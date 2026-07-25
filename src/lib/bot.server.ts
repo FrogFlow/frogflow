@@ -25,6 +25,12 @@ function originFromState(): string {
   ).replace(/\/$/, "");
 }
 
+function isCountryRF(countryCode?: string | null): boolean {
+  if (!countryCode) return false;
+  const code = countryCode.trim().toUpperCase();
+  return code === "RU" || code === "RUS" || code === "РФ" || code === "РОССИЯ";
+}
+
 /** Robokassa: согласие + ссылки на оферту и политику (HTML для сообщений в чате). */
 function legalConsentHtml(base: string): string {
   return (
@@ -747,7 +753,11 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   const getSetting = (key: string) => allSettings?.find((r) => r.key === key)?.value;
 
   const rkEnabled = getSetting("robokassa_enabled") === "true";
-  if (rkEnabled) {
+  const isRfUser = isCountryRF(country_code);
+
+  // Если Робокасса ВКЛЮЧЕНА и пользователь НЕ из РФ — отправляем ссылку на Робокассу.
+  // РФ пользователи платить через Робокассу не могут, поэтому их направляем на чеки.
+  if (rkEnabled && !isRfUser) {
     const testMode = getSetting("robokassa_test_mode") === "true";
     const login = getSetting("robokassa_login")?.trim();
     const pass1 = (testMode ? getSetting("robokassa_pass1_test") : getSetting("robokassa_pass1"))?.trim();
@@ -781,9 +791,15 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   await setState(telegram_id, { mode: "awaiting_proof", pending_order_id: order.id as number });
 
+  // При включенной Робокассе РФ пользователи получают файлы СРАЗУ после загрузки чека!
+  // В обычное время (когда Робокасса выключена) — выдача только после проверки продавцом.
+  const proofInstruction = (rkEnabled && isRfUser)
+    ? `После оплаты <b>пришлите чек</b> (фото или файл) в этот чат — файлы отправятся вам сразу после получения чека!`
+    : `После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`;
+
   await tg("sendMessage", {
     chat_id,
-    text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${formatMoney(total, currency)}</b>\n\n${method!.instructions}\n\nПосле оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`,
+    text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${formatMoney(total, currency)}</b>\n\n${method?.instructions ? `${method.instructions}\n\n` : ""}${proofInstruction}`,
     parse_mode: "HTML",
   });
 }
@@ -1352,22 +1368,57 @@ export async function handleUpdate(update: any) {
           .eq("id", orderId);
       }
 
-      if (proofSaved || proofFileId) {
-        await tg("sendMessage", {
-          chat_id,
-          text: proofSaved
-            ? `📨 Спасибо! Чек получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`
-            : `📨 Чек получен и переслан продавцу. Заказ #${orderId} на проверке. Если нужно — можно отправить чек ещё раз.`,
-          reply_markup: mainMenu(),
-        });
-        await notifyAdminNewOrder(orderId, proofFileId, proofKind);
+      const { data: currentOrder } = await supabaseAdmin
+        .from("orders")
+        .select("country_code")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      const { data: allSettings } = await supabaseAdmin.from("app_settings").select("key, value");
+      const getSetting = (key: string) => allSettings?.find((r) => r.key === key)?.value;
+      const rkEnabled = getSetting("robokassa_enabled") === "true";
+      const isRfOrder = isCountryRF(currentOrder?.country_code);
+
+      if (rkEnabled && isRfOrder) {
+        // При включенной Робокассе заказы из РФ получают файлы СРАЗУ после загрузки чека!
+        if (proofSaved || proofFileId) {
+          await tg("sendMessage", {
+            chat_id,
+            text: `📨 Спасибо! Чек получен. Начинаю отправку файлов по заказу #${orderId}...`,
+            reply_markup: mainMenu(),
+          });
+          await notifyAdminNewOrder(orderId, proofFileId, proofKind);
+
+          // Выдаем заказ немедленно
+          const { deliverOrder } = await import("./orders.server");
+          await deliverOrder(orderId);
+        } else {
+          await tg("sendMessage", {
+            chat_id,
+            text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную.`,
+            reply_markup: mainMenu(),
+          });
+          await notifyAdminNewOrder(orderId, null, null);
+        }
       } else {
-        await tg("sendMessage", {
-          chat_id,
-          text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную. Если хотите — попробуйте отправить чек ещё раз.`,
-          reply_markup: mainMenu(),
-        });
-        await notifyAdminNewOrder(orderId, null, null);
+        // В обычное время (или если не РФ) — стандартное ожидание проверки продавцом
+        if (proofSaved || proofFileId) {
+          await tg("sendMessage", {
+            chat_id,
+            text: proofSaved
+              ? `📨 Спасибо! Чек получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`
+              : `📨 Чек получен и переслан продавцу. Заказ #${orderId} на проверке. Если нужно — можно отправить чек ещё раз.`,
+            reply_markup: mainMenu(),
+          });
+          await notifyAdminNewOrder(orderId, proofFileId, proofKind);
+        } else {
+          await tg("sendMessage", {
+            chat_id,
+            text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную. Если хотите — попробуйте отправить чек ещё раз.`,
+            reply_markup: mainMenu(),
+          });
+          await notifyAdminNewOrder(orderId, null, null);
+        }
       }
       return;
     }
