@@ -51,23 +51,7 @@ async function claimOrderForDelivery(orderId: number) {
   throw new Error(`Заказ #${orderId} нельзя выдать (статус: ${existing.status})`);
 }
 
-/**
- * Atomically claim next item slot: delivery_index must still be `expectedIdx`.
- * Advances to expectedIdx+1 before send — prevents cron+admin double-send.
- */
-async function claimItemSlot(orderId: number, expectedIdx: number): Promise<boolean> {
-  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  const { data, error } = await supabaseAdmin
-    .from("orders")
-    .update({ delivery_index: expectedIdx + 1, updated_at: new Date().toISOString() })
-    .eq("id", orderId)
-    .eq("status", "delivering")
-    .eq("delivery_index", expectedIdx)
-    .select("id")
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return Boolean(data);
-}
+
 
 /**
  * Deliver product files as Telegram documents in batches.
@@ -130,12 +114,8 @@ export async function deliverOrder(
       const idx = Math.max(0, Number(fresh.delivery_index) || 0);
       if (idx >= items.length) break;
 
-      const claimed = await claimItemSlot(orderId, idx);
-      if (!claimed) {
-        // Another worker took this slot — stop; next cron tick will continue
-        break;
-      }
-
+      // Мы не увеличиваем delivery_index заранее (чтобы не пропустить файл при краше Vercel/таймауте).
+      // Если файл успешно отправлен, мы делаем CAS-обновление индекса.
       if (idx === 0) {
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
@@ -189,17 +169,29 @@ export async function deliverOrder(
       }
 
       if (!itemOk) {
-        // Roll back slot so cron/admin can retry (CAS claimed ahead of send)
-        await supabaseAdmin
-          .from("orders")
-          .update({ delivery_index: idx, updated_at: new Date().toISOString() })
-          .eq("id", orderId)
-          .eq("status", "delivering")
-          .eq("delivery_index", idx + 1);
+        // Мы не увеличивали delivery_index, так что откат (rollback) не нужен.
+        // Следующий cron-запуск просто начнёт с этого же idx.
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
           text: `⚠️ Не удалось отправить «${item.name_snapshot}». Попробую ещё раз чуть позже; если не придёт — продавец вышлет вручную.`,
         });
+        break;
+      }
+
+      // Файл успешно отправлен (или не требует отправки, например, если не настроен).
+      // Продвигаем индекс вперёд с помощью CAS.
+      const { data: updated } = await supabaseAdmin
+        .from("orders")
+        .update({ delivery_index: idx + 1, updated_at: new Date().toISOString() })
+        .eq("id", orderId)
+        .eq("status", "delivering")
+        .eq("delivery_index", idx)
+        .select("id")
+        .maybeSingle();
+
+      if (!updated) {
+        // Другой воркер уже отправил этот файл и продвинул индекс (состояние гонки).
+        // Мы отправили дубль, но чтобы не мешать другому воркеру, просто прерываем работу.
         break;
       }
 
