@@ -245,6 +245,8 @@ export async function processPendingDeliveries(limit = 3) {
     .from("orders")
     .select("id")
     .eq("status", "delivering")
+    // Подхватывать зависшие только если прошло > 2 минут с последнего действия
+    .lte("updated_at", new Date(Date.now() - 2 * 60 * 1000).toISOString())
     .order("updated_at", { ascending: true })
     .limit(limit);
 
