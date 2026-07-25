@@ -20,11 +20,18 @@ function sleep(ms: number) {
 export async function tg(method: string, payload: unknown) {
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(botUrl(method), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let res: Response;
+    try {
+      res = await fetch(botUrl(method), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      console.error(`[tg] fetch error on ${method}:`, e);
+      await sleep(1000 * attempt);
+      continue;
+    }
     const data = await res.json().catch(() => ({}));
 
     // Telegram rate limit — wait Retry-After and try again
@@ -48,7 +55,7 @@ export async function tg(method: string, payload: unknown) {
 export async function tgSendMultipart(
   method: string,
   fields: Record<string, string | number>,
-  file: { field: string; filename: string; bytes: Uint8Array; contentType: string },
+  file: { field: string; filename: string; bytes?: Uint8Array; blob?: Blob; contentType?: string },
 ) {
   return tgSendMultipartMany(method, fields, [file]);
 }
@@ -56,23 +63,34 @@ export async function tgSendMultipart(
 export async function tgSendMultipartMany(
   method: string,
   fields: Record<string, string | number>,
-  files: Array<{ field: string; filename: string; bytes: Uint8Array; contentType: string }>,
+  files: Array<{ field: string; filename: string; bytes?: Uint8Array; blob?: Blob; contentType?: string }>,
 ) {
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const fd = new FormData();
     for (const [k, v] of Object.entries(fields)) fd.append(k, String(v));
     for (const file of files) {
-      fd.append(
-        file.field,
-        new Blob([file.bytes as BlobPart], { type: file.contentType }),
-        file.filename,
-      );
+      let b: Blob;
+      if (file.blob) {
+        b = file.blob;
+      } else if (file.bytes) {
+        b = new Blob([file.bytes.buffer as ArrayBuffer], { type: file.contentType });
+      } else continue;
+      
+      fd.append(file.field, b, file.filename);
     }
-    const res = await fetch(botUrl(method), {
-      method: "POST",
-      body: fd,
-    });
+    
+    let res: Response;
+    try {
+      res = await fetch(botUrl(method), {
+        method: "POST",
+        body: fd,
+      });
+    } catch (e) {
+      console.error(`[tgSendMultipartMany] fetch error:`, e);
+      await sleep(1000 * attempt);
+      continue;
+    }
     const data = await res.json().catch(() => ({}));
 
     // Telegram rate limit — wait Retry-After and try again

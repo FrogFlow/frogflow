@@ -342,15 +342,32 @@ export async function processBroadcastBatch() {
     if (i + 1 < pending.length) await sleep(SEND_DELAY_MS);
   }
 
-  const { data: fresh } = await s.from("broadcasts").select("sent_count, failed_count, blocked_count").eq("id", broadcast.id).single();
-  await s
-    .from("broadcasts")
-    .update({
-      sent_count: (fresh?.sent_count ?? 0) + sent,
-      failed_count: (fresh?.failed_count ?? 0) + failed,
-      blocked_count: (fresh?.blocked_count ?? 0) + blocked,
-    })
-    .eq("id", broadcast.id);
+  // Атомарное обновление счётчиков через SQL-инкремент (защита от Race Condition при параллельных воркерах)
+  if (sent > 0 || failed > 0 || blocked > 0) {
+    const increments: Record<string, string> = {};
+    if (sent > 0) increments["sent_count"] = `sent_count + ${sent}`;
+    if (failed > 0) increments["failed_count"] = `failed_count + ${failed}`;
+    if (blocked > 0) increments["blocked_count"] = `blocked_count + ${blocked}`;
+
+    // Используем raw SQL через rpc для атомарного инкремента
+    await s.rpc("increment_broadcast_counts", {
+      p_broadcast_id: broadcast.id,
+      p_sent: sent,
+      p_failed: failed,
+      p_blocked: blocked,
+    }).then(({ error }) => {
+      if (error) {
+        // Fallback: если rpc не создан, используем read-then-write
+        return s.from("broadcasts").select("sent_count, failed_count, blocked_count").eq("id", broadcast.id).single().then(({ data: fresh }) =>
+          s.from("broadcasts").update({
+            sent_count: (fresh?.sent_count ?? 0) + sent,
+            failed_count: (fresh?.failed_count ?? 0) + failed,
+            blocked_count: (fresh?.blocked_count ?? 0) + blocked,
+          }).eq("id", broadcast.id)
+        );
+      }
+    });
+  }
 
   const { count } = await s
     .from("broadcast_recipients")

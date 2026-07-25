@@ -70,9 +70,20 @@ async function handleRobokassaResult(request: Request) {
   }
 
   const orderId = Number(invId);
-  const { data: order } = await s.from("orders").select("status").eq("id", orderId).maybeSingle();
+  const { data: order } = await s.from("orders").select("status, total").eq("id", orderId).maybeSingle();
 
-  if (order && order.status !== "delivered") {
+  if (!order) {
+    return new Response("order not found", { status: 404 });
+  }
+
+  // Защита от подделки суммы
+  if (Math.abs(Number(outSum) - Number(order.total)) > 0.01) {
+    console.error("[robokassa] amount mismatch", { outSum, expected: order.total });
+    return new Response("amount mismatch", { status: 400 });
+  }
+
+  // Выдавать только если заказ ожидает оплаты или подтверждения (защита от выдачи отклонённых)
+  if (["awaiting_payment", "awaiting_confirmation"].includes(order.status)) {
     try {
       await deliverOrder(orderId);
       await s

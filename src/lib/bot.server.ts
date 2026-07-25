@@ -623,6 +623,10 @@ async function startCheckout(chat_id: number, user: BotUser) {
     return;
   }
 
+  // Prevent duplicate double-clicks
+  if (user.state.mode === "placing_order") return;
+  await setState(telegram_id, { ...user.state, mode: "placing_order" });
+
   // user has contact and country, proceed directly to placeOrder
   await placeOrder(chat_id, user, user.state.country_code);
 }
@@ -1031,7 +1035,7 @@ export async function handleUpdate(update: any) {
       }
       if (data.startsWith("rem:")) {
         const s = await db();
-        await s.from("cart_items").delete().eq("id", data.slice(4));
+        await s.from("cart_items").delete().eq("id", data.slice(4)).eq("telegram_id", from_id);
         return showCart(chat_id, user);
       }
       if (data === "clear") {
@@ -1061,7 +1065,20 @@ export async function handleUpdate(update: any) {
         const s = await db();
         const { data: order } = await s.from("orders").select("*, order_items(*)").eq("id", orderId).single();
         if (!order) return;
-        const items = order.order_items as any[];
+        
+        // Security: verify the order belongs to the user clicking the button
+        if (order.telegram_id !== from_id) {
+          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "⛔ Доступ запрещён." });
+          return;
+        }
+
+        // Sort items to match server delivery index logic
+        const items = ((order.order_items as any[]) || []).slice().sort((a, b) => {
+          const ai = String(a.id || "");
+          const bi = String(b.id || "");
+          return ai < bi ? -1 : ai > bi ? 1 : 0;
+        });
+
         const item = items[idx];
         if (!item) return;
 
@@ -1202,25 +1219,30 @@ export async function handleUpdate(update: any) {
 
     // Phone number typed as text during checkout
     if (user.state?.mode === "awaiting_contact" && msg.text) {
-      if (msg.text === "📱 Поделиться контактом") {
-        await tg("sendMessage", {
-          chat_id,
-          text: "Нажмите кнопку «📱 Поделиться контактом» внизу экрана или просто напишите номер телефона в чат.",
-        });
-        return;
-      }
+      if (["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы", "📖 Инструкция", "ℹ️ Информация"].includes(msg.text)) {
+        await setState(from.id, { mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        if (msg.text === "📱 Поделиться контактом") {
+          await tg("sendMessage", {
+            chat_id,
+            text: "Нажмите кнопку «📱 Поделиться контактом» внизу экрана или просто напишите номер телефона в чат.",
+          });
+          return;
+        }
 
-      const phone = normalizePhone(msg.text);
-      if (!phone) {
-        await tg("sendMessage", {
-          chat_id,
-          text: "Не удалось распознать номер. Напишите телефон цифрами, например: <code>+79001234567</code> или <code>89001234567</code>",
-          parse_mode: "HTML",
-        });
+        const phone = normalizePhone(msg.text);
+        if (!phone) {
+          await tg("sendMessage", {
+            chat_id,
+            text: "Не удалось распознать номер. Напишите телефон цифрами, например: <code>+79001234567</code> или <code>89001234567</code>",
+            parse_mode: "HTML",
+          });
+          return;
+        }
+        await saveContactAndContinueCheckout(chat_id, user, phone);
         return;
       }
-      await saveContactAndContinueCheckout(chat_id, user, phone);
-      return;
     }
 
     // Payment proof (photo OR document).
@@ -1246,11 +1268,16 @@ export async function handleUpdate(update: any) {
     }
 
     if (user.state?.mode === "awaiting_proof" && user.state.pending_order_id && !msg.photo && !msg.document) {
-      await tg("sendMessage", {
-        chat_id,
-        text: "📨 Пришлите, пожалуйста, чек об оплате — фото или файл (например, PDF).",
-      });
-      return;
+      if (msg.text && ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы", "📖 Инструкция", "ℹ️ Информация"].includes(msg.text)) {
+        await setState(from.id, { mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        await tg("sendMessage", {
+          chat_id,
+          text: "📨 Пришлите, пожалуйста, чек об оплате — фото или файл (например, PDF).",
+        });
+        return;
+      }
     }
 
     if (proofOrderId && (msg.photo || msg.document)) {

@@ -70,32 +70,51 @@ function SettingsPage() {
   const origin = typeof window !== "undefined" ? window.location.origin : "https://your-app.vercel.app";
 
   async function onSave() {
-    await saveSetting({ data: { key: "admin_chat_id", value: adminChatId.trim() } });
-    await saveSetting({ data: { key: "admin_contact_link", value: adminContactLink.trim() } });
-    qc.invalidateQueries({ queryKey: ["settings"] });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await Promise.all([
+        saveSetting({ data: { key: "admin_chat_id", value: adminChatId.trim() } }),
+        saveSetting({ data: { key: "admin_contact_link", value: adminContactLink.trim() } }),
+      ]);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: any) {
+      alert("Ошибка сохранения: " + (e?.message || "Неизвестная ошибка"));
+    }
   }
 
   async function onSaveRobokassa() {
-    await saveSetting({ data: { key: "robokassa_enabled", value: rkEnabled ? "true" : "false" } });
-    await saveSetting({ data: { key: "robokassa_test_mode", value: rkTestMode ? "true" : "false" } });
-    await saveSetting({ data: { key: "robokassa_login", value: rkLogin.trim() } });
-    await saveSetting({ data: { key: "robokassa_pass1", value: rkPass1.trim() } });
-    await saveSetting({ data: { key: "robokassa_pass2", value: rkPass2.trim() } });
-    await saveSetting({ data: { key: "robokassa_pass1_test", value: rkPass1Test.trim() } });
-    await saveSetting({ data: { key: "robokassa_pass2_test", value: rkPass2Test.trim() } });
-    qc.invalidateQueries({ queryKey: ["settings"] });
-    setRkSaved(true);
-    setTimeout(() => setRkSaved(false), 2000);
+    try {
+      // Promise.all гарантирует, что все настройки сохранятся атомарно (или ни одна не сохранится)
+      await Promise.all([
+        saveSetting({ data: { key: "robokassa_enabled", value: rkEnabled ? "true" : "false" } }),
+        saveSetting({ data: { key: "robokassa_test_mode", value: rkTestMode ? "true" : "false" } }),
+        saveSetting({ data: { key: "robokassa_login", value: rkLogin.trim() } }),
+        saveSetting({ data: { key: "robokassa_pass1", value: rkPass1.trim() } }),
+        saveSetting({ data: { key: "robokassa_pass2", value: rkPass2.trim() } }),
+        saveSetting({ data: { key: "robokassa_pass1_test", value: rkPass1Test.trim() } }),
+        saveSetting({ data: { key: "robokassa_pass2_test", value: rkPass2Test.trim() } }),
+      ]);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setRkSaved(true);
+      setTimeout(() => setRkSaved(false), 2000);
+    } catch (e: any) {
+      alert("Ошибка сохранения Robokassa: " + (e?.message || "Неизвестная ошибка"));
+    }
   }
 
   async function onSaveLegal() {
-    await saveSetting({ data: { key: "legal_seller_details", value: legalSeller } });
-    await saveSetting({ data: { key: "legal_about_html", value: legalAbout } });
-    qc.invalidateQueries({ queryKey: ["settings"] });
-    setLegalSaved(true);
-    setTimeout(() => setLegalSaved(false), 2000);
+    try {
+      await Promise.all([
+        saveSetting({ data: { key: "legal_seller_details", value: legalSeller } }),
+        saveSetting({ data: { key: "legal_about_html", value: legalAbout } }),
+      ]);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setLegalSaved(true);
+      setTimeout(() => setLegalSaved(false), 2000);
+    } catch (e: any) {
+      alert("Ошибка сохранения документов: " + (e?.message || "Неизвестная ошибка"));
+    }
   }
 
   async function onUploadLegal(kind: "offer" | "privacy", file: File | null) {

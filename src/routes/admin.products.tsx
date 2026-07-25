@@ -219,6 +219,8 @@ function ProductsPage() {
       setEditing(null);
       setImages([]);
       qc.invalidateQueries({ queryKey: ["products"] });
+    } catch (e: any) {
+      alert("Ошибка сохранения: " + (e?.message || "Неизвестная ошибка"));
     } finally {
       setSaving(false);
     }
@@ -226,8 +228,12 @@ function ProductsPage() {
 
   async function onDelete(id: string) {
     if (!confirm("Удалить товар?")) return;
-    await deleteProduct({ data: { id } });
-    qc.invalidateQueries({ queryKey: ["products"] });
+    try {
+      await deleteProduct({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["products"] });
+    } catch (e: any) {
+      alert("Ошибка удаления: " + (e?.message || "Неизвестная ошибка"));
+    }
   }
 
   return (

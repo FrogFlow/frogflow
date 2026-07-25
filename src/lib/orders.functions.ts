@@ -93,6 +93,6 @@ export const deleteOrder = createServerFn({ method: "POST" })
     await s.from("order_items").delete().eq("order_id", data.id);
     const { error } = await s.from("orders").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
-    await s.rpc("reset_orders_sequence");
+    // Не сбрасываем sequence — это опасно при параллельных заказах
     return { ok: true as const };
   });

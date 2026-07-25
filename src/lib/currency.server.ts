@@ -34,15 +34,30 @@ async function fetchRates(): Promise<Record<string, number>> {
   return j.rates;
 }
 
+let inMemoryCache: { ts: number; rates: Record<string, number> } | null = null;
+const MEMORY_TTL = 10 * 60 * 1000; // 10 min
+
 async function getRates(): Promise<Record<string, number>> {
+  if (inMemoryCache && Date.now() - inMemoryCache.ts < MEMORY_TTL) {
+    return inMemoryCache.rates;
+  }
+
   const cached = await loadCache();
-  if (cached && Date.now() - cached.ts < TTL_MS) return cached.rates;
+  if (cached && Date.now() - cached.ts < TTL_MS) {
+    inMemoryCache = { ts: Date.now(), rates: cached.rates };
+    return cached.rates;
+  }
+  
   try {
     const rates = await fetchRates();
     await saveCache({ ts: Date.now(), rates });
+    inMemoryCache = { ts: Date.now(), rates };
     return rates;
   } catch (e) {
-    if (cached) return cached.rates; // fall back to stale
+    if (cached) {
+      inMemoryCache = { ts: Date.now(), rates: cached.rates };
+      return cached.rates; // fall back to stale
+    }
     throw e;
   }
 }
@@ -52,11 +67,17 @@ export async function convertAmount(amount: number, from: string, to: string): P
   const f = from.toUpperCase();
   const t = to.toUpperCase();
   if (!amount || f === t) return Math.round(amount);
-  const rates = await getRates();
-  const rf = rates[f];
-  const rt = rates[t];
-  if (!rf || !rt) return Math.round(amount); // unknown currency — keep as-is
-  const usd = amount / rf;
-  const result = usd * rt;
-  return Math.round(result);
+  
+  try {
+    const rates = await getRates();
+    const rf = rates[f];
+    const rt = rates[t];
+    if (!rf || !rt) return Math.round(amount); // unknown currency — keep as-is
+    const usd = amount / rf;
+    const result = usd * rt;
+    return Math.round(result);
+  } catch (e) {
+    console.error("[convertAmount] failed", e);
+    return Math.round(amount); // fallback to original amount on failure
+  }
 }

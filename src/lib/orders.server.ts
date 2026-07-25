@@ -133,13 +133,26 @@ export async function deliverOrder(
       const path_ru = item.file_path_snapshot;
       const path_kz = item.file_path_kz_snapshot;
 
+      // 1. Продвигаем индекс вперёд с помощью CAS ДО отправки файла
+      const { data: updated } = await supabaseAdmin
+        .from("orders")
+        .update({ delivery_index: idx + 1, updated_at: new Date().toISOString() })
+        .eq("id", orderId)
+        .eq("status", "delivering")
+        .eq("delivery_index", idx)
+        .select("id")
+        .maybeSingle();
+
+      if (!updated) {
+        // Другой воркер уже взял этот файл в работу (состояние гонки предотвращено).
+        break;
+      }
+
       let itemOk = true;
       try {
         if (!path_ru && !path_kz) {
-          await tg("sendMessage", {
-            chat_id: fresh.telegram_id,
-            text: `⚠️ Файл для «${item.name_snapshot}» не настроен. Продавец вышлет вручную.`,
-          });
+          // Нет файла — ничего не отправляем
+          itemOk = true;
         } else if (path_ru && path_kz) {
           await tg("sendMessage", {
             chat_id: fresh.telegram_id,
@@ -154,6 +167,7 @@ export async function deliverOrder(
               ],
             },
           });
+          itemOk = true;
         } else {
           const path = path_ru || path_kz!;
           const name =
@@ -169,8 +183,13 @@ export async function deliverOrder(
       }
 
       if (!itemOk) {
-        // Мы не увеличивали delivery_index, так что откат (rollback) не нужен.
-        // Следующий cron-запуск просто начнёт с этого же idx.
+        // Откат (Rollback) CAS лока с обязательным обновлением updated_at, 
+        // чтобы cron подождал 2 минуты до следующей попытки и не спамил
+        await supabaseAdmin
+          .from("orders")
+          .update({ delivery_index: idx, updated_at: new Date().toISOString() })
+          .eq("id", orderId);
+
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
           text: `⚠️ Не удалось отправить «${item.name_snapshot}». Попробую ещё раз чуть позже; если не придёт — продавец вышлет вручную.`,
@@ -178,22 +197,6 @@ export async function deliverOrder(
         break;
       }
 
-      // Файл успешно отправлен (или не требует отправки, например, если не настроен).
-      // Продвигаем индекс вперёд с помощью CAS.
-      const { data: updated } = await supabaseAdmin
-        .from("orders")
-        .update({ delivery_index: idx + 1, updated_at: new Date().toISOString() })
-        .eq("id", orderId)
-        .eq("status", "delivering")
-        .eq("delivery_index", idx)
-        .select("id")
-        .maybeSingle();
-
-      if (!updated) {
-        // Другой воркер уже отправил этот файл и продвинул индекс (состояние гонки).
-        // Мы отправили дубль, но чтобы не мешать другому воркеру, просто прерываем работу.
-        break;
-      }
 
       sent++;
       if (n + 1 < BATCH_SIZE && idx + 1 < items.length) await sleep(ITEM_DELAY_MS);
@@ -333,10 +336,11 @@ export async function sendFileToUser(
     return true; // permanent — don't spin cron forever
   }
 
-  const bytes = new Uint8Array(await dl.arrayBuffer());
+  // Прокидываем Blob напрямую в FormData через обновленный tgSendMultipart
+  // Это потоковая передача, которая защищает Vercel от краша по памяти (OOM) на больших файлах (например, тяжелые .7z)
   const mime = dl.type || "application/octet-stream";
 
-  if (bytes.byteLength === 0) {
+  if (dl.size === 0) {
     console.error("[orders] empty file", path);
     await tg("sendMessage", {
       chat_id,
@@ -345,11 +349,11 @@ export async function sendFileToUser(
     return true;
   }
 
-  if (bytes.byteLength > TG_MAX) {
+  if (dl.size > TG_MAX) {
     if (await sendViaTelegramUrl()) return true;
     await tg("sendMessage", {
       chat_id,
-      text: `⚠️ Файл «${caption}» слишком большой (${Math.round(bytes.byteLength / (1024 * 1024))} МБ, лимит ${Math.round(TG_MAX / (1024 * 1024))} МБ). Продавец вышлет вручную.`,
+      text: `⚠️ Файл «${caption}» слишком большой (${Math.round(dl.size / (1024 * 1024))} МБ, лимит ${Math.round(TG_MAX / (1024 * 1024))} МБ). Продавец вышлет вручную.`,
     });
     // Permanent size problem — treat as handled so we don't infinite-retry
     return true;
@@ -358,17 +362,18 @@ export async function sendFileToUser(
   const res = await tgSendMultipart(
     "sendDocument",
     { chat_id, caption },
-    { field: "document", filename, bytes, contentType: mime },
+    { field: "document", filename, blob: dl, contentType: mime },
   );
+
   if (res?.ok) return true;
 
   console.error("[orders] sendDocument multipart failed", res);
   if (await sendViaTelegramUrl()) return true;
 
-  if (bytes.byteLength > CLOUD_TG_MAX) {
+  if (dl.size > CLOUD_TG_MAX) {
     await tg("sendMessage", {
       chat_id,
-      text: `⚠️ Файл «${caption}» (${Math.round(bytes.byteLength / (1024 * 1024))} МБ) не проходит через облачный Telegram API (лимит ~50 МБ). Нужен Local Bot API или ручная выдача.`,
+      text: `⚠️ Файл «${caption}» (${Math.round(dl.size / (1024 * 1024))} МБ) не проходит через облачный Telegram API (лимит ~50 МБ). Нужен Local Bot API или ручная выдача.`,
     });
     return true; // don't spin forever without Local API
   }
