@@ -13,17 +13,36 @@ function botUrl(method: string) {
   return `${apiBase()}/bot${token()}/${method}`;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function tg(method: string, payload: unknown) {
-  const res = await fetch(botUrl(method), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || (data && data.ok === false)) {
-    console.error(`[telegram] ${method} failed`, res.status, data);
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(botUrl(method), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    // Telegram rate limit — wait Retry-After and try again
+    if (res.status === 429) {
+      const retryAfter = (data?.parameters?.retry_after as number) || attempt * 2;
+      console.warn(`[telegram] ${method} rate limited, retrying after ${retryAfter}s (attempt ${attempt}/${MAX_RETRIES})`);
+      if (attempt < MAX_RETRIES) {
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+    }
+
+    if (!res.ok || (data && data.ok === false)) {
+      console.error(`[telegram] ${method} failed`, res.status, data);
+    }
+    return data as { ok: boolean; result?: unknown; description?: string };
   }
-  return data as { ok: boolean; result?: unknown; description?: string };
+  return { ok: false } as { ok: boolean; result?: unknown; description?: string };
 }
 
 export async function tgSendMultipart(
@@ -39,24 +58,39 @@ export async function tgSendMultipartMany(
   fields: Record<string, string | number>,
   files: Array<{ field: string; filename: string; bytes: Uint8Array; contentType: string }>,
 ) {
-  const fd = new FormData();
-  for (const [k, v] of Object.entries(fields)) fd.append(k, String(v));
-  for (const file of files) {
-    fd.append(
-      file.field,
-      new Blob([file.bytes as BlobPart], { type: file.contentType }),
-      file.filename,
-    );
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields)) fd.append(k, String(v));
+    for (const file of files) {
+      fd.append(
+        file.field,
+        new Blob([file.bytes as BlobPart], { type: file.contentType }),
+        file.filename,
+      );
+    }
+    const res = await fetch(botUrl(method), {
+      method: "POST",
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+
+    // Telegram rate limit — wait Retry-After and try again
+    if (res.status === 429) {
+      const retryAfter = (data?.parameters?.retry_after as number) || attempt * 2;
+      console.warn(`[telegram] ${method} multipart rate limited, retrying after ${retryAfter}s (attempt ${attempt}/${MAX_RETRIES})`);
+      if (attempt < MAX_RETRIES) {
+        await sleep(retryAfter * 1000);
+        continue;
+      }
+    }
+
+    if (!res.ok || (data && data.ok === false)) {
+      console.error(`[telegram] ${method} multipart failed`, res.status, data);
+    }
+    return data as { ok: boolean; result?: unknown; description?: string };
   }
-  const res = await fetch(botUrl(method), {
-    method: "POST",
-    body: fd,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || (data && data.ok === false)) {
-    console.error(`[telegram] ${method} multipart failed`, res.status, data);
-  }
-  return data as { ok: boolean; result?: unknown; description?: string };
+  return { ok: false } as { ok: boolean; result?: unknown; description?: string };
 }
 
 export async function downloadTelegramFile(file_id: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
