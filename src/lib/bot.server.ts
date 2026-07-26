@@ -8,7 +8,15 @@ type BotUser = {
   last_name: string | null;
   language_code: string | null;
   contact_phone: string | null;
-  state: { mode?: string; pending_order_id?: number; country_code?: string; country_name?: string; last_search?: string } | null;
+  state: {
+    mode?: string;
+    pending_order_id?: number;
+    country_code?: string;
+    country_name?: string;
+    last_search?: string;
+    /** When true, attaching a payment receipt auto-delivers files (RU/KZ with Robokassa on). */
+    proof_auto?: boolean;
+  } | null;
 };
 
 async function db() {
@@ -183,7 +191,7 @@ async function sendInstruction(chat_id: number) {
 
   const caption =
     get("instruction_caption") ||
-    "📖 Как пользоваться ботом: каталог → корзина → оплата → чек. Файлы придут после подтверждения.";
+    "📖 Как пользоваться ботом: каталог → корзина → оплата → чек. Файлы придут после оплаты (картой или по чеку).";
   const fileId = get("instruction_video_file_id");
   const path = get("instruction_video_path");
 
@@ -211,7 +219,7 @@ async function sendInstruction(chat_id: number) {
     await tg("sendMessage", {
       chat_id,
       text:
-        "📖 Инструкция скоро появится.\nПока: «Каталог» или «Поиск» → корзина → оплата → пришлите чек. Файлы придут после подтверждения продавцом.",
+        "📖 Инструкция скоро появится.\nПока: «Каталог» или «Поиск» → корзина → оплата → чек или Robokassa. Файлы придут после оплаты.",
       reply_markup: mainMenu(),
     });
     return;
@@ -749,62 +757,172 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   await s.from("order_items").insert(rows);
   await s.from("cart_items").delete().eq("telegram_id", telegram_id);
 
-  const { data: allSettings } = await s.from("app_settings").select("key, value");
-  const getSetting = (key: string) => allSettings?.find((r) => r.key === key)?.value;
+  const rk = await loadRobokassaSettings();
+  const cc = String(method?.country_code ?? country_code ?? "").toUpperCase();
+  const instructions = (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.";
 
-  const rkEnabled = getSetting("robokassa_enabled") === "true";
-  const isRfUser = isCountryRF(country_code);
-
-  // Если Робокасса ВКЛЮЧЕНА и пользователь НЕ из РФ — отправляем ссылку на Робокассу.
-  // РФ пользователи платить через Робокассу не могут, поэтому их направляем на чеки.
-  if (rkEnabled && !isRfUser) {
-    const testMode = getSetting("robokassa_test_mode") === "true";
-    const login = getSetting("robokassa_login")?.trim();
-    const pass1 = (testMode ? getSetting("robokassa_pass1_test") : getSetting("robokassa_pass1"))?.trim();
-    if (login && pass1) {
-      const { buildRobokassaPaymentUrl } = await import("./robokassa.server");
-      const outSum = Number(total).toFixed(2);
-      const paymentUrl = buildRobokassaPaymentUrl({
-        login,
-        pass1,
-        outSum,
-        invId: order.id as number,
-        description: `Заказ #${order.id}`,
-        isTest: testMode,
-      });
-
-      await setState(telegram_id, { mode: "awaiting_payment", pending_order_id: order.id as number });
-      await tg("sendMessage", {
-        chat_id,
-        text:
-          `🧾 <b>Заказ #${order.id}</b> создан.\n\n` +
-          `Сумма к оплате: <b>${formatMoney(total, currency)}</b>\n\n` +
-          `Нажмите кнопку ниже для оплаты через Robokassa — после оплаты файлы придут автоматически.`,
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [[{ text: "💳 Оплатить через Robokassa", url: paymentUrl }]],
-        },
-      });
-      return;
-    }
+  // Robokassa off (or misconfigured) → all countries: receipt + manual admin confirm
+  if (!rk.ready) {
+    await startManualProofPath({
+      chat_id,
+      telegram_id,
+      userState: user.state,
+      orderId: order.id as number,
+      total,
+      currency,
+      instructions,
+      autoDeliver: false,
+    });
+    return;
   }
 
-  await setState(telegram_id, { mode: "awaiting_proof", pending_order_id: order.id as number });
+  // Robokassa on + RU → receipt with auto-delivery (no Robokassa)
+  if (isCountryRF(cc)) {
+    await startManualProofPath({
+      chat_id,
+      telegram_id,
+      userState: user.state,
+      orderId: order.id as number,
+      total,
+      currency,
+      instructions,
+      autoDeliver: true,
+    });
+    return;
+  }
 
-  // При включенной Робокассе РФ пользователи получают файлы СРАЗУ после загрузки чека!
-  // В обычное время (когда Робокасса выключена) — выдача только после проверки продавцом.
-  const proofInstruction = (rkEnabled && isRfUser)
-    ? `После оплаты <b>пришлите чек</b> (фото или файл) в этот чат — файлы отправятся вам сразу после получения чека!`
+  // Robokassa on + KZ → choose Robokassa or receipt (auto-delivery)
+  if (cc === "KZ") {
+    await setState(telegram_id, {
+      ...user.state,
+      mode: "choose_pay",
+      pending_order_id: order.id as number,
+      proof_auto: false,
+    });
+    await tg("sendMessage", {
+      chat_id,
+      text:
+        `🧾 <b>Заказ #${order.id}</b> создан.\n\n` +
+        `Сумма к оплате: <b>${formatMoney(total, currency)}</b>\n\n` +
+        `Выберите способ оплаты:\n` +
+        `• <b>Robokassa</b> — оплата картой, файлы придут сразу после оплаты\n` +
+        `• <b>По реквизитам</b> — перевод вручную, пришлите чек — файлы придут сразу`,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "💳 Оплатить через Robokassa", callback_data: `pay:rk:${order.id}` }],
+          [{ text: "🧾 Оплатить по реквизитам", callback_data: `pay:manual:${order.id}` }],
+        ],
+      },
+    });
+    return;
+  }
+
+  // Robokassa on + other countries → Robokassa only
+  await sendRobokassaPayLink({
+    chat_id,
+    telegram_id,
+    userState: user.state,
+    orderId: order.id as number,
+    total,
+    currency,
+    rk,
+  });
+}
+
+async function loadRobokassaSettings() {
+  const s = await db();
+  const { data: allSettings } = await s.from("app_settings").select("key, value");
+  const getSetting = (key: string) => allSettings?.find((r) => r.key === key)?.value;
+  const enabled = getSetting("robokassa_enabled") === "true";
+  const testMode = getSetting("robokassa_test_mode") === "true";
+  const login = getSetting("robokassa_login")?.trim() || "";
+  const pass1 = (testMode ? getSetting("robokassa_pass1_test") : getSetting("robokassa_pass1"))?.trim() || "";
+  return { enabled, testMode, login, pass1, ready: enabled && Boolean(login && pass1) };
+}
+
+async function sendRobokassaPayLink(params: {
+  chat_id: number;
+  telegram_id: number;
+  userState: BotUser["state"];
+  orderId: number;
+  total: number;
+  currency: string;
+  rk: Awaited<ReturnType<typeof loadRobokassaSettings>>;
+}) {
+  const { buildRobokassaPaymentUrl } = await import("./robokassa.server");
+  const outSum = Number(params.total).toFixed(2);
+  const paymentUrl = buildRobokassaPaymentUrl({
+    login: params.rk.login,
+    pass1: params.rk.pass1,
+    outSum,
+    invId: params.orderId,
+    description: `Заказ #${params.orderId}`,
+    isTest: params.rk.testMode,
+  });
+
+  await setState(params.telegram_id, {
+    ...params.userState,
+    mode: "awaiting_payment",
+    pending_order_id: params.orderId,
+    proof_auto: false,
+  });
+  await tg("sendMessage", {
+    chat_id: params.chat_id,
+    text:
+      `🧾 <b>Заказ #${params.orderId}</b>\n\n` +
+      `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
+      `Нажмите кнопку ниже для оплаты через Robokassa — после оплаты файлы придут автоматически.`,
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [[{ text: "💳 Оплатить через Robokassa", url: paymentUrl }]],
+    },
+  });
+}
+
+async function startManualProofPath(params: {
+  chat_id: number;
+  telegram_id: number;
+  userState: BotUser["state"];
+  orderId: number;
+  total: number;
+  currency: string;
+  instructions: string;
+  autoDeliver: boolean;
+}) {
+  const s = await db();
+  if (params.autoDeliver) {
+    await s.from("orders").update({ admin_note: "proof_auto" }).eq("id", params.orderId);
+  }
+
+  await setState(params.telegram_id, {
+    ...params.userState,
+    mode: "awaiting_proof",
+    pending_order_id: params.orderId,
+    proof_auto: params.autoDeliver,
+  });
+
+  const afterProof = params.autoDeliver
+    ? `После оплаты <b>пришлите чек</b> (фото или PDF) в этот чат — бот сразу отправит файлы.`
     : `После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`;
 
   await tg("sendMessage", {
-    chat_id,
-    text: `🧾 <b>Заказ #${order.id}</b> создан.\n\nСумма к оплате: <b>${formatMoney(total, currency)}</b>\n\n${method?.instructions ? `${method.instructions}\n\n` : ""}${proofInstruction}`,
+    chat_id: params.chat_id,
+    text:
+      `🧾 <b>Заказ #${params.orderId}</b> создан.\n\n` +
+      `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
+      `${params.instructions}\n\n` +
+      afterProof,
     parse_mode: "HTML",
   });
 }
 
-async function notifyAdminNewOrder(orderId: number, proofFileId: string | null, proofKind: "photo" | "document" | null) {
+async function notifyAdminNewOrder(
+  orderId: number,
+  proofFileId: string | null,
+  proofKind: "photo" | "document" | null,
+  options?: { autoDelivered?: boolean },
+) {
   const s = await db();
   const { data: setting } = await s
     .from("app_settings")
@@ -846,28 +964,34 @@ async function notifyAdminNewOrder(orderId: number, proofFileId: string | null, 
     }
   }
 
-  const summaryText = `🆕 <b>Новый заказ #${order.id}</b>
-
-👤 ${escapeHtml(order.display_name as string)}${order.username ? ` (@${escapeHtml(order.username)})` : ""}
+  const autoDelivered = Boolean(options?.autoDelivered);
+  const summaryText =
+    (autoDelivered
+      ? `🆕 <b>Заказ #${order.id}</b> — автовыдача по чеку\n\n`
+      : `🆕 <b>Новый заказ #${order.id}</b>\n\n`) +
+    `👤 ${escapeHtml(order.display_name as string)}${order.username ? ` (@${escapeHtml(order.username)})` : ""}
 📞 ${escapeHtml((order.contact as string) || "—")}
 🌍 ${escapeHtml((order.country_name as string) || "—")}
 📦 Позиций: ${items.length}
 
-💰 <b>Итого: ${order.total} ${order.currency}</b>`;
+💰 <b>Итого: ${order.total} ${order.currency}</b>` +
+    (autoDelivered ? `\n\n⚡ Файлы выданы автоматически после чека (подтверждение не требуется).` : "");
 
   const itemsMessage =
     items.length > 0
       ? `📋 <b>Состав заказа #${order.id}</b>\n\n${items.map((i) => `• ${escapeHtml(i.name_snapshot)} × ${i.quantity} — ${i.price_snapshot} ${order.currency}`).join("\n")}`
       : "";
 
-  const reply_markup = {
-    inline_keyboard: [
-      [
-        { text: "✅ Подтвердить и выдать", callback_data: `confirm:${order.id}` },
-        { text: "❌ Отклонить", callback_data: `reject:${order.id}` },
-      ],
-    ],
-  };
+  const reply_markup = autoDelivered
+    ? undefined
+    : {
+        inline_keyboard: [
+          [
+            { text: "✅ Подтвердить и выдать", callback_data: `confirm:${order.id}` },
+            { text: "❌ Отклонить", callback_data: `reject:${order.id}` },
+          ],
+        ],
+      };
 
   for (const adminChatId of adminIds) {
     // 1) Главное: краткое уведомление с кнопками — отдельно от превью и чека.
@@ -876,7 +1000,7 @@ async function notifyAdminNewOrder(orderId: number, proofFileId: string | null, 
         chat_id: adminChatId,
         text: summaryText,
         parse_mode: "HTML",
-        reply_markup,
+        ...(reply_markup ? { reply_markup } : {}),
       });
     } catch (err) {
       console.error(`[bot] failed to notify admin ${adminChatId} (summary)`, err);
@@ -1018,11 +1142,87 @@ export async function handleUpdate(update: any) {
       const user = await upsertUser(cq.from as any);
       
       // Before allowing navigation, require country code
-      if (!data.startsWith("setcountry:") && !data.startsWith("confirm:") && !data.startsWith("reject:") && data !== "clear" && !data.startsWith("rem:") && !data.startsWith("add:") && !data.startsWith("lang_ru:") && !data.startsWith("lang_kz:") && !data.startsWith("searchmore:") && !data.startsWith("prod:")) {
+      if (
+        !data.startsWith("setcountry:") &&
+        !data.startsWith("confirm:") &&
+        !data.startsWith("reject:") &&
+        !data.startsWith("pay:") &&
+        data !== "clear" &&
+        !data.startsWith("rem:") &&
+        !data.startsWith("add:") &&
+        !data.startsWith("lang_ru:") &&
+        !data.startsWith("lang_kz:") &&
+        !data.startsWith("searchmore:") &&
+        !data.startsWith("prod:")
+      ) {
         if (!user.state?.country_code) {
           await askCountry(chat_id, from_id);
           return;
         }
+      }
+
+      if (data.startsWith("pay:rk:") || data.startsWith("pay:manual:")) {
+        const isRk = data.startsWith("pay:rk:");
+        const orderId = Number(data.slice(isRk ? 7 : 11));
+        if (!orderId) return;
+
+        const s = await db();
+        const { data: order } = await s
+          .from("orders")
+          .select("id, telegram_id, status, total, currency, country_code")
+          .eq("id", orderId)
+          .maybeSingle();
+        if (!order || Number(order.telegram_id) !== Number(from_id)) {
+          await tg("sendMessage", { chat_id, text: "Заказ не найден." });
+          return;
+        }
+        if (order.status !== "awaiting_payment") {
+          await tg("sendMessage", { chat_id, text: `Заказ #${orderId} уже обрабатывается или закрыт.` });
+          return;
+        }
+
+        if (cq.message?.message_id) {
+          await tg("editMessageReplyMarkup", {
+            chat_id,
+            message_id: cq.message.message_id,
+            reply_markup: { inline_keyboard: [] },
+          }).catch(() => {});
+        }
+
+        if (isRk) {
+          const rk = await loadRobokassaSettings();
+          if (!rk.ready) {
+            await tg("sendMessage", { chat_id, text: "Robokassa временно недоступна. Выберите оплату по реквизитам." });
+            return;
+          }
+          await sendRobokassaPayLink({
+            chat_id,
+            telegram_id: from_id,
+            userState: user.state,
+            orderId,
+            total: Number(order.total),
+            currency: (order.currency as string) || "KZT",
+            rk,
+          });
+          return;
+        }
+
+        const { data: method } = await s
+          .from("payment_methods")
+          .select("instructions")
+          .eq("country_code", order.country_code || "KZ")
+          .maybeSingle();
+        await startManualProofPath({
+          chat_id,
+          telegram_id: from_id,
+          userState: user.state,
+          orderId,
+          total: Number(order.total),
+          currency: (order.currency as string) || "KZT",
+          instructions: (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.",
+          autoDeliver: true,
+        });
+        return;
       }
 
       if (data.startsWith("cat:root")) {
@@ -1299,6 +1499,30 @@ export async function handleUpdate(update: any) {
     if (proofOrderId && (msg.photo || msg.document)) {
       const orderId = proofOrderId;
 
+      const sOrder = await db();
+      const { data: orderRow } = await sOrder
+        .from("orders")
+        .select("id, status, admin_note, country_code, telegram_id")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (!orderRow || Number(orderRow.telegram_id) !== Number(from.id)) {
+        await tg("sendMessage", { chat_id, text: "Заказ не найден." });
+        return;
+      }
+      if (orderRow.status === "delivered" || orderRow.status === "rejected" || orderRow.status === "delivering") {
+        await tg("sendMessage", {
+          chat_id,
+          text: `Заказ #${orderId} уже обрабатывается или закрыт.`,
+          reply_markup: mainMenu(),
+        });
+        return;
+      }
+
+      const note = String(orderRow.admin_note || "");
+      const autoDeliver =
+        user.state?.proof_auto === true || note === "proof_auto" || note.startsWith("proof_auto");
+
       // Определяем источник чека и расширение сохраняемого файла.
       // Расширение важно: админ-панель определяет тип чека по расширению пути.
       let proofFileId: string | null = null;
@@ -1322,11 +1546,12 @@ export async function handleUpdate(update: any) {
         else fileExt = "bin";
       }
 
-      // Сохраняем чек в storage и переводим заказ в "awaiting_confirmation".
+      // Сохраняем чек в storage.
       // Даже если storage недоступен — пересылаем file_id админу, чтобы чек не потерялся.
       let proofSaved = false;
+      let proofPath: string | null = null;
+      const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
       if (dl) {
-        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         try {
           const { data: buckets } = await supabaseAdmin.storage.listBuckets();
           if (!buckets?.some((b) => b.name === "payment-proofs")) {
@@ -1346,10 +1571,7 @@ export async function handleUpdate(update: any) {
           upsert: true,
         });
         if (!upRes.error) {
-          await supabaseAdmin
-            .from("orders")
-            .update({ payment_proof_path: key, status: "awaiting_confirmation" })
-            .eq("id", orderId);
+          proofPath = key;
           proofSaved = true;
         } else {
           console.error("[bot] payment-proofs upload failed", upRes.error);
@@ -1358,67 +1580,74 @@ export async function handleUpdate(update: any) {
         console.error("[bot] failed to download proof from Telegram", { orderId, proofKind });
       }
 
-      await setState(from.id, { ...user.state, mode: "idle", pending_order_id: undefined });
+      await setState(from.id, {
+        ...user.state,
+        mode: "idle",
+        pending_order_id: undefined,
+        proof_auto: false,
+      });
 
-      const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-      if (!proofSaved) {
+      if (autoDeliver) {
         await supabaseAdmin
           .from("orders")
-          .update({ status: "awaiting_confirmation" })
+          .update({
+            status: "awaiting_payment",
+            admin_note: note.startsWith("proof_auto") ? note : "proof_auto",
+            ...(proofPath ? { payment_proof_path: proofPath } : {}),
+          })
           .eq("id", orderId);
-      }
 
-      const { data: currentOrder } = await supabaseAdmin
-        .from("orders")
-        .select("country_code")
-        .eq("id", orderId)
-        .maybeSingle();
+        await tg("sendMessage", {
+          chat_id,
+          text: `📨 Спасибо! Чек получен. Заказ #${orderId} — отправляю файлы…`,
+          reply_markup: mainMenu(),
+        });
 
-      const { data: allSettings } = await supabaseAdmin.from("app_settings").select("key, value");
-      const getSetting = (key: string) => allSettings?.find((r) => r.key === key)?.value;
-      const rkEnabled = getSetting("robokassa_enabled") === "true";
-      const isRfOrder = isCountryRF(currentOrder?.country_code);
-
-      if (rkEnabled && isRfOrder) {
-        // При включенной Робокассе заказы из РФ получают файлы СРАЗУ после загрузки чека!
-        if (proofSaved || proofFileId) {
-          await tg("sendMessage", {
-            chat_id,
-            text: `📨 Спасибо! Чек получен. Начинаю отправку файлов по заказу #${orderId}...`,
-            reply_markup: mainMenu(),
-          });
-          await notifyAdminNewOrder(orderId, proofFileId, proofKind);
-
-          // Выдаем заказ немедленно
+        try {
           const { deliverOrder } = await import("./orders.server");
           await deliverOrder(orderId);
-        } else {
+          await notifyAdminNewOrder(orderId, proofFileId, proofKind, { autoDelivered: true });
+        } catch (e: any) {
+          console.error("[bot] auto-deliver after proof failed", orderId, e);
+          await supabaseAdmin
+            .from("orders")
+            .update({ status: "awaiting_confirmation" })
+            .eq("id", orderId);
           await tg("sendMessage", {
             chat_id,
-            text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную.`,
-            reply_markup: mainMenu(),
-          });
-          await notifyAdminNewOrder(orderId, null, null);
-        }
-      } else {
-        // В обычное время (или если не РФ) — стандартное ожидание проверки продавцом
-        if (proofSaved || proofFileId) {
-          await tg("sendMessage", {
-            chat_id,
-            text: proofSaved
-              ? `📨 Спасибо! Чек получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`
-              : `📨 Чек получен и переслан продавцу. Заказ #${orderId} на проверке. Если нужно — можно отправить чек ещё раз.`,
-            reply_markup: mainMenu(),
+            text: `⚠️ Чек принят, но автоматическая выдача заказа #${orderId} не завершилась. Продавец проверит и отправит файлы.`,
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind);
-        } else {
-          await tg("sendMessage", {
-            chat_id,
-            text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную. Если хотите — попробуйте отправить чек ещё раз.`,
-            reply_markup: mainMenu(),
-          });
-          await notifyAdminNewOrder(orderId, null, null);
         }
+        return;
+      }
+
+      // Manual path: await seller confirmation
+      if (proofSaved && proofPath) {
+        await supabaseAdmin
+          .from("orders")
+          .update({ payment_proof_path: proofPath, status: "awaiting_confirmation" })
+          .eq("id", orderId);
+      } else {
+        await supabaseAdmin.from("orders").update({ status: "awaiting_confirmation" }).eq("id", orderId);
+      }
+
+      if (proofSaved || proofFileId) {
+        await tg("sendMessage", {
+          chat_id,
+          text: proofSaved
+            ? `📨 Спасибо! Чек получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`
+            : `📨 Чек получен и переслан продавцу. Заказ #${orderId} на проверке. Если нужно — можно отправить чек ещё раз.`,
+          reply_markup: mainMenu(),
+        });
+        await notifyAdminNewOrder(orderId, proofFileId, proofKind);
+      } else {
+        await tg("sendMessage", {
+          chat_id,
+          text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную. Если хотите — попробуйте отправить чек ещё раз.`,
+          reply_markup: mainMenu(),
+        });
+        await notifyAdminNewOrder(orderId, null, null);
       }
       return;
     }

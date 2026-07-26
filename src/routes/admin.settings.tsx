@@ -426,6 +426,12 @@ function SettingsPage() {
           <Checkbox checked={rkEnabled} onCheckedChange={(c) => setRkEnabled(!!c)} />
           <span>Включить оплату через Robokassa (автовыдача файлов)</span>
         </label>
+        {rkEnabled && (
+          <p className="text-xs text-muted-foreground">
+            При включении: RU — только чек с автовыдачей; KZ — выбор Robokassa или чек с автовыдачей; остальные страны —
+            только Robokassa. При выключении все страны — чек с ручной проверкой.
+          </p>
+        )}
 
         {rkEnabled && (
           <div className="space-y-4 pt-2 border-t border-border/50">
