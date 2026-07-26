@@ -39,6 +39,13 @@ function isCountryRF(countryCode?: string | null): boolean {
   return code === "RU" || code === "RUS" || code === "РФ" || code === "РОССИЯ";
 }
 
+/** Countries that only pay by receipt with auto-delivery when Robokassa is on (no Robokassa link). */
+function isProofAutoOnlyCountry(countryCode?: string | null): boolean {
+  if (isCountryRF(countryCode)) return true;
+  const code = (countryCode || "").trim().toUpperCase();
+  return code === "BY" || code === "OTHER";
+}
+
 /** Robokassa: согласие + ссылки на оферту и политику (HTML для сообщений в чате). */
 function legalConsentHtml(base: string): string {
   return (
@@ -776,8 +783,8 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     return;
   }
 
-  // Robokassa on + RU → receipt with auto-delivery (no Robokassa)
-  if (isCountryRF(cc)) {
+  // Robokassa on + RU/BY/OTHER → receipt with auto-delivery (no Robokassa)
+  if (isProofAutoOnlyCountry(cc)) {
     await startManualProofPath({
       chat_id,
       telegram_id,
