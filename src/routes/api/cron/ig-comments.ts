@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { processIgCommentPoll } from "@/lib/ig-comments.server";
 
 function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
+  // Separate from Telegram CRON_SECRET (broadcast / ensure-webhook)
+  const secret = process.env.IG_CRON_SECRET;
   if (!secret) return false;
   const auth = request.headers.get("authorization");
   if (auth === `Bearer ${secret}`) return true;

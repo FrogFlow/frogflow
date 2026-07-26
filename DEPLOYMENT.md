@@ -9,8 +9,12 @@
 | `VITE_SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_PUBLISHABLE_KEY` | Anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (серверные операции) |
 | `SUPABASE_PROJECT_ID` / `VITE_SUPABASE_PROJECT_ID` | ID проекта |
-| `CRON_SECRET` | Секрет для авторизации cron-запросов |
+| `CRON_SECRET` | Секрет для Telegram cron (`/api/cron/broadcast`, ensure-webhook) |
+| `IG_CRON_SECRET` | Отдельный секрет для Instagram cron (`/api/cron/ig-comments`) |
 | `PUBLIC_APP_URL` | Публичный URL приложения (напр. `https://my-app.vercel.app`) |
+| `UNIPILE_DSN` | Хост Unipile без схемы (напр. `api22.unipile.com:15252`) |
+| `UNIPILE_API_KEY` | Access Token Unipile |
+| `UNIPILE_WEBHOOK_SECRET` | Опционально: secret webhook endpoint Unipile |
 
 ## Cron Jobs
 
@@ -34,6 +38,15 @@ GET https://your-app.vercel.app/api/cron/broadcast?secret=YOUR_CRON_SECRET
 ### Webhook — `/api/cron/ensure-webhook`
 
 Проверяет и восстанавливает webhook Telegram бота. Вызывается автоматически из `/api/cron/broadcast`, но можно настроить отдельно.
+
+### Instagram комментарии — `/api/cron/ig-comments`
+
+Опрос комментариев к watched-постам → keyword → DM через Unipile.
+
+```
+GET https://your-app.vercel.app/api/cron/ig-comments?secret=YOUR_IG_CRON_SECRET
+```
+Интервал: каждую 1–2 минуты. Секрет — **`IG_CRON_SECRET`**, не `CRON_SECRET`.
 
 ## База данных
 
