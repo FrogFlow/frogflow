@@ -84,6 +84,16 @@ export const rejectOrder = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/** Nudge buyer: re-send current payment options for an awaiting_payment order. */
+export const remindPaymentOrder = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    const { remindOrderPayment } = await import("./bot.server");
+    await requireAdmin();
+    return await remindOrderPayment(data.id);
+  });
+
 export const deleteOrder = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
   .handler(async ({ data }) => {

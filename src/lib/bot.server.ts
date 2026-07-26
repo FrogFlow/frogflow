@@ -800,27 +800,13 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   // Robokassa on + KZ → choose Robokassa or receipt (auto-delivery)
   if (cc === "KZ") {
-    await setState(telegram_id, {
-      ...user.state,
-      mode: "choose_pay",
-      pending_order_id: order.id as number,
-      proof_auto: false,
-    });
-    await tg("sendMessage", {
+    await sendKzPaymentChoice({
       chat_id,
-      text:
-        `🧾 <b>Заказ #${order.id}</b> создан.\n\n` +
-        `Сумма к оплате: <b>${formatMoney(total, currency)}</b>\n\n` +
-        `Выберите способ оплаты:\n` +
-        `• <b>Robokassa</b> — оплата картой, файлы придут сразу после оплаты\n` +
-        `• <b>По реквизитам</b> — перевод вручную, пришлите чек — файлы придут сразу`,
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "💳 Оплатить через Robokassa", callback_data: `pay:rk:${order.id}` }],
-          [{ text: "🧾 Оплатить по реквизитам", callback_data: `pay:manual:${order.id}` }],
-        ],
-      },
+      telegram_id,
+      userState: user.state,
+      orderId: order.id as number,
+      total,
+      currency,
     });
     return;
   }
@@ -834,6 +820,137 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     total,
     currency,
     rk,
+  });
+}
+
+/** Re-send payment instructions for a stuck awaiting_payment order (admin nudge). */
+export async function remindOrderPayment(orderId: number) {
+  const s = await db();
+  const { data: order, error } = await s
+    .from("orders")
+    .select("id, telegram_id, status, total, currency, country_code, country_name")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!order) throw new Error("Заказ не найден");
+  if (order.status !== "awaiting_payment") {
+    throw new Error(`Напомнить можно только заказам «Ждёт оплаты» (сейчас: ${order.status})`);
+  }
+
+  const telegram_id = Number(order.telegram_id);
+  const chat_id = telegram_id;
+  const { data: botUser } = await s.from("bot_users").select("*").eq("telegram_id", telegram_id).maybeSingle();
+  const userState = (botUser?.state as BotUser["state"]) ?? {};
+
+  const cc = String(order.country_code ?? "").toUpperCase();
+  const { data: method } = await s.from("payment_methods").select("*").eq("country_code", cc || "OTHER").maybeSingle();
+  const instructions =
+    (method?.instructions as string) ||
+    "Свяжитесь с продавцом для уточнения реквизитов.";
+  const total = Number(order.total);
+  const currency = (order.currency as string) || (method?.currency as string) || "USD";
+
+  await tg("sendMessage", {
+    chat_id,
+    text:
+      `🔔 <b>Напоминание по заказу #${orderId}</b>\n\n` +
+      `Заказ ещё ожидает оплаты (${formatMoney(total, currency)}).\n` +
+      `Ниже — актуальный способ оплаты. Если уже платили — пришлите чек в этот чат.`,
+    parse_mode: "HTML",
+    reply_markup: mainMenu(),
+  });
+
+  const rk = await loadRobokassaSettings();
+
+  if (!rk.ready) {
+    await startManualProofPath({
+      chat_id,
+      telegram_id,
+      userState,
+      orderId,
+      total,
+      currency,
+      instructions,
+      autoDeliver: false,
+      reminder: true,
+    });
+    return { ok: true as const };
+  }
+
+  if (isProofAutoOnlyCountry(cc)) {
+    await startManualProofPath({
+      chat_id,
+      telegram_id,
+      userState,
+      orderId,
+      total,
+      currency,
+      instructions,
+      autoDeliver: true,
+      reminder: true,
+    });
+    return { ok: true as const };
+  }
+
+  if (cc === "KZ") {
+    await sendKzPaymentChoice({
+      chat_id,
+      telegram_id,
+      userState,
+      orderId,
+      total,
+      currency,
+      reminder: true,
+    });
+    return { ok: true as const };
+  }
+
+  await sendRobokassaPayLink({
+    chat_id,
+    telegram_id,
+    userState,
+    orderId,
+    total,
+    currency,
+    rk,
+    reminder: true,
+  });
+  return { ok: true as const };
+}
+
+async function sendKzPaymentChoice(params: {
+  chat_id: number;
+  telegram_id: number;
+  userState: BotUser["state"];
+  orderId: number;
+  total: number;
+  currency: string;
+  reminder?: boolean;
+}) {
+  await setState(params.telegram_id, {
+    ...params.userState,
+    mode: "choose_pay",
+    pending_order_id: params.orderId,
+    proof_auto: false,
+  });
+  const title = params.reminder
+    ? `🔔 <b>Заказ #${params.orderId}</b> — выберите способ оплаты`
+    : `🧾 <b>Заказ #${params.orderId}</b> создан.`;
+  await tg("sendMessage", {
+    chat_id: params.chat_id,
+    text:
+      `${title}\n\n` +
+      `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
+      `Выберите способ оплаты:\n` +
+      `• <b>Robokassa</b> — оплата картой, файлы придут сразу после оплаты\n` +
+      `• <b>По реквизитам</b> — перевод вручную, пришлите чек — файлы придут сразу`,
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "💳 Оплатить через Robokassa", callback_data: `pay:rk:${params.orderId}` }],
+        [{ text: "🧾 Оплатить по реквизитам", callback_data: `pay:manual:${params.orderId}` }],
+      ],
+    },
   });
 }
 
@@ -856,6 +973,7 @@ async function sendRobokassaPayLink(params: {
   total: number;
   currency: string;
   rk: Awaited<ReturnType<typeof loadRobokassaSettings>>;
+  reminder?: boolean;
 }) {
   const { buildRobokassaPaymentUrl } = await import("./robokassa.server");
   const outSum = Number(params.total).toFixed(2);
@@ -874,10 +992,13 @@ async function sendRobokassaPayLink(params: {
     pending_order_id: params.orderId,
     proof_auto: false,
   });
+  const title = params.reminder
+    ? `🔔 <b>Заказ #${params.orderId}</b> — оплата`
+    : `🧾 <b>Заказ #${params.orderId}</b>`;
   await tg("sendMessage", {
     chat_id: params.chat_id,
     text:
-      `🧾 <b>Заказ #${params.orderId}</b>\n\n` +
+      `${title}\n\n` +
       `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
       `Нажмите кнопку ниже для оплаты через Robokassa — после оплаты файлы придут автоматически.`,
     parse_mode: "HTML",
@@ -896,6 +1017,7 @@ async function startManualProofPath(params: {
   currency: string;
   instructions: string;
   autoDeliver: boolean;
+  reminder?: boolean;
 }) {
   const s = await db();
   if (params.autoDeliver) {
@@ -913,10 +1035,14 @@ async function startManualProofPath(params: {
     ? `После оплаты <b>пришлите чек</b> (фото или PDF) в этот чат — бот сразу отправит файлы.`
     : `После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`;
 
+  const title = params.reminder
+    ? `🔔 <b>Заказ #${params.orderId}</b> — оплата по реквизитам`
+    : `🧾 <b>Заказ #${params.orderId}</b> создан.`;
+
   await tg("sendMessage", {
     chat_id: params.chat_id,
     text:
-      `🧾 <b>Заказ #${params.orderId}</b> создан.\n\n` +
+      `${title}\n\n` +
       `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
       `${params.instructions}\n\n` +
       afterProof,

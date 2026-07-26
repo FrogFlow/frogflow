@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components-ui/dialog";
-import { confirmOrder, continueDeliveryOrder, deleteOrder, listOrders, redeliverOrder, rejectOrder } from "@/lib/orders.functions";
+import { confirmOrder, continueDeliveryOrder, deleteOrder, listOrders, redeliverOrder, rejectOrder, remindPaymentOrder } from "@/lib/orders.functions";
 import { useState } from "react";
 
 // Тип чека определяется по расширению сохранённого пути.
@@ -95,6 +95,18 @@ function OrdersPage() {
       setBusy(null);
     }
   }
+  async function onRemindPayment(id: number) {
+    if (!confirm(`Отправить покупателю напоминание и актуальный способ оплаты по заказу #${id}?`)) return;
+    setBusy(id);
+    try {
+      await remindPaymentOrder({ data: { id } });
+      alert(`Напоминание по заказу #${id} отправлено в Telegram.`);
+    } catch (e: any) {
+      alert(e.message || "Не удалось отправить напоминание");
+    } finally {
+      setBusy(null);
+    }
+  }
   async function onDelete(id: number) {
     if (!confirm(`Удалить заказ #${id}? Это действие необратимо.`)) return;
     if (!confirm(`Точно удалить заказ #${id}? Нумерация следующих заказов сбросится до текущего максимума.`)) return;
@@ -175,7 +187,12 @@ function OrdersPage() {
                 </div>
               )}
               {(o.status === "awaiting_confirmation" || o.status === "awaiting_payment") && (
-                <div className="flex gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {o.status === "awaiting_payment" && (
+                    <Button variant="outline" onClick={() => onRemindPayment(o.id)} disabled={busy === o.id}>
+                      📩 Напомнить об оплате
+                    </Button>
+                  )}
                   <Button onClick={() => onConfirm(o.id)} disabled={busy === o.id}>
                     ✅ Подтвердить и выдать
                   </Button>
