@@ -430,6 +430,8 @@ function SettingsPage() {
           <p className="text-xs text-muted-foreground">
             При включении: RU, BY, OTHER — только чек с автовыдачей; KZ — выбор Robokassa или чек с автовыдачей;
             остальные страны — только Robokassa. При выключении все страны — чек с ручной проверкой.
+            Автовыдача по чеку требует <code>GOOGLE_VISION_API_KEY</code> (OCR, сумма ±10%); без ключа чек уходит на
+            ручную проверку.
           </p>
         )}
 

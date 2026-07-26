@@ -285,6 +285,131 @@ export type Database = {
         }
         Relationships: []
       }
+      ig_keywords: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          keyword: string
+          reply_text: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword: string
+          reply_text: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword?: string
+          reply_text?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ig_watched_posts: {
+        Row: {
+          caption_snapshot: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          post_id: string
+          updated_at: string
+        }
+        Insert: {
+          caption_snapshot?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          post_id: string
+          updated_at?: string
+        }
+        Update: {
+          caption_snapshot?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          post_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ig_exclusions: {
+        Row: {
+          created_at: string
+          id: string
+          provider_user_id: string | null
+          reason: string | null
+          username: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          provider_user_id?: string | null
+          reason?: string | null
+          username?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          provider_user_id?: string | null
+          reason?: string | null
+          username?: string | null
+        }
+        Relationships: []
+      }
+      ig_comment_actions: {
+        Row: {
+          comment_id: string
+          comment_text: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          keyword_id: string | null
+          post_id: string
+          provider_user_id: string | null
+          status: string
+          username: string | null
+        }
+        Insert: {
+          comment_id: string
+          comment_text?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          keyword_id?: string | null
+          post_id: string
+          provider_user_id?: string | null
+          status?: string
+          username?: string | null
+        }
+        Update: {
+          comment_id?: string
+          comment_text?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          keyword_id?: string | null
+          post_id?: string
+          provider_user_id?: string | null
+          status?: string
+          username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ig_comment_actions_keyword_id_fkey"
+            columns: ["keyword_id"]
+            isOneToOne: false
+            referencedRelation: "ig_keywords"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_images: {
         Row: {
           created_at: string

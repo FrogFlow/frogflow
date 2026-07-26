@@ -1054,7 +1054,7 @@ async function notifyAdminNewOrder(
   orderId: number,
   proofFileId: string | null,
   proofKind: "photo" | "document" | null,
-  options?: { autoDelivered?: boolean },
+  options?: { autoDelivered?: boolean; reviewReason?: string },
 ) {
   const s = await db();
   const { data: setting } = await s
@@ -1098,17 +1098,24 @@ async function notifyAdminNewOrder(
   }
 
   const autoDelivered = Boolean(options?.autoDelivered);
+  const reviewReason = options?.reviewReason?.trim();
   const summaryText =
     (autoDelivered
       ? `🆕 <b>Заказ #${order.id}</b> — автовыдача по чеку\n\n`
-      : `🆕 <b>Новый заказ #${order.id}</b>\n\n`) +
+      : reviewReason
+        ? `🆕 <b>Заказ #${order.id}</b> — нужна проверка чека\n\n`
+        : `🆕 <b>Новый заказ #${order.id}</b>\n\n`) +
     `👤 ${escapeHtml(order.display_name as string)}${order.username ? ` (@${escapeHtml(order.username)})` : ""}
 📞 ${escapeHtml((order.contact as string) || "—")}
 🌍 ${escapeHtml((order.country_name as string) || "—")}
 📦 Позиций: ${items.length}
 
 💰 <b>Итого: ${order.total} ${order.currency}</b>` +
-    (autoDelivered ? `\n\n⚡ Файлы выданы автоматически после чека (подтверждение не требуется).` : "");
+    (autoDelivered
+      ? `\n\n⚡ Файлы выданы автоматически после проверки чека (OCR).`
+      : reviewReason
+        ? `\n\n⚠️ <b>Причина:</b> ${escapeHtml(reviewReason)}`
+        : "");
 
   const itemsMessage =
     items.length > 0
@@ -1635,7 +1642,7 @@ export async function handleUpdate(update: any) {
       const sOrder = await db();
       const { data: orderRow } = await sOrder
         .from("orders")
-        .select("id, status, admin_note, country_code, telegram_id")
+        .select("id, status, admin_note, country_code, telegram_id, total, currency")
         .eq("id", orderId)
         .maybeSingle();
 
@@ -1713,26 +1720,106 @@ export async function handleUpdate(update: any) {
         console.error("[bot] failed to download proof from Telegram", { orderId, proofKind });
       }
 
-      await setState(from.id, {
-        ...user.state,
-        mode: "idle",
-        pending_order_id: undefined,
-        proof_auto: false,
-      });
-
       if (autoDeliver) {
+        // OCR check before auto-delivery
+        if (!dl) {
+          await setState(from.id, {
+            ...user.state,
+            mode: "awaiting_proof",
+            pending_order_id: orderId,
+            proof_auto: true,
+          });
+          await tg("sendMessage", {
+            chat_id,
+            text: "⚠️ Не удалось загрузить файл. Пришлите чек ещё раз — фото или PDF.",
+          });
+          return;
+        }
+
+        const { verifyPaymentReceipt } = await import("./receipt-verify.server");
+        const verify = await verifyPaymentReceipt({
+          bytes: dl.bytes,
+          mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
+          expectedAmount: Number(orderRow.total),
+          currency: (orderRow.currency as string) || undefined,
+        });
+
+        if (!verify.ok && verify.reason === "not_receipt") {
+          // Keep order open; ask for a real receipt
+          await setState(from.id, {
+            ...user.state,
+            mode: "awaiting_proof",
+            pending_order_id: orderId,
+            proof_auto: true,
+          });
+          if (proofPath) {
+            await supabaseAdmin
+              .from("orders")
+              .update({
+                payment_proof_path: proofPath,
+                admin_note: note.startsWith("proof_auto") ? note : "proof_auto",
+                status: "awaiting_payment",
+              })
+              .eq("id", orderId);
+          }
+          await tg("sendMessage", {
+            chat_id,
+            text:
+              `⚠️ Это не похоже на чек оплаты.\n\n` +
+              `Пришлите, пожалуйста, скриншот перевода / чека с суммой заказа #${orderId}.`,
+          });
+          return;
+        }
+
+        if (!verify.ok) {
+          // amount_mismatch or ocr_unavailable → manual review
+          await setState(from.id, {
+            ...user.state,
+            mode: "idle",
+            pending_order_id: undefined,
+            proof_auto: false,
+          });
+          await supabaseAdmin
+            .from("orders")
+            .update({
+              status: "awaiting_confirmation",
+              admin_note: `proof_auto; OCR: ${verify.detail}`.slice(0, 500),
+              ...(proofPath ? { payment_proof_path: proofPath } : {}),
+            })
+            .eq("id", orderId);
+
+          await tg("sendMessage", {
+            chat_id,
+            text:
+              `📨 Чек получен по заказу #${orderId}, но автоматическая проверка не прошла.\n` +
+              `Заказ отправлен продавцу на ручную проверку — файлы придут после подтверждения.`,
+            reply_markup: mainMenu(),
+          });
+          await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
+            reviewReason: verify.detail,
+          });
+          return;
+        }
+
+        await setState(from.id, {
+          ...user.state,
+          mode: "idle",
+          pending_order_id: undefined,
+          proof_auto: false,
+        });
+
         await supabaseAdmin
           .from("orders")
           .update({
             status: "awaiting_payment",
-            admin_note: note.startsWith("proof_auto") ? note : "proof_auto",
+            admin_note: `proof_auto; OCR ok amount=${verify.matchedAmount}`,
             ...(proofPath ? { payment_proof_path: proofPath } : {}),
           })
           .eq("id", orderId);
 
         await tg("sendMessage", {
           chat_id,
-          text: `📨 Спасибо! Чек получен. Заказ #${orderId} — отправляю файлы…`,
+          text: `📨 Спасибо! Чек проверен. Заказ #${orderId} — отправляю файлы…`,
           reply_markup: mainMenu(),
         });
 
@@ -1750,10 +1837,19 @@ export async function handleUpdate(update: any) {
             chat_id,
             text: `⚠️ Чек принят, но автоматическая выдача заказа #${orderId} не завершилась. Продавец проверит и отправит файлы.`,
           });
-          await notifyAdminNewOrder(orderId, proofFileId, proofKind);
+          await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
+            reviewReason: "Ошибка выдачи после успешного OCR",
+          });
         }
         return;
       }
+
+      await setState(from.id, {
+        ...user.state,
+        mode: "idle",
+        pending_order_id: undefined,
+        proof_auto: false,
+      });
 
       // Manual path: await seller confirmation
       if (proofSaved && proofPath) {
