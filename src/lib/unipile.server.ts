@@ -73,6 +73,12 @@ export async function createInstagramAuthLink(params: {
     success_redirect_url: params.redirectUri,
     failure_redirect_url: params.redirectUri,
     name: params.name || "Instagram",
+    // Credentials OTP often fails on IG; cookies (sessionid) is the reliable path
+    config: {
+      instagram: {
+        allow_methods: ["credentials", "cookies"],
+      },
+    },
   };
   if (params.notifyUrl) body.notify_url = params.notifyUrl;
 
