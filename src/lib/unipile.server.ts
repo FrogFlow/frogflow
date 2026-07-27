@@ -265,8 +265,12 @@ export async function resolveUnipileAccountId(storedId: string): Promise<string>
     const match = accounts.find(
       (a) => String(a.id || "") === id || String(a.account_id || "") === id,
     );
-    const accId = String(match?.id || match?.account_id || "").trim();
-    if (accId) return accId;
+    const accIdRaw = String(match?.account_id || match?.id || "").trim();
+    if (accIdRaw) {
+      // Unipile v2 endpoints expect ^acc_(.*)
+      if (/^acc_/.test(accIdRaw)) return accIdRaw;
+      return `acc_${accIdRaw}`;
+    }
   } catch {
     // ignore
   }
