@@ -147,21 +147,41 @@ function IgKeywordsPage() {
             )}
 
             {(postsQ.data?.length ?? 0) > 0 && (
-              <div className="max-h-56 overflow-y-auto border rounded-md divide-y">
+              <div className="max-h-64 overflow-y-auto border rounded-md divide-y">
                 {postsQ.data!.map((p) => {
                   const selected = editing.post_id === p.id;
-                  const label = p.caption?.trim() || "(без подписи)";
+                  const label = (p.caption || "").trim() || "Без подписи";
+                  let when = "";
+                  if (p.created_at) {
+                    const d = new Date(p.created_at);
+                    when = Number.isNaN(d.getTime())
+                      ? String(p.created_at)
+                      : d.toLocaleString("ru-RU", { day: "2-digit", month: "short", year: "numeric" });
+                  }
                   return (
                     <button
                       key={p.id}
                       type="button"
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-accent ${
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-accent flex gap-3 items-start ${
                         selected ? "bg-accent font-medium" : ""
                       }`}
                       onClick={() => pickPost(p.id, p.caption || "")}
                     >
-                      <div className="line-clamp-2">{label}</div>
-                      <div className="text-xs text-muted-foreground font-mono truncate">{p.id}</div>
+                      {p.thumbnail_url ? (
+                        <img
+                          src={p.thumbnail_url}
+                          alt=""
+                          className="w-12 h-12 object-cover rounded shrink-0 bg-muted"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded shrink-0 bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                          IG
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="line-clamp-2">{label}</div>
+                        {when && <div className="text-xs text-muted-foreground mt-0.5">{when}</div>}
+                      </div>
                     </button>
                   );
                 })}

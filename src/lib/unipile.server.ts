@@ -123,20 +123,45 @@ function accountIgIdentifiers(account: any, accountId: string): string[] {
   return ids;
 }
 
+function extractPostCaption(p: any): string {
+  const raw = p?.text ?? p?.caption ?? p?.title ?? p?.description ?? "";
+  if (typeof raw === "string") return raw.slice(0, 200);
+  if (raw && typeof raw === "object") {
+    const nested =
+      raw.text ?? raw.caption ?? raw.body ?? raw.content ?? raw.message ?? "";
+    if (typeof nested === "string") return nested.slice(0, 200);
+  }
+  // Sometimes caption is array of text runs
+  if (Array.isArray(raw)) {
+    return raw
+      .map((x) => (typeof x === "string" ? x : x?.text || ""))
+      .filter(Boolean)
+      .join(" ")
+      .slice(0, 200);
+  }
+  return "";
+}
+
 function mapPostsPayload(data: any): IgPostSummary[] {
   const items = data?.items || data?.data || data?.posts || (Array.isArray(data) ? data : []);
   return (items as any[])
     .map((p) => {
       const id = String(p.id || p.provider_id || p.social_id || p.post_id || "");
-      const caption = String(p.text || p.caption || p.title || "").slice(0, 200);
+      const caption = extractPostCaption(p);
       const created = p.created_at || p.parsed_datetime || p.date || p.timestamp;
       const thumb =
-        p.preview_image?.url ||
+        (typeof p.preview_image === "string" ? p.preview_image : p.preview_image?.url) ||
         p.attachments?.[0]?.url ||
         p.attachments?.[0]?.thumbnail_url ||
         p.thumbnail_url ||
+        p.picture_url ||
         undefined;
-      return { id, caption, created_at: created ? String(created) : undefined, thumbnail_url: thumb };
+      return {
+        id,
+        caption,
+        created_at: created ? String(created) : undefined,
+        thumbnail_url: thumb ? String(thumb) : undefined,
+      };
     })
     .filter((p) => p.id);
 }
