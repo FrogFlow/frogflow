@@ -275,12 +275,14 @@ async function sendLeadDm(
 
   try {
     const attachment = await loadDmAttachment(rule.dm_file_path, rule.dm_file_name);
+    const hadAttachment = Boolean(attachment);
     const result = await sendInstagramDm({
       accountId,
       attendeeId: dmRecipientId,
       text: rule.reply_text,
       attachment,
     });
+    const attachmentFailed = hadAttachment && !result.attachmentSent;
     await s
       .from("ig_post_leads")
       .update({
@@ -291,7 +293,9 @@ async function sendLeadDm(
         next_retry_at: null,
         retry_until_at: lead.retry_until_at || retryUntil(nowMs),
         closed_reason: null,
-        last_error: null,
+        last_error: attachmentFailed
+          ? `DM text sent, file failed: ${result.attachmentError || "unknown"}`
+          : null,
         updated_at: now,
       })
       .eq("id", lead.id);
@@ -303,13 +307,15 @@ async function sendLeadDm(
       keyword_id: rule.id,
       lead_id: lead.id,
       comment_text: lead.last_comment_text,
-      status: "dm_sent",
+      status: attachmentFailed ? "dm_sent_no_file" : "dm_sent",
       attempt_no: (lead.dm_attempts || 0) + 1,
       debug_info: {
         ...(opts?.debugInfo || {}),
         dmRecipientId,
         route: result.route,
         attachmentSent: result.attachmentSent,
+        attachmentError: result.attachmentError || null,
+        dmFilePath: rule.dm_file_path || null,
       },
     });
     return "sent";

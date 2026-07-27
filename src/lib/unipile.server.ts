@@ -644,17 +644,23 @@ function buildV1ChatFormData(params: {
   attendeeId?: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
+  useBracketArrayKey?: boolean;
+  attachmentFieldName?: "attachment" | "attachments";
 }): FormData {
   const form = new FormData();
   form.append("account_id", params.accountId);
   form.append("text", params.text);
   if (params.attendeeId) {
-    form.append("attendees_ids", params.attendeeId);
+    if (params.useBracketArrayKey) {
+      form.append("attendees_ids[]", params.attendeeId);
+    } else {
+      form.append("attendees_ids", params.attendeeId);
+    }
   }
   if (params.attachment) {
     const bytes = Buffer.from(params.attachment.contentBase64, "base64");
     const blob = new Blob([bytes], { type: params.attachment.contentType || "application/octet-stream" });
-    form.append("attachments", blob, params.attachment.filename);
+    form.append(params.attachmentFieldName || "attachment", blob, params.attachment.filename);
   }
   return form;
 }
@@ -712,13 +718,27 @@ export type DmSendResult = {
   route: string;
   response: any;
   attachmentSent: boolean;
+  attachmentError?: string;
 };
+
+function extractChatIdFromResponse(response: any, fallback: string): string {
+  const id = String(
+    response?.chat_id ||
+      response?.chat?.id ||
+      response?.id ||
+      response?.data?.chat_id ||
+      response?.data?.id ||
+      "",
+  ).trim();
+  return id || fallback;
+}
 
 async function sendV1StartChat(params: {
   accountId: string;
   recipientId: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
+  attachmentFieldName?: "attachment" | "attachments";
 }): Promise<any> {
   const v1AccId = await resolveUnipileAccountId(params.accountId);
   return await unipileFetch(`/api/v1/chats`, {
@@ -728,6 +748,7 @@ async function sendV1StartChat(params: {
       attendeeId: params.recipientId,
       text: params.text,
       attachment: params.attachment,
+      attachmentFieldName: params.attachmentFieldName,
     }),
   });
 }
@@ -737,6 +758,7 @@ async function sendV1ExistingChatMessage(params: {
   chatId: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
+  attachmentFieldName?: "attachment" | "attachments";
 }): Promise<any> {
   const v1AccId = await resolveUnipileAccountId(params.accountId);
   return await unipileFetch(`/api/v1/chats/${encodeURIComponent(params.chatId)}/messages`, {
@@ -746,8 +768,42 @@ async function sendV1ExistingChatMessage(params: {
       accountId: v1AccId,
       text: params.text,
       attachment: params.attachment,
+      attachmentFieldName: params.attachmentFieldName,
     }),
   });
+}
+
+async function trySendV1AttachmentInChat(params: {
+  accountId: string;
+  chatIds: string[];
+  attachment: IgOutgoingAttachment;
+}): Promise<{ ok: true; route: string } | { ok: false; error: string }> {
+  const errors: string[] = [];
+  const attempts: Array<{ route: string; text: string; field: "attachment" | "attachments" }> = [
+    { route: "attachment+space", text: " ", field: "attachment" },
+    { route: "attachments+space", text: " ", field: "attachments" },
+    { route: "attachment+empty", text: "", field: "attachment" },
+    { route: "attachments+empty", text: "", field: "attachments" },
+  ];
+
+  for (const chatId of params.chatIds) {
+    if (!chatId) continue;
+    for (const attempt of attempts) {
+      try {
+        await sendV1ExistingChatMessage({
+          accountId: params.accountId,
+          chatId,
+          text: attempt.text,
+          attachment: params.attachment,
+          attachmentFieldName: attempt.field,
+        });
+        return { ok: true, route: `v1:existingChat:${attempt.route}:chat=${chatId}` };
+      } catch (e: any) {
+        errors.push(`chat=${chatId} ${attempt.route}: ${e?.message || e}`);
+      }
+    }
+  }
+  return { ok: false, error: errors.join("; ") };
 }
 
 async function sendV2StartChat(params: {
@@ -836,28 +892,50 @@ export async function sendInstagramDm(params: {
     }
   }
 
-  try {
-    const response = await sendV1StartChat({ ...params, recipientId, attachment: null });
-    if (attachment) {
-      try {
-        await sendV1ExistingChatMessage({
-          accountId: params.accountId,
-          chatId: recipientId,
-          text: "",
-          attachment,
-        });
-        return { route: "v1:startChat+existingChat:attachment", response, attachmentSent: true };
-      } catch (attachErr: any) {
+  if (attachment) {
+    try {
+      const response = await sendV1StartChat({
+        ...params,
+        recipientId,
+        attachment,
+        attachmentFieldName: "attachment",
+      });
+      return { route: "v1:startChat+attachment", response, attachmentSent: true };
+    } catch (e: any) {
+      errors.push(`v1 startChat+attachment: ${e?.message || e}`);
+    }
+
+    try {
+      const response = await sendV1StartChat({ ...params, recipientId, attachment: null });
+      const chatIds = [extractChatIdFromResponse(response, ""), recipientId].filter(Boolean);
+      const attachResult = await trySendV1AttachmentInChat({
+        accountId: params.accountId,
+        chatIds,
+        attachment,
+      });
+      if (attachResult.ok) {
         return {
-          route: "v1:startChat:text-only",
+          route: `v1:startChat:text+${attachResult.route}`,
           response,
-          attachmentSent: false,
+          attachmentSent: true,
         };
       }
+      return {
+        route: "v1:startChat:text-only",
+        response,
+        attachmentSent: false,
+        attachmentError: attachResult.error,
+      };
+    } catch (e1: any) {
+      errors.push(`v1 startChat: ${e1?.message || e1}`);
     }
-    return { route: "v1:startChat", response, attachmentSent: false };
-  } catch (e1: any) {
-    errors.push(`v1 startChat: ${e1?.message || e1}`);
+  } else {
+    try {
+      const response = await sendV1StartChat({ ...params, recipientId, attachment: null });
+      return { route: "v1:startChat", response, attachmentSent: false };
+    } catch (e1: any) {
+      errors.push(`v1 startChat: ${e1?.message || e1}`);
+    }
   }
 
   try {
@@ -866,10 +944,27 @@ export async function sendInstagramDm(params: {
       chatId: recipientId,
       text: params.text,
       attachment,
+      attachmentFieldName: attachment ? "attachment" : undefined,
     });
     return { route: "v1:existingChat", response, attachmentSent: Boolean(attachment) };
   } catch (e2: any) {
     errors.push(`v1 existingChat: ${e2?.message || e2}`);
+  }
+
+  if (attachment) {
+    const attachResult = await trySendV1AttachmentInChat({
+      accountId: params.accountId,
+      chatIds: [recipientId],
+      attachment,
+    });
+    if (attachResult.ok) {
+      return {
+        route: attachResult.route,
+        response: null,
+        attachmentSent: true,
+      };
+    }
+    errors.push(`v1 attachment-only: ${attachResult.error}`);
   }
 
   throw new Error(`DM send failed. ${errors.join("; ")}`);

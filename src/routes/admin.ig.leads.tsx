@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { listIgLeads } from "@/lib/ig.functions";
+import { Button } from "@/components-ui/button";
+import { deleteIgLead, listIgLeads } from "@/lib/ig.functions";
 
 export const Route = createFileRoute("/admin/ig/leads")({
   component: IgLeadsPage,
@@ -18,8 +19,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function IgLeadsPage() {
+  const qc = useQueryClient();
   const q = useQuery({ queryKey: ["ig-leads"], queryFn: () => listIgLeads() });
   const [status, setStatus] = useState("all");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const rows = useMemo(() => {
     const all = q.data ?? [];
@@ -27,12 +30,32 @@ function IgLeadsPage() {
     return all.filter((r: any) => r.dm_status === status);
   }, [q.data, status]);
 
+  async function onDeleteLead(id: string, username?: string | null) {
+    const label = username ? `@${String(username).replace(/^@/, "")}` : "пользователя";
+    if (
+      !confirm(
+        `Удалить лид для ${label}?\n\nБот забудет, что этому пользователю уже отвечали под этим постом, и сможет снова обработать его комментарий.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(id);
+    try {
+      await deleteIgLead({ data: { id } });
+      await qc.invalidateQueries({ queryKey: ["ig-leads"] });
+      await qc.invalidateQueries({ queryKey: ["ig-log"] });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Лиды Instagram</h1>
         <p className="text-sm text-muted-foreground max-w-3xl">
           Здесь видно пользователей по каждому посту, их последний комментарий, статус директ-сообщения и pending retry.
+          Для тестов можно удалить лид — бот снова сможет ответить этому пользователю под тем же постом.
         </p>
       </div>
 
@@ -70,6 +93,7 @@ function IgLeadsPage() {
               <th className="p-2">Попытки</th>
               <th className="p-2">Следующий retry</th>
               <th className="p-2">Ошибка</th>
+              <th className="p-2">Действия</th>
             </tr>
           </thead>
           <tbody>
@@ -94,6 +118,17 @@ function IgLeadsPage() {
                   {r.next_retry_at ? new Date(r.next_retry_at).toLocaleString("ru-RU") : "—"}
                 </td>
                 <td className="p-2 text-destructive text-xs">{r.last_error || r.closed_reason || ""}</td>
+                <td className="p-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={deletingId === r.id}
+                    onClick={() => onDeleteLead(r.id, r.username)}
+                  >
+                    {deletingId === r.id ? "Удаление…" : "Удалить"}
+                  </Button>
+                </td>
               </tr>
             ))}
           </tbody>

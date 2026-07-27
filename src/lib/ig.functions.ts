@@ -459,6 +459,36 @@ export const listIgLeads = createServerFn({ method: "GET" }).handler(async () =>
   }));
 });
 
+export const deleteIgLead = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const s = await db();
+    const { data: lead, error: fetchError } = await s
+      .from("ig_post_leads")
+      .select("id, post_id, provider_user_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (fetchError) throw new Error(fetchError.message);
+    if (!lead) throw new Error("Лид не найден");
+
+    const { error: actionsByLeadError } = await s.from("ig_comment_actions").delete().eq("lead_id", lead.id);
+    if (actionsByLeadError) throw new Error(actionsByLeadError.message);
+
+    if (lead.post_id && lead.provider_user_id) {
+      const { error: actionsByUserError } = await s
+        .from("ig_comment_actions")
+        .delete()
+        .eq("post_id", lead.post_id)
+        .eq("provider_user_id", lead.provider_user_id);
+      if (actionsByUserError) throw new Error(actionsByUserError.message);
+    }
+
+    const { error } = await s.from("ig_post_leads").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true as const };
+  });
+
 export const listIgPollRuns = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdmin();
   const s = await db();
