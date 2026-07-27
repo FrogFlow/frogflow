@@ -10,6 +10,7 @@ export const Route = createFileRoute("/admin/ig/log")({
 const STATUS_LABELS: Record<string, string> = {
   dm_sent: "DM отправлен",
   dm_sent_no_file: "DM текст, файл не ушёл",
+  matched: "Комментарий взят в работу",
   dm_pending: "DM ждёт retry",
   dm_failed: "DM ошибка",
   dm_gave_up: "DM недоступен",

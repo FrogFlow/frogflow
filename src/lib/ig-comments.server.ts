@@ -108,7 +108,11 @@ async function logAction(s: any, row: Record<string, unknown>) {
     .catch(() => undefined);
 }
 
-async function loadDmAttachment(path?: string | null, name?: string | null): Promise<IgOutgoingAttachment | null> {
+async function loadDmAttachment(
+  path?: string | null,
+  name?: string | null,
+  kind?: string | null,
+): Promise<IgOutgoingAttachment | null> {
   if (!path) return null;
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data, error } = await supabaseAdmin.storage.from("product-files").download(path);
@@ -117,7 +121,7 @@ async function loadDmAttachment(path?: string | null, name?: string | null): Pro
   const filename = name?.trim() || path.split("/").pop() || "attachment";
   return {
     filename,
-    contentType: data.type || "application/octet-stream",
+    contentType: kind?.trim() || data.type || "application/octet-stream",
     contentBase64: Buffer.from(arrayBuffer).toString("base64"),
   };
 }
@@ -235,7 +239,12 @@ async function sendLeadDm(
   accountId: string,
   lead: LeadRow,
   rule: Rule,
-  opts?: { actionId?: string; isRetry?: boolean; debugInfo?: Record<string, unknown> },
+  opts?: {
+    actionId?: string;
+    isRetry?: boolean;
+    attachmentOnly?: boolean;
+    debugInfo?: Record<string, unknown>;
+  },
 ): Promise<"sent" | "pending" | "failed" | "gave_up" | "skipped" | "waiting"> {
   const nowMs = Date.now();
   const now = new Date(nowMs).toISOString();
@@ -243,7 +252,7 @@ async function sendLeadDm(
   let dmRecipientId = (lead.dm_recipient_id || "").trim();
   let dmRecipientSource = dmRecipientId ? "lead.dm_recipient_id" : "none";
 
-  if (lead.dm_status === "dm_sent") return "skipped";
+  if (lead.dm_status === "dm_sent" && !opts?.attachmentOnly) return "skipped";
 
   if (!dmRecipientId) {
     const resolved = await resolveInstagramDmRecipient(accountId, {
@@ -303,20 +312,82 @@ async function sendLeadDm(
   let attachmentLoadError: string | null = null;
   if (rule.dm_file_path) {
     try {
-      attachment = await loadDmAttachment(rule.dm_file_path, rule.dm_file_name);
+      attachment = await loadDmAttachment(rule.dm_file_path, rule.dm_file_name, rule.dm_file_kind);
     } catch (e: any) {
       attachmentLoadError = e?.message || String(e);
     }
   }
+
+  const dmMode = opts?.attachmentOnly
+    ? "attachment_only"
+    : opts?.isRetry || (lead.dm_attempts || 0) > 0
+      ? "retry"
+      : "initial";
 
   try {
     const hadAttachment = Boolean(attachment);
     const result = await sendInstagramDm({
       accountId,
       attendeeId: dmRecipientId,
-      text: rule.reply_text,
+      text: opts?.attachmentOnly ? "" : rule.reply_text,
       attachment,
+      mode: dmMode,
     });
+
+    if (opts?.attachmentOnly) {
+      if (!result.attachmentSent) {
+        await logAction(s, {
+          post_id: lead.post_id,
+          comment_id: actionId,
+          provider_user_id: lead.provider_user_id,
+          username: lead.username,
+          keyword_id: rule.id,
+          lead_id: lead.id,
+          comment_text: lead.last_comment_text,
+          status: "dm_sent_no_file",
+          error_message: (result.attachmentError || attachmentLoadError || "attachment failed").slice(0, 500),
+          attempt_no: lead.dm_attempts,
+          debug_info: {
+            ...(opts?.debugInfo || {}),
+            dmRecipientId,
+            dmRecipientSource,
+            dmMode,
+            route: result.route,
+            attachmentSent: false,
+            attachmentError: result.attachmentError || attachmentLoadError || null,
+          },
+        });
+        return "failed";
+      }
+      await s
+        .from("ig_post_leads")
+        .update({
+          last_error: null,
+          updated_at: now,
+        })
+        .eq("id", lead.id);
+      await logAction(s, {
+        post_id: lead.post_id,
+        comment_id: actionId,
+        provider_user_id: lead.provider_user_id,
+        username: lead.username,
+        keyword_id: rule.id,
+        lead_id: lead.id,
+        comment_text: lead.last_comment_text,
+        status: "dm_sent",
+        attempt_no: lead.dm_attempts,
+        debug_info: {
+          ...(opts?.debugInfo || {}),
+          dmRecipientId,
+          dmRecipientSource,
+          dmMode,
+          route: result.route,
+          attachmentSent: true,
+        },
+      });
+      return "sent";
+    }
+
     const attachmentFailed = (hadAttachment && !result.attachmentSent) || Boolean(attachmentLoadError);
     await s
       .from("ig_post_leads")
@@ -348,6 +419,7 @@ async function sendLeadDm(
         ...(opts?.debugInfo || {}),
         dmRecipientId,
         dmRecipientSource,
+        dmMode,
         route: result.route,
         attachmentSent: result.attachmentSent,
         attachmentError: result.attachmentError || attachmentLoadError || null,
@@ -521,6 +593,45 @@ async function processPendingLeads(
     if (status === "sent") sent++;
     if (status === "failed") errors.push(`lead ${raw.id}: send failed`);
     if (status === "gave_up") errors.push(`lead ${raw.id}: retry window expired`);
+  }
+
+  return { sent, errors };
+}
+
+async function processAttachmentRetries(
+  s: any,
+  accountId: string,
+  activePosts: Set<string>,
+  rulesById: Map<string, Rule>,
+  maxDms: number,
+  sentSoFar: number,
+) {
+  const { data: rows } = await s
+    .from("ig_post_leads")
+    .select("*")
+    .eq("dm_status", "dm_sent")
+    .eq("is_active", true)
+    .like("last_error", "DM text sent, file failed:%")
+    .not("last_error", "like", "%retry exhausted%")
+    .order("updated_at", { ascending: true })
+    .limit(maxDms);
+
+  let sent = 0;
+  const errors: string[] = [];
+
+  for (const raw of (rows ?? []) as LeadRow[]) {
+    if (sentSoFar + sent >= maxDms) break;
+    if (!activePosts.has(raw.post_id)) continue;
+    const rule = raw.keyword_id ? rulesById.get(raw.keyword_id) : null;
+    if (!rule?.dm_file_path) continue;
+
+    const status = await sendLeadDm(s, accountId, raw, rule, {
+      actionId: actionCommentId(raw.last_comment_id || raw.id, "attachment-retry"),
+      attachmentOnly: true,
+      debugInfo: { retryReason: "attachment_retry" },
+    });
+    if (status === "sent") sent++;
+    if (status === "failed") errors.push(`lead ${raw.id}: attachment retry failed`);
   }
 
   return { sent, errors };
@@ -739,6 +850,17 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
   sent += waitingResult.sent;
   errors.push(...waitingResult.errors);
 
+  const attachmentResult = await processAttachmentRetries(
+    s,
+    resolvedAccountId,
+    activePosts,
+    rulesById,
+    maxDms,
+    sent,
+  );
+  sent += attachmentResult.sent;
+  errors.push(...attachmentResult.errors);
+
   for (const [postId, { rules: postRules, commentsPostId, shortcode }] of filteredPosts) {
     if (sent >= maxDms) break;
     postsPolled++;
@@ -847,6 +969,22 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
           });
           continue;
         }
+        if (prior && ["pending", "waiting_messaging_id", "new"].includes(prior.dm_status || "")) {
+          skipped++;
+          continue;
+        }
+      }
+
+      let dmRecipientId = identity.dmRecipientId;
+      let dmRecipientSource = dmRecipientId ? "comment.messaging_id" : "none";
+      if (!dmRecipientId && identity.canDm) {
+        const resolved = await resolveInstagramDmRecipient(resolvedAccountId, {
+          messagingId: identity.dmRecipientId,
+          profileId: identity.authorProfileId,
+          username: identity.username,
+        });
+        dmRecipientId = resolved.recipientId;
+        dmRecipientSource = resolved.source;
       }
 
       const reply = (kw.reply_text || defaultReply || "").trim();
@@ -868,18 +1006,6 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
         });
         skipped++;
         continue;
-      }
-
-      let dmRecipientId = identity.dmRecipientId;
-      let dmRecipientSource = dmRecipientId ? "comment.messaging_id" : "none";
-      if (!dmRecipientId && identity.canDm) {
-        const resolved = await resolveInstagramDmRecipient(resolvedAccountId, {
-          messagingId: identity.dmRecipientId,
-          profileId: identity.authorProfileId,
-          username: identity.username,
-        });
-        dmRecipientId = resolved.recipientId;
-        dmRecipientSource = resolved.source;
       }
 
       let lead: LeadRow;
@@ -913,6 +1039,25 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
         skipped++;
         continue;
       }
+
+      await logAction(s, {
+        post_id: postId,
+        comment_id: comment.id,
+        provider_user_id: identity.dedupeUserId,
+        username: identity.username || null,
+        keyword_id: kw.id,
+        lead_id: lead.id,
+        comment_text: text.slice(0, 1000),
+        status: "matched",
+        attempt_no: 0,
+        debug_info: {
+          dedupeUserId: identity.dedupeUserId,
+          dmRecipientId,
+          dmRecipientSource,
+          authorProfileId: identity.authorProfileId,
+          commentUnipileId: identity.commentUnipileId,
+        },
+      });
 
       const commentReply = (kw.comment_reply_text || "").trim();
       const replyCommentId = identity.commentUnipileId;

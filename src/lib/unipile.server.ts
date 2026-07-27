@@ -820,11 +820,9 @@ async function trySendV1AttachmentInChat(params: {
   attachment: IgOutgoingAttachment;
 }): Promise<{ ok: true; route: string } | { ok: false; error: string }> {
   const errors: string[] = [];
-  const attempts: Array<{ route: string; text: string; field: "attachment" | "attachments" }> = [
-    { route: "attachment+space", text: " ", field: "attachment" },
-    { route: "attachments+space", text: " ", field: "attachments" },
-    { route: "attachment+empty", text: "", field: "attachment" },
-    { route: "attachments+empty", text: "", field: "attachments" },
+  const attempts: Array<{ route: string; field: "attachment" | "attachments" }> = [
+    { route: "attachment", field: "attachment" },
+    { route: "attachments", field: "attachments" },
   ];
 
   for (const chatId of params.chatIds) {
@@ -834,7 +832,7 @@ async function trySendV1AttachmentInChat(params: {
         await sendV1ExistingChatMessage({
           accountId: params.accountId,
           chatId,
-          text: attempt.text,
+          text: "",
           attachment: params.attachment,
           attachmentFieldName: attempt.field,
         });
@@ -846,6 +844,8 @@ async function trySendV1AttachmentInChat(params: {
   }
   return { ok: false, error: errors.join("; ") };
 }
+
+export type DmSendMode = "initial" | "retry" | "attachment_only";
 
 async function sendV2StartChat(params: {
   accountId: string;
@@ -912,17 +912,61 @@ export async function sendInstagramDm(params: {
   attendeeId: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
+  mode?: DmSendMode;
 }): Promise<DmSendResult> {
   const recipientId = params.attendeeId.trim();
   if (!recipientId) throw new Error("Missing Instagram messaging_identifier for DM");
 
+  const mode = params.mode || "initial";
   const errors: string[] = [];
   const attachment = params.attachment;
-  const tryV2 = !isV2MessagingDisabled(params.accountId);
+  const text = params.text || "";
+  const chatIds = [recipientId];
 
+  if (mode === "attachment_only") {
+    if (!attachment) throw new Error("Attachment required for attachment_only mode");
+    const attachResult = await trySendV1AttachmentInChat({
+      accountId: params.accountId,
+      chatIds,
+      attachment,
+    });
+    if (attachResult.ok) {
+      return { route: attachResult.route, response: null, attachmentSent: true };
+    }
+    throw new Error(`Attachment send failed. ${attachResult.error}`);
+  }
+
+  if (mode === "retry") {
+    try {
+      const response = await sendV1ExistingChatMessage({
+        accountId: params.accountId,
+        chatId: recipientId,
+        text,
+        attachment,
+        attachmentFieldName: attachment ? "attachment" : undefined,
+      });
+      return { route: "v1:existingChat:retry", response, attachmentSent: Boolean(attachment) };
+    } catch (e: any) {
+      errors.push(`v1 existingChat retry: ${e?.message || e}`);
+    }
+    if (attachment) {
+      const attachResult = await trySendV1AttachmentInChat({
+        accountId: params.accountId,
+        chatIds,
+        attachment,
+      });
+      if (attachResult.ok) {
+        return { route: attachResult.route, response: null, attachmentSent: true };
+      }
+      errors.push(`v1 attachment retry: ${attachResult.error}`);
+    }
+    throw new Error(`DM retry failed. ${errors.join("; ")}`);
+  }
+
+  const tryV2 = !isV2MessagingDisabled(params.accountId);
   if (tryV2) {
     try {
-      const response = await sendV2StartChat({ ...params, recipientId });
+      const response = await sendV2StartChat({ ...params, recipientId, text });
       return { route: "v2:startChat", response, attachmentSent: Boolean(attachment) };
     } catch (e: any) {
       const msg = e?.message || String(e);
@@ -938,6 +982,7 @@ export async function sendInstagramDm(params: {
       const response = await sendV1StartChat({
         ...params,
         recipientId,
+        text,
         attachment,
         attachmentFieldName: "attachment",
       });
@@ -947,11 +992,11 @@ export async function sendInstagramDm(params: {
     }
 
     try {
-      const response = await sendV1StartChat({ ...params, recipientId, attachment: null });
-      const chatIds = [extractChatIdFromResponse(response, ""), recipientId].filter(Boolean);
+      const response = await sendV1StartChat({ ...params, recipientId, text, attachment: null });
+      const resolvedChatIds = [extractChatIdFromResponse(response, ""), recipientId].filter(Boolean);
       const attachResult = await trySendV1AttachmentInChat({
         accountId: params.accountId,
-        chatIds,
+        chatIds: resolvedChatIds,
         attachment,
       });
       if (attachResult.ok) {
@@ -970,9 +1015,9 @@ export async function sendInstagramDm(params: {
     } catch (e1: any) {
       errors.push(`v1 startChat: ${e1?.message || e1}`);
     }
-  } else {
+  } else if (text) {
     try {
-      const response = await sendV1StartChat({ ...params, recipientId, attachment: null });
+      const response = await sendV1StartChat({ ...params, recipientId, text, attachment: null });
       return { route: "v1:startChat", response, attachmentSent: false };
     } catch (e1: any) {
       errors.push(`v1 startChat: ${e1?.message || e1}`);
@@ -983,29 +1028,13 @@ export async function sendInstagramDm(params: {
     const response = await sendV1ExistingChatMessage({
       accountId: params.accountId,
       chatId: recipientId,
-      text: params.text,
+      text,
       attachment,
       attachmentFieldName: attachment ? "attachment" : undefined,
     });
     return { route: "v1:existingChat", response, attachmentSent: Boolean(attachment) };
   } catch (e2: any) {
     errors.push(`v1 existingChat: ${e2?.message || e2}`);
-  }
-
-  if (attachment) {
-    const attachResult = await trySendV1AttachmentInChat({
-      accountId: params.accountId,
-      chatIds: [recipientId],
-      attachment,
-    });
-    if (attachResult.ok) {
-      return {
-        route: attachResult.route,
-        response: null,
-        attachmentSent: true,
-      };
-    }
-    errors.push(`v1 attachment-only: ${attachResult.error}`);
   }
 
   throw new Error(`DM send failed. ${errors.join("; ")}`);
