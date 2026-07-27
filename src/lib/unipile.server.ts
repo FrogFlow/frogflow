@@ -592,15 +592,28 @@ export async function replyToInstagramComment(params: {
 }): Promise<any> {
   const v1AccId = await resolveUnipileAccountId(params.accountId);
   const v2AccId = await resolveUnipileV2AccountId(params.accountId);
-  return await unipileFetch(
-    `/v2/${encodeURIComponent(v2AccId)}/posts/${encodeURIComponent(params.postId)}/comments/${encodeURIComponent(params.commentId)}`,
-    {
-    method: "POST",
-    body: JSON.stringify({
-      text: params.text,
-    }),
-    },
-  );
+  // Try v2 first (richer), then fallback to v1 if v2 routes are unavailable.
+  try {
+    return await unipileFetch(
+      `/v2/${encodeURIComponent(v2AccId)}/posts/${encodeURIComponent(params.postId)}/comments/${encodeURIComponent(params.commentId)}`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          text: params.text,
+        }),
+      },
+    );
+  } catch (e2: any) {
+    // v1: POST /api/v1/posts/{post_id}/comments with body { account_id, text, comment_id }
+    return await unipileFetch(`/api/v1/posts/${encodeURIComponent(params.postId)}/comments`, {
+      method: "POST",
+      body: JSON.stringify({
+        account_id: v1AccId,
+        text: params.text,
+        comment_id: params.commentId,
+      }),
+    });
+  }
 }
 
 export async function sendInstagramDm(params: {
@@ -640,8 +653,9 @@ export async function sendInstagramDm(params: {
         body: JSON.stringify({ text: params.text }),
       });
     } catch (e2: any) {
-      const fallback = e1?.message || e2?.message || "Failed to send Instagram DM";
-      throw new Error(fallback);
+      const v2Msg = e1?.message || String(e1);
+      const v1Msg = e2?.message || String(e2);
+      throw new Error(`DM send failed. v2: ${v2Msg}; v1: ${v1Msg}`);
     }
   }
 }
