@@ -629,7 +629,7 @@ export async function sendInstagramDm(params: {
     return await unipileFetch(`/v2/${encodeURIComponent(v2AccId)}/chats`, {
       method: "POST",
       body: JSON.stringify({
-        users_ids: [params.attendeeId],
+        user_ids: [params.attendeeId],
         text: params.text,
         ...(attachment
           ? {
@@ -645,12 +645,42 @@ export async function sendInstagramDm(params: {
       }),
     });
   } catch (e1: any) {
-    if (attachment) throw e1;
     try {
-      return await unipileFetch(`/api/v1/chats/${encodeURIComponent(params.attendeeId)}/messages`, {
+      return await unipileFetch(
+        `/v2/${encodeURIComponent(v2AccId)}/chats/${encodeURIComponent(params.attendeeId)}/messages/send`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            text: params.text,
+            ...(attachment
+              ? {
+                  attachments: [
+                    {
+                      content: attachment.contentBase64,
+                      content_type: attachment.contentType,
+                      filename: attachment.filename,
+                    },
+                  ],
+                }
+              : {}),
+          }),
+        },
+      );
+    } catch (eMid: any) {
+      if (attachment) {
+        const v2StartMsg = e1?.message || String(e1);
+        const v2SendMsg = eMid?.message || String(eMid);
+        throw new Error(`DM send failed. v2 startChat: ${v2StartMsg}; v2 sendMessage: ${v2SendMsg}`);
+      }
+    }
+    try {
+      return await unipileFetch(`/api/v1/chats`, {
         method: "POST",
-        query: { account_id: v1AccId },
-        body: JSON.stringify({ text: params.text }),
+        body: JSON.stringify({
+          account_id: v1AccId,
+          text: params.text,
+          attendees_ids: [params.attendeeId],
+        }),
       });
     } catch (e2: any) {
       const v2Msg = e1?.message || String(e1);
