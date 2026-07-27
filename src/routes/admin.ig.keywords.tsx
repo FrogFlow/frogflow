@@ -9,6 +9,7 @@ import {
   deleteIgKeyword,
   listIgKeywords,
   listIgRecentPosts,
+  resolveIgPostLink,
   saveIgKeyword,
 } from "@/lib/ig.functions";
 
@@ -38,7 +39,8 @@ function IgKeywordsPage() {
   const list = (q.data ?? []) as Kw[];
   const [editing, setEditing] = useState<Kw | null>(null);
   const [err, setErr] = useState("");
-  const [manualId, setManualId] = useState(false);
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [resolving, setResolving] = useState(false);
 
   async function onSave() {
     if (!editing) return;
@@ -46,7 +48,7 @@ function IgKeywordsPage() {
     try {
       await saveIgKeyword({ data: editing });
       setEditing(null);
-      setManualId(false);
+      setPasteUrl("");
       qc.invalidateQueries({ queryKey: ["ig-keywords"] });
       qc.invalidateQueries({ queryKey: ["ig-posts"] });
       qc.invalidateQueries({ queryKey: ["ig-dashboard"] });
@@ -68,7 +70,24 @@ function IgKeywordsPage() {
       post_id: id,
       post_note: editing.post_note || caption.slice(0, 120) || "",
     });
-    setManualId(false);
+  }
+
+  async function onResolveUrl() {
+    if (!editing || !pasteUrl.trim()) return;
+    setResolving(true);
+    setErr("");
+    try {
+      const post = await resolveIgPostLink({ data: { url: pasteUrl.trim() } });
+      setEditing({
+        ...editing,
+        post_id: post.id,
+        post_note: editing.post_note || post.caption || pasteUrl.trim(),
+      });
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setResolving(false);
+    }
   }
 
   return (
@@ -77,15 +96,14 @@ function IgKeywordsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Правила</h1>
           <p className="text-sm text-muted-foreground max-w-2xl">
-            Одно правило = <strong>пост</strong> (выберите из списка) + <strong>кодовое слово</strong> +{" "}
-            <strong>текст в личку</strong> автору комментария.
+            Проще всего: вставьте <strong>ссылку на пост Instagram</strong> → кодовое слово → текст в личку.
           </p>
         </div>
         {!editing && (
           <Button
             onClick={() => {
               setEditing({ ...empty });
-              setManualId(false);
+              setPasteUrl("");
               setErr("");
               void postsQ.refetch();
             }}
@@ -98,26 +116,37 @@ function IgKeywordsPage() {
       {editing && (
         <div className="bg-card border rounded-lg p-4 space-y-3 max-w-2xl">
           <div className="space-y-2">
+            <Label>Ссылка на пост Instagram</Label>
+            <div className="flex gap-2">
+              <Input
+                value={pasteUrl}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                placeholder="https://www.instagram.com/p/XXXX/ или /reel/XXXX/"
+              />
+              <Button type="button" variant="outline" disabled={resolving || !pasteUrl.trim()} onClick={() => void onResolveUrl()}>
+                {resolving ? "…" : "Найти"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Скопируйте ссылку из Instagram (Share → Copy link) и нажмите «Найти».
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <Label>Какой пост слушать</Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => void postsQ.refetch()}
-                disabled={postsQ.isFetching}
-              >
-                {postsQ.isFetching ? "Загрузка…" : "Обновить список"}
+              <Label>Или выберите из последних постов</Label>
+              <Button type="button" variant="ghost" size="sm" onClick={() => void postsQ.refetch()} disabled={postsQ.isFetching}>
+                {postsQ.isFetching ? "Загрузка…" : "Обновить"}
               </Button>
             </div>
 
             {postsQ.isError && (
-              <p className="text-sm text-amber-700">
-                Не удалось загрузить посты: {(postsQ.error as Error).message}. Можно ввести id вручную.
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">
+                {(postsQ.error as Error).message}
               </p>
             )}
 
-            {!manualId && (postsQ.data?.length ?? 0) > 0 && (
+            {(postsQ.data?.length ?? 0) > 0 && (
               <div className="max-h-56 overflow-y-auto border rounded-md divide-y">
                 {postsQ.data!.map((p) => {
                   const selected = editing.post_id === p.id;
@@ -139,32 +168,16 @@ function IgKeywordsPage() {
               </div>
             )}
 
-            {!manualId && !postsQ.isLoading && !postsQ.data?.length && !postsQ.isError && (
-              <p className="text-sm text-muted-foreground">Постов не найдено — введите id вручную.</p>
+            {!postsQ.isLoading && !postsQ.isError && !postsQ.data?.length && (
+              <p className="text-sm text-muted-foreground">Список пуст — используйте ссылку выше.</p>
             )}
-
-            {(manualId || !postsQ.data?.length) && (
-              <Input
-                value={editing.post_id}
-                onChange={(e) => setEditing({ ...editing, post_id: e.target.value })}
-                placeholder="Unipile post_id"
-              />
-            )}
-
-            {editing.post_id && !manualId && (postsQ.data?.length ?? 0) > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Выбран: <span className="font-mono">{editing.post_id}</span>
-              </p>
-            )}
-
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline"
-              onClick={() => setManualId((v) => !v)}
-            >
-              {manualId ? "Выбрать из списка" : "Ввести post_id вручную"}
-            </button>
           </div>
+
+          {editing.post_id && (
+            <p className="text-xs text-muted-foreground">
+              ID поста для слежения: <span className="font-mono break-all">{editing.post_id}</span>
+            </p>
+          )}
 
           <div className="space-y-2">
             <Label>Заметка (необязательно)</Label>
@@ -208,7 +221,7 @@ function IgKeywordsPage() {
               variant="outline"
               onClick={() => {
                 setEditing(null);
-                setManualId(false);
+                setPasteUrl("");
               }}
             >
               Отмена
@@ -237,7 +250,7 @@ function IgKeywordsPage() {
                 variant="outline"
                 onClick={() => {
                   setEditing(row);
-                  setManualId(false);
+                  setPasteUrl("");
                   void postsQ.refetch();
                 }}
               >
@@ -253,7 +266,7 @@ function IgKeywordsPage() {
         ))}
         {!list.length && !q.isLoading && (
           <p className="text-muted-foreground text-sm">
-            Пока нет правил. «+ Правило» → выбрать пост → слово → текст в ЛС.
+            Пока нет правил. «+ Правило» → ссылка на пост → слово → текст в ЛС.
           </p>
         )}
       </div>

@@ -99,32 +99,37 @@ export async function listAccounts(): Promise<any[]> {
   return [];
 }
 
-export type IgPostSummary = {
-  id: string;
-  caption: string;
-  created_at?: string;
-  thumbnail_url?: string;
-};
+export async function getAccount(accountId: string): Promise<any> {
+  return await unipileFetch<any>(`/api/v1/accounts/${encodeURIComponent(accountId)}`);
+}
 
-/** Own feed posts for the connected IG account (user_id = me). */
-export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPostSummary[]> {
-  let data: any;
-  try {
-    data = await unipileFetch<any>(`/api/v1/users/me/posts`, {
-      query: { account_id: accountId, limit: String(limit) },
-    });
-  } catch {
-    // Fallback: some setups want the account's provider username as identifier
-    data = await unipileFetch<any>(`/api/v1/users/${encodeURIComponent(accountId)}/posts`, {
-      query: { account_id: accountId, limit: String(limit) },
-    });
-  }
+function accountIgIdentifiers(account: any, accountId: string): string[] {
+  const ids: string[] = [];
+  const push = (v: unknown) => {
+    const s = String(v || "").trim().replace(/^@/, "");
+    if (s && !ids.includes(s)) ids.push(s);
+  };
+  push(account?.connection_params?.username);
+  push(account?.connection_params?.id);
+  push(account?.connection_params?.user_id);
+  push(account?.connection_params?.im?.id);
+  push(account?.username);
+  push(account?.name);
+  push(account?.provider_id);
+  push(account?.sources?.[0]?.id);
+  push("me");
+  // last resort — sometimes docs allow account id context only with username
+  push(accountId);
+  return ids;
+}
+
+function mapPostsPayload(data: any): IgPostSummary[] {
   const items = data?.items || data?.data || data?.posts || (Array.isArray(data) ? data : []);
   return (items as any[])
     .map((p) => {
-      const id = String(p.id || p.provider_id || p.post_id || "");
+      const id = String(p.id || p.provider_id || p.social_id || p.post_id || "");
       const caption = String(p.text || p.caption || p.title || "").slice(0, 200);
-      const created = p.created_at || p.date || p.timestamp;
+      const created = p.created_at || p.parsed_datetime || p.date || p.timestamp;
       const thumb =
         p.preview_image?.url ||
         p.attachments?.[0]?.url ||
@@ -134,6 +139,81 @@ export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPos
       return { id, caption, created_at: created ? String(created) : undefined, thumbnail_url: thumb };
     })
     .filter((p) => p.id);
+}
+
+export type IgPostSummary = {
+  id: string;
+  caption: string;
+  created_at?: string;
+  thumbnail_url?: string;
+};
+
+/** Own feed posts — try username / provider_id / me until Unipile returns items. */
+export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPostSummary[]> {
+  let account: any = null;
+  try {
+    account = await getAccount(accountId);
+  } catch {
+    account = null;
+  }
+  const identifiers = accountIgIdentifiers(account, accountId);
+  const errors: string[] = [];
+
+  for (const identifier of identifiers) {
+    try {
+      const data = await unipileFetch<any>(`/api/v1/users/${encodeURIComponent(identifier)}/posts`, {
+        query: { account_id: accountId, limit: String(limit) },
+      });
+      const mapped = mapPostsPayload(data);
+      if (mapped.length) return mapped;
+    } catch (e: any) {
+      errors.push(`${identifier}: ${e?.message || e}`);
+    }
+  }
+
+  if (errors.length) {
+    throw new Error(
+      `Не удалось загрузить посты. Пробовали: ${identifiers.join(", ")}. Ошибки: ${errors.slice(0, 3).join(" | ")}`,
+    );
+  }
+  return [];
+}
+
+/** Instagram URL or shortcode → Unipile provider post id (needed for comments). */
+export function extractIgShortcode(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  const m = raw.match(/instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/i);
+  if (m?.[1]) return m[1];
+  if (/^[A-Za-z0-9_-]{5,20}$/.test(raw) && !raw.includes("/")) return raw;
+  return null;
+}
+
+export async function resolveIgPost(
+  accountId: string,
+  urlOrShortcodeOrId: string,
+): Promise<IgPostSummary> {
+  const shortcode = extractIgShortcode(urlOrShortcodeOrId);
+  const candidates = [shortcode, urlOrShortcodeOrId.trim()].filter(Boolean) as string[];
+  const tried = new Set<string>();
+  let lastErr = "";
+
+  for (const candidate of candidates) {
+    if (tried.has(candidate)) continue;
+    tried.add(candidate);
+    try {
+      const data = await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(candidate)}`, {
+        query: { account_id: accountId },
+      });
+      const id = String(data?.id || data?.provider_id || data?.social_id || candidate);
+      const caption = String(data?.text || data?.caption || "").slice(0, 200);
+      if (!id) throw new Error("empty post id in response");
+      return { id, caption, created_at: data?.parsed_datetime || data?.date };
+    } catch (e: any) {
+      lastErr = e?.message || String(e);
+    }
+  }
+  throw new Error(lastErr || "Пост не найден в Unipile");
 }
 
 export type IgComment = {

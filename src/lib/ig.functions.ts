@@ -129,6 +129,19 @@ export const listIgRecentPosts = createServerFn({ method: "GET" }).handler(async
   return await listOwnPosts(accountId, 40);
 });
 
+/** Paste Instagram post URL / shortcode → Unipile provider_id for the rule. */
+export const resolveIgPostLink = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ url: z.string().min(3).max(500) }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const { resolveIgPost, isUnipileConfigured } = await import("./unipile.server");
+    if (!isUnipileConfigured()) throw new Error("Unipile не настроен");
+    const map = await settingsMap();
+    const accountId = (map.unipile_account_id || "").trim();
+    if (!accountId) throw new Error("Сначала подключите Instagram-аккаунт");
+    return await resolveIgPost(accountId, data.url);
+  });
+
 // —— keywords ——
 export const listIgKeywords = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdmin();
