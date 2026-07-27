@@ -161,6 +161,7 @@ export const listIgKeywords = createServerFn({ method: "GET" }).handler(async ()
 const KeywordInput = z.object({
   id: z.string().uuid().optional(),
   post_id: z.string().min(1).max(200),
+  comments_post_id: z.string().max(200).optional().nullable(),
   post_shortcode: z.string().max(100).optional().nullable(),
   post_note: z.string().max(2000).optional().nullable(),
   keyword: z.string().min(1).max(200),
@@ -180,6 +181,8 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
     const now = new Date().toISOString();
 
     let postId = data.post_id.trim();
+    let commentsPostId = data.comments_post_id?.trim() || postId;
+    let postDisplayId = postId;
     let shortcode = data.post_shortcode?.trim() || null;
     const note = data.post_note?.trim() || null;
 
@@ -190,6 +193,8 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
       if (isUnipileConfigured()) {
         try {
           const resolved = await resolveIgPost(accountId, shortcode || postId);
+          commentsPostId = resolved.commentsPostId;
+          postDisplayId = resolved.id;
           postId = resolved.commentsPostId;
           shortcode = resolved.shortcode || shortcode;
         } catch {
@@ -208,6 +213,9 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
         .from("ig_watched_posts")
         .update({
           caption_snapshot: note,
+          comments_post_id: commentsPostId,
+          post_display_id: postDisplayId,
+          post_shortcode: shortcode,
           is_active: true,
           updated_at: now,
         })
@@ -215,6 +223,9 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
     } else {
       const { error: postErr } = await s.from("ig_watched_posts").insert({
         post_id: postId,
+        comments_post_id: commentsPostId,
+        post_display_id: postDisplayId,
+        post_shortcode: shortcode,
         caption_snapshot: note,
         is_active: true,
       });
@@ -223,6 +234,7 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
 
     const row = {
       post_id: postId,
+      comments_post_id: commentsPostId,
       post_shortcode: shortcode,
       post_note: note,
       keyword: data.keyword.trim(),
@@ -267,6 +279,9 @@ export const listIgWatchedPosts = createServerFn({ method: "GET" }).handler(asyn
 const PostInput = z.object({
   id: z.string().uuid().optional(),
   post_id: z.string().min(1).max(200),
+  comments_post_id: z.string().max(200).optional().nullable(),
+  post_display_id: z.string().max(200).optional().nullable(),
+  post_shortcode: z.string().max(100).optional().nullable(),
   caption_snapshot: z.string().max(2000).optional().nullable(),
   is_active: z.boolean().default(true),
 });
@@ -277,11 +292,36 @@ export const saveIgWatchedPost = createServerFn({ method: "POST" })
     await requireAdmin();
     const s = await db();
     const now = new Date().toISOString();
+    const map = await settingsMap();
+    const accountId = (map.unipile_account_id || "").trim();
+    let postId = data.post_id.trim();
+    let commentsPostId = data.comments_post_id?.trim() || postId;
+    let postDisplayId = data.post_display_id?.trim() || postId;
+    let shortcode = data.post_shortcode?.trim() || null;
+
+    if (accountId && postId) {
+      const { resolveIgPost, isUnipileConfigured } = await import("./unipile.server");
+      if (isUnipileConfigured()) {
+        try {
+          const resolved = await resolveIgPost(accountId, shortcode || postId);
+          commentsPostId = resolved.commentsPostId;
+          postDisplayId = resolved.id;
+          postId = resolved.commentsPostId;
+          shortcode = resolved.shortcode || shortcode;
+        } catch {
+          // keep user-provided id
+        }
+      }
+    }
+
     if (data.id) {
       const { error } = await s
         .from("ig_watched_posts")
         .update({
-          post_id: data.post_id.trim(),
+          post_id: postId,
+          comments_post_id: commentsPostId,
+          post_display_id: postDisplayId,
+          post_shortcode: shortcode,
           caption_snapshot: data.caption_snapshot || null,
           is_active: data.is_active,
           updated_at: now,
@@ -290,7 +330,10 @@ export const saveIgWatchedPost = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     } else {
       const { error } = await s.from("ig_watched_posts").insert({
-        post_id: data.post_id.trim(),
+        post_id: postId,
+        comments_post_id: commentsPostId,
+        post_display_id: postDisplayId,
+        post_shortcode: shortcode,
         caption_snapshot: data.caption_snapshot || null,
         is_active: data.is_active,
       });
@@ -452,7 +495,13 @@ export const debugIgRuleComments = createServerFn({ method: "POST" })
     if (!accountId) throw new Error("Сначала подключите Instagram-аккаунт");
 
     const s = await db();
-    let rules: { id: string; keyword: string; post_id: string; post_shortcode?: string | null }[] = [];
+    let rules: {
+      id: string;
+      keyword: string;
+      post_id: string;
+      comments_post_id?: string | null;
+      post_shortcode?: string | null;
+    }[] = [];
     if (data.ruleId) {
       const { data: row, error } = await s.from("ig_keywords").select("*").eq("id", data.ruleId).maybeSingle();
       if (error) throw new Error(error.message);
@@ -470,26 +519,42 @@ export const debugIgRuleComments = createServerFn({ method: "POST" })
     for (const rule of rules) {
       const postId = String(rule.post_id || "").trim();
       if (!postId) continue;
-      const candidates = await resolvePostIdCandidates(accountId, postId, rule.post_shortcode);
+      const canonicalPostId = rule.comments_post_id || postId;
+      const candidates = await resolvePostIdCandidates(
+        accountId,
+        postId,
+        rule.post_shortcode,
+        canonicalPostId,
+      );
       const debug: import("./unipile.server").CommentsFetchDebug[] = [];
       const comments = await listPostComments(accountId, postId, {
         maxPages: 1,
         shortcode: rule.post_shortcode,
+        canonicalCommentsPostId: canonicalPostId,
         debug,
       });
       results.push({
         ruleId: rule.id,
         keyword: rule.keyword,
         storedPostId: postId,
+        canonicalCommentsPostId: canonicalPostId,
         shortcode: rule.post_shortcode,
         accountId: resolvedAccountId,
+        v2MessagingDisabled: (await import("./unipile.server")).isV2MessagingDisabled(accountId),
         candidates,
         attempts: debug,
         commentsFound: comments.length,
         samples: comments.slice(0, 3).map((c) => ({
           id: c.id,
+          commentUnipileId: c.commentUnipileId,
           text: (c.text || "").slice(0, 120),
           username: c.username || "",
+          dedupeUserId: c.ids.dedupeUserId,
+          dmRecipientId: c.ids.authorMessagingIdentifier,
+          authorProfileId: c.ids.authorProfileId,
+          canReply: Boolean(c.commentUnipileId && !c.ids.isSyntheticCommentId),
+          canDm: Boolean(c.ids.authorMessagingIdentifier),
+          rawIds: c.ids.raw,
         })),
       });
     }
@@ -530,20 +595,25 @@ export const migrateIgRulePostIds = createServerFn({ method: "POST" }).handler(a
       }
       if (!newId) throw new Error("empty provider id");
       if (newId !== current) {
+        const now = new Date().toISOString();
         await s
           .from("ig_keywords")
           .update({
             post_id: newId,
+            comments_post_id: newId,
             post_shortcode: shortcode,
-            updated_at: new Date().toISOString(),
+            updated_at: now,
           })
           .eq("id", rule.id);
         await s.from("ig_watched_posts").upsert(
           {
             post_id: newId,
+            comments_post_id: newId,
+            post_display_id: shortcode || newId,
+            post_shortcode: shortcode,
             caption_snapshot: rule.post_note,
             is_active: true,
-            updated_at: new Date().toISOString(),
+            updated_at: now,
           },
           { onConflict: "post_id" },
         );

@@ -12,6 +12,7 @@ const STATUS_LABELS: Record<string, string> = {
   dm_pending: "DM ждёт retry",
   dm_failed: "DM ошибка",
   dm_gave_up: "DM недоступен",
+  waiting_messaging_id: "Нет messaging id",
   comment_replied: "Ответили в комментарий",
   post_disabled: "Пост выключен",
   error: "Ошибка",
@@ -81,6 +82,7 @@ function IgLogPage() {
               <th className="p-2">Правило</th>
               <th className="p-2">Пользователь</th>
               <th className="p-2">Комментарий</th>
+              <th className="p-2">Debug</th>
               <th className="p-2">Ошибка</th>
             </tr>
           </thead>
@@ -97,6 +99,9 @@ function IgLogPage() {
                 </td>
                 <td className="p-2 max-w-xs truncate" title={r.comment_text || ""}>
                   {r.comment_text || "—"}
+                </td>
+                <td className="p-2 max-w-xs text-xs font-mono whitespace-pre-wrap">
+                  {r.debug_info ? JSON.stringify(r.debug_info) : ""}
                 </td>
                 <td className="p-2 text-destructive text-xs">{r.error_message || ""}</td>
               </tr>

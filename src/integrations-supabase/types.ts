@@ -288,6 +288,7 @@ export type Database = {
       ig_keywords: {
         Row: {
           comment_reply_text: string | null
+          comments_post_id: string | null
           created_at: string
           dm_file_kind: string | null
           dm_file_name: string | null
@@ -303,6 +304,7 @@ export type Database = {
         }
         Insert: {
           comment_reply_text?: string | null
+          comments_post_id?: string | null
           created_at?: string
           dm_file_kind?: string | null
           dm_file_name?: string | null
@@ -318,6 +320,7 @@ export type Database = {
         }
         Update: {
           comment_reply_text?: string | null
+          comments_post_id?: string | null
           created_at?: string
           dm_file_kind?: string | null
           dm_file_name?: string | null
@@ -381,26 +384,35 @@ export type Database = {
       ig_watched_posts: {
         Row: {
           caption_snapshot: string | null
+          comments_post_id: string | null
           created_at: string
           id: string
           is_active: boolean
+          post_display_id: string | null
           post_id: string
+          post_shortcode: string | null
           updated_at: string
         }
         Insert: {
           caption_snapshot?: string | null
+          comments_post_id?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
+          post_display_id?: string | null
           post_id: string
+          post_shortcode?: string | null
           updated_at?: string
         }
         Update: {
           caption_snapshot?: string | null
+          comments_post_id?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
+          post_display_id?: string | null
           post_id?: string
+          post_shortcode?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -435,6 +447,7 @@ export type Database = {
           comment_id: string
           comment_text: string | null
           created_at: string
+          debug_info: Json | null
           error_message: string | null
           id: string
           keyword_id: string | null
@@ -449,6 +462,7 @@ export type Database = {
           comment_id: string
           comment_text?: string | null
           created_at?: string
+          debug_info?: Json | null
           error_message?: string | null
           id?: string
           keyword_id?: string | null
@@ -463,6 +477,7 @@ export type Database = {
           comment_id?: string
           comment_text?: string | null
           created_at?: string
+          debug_info?: Json | null
           error_message?: string | null
           id?: string
           keyword_id?: string | null
@@ -491,10 +506,12 @@ export type Database = {
       }
       ig_post_leads: {
         Row: {
+          author_profile_id: string | null
           closed_reason: string | null
           comment_replied_at: string | null
           created_at: string
           dm_attempts: number
+          dm_recipient_id: string | null
           dm_sent_at: string | null
           dm_status: string
           first_comment_id: string | null
@@ -509,14 +526,17 @@ export type Database = {
           post_id: string
           provider_user_id: string
           retry_until_at: string | null
+          unipile_comment_id: string | null
           updated_at: string
           username: string | null
         }
         Insert: {
+          author_profile_id?: string | null
           closed_reason?: string | null
           comment_replied_at?: string | null
           created_at?: string
           dm_attempts?: number
+          dm_recipient_id?: string | null
           dm_sent_at?: string | null
           dm_status?: string
           first_comment_id?: string | null
@@ -531,14 +551,17 @@ export type Database = {
           post_id: string
           provider_user_id: string
           retry_until_at?: string | null
+          unipile_comment_id?: string | null
           updated_at?: string
           username?: string | null
         }
         Update: {
+          author_profile_id?: string | null
           closed_reason?: string | null
           comment_replied_at?: string | null
           created_at?: string
           dm_attempts?: number
+          dm_recipient_id?: string | null
           dm_sent_at?: string | null
           dm_status?: string
           first_comment_id?: string | null
@@ -553,6 +576,7 @@ export type Database = {
           post_id?: string
           provider_user_id?: string
           retry_until_at?: string | null
+          unipile_comment_id?: string | null
           updated_at?: string
           username?: string | null
         }

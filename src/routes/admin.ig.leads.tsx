@@ -10,6 +10,7 @@ export const Route = createFileRoute("/admin/ig/leads")({
 const STATUS_LABELS: Record<string, string> = {
   new: "Новый",
   pending: "Ожидает retry",
+  waiting_messaging_id: "Нет messaging id",
   dm_sent: "DM отправлен",
   dm_failed: "Ошибка отправки",
   dm_gave_up: "Недоступен",
@@ -62,6 +63,9 @@ function IgLeadsPage() {
               <th className="p-2">Пост</th>
               <th className="p-2">Правило</th>
               <th className="p-2">Пользователь</th>
+              <th className="p-2">DM recipient</th>
+              <th className="p-2">Profile id</th>
+              <th className="p-2">Comment id</th>
               <th className="p-2">Комментарий</th>
               <th className="p-2">Попытки</th>
               <th className="p-2">Следующий retry</th>
@@ -81,6 +85,9 @@ function IgLeadsPage() {
                 </td>
                 <td className="p-2">{r.keyword_label || "—"}</td>
                 <td className="p-2">{r.username ? `@${String(r.username).replace(/^@/, "")}` : r.provider_user_id}</td>
+                <td className="p-2 font-mono text-xs break-all">{r.dm_recipient_id || "—"}</td>
+                <td className="p-2 font-mono text-xs break-all">{r.author_profile_id || r.provider_user_id || "—"}</td>
+                <td className="p-2 font-mono text-xs break-all">{r.unipile_comment_id || "—"}</td>
                 <td className="p-2 max-w-sm whitespace-pre-wrap">{r.last_comment_text || "—"}</td>
                 <td className="p-2">{r.dm_attempts}</td>
                 <td className="p-2 whitespace-nowrap text-muted-foreground">

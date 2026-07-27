@@ -1,5 +1,9 @@
 /**
  * Unipile API client (Instagram).
+ * Uses canonical identifier types per Unipile docs:
+ * - post comments/replies: Unipile post_id + comment_id
+ * - Instagram DMs: recipient messaging_identifier (not profile id)
+ * - v1 messaging: multipart/form-data on /api/v1/chats
  */
 
 import { createHmac } from "node:crypto";
@@ -19,6 +23,11 @@ function apiKey(): string {
 export function isUnipileConfigured(): boolean {
   return Boolean(process.env.UNIPILE_DSN?.trim() && process.env.UNIPILE_API_KEY?.trim());
 }
+
+export type UnipileFetchMeta = {
+  route: string;
+  accountIdFlavor?: "v1" | "v2" | "stored";
+};
 
 async function unipileFetch<T = any>(
   path: string,
@@ -53,6 +62,16 @@ async function unipileFetch<T = any>(
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
   return json as T;
+}
+
+const v2MessagingDisabledAccounts = new Set<string>();
+
+function markV2MessagingUnavailable(accountId: string) {
+  v2MessagingDisabledAccounts.add(accountId.trim());
+}
+
+export function isV2MessagingDisabled(accountId: string): boolean {
+  return v2MessagingDisabledAccounts.has(accountId.trim());
 }
 
 export async function createInstagramAuthLink(params: {
@@ -117,9 +136,8 @@ function accountIgIdentifiers(account: any, accountId: string): string[] {
   return ids;
 }
 
-/** ID for comments API — Instagram needs provider_id, not display id. */
+/** Canonical post id for comments/replies API. */
 export function igCommentsPostId(p: any): string {
-  // Unipile v2 Post: `id` is the provider post id
   if (p?.object === "Post") return String(p.id || "").trim();
   return String(
     p?.provider_id ||
@@ -207,9 +225,10 @@ export type IgPostSummary = {
 
 export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPostSummary[]> {
   const accId = await resolveUnipileAccountId(accountId);
-  if (/^acc_/.test(accId)) {
+  const v2AccId = await resolveUnipileV2AccountId(accountId);
+  if (v2AccId) {
     try {
-      const data = await unipileFetch<any>(`/v2/${encodeURIComponent(accId)}/users/me/posts`, {
+      const data = await unipileFetch<any>(`/v2/${encodeURIComponent(v2AccId)}/users/me/posts`, {
         query: { limit: String(limit) },
       });
       const mapped = mapPostsPayload(data);
@@ -231,7 +250,7 @@ export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPos
   for (const identifier of identifiers) {
     try {
       const data = await unipileFetch<any>(`/api/v1/users/${encodeURIComponent(identifier)}/posts`, {
-        query: { account_id: accountId, limit: String(limit) },
+        query: { account_id: accId, limit: String(limit) },
       });
       const mapped = mapPostsPayload(data);
       if (mapped.length) return mapped;
@@ -264,7 +283,7 @@ function toUnipileV2AccountId(accountIdV1: string): string {
   return `acc_${id}`;
 }
 
-async function resolveUnipileV2AccountId(storedId: string): Promise<string> {
+export async function resolveUnipileV2AccountId(storedId: string): Promise<string> {
   const id = (storedId || "").trim();
   if (!id) return id;
   const v1IdInput = id.replace(/^acc_/, "");
@@ -288,8 +307,6 @@ async function resolveUnipileV2AccountId(storedId: string): Promise<string> {
 export async function resolveUnipileAccountId(storedId: string): Promise<string> {
   const id = storedId.trim();
   if (!id) return id;
-  // For Unipile v1 endpoints, observed IDs do NOT use `acc_` prefix.
-  // So we normalize to v1 style: strip `acc_` if present.
   const v1IdInput = id.replace(/^acc_/, "");
   try {
     const accounts = await listAccounts();
@@ -348,31 +365,85 @@ export async function resolveIgPost(
   throw new Error(lastErr || "Пост не найден в Unipile");
 }
 
-export type IgComment = {
-  id: string;
-  text?: string;
-  author_id?: string;
-  author?: {
-    id?: string;
-    display_name?: string;
-    messaging_identifier?: string;
-    username?: string;
-    provider_id?: string;
-    messaging_id?: string;
-    user_id?: string;
-  };
-  user_id?: string;
-  username?: string;
-  attendee_id?: string;
-  messaging_id?: string;
-  created_at?: string;
+export type IgCanonicalIds = {
+  commentUnipileId: string | null;
+  authorProfileId: string | null;
+  authorMessagingIdentifier: string | null;
+  dedupeUserId: string | null;
+  chatId: string | null;
+  isSyntheticCommentId: boolean;
+  raw: Record<string, string | null>;
 };
 
-/** Collect every post identifier that might work for the comments API. */
+export type IgComment = {
+  /** Local dedupe key for ig_comment_actions — may be synthetic when Unipile id is missing */
+  id: string;
+  commentUnipileId: string | null;
+  text?: string;
+  username?: string;
+  created_at?: string;
+  ids: IgCanonicalIds;
+};
+
+function pickStr(...values: unknown[]): string | null {
+  for (const v of values) {
+    const s = String(v ?? "").trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+function localCommentDedupeKey(c: any, text: string): string {
+  const author = c.username || c.author?.username || c.author_id || c.user_id || "anon";
+  const ts = c.created_at || c.date || c.timestamp || "";
+  const base = `${author}:${text.slice(0, 120)}:${ts}`;
+  let h = 0;
+  for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
+  return `local_${h.toString(16)}`;
+}
+
+export function extractCommentCanonicalIds(c: any, text = extractCommentText(c)): IgCanonicalIds {
+  const author = c?.author || {};
+  const commentUnipileId = pickStr(c.id, c.comment_id, c.provider_id, c.pk, c.social_id);
+  const authorMessagingIdentifier = pickStr(
+    c.messaging_id,
+    c.attendee_id,
+    author.messaging_identifier,
+    author.messaging_id,
+    c.author?.messaging_identifier,
+  );
+  const authorProfileId = pickStr(c.author_id, c.user_id, author.id, author.provider_id, author.user_id);
+  const dedupeUserId = authorProfileId || authorMessagingIdentifier;
+  const chatId = authorMessagingIdentifier;
+  const isSyntheticCommentId = !commentUnipileId;
+  return {
+    commentUnipileId,
+    authorProfileId,
+    authorMessagingIdentifier,
+    dedupeUserId,
+    chatId,
+    isSyntheticCommentId,
+    raw: {
+      comment_id: pickStr(c.comment_id),
+      id: pickStr(c.id),
+      provider_id: pickStr(c.provider_id),
+      author_id: pickStr(c.author_id),
+      user_id: pickStr(c.user_id),
+      attendee_id: pickStr(c.attendee_id),
+      messaging_id: pickStr(c.messaging_id),
+      author_messaging_identifier: pickStr(author.messaging_identifier),
+      author_messaging_id: pickStr(author.messaging_id),
+      author_profile_id: pickStr(author.id, author.provider_id),
+    },
+  };
+}
+
+/** Collect post identifiers — prefer stored canonical comments_post_id when provided. */
 export async function resolvePostIdCandidates(
   accountId: string,
   postId: string,
   shortcode?: string | null,
+  canonicalCommentsPostId?: string | null,
 ): Promise<string[]> {
   const out: string[] = [];
   const push = (v: unknown) => {
@@ -380,8 +451,13 @@ export async function resolvePostIdCandidates(
     if (s && !out.includes(s)) out.push(s);
   };
 
+  if (canonicalCommentsPostId) push(canonicalCommentsPostId);
   push(postId);
   push(shortcode);
+
+  if (canonicalCommentsPostId && canonicalCommentsPostId === postId) {
+    return out;
+  }
 
   const tryRaw = (raw: any) => {
     push(igCommentsPostId(raw));
@@ -423,44 +499,19 @@ function commentItemsFromPayload(data: any): any[] {
   return [];
 }
 
-function stableCommentId(c: any, text: string): string {
-  const direct = String(c.id || c.comment_id || c.provider_id || c.pk || c.social_id || "").trim();
-  if (direct) return direct;
-  const author = c.username || c.author?.username || c.author_id || c.user_id || "anon";
-  const ts = c.created_at || c.date || c.timestamp || "";
-  const base = `${author}:${text.slice(0, 120)}:${ts}`;
-  let h = 0;
-  for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
-  return `gen_${h.toString(16)}`;
-}
-
 function mapCommentItem(c: any): IgComment | null {
   const text = extractCommentText(c);
-  const id = stableCommentId(c, text);
+  const ids = extractCommentCanonicalIds(c, text);
+  const id = ids.commentUnipileId || localCommentDedupeKey(c, text);
   if (!id) return null;
   const author = c.author;
-  const author_id = String(
-    c.author_id ||
-      c.user_id ||
-      author?.messaging_identifier ||
-      author?.messaging_id ||
-      author?.id ||
-      author?.provider_id ||
-      author?.user_id ||
-      c.attendee_id ||
-      c.messaging_id ||
-      "",
-  ).trim();
   return {
     id,
+    commentUnipileId: ids.commentUnipileId,
     text,
-    author_id,
-    author,
-    user_id: c.user_id,
     username: c.username || author?.username || author?.name || author?.display_name || "",
-    attendee_id: c.attendee_id,
-    messaging_id: c.messaging_id || author?.messaging_identifier || author?.messaging_id,
     created_at: c.created_at || c.date || c.timestamp || c.parsed_datetime,
+    ids,
   };
 }
 
@@ -481,13 +532,7 @@ async function fetchCommentsPage(
       query: { limit: "50", sort_by: "MOST_RECENT", cursor },
     });
   }
-  attempts.push(
-    { path: `/api/v1/posts/${encodeURIComponent(postId)}/comments`, query: v1Query },
-    {
-      path: `/api/v1/accounts/${encodeURIComponent(v1AccId)}/posts/${encodeURIComponent(postId)}/comments`,
-      query: v1Query,
-    },
-  );
+  attempts.push({ path: `/api/v1/posts/${encodeURIComponent(postId)}/comments`, query: v1Query });
 
   let lastErr = "";
   for (const { path, query } of attempts) {
@@ -508,16 +553,35 @@ export type CommentsFetchDebug = {
   count: number;
   error?: string;
   path?: string;
-  sample?: { id: string; text: string; username: string };
+  sample?: {
+    id: string;
+    commentUnipileId: string | null;
+    text: string;
+    username: string;
+    dedupeUserId: string | null;
+    dmRecipientId: string | null;
+    isSyntheticCommentId: boolean;
+    rawIds?: Record<string, string | null>;
+  };
 };
 
 export async function listPostComments(
   accountId: string,
   postId: string,
-  opts?: { maxPages?: number; shortcode?: string | null; debug?: CommentsFetchDebug[] },
+  opts?: {
+    maxPages?: number;
+    shortcode?: string | null;
+    canonicalCommentsPostId?: string | null;
+    debug?: CommentsFetchDebug[];
+  },
 ): Promise<IgComment[]> {
   const maxPages = opts?.maxPages ?? 3;
-  const candidates = await resolvePostIdCandidates(accountId, postId, opts?.shortcode);
+  const candidates = await resolvePostIdCandidates(
+    accountId,
+    postId,
+    opts?.shortcode,
+    opts?.canonicalCommentsPostId,
+  );
   const all: IgComment[] = [];
   const seen = new Set<string>();
 
@@ -536,7 +600,16 @@ export async function listPostComments(
           error,
           path,
           sample: mapped
-            ? { id: mapped.id, text: (mapped.text || "").slice(0, 80), username: mapped.username || "" }
+            ? {
+                id: mapped.id,
+                commentUnipileId: mapped.commentUnipileId,
+                text: (mapped.text || "").slice(0, 80),
+                username: mapped.username || "",
+                dedupeUserId: mapped.ids.dedupeUserId,
+                dmRecipientId: mapped.ids.authorMessagingIdentifier,
+                isSyntheticCommentId: mapped.ids.isSyntheticCommentId,
+                rawIds: mapped.ids.raw,
+              }
             : undefined,
         });
       }
@@ -566,22 +639,22 @@ export type IgOutgoingAttachment = {
   contentBase64: string;
 };
 
-function buildV1InstagramChatFormData(params: {
+function buildV1ChatFormData(params: {
   accountId: string;
-  attendeeId: string;
+  attendeeId?: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
-  useBracketArrayKey?: boolean;
-  attachmentFieldName?: "attachment" | "attachments";
 }): FormData {
   const form = new FormData();
   form.append("account_id", params.accountId);
   form.append("text", params.text);
-  form.append(params.useBracketArrayKey ? "attendees_ids[]" : "attendees_ids", params.attendeeId);
+  if (params.attendeeId) {
+    form.append("attendees_ids", params.attendeeId);
+  }
   if (params.attachment) {
     const bytes = Buffer.from(params.attachment.contentBase64, "base64");
     const blob = new Blob([bytes], { type: params.attachment.contentType || "application/octet-stream" });
-    form.append(params.attachmentFieldName || "attachment", blob, params.attachment.filename);
+    form.append("attachments", blob, params.attachment.filename);
   }
   return form;
 }
@@ -600,8 +673,8 @@ export function isInstagramDmBlockedError(error: unknown): boolean {
     "privacy",
     "closed direct",
     "direct is disabled",
-    "messaging identifier",
     "forbidden",
+    "422",
   ].some((needle) => msg.includes(needle));
 }
 
@@ -618,7 +691,90 @@ export function isRetryableInstagramDmError(error: unknown): boolean {
     "service unavailable",
     "bad gateway",
     "internal server error",
+    "503",
   ].some((needle) => msg.includes(needle));
+}
+
+export function isPermanentInstagramDmSchemaError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error || "").toLowerCase();
+  if (!msg) return false;
+  return [
+    "invalid parameters",
+    "unexpected field",
+    "cannot post /v2/",
+    "bad request",
+    "400",
+    "415",
+  ].some((needle) => msg.includes(needle));
+}
+
+export type DmSendResult = {
+  route: string;
+  response: any;
+  attachmentSent: boolean;
+};
+
+async function sendV1StartChat(params: {
+  accountId: string;
+  recipientId: string;
+  text: string;
+  attachment?: IgOutgoingAttachment | null;
+}): Promise<any> {
+  const v1AccId = await resolveUnipileAccountId(params.accountId);
+  return await unipileFetch(`/api/v1/chats`, {
+    method: "POST",
+    body: buildV1ChatFormData({
+      accountId: v1AccId,
+      attendeeId: params.recipientId,
+      text: params.text,
+      attachment: params.attachment,
+    }),
+  });
+}
+
+async function sendV1ExistingChatMessage(params: {
+  accountId: string;
+  chatId: string;
+  text: string;
+  attachment?: IgOutgoingAttachment | null;
+}): Promise<any> {
+  const v1AccId = await resolveUnipileAccountId(params.accountId);
+  return await unipileFetch(`/api/v1/chats/${encodeURIComponent(params.chatId)}/messages`, {
+    method: "POST",
+    query: { account_id: v1AccId },
+    body: buildV1ChatFormData({
+      accountId: v1AccId,
+      text: params.text,
+      attachment: params.attachment,
+    }),
+  });
+}
+
+async function sendV2StartChat(params: {
+  accountId: string;
+  recipientId: string;
+  text: string;
+  attachment?: IgOutgoingAttachment | null;
+}): Promise<any> {
+  const v2AccId = await resolveUnipileV2AccountId(params.accountId);
+  return await unipileFetch(`/v2/${encodeURIComponent(v2AccId)}/chats`, {
+    method: "POST",
+    body: JSON.stringify({
+      user_ids: [params.recipientId],
+      text: params.text,
+      ...(params.attachment
+        ? {
+            attachments: [
+              {
+                content: params.attachment.contentBase64,
+                content_type: params.attachment.contentType,
+                filename: params.attachment.filename,
+              },
+            ],
+          }
+        : {}),
+    }),
+  });
 }
 
 export async function replyToInstagramComment(params: {
@@ -626,23 +782,23 @@ export async function replyToInstagramComment(params: {
   postId: string;
   commentId: string;
   text: string;
-}): Promise<any> {
+}): Promise<{ route: string; response: any }> {
+  if (!params.commentId || params.commentId.startsWith("local_")) {
+    throw new Error("Missing Unipile comment id for reply");
+  }
   const v1AccId = await resolveUnipileAccountId(params.accountId);
   const v2AccId = await resolveUnipileV2AccountId(params.accountId);
-  // Try v2 first (richer), then fallback to v1 if v2 routes are unavailable.
   try {
-    return await unipileFetch(
+    const response = await unipileFetch(
       `/v2/${encodeURIComponent(v2AccId)}/posts/${encodeURIComponent(params.postId)}/comments/${encodeURIComponent(params.commentId)}`,
       {
         method: "POST",
-        body: JSON.stringify({
-          text: params.text,
-        }),
+        body: JSON.stringify({ text: params.text }),
       },
     );
-  } catch (e2: any) {
-    // v1: POST /api/v1/posts/{post_id}/comments with body { account_id, text, comment_id }
-    return await unipileFetch(`/api/v1/posts/${encodeURIComponent(params.postId)}/comments`, {
+    return { route: "v2:replyToComment", response };
+  } catch {
+    const response = await unipileFetch(`/api/v1/posts/${encodeURIComponent(params.postId)}/comments`, {
       method: "POST",
       body: JSON.stringify({
         account_id: v1AccId,
@@ -650,6 +806,7 @@ export async function replyToInstagramComment(params: {
         comment_id: params.commentId,
       }),
     });
+    return { route: "v1:replyToComment", response };
   }
 }
 
@@ -658,116 +815,64 @@ export async function sendInstagramDm(params: {
   attendeeId: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
-}): Promise<any> {
-  const v1AccId = await resolveUnipileAccountId(params.accountId);
-  const v2AccId = await resolveUnipileV2AccountId(params.accountId);
+}): Promise<DmSendResult> {
+  const recipientId = params.attendeeId.trim();
+  if (!recipientId) throw new Error("Missing Instagram messaging_identifier for DM");
+
+  const errors: string[] = [];
   const attachment = params.attachment;
-  try {
-    return await unipileFetch(`/v2/${encodeURIComponent(v2AccId)}/chats`, {
-      method: "POST",
-      body: JSON.stringify({
-        user_ids: [params.attendeeId],
-        text: params.text,
-        ...(attachment
-          ? {
-              attachments: [
-                {
-                  content: attachment.contentBase64,
-                  content_type: attachment.contentType,
-                  filename: attachment.filename,
-                },
-              ],
-            }
-          : {}),
-      }),
-    });
-  } catch (e1: any) {
-    let v2SendMsg = "";
+  const tryV2 = !isV2MessagingDisabled(params.accountId);
+
+  if (tryV2) {
     try {
-      return await unipileFetch(
-        `/v2/${encodeURIComponent(v2AccId)}/chats/${encodeURIComponent(params.attendeeId)}/messages/send`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            text: params.text,
-            ...(attachment
-              ? {
-                  attachments: [
-                    {
-                      content: attachment.contentBase64,
-                      content_type: attachment.contentType,
-                      filename: attachment.filename,
-                    },
-                  ],
-                }
-              : {}),
-          }),
-        },
-      );
-    } catch (eMid: any) {
-      v2SendMsg = eMid?.message || String(eMid);
-    }
-    try {
-      return await unipileFetch(`/api/v1/chats`, {
-        method: "POST",
-        body: buildV1InstagramChatFormData({
-          accountId: v1AccId,
-          attendeeId: params.attendeeId,
-          text: params.text,
-          attachment,
-        }),
-      });
-    } catch (e2: any) {
-      try {
-        return await unipileFetch(`/api/v1/chats`, {
-          method: "POST",
-          body: buildV1InstagramChatFormData({
-            accountId: v1AccId,
-            attendeeId: params.attendeeId,
-            text: params.text,
-            attachment,
-            useBracketArrayKey: true,
-          }),
-        });
-      } catch (e3: any) {
-        if (attachment) {
-          try {
-            return await unipileFetch(`/api/v1/chats`, {
-              method: "POST",
-              body: buildV1InstagramChatFormData({
-                accountId: v1AccId,
-                attendeeId: params.attendeeId,
-                text: params.text,
-                useBracketArrayKey: true,
-              }),
-            });
-          } catch (e4: any) {
-            const v2Msg = e1?.message || String(e1);
-            const v1Msg = e2?.message || String(e2);
-            const v1AltMsg = e3?.message || String(e3);
-            const v1TextOnlyMsg = e4?.message || String(e4);
-            if (v2SendMsg) {
-              throw new Error(
-                `DM send failed. v2 startChat: ${v2Msg}; v2 sendMessage: ${v2SendMsg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}; v1 text-only: ${v1TextOnlyMsg}`,
-              );
-            }
-            throw new Error(
-              `DM send failed. v2: ${v2Msg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}; v1 text-only: ${v1TextOnlyMsg}`,
-            );
-          }
-        }
-        const v2Msg = e1?.message || String(e1);
-        const v1Msg = e2?.message || String(e2);
-        const v1AltMsg = e3?.message || String(e3);
-        if (v2SendMsg) {
-          throw new Error(
-            `DM send failed. v2 startChat: ${v2Msg}; v2 sendMessage: ${v2SendMsg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}`,
-          );
-        }
-        throw new Error(`DM send failed. v2: ${v2Msg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}`);
+      const response = await sendV2StartChat({ ...params, recipientId });
+      return { route: "v2:startChat", response, attachmentSent: Boolean(attachment) };
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      errors.push(`v2 startChat: ${msg}`);
+      if (/cannot post \/v2\//i.test(msg)) {
+        markV2MessagingUnavailable(params.accountId);
       }
     }
   }
+
+  try {
+    const response = await sendV1StartChat({ ...params, recipientId, attachment: null });
+    if (attachment) {
+      try {
+        await sendV1ExistingChatMessage({
+          accountId: params.accountId,
+          chatId: recipientId,
+          text: "",
+          attachment,
+        });
+        return { route: "v1:startChat+existingChat:attachment", response, attachmentSent: true };
+      } catch (attachErr: any) {
+        return {
+          route: "v1:startChat:text-only",
+          response,
+          attachmentSent: false,
+        };
+      }
+    }
+    return { route: "v1:startChat", response, attachmentSent: false };
+  } catch (e1: any) {
+    errors.push(`v1 startChat: ${e1?.message || e1}`);
+  }
+
+  try {
+    const response = await sendV1ExistingChatMessage({
+      accountId: params.accountId,
+      chatId: recipientId,
+      text: params.text,
+      attachment,
+    });
+    return { route: "v1:existingChat", response, attachmentSent: Boolean(attachment) };
+  } catch (e2: any) {
+    errors.push(`v1 existingChat: ${e2?.message || e2}`);
+  }
+
+  throw new Error(`DM send failed. ${errors.join("; ")}`);
 }
 
 export function verifyUnipileWebhookSignature(_rawBody: string, _signatureHeader: string | null): boolean {

@@ -48,7 +48,11 @@ function IgDashboardPage() {
         const attempts = x.attempts
           .map((a) => `${a.postIdTried}→${a.count}${a.path ? ` via ${a.path}` : ""}${a.error ? ` (${a.error})` : ""}`)
           .join("; ");
-        return `«${x.keyword}»: найдено ${x.commentsFound}. ID: ${x.storedPostId}. Пробовали: ${attempts || "—"}`;
+        const sample = x.samples?.[0];
+        const sampleIds = sample
+          ? ` sample: dedupe=${sample.dedupeUserId || "—"}, dm=${sample.dmRecipientId || "—"}, comment=${sample.commentUnipileId || "—"}`
+          : "";
+        return `«${x.keyword}»: найдено ${x.commentsFound}. canonical=${x.canonicalCommentsPostId || x.storedPostId}. v2DM=${x.v2MessagingDisabled ? "off" : "on"}. Пробовали: ${attempts || "—"}${sampleIds}`;
       });
       setMsg(lines.length ? lines.join("\n") : "Нет активных правил");
     } catch (e: any) {

@@ -23,6 +23,7 @@ type Rule = {
   dm_file_name?: string | null;
   dm_file_kind?: string | null;
   post_id: string;
+  comments_post_id?: string | null;
   post_shortcode?: string | null;
 };
 
@@ -31,6 +32,9 @@ type LeadRow = {
   post_id: string;
   keyword_id: string | null;
   provider_user_id: string;
+  author_profile_id: string | null;
+  dm_recipient_id: string | null;
+  unipile_comment_id: string | null;
   username: string | null;
   first_comment_id: string | null;
   last_comment_id: string | null;
@@ -63,24 +67,20 @@ export function findMatchingKeyword(commentText: string, keywords: Rule[]): Rule
   return null;
 }
 
-function commentAuthor(c: IgComment): { userId: string; username: string } {
-  const userId = String(
-    c.author_id ||
-      c.attendee_id ||
-      c.messaging_id ||
-      c.user_id ||
-      c.author?.id ||
-      c.author?.provider_id ||
-      c.author?.messaging_id ||
-      c.author?.user_id ||
-      "",
-  ).trim();
-  const username = String(
-    c.username || c.author?.username || c.author?.display_name || c.author?.name || "",
-  )
+function commentIdentity(c: IgComment) {
+  const username = String(c.username || "")
     .trim()
     .replace(/^@/, "");
-  return { userId, username };
+  return {
+    dedupeUserId: c.ids.dedupeUserId || "",
+    authorProfileId: c.ids.authorProfileId,
+    dmRecipientId: c.ids.authorMessagingIdentifier,
+    commentUnipileId: c.commentUnipileId,
+    canReply: Boolean(c.commentUnipileId && !c.ids.isSyntheticCommentId),
+    canDm: Boolean(c.ids.authorMessagingIdentifier),
+    username,
+    rawIds: c.ids.raw,
+  };
 }
 
 function retryAt(fromMs = Date.now()) {
@@ -126,7 +126,10 @@ async function upsertLeadFromComment(
   params: {
     rule: Rule;
     postId: string;
-    userId: string;
+    dedupeUserId: string;
+    authorProfileId: string | null;
+    dmRecipientId: string | null;
+    commentUnipileId: string | null;
     username: string;
     commentId: string;
     commentText: string;
@@ -137,22 +140,29 @@ async function upsertLeadFromComment(
     .from("ig_post_leads")
     .select("*")
     .eq("post_id", params.postId)
-    .eq("provider_user_id", params.userId)
+    .eq("provider_user_id", params.dedupeUserId)
     .maybeSingle();
+
+  const baseFields = {
+    keyword_id: params.rule.id,
+    author_profile_id: params.authorProfileId,
+    dm_recipient_id: params.dmRecipientId,
+    unipile_comment_id: params.commentUnipileId,
+    username: params.username || null,
+    last_comment_id: params.commentId,
+    last_comment_text: params.commentText.slice(0, 1000),
+    is_active: true,
+    updated_at: now,
+  };
 
   if (!existing) {
     const { data, error } = await s
       .from("ig_post_leads")
       .insert({
         post_id: params.postId,
-        keyword_id: params.rule.id,
-        provider_user_id: params.userId,
-        username: params.username || null,
+        provider_user_id: params.dedupeUserId,
         first_comment_id: params.commentId,
-        last_comment_id: params.commentId,
-        last_comment_text: params.commentText.slice(0, 1000),
-        is_active: true,
-        updated_at: now,
+        ...baseFields,
       })
       .select("*")
       .single();
@@ -160,25 +170,20 @@ async function upsertLeadFromComment(
     return data as LeadRow;
   }
 
-  const update: Record<string, unknown> = {
-    keyword_id: params.rule.id,
-    username: params.username || existing.username || null,
-    last_comment_id: params.commentId,
-    last_comment_text: params.commentText.slice(0, 1000),
-    is_active: true,
-    updated_at: now,
-  };
+  const update: Record<string, unknown> = { ...baseFields };
+  if (params.dmRecipientId) update.dm_recipient_id = params.dmRecipientId;
+  if (params.commentUnipileId) update.unipile_comment_id = params.commentUnipileId;
 
   if (
     existing.last_comment_id !== params.commentId &&
-    ["dm_failed", "dm_gave_up", "new"].includes(existing.dm_status || "")
+    ["dm_failed", "dm_gave_up", "new", "waiting_messaging_id"].includes(existing.dm_status || "")
   ) {
-    update.dm_status = "new";
+    update.dm_status = params.dmRecipientId ? "new" : "waiting_messaging_id";
     update.dm_attempts = 0;
     update.first_dm_attempt_at = null;
     update.next_retry_at = null;
     update.retry_until_at = null;
-    update.closed_reason = null;
+    update.closed_reason = params.dmRecipientId ? null : "missing_messaging_id";
     update.last_error = null;
   }
 
@@ -229,13 +234,40 @@ async function sendLeadDm(
   accountId: string,
   lead: LeadRow,
   rule: Rule,
-  opts?: { actionId?: string; isRetry?: boolean },
-): Promise<"sent" | "pending" | "failed" | "gave_up" | "skipped"> {
+  opts?: { actionId?: string; isRetry?: boolean; debugInfo?: Record<string, unknown> },
+): Promise<"sent" | "pending" | "failed" | "gave_up" | "skipped" | "waiting"> {
   const nowMs = Date.now();
   const now = new Date(nowMs).toISOString();
   const actionId = opts?.actionId || actionCommentId(lead.last_comment_id || lead.id, opts?.isRetry ? "retry" : "dm");
+  const dmRecipientId = (lead.dm_recipient_id || "").trim();
 
   if (lead.dm_status === "dm_sent") return "skipped";
+  if (!dmRecipientId) {
+    await s
+      .from("ig_post_leads")
+      .update({
+        dm_status: "waiting_messaging_id",
+        closed_reason: "missing_messaging_id",
+        last_error: "Нет messaging_identifier для Instagram DM",
+        updated_at: now,
+      })
+      .eq("id", lead.id);
+    await logAction(s, {
+      post_id: lead.post_id,
+      comment_id: actionCommentId(actionId, "no-messaging-id"),
+      provider_user_id: lead.provider_user_id,
+      username: lead.username,
+      keyword_id: rule.id,
+      lead_id: lead.id,
+      comment_text: lead.last_comment_text,
+      status: "waiting_messaging_id",
+      error_message: "Нет messaging_identifier",
+      attempt_no: lead.dm_attempts,
+      debug_info: opts?.debugInfo || null,
+    });
+    return "waiting";
+  }
+
   if (opts?.isRetry && isRetryExpired(lead, nowMs)) {
     await markLeadGaveUp(s, lead, "retry_window_expired");
     return "gave_up";
@@ -243,9 +275,9 @@ async function sendLeadDm(
 
   try {
     const attachment = await loadDmAttachment(rule.dm_file_path, rule.dm_file_name);
-    await sendInstagramDm({
+    const result = await sendInstagramDm({
       accountId,
-      attendeeId: lead.provider_user_id,
+      attendeeId: dmRecipientId,
       text: rule.reply_text,
       attachment,
     });
@@ -273,6 +305,12 @@ async function sendLeadDm(
       comment_text: lead.last_comment_text,
       status: "dm_sent",
       attempt_no: (lead.dm_attempts || 0) + 1,
+      debug_info: {
+        ...(opts?.debugInfo || {}),
+        dmRecipientId,
+        route: result.route,
+        attachmentSent: result.attachmentSent,
+      },
     });
     return "sent";
   } catch (e: any) {
@@ -309,6 +347,7 @@ async function sendLeadDm(
         status: "dm_pending",
         error_message: msg.slice(0, 500),
         attempt_no: attempts,
+        debug_info: { ...(opts?.debugInfo || {}), dmRecipientId },
       });
       return "pending";
     }
@@ -343,6 +382,7 @@ async function sendLeadDm(
         status: "dm_pending",
         error_message: msg.slice(0, 500),
         attempt_no: attempts,
+        debug_info: { ...(opts?.debugInfo || {}), dmRecipientId },
       });
       return "pending";
     }
@@ -370,6 +410,7 @@ async function sendLeadDm(
       status: "dm_failed",
       error_message: msg.slice(0, 500),
       attempt_no: attempts,
+      debug_info: { ...(opts?.debugInfo || {}), dmRecipientId },
     });
     return "failed";
   }
@@ -519,13 +560,27 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
   const defaultReply = (settings.ig_default_reply || "").trim();
   const logAllComments = settings.ig_log_all_comments === "true";
 
-  const [{ data: keywords }, { data: exclusions }] = await Promise.all([
+  const [{ data: keywords }, { data: exclusions }, { data: watchedPosts }] = await Promise.all([
     s
       .from("ig_keywords")
-      .select("id, keyword, comment_reply_text, reply_text, dm_file_path, dm_file_name, dm_file_kind, post_id, post_shortcode")
+      .select(
+        "id, keyword, comment_reply_text, reply_text, dm_file_path, dm_file_name, dm_file_kind, post_id, comments_post_id, post_shortcode",
+      )
       .eq("is_active", true),
     s.from("ig_exclusions").select("provider_user_id, username"),
+    s.from("ig_watched_posts").select("post_id, comments_post_id, post_shortcode, is_active"),
   ]);
+
+  const watchedByPostId = new Map(
+    (watchedPosts ?? []).map((p) => [
+      String(p.post_id || "").trim(),
+      {
+        commentsPostId: String(p.comments_post_id || p.post_id || "").trim(),
+        shortcode: p.post_shortcode || null,
+        isActive: p.is_active,
+      },
+    ]),
+  );
 
   const rules: Rule[] = (keywords ?? [])
     .filter((k) => k.post_id && String(k.post_id).trim())
@@ -538,7 +593,8 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
       dm_file_name: k.dm_file_name,
       dm_file_kind: k.dm_file_kind,
       post_id: String(k.post_id).trim(),
-      post_shortcode: k.post_shortcode,
+      comments_post_id: k.comments_post_id || watchedByPostId.get(String(k.post_id).trim())?.commentsPostId || null,
+      post_shortcode: k.post_shortcode || watchedByPostId.get(String(k.post_id).trim())?.shortcode || null,
     }));
 
   if (!rules.length) {
@@ -547,10 +603,15 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
     return result;
   }
 
-  const byPost = new Map<string, { rules: Rule[]; shortcode?: string | null }>();
+  const byPost = new Map<string, { rules: Rule[]; commentsPostId?: string | null; shortcode?: string | null }>();
   for (const r of rules) {
-    const entry = byPost.get(r.post_id) || { rules: [], shortcode: r.post_shortcode };
+    const entry = byPost.get(r.post_id) || {
+      rules: [],
+      commentsPostId: r.comments_post_id,
+      shortcode: r.post_shortcode,
+    };
     entry.rules.push(r);
+    if (r.comments_post_id) entry.commentsPostId = r.comments_post_id;
     if (r.post_shortcode) entry.shortcode = r.post_shortcode;
     byPost.set(r.post_id, entry);
   }
@@ -571,11 +632,12 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
   let postsPolled = 0;
   const errors: string[] = [];
 
-  const { data: activePostsRows } = await s
-    .from("ig_watched_posts")
-    .select("post_id")
-    .eq("is_active", true);
-  const activePosts = new Set((activePostsRows ?? []).map((r) => String(r.post_id || "").trim()).filter(Boolean));
+  const activePosts = new Set(
+    (watchedPosts ?? [])
+      .filter((p) => p.is_active)
+      .map((r) => String(r.post_id || "").trim())
+      .filter(Boolean),
+  );
   const filteredPosts = new Map(
     [...byPost.entries()].filter(([postId]) => activePosts.has(postId)),
   );
@@ -585,15 +647,17 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
   sent += pendingResult.sent;
   errors.push(...pendingResult.errors);
 
-  for (const [postId, { rules: postRules, shortcode }] of filteredPosts) {
+  for (const [postId, { rules: postRules, commentsPostId, shortcode }] of filteredPosts) {
     if (sent >= maxDms) break;
     postsPolled++;
     let comments: IgComment[] = [];
     const fetchDebug: import("./unipile.server").CommentsFetchDebug[] = [];
+    const canonicalPostId = commentsPostId || postId;
     try {
       comments = await listPostComments(resolvedAccountId, postId, {
         maxPages: 3,
         shortcode,
+        canonicalCommentsPostId: canonicalPostId,
         debug: fetchDebug,
       });
       if (comments.length === 0 && fetchDebug.length) {
@@ -613,6 +677,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
       scanned++;
       const text = comment.text || extractCommentText(comment) || "";
       const kw = findMatchingKeyword(text, postRules);
+      const identity = commentIdentity(comment);
 
       if (!kw) {
         if (logAllComments) {
@@ -623,15 +688,15 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
             .eq("comment_id", comment.id)
             .maybeSingle();
           if (!seen) {
-            const { userId, username } = commentAuthor(comment);
             await logAction(s, {
               post_id: postId,
               comment_id: comment.id,
-              provider_user_id: userId || null,
-              username: username || null,
+              provider_user_id: identity.dedupeUserId || null,
+              username: identity.username || null,
               comment_text: text.slice(0, 1000),
               status: "no_match",
               attempt_no: 0,
+              debug_info: { rawIds: identity.rawIds },
             });
           }
         }
@@ -639,18 +704,21 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
       }
       matched++;
 
-      const { userId, username } = commentAuthor(comment);
-      if ((userId && exclIds.has(userId)) || (username && exclNames.has(username.toLowerCase()))) {
+      if (
+        (identity.dedupeUserId && exclIds.has(identity.dedupeUserId)) ||
+        (identity.username && exclNames.has(identity.username.toLowerCase()))
+      ) {
         skipped++;
         await logAction(s, {
           post_id: postId,
           comment_id: comment.id,
-          provider_user_id: userId || null,
-          username: username || null,
+          provider_user_id: identity.dedupeUserId || null,
+          username: identity.username || null,
           keyword_id: kw.id,
           comment_text: text.slice(0, 1000),
           status: "excluded",
           attempt_no: 0,
+          debug_info: { rawIds: identity.rawIds },
         });
         continue;
       }
@@ -666,20 +734,20 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
         continue;
       }
 
-      if (userId) {
+      if (identity.dedupeUserId) {
         const { data: prior } = await s
           .from("ig_post_leads")
           .select("id, dm_status")
           .eq("post_id", postId)
-          .eq("provider_user_id", userId)
+          .eq("provider_user_id", identity.dedupeUserId)
           .maybeSingle();
         if (prior?.dm_status === "dm_sent") {
           skipped++;
           await logAction(s, {
             post_id: postId,
             comment_id: comment.id,
-            provider_user_id: userId,
-            username: username || null,
+            provider_user_id: identity.dedupeUserId,
+            username: identity.username || null,
             keyword_id: kw.id,
             comment_text: text.slice(0, 1000),
             status: "skipped_duplicate_user",
@@ -694,16 +762,17 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
         skipped++;
         continue;
       }
-      if (!userId) {
+      if (!identity.dedupeUserId) {
         await logAction(s, {
           post_id: postId,
           comment_id: comment.id,
-          username: username || null,
+          username: identity.username || null,
           keyword_id: kw.id,
           comment_text: text.slice(0, 1000),
           status: "error",
           error_message: "missing author id",
           attempt_no: 0,
+          debug_info: { rawIds: identity.rawIds },
         });
         skipped++;
         continue;
@@ -714,8 +783,11 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
         lead = await upsertLeadFromComment(s, {
           rule: kw,
           postId,
-          userId,
-          username,
+          dedupeUserId: identity.dedupeUserId,
+          authorProfileId: identity.authorProfileId,
+          dmRecipientId: identity.dmRecipientId,
+          commentUnipileId: identity.commentUnipileId,
+          username: identity.username,
           commentId: comment.id,
           commentText: text,
         });
@@ -725,60 +797,85 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
         await logAction(s, {
           post_id: postId,
           comment_id: comment.id,
-          provider_user_id: userId,
-          username: username || null,
+          provider_user_id: identity.dedupeUserId,
+          username: identity.username || null,
           keyword_id: kw.id,
           comment_text: text.slice(0, 1000),
           status: "error",
           error_message: msg.slice(0, 500),
           attempt_no: 0,
+          debug_info: { rawIds: identity.rawIds },
         });
         skipped++;
         continue;
       }
 
       const commentReply = (kw.comment_reply_text || "").trim();
+      const replyCommentId = identity.commentUnipileId;
       if (commentReply && !lead.comment_replied_at) {
-        try {
-          await replyToInstagramComment({
-            accountId: resolvedAccountId,
-            postId,
-            commentId: comment.id,
-            text: commentReply,
-          });
-          lead = {
-            ...lead,
-            comment_replied_at: new Date().toISOString(),
-          };
-          await s
-            .from("ig_post_leads")
-            .update({ comment_replied_at: lead.comment_replied_at, updated_at: lead.comment_replied_at })
-            .eq("id", lead.id);
+        if (!identity.canReply || !replyCommentId) {
+          errors.push(`reply ${comment.id}: missing Unipile comment id`);
           await logAction(s, {
             post_id: postId,
-            comment_id: actionCommentId(comment.id, "comment-reply"),
-            provider_user_id: userId,
-            username: username || null,
-            keyword_id: kw.id,
-            lead_id: lead.id,
-            comment_text: text.slice(0, 1000),
-            status: "comment_replied",
-            attempt_no: 0,
-          });
-        } catch (e: any) {
-          errors.push(`reply ${comment.id}: ${e?.message || e}`);
-          await logAction(s, {
-            post_id: postId,
-            comment_id: actionCommentId(comment.id, "comment-reply-error"),
-            provider_user_id: userId,
-            username: username || null,
+            comment_id: actionCommentId(comment.id, "comment-reply-skip"),
+            provider_user_id: identity.dedupeUserId,
+            username: identity.username || null,
             keyword_id: kw.id,
             lead_id: lead.id,
             comment_text: text.slice(0, 1000),
             status: "error",
-            error_message: String(e?.message || e).slice(0, 500),
+            error_message: "missing Unipile comment id for reply",
             attempt_no: 0,
+            debug_info: { rawIds: identity.rawIds },
           });
+        } else {
+          try {
+            const replyResult = await replyToInstagramComment({
+              accountId: resolvedAccountId,
+              postId: canonicalPostId,
+              commentId: replyCommentId,
+              text: commentReply,
+            });
+            lead = {
+              ...lead,
+              comment_replied_at: new Date().toISOString(),
+            };
+            await s
+              .from("ig_post_leads")
+              .update({ comment_replied_at: lead.comment_replied_at, updated_at: lead.comment_replied_at })
+              .eq("id", lead.id);
+            await logAction(s, {
+              post_id: postId,
+              comment_id: actionCommentId(comment.id, "comment-reply"),
+              provider_user_id: identity.dedupeUserId,
+              username: identity.username || null,
+              keyword_id: kw.id,
+              lead_id: lead.id,
+              comment_text: text.slice(0, 1000),
+              status: "comment_replied",
+              attempt_no: 0,
+              debug_info: {
+                route: replyResult.route,
+                commentUnipileId: replyCommentId,
+                canonicalPostId,
+              },
+            });
+          } catch (e: any) {
+            errors.push(`reply ${comment.id}: ${e?.message || e}`);
+            await logAction(s, {
+              post_id: postId,
+              comment_id: actionCommentId(comment.id, "comment-reply-error"),
+              provider_user_id: identity.dedupeUserId,
+              username: identity.username || null,
+              keyword_id: kw.id,
+              lead_id: lead.id,
+              comment_text: text.slice(0, 1000),
+              status: "error",
+              error_message: String(e?.message || e).slice(0, 500),
+              attempt_no: 0,
+              debug_info: { commentUnipileId: replyCommentId, canonicalPostId },
+            });
+          }
         }
       }
 
@@ -787,7 +884,16 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
         resolvedAccountId,
         lead,
         kw,
-        { actionId: comment.id },
+        {
+          actionId: comment.id,
+          debugInfo: {
+            dedupeUserId: identity.dedupeUserId,
+            dmRecipientId: identity.dmRecipientId,
+            authorProfileId: identity.authorProfileId,
+            commentUnipileId: identity.commentUnipileId,
+            rawIds: identity.rawIds,
+          },
+        },
       );
       if (dmStatus === "sent") sent++;
       if (dmStatus === "failed" || dmStatus === "gave_up") {
