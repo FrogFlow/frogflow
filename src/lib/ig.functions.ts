@@ -174,10 +174,25 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
     await requireAdmin();
     const s = await db();
     const now = new Date().toISOString();
-    // post_id must be Unipile provider_id for comments API
-    const postId = data.post_id.trim();
+
+    let postId = data.post_id.trim();
+    let shortcode = data.post_shortcode?.trim() || null;
     const note = data.post_note?.trim() || null;
-    const shortcode = data.post_shortcode?.trim() || null;
+
+    const map = await settingsMap();
+    const accountId = (map.unipile_account_id || "").trim();
+    if (accountId && postId) {
+      const { resolveIgPost, isUnipileConfigured } = await import("./unipile.server");
+      if (isUnipileConfigured()) {
+        try {
+          const resolved = await resolveIgPost(accountId, shortcode || postId);
+          postId = resolved.commentsPostId;
+          shortcode = resolved.shortcode || shortcode;
+        } catch {
+          // keep user-provided id
+        }
+      }
+    }
 
     const { data: existingPost } = await s
       .from("ig_watched_posts")
@@ -368,6 +383,69 @@ export const runIgPollNow = createServerFn({ method: "POST" }).handler(async () 
   const { processIgCommentPoll } = await import("./ig-comments.server");
   return await processIgCommentPoll({ maxDms: 20 });
 });
+
+/** Diagnostic: try all post id variants and API paths for a rule. */
+export const debugIgRuleComments = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ ruleId: z.string().uuid().optional() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const {
+      listPostComments,
+      resolvePostIdCandidates,
+      resolveUnipileAccountId,
+      isUnipileConfigured,
+    } = await import("./unipile.server");
+    if (!isUnipileConfigured()) throw new Error("Unipile не настроен");
+
+    const map = await settingsMap();
+    const accountId = (map.unipile_account_id || "").trim();
+    if (!accountId) throw new Error("Сначала подключите Instagram-аккаунт");
+
+    const s = await db();
+    let rules: { id: string; keyword: string; post_id: string; post_shortcode?: string | null }[] = [];
+    if (data.ruleId) {
+      const { data: row, error } = await s.from("ig_keywords").select("*").eq("id", data.ruleId).maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!row) throw new Error("Правило не найдено");
+      rules = [row];
+    } else {
+      const { data: rows, error } = await s.from("ig_keywords").select("*").eq("is_active", true);
+      if (error) throw new Error(error.message);
+      rules = rows ?? [];
+    }
+
+    const resolvedAccountId = await resolveUnipileAccountId(accountId);
+    const results = [];
+
+    for (const rule of rules) {
+      const postId = String(rule.post_id || "").trim();
+      if (!postId) continue;
+      const candidates = await resolvePostIdCandidates(accountId, postId, rule.post_shortcode);
+      const debug: import("./unipile.server").CommentsFetchDebug[] = [];
+      const comments = await listPostComments(accountId, postId, {
+        maxPages: 1,
+        shortcode: rule.post_shortcode,
+        debug,
+      });
+      results.push({
+        ruleId: rule.id,
+        keyword: rule.keyword,
+        storedPostId: postId,
+        shortcode: rule.post_shortcode,
+        accountId: resolvedAccountId,
+        candidates,
+        attempts: debug,
+        commentsFound: comments.length,
+        samples: comments.slice(0, 3).map((c) => ({
+          id: c.id,
+          text: (c.text || "").slice(0, 120),
+          username: c.username || "",
+        })),
+      });
+    }
+
+    return { ok: true as const, results };
+  });
 
 /** Re-resolve post_id to provider_id for existing rules (one-time fix). */
 export const migrateIgRulePostIds = createServerFn({ method: "POST" }).handler(async () => {

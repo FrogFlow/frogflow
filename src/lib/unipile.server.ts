@@ -118,10 +118,13 @@ function accountIgIdentifiers(account: any, accountId: string): string[] {
 
 /** ID for comments API — Instagram needs provider_id, not display id. */
 export function igCommentsPostId(p: any): string {
+  // Unipile v2 Post: `id` is the provider post id
+  if (p?.object === "Post") return String(p.id || "").trim();
   return String(
     p?.provider_id ||
       p?.social_id ||
       p?.specifics?.instagram?.provider_id ||
+      p?.specifics?.instagram?.media_id ||
       p?.id ||
       p?.post_id ||
       "",
@@ -184,7 +187,11 @@ function mapPostItem(p: any): IgPostSummary | null {
 }
 
 function mapPostsPayload(data: any): IgPostSummary[] {
-  const items = data?.items || data?.data || data?.posts || (Array.isArray(data) ? data : []);
+  const items =
+    data?.data ||
+    data?.items ||
+    data?.posts ||
+    (Array.isArray(data) ? data : []);
   return (items as any[]).map(mapPostItem).filter((p): p is IgPostSummary => Boolean(p));
 }
 
@@ -198,6 +205,19 @@ export type IgPostSummary = {
 };
 
 export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPostSummary[]> {
+  const accId = await resolveUnipileAccountId(accountId);
+  if (/^acc_/.test(accId)) {
+    try {
+      const data = await unipileFetch<any>(`/v2/${encodeURIComponent(accId)}/users/me/posts`, {
+        query: { limit: String(limit) },
+      });
+      const mapped = mapPostsPayload(data);
+      if (mapped.length) return mapped;
+    } catch {
+      // fall through to v1
+    }
+  }
+
   let account: any = null;
   try {
     account = await getAccount(accountId);
@@ -236,7 +256,34 @@ export function extractIgShortcode(input: string): string | null {
   return null;
 }
 
+export async function resolveUnipileAccountId(storedId: string): Promise<string> {
+  const id = storedId.trim();
+  if (!id) return id;
+  if (/^acc_/.test(id)) return id;
+  try {
+    const accounts = await listAccounts();
+    const match = accounts.find(
+      (a) => String(a.id || "") === id || String(a.account_id || "") === id,
+    );
+    const accId = String(match?.id || match?.account_id || "").trim();
+    if (accId) return accId;
+  } catch {
+    // ignore
+  }
+  return id;
+}
+
 export async function fetchIgPostRaw(accountId: string, postIdOrShortcode: string): Promise<any> {
+  const accId = await resolveUnipileAccountId(accountId);
+  if (/^acc_/.test(accId)) {
+    try {
+      return await unipileFetch<any>(
+        `/v2/${encodeURIComponent(accId)}/posts/${encodeURIComponent(postIdOrShortcode)}`,
+      );
+    } catch {
+      // fall through to v1
+    }
+  }
   return await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(postIdOrShortcode)}`, {
     query: { account_id: accountId },
   });
@@ -284,17 +331,83 @@ export type IgComment = {
   created_at?: string;
 };
 
+/** Collect every post identifier that might work for the comments API. */
+export async function resolvePostIdCandidates(
+  accountId: string,
+  postId: string,
+  shortcode?: string | null,
+): Promise<string[]> {
+  const out: string[] = [];
+  const push = (v: unknown) => {
+    const s = String(v ?? "").trim();
+    if (s && !out.includes(s)) out.push(s);
+  };
+
+  push(postId);
+  push(shortcode);
+
+  const tryRaw = (raw: any) => {
+    push(igCommentsPostId(raw));
+    push(raw?.social_id);
+    push(raw?.provider_id);
+    push(raw?.id);
+    push(raw?.specifics?.instagram?.provider_id);
+    push(raw?.specifics?.instagram?.id);
+    push(raw?.specifics?.instagram?.media_id);
+    if (typeof raw?.share_url === "string") {
+      push(extractIgShortcode(raw.share_url));
+    }
+  };
+
+  for (const key of [postId, shortcode].filter(Boolean)) {
+    try {
+      tryRaw(await fetchIgPostRaw(accountId, key!));
+    } catch {
+      // ignore
+    }
+  }
+
+  return out;
+}
+
+function commentItemsFromPayload(data: any): any[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  const buckets = [
+    data.items,
+    data.data,
+    data.comments,
+    data.results,
+    data.object === "Comment" ? [data] : null,
+  ];
+  for (const b of buckets) {
+    if (Array.isArray(b) && b.length) return b;
+  }
+  return [];
+}
+
+function stableCommentId(c: any, text: string): string {
+  const direct = String(c.id || c.comment_id || c.provider_id || c.pk || c.social_id || "").trim();
+  if (direct) return direct;
+  const author = c.username || c.author?.username || c.author_id || c.user_id || "anon";
+  const ts = c.created_at || c.date || c.timestamp || "";
+  const base = `${author}:${text.slice(0, 120)}:${ts}`;
+  let h = 0;
+  for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
+  return `gen_${h.toString(16)}`;
+}
+
 function mapCommentItem(c: any): IgComment | null {
-  const id = String(c.id || c.comment_id || "");
-  if (!id) return null;
   const text = extractCommentText(c);
+  const id = stableCommentId(c, text);
+  if (!id) return null;
   const author = c.author;
   const author_id = String(
     c.author_id ||
       c.user_id ||
+      author?.id ||
       author?.provider_id ||
       author?.messaging_id ||
-      author?.id ||
       author?.user_id ||
       c.attendee_id ||
       c.messaging_id ||
@@ -306,49 +419,103 @@ function mapCommentItem(c: any): IgComment | null {
     author_id,
     author,
     user_id: c.user_id,
-    username: c.username || author?.username || author?.name || "",
+    username: c.username || author?.username || author?.name || author?.display_name || "",
     attendee_id: c.attendee_id,
     messaging_id: c.messaging_id,
-    created_at: c.created_at || c.date || c.timestamp,
+    created_at: c.created_at || c.date || c.timestamp || c.parsed_datetime,
   };
 }
+
+async function fetchCommentsPage(
+  accountId: string,
+  postId: string,
+  cursor?: string,
+): Promise<{ items: any[]; nextCursor?: string; error?: string; path?: string }> {
+  const accId = await resolveUnipileAccountId(accountId);
+  const v1Query: Record<string, string | undefined> = { account_id: accountId, limit: "50" };
+  if (cursor) v1Query.cursor = cursor;
+
+  const attempts: { path: string; query?: Record<string, string | undefined> }[] = [];
+  if (/^acc_/.test(accId)) {
+    attempts.push({
+      path: `/v2/${encodeURIComponent(accId)}/posts/${encodeURIComponent(postId)}/comments`,
+      query: { limit: "50", sort_by: "MOST_RECENT", cursor },
+    });
+  }
+  attempts.push(
+    { path: `/api/v1/posts/${encodeURIComponent(postId)}/comments`, query: v1Query },
+    {
+      path: `/api/v1/accounts/${encodeURIComponent(accountId)}/posts/${encodeURIComponent(postId)}/comments`,
+      query: v1Query,
+    },
+  );
+
+  let lastErr = "";
+  for (const { path, query } of attempts) {
+    try {
+      const data = await unipileFetch<any>(path, { query });
+      const items = commentItemsFromPayload(data);
+      const next = data?.cursor || data?.next_cursor || data?.paging?.next_cursor;
+      return { items, nextCursor: next ? String(next) : undefined, path };
+    } catch (e: any) {
+      lastErr = e?.message || String(e);
+    }
+  }
+  return { items: [], error: lastErr };
+}
+
+export type CommentsFetchDebug = {
+  postIdTried: string;
+  count: number;
+  error?: string;
+  path?: string;
+  sample?: { id: string; text: string; username: string };
+};
 
 export async function listPostComments(
   accountId: string,
   postId: string,
-  opts?: { maxPages?: number },
+  opts?: { maxPages?: number; shortcode?: string | null; debug?: CommentsFetchDebug[] },
 ): Promise<IgComment[]> {
   const maxPages = opts?.maxPages ?? 3;
+  const candidates = await resolvePostIdCandidates(accountId, postId, opts?.shortcode);
   const all: IgComment[] = [];
   const seen = new Set<string>();
-  let cursor: string | undefined;
 
-  for (let page = 0; page < maxPages; page++) {
-    let data: any;
-    const query: Record<string, string | undefined> = { account_id: accountId };
-    if (cursor) query.cursor = cursor;
+  for (const candidate of candidates) {
+    let cursor: string | undefined;
+    let foundOnThis = 0;
 
-    try {
-      data = await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(postId)}/comments`, { query });
-    } catch {
-      data = await unipileFetch<any>(
-        `/api/v1/accounts/${encodeURIComponent(accountId)}/posts/${encodeURIComponent(postId)}/comments`,
-        { query },
-      );
-    }
-
-    const items = data?.items || data?.data || data?.comments || (Array.isArray(data) ? data : []);
-    for (const c of items as any[]) {
-      const mapped = mapCommentItem(c);
-      if (mapped && !seen.has(mapped.id)) {
-        seen.add(mapped.id);
-        all.push(mapped);
+    for (let page = 0; page < maxPages; page++) {
+      const { items, nextCursor, error, path } = await fetchCommentsPage(accountId, candidate, cursor);
+      if (opts?.debug && page === 0) {
+        const first = items[0];
+        const mapped = first ? mapCommentItem(first) : null;
+        opts.debug.push({
+          postIdTried: candidate,
+          count: items.length,
+          error,
+          path,
+          sample: mapped
+            ? { id: mapped.id, text: (mapped.text || "").slice(0, 80), username: mapped.username || "" }
+            : undefined,
+        });
       }
+
+      for (const c of items) {
+        const mapped = mapCommentItem(c);
+        if (mapped && !seen.has(mapped.id)) {
+          seen.add(mapped.id);
+          all.push(mapped);
+          foundOnThis++;
+        }
+      }
+
+      if (!nextCursor || nextCursor === cursor) break;
+      cursor = nextCursor;
     }
 
-    const next = data?.cursor || data?.next_cursor || data?.paging?.next_cursor;
-    if (!next || next === cursor) break;
-    cursor = String(next);
+    if (foundOnThis > 0) break;
   }
 
   return all;

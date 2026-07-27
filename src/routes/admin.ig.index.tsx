@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components-ui/button";
-import { getIgDashboard, migrateIgRulePostIds, runIgPollNow } from "@/lib/ig.functions";
+import { getIgDashboard, migrateIgRulePostIds, runIgPollNow, debugIgRuleComments } from "@/lib/ig.functions";
 import { Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/admin/ig/")({
@@ -15,6 +15,7 @@ function IgDashboardPage() {
   const d = q.data;
   const [pollBusy, setPollBusy] = useState(false);
   const [migrateBusy, setMigrateBusy] = useState(false);
+  const [debugBusy, setDebugBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
   async function onPollNow() {
@@ -35,6 +36,25 @@ function IgDashboardPage() {
       setMsg(e?.message || String(e));
     } finally {
       setPollBusy(false);
+    }
+  }
+
+  async function onDebug() {
+    setDebugBusy(true);
+    setMsg("");
+    try {
+      const r = await debugIgRuleComments({ data: {} });
+      const lines = r.results.map((x) => {
+        const attempts = x.attempts
+          .map((a) => `${a.postIdTried}→${a.count}${a.path ? ` via ${a.path}` : ""}${a.error ? ` (${a.error})` : ""}`)
+          .join("; ");
+        return `«${x.keyword}»: найдено ${x.commentsFound}. ID: ${x.storedPostId}. Пробовали: ${attempts || "—"}`;
+      });
+      setMsg(lines.length ? lines.join("\n") : "Нет активных правил");
+    } catch (e: any) {
+      setMsg(e?.message || String(e));
+    } finally {
+      setDebugBusy(false);
     }
   }
 
@@ -61,9 +81,12 @@ function IgDashboardPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Instagram — дашборд</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={() => void onMigrate()} disabled={migrateBusy}>
             {migrateBusy ? "…" : "Исправить post_id"}
+          </Button>
+          <Button variant="outline" onClick={() => void onDebug()} disabled={debugBusy}>
+            {debugBusy ? "…" : "Диагностика"}
           </Button>
           <Button onClick={() => void onPollNow()} disabled={pollBusy}>
             {pollBusy ? "Проверяю…" : "Проверить сейчас"}
@@ -71,7 +94,7 @@ function IgDashboardPage() {
         </div>
       </div>
 
-      {msg && <p className="text-sm bg-muted border rounded-lg p-3">{msg}</p>}
+      {msg && <p className="text-sm bg-muted border rounded-lg p-3 whitespace-pre-wrap">{msg}</p>}
 
       {q.isLoading && <p className="text-muted-foreground">Загрузка…</p>}
       {q.error && <p className="text-destructive">{(q.error as Error).message}</p>}

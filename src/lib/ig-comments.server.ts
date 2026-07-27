@@ -10,7 +10,7 @@ function normalize(s: string): string {
   return s.toLowerCase().normalize("NFKC");
 }
 
-type Rule = { id: string; keyword: string; reply_text: string; post_id: string };
+type Rule = { id: string; keyword: string; reply_text: string; post_id: string; post_shortcode?: string | null };
 
 export function findMatchingKeyword(commentText: string, keywords: Rule[]): Rule | null {
   const hay = normalize(commentText || "");
@@ -29,13 +29,17 @@ function commentAuthor(c: IgComment): { userId: string; username: string } {
       c.attendee_id ||
       c.messaging_id ||
       c.user_id ||
+      c.author?.id ||
       c.author?.provider_id ||
       c.author?.messaging_id ||
-      c.author?.id ||
       c.author?.user_id ||
       "",
   ).trim();
-  const username = String(c.username || c.author?.username || "").trim().replace(/^@/, "");
+  const username = String(
+    c.username || c.author?.username || c.author?.display_name || c.author?.name || "",
+  )
+    .trim()
+    .replace(/^@/, "");
   return { userId, username };
 }
 
@@ -109,11 +113,14 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
     return result;
   }
 
+  const { resolveUnipileAccountId } = await import("./unipile.server");
+  const resolvedAccountId = await resolveUnipileAccountId(accountId);
+
   const defaultReply = (settings.ig_default_reply || "").trim();
   const logAllComments = settings.ig_log_all_comments === "true";
 
   const [{ data: keywords }, { data: exclusions }] = await Promise.all([
-    s.from("ig_keywords").select("id, keyword, reply_text, post_id").eq("is_active", true),
+    s.from("ig_keywords").select("id, keyword, reply_text, post_id, post_shortcode").eq("is_active", true),
     s.from("ig_exclusions").select("provider_user_id, username"),
   ]);
 
@@ -124,6 +131,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
       keyword: k.keyword,
       reply_text: k.reply_text,
       post_id: String(k.post_id).trim(),
+      post_shortcode: k.post_shortcode,
     }));
 
   if (!rules.length) {
@@ -132,11 +140,12 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
     return result;
   }
 
-  const byPost = new Map<string, Rule[]>();
+  const byPost = new Map<string, { rules: Rule[]; shortcode?: string | null }>();
   for (const r of rules) {
-    const list = byPost.get(r.post_id) || [];
-    list.push(r);
-    byPost.set(r.post_id, list);
+    const entry = byPost.get(r.post_id) || { rules: [], shortcode: r.post_shortcode };
+    entry.rules.push(r);
+    if (r.post_shortcode) entry.shortcode = r.post_shortcode;
+    byPost.set(r.post_id, entry);
   }
 
   const exclIds = new Set(
@@ -155,12 +164,23 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
   let postsPolled = 0;
   const errors: string[] = [];
 
-  for (const [postId, postRules] of byPost) {
+  for (const [postId, { rules: postRules, shortcode }] of byPost) {
     if (sent >= maxDms) break;
     postsPolled++;
     let comments: IgComment[] = [];
+    const fetchDebug: import("./unipile.server").CommentsFetchDebug[] = [];
     try {
-      comments = await listPostComments(accountId, postId, { maxPages: 3 });
+      comments = await listPostComments(resolvedAccountId, postId, {
+        maxPages: 3,
+        shortcode,
+        debug: fetchDebug,
+      });
+      if (comments.length === 0 && fetchDebug.length) {
+        const summary = fetchDebug
+          .map((d) => `${d.postIdTried}:${d.count}${d.path ? `@${d.path.split("/").slice(-2).join("/")}` : ""}${d.error ? `(${d.error})` : ""}`)
+          .join("; ");
+        errors.push(`post ${postId} — 0 comments. Tried: ${summary}`);
+      }
     } catch (e: any) {
       const msg = `post ${postId}: ${e?.message || e}`;
       errors.push(msg);
@@ -267,7 +287,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }): Promise<
       }
 
       try {
-        await sendInstagramDm({ accountId, attendeeId: userId, text: reply });
+        await sendInstagramDm({ accountId: resolvedAccountId, attendeeId: userId, text: reply });
         await s.from("ig_comment_actions").insert({
           post_id: postId,
           comment_id: comment.id,
