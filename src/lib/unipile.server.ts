@@ -256,41 +256,49 @@ export function extractIgShortcode(input: string): string | null {
   return null;
 }
 
-export async function resolveUnipileAccountId(storedId: string): Promise<string> {
-  const id = storedId.trim();
+function toUnipileV2AccountId(accountIdV1: string): string {
+  const id = (accountIdV1 || "").trim();
   if (!id) return id;
   if (/^acc_/.test(id)) return id;
-  try {
-    const accounts = await listAccounts();
-    const match = accounts.find(
-      (a) => String(a.id || "") === id || String(a.account_id || "") === id,
-    );
-    const accIdRaw = String(match?.account_id || match?.id || "").trim();
-    if (accIdRaw) {
-      // Unipile v2 endpoints expect ^acc_(.*)
-      if (/^acc_/.test(accIdRaw)) return accIdRaw;
-      return `acc_${accIdRaw}`;
-    }
-  } catch {
-    // ignore
-  }
-  // Fallback: v2 endpoints require `acc_...`, even if we couldn't match the stored value.
   return `acc_${id}`;
 }
 
+export async function resolveUnipileAccountId(storedId: string): Promise<string> {
+  const id = storedId.trim();
+  if (!id) return id;
+  // For Unipile v1 endpoints, observed IDs do NOT use `acc_` prefix.
+  // So we normalize to v1 style: strip `acc_` if present.
+  const v1IdInput = id.replace(/^acc_/, "");
+  try {
+    const accounts = await listAccounts();
+    const match = accounts.find(
+      (a) =>
+        String(a.id || "").trim() === id ||
+        String(a.id || "").trim() === v1IdInput ||
+        String(a.account_id || "").trim() === id ||
+        String(a.account_id || "").trim() === v1IdInput,
+    );
+    const v1Acc = String(match?.id || match?.account_id || v1IdInput).trim();
+    return v1Acc.replace(/^acc_/, "");
+  } catch {
+    return v1IdInput;
+  }
+}
+
 export async function fetchIgPostRaw(accountId: string, postIdOrShortcode: string): Promise<any> {
-  const accId = await resolveUnipileAccountId(accountId);
-  if (/^acc_/.test(accId)) {
+  const v1AccId = await resolveUnipileAccountId(accountId);
+  const v2AccId = toUnipileV2AccountId(v1AccId);
+  if (v2AccId) {
     try {
       return await unipileFetch<any>(
-        `/v2/${encodeURIComponent(accId)}/posts/${encodeURIComponent(postIdOrShortcode)}`,
+        `/v2/${encodeURIComponent(v2AccId)}/posts/${encodeURIComponent(postIdOrShortcode)}`,
       );
     } catch {
       // fall through to v1
     }
   }
   return await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(postIdOrShortcode)}`, {
-    query: { account_id: accountId },
+    query: { account_id: v1AccId },
   });
 }
 
@@ -439,21 +447,22 @@ async function fetchCommentsPage(
   postId: string,
   cursor?: string,
 ): Promise<{ items: any[]; nextCursor?: string; error?: string; path?: string }> {
-  const accId = await resolveUnipileAccountId(accountId);
-  const v1Query: Record<string, string | undefined> = { account_id: accountId, limit: "50" };
+  const v1AccId = await resolveUnipileAccountId(accountId);
+  const v2AccId = toUnipileV2AccountId(v1AccId);
+  const v1Query: Record<string, string | undefined> = { account_id: v1AccId, limit: "50" };
   if (cursor) v1Query.cursor = cursor;
 
   const attempts: { path: string; query?: Record<string, string | undefined> }[] = [];
-  if (/^acc_/.test(accId)) {
+  if (v2AccId) {
     attempts.push({
-      path: `/v2/${encodeURIComponent(accId)}/posts/${encodeURIComponent(postId)}/comments`,
+      path: `/v2/${encodeURIComponent(v2AccId)}/posts/${encodeURIComponent(postId)}/comments`,
       query: { limit: "50", sort_by: "MOST_RECENT", cursor },
     });
   }
   attempts.push(
     { path: `/api/v1/posts/${encodeURIComponent(postId)}/comments`, query: v1Query },
     {
-      path: `/api/v1/accounts/${encodeURIComponent(accountId)}/posts/${encodeURIComponent(postId)}/comments`,
+      path: `/api/v1/accounts/${encodeURIComponent(v1AccId)}/posts/${encodeURIComponent(postId)}/comments`,
       query: v1Query,
     },
   );
@@ -560,13 +569,17 @@ export async function replyToInstagramComment(params: {
   commentId: string;
   text: string;
 }): Promise<any> {
-  const accountId = await resolveUnipileAccountId(params.accountId);
-  return await unipileFetch(`/v2/${encodeURIComponent(accountId)}/posts/${encodeURIComponent(params.postId)}/comments/${encodeURIComponent(params.commentId)}`, {
+  const v1AccId = await resolveUnipileAccountId(params.accountId);
+  const v2AccId = toUnipileV2AccountId(v1AccId);
+  return await unipileFetch(
+    `/v2/${encodeURIComponent(v2AccId)}/posts/${encodeURIComponent(params.postId)}/comments/${encodeURIComponent(params.commentId)}`,
+    {
     method: "POST",
     body: JSON.stringify({
       text: params.text,
     }),
-  });
+    },
+  );
 }
 
 export async function sendInstagramDm(params: {
@@ -575,10 +588,11 @@ export async function sendInstagramDm(params: {
   text: string;
   attachment?: IgOutgoingAttachment | null;
 }): Promise<any> {
-  const accountId = await resolveUnipileAccountId(params.accountId);
+  const v1AccId = await resolveUnipileAccountId(params.accountId);
+  const v2AccId = toUnipileV2AccountId(v1AccId);
   const attachment = params.attachment;
   try {
-    return await unipileFetch(`/v2/${encodeURIComponent(accountId)}/chats`, {
+    return await unipileFetch(`/v2/${encodeURIComponent(v2AccId)}/chats`, {
       method: "POST",
       body: JSON.stringify({
         users_ids: [params.attendeeId],
@@ -601,7 +615,7 @@ export async function sendInstagramDm(params: {
     try {
       return await unipileFetch(`/api/v1/chats/${encodeURIComponent(params.attendeeId)}/messages`, {
         method: "POST",
-        query: { account_id: accountId },
+        query: { account_id: v1AccId },
         body: JSON.stringify({ text: params.text }),
       });
     } catch (e2: any) {
