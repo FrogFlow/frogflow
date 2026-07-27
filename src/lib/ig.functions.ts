@@ -118,6 +118,17 @@ export const syncIgAccountsFromUnipile = createServerFn({ method: "POST" }).hand
   return { ok: true as const, accountId: id, accountName: name, status };
 });
 
+/** Recent posts of the connected IG account — for picking in Rules UI. */
+export const listIgRecentPosts = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdmin();
+  const { listOwnPosts, isUnipileConfigured } = await import("./unipile.server");
+  if (!isUnipileConfigured()) throw new Error("Unipile не настроен");
+  const map = await settingsMap();
+  const accountId = (map.unipile_account_id || "").trim();
+  if (!accountId) throw new Error("Сначала подключите Instagram-аккаунт");
+  return await listOwnPosts(accountId, 40);
+});
+
 // —— keywords ——
 export const listIgKeywords = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdmin();

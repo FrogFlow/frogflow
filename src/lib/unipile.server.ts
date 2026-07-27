@@ -99,6 +99,43 @@ export async function listAccounts(): Promise<any[]> {
   return [];
 }
 
+export type IgPostSummary = {
+  id: string;
+  caption: string;
+  created_at?: string;
+  thumbnail_url?: string;
+};
+
+/** Own feed posts for the connected IG account (user_id = me). */
+export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPostSummary[]> {
+  let data: any;
+  try {
+    data = await unipileFetch<any>(`/api/v1/users/me/posts`, {
+      query: { account_id: accountId, limit: String(limit) },
+    });
+  } catch {
+    // Fallback: some setups want the account's provider username as identifier
+    data = await unipileFetch<any>(`/api/v1/users/${encodeURIComponent(accountId)}/posts`, {
+      query: { account_id: accountId, limit: String(limit) },
+    });
+  }
+  const items = data?.items || data?.data || data?.posts || (Array.isArray(data) ? data : []);
+  return (items as any[])
+    .map((p) => {
+      const id = String(p.id || p.provider_id || p.post_id || "");
+      const caption = String(p.text || p.caption || p.title || "").slice(0, 200);
+      const created = p.created_at || p.date || p.timestamp;
+      const thumb =
+        p.preview_image?.url ||
+        p.attachments?.[0]?.url ||
+        p.attachments?.[0]?.thumbnail_url ||
+        p.thumbnail_url ||
+        undefined;
+      return { id, caption, created_at: created ? String(created) : undefined, thumbnail_url: thumb };
+    })
+    .filter((p) => p.id);
+}
+
 export type IgComment = {
   id: string;
   text?: string;
