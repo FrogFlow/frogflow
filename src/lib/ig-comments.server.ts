@@ -4,11 +4,13 @@ function normalize(s: string): string {
   return s.toLowerCase().normalize("NFKC");
 }
 
-/** Case-insensitive substring match (plan: substring). */
+type Rule = { id: string; keyword: string; reply_text: string; post_id: string };
+
+/** Match comment against rules for one post only (substring, case-insensitive). */
 export function findMatchingKeyword(
   commentText: string,
-  keywords: { id: string; keyword: string; reply_text: string }[],
-): { id: string; keyword: string; reply_text: string } | null {
+  keywords: Rule[],
+): Rule | null {
   const hay = normalize(commentText || "");
   if (!hay) return null;
   for (const kw of keywords) {
@@ -51,15 +53,30 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
 
   const defaultReply = (settings.ig_default_reply || "").trim();
 
-  const [{ data: posts }, { data: keywords }, { data: exclusions }] = await Promise.all([
-    s.from("ig_watched_posts").select("*").eq("is_active", true),
-    s.from("ig_keywords").select("id, keyword, reply_text").eq("is_active", true),
+  const [{ data: keywords }, { data: exclusions }] = await Promise.all([
+    s.from("ig_keywords").select("id, keyword, reply_text, post_id").eq("is_active", true),
     s.from("ig_exclusions").select("provider_user_id, username"),
   ]);
 
-  const kwList = keywords ?? [];
-  if (!posts?.length || !kwList.length) {
-    return { ok: true as const, scanned: 0, matched: 0, sent: 0, skipped: 0, note: "no posts or keywords" };
+  const rules: Rule[] = (keywords ?? [])
+    .filter((k) => k.post_id && String(k.post_id).trim())
+    .map((k) => ({
+      id: k.id,
+      keyword: k.keyword,
+      reply_text: k.reply_text,
+      post_id: String(k.post_id).trim(),
+    }));
+
+  if (!rules.length) {
+    return { ok: true as const, scanned: 0, matched: 0, sent: 0, skipped: 0, note: "no per-post rules" };
+  }
+
+  // Group rules by post_id
+  const byPost = new Map<string, Rule[]>();
+  for (const r of rules) {
+    const list = byPost.get(r.post_id) || [];
+    list.push(r);
+    byPost.set(r.post_id, list);
   }
 
   const exclIds = new Set(
@@ -79,13 +96,13 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
   let skipped = 0;
   const errors: string[] = [];
 
-  for (const post of posts) {
+  for (const [postId, postRules] of byPost) {
     if (sent >= maxDms) break;
     let comments: IgComment[] = [];
     try {
-      comments = await listPostComments(accountId, post.post_id);
+      comments = await listPostComments(accountId, postId);
     } catch (e: any) {
-      errors.push(`post ${post.post_id}: ${e?.message || e}`);
+      errors.push(`post ${postId}: ${e?.message || e}`);
       continue;
     }
 
@@ -93,7 +110,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
       if (sent >= maxDms) break;
       scanned++;
       const text = comment.text || "";
-      const kw = findMatchingKeyword(text, kwList);
+      const kw = findMatchingKeyword(text, postRules);
       if (!kw) continue;
       matched++;
 
@@ -103,11 +120,10 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
         continue;
       }
 
-      // Already processed this comment?
       const { data: existing } = await s
         .from("ig_comment_actions")
         .select("id")
-        .eq("post_id", post.post_id)
+        .eq("post_id", postId)
         .eq("comment_id", comment.id)
         .maybeSingle();
       if (existing) {
@@ -115,7 +131,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
         continue;
       }
 
-      // Already DM'd this user for this keyword?
+      // Already DM'd this user for this rule (same keyword on this post)?
       if (userId) {
         const { data: prior } = await s
           .from("ig_comment_actions")
@@ -128,7 +144,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
         if (prior) {
           skipped++;
           await s.from("ig_comment_actions").insert({
-            post_id: post.post_id,
+            post_id: postId,
             comment_id: comment.id,
             provider_user_id: userId || null,
             username: username || null,
@@ -147,7 +163,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
       }
       if (!userId) {
         await s.from("ig_comment_actions").insert({
-          post_id: post.post_id,
+          post_id: postId,
           comment_id: comment.id,
           username: username || null,
           keyword_id: kw.id,
@@ -162,7 +178,7 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
       try {
         await sendInstagramDm({ accountId, attendeeId: userId, text: reply });
         await s.from("ig_comment_actions").insert({
-          post_id: post.post_id,
+          post_id: postId,
           comment_id: comment.id,
           provider_user_id: userId,
           username: username || null,
@@ -170,22 +186,20 @@ export async function processIgCommentPoll(opts?: { maxDms?: number }) {
           comment_text: text.slice(0, 1000),
           status: "sent",
         });
-        // Auto-exclude after successful DM so we don't spam
         if (userId && !exclIds.has(userId)) {
-          const { error: exclErr } = await s.from("ig_exclusions").insert({
+          await s.from("ig_exclusions").insert({
             provider_user_id: userId,
             username: username || null,
             reason: "auto: already messaged by bot",
           });
-          if (!exclErr) exclIds.add(userId);
-          else exclIds.add(userId); // duplicate unique — still treat as excluded
+          exclIds.add(userId);
         }
         sent++;
       } catch (e: any) {
         const msg = e?.message || String(e);
         errors.push(msg);
         await s.from("ig_comment_actions").insert({
-          post_id: post.post_id,
+          post_id: postId,
           comment_id: comment.id,
           provider_user_id: userId,
           username: username || null,

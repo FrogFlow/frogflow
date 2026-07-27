@@ -43,8 +43,10 @@ function IgPostsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Посты в слежении</h1>
-          <p className="text-sm text-muted-foreground">
-            post_id — идентификатор поста в Unipile (List comments). Cron опрашивает комментарии раз в 1–2 мин.
+          <p className="text-sm text-muted-foreground max-w-2xl">
+            Список постов подтягивается автоматически, когда вы создаёте правило (пост + слово + ЛС).
+            Здесь можно выключить пост целиком или добавить вручную. Основная настройка — в разделе{" "}
+            <strong>Правила</strong>.
           </p>
         </div>
         {!editing && <Button onClick={() => setEditing({ ...empty })}>+ Добавить</Button>}

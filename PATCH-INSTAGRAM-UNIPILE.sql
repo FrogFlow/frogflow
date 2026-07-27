@@ -2,6 +2,8 @@
 
 CREATE TABLE IF NOT EXISTS public.ig_keywords (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id TEXT,
+  post_note TEXT,
   keyword TEXT NOT NULL,
   reply_text TEXT NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT true,

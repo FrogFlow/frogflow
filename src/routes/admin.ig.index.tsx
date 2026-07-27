@@ -22,7 +22,7 @@ function IgDashboardPage() {
       {d && (
         <>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <Stat label="Ключевые слова" value={d.counts.keywords} />
+            <Stat label="Правила" value={d.counts.keywords} />
             <Stat label="Посты в слежении" value={d.counts.posts} />
             <Stat label="Исключения" value={d.counts.exclusions} />
             <Stat label="Действий в логе" value={d.counts.actions} />

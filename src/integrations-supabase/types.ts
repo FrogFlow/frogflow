@@ -291,6 +291,8 @@ export type Database = {
           id: string
           is_active: boolean
           keyword: string
+          post_id: string | null
+          post_note: string | null
           reply_text: string
           updated_at: string
         }
@@ -299,6 +301,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           keyword: string
+          post_id?: string | null
+          post_note?: string | null
           reply_text: string
           updated_at?: string
         }
@@ -307,6 +311,8 @@ export type Database = {
           id?: string
           is_active?: boolean
           keyword?: string
+          post_id?: string | null
+          post_note?: string | null
           reply_text?: string
           updated_at?: string
         }

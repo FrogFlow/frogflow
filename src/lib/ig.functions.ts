@@ -129,6 +129,8 @@ export const listIgKeywords = createServerFn({ method: "GET" }).handler(async ()
 
 const KeywordInput = z.object({
   id: z.string().uuid().optional(),
+  post_id: z.string().min(1).max(200),
+  post_note: z.string().max(2000).optional().nullable(),
   keyword: z.string().min(1).max(200),
   reply_text: z.string().min(1).max(4000),
   is_active: z.boolean().default(true),
@@ -140,10 +142,39 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
     await requireAdmin();
     const s = await db();
     const now = new Date().toISOString();
+    const postId = data.post_id.trim();
+    const note = data.post_note?.trim() || null;
+
+    // Keep watched_posts in sync so cron/dashboard still see the post
+    const { data: existingPost } = await s
+      .from("ig_watched_posts")
+      .select("id")
+      .eq("post_id", postId)
+      .maybeSingle();
+    if (existingPost) {
+      await s
+        .from("ig_watched_posts")
+        .update({
+          caption_snapshot: note,
+          is_active: true,
+          updated_at: now,
+        })
+        .eq("id", existingPost.id);
+    } else {
+      const { error: postErr } = await s.from("ig_watched_posts").insert({
+        post_id: postId,
+        caption_snapshot: note,
+        is_active: true,
+      });
+      if (postErr) throw new Error(postErr.message);
+    }
+
     if (data.id) {
       const { error } = await s
         .from("ig_keywords")
         .update({
+          post_id: postId,
+          post_note: note,
           keyword: data.keyword.trim(),
           reply_text: data.reply_text,
           is_active: data.is_active,
@@ -153,6 +184,8 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     } else {
       const { error } = await s.from("ig_keywords").insert({
+        post_id: postId,
+        post_note: note,
         keyword: data.keyword.trim(),
         reply_text: data.reply_text,
         is_active: data.is_active,
