@@ -2,7 +2,7 @@
  * Unipile API client (Instagram).
  * Uses canonical identifier types per Unipile docs:
  * - post comments/replies: Unipile post_id + comment_id
- * - Instagram DMs: recipient messaging_identifier (not profile id)
+ * - Instagram DMs: recipient provider_messaging_id (see Unipile send-messages docs)
  * - v1 messaging: multipart/form-data on /api/v1/chats
  */
 
@@ -416,20 +416,16 @@ export async function resolveInstagramDmRecipient(
         query: { account_id: v1AccId },
       });
       const resolved = pickStr(
+        data.provider_messaging_id,
         data.messaging_identifier,
         data.messaging_id,
-        data.im_id,
-        data.specifics?.instagram?.messaging_identifier,
-        data.specifics?.instagram?.messaging_id,
+        data.specifics?.instagram?.provider_messaging_id,
       );
-      if (resolved) return { recipientId: resolved, source: `users/${identifier}` };
+      if (resolved) return { recipientId: resolved, source: `users/${identifier}:provider_messaging_id` };
     } catch {
       // try next identifier
     }
   }
-
-  const profileId = pickStr(hints.profileId);
-  if (profileId) return { recipientId: profileId, source: "profile_id_fallback" };
 
   return { recipientId: null, source: "none" };
 }
@@ -447,6 +443,8 @@ export function extractCommentCanonicalIds(c: any, text = extractCommentText(c))
   const author = c?.author || {};
   const commentUnipileId = pickStr(c.id, c.comment_id, c.provider_id, c.pk, c.social_id);
   const authorMessagingIdentifier = pickStr(
+    author.provider_messaging_id,
+    c.provider_messaging_id,
     c.messaging_id,
     c.attendee_id,
     author.messaging_identifier,
@@ -472,6 +470,7 @@ export function extractCommentCanonicalIds(c: any, text = extractCommentText(c))
       user_id: pickStr(c.user_id),
       attendee_id: pickStr(c.attendee_id),
       messaging_id: pickStr(c.messaging_id),
+      provider_messaging_id: pickStr(c.provider_messaging_id, author.provider_messaging_id),
       author_messaging_identifier: pickStr(author.messaging_identifier),
       author_messaging_id: pickStr(author.messaging_id),
       author_profile_id: pickStr(author.id, author.provider_id),
@@ -685,23 +684,19 @@ function buildV1ChatFormData(params: {
   attendeeId?: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
-  useBracketArrayKey?: boolean;
-  attachmentFieldName?: "attachment" | "attachments";
 }): FormData {
   const form = new FormData();
   form.append("account_id", params.accountId);
   form.append("text", params.text);
   if (params.attendeeId) {
-    if (params.useBracketArrayKey) {
-      form.append("attendees_ids[]", params.attendeeId);
-    } else {
-      form.append("attendees_ids", params.attendeeId);
-    }
+    // https://developer.unipile.com/docs/send-messages — attendees_ids for Instagram = provider_messaging_id
+    form.append("attendees_ids", params.attendeeId);
   }
   if (params.attachment) {
     const bytes = Buffer.from(params.attachment.contentBase64, "base64");
     const blob = new Blob([bytes], { type: params.attachment.contentType || "application/octet-stream" });
-    form.append(params.attachmentFieldName || "attachment", blob, params.attachment.filename);
+    // https://developer.unipile.com/docs/send-messages — multipart field is "attachments"
+    form.append("attachments", blob, params.attachment.filename);
   }
   return form;
 }
@@ -762,24 +757,11 @@ export type DmSendResult = {
   attachmentError?: string;
 };
 
-function extractChatIdFromResponse(response: any, fallback: string): string {
-  const id = String(
-    response?.chat_id ||
-      response?.chat?.id ||
-      response?.id ||
-      response?.data?.chat_id ||
-      response?.data?.id ||
-      "",
-  ).trim();
-  return id || fallback;
-}
-
 async function sendV1StartChat(params: {
   accountId: string;
   recipientId: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
-  attachmentFieldName?: "attachment" | "attachments";
 }): Promise<any> {
   const v1AccId = await resolveUnipileAccountId(params.accountId);
   return await unipileFetch(`/api/v1/chats`, {
@@ -789,7 +771,6 @@ async function sendV1StartChat(params: {
       attendeeId: params.recipientId,
       text: params.text,
       attachment: params.attachment,
-      attachmentFieldName: params.attachmentFieldName,
     }),
   });
 }
@@ -799,7 +780,6 @@ async function sendV1ExistingChatMessage(params: {
   chatId: string;
   text: string;
   attachment?: IgOutgoingAttachment | null;
-  attachmentFieldName?: "attachment" | "attachments";
 }): Promise<any> {
   const v1AccId = await resolveUnipileAccountId(params.accountId);
   return await unipileFetch(`/api/v1/chats/${encodeURIComponent(params.chatId)}/messages`, {
@@ -809,40 +789,8 @@ async function sendV1ExistingChatMessage(params: {
       accountId: v1AccId,
       text: params.text,
       attachment: params.attachment,
-      attachmentFieldName: params.attachmentFieldName,
     }),
   });
-}
-
-async function trySendV1AttachmentInChat(params: {
-  accountId: string;
-  chatIds: string[];
-  attachment: IgOutgoingAttachment;
-}): Promise<{ ok: true; route: string } | { ok: false; error: string }> {
-  const errors: string[] = [];
-  const attempts: Array<{ route: string; field: "attachment" | "attachments" }> = [
-    { route: "attachment", field: "attachment" },
-    { route: "attachments", field: "attachments" },
-  ];
-
-  for (const chatId of params.chatIds) {
-    if (!chatId) continue;
-    for (const attempt of attempts) {
-      try {
-        await sendV1ExistingChatMessage({
-          accountId: params.accountId,
-          chatId,
-          text: "",
-          attachment: params.attachment,
-          attachmentFieldName: attempt.field,
-        });
-        return { ok: true, route: `v1:existingChat:${attempt.route}:chat=${chatId}` };
-      } catch (e: any) {
-        errors.push(`chat=${chatId} ${attempt.route}: ${e?.message || e}`);
-      }
-    }
-  }
-  return { ok: false, error: errors.join("; ") };
 }
 
 export type DmSendMode = "initial" | "retry" | "attachment_only";
@@ -915,25 +863,25 @@ export async function sendInstagramDm(params: {
   mode?: DmSendMode;
 }): Promise<DmSendResult> {
   const recipientId = params.attendeeId.trim();
-  if (!recipientId) throw new Error("Missing Instagram messaging_identifier for DM");
+  if (!recipientId) throw new Error("Missing Instagram provider_messaging_id for DM");
 
   const mode = params.mode || "initial";
-  const errors: string[] = [];
   const attachment = params.attachment;
   const text = params.text || "";
-  const chatIds = [recipientId];
+  const errors: string[] = [];
+
+  // Instagram 1:1 chat_id === provider_messaging_id
+  // https://developer.unipile.com/v2.0/docs/instagram-send-messages
 
   if (mode === "attachment_only") {
     if (!attachment) throw new Error("Attachment required for attachment_only mode");
-    const attachResult = await trySendV1AttachmentInChat({
+    const response = await sendV1ExistingChatMessage({
       accountId: params.accountId,
-      chatIds,
+      chatId: recipientId,
+      text: "",
       attachment,
     });
-    if (attachResult.ok) {
-      return { route: attachResult.route, response: null, attachmentSent: true };
-    }
-    throw new Error(`Attachment send failed. ${attachResult.error}`);
+    return { route: "v1:messages:attachment", response, attachmentSent: true };
   }
 
   if (mode === "retry") {
@@ -943,98 +891,51 @@ export async function sendInstagramDm(params: {
         chatId: recipientId,
         text,
         attachment,
-        attachmentFieldName: attachment ? "attachment" : undefined,
       });
-      return { route: "v1:existingChat:retry", response, attachmentSent: Boolean(attachment) };
+      return { route: "v1:messages:retry", response, attachmentSent: Boolean(attachment) };
     } catch (e: any) {
-      errors.push(`v1 existingChat retry: ${e?.message || e}`);
-    }
-    if (attachment) {
-      const attachResult = await trySendV1AttachmentInChat({
-        accountId: params.accountId,
-        chatIds,
-        attachment,
-      });
-      if (attachResult.ok) {
-        return { route: attachResult.route, response: null, attachmentSent: true };
-      }
-      errors.push(`v1 attachment retry: ${attachResult.error}`);
-    }
-    throw new Error(`DM retry failed. ${errors.join("; ")}`);
-  }
-
-  const tryV2 = !isV2MessagingDisabled(params.accountId);
-  if (tryV2) {
-    try {
-      const response = await sendV2StartChat({ ...params, recipientId, text });
-      return { route: "v2:startChat", response, attachmentSent: Boolean(attachment) };
-    } catch (e: any) {
-      const msg = e?.message || String(e);
-      errors.push(`v2 startChat: ${msg}`);
-      if (/cannot post \/v2\//i.test(msg)) {
-        markV2MessagingUnavailable(params.accountId);
-      }
+      throw new Error(`DM retry failed: ${e?.message || e}`);
     }
   }
 
-  if (attachment) {
-    try {
-      const response = await sendV1StartChat({
-        ...params,
-        recipientId,
-        text,
-        attachment,
-        attachmentFieldName: "attachment",
-      });
-      return { route: "v1:startChat+attachment", response, attachmentSent: true };
-    } catch (e: any) {
-      errors.push(`v1 startChat+attachment: ${e?.message || e}`);
-    }
-
-    try {
-      const response = await sendV1StartChat({ ...params, recipientId, text, attachment: null });
-      const resolvedChatIds = [extractChatIdFromResponse(response, ""), recipientId].filter(Boolean);
-      const attachResult = await trySendV1AttachmentInChat({
-        accountId: params.accountId,
-        chatIds: resolvedChatIds,
-        attachment,
-      });
-      if (attachResult.ok) {
-        return {
-          route: `v1:startChat:text+${attachResult.route}`,
-          response,
-          attachmentSent: true,
-        };
-      }
-      return {
-        route: "v1:startChat:text-only",
-        response,
-        attachmentSent: false,
-        attachmentError: attachResult.error,
-      };
-    } catch (e1: any) {
-      errors.push(`v1 startChat: ${e1?.message || e1}`);
-    }
-  } else if (text) {
-    try {
-      const response = await sendV1StartChat({ ...params, recipientId, text, attachment: null });
-      return { route: "v1:startChat", response, attachmentSent: false };
-    } catch (e1: any) {
-      errors.push(`v1 startChat: ${e1?.message || e1}`);
-    }
+  // Initial send: one multipart POST /api/v1/chats with text + attachments
+  // https://developer.unipile.com/docs/send-messages
+  try {
+    const response = await sendV1StartChat({
+      accountId: params.accountId,
+      recipientId,
+      text,
+      attachment,
+    });
+    return { route: "v1:startChat", response, attachmentSent: Boolean(attachment) };
+  } catch (e1: any) {
+    errors.push(`v1 startChat: ${e1?.message || e1}`);
   }
 
+  // Chat may already exist — prefer chat_id when known
   try {
     const response = await sendV1ExistingChatMessage({
       accountId: params.accountId,
       chatId: recipientId,
       text,
       attachment,
-      attachmentFieldName: attachment ? "attachment" : undefined,
     });
-    return { route: "v1:existingChat", response, attachmentSent: Boolean(attachment) };
+    return { route: "v1:messages", response, attachmentSent: Boolean(attachment) };
   } catch (e2: any) {
-    errors.push(`v1 existingChat: ${e2?.message || e2}`);
+    errors.push(`v1 messages: ${e2?.message || e2}`);
+  }
+
+  if (!isV2MessagingDisabled(params.accountId)) {
+    try {
+      const response = await sendV2StartChat({ ...params, recipientId, text });
+      return { route: "v2:startChat", response, attachmentSent: Boolean(attachment) };
+    } catch (e3: any) {
+      const msg = e3?.message || String(e3);
+      errors.push(`v2 startChat: ${msg}`);
+      if (/cannot post \/v2\//i.test(msg)) {
+        markV2MessagingUnavailable(params.accountId);
+      }
+    }
   }
 
   throw new Error(`DM send failed. ${errors.join("; ")}`);
