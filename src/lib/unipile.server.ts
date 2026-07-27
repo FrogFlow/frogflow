@@ -393,6 +393,47 @@ function pickStr(...values: unknown[]): string | null {
   return null;
 }
 
+export async function resolveInstagramDmRecipient(
+  accountId: string,
+  hints: {
+    messagingId?: string | null;
+    profileId?: string | null;
+    username?: string | null;
+  },
+): Promise<{ recipientId: string | null; source: string }> {
+  const messagingId = pickStr(hints.messagingId);
+  if (messagingId) return { recipientId: messagingId, source: "comment.messaging_id" };
+
+  const v1AccId = await resolveUnipileAccountId(accountId);
+  const lookupIds = [
+    pickStr(hints.profileId),
+    pickStr(hints.username?.replace(/^@/, "")),
+  ].filter(Boolean) as string[];
+
+  for (const identifier of lookupIds) {
+    try {
+      const data = await unipileFetch<any>(`/api/v1/users/${encodeURIComponent(identifier)}`, {
+        query: { account_id: v1AccId },
+      });
+      const resolved = pickStr(
+        data.messaging_identifier,
+        data.messaging_id,
+        data.im_id,
+        data.specifics?.instagram?.messaging_identifier,
+        data.specifics?.instagram?.messaging_id,
+      );
+      if (resolved) return { recipientId: resolved, source: `users/${identifier}` };
+    } catch {
+      // try next identifier
+    }
+  }
+
+  const profileId = pickStr(hints.profileId);
+  if (profileId) return { recipientId: profileId, source: "profile_id_fallback" };
+
+  return { recipientId: null, source: "none" };
+}
+
 function localCommentDedupeKey(c: any, text: string): string {
   const author = c.username || c.author?.username || c.author_id || c.user_id || "anon";
   const ts = c.created_at || c.date || c.timestamp || "";

@@ -516,6 +516,7 @@ export const debugIgRuleComments = createServerFn({ method: "POST" })
       listPostComments,
       resolvePostIdCandidates,
       resolveUnipileAccountId,
+      resolveInstagramDmRecipient,
       isUnipileConfigured,
     } = await import("./unipile.server");
     if (!isUnipileConfigured()) throw new Error("Unipile не настроен");
@@ -574,18 +575,29 @@ export const debugIgRuleComments = createServerFn({ method: "POST" })
         candidates,
         attempts: debug,
         commentsFound: comments.length,
-        samples: comments.slice(0, 3).map((c) => ({
-          id: c.id,
-          commentUnipileId: c.commentUnipileId,
-          text: (c.text || "").slice(0, 120),
-          username: c.username || "",
-          dedupeUserId: c.ids.dedupeUserId,
-          dmRecipientId: c.ids.authorMessagingIdentifier,
-          authorProfileId: c.ids.authorProfileId,
-          canReply: Boolean(c.commentUnipileId && !c.ids.isSyntheticCommentId),
-          canDm: Boolean(c.ids.authorMessagingIdentifier),
-          rawIds: c.ids.raw,
-        })),
+        samples: await Promise.all(
+          comments.slice(0, 3).map(async (c) => {
+            const resolved = await resolveInstagramDmRecipient(accountId, {
+              messagingId: c.ids.authorMessagingIdentifier,
+              profileId: c.ids.authorProfileId,
+              username: c.username || "",
+            });
+            return {
+              id: c.id,
+              commentUnipileId: c.commentUnipileId,
+              text: (c.text || "").slice(0, 120),
+              username: c.username || "",
+              dedupeUserId: c.ids.dedupeUserId,
+              dmRecipientId: c.ids.authorMessagingIdentifier,
+              dmRecipientResolved: resolved.recipientId,
+              dmRecipientSource: resolved.source,
+              authorProfileId: c.ids.authorProfileId,
+              canReply: Boolean(c.commentUnipileId && !c.ids.isSyntheticCommentId),
+              canDm: Boolean(resolved.recipientId),
+              rawIds: c.ids.raw,
+            };
+          }),
+        ),
       });
     }
 
