@@ -645,6 +645,7 @@ export async function sendInstagramDm(params: {
       }),
     });
   } catch (e1: any) {
+    let v2SendMsg = "";
     try {
       return await unipileFetch(
         `/v2/${encodeURIComponent(v2AccId)}/chats/${encodeURIComponent(params.attendeeId)}/messages/send`,
@@ -667,11 +668,7 @@ export async function sendInstagramDm(params: {
         },
       );
     } catch (eMid: any) {
-      if (attachment) {
-        const v2StartMsg = e1?.message || String(e1);
-        const v2SendMsg = eMid?.message || String(eMid);
-        throw new Error(`DM send failed. v2 startChat: ${v2StartMsg}; v2 sendMessage: ${v2SendMsg}`);
-      }
+      v2SendMsg = eMid?.message || String(eMid);
     }
     try {
       return await unipileFetch(`/api/v1/chats`, {
@@ -680,11 +677,25 @@ export async function sendInstagramDm(params: {
           account_id: v1AccId,
           text: params.text,
           attendees_ids: [params.attendeeId],
+          ...(attachment
+            ? {
+                attachments: [
+                  {
+                    content: attachment.contentBase64,
+                    content_type: attachment.contentType,
+                    filename: attachment.filename,
+                  },
+                ],
+              }
+            : {}),
         }),
       });
     } catch (e2: any) {
       const v2Msg = e1?.message || String(e1);
       const v1Msg = e2?.message || String(e2);
+      if (v2SendMsg) {
+        throw new Error(`DM send failed. v2 startChat: ${v2Msg}; v2 sendMessage: ${v2SendMsg}; v1: ${v1Msg}`);
+      }
       throw new Error(`DM send failed. v2: ${v2Msg}; v1: ${v1Msg}`);
     }
   }
