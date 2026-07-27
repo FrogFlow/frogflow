@@ -31,11 +31,12 @@ async function unipileFetch<T = any>(
     }
   }
   const { query: _q, ...rest } = init || {};
+  const isFormData = typeof FormData !== "undefined" && rest.body instanceof FormData;
   const res = await fetch(url.toString(), {
     ...rest,
     headers: {
       accept: "application/json",
-      "content-type": "application/json",
+      ...(isFormData ? {} : { "content-type": "application/json" }),
       "X-API-KEY": apiKey(),
       ...(rest.headers || {}),
     },
@@ -565,6 +566,25 @@ export type IgOutgoingAttachment = {
   contentBase64: string;
 };
 
+function buildV1InstagramChatFormData(params: {
+  accountId: string;
+  attendeeId: string;
+  text: string;
+  attachment?: IgOutgoingAttachment | null;
+  useBracketArrayKey?: boolean;
+}): FormData {
+  const form = new FormData();
+  form.append("account_id", params.accountId);
+  form.append("text", params.text);
+  form.append(params.useBracketArrayKey ? "attendees_ids[]" : "attendees_ids", params.attendeeId);
+  if (params.attachment) {
+    const bytes = Buffer.from(params.attachment.contentBase64, "base64");
+    const blob = new Blob([bytes], { type: params.attachment.contentType || "application/octet-stream" });
+    form.append("attachment", blob, params.attachment.filename);
+  }
+  return form;
+}
+
 export function isInstagramDmBlockedError(error: unknown): boolean {
   const msg = String((error as any)?.message || error || "").toLowerCase();
   if (!msg) return false;
@@ -673,30 +693,36 @@ export async function sendInstagramDm(params: {
     try {
       return await unipileFetch(`/api/v1/chats`, {
         method: "POST",
-        body: JSON.stringify({
-          account_id: v1AccId,
+        body: buildV1InstagramChatFormData({
+          accountId: v1AccId,
+          attendeeId: params.attendeeId,
           text: params.text,
-          attendees_ids: [params.attendeeId],
-          ...(attachment
-            ? {
-                attachments: [
-                  {
-                    content: attachment.contentBase64,
-                    content_type: attachment.contentType,
-                    filename: attachment.filename,
-                  },
-                ],
-              }
-            : {}),
+          attachment,
         }),
       });
     } catch (e2: any) {
-      const v2Msg = e1?.message || String(e1);
-      const v1Msg = e2?.message || String(e2);
-      if (v2SendMsg) {
-        throw new Error(`DM send failed. v2 startChat: ${v2Msg}; v2 sendMessage: ${v2SendMsg}; v1: ${v1Msg}`);
+      try {
+        return await unipileFetch(`/api/v1/chats`, {
+          method: "POST",
+          body: buildV1InstagramChatFormData({
+            accountId: v1AccId,
+            attendeeId: params.attendeeId,
+            text: params.text,
+            attachment,
+            useBracketArrayKey: true,
+          }),
+        });
+      } catch (e3: any) {
+        const v2Msg = e1?.message || String(e1);
+        const v1Msg = e2?.message || String(e2);
+        const v1AltMsg = e3?.message || String(e3);
+        if (v2SendMsg) {
+          throw new Error(
+            `DM send failed. v2 startChat: ${v2Msg}; v2 sendMessage: ${v2SendMsg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}`,
+          );
+        }
+        throw new Error(`DM send failed. v2: ${v2Msg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}`);
       }
-      throw new Error(`DM send failed. v2: ${v2Msg}; v1: ${v1Msg}`);
     }
   }
 }
