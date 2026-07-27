@@ -274,7 +274,8 @@ export async function resolveUnipileAccountId(storedId: string): Promise<string>
   } catch {
     // ignore
   }
-  return id;
+  // Fallback: v2 endpoints require `acc_...`, even if we couldn't match the stored value.
+  return `acc_${id}`;
 }
 
 export async function fetchIgPostRaw(accountId: string, postIdOrShortcode: string): Promise<any> {
