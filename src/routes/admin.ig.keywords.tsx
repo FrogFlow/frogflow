@@ -24,11 +24,26 @@ type Kw = {
   post_shortcode?: string | null;
   post_note?: string | null;
   keyword: string;
+  comment_reply_text?: string | null;
   reply_text: string;
+  dm_file_path?: string | null;
+  dm_file_name?: string | null;
+  dm_file_kind?: string | null;
   is_active: boolean;
 };
 
-const empty: Kw = { post_id: "", post_shortcode: "", post_note: "", keyword: "", reply_text: "", is_active: true };
+const empty: Kw = {
+  post_id: "",
+  post_shortcode: "",
+  post_note: "",
+  keyword: "",
+  comment_reply_text: "",
+  reply_text: "",
+  dm_file_path: "",
+  dm_file_name: "",
+  dm_file_kind: "",
+  is_active: true,
+};
 
 function IgKeywordsPage() {
   const qc = useQueryClient();
@@ -44,6 +59,7 @@ function IgKeywordsPage() {
   const [pasteUrl, setPasteUrl] = useState("");
   const [resolving, setResolving] = useState(false);
   const [pollMsg, setPollMsg] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const thumbByPostId = useMemo(() => {
     const m = new Map<string, string>();
@@ -118,13 +134,37 @@ function IgKeywordsPage() {
     }
   }
 
+  async function onUploadFile(file: File) {
+    setUploading(true);
+    setErr("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("bucket", "product-files");
+      const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.message || json?.error || "Не удалось загрузить файл");
+      if (!editing) return;
+      setEditing({
+        ...editing,
+        dm_file_path: json.path || "",
+        dm_file_name: json.name || file.name,
+        dm_file_kind: file.type || "application/octet-stream",
+      });
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Правила</h1>
           <p className="text-sm text-muted-foreground max-w-2xl">
-            Пост + кодовое слово в комментарии + текст в личку. Одно правило = один сценарий.
+            Пост + кодовое слово + ответ на комментарий + сообщение в личку. Одно правило = один сценарий.
           </p>
         </div>
         {!editing && (
@@ -204,8 +244,52 @@ function IgKeywordsPage() {
             <Input value={editing.keyword} onChange={(e) => setEditing({ ...editing, keyword: e.target.value })} placeholder="прайс" />
           </div>
           <div className="space-y-2">
+            <Label>Ответ на комментарий</Label>
+            <Textarea
+              value={editing.comment_reply_text || ""}
+              onChange={(e) => setEditing({ ...editing, comment_reply_text: e.target.value })}
+              rows={3}
+              placeholder="Например: написал(а) в директ, проверьте сообщения"
+            />
+          </div>
+          <div className="space-y-2">
             <Label>Сообщение в личку автору</Label>
             <Textarea value={editing.reply_text} onChange={(e) => setEditing({ ...editing, reply_text: e.target.value })} rows={4} />
+          </div>
+          <div className="space-y-2">
+            <Label>Файл для отправки в директ (опционально)</Label>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void onUploadFile(file);
+                  e.currentTarget.value = "";
+                }}
+                disabled={uploading}
+              />
+              {uploading && <span className="text-sm text-muted-foreground">Загрузка…</span>}
+            </div>
+            {editing.dm_file_name && (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Файл: {editing.dm_file_name}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setEditing({
+                      ...editing,
+                      dm_file_path: "",
+                      dm_file_name: "",
+                      dm_file_kind: "",
+                    })
+                  }
+                >
+                  Убрать файл
+                </Button>
+              </div>
+            )}
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={editing.is_active} onChange={(e) => setEditing({ ...editing, is_active: e.target.checked })} />
@@ -239,7 +323,15 @@ function IgKeywordsPage() {
                   Слово «{row.keyword}» {!row.is_active && <span className="text-muted-foreground">(выкл)</span>}
                 </div>
                 {row.post_note && <div className="text-sm text-muted-foreground line-clamp-2">{row.post_note}</div>}
+                {row.comment_reply_text && (
+                  <div className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">
+                    Ответ в коммент: {row.comment_reply_text}
+                  </div>
+                )}
                 <div className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">{row.reply_text}</div>
+                {row.dm_file_name && (
+                  <div className="text-xs text-muted-foreground mt-1">Файл в директ: {row.dm_file_name}</div>
+                )}
               </div>
             </div>
             <div className="flex gap-2 shrink-0">

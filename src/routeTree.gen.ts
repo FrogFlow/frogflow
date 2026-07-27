@@ -27,6 +27,7 @@ import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcas
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
 import { Route as AdminIgPostsRouteImport } from './routes/admin.ig.posts'
 import { Route as AdminIgLogRouteImport } from './routes/admin.ig.log'
+import { Route as AdminIgLeadsRouteImport } from './routes/admin.ig.leads'
 import { Route as AdminIgKeywordsRouteImport } from './routes/admin.ig.keywords'
 import { Route as AdminIgExclusionsRouteImport } from './routes/admin.ig.exclusions'
 import { Route as AdminIgAccountRouteImport } from './routes/admin.ig.account'
@@ -128,6 +129,11 @@ const AdminIgLogRoute = AdminIgLogRouteImport.update({
   path: '/ig/log',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminIgLeadsRoute = AdminIgLeadsRouteImport.update({
+  id: '/ig/leads',
+  path: '/ig/leads',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminIgKeywordsRoute = AdminIgKeywordsRouteImport.update({
   id: '/ig/keywords',
   path: '/ig/keywords',
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/admin/ig/account': typeof AdminIgAccountRoute
   '/admin/ig/exclusions': typeof AdminIgExclusionsRoute
   '/admin/ig/keywords': typeof AdminIgKeywordsRoute
+  '/admin/ig/leads': typeof AdminIgLeadsRoute
   '/admin/ig/log': typeof AdminIgLogRoute
   '/admin/ig/posts': typeof AdminIgPostsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
@@ -226,6 +233,7 @@ export interface FileRoutesByTo {
   '/admin/ig/account': typeof AdminIgAccountRoute
   '/admin/ig/exclusions': typeof AdminIgExclusionsRoute
   '/admin/ig/keywords': typeof AdminIgKeywordsRoute
+  '/admin/ig/leads': typeof AdminIgLeadsRoute
   '/admin/ig/log': typeof AdminIgLogRoute
   '/admin/ig/posts': typeof AdminIgPostsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
@@ -257,6 +265,7 @@ export interface FileRoutesById {
   '/admin/ig/account': typeof AdminIgAccountRoute
   '/admin/ig/exclusions': typeof AdminIgExclusionsRoute
   '/admin/ig/keywords': typeof AdminIgKeywordsRoute
+  '/admin/ig/leads': typeof AdminIgLeadsRoute
   '/admin/ig/log': typeof AdminIgLogRoute
   '/admin/ig/posts': typeof AdminIgPostsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
@@ -289,6 +298,7 @@ export interface FileRouteTypes {
     | '/admin/ig/account'
     | '/admin/ig/exclusions'
     | '/admin/ig/keywords'
+    | '/admin/ig/leads'
     | '/admin/ig/log'
     | '/admin/ig/posts'
     | '/api/admin/upload'
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
     | '/admin/ig/account'
     | '/admin/ig/exclusions'
     | '/admin/ig/keywords'
+    | '/admin/ig/leads'
     | '/admin/ig/log'
     | '/admin/ig/posts'
     | '/api/admin/upload'
@@ -348,6 +359,7 @@ export interface FileRouteTypes {
     | '/admin/ig/account'
     | '/admin/ig/exclusions'
     | '/admin/ig/keywords'
+    | '/admin/ig/leads'
     | '/admin/ig/log'
     | '/admin/ig/posts'
     | '/api/admin/upload'
@@ -510,6 +522,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIgLogRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/ig/leads': {
+      id: '/admin/ig/leads'
+      path: '/ig/leads'
+      fullPath: '/admin/ig/leads'
+      preLoaderRoute: typeof AdminIgLeadsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/ig/keywords': {
       id: '/admin/ig/keywords'
       path: '/ig/keywords'
@@ -594,6 +613,7 @@ interface AdminRouteChildren {
   AdminIgAccountRoute: typeof AdminIgAccountRoute
   AdminIgExclusionsRoute: typeof AdminIgExclusionsRoute
   AdminIgKeywordsRoute: typeof AdminIgKeywordsRoute
+  AdminIgLeadsRoute: typeof AdminIgLeadsRoute
   AdminIgLogRoute: typeof AdminIgLogRoute
   AdminIgPostsRoute: typeof AdminIgPostsRoute
   AdminIgIndexRoute: typeof AdminIgIndexRoute
@@ -610,6 +630,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminIgAccountRoute: AdminIgAccountRoute,
   AdminIgExclusionsRoute: AdminIgExclusionsRoute,
   AdminIgKeywordsRoute: AdminIgKeywordsRoute,
+  AdminIgLeadsRoute: AdminIgLeadsRoute,
   AdminIgLogRoute: AdminIgLogRoute,
   AdminIgPostsRoute: AdminIgPostsRoute,
   AdminIgIndexRoute: AdminIgIndexRoute,

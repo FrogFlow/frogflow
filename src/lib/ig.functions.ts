@@ -164,7 +164,11 @@ const KeywordInput = z.object({
   post_shortcode: z.string().max(100).optional().nullable(),
   post_note: z.string().max(2000).optional().nullable(),
   keyword: z.string().min(1).max(200),
+  comment_reply_text: z.string().max(4000).optional().nullable(),
   reply_text: z.string().min(1).max(4000),
+  dm_file_path: z.string().max(500).optional().nullable(),
+  dm_file_name: z.string().max(255).optional().nullable(),
+  dm_file_kind: z.string().max(100).optional().nullable(),
   is_active: z.boolean().default(true),
 });
 
@@ -222,7 +226,11 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
       post_shortcode: shortcode,
       post_note: note,
       keyword: data.keyword.trim(),
+      comment_reply_text: data.comment_reply_text?.trim() || null,
       reply_text: data.reply_text,
+      dm_file_path: data.dm_file_path?.trim() || null,
+      dm_file_name: data.dm_file_name?.trim() || null,
+      dm_file_kind: data.dm_file_kind?.trim() || null,
       is_active: data.is_active,
       updated_at: now,
     };
@@ -288,6 +296,10 @@ export const saveIgWatchedPost = createServerFn({ method: "POST" })
       });
       if (error) throw new Error(error.message);
     }
+    await s
+      .from("ig_post_leads")
+      .update({ is_active: data.is_active, updated_at: now })
+      .eq("post_id", data.post_id.trim());
     return { ok: true as const };
   });
 
@@ -296,6 +308,13 @@ export const deleteIgWatchedPost = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
+    const { data: row } = await s.from("ig_watched_posts").select("post_id").eq("id", data.id).maybeSingle();
+    if (row?.post_id) {
+      await s
+        .from("ig_post_leads")
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq("post_id", row.post_id);
+    }
     const { error } = await s.from("ig_watched_posts").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true as const };
@@ -363,6 +382,37 @@ export const listIgCommentActions = createServerFn({ method: "GET" }).handler(as
   return (rows ?? []).map((r) => ({
     ...r,
     keyword_label: r.keyword_id ? kwMap[r.keyword_id] || "—" : "—",
+  }));
+});
+
+export const listIgLeads = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdmin();
+  const s = await db();
+  const { data: rows, error } = await s
+    .from("ig_post_leads")
+    .select("*")
+    .order("updated_at", { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+
+  const keywordIds = [...new Set((rows ?? []).map((r) => r.keyword_id).filter(Boolean))];
+  const postIds = [...new Set((rows ?? []).map((r) => r.post_id).filter(Boolean))];
+  let kwMap: Record<string, string> = {};
+  let postMap: Record<string, string> = {};
+
+  if (keywordIds.length) {
+    const { data: kws } = await s.from("ig_keywords").select("id, keyword").in("id", keywordIds);
+    kwMap = Object.fromEntries((kws ?? []).map((k) => [k.id, k.keyword]));
+  }
+  if (postIds.length) {
+    const { data: posts } = await s.from("ig_watched_posts").select("post_id, caption_snapshot").in("post_id", postIds);
+    postMap = Object.fromEntries((posts ?? []).map((p) => [p.post_id, p.caption_snapshot || ""]));
+  }
+
+  return (rows ?? []).map((r) => ({
+    ...r,
+    keyword_label: r.keyword_id ? kwMap[r.keyword_id] || "—" : "—",
+    post_note: postMap[r.post_id] || "",
   }));
 });
 

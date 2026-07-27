@@ -8,7 +8,12 @@ export const Route = createFileRoute("/admin/ig/log")({
 });
 
 const STATUS_LABELS: Record<string, string> = {
-  sent: "Отправлено",
+  dm_sent: "DM отправлен",
+  dm_pending: "DM ждёт retry",
+  dm_failed: "DM ошибка",
+  dm_gave_up: "DM недоступен",
+  comment_replied: "Ответили в комментарий",
+  post_disabled: "Пост выключен",
   error: "Ошибка",
   excluded: "В исключениях",
   no_match: "Без совпадения",

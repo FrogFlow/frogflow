@@ -287,7 +287,11 @@ export type Database = {
       }
       ig_keywords: {
         Row: {
+          comment_reply_text: string | null
           created_at: string
+          dm_file_kind: string | null
+          dm_file_name: string | null
+          dm_file_path: string | null
           id: string
           is_active: boolean
           keyword: string
@@ -298,7 +302,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          comment_reply_text?: string | null
           created_at?: string
+          dm_file_kind?: string | null
+          dm_file_name?: string | null
+          dm_file_path?: string | null
           id?: string
           is_active?: boolean
           keyword: string
@@ -309,7 +317,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          comment_reply_text?: string | null
           created_at?: string
+          dm_file_kind?: string | null
+          dm_file_name?: string | null
+          dm_file_path?: string | null
           id?: string
           is_active?: boolean
           keyword?: string
@@ -419,36 +431,42 @@ export type Database = {
       }
       ig_comment_actions: {
         Row: {
+          attempt_no: number
           comment_id: string
           comment_text: string | null
           created_at: string
           error_message: string | null
           id: string
           keyword_id: string | null
+          lead_id: string | null
           post_id: string
           provider_user_id: string | null
           status: string
           username: string | null
         }
         Insert: {
+          attempt_no?: number
           comment_id: string
           comment_text?: string | null
           created_at?: string
           error_message?: string | null
           id?: string
           keyword_id?: string | null
+          lead_id?: string | null
           post_id: string
           provider_user_id?: string | null
           status?: string
           username?: string | null
         }
         Update: {
+          attempt_no?: number
           comment_id?: string
           comment_text?: string | null
           created_at?: string
           error_message?: string | null
           id?: string
           keyword_id?: string | null
+          lead_id?: string | null
           post_id?: string
           provider_user_id?: string | null
           status?: string
@@ -457,6 +475,90 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ig_comment_actions_keyword_id_fkey"
+            columns: ["keyword_id"]
+            isOneToOne: false
+            referencedRelation: "ig_keywords"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ig_comment_actions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "ig_post_leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ig_post_leads: {
+        Row: {
+          closed_reason: string | null
+          comment_replied_at: string | null
+          created_at: string
+          dm_attempts: number
+          dm_sent_at: string | null
+          dm_status: string
+          first_comment_id: string | null
+          first_dm_attempt_at: string | null
+          id: string
+          is_active: boolean
+          keyword_id: string | null
+          last_comment_id: string | null
+          last_comment_text: string | null
+          last_error: string | null
+          next_retry_at: string | null
+          post_id: string
+          provider_user_id: string
+          retry_until_at: string | null
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          closed_reason?: string | null
+          comment_replied_at?: string | null
+          created_at?: string
+          dm_attempts?: number
+          dm_sent_at?: string | null
+          dm_status?: string
+          first_comment_id?: string | null
+          first_dm_attempt_at?: string | null
+          id?: string
+          is_active?: boolean
+          keyword_id?: string | null
+          last_comment_id?: string | null
+          last_comment_text?: string | null
+          last_error?: string | null
+          next_retry_at?: string | null
+          post_id: string
+          provider_user_id: string
+          retry_until_at?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          closed_reason?: string | null
+          comment_replied_at?: string | null
+          created_at?: string
+          dm_attempts?: number
+          dm_sent_at?: string | null
+          dm_status?: string
+          first_comment_id?: string | null
+          first_dm_attempt_at?: string | null
+          id?: string
+          is_active?: boolean
+          keyword_id?: string | null
+          last_comment_id?: string | null
+          last_comment_text?: string | null
+          last_error?: string | null
+          next_retry_at?: string | null
+          post_id?: string
+          provider_user_id?: string
+          retry_until_at?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ig_post_leads_keyword_id_fkey"
             columns: ["keyword_id"]
             isOneToOne: false
             referencedRelation: "ig_keywords"

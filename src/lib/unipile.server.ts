@@ -319,6 +319,8 @@ export type IgComment = {
   author_id?: string;
   author?: {
     id?: string;
+    display_name?: string;
+    messaging_identifier?: string;
     username?: string;
     provider_id?: string;
     messaging_id?: string;
@@ -405,9 +407,10 @@ function mapCommentItem(c: any): IgComment | null {
   const author_id = String(
     c.author_id ||
       c.user_id ||
+      author?.messaging_identifier ||
+      author?.messaging_id ||
       author?.id ||
       author?.provider_id ||
-      author?.messaging_id ||
       author?.user_id ||
       c.attendee_id ||
       c.messaging_id ||
@@ -421,7 +424,7 @@ function mapCommentItem(c: any): IgComment | null {
     user_id: c.user_id,
     username: c.username || author?.username || author?.name || author?.display_name || "",
     attendee_id: c.attendee_id,
-    messaging_id: c.messaging_id,
+    messaging_id: c.messaging_id || author?.messaging_identifier || author?.messaging_id,
     created_at: c.created_at || c.date || c.timestamp || c.parsed_datetime,
   };
 }
@@ -521,29 +524,84 @@ export async function listPostComments(
   return all;
 }
 
+export type IgOutgoingAttachment = {
+  filename: string;
+  contentType: string;
+  contentBase64: string;
+};
+
+export function isInstagramDmBlockedError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error || "").toLowerCase();
+  if (!msg) return false;
+  return [
+    "can't message this account",
+    "cannot message this account",
+    "can't send messages",
+    "cannot send messages",
+    "not allowed to message",
+    "user is unavailable",
+    "recipient is unavailable",
+    "privacy",
+    "closed direct",
+    "direct is disabled",
+    "messaging identifier",
+    "forbidden",
+  ].some((needle) => msg.includes(needle));
+}
+
+export async function replyToInstagramComment(params: {
+  accountId: string;
+  postId: string;
+  commentId: string;
+  text: string;
+}): Promise<any> {
+  const accountId = await resolveUnipileAccountId(params.accountId);
+  return await unipileFetch(`/v2/${encodeURIComponent(accountId)}/posts/${encodeURIComponent(params.postId)}/comments/${encodeURIComponent(params.commentId)}`, {
+    method: "POST",
+    body: JSON.stringify({
+      text: params.text,
+    }),
+  });
+}
+
 export async function sendInstagramDm(params: {
   accountId: string;
   attendeeId: string;
   text: string;
+  attachment?: IgOutgoingAttachment | null;
 }): Promise<any> {
+  const accountId = await resolveUnipileAccountId(params.accountId);
+  const attachment = params.attachment;
   try {
-    return await unipileFetch(`/api/v1/chats`, {
+    return await unipileFetch(`/v2/${encodeURIComponent(accountId)}/chats`, {
       method: "POST",
       body: JSON.stringify({
-        account_id: params.accountId,
-        attendees_ids: [params.attendeeId],
+        users_ids: [params.attendeeId],
         text: params.text,
+        ...(attachment
+          ? {
+              attachments: [
+                {
+                  content: attachment.contentBase64,
+                  content_type: attachment.contentType,
+                  filename: attachment.filename,
+                },
+              ],
+            }
+          : {}),
       }),
     });
   } catch (e1: any) {
+    if (attachment) throw e1;
     try {
       return await unipileFetch(`/api/v1/chats/${encodeURIComponent(params.attendeeId)}/messages`, {
         method: "POST",
-        query: { account_id: params.accountId },
+        query: { account_id: accountId },
         body: JSON.stringify({ text: params.text }),
       });
     } catch (e2: any) {
-      throw new Error(e1?.message || e2?.message || "Failed to send Instagram DM");
+      const fallback = e1?.message || e2?.message || "Failed to send Instagram DM";
+      throw new Error(fallback);
     }
   }
 }
