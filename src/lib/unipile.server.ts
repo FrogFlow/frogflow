@@ -1,10 +1,5 @@
 /**
  * Unipile API client (Instagram).
- * Docs: https://developer.unipile.com/
- *
- * Env:
- * - UNIPILE_DSN — host like api1.unipile.com:13111 (no https://)
- * - UNIPILE_API_KEY — access token
  */
 
 import { createHmac } from "node:crypto";
@@ -73,7 +68,6 @@ export async function createInstagramAuthLink(params: {
     success_redirect_url: params.redirectUri,
     failure_redirect_url: params.redirectUri,
     name: params.name || "Instagram",
-    // Credentials OTP often fails on IG; cookies (sessionid) is the reliable path
     config: {
       instagram: {
         allow_methods: ["credentials", "cookies"],
@@ -118,62 +112,91 @@ function accountIgIdentifiers(account: any, accountId: string): string[] {
   push(account?.provider_id);
   push(account?.sources?.[0]?.id);
   push("me");
-  // last resort — sometimes docs allow account id context only with username
   push(accountId);
   return ids;
 }
 
-function extractPostCaption(p: any): string {
-  const raw = p?.text ?? p?.caption ?? p?.title ?? p?.description ?? "";
-  if (typeof raw === "string") return raw.slice(0, 200);
+/** ID for comments API — Instagram needs provider_id, not display id. */
+export function igCommentsPostId(p: any): string {
+  return String(
+    p?.provider_id ||
+      p?.social_id ||
+      p?.specifics?.instagram?.provider_id ||
+      p?.id ||
+      p?.post_id ||
+      "",
+  ).trim();
+}
+
+function extractTextField(raw: unknown, max = 200): string {
+  if (typeof raw === "string") return raw.slice(0, max);
   if (raw && typeof raw === "object") {
-    const nested =
-      raw.text ?? raw.caption ?? raw.body ?? raw.content ?? raw.message ?? "";
-    if (typeof nested === "string") return nested.slice(0, 200);
+    const o = raw as Record<string, unknown>;
+    const nested = o.text ?? o.caption ?? o.body ?? o.content ?? o.message ?? "";
+    if (typeof nested === "string") return nested.slice(0, max);
   }
-  // Sometimes caption is array of text runs
   if (Array.isArray(raw)) {
     return raw
-      .map((x) => (typeof x === "string" ? x : x?.text || ""))
+      .map((x) => (typeof x === "string" ? x : (x as any)?.text || ""))
       .filter(Boolean)
       .join(" ")
-      .slice(0, 200);
+      .slice(0, max);
   }
   return "";
 }
 
+function extractPostCaption(p: any): string {
+  return extractTextField(p?.text ?? p?.caption ?? p?.title ?? p?.description ?? "", 200);
+}
+
+export function extractCommentText(c: any): string {
+  return extractTextField(c?.text ?? c?.message ?? c?.body ?? c?.content ?? "", 2000);
+}
+
+function mapPostItem(p: any): IgPostSummary | null {
+  const commentsPostId = igCommentsPostId(p);
+  if (!commentsPostId) return null;
+  const displayId = String(p.id || commentsPostId);
+  const caption = extractPostCaption(p);
+  const created = p.created_at || p.parsed_datetime || p.date || p.timestamp;
+  const thumb =
+    (typeof p.preview_image === "string" ? p.preview_image : p.preview_image?.url) ||
+    p.attachments?.[0]?.url ||
+    p.attachments?.[0]?.thumbnail_url ||
+    p.thumbnail_url ||
+    p.picture_url ||
+    undefined;
+  const shortcode =
+    p.shortcode ||
+    p.specifics?.instagram?.shortcode ||
+    (typeof p.share_url === "string"
+      ? p.share_url.match(/instagram\.com\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/i)?.[1]
+      : null) ||
+    undefined;
+  return {
+    id: displayId,
+    commentsPostId,
+    caption,
+    created_at: created ? String(created) : undefined,
+    thumbnail_url: thumb ? String(thumb) : undefined,
+    shortcode: shortcode ? String(shortcode) : undefined,
+  };
+}
+
 function mapPostsPayload(data: any): IgPostSummary[] {
   const items = data?.items || data?.data || data?.posts || (Array.isArray(data) ? data : []);
-  return (items as any[])
-    .map((p) => {
-      const id = String(p.id || p.provider_id || p.social_id || p.post_id || "");
-      const caption = extractPostCaption(p);
-      const created = p.created_at || p.parsed_datetime || p.date || p.timestamp;
-      const thumb =
-        (typeof p.preview_image === "string" ? p.preview_image : p.preview_image?.url) ||
-        p.attachments?.[0]?.url ||
-        p.attachments?.[0]?.thumbnail_url ||
-        p.thumbnail_url ||
-        p.picture_url ||
-        undefined;
-      return {
-        id,
-        caption,
-        created_at: created ? String(created) : undefined,
-        thumbnail_url: thumb ? String(thumb) : undefined,
-      };
-    })
-    .filter((p) => p.id);
+  return (items as any[]).map(mapPostItem).filter((p): p is IgPostSummary => Boolean(p));
 }
 
 export type IgPostSummary = {
   id: string;
+  commentsPostId: string;
   caption: string;
   created_at?: string;
   thumbnail_url?: string;
+  shortcode?: string;
 };
 
-/** Own feed posts — try username / provider_id / me until Unipile returns items. */
 export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPostSummary[]> {
   let account: any = null;
   try {
@@ -204,7 +227,6 @@ export async function listOwnPosts(accountId: string, limit = 30): Promise<IgPos
   return [];
 }
 
-/** Instagram URL or shortcode → Unipile provider post id (needed for comments). */
 export function extractIgShortcode(input: string): string | null {
   const raw = input.trim();
   if (!raw) return null;
@@ -212,6 +234,12 @@ export function extractIgShortcode(input: string): string | null {
   if (m?.[1]) return m[1];
   if (/^[A-Za-z0-9_-]{5,20}$/.test(raw) && !raw.includes("/")) return raw;
   return null;
+}
+
+export async function fetchIgPostRaw(accountId: string, postIdOrShortcode: string): Promise<any> {
+  return await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(postIdOrShortcode)}`, {
+    query: { account_id: accountId },
+  });
 }
 
 export async function resolveIgPost(
@@ -227,13 +255,10 @@ export async function resolveIgPost(
     if (tried.has(candidate)) continue;
     tried.add(candidate);
     try {
-      const data = await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(candidate)}`, {
-        query: { account_id: accountId },
-      });
-      const id = String(data?.id || data?.provider_id || data?.social_id || candidate);
-      const caption = String(data?.text || data?.caption || "").slice(0, 200);
-      if (!id) throw new Error("empty post id in response");
-      return { id, caption, created_at: data?.parsed_datetime || data?.date };
+      const data = await fetchIgPostRaw(accountId, candidate);
+      const mapped = mapPostItem(data);
+      if (!mapped) throw new Error("empty post id in response");
+      return mapped;
     } catch (e: any) {
       lastErr = e?.message || String(e);
     }
@@ -245,48 +270,95 @@ export type IgComment = {
   id: string;
   text?: string;
   author_id?: string;
-  author?: { id?: string; username?: string; provider_id?: string };
+  author?: {
+    id?: string;
+    username?: string;
+    provider_id?: string;
+    messaging_id?: string;
+    user_id?: string;
+  };
   user_id?: string;
   username?: string;
+  attendee_id?: string;
+  messaging_id?: string;
   created_at?: string;
 };
 
-export async function listPostComments(accountId: string, postId: string): Promise<IgComment[]> {
-  // DSN API (common): GET /api/v1/posts/{post_id}/comments?account_id=
-  // Some docs show: GET /api/v1/accounts/{account_id}/posts/{post_id}/comments
-  let data: any;
-  try {
-    data = await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(postId)}/comments`, {
-      query: { account_id: accountId },
-    });
-  } catch {
-    data = await unipileFetch<any>(
-      `/api/v1/accounts/${encodeURIComponent(accountId)}/posts/${encodeURIComponent(postId)}/comments`,
-    );
-  }
-  const items = data?.items || data?.data || data?.comments || (Array.isArray(data) ? data : []);
-  return (items as any[])
-    .map((c) => ({
-      id: String(c.id || c.comment_id || ""),
-      text: c.text || c.message || c.body || "",
-      author_id: String(
-        c.author_id || c.user_id || c.author?.id || c.author?.provider_id || c.author?.user_id || "",
-      ),
-      author: c.author,
-      username: c.username || c.author?.username || c.author?.name || "",
-      created_at: c.created_at || c.date || c.timestamp,
-    }))
-    .filter((c) => c.id);
+function mapCommentItem(c: any): IgComment | null {
+  const id = String(c.id || c.comment_id || "");
+  if (!id) return null;
+  const text = extractCommentText(c);
+  const author = c.author;
+  const author_id = String(
+    c.author_id ||
+      c.user_id ||
+      author?.provider_id ||
+      author?.messaging_id ||
+      author?.id ||
+      author?.user_id ||
+      c.attendee_id ||
+      c.messaging_id ||
+      "",
+  ).trim();
+  return {
+    id,
+    text,
+    author_id,
+    author,
+    user_id: c.user_id,
+    username: c.username || author?.username || author?.name || "",
+    attendee_id: c.attendee_id,
+    messaging_id: c.messaging_id,
+    created_at: c.created_at || c.date || c.timestamp,
+  };
 }
 
-/** Start a new DM or send into existing chat. */
+export async function listPostComments(
+  accountId: string,
+  postId: string,
+  opts?: { maxPages?: number },
+): Promise<IgComment[]> {
+  const maxPages = opts?.maxPages ?? 3;
+  const all: IgComment[] = [];
+  const seen = new Set<string>();
+  let cursor: string | undefined;
+
+  for (let page = 0; page < maxPages; page++) {
+    let data: any;
+    const query: Record<string, string | undefined> = { account_id: accountId };
+    if (cursor) query.cursor = cursor;
+
+    try {
+      data = await unipileFetch<any>(`/api/v1/posts/${encodeURIComponent(postId)}/comments`, { query });
+    } catch {
+      data = await unipileFetch<any>(
+        `/api/v1/accounts/${encodeURIComponent(accountId)}/posts/${encodeURIComponent(postId)}/comments`,
+        { query },
+      );
+    }
+
+    const items = data?.items || data?.data || data?.comments || (Array.isArray(data) ? data : []);
+    for (const c of items as any[]) {
+      const mapped = mapCommentItem(c);
+      if (mapped && !seen.has(mapped.id)) {
+        seen.add(mapped.id);
+        all.push(mapped);
+      }
+    }
+
+    const next = data?.cursor || data?.next_cursor || data?.paging?.next_cursor;
+    if (!next || next === cursor) break;
+    cursor = String(next);
+  }
+
+  return all;
+}
+
 export async function sendInstagramDm(params: {
   accountId: string;
-  /** Recipient messaging identifier / provider user id */
   attendeeId: string;
   text: string;
 }): Promise<any> {
-  // Prefer start new chat with attendees
   try {
     return await unipileFetch(`/api/v1/chats`, {
       method: "POST",
@@ -297,7 +369,6 @@ export async function sendInstagramDm(params: {
       }),
     });
   } catch (e1: any) {
-    // Fallback: some accounts use messaging_id as chat_id
     try {
       return await unipileFetch(`/api/v1/chats/${encodeURIComponent(params.attendeeId)}/messages`, {
         method: "POST",
@@ -313,12 +384,9 @@ export async function sendInstagramDm(params: {
 export function verifyUnipileWebhookSignature(_rawBody: string, _signatureHeader: string | null): boolean {
   const secret = process.env.UNIPILE_WEBHOOK_SECRET?.trim();
   if (!secret) {
-    // If no secret configured, accept in dev but log
     console.warn("[unipile] UNIPILE_WEBHOOK_SECRET not set — skipping signature check");
     return true;
   }
-  // Unipile signs with webhook endpoint secret; exact algorithm varies by version.
-  // Accept matching header value or HMAC if provided as hex.
   if (!_signatureHeader) return false;
   if (_signatureHeader === secret) return true;
   try {

@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS public.ig_keywords (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   post_id TEXT,
   post_note TEXT,
+  post_shortcode TEXT,
   keyword TEXT NOT NULL,
   reply_text TEXT NOT NULL,
   is_active BOOLEAN NOT NULL DEFAULT true,
@@ -75,5 +76,26 @@ INSERT INTO public.app_settings (key, value) VALUES
   ('unipile_account_name', ''),
   ('unipile_account_status', ''),
   ('ig_dm_enabled', 'false'),
-  ('ig_default_reply', 'Спасибо за интерес! Напишите нам, чем можем помочь.')
+  ('ig_default_reply', 'Спасибо за интерес! Напишите нам, чем можем помочь.'),
+  ('ig_log_all_comments', 'false')
 ON CONFLICT (key) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.ig_poll_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'ok',
+  rules_count INT NOT NULL DEFAULT 0,
+  posts_polled INT NOT NULL DEFAULT 0,
+  comments_scanned INT NOT NULL DEFAULT 0,
+  matched INT NOT NULL DEFAULT 0,
+  sent INT NOT NULL DEFAULT 0,
+  skipped INT NOT NULL DEFAULT 0,
+  errors TEXT,
+  note TEXT
+);
+GRANT ALL ON public.ig_poll_runs TO service_role;
+ALTER TABLE public.ig_poll_runs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service Role All ig_poll_runs" ON public.ig_poll_runs;
+CREATE POLICY "Service Role All ig_poll_runs"
+ON public.ig_poll_runs FOR ALL TO service_role USING (true) WITH CHECK (true);

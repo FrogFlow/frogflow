@@ -48,6 +48,8 @@ GET https://your-app.vercel.app/api/cron/ig-comments?secret=YOUR_IG_CRON_SECRET
 ```
 Интервал: каждую 1–2 минуты. Секрет — **`IG_CRON_SECRET`**, не `CRON_SECRET`.
 
+После деплоя выполните SQL-патч `PATCH-IG-FIX-COMMENTS.sql` (таблица `ig_poll_runs`, `post_shortcode`). Для существующих правил нажмите «Исправить post_id» на дашборде IG.
+
 ## База данных
 
 При первой настройке выполните `COMPLETE-SETUP.sql` в SQL Editor Supabase.

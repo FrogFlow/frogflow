@@ -26,11 +26,17 @@ export const getIgDashboard = createServerFn({ method: "GET" }).handler(async ()
   const s = await db();
   const map = await settingsMap();
   const [{ count: keywords }, { count: posts }, { count: exclusions }, { count: actions }] = await Promise.all([
-    s.from("ig_keywords").select("*", { count: "exact", head: true }),
+    s.from("ig_keywords").select("*", { count: "exact", head: true }).eq("is_active", true),
     s.from("ig_watched_posts").select("*", { count: "exact", head: true }).eq("is_active", true),
     s.from("ig_exclusions").select("*", { count: "exact", head: true }),
     s.from("ig_comment_actions").select("*", { count: "exact", head: true }),
   ]);
+  const { data: lastPoll } = await s
+    .from("ig_poll_runs")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const { isUnipileConfigured } = await import("./unipile.server");
   return {
     configured: isUnipileConfigured(),
@@ -39,6 +45,7 @@ export const getIgDashboard = createServerFn({ method: "GET" }).handler(async ()
     accountStatus: map.unipile_account_status || "",
     dmEnabled: map.ig_dm_enabled === "true",
     defaultReply: map.ig_default_reply || "",
+    lastPoll: lastPoll || null,
     counts: {
       keywords: keywords ?? 0,
       posts: posts ?? 0,
@@ -154,6 +161,7 @@ export const listIgKeywords = createServerFn({ method: "GET" }).handler(async ()
 const KeywordInput = z.object({
   id: z.string().uuid().optional(),
   post_id: z.string().min(1).max(200),
+  post_shortcode: z.string().max(100).optional().nullable(),
   post_note: z.string().max(2000).optional().nullable(),
   keyword: z.string().min(1).max(200),
   reply_text: z.string().min(1).max(4000),
@@ -166,10 +174,11 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
     await requireAdmin();
     const s = await db();
     const now = new Date().toISOString();
+    // post_id must be Unipile provider_id for comments API
     const postId = data.post_id.trim();
     const note = data.post_note?.trim() || null;
+    const shortcode = data.post_shortcode?.trim() || null;
 
-    // Keep watched_posts in sync so cron/dashboard still see the post
     const { data: existingPost } = await s
       .from("ig_watched_posts")
       .select("id")
@@ -193,27 +202,21 @@ export const saveIgKeyword = createServerFn({ method: "POST" })
       if (postErr) throw new Error(postErr.message);
     }
 
+    const row = {
+      post_id: postId,
+      post_shortcode: shortcode,
+      post_note: note,
+      keyword: data.keyword.trim(),
+      reply_text: data.reply_text,
+      is_active: data.is_active,
+      updated_at: now,
+    };
+
     if (data.id) {
-      const { error } = await s
-        .from("ig_keywords")
-        .update({
-          post_id: postId,
-          post_note: note,
-          keyword: data.keyword.trim(),
-          reply_text: data.reply_text,
-          is_active: data.is_active,
-          updated_at: now,
-        })
-        .eq("id", data.id);
+      const { error } = await s.from("ig_keywords").update(row).eq("id", data.id);
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await s.from("ig_keywords").insert({
-        post_id: postId,
-        post_note: note,
-        keyword: data.keyword.trim(),
-        reply_text: data.reply_text,
-        is_active: data.is_active,
-      });
+      const { error } = await s.from("ig_keywords").insert(row);
       if (error) throw new Error(error.message);
     }
     return { ok: true as const };
@@ -329,11 +332,98 @@ export const deleteIgExclusion = createServerFn({ method: "POST" })
 export const listIgCommentActions = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdmin();
   const s = await db();
-  const { data, error } = await s
+  const { data: rows, error } = await s
     .from("ig_comment_actions")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) throw new Error(error.message);
+
+  const keywordIds = [...new Set((rows ?? []).map((r) => r.keyword_id).filter(Boolean))];
+  let kwMap: Record<string, string> = {};
+  if (keywordIds.length) {
+    const { data: kws } = await s.from("ig_keywords").select("id, keyword").in("id", keywordIds);
+    kwMap = Object.fromEntries((kws ?? []).map((k) => [k.id, k.keyword]));
+  }
+  return (rows ?? []).map((r) => ({
+    ...r,
+    keyword_label: r.keyword_id ? kwMap[r.keyword_id] || "—" : "—",
+  }));
+});
+
+export const listIgPollRuns = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdmin();
+  const s = await db();
+  const { data, error } = await s
+    .from("ig_poll_runs")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(20);
+  if (error) throw new Error(error.message);
   return data ?? [];
+});
+
+export const runIgPollNow = createServerFn({ method: "POST" }).handler(async () => {
+  await requireAdmin();
+  const { processIgCommentPoll } = await import("./ig-comments.server");
+  return await processIgCommentPoll({ maxDms: 20 });
+});
+
+/** Re-resolve post_id to provider_id for existing rules (one-time fix). */
+export const migrateIgRulePostIds = createServerFn({ method: "POST" }).handler(async () => {
+  await requireAdmin();
+  const { resolveIgPost, igCommentsPostId, fetchIgPostRaw, isUnipileConfigured } = await import(
+    "./unipile.server"
+  );
+  if (!isUnipileConfigured()) throw new Error("Unipile не настроен");
+  const map = await settingsMap();
+  const accountId = (map.unipile_account_id || "").trim();
+  if (!accountId) throw new Error("Сначала подключите Instagram-аккаунт");
+
+  const s = await db();
+  const { data: rules } = await s.from("ig_keywords").select("*");
+  let updated = 0;
+  const errors: string[] = [];
+
+  for (const rule of rules ?? []) {
+    const current = String(rule.post_id || "").trim();
+    if (!current) continue;
+    try {
+      let newId: string;
+      let shortcode: string | null = rule.post_shortcode;
+      try {
+        const raw = await fetchIgPostRaw(accountId, current);
+        newId = igCommentsPostId(raw);
+        shortcode = raw?.shortcode || rule.post_shortcode || null;
+      } catch {
+        const resolved = await resolveIgPost(accountId, current);
+        newId = resolved.commentsPostId;
+        shortcode = resolved.shortcode || null;
+      }
+      if (!newId) throw new Error("empty provider id");
+      if (newId !== current) {
+        await s
+          .from("ig_keywords")
+          .update({
+            post_id: newId,
+            post_shortcode: shortcode,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", rule.id);
+        await s.from("ig_watched_posts").upsert(
+          {
+            post_id: newId,
+            caption_snapshot: rule.post_note,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "post_id" },
+        );
+        updated++;
+      }
+    } catch (e: any) {
+      errors.push(`${rule.keyword}: ${e?.message || e}`);
+    }
+  }
+  return { ok: true as const, updated, errors };
 });

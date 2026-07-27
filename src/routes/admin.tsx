@@ -95,9 +95,8 @@ function AdminLayout() {
             ) : (
               <>
                 <NavLink to="/admin/ig">Дашборд IG</NavLink>
-                <NavLink to="/admin/ig/account">Аккаунт</NavLink>
                 <NavLink to="/admin/ig/keywords">Правила</NavLink>
-                <NavLink to="/admin/ig/posts">Посты</NavLink>
+                <NavLink to="/admin/ig/account">Аккаунт</NavLink>
                 <NavLink to="/admin/ig/exclusions">Исключения</NavLink>
                 <NavLink to="/admin/ig/log">Лог</NavLink>
               </>

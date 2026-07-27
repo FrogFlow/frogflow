@@ -293,6 +293,7 @@ export type Database = {
           keyword: string
           post_id: string | null
           post_note: string | null
+          post_shortcode: string | null
           reply_text: string
           updated_at: string
         }
@@ -303,6 +304,7 @@ export type Database = {
           keyword: string
           post_id?: string | null
           post_note?: string | null
+          post_shortcode?: string | null
           reply_text: string
           updated_at?: string
         }
@@ -313,8 +315,54 @@ export type Database = {
           keyword?: string
           post_id?: string | null
           post_note?: string | null
+          post_shortcode?: string | null
           reply_text?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      ig_poll_runs: {
+        Row: {
+          comments_scanned: number
+          errors: string | null
+          finished_at: string | null
+          id: string
+          matched: number
+          note: string | null
+          posts_polled: number
+          rules_count: number
+          sent: number
+          skipped: number
+          started_at: string
+          status: string
+        }
+        Insert: {
+          comments_scanned?: number
+          errors?: string | null
+          finished_at?: string | null
+          id?: string
+          matched?: number
+          note?: string | null
+          posts_polled?: number
+          rules_count?: number
+          sent?: number
+          skipped?: number
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          comments_scanned?: number
+          errors?: string | null
+          finished_at?: string | null
+          id?: string
+          matched?: number
+          note?: string | null
+          posts_polled?: number
+          rules_count?: number
+          sent?: number
+          skipped?: number
+          started_at?: string
+          status?: string
         }
         Relationships: []
       }
