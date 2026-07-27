@@ -1,5 +1,6 @@
 import {
   isInstagramDmBlockedError,
+  isRetryableInstagramDmError,
   listPostComments,
   extractCommentText,
   type IgComment,
@@ -300,6 +301,40 @@ async function sendLeadDm(
       await logAction(s, {
         post_id: lead.post_id,
         comment_id: actionId,
+        provider_user_id: lead.provider_user_id,
+        username: lead.username,
+        keyword_id: rule.id,
+        lead_id: lead.id,
+        comment_text: lead.last_comment_text,
+        status: "dm_pending",
+        error_message: msg.slice(0, 500),
+        attempt_no: attempts,
+      });
+      return "pending";
+    }
+    if (isRetryableInstagramDmError(e)) {
+      const expired =
+        Boolean(lead.retry_until_at) && new Date(lead.retry_until_at as string).getTime() <= nowMs;
+      if (expired) {
+        await markLeadGaveUp(s, lead, "retry_window_expired", msg);
+        return "gave_up";
+      }
+      await s
+        .from("ig_post_leads")
+        .update({
+          dm_status: "pending",
+          dm_attempts: attempts,
+          first_dm_attempt_at: lead.first_dm_attempt_at || now,
+          next_retry_at: retryAt(nowMs),
+          retry_until_at: lead.retry_until_at || retryUntil(nowMs),
+          closed_reason: "temporary_error",
+          last_error: msg.slice(0, 500),
+          updated_at: now,
+        })
+        .eq("id", lead.id);
+      await logAction(s, {
+        post_id: lead.post_id,
+        comment_id: actionCommentId(actionId, "retryable"),
         provider_user_id: lead.provider_user_id,
         username: lead.username,
         keyword_id: rule.id,

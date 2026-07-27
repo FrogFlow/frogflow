@@ -572,6 +572,7 @@ function buildV1InstagramChatFormData(params: {
   text: string;
   attachment?: IgOutgoingAttachment | null;
   useBracketArrayKey?: boolean;
+  attachmentFieldName?: "attachment" | "attachments";
 }): FormData {
   const form = new FormData();
   form.append("account_id", params.accountId);
@@ -580,7 +581,7 @@ function buildV1InstagramChatFormData(params: {
   if (params.attachment) {
     const bytes = Buffer.from(params.attachment.contentBase64, "base64");
     const blob = new Blob([bytes], { type: params.attachment.contentType || "application/octet-stream" });
-    form.append("attachment", blob, params.attachment.filename);
+    form.append(params.attachmentFieldName || "attachment", blob, params.attachment.filename);
   }
   return form;
 }
@@ -601,6 +602,22 @@ export function isInstagramDmBlockedError(error: unknown): boolean {
     "direct is disabled",
     "messaging identifier",
     "forbidden",
+  ].some((needle) => msg.includes(needle));
+}
+
+export function isRetryableInstagramDmError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error || "").toLowerCase();
+  if (!msg) return false;
+  return [
+    "504 gateway time-out",
+    "gateway time-out",
+    "request timed out",
+    "request_timeout",
+    "timeout",
+    "temporarily unavailable",
+    "service unavailable",
+    "bad gateway",
+    "internal server error",
   ].some((needle) => msg.includes(needle));
 }
 
@@ -713,6 +730,32 @@ export async function sendInstagramDm(params: {
           }),
         });
       } catch (e3: any) {
+        if (attachment) {
+          try {
+            return await unipileFetch(`/api/v1/chats`, {
+              method: "POST",
+              body: buildV1InstagramChatFormData({
+                accountId: v1AccId,
+                attendeeId: params.attendeeId,
+                text: params.text,
+                useBracketArrayKey: true,
+              }),
+            });
+          } catch (e4: any) {
+            const v2Msg = e1?.message || String(e1);
+            const v1Msg = e2?.message || String(e2);
+            const v1AltMsg = e3?.message || String(e3);
+            const v1TextOnlyMsg = e4?.message || String(e4);
+            if (v2SendMsg) {
+              throw new Error(
+                `DM send failed. v2 startChat: ${v2Msg}; v2 sendMessage: ${v2SendMsg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}; v1 text-only: ${v1TextOnlyMsg}`,
+              );
+            }
+            throw new Error(
+              `DM send failed. v2: ${v2Msg}; v1: ${v1Msg}; v1 alt: ${v1AltMsg}; v1 text-only: ${v1TextOnlyMsg}`,
+            );
+          }
+        }
         const v2Msg = e1?.message || String(e1);
         const v1Msg = e2?.message || String(e2);
         const v1AltMsg = e3?.message || String(e3);
