@@ -1,31 +1,35 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { listOrders } from "@/lib/orders.functions";
-import { listProducts } from "@/lib/products.functions";
+import { getDashboardStats } from "@/lib/orders.functions";
 
 export const Route = createFileRoute("/admin/")({
   component: Dashboard,
 });
 
 function Dashboard() {
-  const orders = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
-  const products = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
+  const stats = useQuery({ queryKey: ["dashboard-stats"], queryFn: () => getDashboardStats() });
+  const s = stats.data;
 
-  const newOrders = (orders.data ?? []).filter(
-    (o: any) => o.status === "awaiting_confirmation" || o.status === "awaiting_payment",
-  ).length;
-  const total = (orders.data ?? []).length;
-  const delivered = (orders.data ?? []).filter((o: any) => o.status === "delivered").length;
+  const products = s?.products ?? 0;
+  const total = s?.total ?? 0;
+  const awaiting = s?.awaiting ?? 0;
+  const delivered = s?.delivered ?? 0;
+  const delivering = s?.delivering ?? 0;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Дашборд</h1>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="Товары" value={(products.data ?? []).length} />
+        <Stat label="Товары" value={products} />
         <Stat label="Всего заказов" value={total} />
-        <Stat label="Ждут подтверждения" value={newOrders} highlight={newOrders > 0} />
+        <Stat label="Ждут подтверждения" value={awaiting} highlight={awaiting > 0} />
         <Stat label="Выдано" value={delivered} />
       </div>
+      {delivering > 0 && (
+        <p className="text-sm text-blue-700">
+          Выдаётся сейчас: <b>{delivering}</b> — порции файлов ещё идут (см. «Заказы» → Продолжить выдачу).
+        </p>
+      )}
       <div className="bg-card border rounded-lg p-4">
         <h2 className="font-medium mb-2">Как пользоваться</h2>
         <ol className="list-decimal pl-5 text-sm space-y-1 text-muted-foreground">

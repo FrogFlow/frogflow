@@ -19,6 +19,33 @@ export const listOrders = createServerFn({ method: "GET" }).handler(async () => 
   return data ?? [];
 });
 
+/** Exact counts for admin dashboard (listOrders is capped at 200). */
+export const getDashboardStats = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireAdmin } = await import("./admin-session.server");
+  await requireAdmin();
+  const s = await db();
+
+  const countExact = async (table: "orders" | "products", filter?: (q: any) => any) => {
+    let q = s.from(table).select("*", { count: "exact", head: true });
+    if (filter) q = filter(q);
+    const { count, error } = await q;
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
+
+  const [products, total, awaiting, delivered, delivering] = await Promise.all([
+    countExact("products"),
+    countExact("orders"),
+    countExact("orders", (q) =>
+      q.in("status", ["awaiting_payment", "awaiting_confirmation"]),
+    ),
+    countExact("orders", (q) => q.eq("status", "delivered")),
+    countExact("orders", (q) => q.eq("status", "delivering")),
+  ]);
+
+  return { products, total, awaiting, delivered, delivering };
+});
+
 export const getOrder = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
   .handler(async ({ data }) => {
