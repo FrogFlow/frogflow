@@ -81,7 +81,6 @@ function AdminLayout() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-
             {mode === "telegram" ? (
               <>
                 <NavLink to="/admin">Дашборд</NavLink>
@@ -90,6 +89,7 @@ function AdminLayout() {
                 <NavLink to="/admin/orders">Заказы</NavLink>
                 <NavLink to="/admin/broadcast">Рассылка</NavLink>
                 <NavLink to="/admin/payment-methods">Реквизиты</NavLink>
+                <NavLink to="/admin/instagram">Zernio IG</NavLink>
                 <NavLink to="/admin/settings">Настройки</NavLink>
               </>
             ) : (
@@ -100,6 +100,7 @@ function AdminLayout() {
                 <NavLink to="/admin/ig/account">Аккаунт</NavLink>
                 <NavLink to="/admin/ig/exclusions">Исключения</NavLink>
                 <NavLink to="/admin/ig/log">Лог</NavLink>
+                <NavLink to="/admin/instagram">Zernio IG</NavLink>
               </>
             )}
           </div>

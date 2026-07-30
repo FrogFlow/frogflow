@@ -12,9 +12,8 @@
 | `CRON_SECRET` | Секрет для Telegram cron (`/api/cron/broadcast`, ensure-webhook) |
 | `IG_CRON_SECRET` | Отдельный секрет для Instagram cron (`/api/cron/ig-comments`) |
 | `PUBLIC_APP_URL` | Публичный URL приложения (напр. `https://my-app.vercel.app`) |
-| `UNIPILE_DSN` | Хост Unipile без схемы (напр. `api22.unipile.com:15252`) |
-| `UNIPILE_API_KEY` | Access Token Unipile |
-| `UNIPILE_WEBHOOK_SECRET` | Опционально: secret webhook endpoint Unipile |
+| `ZERNIO_API_KEY` | API ключ Zernio API для Instagram (sk_...) |
+| `ZERNIO_BASE_URL` | Base URL Zernio API (по умолчанию `https://zernio.com/api/v1`) |
 
 ## Cron Jobs
 
@@ -59,6 +58,7 @@ GET https://your-app.vercel.app/api/cron/ig-comments?secret=YOUR_IG_CRON_SECRET
 - Robokassa + юр.документы — `PATCH-ROBOKASSA.sql`
 - скрытие категорий + видео-инструкция — `PATCH-CATEGORY-VISIBLE.sql` (обязательно перед деплоем этой версии)
 - порционная выдача заказов — `PATCH-DELIVERY-BATCH.sql`
+- мультиплатформенность Instagram + Zernio — `PATCH-INSTAGRAM-ZERNIO.sql`
 
 ## Robokassa (KZ)
 

@@ -18,6 +18,7 @@ import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
+import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
 import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
 import { Route as AdminIgIndexRouteImport } from './routes/admin.ig.index'
@@ -31,6 +32,7 @@ import { Route as AdminIgLeadsRouteImport } from './routes/admin.ig.leads'
 import { Route as AdminIgKeywordsRouteImport } from './routes/admin.ig.keywords'
 import { Route as AdminIgExclusionsRouteImport } from './routes/admin.ig.exclusions'
 import { Route as AdminIgAccountRouteImport } from './routes/admin.ig.account'
+import { Route as ApiPublicZernioWebhookRouteImport } from './routes/api/public/zernio/webhook'
 import { Route as ApiPublicUnipileWebhookRouteImport } from './routes/api/public/unipile/webhook'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicRobokassaSuccessRouteImport } from './routes/api/public/robokassa/success'
@@ -82,6 +84,11 @@ const AdminPaymentMethodsRoute = AdminPaymentMethodsRouteImport.update({
 const AdminOrdersRoute = AdminOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminInstagramRoute = AdminInstagramRouteImport.update({
+  id: '/instagram',
+  path: '/instagram',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
@@ -149,6 +156,11 @@ const AdminIgAccountRoute = AdminIgAccountRouteImport.update({
   path: '/ig/account',
   getParentRoute: () => AdminRoute,
 } as any)
+const ApiPublicZernioWebhookRoute = ApiPublicZernioWebhookRouteImport.update({
+  id: '/api/public/zernio/webhook',
+  path: '/api/public/zernio/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicUnipileWebhookRoute = ApiPublicUnipileWebhookRouteImport.update({
   id: '/api/public/unipile/webhook',
   path: '/api/public/unipile/webhook',
@@ -194,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/instagram': typeof AdminInstagramRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
@@ -218,12 +231,14 @@ export interface FileRoutesByFullPath {
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/unipile/webhook': typeof ApiPublicUnipileWebhookRoute
+  '/api/public/zernio/webhook': typeof ApiPublicZernioWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/instagram': typeof AdminInstagramRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
@@ -248,6 +263,7 @@ export interface FileRoutesByTo {
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/unipile/webhook': typeof ApiPublicUnipileWebhookRoute
+  '/api/public/zernio/webhook': typeof ApiPublicZernioWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -256,6 +272,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/instagram': typeof AdminInstagramRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
@@ -280,6 +297,7 @@ export interface FileRoutesById {
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/unipile/webhook': typeof ApiPublicUnipileWebhookRoute
+  '/api/public/zernio/webhook': typeof ApiPublicZernioWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -289,6 +307,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/instagram'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
@@ -313,12 +332,14 @@ export interface FileRouteTypes {
     | '/api/public/robokassa/success'
     | '/api/public/telegram/webhook'
     | '/api/public/unipile/webhook'
+    | '/api/public/zernio/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/instagram'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
@@ -343,6 +364,7 @@ export interface FileRouteTypes {
     | '/api/public/robokassa/success'
     | '/api/public/telegram/webhook'
     | '/api/public/unipile/webhook'
+    | '/api/public/zernio/webhook'
   id:
     | '__root__'
     | '/'
@@ -350,6 +372,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/instagram'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
@@ -374,6 +397,7 @@ export interface FileRouteTypes {
     | '/api/public/robokassa/success'
     | '/api/public/telegram/webhook'
     | '/api/public/unipile/webhook'
+    | '/api/public/zernio/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -392,6 +416,7 @@ export interface RootRouteChildren {
   ApiPublicRobokassaSuccessRoute: typeof ApiPublicRobokassaSuccessRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
   ApiPublicUnipileWebhookRoute: typeof ApiPublicUnipileWebhookRoute
+  ApiPublicZernioWebhookRoute: typeof ApiPublicZernioWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -457,6 +482,13 @@ declare module '@tanstack/react-router' {
       path: '/orders'
       fullPath: '/admin/orders'
       preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/instagram': {
+      id: '/admin/instagram'
+      path: '/instagram'
+      fullPath: '/admin/instagram'
+      preLoaderRoute: typeof AdminInstagramRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/categories': {
@@ -550,6 +582,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIgAccountRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/api/public/zernio/webhook': {
+      id: '/api/public/zernio/webhook'
+      path: '/api/public/zernio/webhook'
+      fullPath: '/api/public/zernio/webhook'
+      preLoaderRoute: typeof ApiPublicZernioWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/unipile/webhook': {
       id: '/api/public/unipile/webhook'
       path: '/api/public/unipile/webhook'
@@ -605,6 +644,7 @@ declare module '@tanstack/react-router' {
 interface AdminRouteChildren {
   AdminBroadcastRoute: typeof AdminBroadcastRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
+  AdminInstagramRoute: typeof AdminInstagramRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPaymentMethodsRoute: typeof AdminPaymentMethodsRoute
   AdminProductsRoute: typeof AdminProductsRoute
@@ -622,6 +662,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminBroadcastRoute: AdminBroadcastRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
+  AdminInstagramRoute: AdminInstagramRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPaymentMethodsRoute: AdminPaymentMethodsRoute,
   AdminProductsRoute: AdminProductsRoute,
@@ -654,6 +695,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicRobokassaSuccessRoute: ApiPublicRobokassaSuccessRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
   ApiPublicUnipileWebhookRoute: ApiPublicUnipileWebhookRoute,
+  ApiPublicZernioWebhookRoute: ApiPublicZernioWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
