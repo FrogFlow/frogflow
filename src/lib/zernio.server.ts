@@ -252,8 +252,10 @@ export async function registerZernioWebhook(webhookUrl: string): Promise<{ ok: b
     await zernioRequest("/webhooks/settings", {
       method: "POST",
       body: {
+        name: "Instagram Store Webhook",
         url: webhookUrl,
         events: ["message.received", "comment.received", "account.connected"],
+        isActive: true,
       },
     });
     return { ok: true };
