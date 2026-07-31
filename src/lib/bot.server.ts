@@ -129,36 +129,59 @@ async function upsertUser(from: {
   language_code?: string;
 }): Promise<BotUser> {
   const s = await db();
-  const { data, error } = await s
+  
+  // 1. Try to get existing user
+  const { data: existing } = await s
     .from("bot_users")
-    .upsert(
-      {
-        telegram_id: from.id,
-        username: from.username ?? null,
-        first_name: from.first_name ?? null,
-        last_name: from.last_name ?? null,
-        language_code: from.language_code ?? null,
-      },
-      { onConflict: "telegram_id" },
-    )
     .select("*")
-    .single();
-  if (error) {
-    console.error("[bot] upsertUser error", error);
+    .eq("telegram_id", from.id)
+    .maybeSingle();
+
+  if (existing) {
+    // 2. Update profile if changed (don't touch state)
+    const { data: updated, error } = await s
+      .from("bot_users")
+      .update({
+        username: from.username ?? existing.username,
+        first_name: from.first_name ?? existing.first_name,
+        last_name: from.last_name ?? existing.last_name,
+        language_code: from.language_code ?? existing.language_code,
+      })
+      .eq("telegram_id", from.id)
+      .select("*")
+      .single();
+    
+    if (error) console.error("[bot] updateUser error", error);
+    return (updated || existing) as BotUser;
   }
-  if (!data) {
-    // Return a safe fallback so the bot doesn't crash
-    return {
+
+  // 3. New user: insert
+  const { data: inserted, error } = await s
+    .from("bot_users")
+    .insert({
       telegram_id: from.id,
       username: from.username ?? null,
       first_name: from.first_name ?? null,
       last_name: from.last_name ?? null,
       language_code: from.language_code ?? null,
-      contact_phone: null,
-      state: null,
-    };
+      state: {},
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("[bot] insertUser error", error);
   }
-  return data as BotUser;
+
+  return (inserted || {
+    telegram_id: from.id,
+    username: from.username ?? null,
+    first_name: from.first_name ?? null,
+    last_name: from.last_name ?? null,
+    language_code: from.language_code ?? null,
+    contact_phone: null,
+    state: null,
+  }) as BotUser;
 }
 
 async function setState(telegram_id: number, state: BotUser["state"]) {
