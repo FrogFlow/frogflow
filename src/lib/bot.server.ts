@@ -129,7 +129,7 @@ async function upsertUser(from: {
   language_code?: string;
 }): Promise<BotUser> {
   const s = await db();
-  const { data } = await s
+  const { data, error } = await s
     .from("bot_users")
     .upsert(
       {
@@ -143,6 +143,21 @@ async function upsertUser(from: {
     )
     .select("*")
     .single();
+  if (error) {
+    console.error("[bot] upsertUser error", error);
+  }
+  if (!data) {
+    // Return a safe fallback so the bot doesn't crash
+    return {
+      telegram_id: from.id,
+      username: from.username ?? null,
+      first_name: from.first_name ?? null,
+      last_name: from.last_name ?? null,
+      language_code: from.language_code ?? null,
+      contact_phone: null,
+      state: null,
+    };
+  }
   return data as BotUser;
 }
 
@@ -1280,6 +1295,7 @@ export async function handleUpdate(update: any) {
       await tg("answerCallbackQuery", { callback_query_id: cq.id });
 
       const user = await upsertUser(cq.from as any);
+      if (!user) return;
       
       // Before allowing navigation, require country code
       if (
@@ -1526,6 +1542,7 @@ export async function handleUpdate(update: any) {
     const from = msg.from;
     if (!from) return;
     const user = await upsertUser(from);
+    if (!user) return;
 
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start") {
