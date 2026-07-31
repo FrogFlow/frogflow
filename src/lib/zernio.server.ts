@@ -222,24 +222,25 @@ export async function replyToInstagramComment(
 
 /**
  * Отправить личное сообщение в DM по комментарию (Comment-to-DM Private Reply).
+ * Endpoint: POST /v1/inbox/comments/{postId}/{commentId}/private-reply
  */
 export async function sendInstagramPrivateReply(
+  postId: string,
   commentId: string,
   accountId: string,
   message: string,
 ): Promise<{ ok: boolean }> {
   try {
-    await zernioRequest(`/inbox/comments/private-reply`, {
+    await zernioRequest(`/inbox/comments/${postId}/${commentId}/private-reply`, {
       method: "POST",
       body: {
         accountId,
-        commentId,
         message,
       },
     });
     return { ok: true };
   } catch (e) {
-    console.error(`[zernio] sendInstagramPrivateReply failed for comment ${commentId}`, e);
+    console.error(`[zernio] sendInstagramPrivateReply failed for comment ${commentId} on post ${postId}`, e);
     return { ok: false };
   }
 }

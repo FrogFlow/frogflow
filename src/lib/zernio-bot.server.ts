@@ -290,13 +290,24 @@ export async function handleZernioComment(payload: any) {
   const accObj = payload.account || {};
 
   const commentId = commentObj.id;
-  const postId = commentObj.postId || commentObj.platformPostId || postObj.platformPostId || postObj.id;
-  const commentText = (commentObj.text || "").trim();
-  const accountId = accObj.accountId || accObj.id;
+  // postId может приходить в разных полях — проверяем все варианты
+  const postId =
+    commentObj.postId ||
+    commentObj.platformPostId ||
+    commentObj.mediaId ||
+    postObj.id ||
+    postObj.platformPostId ||
+    postObj.mediaId;
+  const commentText = (commentObj.text || commentObj.content || "").trim();
+  const accountId = accObj.accountId || accObj.id || accObj._id;
 
   if (!commentId || !accountId) {
-    console.warn("[zernio-bot] comment.received missing commentId or accountId:", payload);
+    console.warn("[zernio-bot] comment.received missing commentId or accountId:", JSON.stringify(payload));
     return;
+  }
+
+  if (!postId) {
+    console.warn("[zernio-bot] comment.received missing postId, private-reply may fail:", JSON.stringify(payload));
   }
 
   console.log(`[zernio-bot] New comment on post ${postId}: "${commentText}"`);
@@ -342,12 +353,15 @@ export async function handleZernioComment(payload: any) {
     }
 
     // 2. Отправляем автоответ в DM (Private Reply)
-    if (matchedAutomation.dm_text) {
+    if (matchedAutomation.dm_text && postId) {
       await sendInstagramPrivateReply(
+        postId,
         commentId,
         accountId,
         matchedAutomation.dm_text,
       );
+    } else if (matchedAutomation.dm_text && !postId) {
+      console.warn("[zernio-bot] Cannot send private-reply: postId is missing from payload");
     }
 
     // Увеличиваем счетчик срабатываний
@@ -371,7 +385,11 @@ export async function handleZernioComment(payload: any) {
     const publicReply = `Здравствуйте! Отправили вам всю информацию и ссылку на каталог в Директ! 📩`;
     const dmReply = `Здравствуйте! 👋\nНаши учебные материалы и полный каталог доступны на сайте: ${appUrl()}\n\nЕсли у вас есть вопросы по конкретному предмету — напишите нам в ответное сообщение!`;
 
-    await replyToInstagramComment(postId || commentId, commentId, accountId, publicReply);
-    await sendInstagramPrivateReply(commentId, accountId, dmReply);
+    if (postId) {
+      await replyToInstagramComment(postId, commentId, accountId, publicReply);
+      await sendInstagramPrivateReply(postId, commentId, accountId, dmReply);
+    } else {
+      console.warn("[zernio-bot] Skipping default reply: postId is missing from payload");
+    }
   }
 }

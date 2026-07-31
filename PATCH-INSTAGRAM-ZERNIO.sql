@@ -105,11 +105,14 @@ CREATE TABLE IF NOT EXISTS public.zernio_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id TEXT UNIQUE,
   event_type TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'processed', -- 'processed', 'ignored', 'failed', 'opt_out'
+  status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'processed', 'error', 'ignored'
   payload JSONB NOT NULL DEFAULT '{}'::jsonb,
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Добавить колонку error_message если её нет (idempotent)
+ALTER TABLE public.zernio_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
 
 GRANT ALL ON public.zernio_logs TO service_role;
 ALTER TABLE public.zernio_logs ENABLE ROW LEVEL SECURITY;

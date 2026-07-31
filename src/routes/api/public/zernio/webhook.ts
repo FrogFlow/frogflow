@@ -39,20 +39,35 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         }
 
         // Логирование входящего события
-        await supabaseAdmin.from("zernio_logs").insert({
+        const { data: logEntry, error: insertError } = await supabaseAdmin.from("zernio_logs").insert({
           event_id: eventId ? String(eventId) : null,
           event_type: eventType,
-          status: "processed",
+          status: "pending",
           payload,
-        });
+        }).select("id").single();
+
+        if (insertError) {
+          console.error("Failed to insert zernio log:", insertError);
+        }
 
         // Запуск асинхронной обработки события
-        await runInBackground(async () => {
-          const { handleZernioMessage, handleZernioComment } = await import("@/lib/zernio-bot.server");
-          if (eventType === "message.received") {
-            await handleZernioMessage(payload);
-          } else if (eventType === "comment.received") {
-            await handleZernioComment(payload);
+        runInBackground(async () => {
+          try {
+            const { handleZernioMessage, handleZernioComment } = await import("@/lib/zernio-bot.server");
+            if (eventType === "message.received") {
+              await handleZernioMessage(payload);
+            } else if (eventType === "comment.received") {
+              await handleZernioComment(payload);
+            }
+            
+            if (logEntry?.id) {
+              await supabaseAdmin.from("zernio_logs").update({ status: "processed" }).eq("id", logEntry.id);
+            }
+          } catch (err) {
+            console.error(`Error processing zernio event ${eventId}:`, err);
+            if (logEntry?.id) {
+              await supabaseAdmin.from("zernio_logs").update({ status: "error" }).eq("id", logEntry.id);
+            }
           }
         });
 
