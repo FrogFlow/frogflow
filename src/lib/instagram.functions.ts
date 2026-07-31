@@ -62,7 +62,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     z
       .object({
         accountId: z.string().min(1, "Укажите accountId"),
-        profileId: z.string().min(1, "Укажите profileId"),
+        profileId: z.any().optional(),
         name: z.string().min(1, "Укажите название"),
         keywords: z.array(z.string()).default([]),
         matchMode: z.enum(["exact", "contains"]).default("contains"),
@@ -74,9 +74,19 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
-    const { createCommentAutomation } = await import("./zernio.server");
+    const { createCommentAutomation, ensureDefaultZernioProfile } = await import("./zernio.server");
     await requireAdmin();
-    return await createCommentAutomation(data);
+    
+    let profileId = typeof data.profileId === "string" ? data.profileId : "";
+    if (!profileId) {
+      const defaultProfile = await ensureDefaultZernioProfile();
+      profileId = defaultProfile._id;
+    }
+
+    return await createCommentAutomation({
+      ...data,
+      profileId,
+    });
   });
 
 /**
