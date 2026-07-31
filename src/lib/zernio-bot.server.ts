@@ -2,7 +2,6 @@ import {
   sendZernioInboxMessage,
   replyToInstagramComment,
   sendInstagramPrivateReply,
-  ZernioWebhookMessagePayload,
 } from "./zernio.server";
 import { convertAmount } from "./currency.server";
 
@@ -70,27 +69,37 @@ export async function upsertZernioUser(
 
 /**
  * Обработать входящее личное сообщение (DM) из Instagram Direct.
+ * Соответствует спецификации Zernio Webhooks: payload.message, payload.conversation, payload.account
  */
-export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) {
-  const data = payload.data;
-  if (!data || !data.conversationId || !data.accountId) return;
+export async function handleZernioMessage(payload: any) {
+  const msgObj = payload.message || {};
+  const convObj = payload.conversation || {};
+  const accObj = payload.account || {};
 
-  const conversationId = data.conversationId;
-  const accountId = data.accountId;
-  const senderId = data.senderId || data.senderUsername || "unknown";
+  const conversationId = msgObj.conversationId || convObj.id;
+  const accountId = accObj.accountId || accObj.id || msgObj.accountId;
+  const senderObj = msgObj.sender || {};
+  const senderId = senderObj.id || senderObj.username || convObj.participantId || "unknown";
+  const senderUsername = senderObj.username || convObj.participantUsername || "";
+  const senderName = senderObj.name || convObj.participantName || senderUsername || "друг";
   const userKey = `ig_${senderId}`;
-  const text = (data.message || "").trim();
+  const text = (msgObj.text || "").trim();
+
+  if (!conversationId || !accountId) {
+    console.warn("[zernio-bot] message.received missing conversationId or accountId:", payload);
+    return;
+  }
 
   // Логируем сообщение
-  console.log(`[zernio-bot] DM from ${userKey} (${data.senderUsername}): "${text}"`);
+  console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
 
   // Обновляем/создаем пользователя
   const user = await upsertZernioUser(
     userKey,
     conversationId,
     accountId,
-    data.senderUsername,
-    data.senderName,
+    senderUsername,
+    senderName,
   );
 
   const lower = text.toLowerCase();
@@ -121,7 +130,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
 
   // Дефолтный приветственный ответ
   const defaultReply =
-    `Здравствуйте, ${data.senderName || "друг"}! 👋\n` +
+    `Здравствуйте, ${senderName}! 👋\n` +
     `Добро пожаловать в наш магазин учебных материалов.\n\n` +
     `Напишите название предмета или темы для поиска материалов, или отправьте "Каталог" для просмотра категорий.\n\n` +
     `Ссылка на наш веб-каталог: ${appUrl()}`;
@@ -273,15 +282,22 @@ async function sendOrders(conversationId: string, accountId: string, userKey: st
 
 /**
  * Обработать входящий комментарий к публикации/Reels (Comment-to-DM).
+ * Соответствует спецификации Zernio Webhooks: payload.comment, payload.post, payload.account
  */
-export async function handleZernioComment(payload: ZernioWebhookMessagePayload) {
-  const data = payload.data;
-  if (!data || !data.commentId || !data.accountId) return;
+export async function handleZernioComment(payload: any) {
+  const commentObj = payload.comment || {};
+  const postObj = payload.post || {};
+  const accObj = payload.account || {};
 
-  const postId = data.postId;
-  const commentId = data.commentId;
-  const commentText = (data.commentText || data.message || "").trim();
-  const accountId = data.accountId;
+  const commentId = commentObj.id;
+  const postId = commentObj.postId || commentObj.platformPostId || postObj.platformPostId || postObj.id;
+  const commentText = (commentObj.text || "").trim();
+  const accountId = accObj.accountId || accObj.id;
+
+  if (!commentId || !accountId) {
+    console.warn("[zernio-bot] comment.received missing commentId or accountId:", payload);
+    return;
+  }
 
   console.log(`[zernio-bot] New comment on post ${postId}: "${commentText}"`);
 

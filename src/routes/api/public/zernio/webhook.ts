@@ -20,7 +20,7 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
           return new Response("bad json", { status: 400 });
         }
 
-        const eventId = payload.id || payload.data?.commentId || payload.data?.messageId || null;
+        const eventId = payload.id || payload.comment?.id || payload.message?.id || null;
         const eventType = payload.event || "unknown";
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
