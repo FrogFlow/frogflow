@@ -286,110 +286,12 @@ async function sendOrders(conversationId: string, accountId: string, userKey: st
  */
 export async function handleZernioComment(payload: any) {
   const commentObj = payload.comment || {};
-  const postObj = payload.post || {};
-  const accObj = payload.account || {};
-
-  const commentId = commentObj.id;
-  // postId может приходить в разных полях — проверяем все варианты
-  const postId =
-    commentObj.postId ||
-    commentObj.platformPostId ||
-    commentObj.mediaId ||
-    postObj.id ||
-    postObj.platformPostId ||
-    postObj.mediaId;
   const commentText = (commentObj.text || commentObj.content || "").trim();
-  const accountId = accObj.accountId || accObj.id || accObj._id;
-
-  if (!commentId || !accountId) {
-    console.warn("[zernio-bot] comment.received missing commentId or accountId:", JSON.stringify(payload));
-    return;
-  }
-
-  if (!postId) {
-    console.warn("[zernio-bot] comment.received missing postId, private-reply may fail:", JSON.stringify(payload));
-  }
-
-  console.log(`[zernio-bot] New comment on post ${postId}: "${commentText}"`);
-
-  const s = await db();
-
-  // Ищем совпадения в Comment-to-DM автоматизациях
-  const { data: automations } = await s
-    .from("zernio_automations")
-    .select("*")
-    .eq("is_active", true);
-
-  let matchedAutomation = null;
-  if (automations && automations.length > 0) {
-    for (const auto of automations) {
-      if (auto.post_id && auto.post_id !== postId) continue;
-
-      const keywords = (auto.keywords || []).map((k: string) => k.toLowerCase().trim());
-      if (keywords.length === 0) {
-        matchedAutomation = auto;
-        break;
-      }
-
-      const lowerComment = commentText.toLowerCase();
-      if (keywords.some((kw: string) => kw && lowerComment.includes(kw))) {
-        matchedAutomation = auto;
-        break;
-      }
-    }
-  }
-
-  if (matchedAutomation) {
-    console.log(`[zernio-bot] Matched automation "${matchedAutomation.title}"`);
-
-    // 1. Отправляем публичный ответ на комментарий
-    if (matchedAutomation.reply_text) {
-      await replyToInstagramComment(
-        postId || commentId,
-        commentId,
-        accountId,
-        matchedAutomation.reply_text,
-      );
-    }
-
-    // 2. Отправляем автоответ в DM (Private Reply)
-    if (matchedAutomation.dm_text && postId) {
-      await sendInstagramPrivateReply(
-        postId,
-        commentId,
-        accountId,
-        matchedAutomation.dm_text,
-      );
-    } else if (matchedAutomation.dm_text && !postId) {
-      console.warn("[zernio-bot] Cannot send private-reply: postId is missing from payload");
-    }
-
-    // Увеличиваем счетчик срабатываний
-    await s
-      .from("zernio_automations")
-      .update({ trigger_count: (matchedAutomation.trigger_count || 0) + 1 })
-      .eq("id", matchedAutomation.id);
-
-    return;
-  }
-
-  // Дефолтная авто-реакция на популярные запросы ("цена", "купить", "материал", "хочу")
-  const lower = commentText.toLowerCase();
-  if (
-    lower.includes("цена") ||
-    lower.includes("стоимость") ||
-    lower.includes("купить") ||
-    lower.includes("хочу") ||
-    lower.includes("материал")
-  ) {
-    const publicReply = `Здравствуйте! Отправили вам всю информацию и ссылку на каталог в Директ! 📩`;
-    const dmReply = `Здравствуйте! 👋\nНаши учебные материалы и полный каталог доступны на сайте: ${appUrl()}\n\nЕсли у вас есть вопросы по конкретному предмету — напишите нам в ответное сообщение!`;
-
-    if (postId) {
-      await replyToInstagramComment(postId, commentId, accountId, publicReply);
-      await sendInstagramPrivateReply(postId, commentId, accountId, dmReply);
-    } else {
-      console.warn("[zernio-bot] Skipping default reply: postId is missing from payload");
-    }
-  }
+  const commentId = commentObj.id;
+  
+  // Zernio's native Comment-to-DM automations will automatically handle
+  // matching keywords and sending DMs / Public Replies.
+  // Here we just log the event for our records.
+  
+  console.log(`[zernio-bot] Received comment (handled by Zernio Automations): "${commentText}" (ID: ${commentId})`);
 }

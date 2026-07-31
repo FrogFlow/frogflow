@@ -13,6 +13,7 @@ import {
   getAutomationsFn,
   saveAutomationFn,
   deleteAutomationFn,
+  toggleAutomationFn,
   getInstagramLogsFn,
 } from "@/lib/instagram.functions";
 
@@ -79,6 +80,13 @@ function AdminInstagramPage() {
   const handleSaveAutomation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+
+    if (!accountsQuery.data?.accounts || accountsQuery.data.accounts.length === 0) {
+      alert("Нет подключенных аккаунтов Zernio!");
+      return;
+    }
+    const acc = accountsQuery.data.accounts[0];
+    
     setSavingAuto(true);
     try {
       const keywords = keywordsStr
@@ -88,12 +96,14 @@ function AdminInstagramPage() {
 
       await saveAutomationFn({
         data: {
-          title,
+          accountId: acc._id,
+          profileId: acc.profileId || "", // We can pass empty, backend will use default profileId if missing
+          name: title,
           keywords,
-          reply_text: replyText,
-          dm_text: dmText,
-          post_id: postId.trim() || null,
-          is_active: isActive,
+          matchMode: "contains",
+          dmMessage: dmText,
+          commentReply: replyText,
+          platformPostId: postId.trim() || null,
         },
       });
 
@@ -108,6 +118,15 @@ function AdminInstagramPage() {
       alert(`Ошибка сохранения: ${e.message}`);
     } finally {
       setSavingAuto(false);
+    }
+  };
+
+  const handleToggleAutomation = async (id: string, currentIsActive: boolean) => {
+    try {
+      await toggleAutomationFn({ data: { id, isActive: !currentIsActive } });
+      qc.invalidateQueries({ queryKey: ["ig_automations"] });
+    } catch (e: any) {
+      alert(`Ошибка переключения: ${e.message}`);
     }
   };
 
@@ -270,21 +289,26 @@ function AdminInstagramPage() {
                 <div key={auto.id} className="p-4 border rounded-md flex flex-col md:flex-row md:items-center justify-between gap-3 bg-card">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">{auto.title}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${auto.is_active ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}>
-                        {auto.is_active ? 'Активно' : 'Отключено'}
+                      <span className="font-semibold">{auto.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${auto.isActive ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}>
+                        {auto.isActive ? 'Активно' : 'Отключено'}
                       </span>
-                      <span className="text-xs text-muted-foreground">Срабатываний: {auto.trigger_count || 0}</span>
+                      <span className="text-xs text-muted-foreground">Срабатываний: {auto.stats?.triggered || 0}</span>
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Ключевые слова: {auto.keywords && auto.keywords.length > 0 ? auto.keywords.join(", ") : "Все комментарии"}
                     </div>
-                    {auto.reply_text && <div className="text-xs">💬 Ответ: "{auto.reply_text}"</div>}
-                    {auto.dm_text && <div className="text-xs">📩 DM: "{auto.dm_text}"</div>}
+                    {auto.commentReply && <div className="text-xs">💬 Ответ: "{auto.commentReply}"</div>}
+                    {auto.dmMessage && <div className="text-xs">📩 DM: "{auto.dmMessage}"</div>}
                   </div>
-                  <Button variant="destructive" size="sm" onClick={() => handleDeleteAutomation(auto.id)}>
-                    Удалить
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleToggleAutomation(auto.id, auto.isActive)}>
+                      {auto.isActive ? "Выключить" : "Включить"}
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={() => handleDeleteAutomation(auto.id)}>
+                      Удалить
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>

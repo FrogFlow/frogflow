@@ -42,85 +42,82 @@ export const registerInstagramWebhookFn = createServerFn({ method: "POST" }).han
   return await registerZernioWebhook(webhookUrl);
 });
 
+// ─── Automations via Zernio API ───────────────────────────────────────────────
+
+/**
+ * Получить список Comment-to-DM автоматизаций напрямую из Zernio
+ */
 export const getAutomationsFn = createServerFn({ method: "GET" }).handler(async () => {
   const { requireAdmin } = await import("./admin-session.server");
+  const { listCommentAutomations } = await import("./zernio.server");
   await requireAdmin();
-
-  const s = await db();
-  const { data, error } = await s
-    .from("zernio_automations")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("[instagram.functions] getAutomations error:", error);
-    return { automations: [] };
-  }
-
-  return { automations: data || [] };
+  return await listCommentAutomations();
 });
 
+/**
+ * Создать Comment-to-DM автоматизацию через Zernio API
+ */
 export const saveAutomationFn = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
     z
       .object({
-        id: z.string().uuid().optional(),
-        title: z.string().min(1, "Укажите название"),
+        accountId: z.string().min(1, "Укажите accountId"),
+        profileId: z.string().min(1, "Укажите profileId"),
+        name: z.string().min(1, "Укажите название"),
         keywords: z.array(z.string()).default([]),
-        reply_text: z.string().default(""),
-        dm_text: z.string().default(""),
-        post_id: z.string().optional().nullable(),
-        is_active: z.boolean().default(true),
+        matchMode: z.enum(["exact", "contains"]).default("contains"),
+        dmMessage: z.string().min(1, "Укажите DM сообщение"),
+        commentReply: z.string().default(""),
+        platformPostId: z.string().optional().nullable(),
       })
       .parse(d),
   )
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
+    const { createCommentAutomation } = await import("./zernio.server");
     await requireAdmin();
-
-    const s = await db();
-    if (data.id) {
-      const { error } = await s
-        .from("zernio_automations")
-        .update({
-          title: data.title,
-          keywords: data.keywords,
-          reply_text: data.reply_text,
-          dm_text: data.dm_text,
-          post_id: data.post_id || null,
-          is_active: data.is_active,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", data.id);
-
-      if (error) throw new Error(error.message);
-      return { ok: true };
-    }
-
-    const { error } = await s.from("zernio_automations").insert({
-      title: data.title,
-      keywords: data.keywords,
-      reply_text: data.reply_text,
-      dm_text: data.dm_text,
-      post_id: data.post_id || null,
-      is_active: data.is_active,
-    });
-
-    if (error) throw new Error(error.message);
-    return { ok: true };
+    return await createCommentAutomation(data);
   });
 
+/**
+ * Удалить автоматизацию через Zernio API
+ */
 export const deleteAutomationFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
+    const { deleteCommentAutomation } = await import("./zernio.server");
     await requireAdmin();
-
-    const s = await db();
-    const { error } = await s.from("zernio_automations").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
+    return await deleteCommentAutomation(data.id);
   });
+
+/**
+ * Включить/выключить автоматизацию через Zernio API
+ */
+export const toggleAutomationFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z.object({ id: z.string(), isActive: z.boolean() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    const { updateCommentAutomation } = await import("./zernio.server");
+    await requireAdmin();
+    return await updateCommentAutomation(data.id, { isActive: data.isActive });
+  });
+
+/**
+ * Получить логи конкретной автоматизации из Zernio API
+ */
+export const getAutomationLogsFn = createServerFn({ method: "GET" })
+  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    const { getCommentAutomationLogs } = await import("./zernio.server");
+    await requireAdmin();
+    return await getCommentAutomationLogs(data.id);
+  });
+
+// ─── Webhook logs (наша БД) ───────────────────────────────────────────────────
 
 export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(async () => {
   const { requireAdmin } = await import("./admin-session.server");
@@ -131,7 +128,7 @@ export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(asyn
     .from("zernio_logs")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(30);
 
   if (error) {
     console.error("[instagram.functions] getInstagramLogs error:", error);

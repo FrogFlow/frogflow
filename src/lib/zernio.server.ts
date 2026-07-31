@@ -301,3 +301,99 @@ export async function publishZernioPost(
     return { ok: false };
   }
 }
+
+/**
+ * Получить список Comment-to-DM автоматизаций
+ */
+export async function listCommentAutomations(profileId?: string): Promise<{ automations: any[] }> {
+  try {
+    const query: Record<string, string> = {};
+    if (profileId) query.profileId = profileId;
+    const res = await zernioRequest<{ automations: any[] }>("/comment-automations", { query });
+    return res;
+  } catch (e) {
+    console.error("[zernio] listCommentAutomations error", e);
+    return { automations: [] };
+  }
+}
+
+/**
+ * Создать Comment-to-DM автоматизацию
+ */
+export async function createCommentAutomation(data: {
+  accountId: string;
+  profileId: string;
+  name: string;
+  keywords?: string[];
+  matchMode?: "exact" | "contains";
+  dmMessage: string;
+  commentReply?: string;
+  platformPostId?: string | null;
+}): Promise<{ ok: boolean }> {
+  try {
+    const body: Record<string, any> = {
+      profileId: data.profileId,
+      accountId: data.accountId,
+      trigger: "comment",
+      name: data.name,
+      keywords: data.keywords || [],
+      matchMode: data.matchMode || "contains",
+      dmMessage: data.dmMessage,
+    };
+    if (data.commentReply) body.commentReply = data.commentReply;
+    if (data.platformPostId) body.platformPostId = data.platformPostId;
+
+    await zernioRequest("/comment-automations", {
+      method: "POST",
+      body,
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("[zernio] createCommentAutomation error", e);
+    return { ok: false };
+  }
+}
+
+/**
+ * Обновить Comment-to-DM автоматизацию
+ */
+export async function updateCommentAutomation(automationId: string, data: { isActive: boolean }): Promise<{ ok: boolean }> {
+  try {
+    await zernioRequest(`/comment-automations/${automationId}`, {
+      method: "PATCH",
+      body: data,
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("[zernio] updateCommentAutomation error", e);
+    return { ok: false };
+  }
+}
+
+/**
+ * Удалить Comment-to-DM автоматизацию
+ */
+export async function deleteCommentAutomation(automationId: string): Promise<{ ok: boolean }> {
+  try {
+    await zernioRequest(`/comment-automations/${automationId}`, {
+      method: "DELETE",
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("[zernio] deleteCommentAutomation error", e);
+    return { ok: false };
+  }
+}
+
+/**
+ * Получить логи автоматизации
+ */
+export async function getCommentAutomationLogs(automationId: string): Promise<{ logs: any[] }> {
+  try {
+    const res = await zernioRequest<{ logs: any[] }>(`/comment-automations/${automationId}/logs`);
+    return { logs: res.logs || [] };
+  } catch (e) {
+    console.error("[zernio] getCommentAutomationLogs error", e);
+    return { logs: [] };
+  }
+}
