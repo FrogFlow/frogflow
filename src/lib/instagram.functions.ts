@@ -147,3 +147,13 @@ export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(asyn
 
   return { logs: data || [] };
 });
+
+export const getZernioPostsFn = createServerFn({ method: "GET" })
+  .validator((d: unknown) => z.object({ accountId: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    const { listZernioPosts } = await import("./zernio.server");
+    await requireAdmin();
+    const posts = await listZernioPosts(data.accountId);
+    return { posts };
+  });

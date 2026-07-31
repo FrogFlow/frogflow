@@ -397,3 +397,40 @@ export async function getCommentAutomationLogs(automationId: string): Promise<{ 
     return { logs: [] };
   }
 }
+
+/**
+ * Получить список постов (для выбора Post ID в автоответах)
+ */
+export async function listZernioPosts(accountId: string): Promise<any[]> {
+  try {
+    const externalRes = await zernioRequest<{ posts: any[] }>(`/posts`, {
+      query: { accountId, source: "external", limit: "50" },
+    });
+    
+    const zernioRes = await zernioRequest<{ posts: any[] }>(`/posts`, {
+      query: { accountId, source: "zernio", limit: "50" },
+    });
+    
+    const allPosts = [...(externalRes.posts || []), ...(zernioRes.posts || [])];
+    
+    const uniquePosts: any[] = [];
+    const seen = new Set();
+    
+    for (const p of allPosts) {
+      const id = p.platformPostId || p._id || p.id;
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        uniquePosts.push(p);
+      }
+    }
+    
+    return uniquePosts.sort((a, b) => {
+      const d1 = new Date(a.createdAt || a.created_at || 0).getTime();
+      const d2 = new Date(b.createdAt || b.created_at || 0).getTime();
+      return d2 - d1;
+    });
+  } catch (e) {
+    console.error("[zernio] listZernioPosts error", e);
+    return [];
+  }
+}

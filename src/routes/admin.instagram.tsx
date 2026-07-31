@@ -15,6 +15,7 @@ import {
   deleteAutomationFn,
   toggleAutomationFn,
   getInstagramLogsFn,
+  getZernioPostsFn,
 } from "@/lib/instagram.functions";
 
 export const Route = createFileRoute("/admin/instagram")({
@@ -28,6 +29,15 @@ function AdminInstagramPage() {
   const accountsQuery = useQuery({ queryKey: ["ig_accounts"], queryFn: () => getInstagramAccountsFn() });
   const automationsQuery = useQuery({ queryKey: ["ig_automations"], queryFn: () => getAutomationsFn() });
   const logsQuery = useQuery({ queryKey: ["ig_logs"], queryFn: () => getInstagramLogsFn() });
+  
+  const accounts = accountsQuery.data?.accounts || [];
+  const acc = accounts[0];
+  
+  const postsQuery = useQuery({ 
+    queryKey: ["ig_posts", acc?._id], 
+    queryFn: () => getZernioPostsFn({ data: { accountId: acc?._id } }), 
+    enabled: !!acc?._id 
+  });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
@@ -51,7 +61,7 @@ function AdminInstagramPage() {
         window.open(res.authUrl, "_blank");
         setStatusMsg("Ссылка авторизации открыта в новой вкладке. Пройдите авторизацию через Meta.");
       } else {
-        setStatusMsg("Ошибка: не удалось получить ссылку авторизации Zernio.");
+        setStatusMsg("Ошибка: не удалось получить ссылку авторизации.");
       }
     } catch (e: any) {
       setStatusMsg(`Ошибка подключения: ${e.message}`);
@@ -66,12 +76,12 @@ function AdminInstagramPage() {
     try {
       const res = await registerInstagramWebhookFn();
       if (res?.ok) {
-        setStatusMsg("✅ Вебхук Zernio успешно зарегистрирован!");
+        setStatusMsg("✅ Соединение успешно обновлено!");
       } else {
-        setStatusMsg("❌ Ошибка при регистрации вебхука Zernio.");
+        setStatusMsg("❌ Ошибка при обновлении соединения.");
       }
     } catch (e: any) {
-      setStatusMsg(`Ошибка вебхука: ${e.message}`);
+      setStatusMsg(`Ошибка: ${e.message}`);
     } finally {
       setRegisteringWebhook(false);
     }
@@ -82,7 +92,7 @@ function AdminInstagramPage() {
     if (!title.trim()) return;
 
     if (!accountsQuery.data?.accounts || accountsQuery.data.accounts.length === 0) {
-      alert("Нет подключенных аккаунтов Zernio!");
+      alert("Нет подключенных аккаунтов Instagram!");
       return;
     }
     const acc = accountsQuery.data.accounts[0];
@@ -140,17 +150,17 @@ function AdminInstagramPage() {
     }
   };
 
-  const accounts = accountsQuery.data?.accounts || [];
   const automations = automationsQuery.data?.automations || [];
   const logs = logsQuery.data?.logs || [];
+  const posts = postsQuery.data?.posts || [];
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Интеграция Instagram (Zernio API)</h1>
+          <h1 className="text-2xl font-bold">Интеграция Instagram</h1>
           <p className="text-sm text-muted-foreground">
-            Официальное подключение аккаунтов через Zernio OAuth, обработка Direct и Comment-to-DM автоответов
+            Официальное подключение аккаунтов, обработка Direct и автоответов на комментарии
           </p>
         </div>
       </div>
@@ -163,19 +173,17 @@ function AdminInstagramPage() {
 
       {/* 1. Подключение и статус аккаунта */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="border rounded-lg p-5 bg-card space-y-4">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span>📸 Подключение Instagram</span>
-          </h2>
+        <div className="border rounded-lg p-5 bg-card space-y-3">
+          <h2 className="text-lg font-semibold">1. Авторизация</h2>
           <p className="text-sm text-muted-foreground">
-            Авторизация происходит через официальный Meta OAuth шлюз Zernio. Пароли вводить не требуется.
+            Авторизация происходит через официальный шлюз Meta. Пароли вводить не требуется.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button onClick={handleConnect} disabled={connecting}>
-              {connecting ? "Генерация ссылки..." : "🔗 Подключить Instagram аккаунт"}
+              {connecting ? "Генерация ссылки..." : "🔗 Подключить аккаунт"}
             </Button>
             <Button variant="outline" onClick={handleRegisterWebhook} disabled={registeringWebhook}>
-              {registeringWebhook ? "Регистрация..." : "⚡ Зарегистрировать Webhook"}
+              {registeringWebhook ? "Регистрация..." : "⚡ Обновить соединение"}
             </Button>
           </div>
         </div>
@@ -185,14 +193,14 @@ function AdminInstagramPage() {
           {accountsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Загрузка аккаунтов...</p>
           ) : accounts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Нет подключенных Instagram аккаунтов в Zernio</p>
+            <p className="text-sm text-muted-foreground">Нет подключенных Instagram аккаунтов</p>
           ) : (
             <div className="space-y-2">
               {accounts.map((acc: any) => (
                 <div key={acc._id} className="p-3 border rounded-md flex items-center justify-between text-sm">
                   <div>
                     <div className="font-medium">{acc.name || acc.username || "Instagram Account"}</div>
-                    <div className="text-xs text-muted-foreground">ID: {acc._id} | {acc.platform}</div>
+                    <div className="text-xs text-muted-foreground">ID: {acc._id}</div>
                   </div>
                   <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-600 font-medium">
                     Активен
@@ -204,11 +212,11 @@ function AdminInstagramPage() {
         </div>
       </div>
 
-      {/* 2. Comment-to-DM Автоматизации */}
+      {/* 2. Автоответов */}
       <div className="border rounded-lg p-5 bg-card space-y-4">
-        <h2 className="text-lg font-semibold">Comment-to-DM Автоматизации</h2>
+        <h2 className="text-lg font-semibold">Автоматические ответы на комментарии</h2>
         <p className="text-sm text-muted-foreground">
-          При написании указанных ключевых слов в комментариях под постом/Reels, бот автоматически отправит публичный ответ и напишет сообщение в Директ.
+          При написании указанных ключевых слов в комментариях под постом или Reels, бот автоматически ответит пользователю публично и пришлет подробное сообщение в Директ.
         </p>
 
         <form onSubmit={handleSaveAutomation} className="grid grid-cols-1 md:grid-cols-2 gap-4 border p-4 rounded-md bg-muted/20">
@@ -235,13 +243,20 @@ function AdminInstagramPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="auto_post_id">Post ID (необязательно)</Label>
-            <Input
+            <Label htmlFor="auto_post_id">Прикрепить к посту (необязательно)</Label>
+            <select
               id="auto_post_id"
-              placeholder="Оставьте пустым для всех постов"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               value={postId}
               onChange={(e) => setPostId(e.target.value)}
-            />
+            >
+              <option value="">Любой пост (оставьте так для всех постов)</option>
+              {posts.map((p: any) => (
+                <option key={p.platformPostId || p._id} value={p.platformPostId || p._id}>
+                  {p.text ? p.text.substring(0, 40) + "..." : "Пост от " + new Date(p.createdAt || p.created_at).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="space-y-2">
@@ -316,10 +331,10 @@ function AdminInstagramPage() {
         </div>
       </div>
 
-      {/* 3. Журнал событий (Zernio Webhook Logs) */}
+      {/* 3. Журнал событий */}
       <div className="border rounded-lg p-5 bg-card space-y-4">
-        <h2 className="text-lg font-semibold">Журнал событий Zernio</h2>
-        <p className="text-sm text-muted-foreground">Последние 20 вебхуков от Instagram</p>
+        <h2 className="text-lg font-semibold">Журнал событий</h2>
+        <p className="text-sm text-muted-foreground">Последние системные события интеграции</p>
 
         {logs.length === 0 ? (
           <p className="text-sm text-muted-foreground">Событий пока не зафиксировано.</p>
