@@ -1546,7 +1546,7 @@ export async function handleUpdate(update: any) {
 
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start") {
-      await setState(from.id, { mode: "idle" });
+      await setState(from.id, { ...user.state, mode: "idle" });
       const s = await db();
       const { data: setting } = await s
         .from("app_settings")
@@ -1593,7 +1593,7 @@ export async function handleUpdate(update: any) {
     // Phone number typed as text during checkout
     if (user.state?.mode === "awaiting_contact" && msg.text) {
       if (["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы", "📖 Инструкция", "ℹ️ Информация"].includes(msg.text)) {
-        await setState(from.id, { mode: "idle" });
+        await setState(from.id, { ...user.state, mode: "idle" });
         // Fallthrough to the main menu switch below
       } else {
         if (msg.text === "📱 Поделиться контактом") {
@@ -1642,7 +1642,7 @@ export async function handleUpdate(update: any) {
 
     if (user.state?.mode === "awaiting_proof" && user.state.pending_order_id && !msg.photo && !msg.document) {
       if (msg.text && ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы", "📖 Инструкция", "ℹ️ Информация"].includes(msg.text)) {
-        await setState(from.id, { mode: "idle" });
+        await setState(from.id, { ...user.state, mode: "idle" });
         // Fallthrough to the main menu switch below
       } else {
         await tg("sendMessage", {
