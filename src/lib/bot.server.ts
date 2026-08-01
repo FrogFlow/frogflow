@@ -152,6 +152,7 @@ async function upsertUser(from: {
       .single();
     
     if (error) console.error("[bot] updateUser error", error);
+    console.log(`[bot] upsertUser(tg_${from.id}): state in DB is ${JSON.stringify(existing.state)}`);
     return (updated || existing) as BotUser;
   }
 
@@ -186,6 +187,22 @@ async function upsertUser(from: {
 
 async function setState(telegram_id: number, state: BotUser["state"]) {
   const s = await db();
+  
+  // Если в state нет country_code, попробуем сохранить старый из базы, чтобы не затереть
+  if (state && !state.country_code) {
+    const { data: existing } = await s
+      .from("bot_users")
+      .select("state")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+    
+    if (existing?.state?.country_code) {
+      state.country_code = existing.state.country_code;
+      state.country_name = existing.state.country_name;
+    }
+  }
+
+  console.log(`[bot] setState(tg_${telegram_id}): saving state ${JSON.stringify(state)}`);
   await s.from("bot_users").update({ state: state ?? {} }).eq("telegram_id", telegram_id);
 }
 
