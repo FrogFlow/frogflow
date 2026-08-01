@@ -157,10 +157,13 @@ async function upsertUser(from: {
   }
 
   // 3. New user: insert
+  const userKey = `tg_${from.id}`;
   const { data: inserted, error } = await s
     .from("bot_users")
     .insert({
       telegram_id: from.id,
+      user_key: userKey,
+      platform: "telegram",
       username: from.username ?? null,
       first_name: from.first_name ?? null,
       last_name: from.last_name ?? null,
@@ -203,12 +206,25 @@ async function setState(telegram_id: number, state: BotUser["state"]) {
   }
 
   console.log(`[bot] setState(tg_${telegram_id}): saving state ${JSON.stringify(state)}`);
-  await s.from("bot_users").update({ state: state ?? {} }).eq("telegram_id", telegram_id);
+  // Обновляем по user_key если он существует, иначе по telegram_id (обратная совместимость)
+  const userKey = `tg_${telegram_id}`;
+  const { data: byKey } = await s.from("bot_users").select("user_key").eq("user_key", userKey).maybeSingle();
+  if (byKey) {
+    await s.from("bot_users").update({ state: state ?? {} }).eq("user_key", userKey);
+  } else {
+    await s.from("bot_users").update({ state: state ?? {} }).eq("telegram_id", telegram_id);
+  }
 }
 
 async function setContact(telegram_id: number, phone: string) {
   const s = await db();
-  await s.from("bot_users").update({ contact_phone: phone }).eq("telegram_id", telegram_id);
+  const userKey = `tg_${telegram_id}`;
+  const { data: byKey } = await s.from("bot_users").select("user_key").eq("user_key", userKey).maybeSingle();
+  if (byKey) {
+    await s.from("bot_users").update({ contact_phone: phone }).eq("user_key", userKey);
+  } else {
+    await s.from("bot_users").update({ contact_phone: phone }).eq("telegram_id", telegram_id);
+  }
 }
 
 function mainMenu() {
