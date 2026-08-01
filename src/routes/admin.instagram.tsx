@@ -266,11 +266,14 @@ function AdminInstagramPage() {
               <SelectContent>
                 <SelectItem value="ALL_POSTS">Любой пост (для всех постов)</SelectItem>
                 {posts.map((p: any) => {
-                  const id = p.platformPostId || p._id;
-                  const date = new Date(p.createdAt || p.created_at).toLocaleDateString();
-                  const text = p.text || p.caption || "Без текста";
+                  const id = p.platformPostId || p._id || p.id;
+                  // Zernio/Instagram API fields: timestamp, caption, media_url, thumbnail_url
+                  const rawDate = p.timestamp || p.createdAt || p.created_at;
+                  const date = rawDate ? new Date(rawDate).toLocaleDateString() : "Дата неизвестна";
+                  const text = p.caption || p.text || "Без текста";
+                  
                   const media = Array.isArray(p.media) ? p.media[0] : (p.mediaUrl ? { url: p.mediaUrl } : null);
-                  const thumb = media?.url || media?.thumbnail_url || p.thumbnailUrl;
+                  const thumb = p.thumbnail_url || p.media_url || media?.url || media?.thumbnail_url || p.thumbnailUrl;
 
                   return (
                     <SelectItem key={id} value={id}>
@@ -282,7 +285,7 @@ function AdminInstagramPage() {
                             <ImageIcon className="w-5 h-5 opacity-40" />
                           </div>
                         )}
-                        <div className="flex flex-col min-w-0 overflow-hidden">
+                        <div className="flex flex-col min-w-0 overflow-hidden text-left">
                           <span className="text-[10px] text-muted-foreground uppercase font-bold">
                             {date}
                           </span>
@@ -365,14 +368,17 @@ function AdminInstagramPage() {
                     {auto.platformPostId && (
                       <div className="flex items-center gap-2 mt-1 p-1.5 border rounded-md bg-muted/30 w-fit max-w-xs">
                         {(() => {
-                          const p = posts.find((x: any) => (x.platformPostId || x._id) === auto.platformPostId);
+                          const p = posts.find((x: any) => (x.platformPostId || x._id || x.id) === auto.platformPostId);
                           if (!p) return <span className="text-[10px] text-muted-foreground italic">Привязано к посту (ID: {auto.platformPostId.substring(0, 8)}...)</span>;
+                          
+                          const text = p.caption || p.text || "Без текста";
                           const media = Array.isArray(p.media) ? p.media[0] : (p.mediaUrl ? { url: p.mediaUrl } : null);
-                          const thumb = media?.url || media?.thumbnail_url || p.thumbnailUrl;
+                          const thumb = p.thumbnail_url || p.media_url || media?.url || media?.thumbnail_url || p.thumbnailUrl;
+                          
                           return (
                             <>
                               {thumb && <img src={thumb} className="w-6 h-6 object-cover rounded shrink-0 bg-muted" alt="" />}
-                              <span className="text-[10px] truncate">{p.text || p.caption || "Пост без текста"}</span>
+                              <span className="text-[10px] truncate">{text}</span>
                             </>
                           );
                         })()}
