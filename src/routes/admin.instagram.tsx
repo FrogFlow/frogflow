@@ -17,6 +17,14 @@ import {
   getInstagramLogsFn,
   getZernioPostsFn,
 } from "@/lib/instagram.functions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components-ui/select";
+import { ImageIcon } from "lucide-react";
 
 export const Route = createFileRoute("/admin/instagram")({
   head: () => ({ meta: [{ title: "Управление Instagram — Админка" }] }),
@@ -51,6 +59,10 @@ function AdminInstagramPage() {
   const [postId, setPostId] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [savingAuto, setSavingAuto] = useState(false);
+
+  const handleRefreshPosts = () => {
+    qc.invalidateQueries({ queryKey: ["ig_posts"] });
+  };
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -113,7 +125,7 @@ function AdminInstagramPage() {
           matchMode: "contains",
           dmMessage: dmText,
           commentReply: replyText,
-          platformPostId: postId.trim() || null,
+          platformPostId: (postId && postId !== "ALL_POSTS") ? postId.trim() : null,
         },
       });
 
@@ -185,6 +197,9 @@ function AdminInstagramPage() {
             <Button variant="outline" onClick={handleRegisterWebhook} disabled={registeringWebhook}>
               {registeringWebhook ? "Регистрация..." : "⚡ Обновить соединение"}
             </Button>
+            <Button variant="ghost" onClick={handleRefreshPosts} size="sm">
+              🔄 Обновить посты
+            </Button>
           </div>
         </div>
 
@@ -244,19 +259,53 @@ function AdminInstagramPage() {
 
           <div className="space-y-2">
             <Label htmlFor="auto_post_id">Прикрепить к посту (необязательно)</Label>
-            <select
-              id="auto_post_id"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              value={postId}
-              onChange={(e) => setPostId(e.target.value)}
-            >
-              <option value="">Любой пост (оставьте так для всех постов)</option>
-              {posts.map((p: any) => (
-                <option key={p.platformPostId || p._id} value={p.platformPostId || p._id}>
-                  {p.text ? p.text.substring(0, 40) + "..." : "Пост от " + new Date(p.createdAt || p.created_at).toLocaleDateString()}
-                </option>
-              ))}
-            </select>
+            <Select value={postId} onValueChange={setPostId}>
+              <SelectTrigger id="auto_post_id" className="h-auto py-2">
+                <SelectValue placeholder="Выберите пост или оставьте для всех" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL_POSTS">Любой пост (для всех постов)</SelectItem>
+                {posts.map((p: any) => {
+                  const id = p.platformPostId || p._id;
+                  const date = new Date(p.createdAt || p.created_at).toLocaleDateString();
+                  const text = p.text || p.caption || "Без текста";
+                  const media = Array.isArray(p.media) ? p.media[0] : (p.mediaUrl ? { url: p.mediaUrl } : null);
+                  const thumb = media?.url || media?.thumbnail_url || p.thumbnailUrl;
+
+                  return (
+                    <SelectItem key={id} value={id}>
+                      <div className="flex items-center gap-3 py-1 max-w-[400px]">
+                        {thumb ? (
+                          <img src={thumb} className="w-10 h-10 object-cover rounded shrink-0 bg-muted" alt="" />
+                        ) : (
+                          <div className="w-10 h-10 bg-muted rounded flex items-center justify-center shrink-0">
+                            <ImageIcon className="w-5 h-5 opacity-40" />
+                          </div>
+                        )}
+                        <div className="flex flex-col min-w-0 overflow-hidden">
+                          <span className="text-[10px] text-muted-foreground uppercase font-bold">
+                            {date}
+                          </span>
+                          <span className="text-sm truncate font-medium">
+                            {text}
+                          </span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            {postId && postId !== "ALL_POSTS" && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 text-[10px] px-2" 
+                onClick={() => setPostId("")}
+              >
+                ✕ Сбросить выбор поста
+              </Button>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -313,6 +362,22 @@ function AdminInstagramPage() {
                     <div className="text-xs text-muted-foreground">
                       Ключевые слова: {auto.keywords && auto.keywords.length > 0 ? auto.keywords.join(", ") : "Все комментарии"}
                     </div>
+                    {auto.platformPostId && (
+                      <div className="flex items-center gap-2 mt-1 p-1.5 border rounded-md bg-muted/30 w-fit max-w-xs">
+                        {(() => {
+                          const p = posts.find((x: any) => (x.platformPostId || x._id) === auto.platformPostId);
+                          if (!p) return <span className="text-[10px] text-muted-foreground italic">Привязано к посту (ID: {auto.platformPostId.substring(0, 8)}...)</span>;
+                          const media = Array.isArray(p.media) ? p.media[0] : (p.mediaUrl ? { url: p.mediaUrl } : null);
+                          const thumb = media?.url || media?.thumbnail_url || p.thumbnailUrl;
+                          return (
+                            <>
+                              {thumb && <img src={thumb} className="w-6 h-6 object-cover rounded shrink-0 bg-muted" alt="" />}
+                              <span className="text-[10px] truncate">{p.text || p.caption || "Пост без текста"}</span>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
                     {auto.commentReply && <div className="text-xs">💬 Ответ: "{auto.commentReply}"</div>}
                     {auto.dmMessage && <div className="text-xs">📩 DM: "{auto.dmMessage}"</div>}
                   </div>
