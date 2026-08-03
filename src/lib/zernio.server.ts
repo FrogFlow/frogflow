@@ -394,6 +394,8 @@ export async function createCommentAutomation(data: {
       });
     }
 
+    console.log("[zernio] Sending automation request body:", JSON.stringify(body, null, 2));
+    
     await zernioRequest("/comment-automations", {
       method: "POST",
       body,
