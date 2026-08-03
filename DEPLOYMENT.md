@@ -10,7 +10,6 @@
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key (серверные операции) |
 | `SUPABASE_PROJECT_ID` / `VITE_SUPABASE_PROJECT_ID` | ID проекта |
 | `CRON_SECRET` | Секрет для Telegram cron (`/api/cron/broadcast`, ensure-webhook) |
-| `IG_CRON_SECRET` | Отдельный секрет для Instagram cron (`/api/cron/ig-comments`) |
 | `PUBLIC_APP_URL` | Публичный URL приложения (напр. `https://my-app.vercel.app`) |
 | `ZERNIO_API_KEY` | API ключ Zernio API для Instagram (sk_...) |
 | `ZERNIO_BASE_URL` | Base URL Zernio API (по умолчанию `https://zernio.com/api/v1`) |
@@ -37,17 +36,6 @@ GET https://your-app.vercel.app/api/cron/broadcast?secret=YOUR_CRON_SECRET
 ### Webhook — `/api/cron/ensure-webhook`
 
 Проверяет и восстанавливает webhook Telegram бота. Вызывается автоматически из `/api/cron/broadcast`, но можно настроить отдельно.
-
-### Instagram комментарии — `/api/cron/ig-comments`
-
-Опрос комментариев к watched-постам → keyword → DM через Unipile.
-
-```
-GET https://your-app.vercel.app/api/cron/ig-comments?secret=YOUR_IG_CRON_SECRET
-```
-Интервал: каждую 1–2 минуты. Секрет — **`IG_CRON_SECRET`**, не `CRON_SECRET`.
-
-После деплоя выполните SQL-патч `PATCH-IG-FIX-COMMENTS.sql` (таблица `ig_poll_runs`, `post_shortcode`). Для существующих правил нажмите «Исправить post_id» на дашборде IG.
 
 ## База данных
 

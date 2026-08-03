@@ -28,6 +28,7 @@ export async function upsertZernioUser(
   accountId?: string,
   username?: string,
   firstName?: string,
+  metadata?: Record<string, any>,
 ) {
   const s = await db();
   const { data: existing } = await s
@@ -44,6 +45,9 @@ export async function upsertZernioUser(
     if (accountId) updates.zernio_account_id = accountId;
     if (username) updates.username = username;
     if (firstName) updates.first_name = firstName;
+    if (metadata) {
+      updates.metadata = { ...(existing.metadata || {}), ...metadata };
+    }
 
     await s.from("bot_users").update(updates).eq("user_key", userKey);
     return { ...existing, ...updates };
@@ -57,6 +61,7 @@ export async function upsertZernioUser(
     username: username || null,
     first_name: firstName || "Инста-гость",
     state: {},
+    metadata: metadata || {},
   };
 
   const { data: inserted, error } = await s.from("bot_users").insert(newUser).select().single();
@@ -93,6 +98,9 @@ export async function handleZernioMessage(payload: any) {
   // Логируем сообщение
   console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
 
+  // Извлекаем метаданные профиля Instagram
+  const metadata = payload.data?.instagramProfile || {};
+  
   // Обновляем/создаем пользователя
   const user = await upsertZernioUser(
     userKey,
@@ -100,6 +108,7 @@ export async function handleZernioMessage(payload: any) {
     accountId,
     senderUsername,
     senderName,
+    metadata,
   );
 
   const lower = text.toLowerCase();

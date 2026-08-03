@@ -59,6 +59,7 @@ function AdminInstagramPage() {
   const [postId, setPostId] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [savingAuto, setSavingAuto] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleRefreshPosts = () => {
     qc.invalidateQueries({ queryKey: ["ig_posts"] });
@@ -116,10 +117,29 @@ function AdminInstagramPage() {
         .map((k) => k.trim())
         .filter(Boolean);
 
+      if (editingId) {
+        // Update existing
+        await toggleAutomationFn({ 
+          data: { 
+            id: editingId, 
+            isActive,
+            // We need to pass other fields too if we want to update them
+            // but Zernio update endpoint currently only shown for isActive in my toggleAutomationFn.
+            // I should update toggleAutomationFn or use a proper update function.
+          } 
+        });
+        // Note: For full update, we'd need a proper updateCommentAutomationFn.
+        // For now, let's just re-create if it's an edit to ensure all fields are updated,
+        // OR better: I'll assume saveAutomationFn handles updates if ID is provided.
+        // Actually, looking at zernio.server.ts, create and update are separate.
+        // I will just create a new one and delete the old one if editing, or just inform the user.
+        // Better: I'll stick to the current UI fix and post text fix first.
+      }
+
       await saveAutomationFn({
         data: {
           accountId: acc._id,
-          profileId: acc.profileId || "", // We can pass empty, backend will use default profileId if missing
+          profileId: acc.profileId || "",
           name: title,
           keywords,
           matchMode: "contains",
@@ -129,18 +149,38 @@ function AdminInstagramPage() {
         },
       });
 
-      setTitle("");
-      setKeywordsStr("");
-      setReplyText("");
-      setDmText("");
-      setPostId("");
-      setIsActive(true);
+      if (editingId) {
+        await deleteAutomationFn({ data: { id: editingId } });
+      }
+
+      handleResetForm();
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
     } catch (e: any) {
       alert(`Ошибка сохранения: ${e.message}`);
     } finally {
       setSavingAuto(false);
     }
+  };
+
+  const handleResetForm = () => {
+    setTitle("");
+    setKeywordsStr("");
+    setReplyText("");
+    setDmText("");
+    setPostId("");
+    setIsActive(true);
+    setEditingId(null);
+  };
+
+  const handleEditAutomation = (auto: any) => {
+    setEditingId(auto.id);
+    setTitle(auto.name || "");
+    setKeywordsStr(auto.keywords?.join(", ") || "");
+    setReplyText(auto.commentReply || "");
+    setDmText(auto.dmMessage || "");
+    setPostId(auto.platformPostId || "ALL_POSTS");
+    setIsActive(auto.isActive);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleToggleAutomation = async (id: string, currentIsActive: boolean) => {
@@ -339,9 +379,16 @@ function AdminInstagramPage() {
           </div>
 
           <div className="md:col-span-2">
-            <Button type="submit" disabled={savingAuto}>
-              {savingAuto ? "Сохранение..." : "➕ Добавить автоматизацию"}
-            </Button>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={savingAuto}>
+                {savingAuto ? "Сохранение..." : editingId ? "💾 Сохранить изменения" : "➕ Добавить автоматизацию"}
+              </Button>
+              {editingId && (
+                <Button variant="ghost" onClick={handleResetForm}>
+                  Отмена
+                </Button>
+              )}
+            </div>
           </div>
         </form>
 
@@ -388,6 +435,9 @@ function AdminInstagramPage() {
                     {auto.dmMessage && <div className="text-xs">📩 DM: "{auto.dmMessage}"</div>}
                   </div>
                   <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleEditAutomation(auto)}>
+                      Редактировать
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => handleToggleAutomation(auto.id, auto.isActive)}>
                       {auto.isActive ? "Выключить" : "Включить"}
                     </Button>
@@ -427,9 +477,22 @@ function AdminInstagramPage() {
                     <td className="p-2 font-mono text-xs">{log.event_type}</td>
                     <td className="p-2 font-mono text-xs">{log.event_id || "-"}</td>
                     <td className="p-2">
-                      <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-600">
-                        {log.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-600">
+                          {log.status}
+                        </span>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-6 text-[10px] px-2"
+                          onClick={() => {
+                            console.log("Event Payload:", log.payload);
+                            alert(JSON.stringify(log.payload, null, 2));
+                          }}
+                        >
+                          👁️
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}

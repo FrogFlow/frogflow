@@ -420,6 +420,20 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
       const id = p.platformPostId || p._id || p.id;
       if (id && !seen.has(id)) {
         seen.add(id);
+        
+        // Normalize text/caption
+        if (!p.caption && (p.text || p.content || p.metadata?.caption)) {
+          p.caption = p.text || p.content || p.metadata?.caption;
+        }
+        
+        // Normalize media for thumbnail display
+        if (!p.thumbnail_url && !p.media_url) {
+          const media = Array.isArray(p.media) ? p.media[0] : p.media;
+          if (media?.url || media?.thumbnail_url) {
+            p.thumbnail_url = media.thumbnail_url || media.url;
+          }
+        }
+        
         uniquePosts.push(p);
       }
     }
