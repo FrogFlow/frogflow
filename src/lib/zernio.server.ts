@@ -353,7 +353,8 @@ export async function createCommentAutomation(data: {
       accountId: data.accountId,
       trigger: "comment",
       name: data.name,
-      keywords: data.keywords || [],
+      // Приводим ключи к нижнему регистру для надежности
+      keywords: (data.keywords || []).map(k => k.toLowerCase()),
       matchMode: data.matchMode || "contains",
       dmMessage: data.dmMessage || "",
     };

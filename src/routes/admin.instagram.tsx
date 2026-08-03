@@ -546,10 +546,15 @@ function AdminInstagramPage() {
                     )}
                     {auto.commentReply && <div className="text-xs">💬 Ответ: "{auto.commentReply}"</div>}
                     {auto.dmMessage && <div className="text-xs">📩 DM: "{auto.dmMessage}"</div>}
-                    {auto.dmAttachmentUrl && (
-                      <div className="text-[10px] text-blue-600 flex items-center gap-1 mt-1">
-                        <Paperclip className="w-3 h-3" />
-                        Файл прикреплен ({auto.dmAttachmentType || "media"})
+                    {(auto.dmAttachmentUrl || auto.dmAttachment) && (
+                      <div className="text-[10px] text-blue-600 flex flex-col gap-1 mt-1">
+                        <div className="flex items-center gap-1">
+                          <Paperclip className="w-3 h-3" />
+                          Файл прикреплен ({auto.dmAttachmentType || "media"})
+                        </div>
+                        <div className="bg-blue-50 p-1 rounded border border-blue-100 font-mono text-[9px] break-all text-blue-800">
+                          URL: {auto.dmAttachmentUrl || auto.dmAttachment}
+                        </div>
                       </div>
                     )}
                   </div>
