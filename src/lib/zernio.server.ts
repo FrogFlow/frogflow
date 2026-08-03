@@ -362,9 +362,13 @@ export async function createCommentAutomation(data: {
     if (data.dmMediaPath) {
       // Build a public URL for the media attachment
       // Use VERCEL_URL if PUBLIC_APP_URL is missing
-      const host = process.env.PUBLIC_APP_URL || 
+      let host = process.env.PUBLIC_APP_URL || 
                    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
                    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      
+      if (host && !host.startsWith("http")) {
+        host = `https://${host}`;
+      }
       
       const baseUrl = (host || "").replace(/\/$/, "");
       
