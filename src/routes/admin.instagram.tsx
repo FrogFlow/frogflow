@@ -16,6 +16,8 @@ import {
   toggleAutomationFn,
   getInstagramLogsFn,
   getZernioPostsFn,
+  disconnectInstagramAccountFn,
+  getInstagramMediaUploadUrlFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -24,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components-ui/select";
-import { ImageIcon } from "lucide-react";
+import { ImageIcon, Paperclip, X } from "lucide-react";
 
 export const Route = createFileRoute("/admin/instagram")({
   head: () => ({ meta: [{ title: "Управление Instagram — Админка" }] }),
@@ -49,7 +51,28 @@ function AdminInstagramPage() {
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  const handleDisconnectAccount = async (accountId: string, accountName: string) => {
+    if (!confirm(`Отключить аккаунт "${accountName}"? Все автоматизации для этого аккаунта перестанут работать.`)) return;
+    setDisconnecting(accountId);
+    setStatusMsg(null);
+    try {
+      const res = await disconnectInstagramAccountFn({ data: { accountId } });
+      if (res?.ok) {
+        setStatusMsg("✅ Аккаунт успешно отключён.");
+        qc.invalidateQueries({ queryKey: ["ig_accounts"] });
+        qc.invalidateQueries({ queryKey: ["ig_posts"] });
+      } else {
+        setStatusMsg("❌ Не удалось отключить аккаунт.");
+      }
+    } catch (e: any) {
+      setStatusMsg(`Ошибка отключения: ${e.message}`);
+    } finally {
+      setDisconnecting(null);
+    }
+  };
 
   // Form state for Comment-to-DM automation
   const [title, setTitle] = useState("");
@@ -60,6 +83,37 @@ function AdminInstagramPage() {
   const [isActive, setIsActive] = useState(true);
   const [savingAuto, setSavingAuto] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Media attachment state
+  const [dmMediaPath, setDmMediaPath] = useState<string | null>(null);
+  const [dmMediaType, setDmMediaType] = useState<"image" | "video" | "audio">("image");
+  const [dmMediaName, setDmMediaName] = useState<string | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+
+  const handleMediaUpload = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const file = files[0];
+    setUploadingMedia(true);
+    try {
+      const { path, signedUrl } = await getInstagramMediaUploadUrlFn({ data: { filename: file.name } });
+      const res = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      if (!res.ok) throw new Error(`Не удалось загрузить файл`);
+      setDmMediaPath(path);
+      setDmMediaName(file.name);
+      // Auto-detect media type
+      if (file.type.startsWith("video/")) setDmMediaType("video");
+      else if (file.type.startsWith("audio/")) setDmMediaType("audio");
+      else setDmMediaType("image");
+    } catch (e: any) {
+      alert(`Ошибка загрузки: ${e.message}`);
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
 
   const handleRefreshPosts = () => {
     qc.invalidateQueries({ queryKey: ["ig_posts"] });
@@ -146,6 +200,8 @@ function AdminInstagramPage() {
           dmMessage: dmText,
           commentReply: replyText,
           platformPostId: (postId && postId !== "ALL_POSTS") ? postId.trim() : null,
+          dmMediaPath: dmMediaPath || null,
+          dmMediaType: dmMediaPath ? dmMediaType : null,
         },
       });
 
@@ -170,6 +226,9 @@ function AdminInstagramPage() {
     setPostId("");
     setIsActive(true);
     setEditingId(null);
+    setDmMediaPath(null);
+    setDmMediaName(null);
+    setDmMediaType("image");
   };
 
   const handleEditAutomation = (auto: any) => {
@@ -252,14 +311,25 @@ function AdminInstagramPage() {
           ) : (
             <div className="space-y-2">
               {accounts.map((acc: any) => (
-                <div key={acc._id} className="p-3 border rounded-md flex items-center justify-between text-sm">
-                  <div>
+                <div key={acc._id} className="p-3 border rounded-md flex items-center justify-between text-sm gap-3">
+                  <div className="flex-1 min-w-0">
                     <div className="font-medium">{acc.name || acc.username || "Instagram Account"}</div>
                     <div className="text-xs text-muted-foreground">ID: {acc._id}</div>
                   </div>
-                  <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-600 font-medium">
-                    Активен
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-600 font-medium">
+                      Активен
+                    </span>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={disconnecting === acc._id}
+                      onClick={() => handleDisconnectAccount(acc._id, acc.name || acc.username || "Instagram Account")}
+                    >
+                      {disconnecting === acc._id ? "Отключение..." : "🔓 Отключить"}
+                    </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -309,7 +379,9 @@ function AdminInstagramPage() {
                   const id = p.platformPostId || p._id || p.id;
                   // Используем нормализованные поля из zernio.server.ts
                   const rawDate = p._date || p.publishedAt || p.createdAt || p.timestamp;
-                  const date = rawDate ? new Date(rawDate).toLocaleDateString() : "Дата неизвестна";
+                  const date = rawDate
+                    ? new Date(rawDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })
+                    : "Дата неизвестна";
                   const text = p.caption || p.content || "Без текста";
                   
                   const thumb = p._thumbnail || p.thumbnailUrl || p.thumbnail_url || null;
@@ -370,6 +442,49 @@ function AdminInstagramPage() {
               value={dmText}
               onChange={(e) => setDmText(e.target.value)}
             />
+          </div>
+
+          {/* Media attachment for DM */}
+          <div className="space-y-2 md:col-span-2">
+            <Label>Вложение к DM (изображение, видео, аудио или файл) — необязательно</Label>
+            {dmMediaPath ? (
+              <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/40">
+                <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-sm truncate flex-1">{dmMediaName || dmMediaPath}</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 shrink-0"
+                  onClick={() => { setDmMediaPath(null); setDmMediaName(null); }}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
+                  onChange={(e) => handleMediaUpload(e.target.files)}
+                  disabled={uploadingMedia}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={uploadingMedia}
+                  asChild
+                >
+                  <span>
+                    <Paperclip className="w-4 h-4 mr-1" />
+                    {uploadingMedia ? "Загрузка..." : "Прикрепить файл"}
+                  </span>
+                </Button>
+                <span className="text-xs text-muted-foreground">Изображения, видео, аудио, PDF, документы — до 20МБ</span>
+              </label>
+            )}
           </div>
 
           <div className="flex items-center gap-2 md:col-span-2">

@@ -303,6 +303,21 @@ export async function publishZernioPost(
 }
 
 /**
+ * Отключить (удалить) аккаунт Instagram из Zernio.
+ */
+export async function disconnectZernioAccount(accountId: string): Promise<{ ok: boolean }> {
+  try {
+    await zernioRequest(`/accounts/${accountId}`, {
+      method: "DELETE",
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("[zernio] disconnectZernioAccount error", e);
+    return { ok: false };
+  }
+}
+
+/**
  * Получить список Comment-to-DM автоматизаций
  */
 export async function listCommentAutomations(profileId?: string): Promise<{ automations: any[] }> {
@@ -326,9 +341,11 @@ export async function createCommentAutomation(data: {
   name: string;
   keywords?: string[];
   matchMode?: "exact" | "contains";
-  dmMessage: string;
+  dmMessage?: string;
   commentReply?: string;
   platformPostId?: string | null;
+  dmMediaPath?: string | null;
+  dmMediaType?: "image" | "video" | "audio" | null;
 }): Promise<{ ok: boolean }> {
   try {
     const body: Record<string, any> = {
@@ -338,10 +355,16 @@ export async function createCommentAutomation(data: {
       name: data.name,
       keywords: data.keywords || [],
       matchMode: data.matchMode || "contains",
-      dmMessage: data.dmMessage,
+      dmMessage: data.dmMessage || "",
     };
     if (data.commentReply) body.commentReply = data.commentReply;
     if (data.platformPostId) body.platformPostId = data.platformPostId;
+    if (data.dmMediaPath) {
+      // Build a public URL for the media attachment
+      const baseUrl = (process.env.PUBLIC_APP_URL || "").replace(/\/$/, "");
+      body.dmAttachmentUrl = `${baseUrl}/api/public/img/instagram-media/${encodeURIComponent(data.dmMediaPath)}`;
+      body.dmAttachmentType = data.dmMediaType || "image";
+    }
 
     await zernioRequest("/comment-automations", {
       method: "POST",

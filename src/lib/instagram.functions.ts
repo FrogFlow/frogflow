@@ -66,9 +66,11 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         name: z.string().min(1, "Укажите название"),
         keywords: z.array(z.string()).default([]),
         matchMode: z.enum(["exact", "contains"]).default("contains"),
-        dmMessage: z.string().min(1, "Укажите DM сообщение"),
+        dmMessage: z.string().default(""),
         commentReply: z.string().default(""),
         platformPostId: z.string().optional().nullable(),
+        dmMediaPath: z.string().optional().nullable(),
+        dmMediaType: z.enum(["image", "video", "audio"]).optional().nullable(),
       })
       .parse(d),
   )
@@ -86,6 +88,8 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     return await createCommentAutomation({
       ...data,
       profileId,
+      dmMediaPath: data.dmMediaPath || null,
+      dmMediaType: data.dmMediaType || null,
     });
   });
 
@@ -147,6 +151,33 @@ export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(asyn
 
   return { logs: data || [] };
 });
+
+/**
+ * Сгенерировать signed upload URL для медиа-вложения в Instagram DM
+ */
+export const getInstagramMediaUploadUrlFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ filename: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    await requireAdmin();
+    const ext = (data.filename.split(".").pop() || "jpg").toLowerCase().slice(0, 10);
+    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from("instagram-media")
+      .createSignedUploadUrl(key);
+    if (error || !signed) throw new Error(error?.message || "Upload error");
+    return { path: key, signedUrl: signed.signedUrl };
+  });
+
+export const disconnectInstagramAccountFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ accountId: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    const { disconnectZernioAccount } = await import("./zernio.server");
+    await requireAdmin();
+    return await disconnectZernioAccount(data.accountId);
+  });
 
 export const getZernioPostsFn = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ accountId: z.string() }).parse(d))

@@ -4,6 +4,9 @@ function resolveBucketAndKey(splat: string): { bucket: string; key: string } {
   if (splat.startsWith("broadcast-images/")) {
     return { bucket: "broadcast-images", key: splat.slice("broadcast-images/".length) };
   }
+  if (splat.startsWith("instagram-media/")) {
+    return { bucket: "instagram-media", key: splat.slice("instagram-media/".length) };
+  }
   return { bucket: "product-images", key: splat };
 }
 
