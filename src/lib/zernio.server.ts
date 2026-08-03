@@ -359,7 +359,15 @@ export async function createCommentAutomation(data: {
       dmMessage: data.dmMessage || "",
     };
     if (data.commentReply) body.commentReply = data.commentReply;
-    if (data.platformPostId) body.platformPostId = data.platformPostId;
+    
+    if (data.platformPostId) {
+      // Zernio может ожидать либо postId (внутренний), либо platformPostId (инстаграмовский)
+      // Для надежности передаем оба, если они отличаются
+      body.platformPostId = data.platformPostId;
+      body.postId = data.platformPostId;
+      
+      console.log("[zernio] Targeting specific post:", data.platformPostId);
+    }
     if (data.dmMediaPath) {
       // Build a public URL for the media attachment
       // Use VERCEL_URL if PUBLIC_APP_URL is missing
