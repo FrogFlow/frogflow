@@ -403,10 +403,10 @@ function AdminInstagramPage() {
 	                          <span className="text-sm truncate font-medium">
 	                            {text}
 	                          </span>
-	                          <span className="text-[9px] font-mono text-muted-foreground">ID: {id} | pID: {p.platformPostId} | _id: {p._id}</span>
-	                        </div>
-	                      </div>
-	                    </SelectItem>
+		                          <span className="text-[9px] font-mono text-muted-foreground">ID: {id}</span>
+		                        </div>
+		                      </div>
+		                    </SelectItem>
                   );
                 })}
               </SelectContent>
