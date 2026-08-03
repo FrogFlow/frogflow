@@ -307,13 +307,12 @@ function AdminInstagramPage() {
                 <SelectItem value="ALL_POSTS">Любой пост (для всех постов)</SelectItem>
                 {posts.map((p: any) => {
                   const id = p.platformPostId || p._id || p.id;
-                  // Zernio/Instagram API fields: timestamp, caption, media_url, thumbnail_url
-                  const rawDate = p.timestamp || p.createdAt || p.created_at;
+                  // Используем нормализованные поля из zernio.server.ts
+                  const rawDate = p._date || p.publishedAt || p.createdAt || p.timestamp;
                   const date = rawDate ? new Date(rawDate).toLocaleDateString() : "Дата неизвестна";
-                  const text = p.caption || p.text || "Без текста";
+                  const text = p.caption || p.content || "Без текста";
                   
-                  const media = Array.isArray(p.media) ? p.media[0] : (p.mediaUrl ? { url: p.mediaUrl } : null);
-                  const thumb = p.thumbnail_url || p.media_url || media?.url || media?.thumbnail_url || p.thumbnailUrl;
+                  const thumb = p._thumbnail || p.thumbnailUrl || p.thumbnail_url || null;
 
                   return (
                     <SelectItem key={id} value={id}>
@@ -418,9 +417,8 @@ function AdminInstagramPage() {
                           const p = posts.find((x: any) => (x.platformPostId || x._id || x.id) === auto.platformPostId);
                           if (!p) return <span className="text-[10px] text-muted-foreground italic">Привязано к посту (ID: {auto.platformPostId.substring(0, 8)}...)</span>;
                           
-                          const text = p.caption || p.text || "Без текста";
-                          const media = Array.isArray(p.media) ? p.media[0] : (p.mediaUrl ? { url: p.mediaUrl } : null);
-                          const thumb = p.thumbnail_url || p.media_url || media?.url || media?.thumbnail_url || p.thumbnailUrl;
+                          const text = p.caption || p.content || "Без текста";
+                          const thumb = p._thumbnail || p.thumbnailUrl || p.thumbnail_url || null;
                           
                           return (
                             <>

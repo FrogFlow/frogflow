@@ -426,21 +426,22 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
           p.caption = p.text || p.content || p.metadata?.caption;
         }
         
-        // Normalize media for thumbnail display
-        if (!p.thumbnail_url && !p.media_url) {
-          const media = Array.isArray(p.media) ? p.media[0] : p.media;
-          if (media?.url || media?.thumbnail_url) {
-            p.thumbnail_url = media.thumbnail_url || media.url;
-          }
-        }
+        // Normalize thumbnail for UI display
+        // Zernio API returns: thumbnailUrl (top-level), mediaItems[].thumbnail, mediaItems[].url
+        const mediaItem = Array.isArray(p.mediaItems) ? p.mediaItems[0] : null;
+        p._thumbnail = p.thumbnailUrl || mediaItem?.thumbnail || mediaItem?.url || null;
+        
+        // Normalize date for UI display
+        // Zernio API returns: publishedAt (ISO date-time), createdAt (post creation in Zernio)
+        p._date = p.publishedAt || p.createdAt || p.scheduledFor || null;
         
         uniquePosts.push(p);
       }
     }
     
     return uniquePosts.sort((a, b) => {
-      const d1 = new Date(a.createdAt || a.created_at || 0).getTime();
-      const d2 = new Date(b.createdAt || b.created_at || 0).getTime();
+      const d1 = new Date(a._date || 0).getTime();
+      const d2 = new Date(b._date || 0).getTime();
       return d2 - d1;
     });
   } catch (e) {
