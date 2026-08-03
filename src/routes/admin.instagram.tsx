@@ -400,12 +400,13 @@ function AdminInstagramPage() {
                           <span className="text-[10px] text-muted-foreground uppercase font-bold">
                             {date}
                           </span>
-                          <span className="text-sm truncate font-medium">
-                            {text}
-                          </span>
-                        </div>
-                      </div>
-                    </SelectItem>
+	                          <span className="text-sm truncate font-medium">
+	                            {text}
+	                          </span>
+	                          <span className="text-[9px] font-mono text-muted-foreground">ID: {id}</span>
+	                        </div>
+	                      </div>
+	                    </SelectItem>
                   );
                 })}
               </SelectContent>
@@ -535,12 +536,15 @@ function AdminInstagramPage() {
                           const text = p.caption || p.content || "Без текста";
                           const thumb = p._thumbnail || p.thumbnailUrl || p.thumbnail_url || null;
                           
-                          return (
-                            <>
-                              {thumb && <img src={thumb} className="w-6 h-6 object-cover rounded shrink-0 bg-muted" alt="" />}
-                              <span className="text-[10px] truncate">{text}</span>
-                            </>
-                          );
+	                          return (
+	                            <>
+	                              {thumb && <img src={thumb} className="w-6 h-6 object-cover rounded shrink-0 bg-muted" alt="" />}
+	                              <div className="flex flex-col min-w-0">
+	                                <span className="text-[10px] truncate">{text}</span>
+	                                <span className="text-[8px] font-mono text-muted-foreground">Post ID: {auto.platformPostId}</span>
+	                              </div>
+	                            </>
+	                          );
                         })()}
                       </div>
                     )}
