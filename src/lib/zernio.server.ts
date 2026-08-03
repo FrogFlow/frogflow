@@ -361,9 +361,24 @@ export async function createCommentAutomation(data: {
     if (data.platformPostId) body.platformPostId = data.platformPostId;
     if (data.dmMediaPath) {
       // Build a public URL for the media attachment
-      const baseUrl = (process.env.PUBLIC_APP_URL || "").replace(/\/$/, "");
+      // Use VERCEL_URL if PUBLIC_APP_URL is missing
+      const host = process.env.PUBLIC_APP_URL || 
+                   (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
+                   (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
+      
+      const baseUrl = (host || "").replace(/\/$/, "");
+      
+      if (!baseUrl) {
+        console.warn("[zernio] Warning: No base URL found for media attachment. Link might be broken.");
+      }
+
       body.dmAttachmentUrl = `${baseUrl}/api/public/img/instagram-media/${encodeURIComponent(data.dmMediaPath)}`;
       body.dmAttachmentType = data.dmMediaType || "image";
+      
+      console.log("[zernio] Creating automation with media:", {
+        url: body.dmAttachmentUrl,
+        type: body.dmAttachmentType
+      });
     }
 
     await zernioRequest("/comment-automations", {

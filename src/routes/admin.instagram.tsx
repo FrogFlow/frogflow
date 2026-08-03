@@ -546,6 +546,12 @@ function AdminInstagramPage() {
                     )}
                     {auto.commentReply && <div className="text-xs">💬 Ответ: "{auto.commentReply}"</div>}
                     {auto.dmMessage && <div className="text-xs">📩 DM: "{auto.dmMessage}"</div>}
+                    {auto.dmAttachmentUrl && (
+                      <div className="text-[10px] text-blue-600 flex items-center gap-1 mt-1">
+                        <Paperclip className="w-3 h-3" />
+                        Файл прикреплен ({auto.dmAttachmentType || "media"})
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => handleEditAutomation(auto)}>
