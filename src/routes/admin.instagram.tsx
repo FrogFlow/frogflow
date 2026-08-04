@@ -113,6 +113,8 @@ function AdminInstagramPage() {
   const [clickTag, setClickTag] = useState("");
   const [savingAuto, setSavingAuto] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [originalPlatformPostId, setOriginalPlatformPostId] = useState<string | null>(null);
+  const [originalTrigger, setOriginalTrigger] = useState<"comment" | "story_reply">("comment");
 
   // Media attachment state
   const [dmMediaPath, setDmMediaPath] = useState<string | null>(null);
@@ -205,6 +207,8 @@ function AdminInstagramPage() {
 
       const automationData = {
         id: editingId || undefined,
+        originalPlatformPostId,
+        originalTrigger,
         accountId: acc._id,
         profileId: typeof acc.profileId === "string" ? acc.profileId : acc.profileId?._id || "",
         name: title,
@@ -226,7 +230,8 @@ function AdminInstagramPage() {
         isActive,
       };
 
-      await saveAutomationFn({ data: automationData });
+      const result = await saveAutomationFn({ data: automationData });
+      if (!result?.ok) throw new Error("Zernio отклонил создание правила. Старое правило сохранено.");
 
       handleResetForm();
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
@@ -251,6 +256,8 @@ function AdminInstagramPage() {
     setLinkTracking(true);
     setClickTag("");
     setEditingId(null);
+    setOriginalPlatformPostId(null);
+    setOriginalTrigger("comment");
     setDmMediaPath(null);
     setDmMediaName(null);
     setDmMediaType("image");
@@ -258,6 +265,8 @@ function AdminInstagramPage() {
 
   const handleEditAutomation = (auto: any) => {
     setEditingId(auto.id);
+    setOriginalPlatformPostId(auto.platformPostId || null);
+    setOriginalTrigger(auto.trigger || "comment");
     setTitle(auto.name || "");
     setKeywordsStr(auto.keywords?.join(", ") || "");
     setReplyText(auto.commentReply || "");

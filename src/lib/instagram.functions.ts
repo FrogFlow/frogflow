@@ -62,6 +62,8 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     z
       .object({
         id: z.string().optional(),
+        originalPlatformPostId: z.string().optional().nullable(),
+        originalTrigger: z.enum(["comment", "story_reply"]).optional(),
         accountId: z.string().min(1, "Укажите accountId"),
         profileId: z.any().optional(),
         name: z.string().min(1, "Укажите название"),
@@ -84,7 +86,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
-    const { createCommentAutomation, deleteCommentAutomation, ensureDefaultZernioProfile } = await import("./zernio.server");
+    const { createCommentAutomation, deleteCommentAutomation, ensureDefaultZernioProfile, updateCommentAutomation } = await import("./zernio.server");
     await requireAdmin();
     if (data.platformPostId && data.platformPostId === data.accountId) {
       throw new Error("Выбран ID аккаунта вместо ID публикации. Обновите список и выберите пост заново.");
@@ -96,18 +98,26 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
       profileId = defaultProfile._id;
     }
 
-    const { id: automationId, ...automationData } = data;
+    const { id: automationId, originalPlatformPostId, originalTrigger, ...automationData } = data;
     const automation = {
       ...automationData,
       profileId,
       dmMediaPath: data.dmMediaPath || null,
       dmMediaType: data.dmMediaType || null,
     };
-    // Zernio PATCH deliberately cannot change platformPostId, postId, or trigger.
-    // Recreate an edited rule so a newly selected post actually takes effect.
+    // Zernio PATCH cannot change platformPostId, postId, or trigger. If those
+    // fields are unchanged, preserve the rule and its statistics with PATCH.
     if (automationId) {
+      if (originalPlatformPostId === data.platformPostId && (originalTrigger || "comment") === data.trigger) {
+        return await updateCommentAutomation(automationId, automation);
+      }
+      // Target changed: create first. This keeps the old working rule intact
+      // when Zernio rejects the new post ID or returns a validation error.
+      const created = await createCommentAutomation(automation);
+      if (!created.ok) return created;
       const deleted = await deleteCommentAutomation(automationId);
-      if (!deleted.ok) throw new Error("Не удалось заменить старое правило автоматизации");
+      if (!deleted.ok) throw new Error("Новое правило создано, но старое не удалось удалить");
+      return created;
     }
     return await createCommentAutomation(automation);
   });
