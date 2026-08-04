@@ -26,10 +26,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components-ui/select";
-import { ImageIcon, Paperclip, X } from "lucide-react";
+import { 
+  ImageIcon, 
+  Paperclip, 
+  X, 
+  Settings2, 
+  MessageSquare, 
+  Zap, 
+  Plus, 
+  RefreshCcw, 
+  Trash2, 
+  Play, 
+  Pause,
+  ExternalLink,
+  History,
+  Eye,
+  Info
+} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components-ui/card";
+import { Badge } from "@/components-ui/badge";
 
 export const Route = createFileRoute("/admin/instagram")({
-  head: () => ({ meta: [{ title: "Управление Instagram — Админка" }] }),
+  head: () => ({ meta: [{ title: "Instagram Automation — Zernio" }] }),
   component: AdminInstagramPage,
 });
 
@@ -74,12 +93,12 @@ function AdminInstagramPage() {
     }
   };
 
-  // Form state for Comment-to-DM automation
+  // Form state
   const [title, setTitle] = useState("");
   const [keywordsStr, setKeywordsStr] = useState("");
   const [replyText, setReplyText] = useState("");
   const [dmText, setDmText] = useState("");
-  const [postId, setPostId] = useState("");
+  const [postId, setPostId] = useState("ALL_POSTS");
   const [isActive, setIsActive] = useState(true);
   const [trigger, setTrigger] = useState<"comment" | "story_reply">("comment");
   const [buttons, setButtons] = useState<any[]>([]);
@@ -110,7 +129,6 @@ function AdminInstagramPage() {
       if (!res.ok) throw new Error(`Не удалось загрузить файл`);
       setDmMediaPath(path);
       setDmMediaName(file.name);
-      // Auto-detect media type
       if (file.type.startsWith("video/")) setDmMediaType("video");
       else if (file.type.startsWith("audio/")) setDmMediaType("audio");
       else setDmMediaType("image");
@@ -132,7 +150,7 @@ function AdminInstagramPage() {
       const res = await getInstagramConnectUrlFn();
       if (res?.authUrl) {
         window.open(res.authUrl, "_blank");
-        setStatusMsg("Ссылка авторизации открыта в новой вкладке. Пройдите авторизацию через Meta.");
+        setStatusMsg("Ссылка авторизации открыта в новой вкладке.");
       } else {
         setStatusMsg("Ошибка: не удалось получить ссылку авторизации.");
       }
@@ -177,24 +195,8 @@ function AdminInstagramPage() {
         .map((k) => k.trim())
         .filter(Boolean);
 
-      if (editingId) {
-        // Update existing
-        await toggleAutomationFn({ 
-          data: { 
-            id: editingId, 
-            isActive,
-            // We need to pass other fields too if we want to update them
-            // but Zernio update endpoint currently only shown for isActive in my toggleAutomationFn.
-            // I should update toggleAutomationFn or use a proper update function.
-          } 
-        });
-        // Note: For full update, we'd need a proper updateCommentAutomationFn.
-        // For now, let's just re-create if it's an edit to ensure all fields are updated,
-        // OR better: I'll assume saveAutomationFn handles updates if ID is provided.
-        // Actually, looking at zernio.server.ts, create and update are separate.
-        // I will just create a new one and delete the old one if editing, or just inform the user.
-        // Better: I'll stick to the current UI fix and post text fix first.
-      }
+      const posts = postsQuery.data?.posts || [];
+      const selectedPost = posts.find((p: any) => (p.platformPostId || p._id || p.id) === postId);
 
       const automationData = {
         id: editingId || undefined,
@@ -206,7 +208,8 @@ function AdminInstagramPage() {
         matchMode: "contains" as const,
         dmMessage: dmText,
         commentReply: replyText,
-        platformPostId: (postId && postId !== "ALL_POSTS") ? postId.trim() : null,
+        platformPostId: (postId && postId !== "ALL_POSTS") ? (selectedPost?.platformPostId || postId.trim()) : null,
+        postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._id || selectedPost?.id || null) : null,
         dmMediaPath: dmMediaPath || null,
         dmMediaType: dmMediaPath ? dmMediaType : null,
         buttons: buttons.length > 0 ? buttons : undefined,
@@ -233,7 +236,7 @@ function AdminInstagramPage() {
     setKeywordsStr("");
     setReplyText("");
     setDmText("");
-    setPostId("");
+    setPostId("ALL_POSTS");
     setIsActive(true);
     setTrigger("comment");
     setButtons([]);
@@ -253,7 +256,7 @@ function AdminInstagramPage() {
     setKeywordsStr(auto.keywords?.join(", ") || "");
     setReplyText(auto.commentReply || "");
     setDmText(auto.dmMessage || "");
-    setPostId(auto.platformPostId || "ALL_POSTS");
+    setPostId(auto.platformPostId || auto.postId || "ALL_POSTS");
     setIsActive(auto.isActive);
     setTrigger(auto.trigger || "comment");
     setButtons(auto.buttons || []);
@@ -261,7 +264,6 @@ function AdminInstagramPage() {
     setReplyVariations(auto.commentReplyVariations || []);
     setLinkTracking(auto.linkTracking !== false);
     setClickTag(auto.clickTag || "");
-    // Note: dmMediaPath/Name/Type might not be returned in simple list, but if they are:
     setDmMediaPath(auto.dmMediaPath || null);
     setDmMediaName(auto.dmMediaName || (auto.dmMediaPath ? "Файл прикреплен" : null));
     setDmMediaType(auto.dmMediaType || "image");
@@ -308,485 +310,435 @@ function AdminInstagramPage() {
   const posts = postsQuery.data?.posts || [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Интеграция Instagram</h1>
-          <p className="text-sm text-muted-foreground">
-            Официальное подключение аккаунтов, обработка Direct и автоответов на комментарии
+    <div className="max-w-6xl mx-auto p-4 space-y-8 pb-20">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-extrabold tracking-tight">Instagram Automation</h1>
+          <p className="text-muted-foreground flex items-center gap-2">
+            <Badge variant="outline" className="bg-green-500/5 text-green-600 border-green-500/20">Zernio API v1</Badge>
+            Управление автоответами, Direct и CRM-лидами
           </p>
         </div>
-      </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleRegisterWebhook} disabled={registeringWebhook} size="sm">
+            {registeringWebhook ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
+            Обновить Webhook
+          </Button>
+          <Button onClick={handleConnect} disabled={connecting} size="sm">
+            <Plus className="w-4 h-4 mr-2" />
+            Подключить аккаунт
+          </Button>
+        </div>
+      </header>
 
       {statusMsg && (
-        <div className="p-3 rounded-md bg-blue-500/10 border border-blue-500/30 text-blue-600 text-sm">
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-sm flex items-center gap-3">
+          <Info className="w-5 h-5 shrink-0" />
           {statusMsg}
         </div>
       )}
 
-      {/* 1. Подключение и статус аккаунта */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="border rounded-lg p-5 bg-card space-y-3">
-          <h2 className="text-lg font-semibold">1. Авторизация</h2>
-          <p className="text-sm text-muted-foreground">
-            Авторизация происходит через официальный шлюз Meta. Пароли вводить не требуется.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <Button onClick={handleConnect} disabled={connecting}>
-              {connecting ? "Генерация ссылки..." : "🔗 Подключить аккаунт"}
-            </Button>
-            <Button variant="outline" onClick={handleRegisterWebhook} disabled={registeringWebhook}>
-              {registeringWebhook ? "Регистрация..." : "⚡ Обновить соединение"}
-            </Button>
-            <Button variant="ghost" onClick={handleRefreshPosts} size="sm">
-              🔄 Обновить посты
-            </Button>
-          </div>
-        </div>
+      <Tabs defaultValue="automations" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-3 max-w-md">
+          <TabsTrigger value="automations" className="gap-2">
+            <Settings2 className="w-4 h-4" /> Автоматизации
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="gap-2">
+            <History className="w-4 h-4" /> Журнал
+          </TabsTrigger>
+          <TabsTrigger value="accounts" className="gap-2">
+            <MessageSquare className="w-4 h-4" /> Аккаунты
+          </TabsTrigger>
+        </TabsList>
 
-        <div className="border rounded-lg p-5 bg-card space-y-3">
-          <h2 className="text-lg font-semibold">Подключенные аккаунты</h2>
-          {accountsQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">Загрузка аккаунтов...</p>
-          ) : accounts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Нет подключенных Instagram аккаунтов</p>
-          ) : (
-            <div className="space-y-2">
-              {accounts.map((acc: any) => (
-                <div key={acc._id} className="p-3 border rounded-md flex items-center justify-between text-sm gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium">{acc.name || acc.username || "Instagram Account"}</div>
-                    <div className="text-xs text-muted-foreground">ID: {acc._id}</div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-600 font-medium">
-                      Активен
-                    </span>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="h-7 text-xs"
-                      disabled={disconnecting === acc._id}
-                      onClick={() => handleDisconnectAccount(acc._id, acc.name || acc.username || "Instagram Account")}
-                    >
-                      {disconnecting === acc._id ? "Отключение..." : "🔓 Отключить"}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 2. Автоответов */}
-      <div className="border rounded-lg p-5 bg-card space-y-4">
-        <h2 className="text-lg font-semibold">Автоматические ответы на комментарии</h2>
-        <p className="text-sm text-muted-foreground">
-          При написании указанных ключевых слов в комментариях под постом или Reels, бот автоматически ответит пользователю публично и пришлет подробное сообщение в Директ.
-        </p>
-
-        <form onSubmit={handleSaveAutomation} className="grid grid-cols-1 md:grid-cols-2 gap-4 border p-4 rounded-md bg-muted/20">
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="auto_title">Название правила</Label>
-            <Input
-              id="auto_title"
-              placeholder="Например: Автовыдача учебника по математике"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="auto_kw">Ключевые слова (через запятую)</Label>
-            <Input
-              id="auto_kw"
-              placeholder="цена, купить, хочу, материал"
-              value={keywordsStr}
-              onChange={(e) => setKeywordsStr(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">Оставьте пустым для срабатывания на любой комментарий</p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="auto_trigger">Тип триггера</Label>
-            <Select value={trigger} onValueChange={(v: any) => setTrigger(v)}>
-              <SelectTrigger id="auto_trigger">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="comment">💬 Комментарий под постом</SelectItem>
-                <SelectItem value="story_reply">📱 Ответ на Story</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="auto_post_id">
-              {trigger === "story_reply" ? "Прикрепить к конкретной Story (необязательно)" : "Прикрепить к посту (необязательно)"}
-            </Label>
-            <Select value={postId} onValueChange={setPostId}>
-              <SelectTrigger id="auto_post_id" className="h-auto py-2">
-                <SelectValue placeholder="Выберите пост или оставьте для всех" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL_POSTS">Любой пост (для всех постов)</SelectItem>
-                {posts.map((p: any) => {
-                  const id = p.platformPostId || p._id || p.id;
-                  // Используем нормализованные поля из zernio.server.ts
-                  const rawDate = p._date || p.publishedAt || p.createdAt || p.timestamp;
-                  const date = rawDate
-                    ? new Date(rawDate).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })
-                    : "Дата неизвестна";
-                  const text = p.caption || p.content || "Без текста";
-                  
-                  const thumb = p._thumbnail || p.thumbnailUrl || p.thumbnail_url || null;
-
-                  return (
-                    <SelectItem key={id} value={id}>
-                      <div className="flex items-center gap-3 py-1 max-w-[400px]">
-                        {thumb ? (
-                          <img src={thumb} className="w-10 h-10 object-cover rounded shrink-0 bg-muted" alt="" />
-                        ) : (
-                          <div className="w-10 h-10 bg-muted rounded flex items-center justify-center shrink-0">
-                            <ImageIcon className="w-5 h-5 opacity-40" />
-                          </div>
-                        )}
-                        <div className="flex flex-col min-w-0 overflow-hidden text-left">
-                          <span className="text-[10px] text-muted-foreground uppercase font-bold">
-                            {date}
-                          </span>
-	                          <span className="text-sm truncate font-medium">
-	                            {text}
-	                          </span>
-		                          <span className="text-[9px] font-mono text-muted-foreground">ID: {id}</span>
-		                        </div>
-		                      </div>
-		                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-            {postId && postId !== "ALL_POSTS" && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-6 text-[10px] px-2" 
-                onClick={() => setPostId("")}
-              >
-                ✕ Сбросить выбор поста
-              </Button>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="auto_reply">Публичный ответ на комментарий</Label>
-            <Textarea
-              id="auto_reply"
-              rows={2}
-              placeholder="Написали вам в Директ! 📩"
-              value={replyText}
-              onChange={(e) => setReplyText(e.target.value)}
-            />
-            <div className="space-y-1">
-              <Label className="text-[10px] text-muted-foreground">Вариации ответа (по одной на строку, для рандомизации)</Label>
-              <Textarea
-                className="text-xs min-h-[60px]"
-                placeholder="Ответили в ЛС!&#10;Проверьте директ!"
-                value={replyVariations.join("\n")}
-                onChange={(e) => setReplyVariations(e.target.value.split("\n"))}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="auto_dm">Личное сообщение в DM (Direct)</Label>
-            <Textarea
-              id="auto_dm"
-              rows={2}
-              placeholder="Здравствуйте! Вот подробная информация и ссылка на каталог: ..."
-              value={dmText}
-              onChange={(e) => setDmText(e.target.value)}
-            />
-            {/* Кнопки в DM */}
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-semibold">Кнопки в сообщении (макс. 3)</Label>
-                <Button type="button" variant="outline" size="xs" onClick={handleAddButton} disabled={buttons.length >= 3}>
-                  + Добавить кнопку
-                </Button>
-              </div>
-              {buttons.map((btn, i) => (
-                <div key={i} className="p-3 border rounded-md bg-muted/10 space-y-2 relative">
-                  <Button 
-                    type="button" 
-                    variant="ghost" 
-                    size="xs" 
-                    className="absolute top-1 right-1 h-6 w-6 p-0" 
-                    onClick={() => handleRemoveButton(i)}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-[10px]">Текст кнопки</Label>
+        {/* AUTOMATIONS TAB */}
+        <TabsContent value="automations" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Editor Side */}
+            <div className="lg:col-span-5 space-y-6">
+              <Card className="shadow-sm border-primary/10">
+                <CardHeader>
+                  <CardTitle className="text-xl flex items-center gap-2">
+                    {editingId ? <Settings2 className="w-5 h-5 text-primary" /> : <Plus className="w-5 h-5 text-primary" />}
+                    {editingId ? "Редактировать правило" : "Новая автоматизация"}
+                  </CardTitle>
+                  <CardDescription>
+                    Настройте триггер и автоматический ответ
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSaveAutomation} className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="auto_title">Название</Label>
                       <Input 
-                        value={btn.title} 
-                        onChange={(e) => handleUpdateButton(i, "title", e.target.value)} 
-                        placeholder="Купить"
-                        className="h-8 text-xs"
+                        id="auto_title" 
+                        value={title} 
+                        onChange={(e) => setTitle(e.target.value)} 
+                        placeholder="Напр: Рассылка чек-листа"
+                        required 
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px]">Тип</Label>
-                      <Select value={btn.type} onValueChange={(v) => handleUpdateButton(i, "type", v)}>
-                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="url">🔗 Ссылка</SelectItem>
-                          <SelectItem value="postback">🤖 Команда</SelectItem>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Триггер</Label>
+                        <Select value={trigger} onValueChange={(v: any) => { setTrigger(v); setPostId("ALL_POSTS"); }}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="comment">💬 Комментарий</SelectItem>
+                            <SelectItem value="story_reply">📱 Ответ на Story</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Ключевые слова</Label>
+                        <Input 
+                          value={keywordsStr} 
+                          onChange={(e) => setKeywordsStr(e.target.value)} 
+                          placeholder="хочу, инфо, +" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>{trigger === "story_reply" ? "Целевая Story" : "Целевой пост"}</Label>
+                        <Button type="button" variant="ghost" size="xs" onClick={handleRefreshPosts} className="h-6 text-[10px]">
+                          <RefreshCcw className="w-3 h-3 mr-1" /> Обновить список
+                        </Button>
+                      </div>
+                      <Select value={postId} onValueChange={setPostId}>
+                        <SelectTrigger className="h-auto py-2">
+                          <SelectValue placeholder="Выберите объект" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[300px]">
+                          <SelectItem value="ALL_POSTS">
+                            {trigger === "story_reply" ? "✨ Любая Story" : "✨ Любой пост"}
+                          </SelectItem>
+                          {posts
+                            .filter((p: any) => trigger === "story_reply" ? p._isStory : !p._isStory)
+                            .map((p: any) => (
+                              <SelectItem key={p.platformPostId || p._id || p.id} value={p.platformPostId || p._id || p.id}>
+                                <div className="flex items-center gap-3 py-1 max-w-[300px]">
+                                  {p._thumbnail ? (
+                                    <img src={p._thumbnail} className="w-8 h-8 object-cover rounded shrink-0 bg-muted" alt="" />
+                                  ) : (
+                                    <div className="w-8 h-8 bg-muted rounded flex items-center justify-center shrink-0">
+                                      <ImageIcon className="w-4 h-4 opacity-40" />
+                                    </div>
+                                  )}
+                                  <div className="flex flex-col min-w-0 text-left">
+                                    <span className="text-[9px] text-muted-foreground font-bold uppercase">
+                                      {p._date ? new Date(p._date).toLocaleDateString("ru-RU") : "Нет даты"}
+                                    </span>
+                                    <span className="text-xs truncate font-medium">
+                                      {p.caption || p.content || (p._isStory ? "Story без текста" : "Без текста")}
+                                    </span>
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-                  {btn.type === "url" && (
-                    <div className="space-y-1">
-                      <Label className="text-[10px]">URL адрес</Label>
-                      <Input 
-                        value={btn.url} 
-                        onChange={(e) => handleUpdateButton(i, "url", e.target.value)} 
-                        placeholder="https://..."
-                        className="h-8 text-xs"
-                      />
+
+                    <div className="space-y-4 border-t pt-4">
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4 text-primary" /> Публичный ответ
+                        </Label>
+                        <Textarea 
+                          value={replyText} 
+                          onChange={(e) => setReplyText(e.target.value)} 
+                          placeholder="Ответили вам в Директ! 📩"
+                          rows={2}
+                        />
+                        <div className="bg-muted/30 p-2 rounded text-[10px] space-y-1">
+                          <span className="text-muted-foreground font-semibold uppercase">Вариации для анти-спама:</span>
+                          <Textarea 
+                            className="text-[11px] min-h-[40px] bg-transparent border-none focus-visible:ring-0 p-0"
+                            placeholder="Одна вариация на строку..."
+                            value={replyVariations.join("\n")}
+                            onChange={(e) => setReplyVariations(e.target.value.split("\n"))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-primary" /> Личное сообщение (DM)
+                        </Label>
+                        <Textarea 
+                          value={dmText} 
+                          onChange={(e) => setDmText(e.target.value)} 
+                          placeholder="Привет! Вот ссылка на материал..."
+                          rows={3}
+                        />
+                        
+                        {/* Buttons inside DM */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase text-muted-foreground">Кнопки в DM ({buttons.length}/3)</span>
+                            <Button type="button" variant="outline" size="xs" onClick={handleAddButton} disabled={buttons.length >= 3}>
+                              + Добавить
+                            </Button>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
+                            {buttons.map((btn, i) => (
+                              <div key={i} className="flex items-start gap-2 p-2 border rounded-md bg-muted/20 relative group">
+                                <div className="flex-1 grid grid-cols-2 gap-2">
+                                  <Input 
+                                    value={btn.title} 
+                                    onChange={(e) => handleUpdateButton(i, "title", e.target.value)} 
+                                    placeholder="Текст" 
+                                    className="h-7 text-[11px]"
+                                  />
+                                  <Select value={btn.type} onValueChange={(v) => handleUpdateButton(i, "type", v)}>
+                                    <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="url">🔗 URL</SelectItem>
+                                      <SelectItem value="postback">🤖 CMD</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  {btn.type === "url" && (
+                                    <Input 
+                                      value={btn.url} 
+                                      onChange={(e) => handleUpdateButton(i, "url", e.target.value)} 
+                                      placeholder="https://..." 
+                                      className="h-7 text-[11px] col-span-2"
+                                    />
+                                  )}
+                                </div>
+                                <Button type="button" variant="ghost" size="xs" onClick={() => handleRemoveButton(i)} className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100">
+                                  <X className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Media Attachment */}
+                        <div className="pt-2">
+                          {dmMediaPath ? (
+                            <div className="flex items-center gap-2 p-2 border rounded-md bg-green-500/5 border-green-500/20">
+                              <ImageIcon className="w-4 h-4 text-green-600" />
+                              <span className="text-[11px] truncate flex-1">{dmMediaName}</span>
+                              <Button type="button" variant="ghost" size="xs" onClick={() => { setDmMediaPath(null); setDmMediaName(null); }}>
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Input type="file" className="hidden" id="file-up" onChange={(e) => handleMediaUpload(e.target.files)} />
+                              <Button type="button" variant="outline" size="xs" className="w-full border-dashed" onClick={() => document.getElementById("file-up")?.click()} disabled={uploadingMedia}>
+                                <Paperclip className="w-3 h-3 mr-2" /> {uploadingMedia ? "Загрузка..." : "Прикрепить медиа"}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  )}
+
+                    <div className="pt-4 border-t space-y-4">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="trk" checked={linkTracking} onCheckedChange={(v) => setLinkTracking(!!v)} />
+                          <Label htmlFor="trk" className="cursor-pointer">Трекинг ссылок</Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="act" checked={isActive} onCheckedChange={(v) => setIsActive(!!v)} />
+                          <Label htmlFor="act" className="cursor-pointer">Активно</Label>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button type="submit" className="flex-1" disabled={savingAuto}>
+                          {savingAuto ? "Сохранение..." : editingId ? "Сохранить изменения" : "Создать автоматизацию"}
+                        </Button>
+                        {editingId && (
+                          <Button variant="ghost" onClick={handleResetForm}>Отмена</Button>
+                        )}
+                      </div>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* List Side */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-lg">Активные правила ({automations.length})</h3>
+              </div>
+
+              {automations.length === 0 ? (
+                <div className="border-2 border-dashed rounded-xl p-12 text-center space-y-3 bg-muted/10">
+                  <div className="bg-muted w-12 h-12 rounded-full flex items-center justify-center mx-auto">
+                    <Zap className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <div className="text-sm font-medium">Нет активных автоматизаций</div>
+                  <p className="text-xs text-muted-foreground max-w-[200px] mx-auto">
+                    Создайте свое первое правило в панели слева
+                  </p>
                 </div>
-              ))}
-            </div>
-            <div className="space-y-1 mt-2">
-              <Label className="text-[10px] text-muted-foreground">Вариации DM (по одной на строку)</Label>
-              <Textarea
-                className="text-xs min-h-[60px]"
-                placeholder="Привет! Вот ссылка...&#10;Добрый день! Ваш материал тут..."
-                value={dmVariations.join("\n")}
-                onChange={(e) => setDmVariations(e.target.value.split("\n"))}
-              />
-            </div>
-          </div>
-
-          {/* Media attachment for DM */}
-          <div className="space-y-2 md:col-span-2">
-            <Label>Вложение к DM (изображение, видео, аудио или файл) — необязательно</Label>
-            {dmMediaPath ? (
-              <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/40">
-                <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
-                <span className="text-sm truncate flex-1">{dmMediaName || dmMediaPath}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-6 p-0 shrink-0"
-                  onClick={() => { setDmMediaPath(null); setDmMediaName(null); }}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-            ) : (
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="file"
-                  className="hidden"
-                  accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.zip,.rar"
-                  onChange={(e) => handleMediaUpload(e.target.files)}
-                  disabled={uploadingMedia}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={uploadingMedia}
-                  asChild
-                >
-                  <span>
-                    <Paperclip className="w-4 h-4 mr-1" />
-                    {uploadingMedia ? "Загрузка..." : "Прикрепить файл"}
-                  </span>
-                </Button>
-                <span className="text-xs text-muted-foreground">Изображения, видео, аудио, PDF, документы — до 20МБ</span>
-              </label>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 md:col-span-2">
-            <Checkbox id="auto_active" checked={isActive} onCheckedChange={(v) => setIsActive(!!v)} />
-            <Label htmlFor="auto_active" className="cursor-pointer">Правило активно</Label>
-          </div>
-
-          <div className="md:col-span-2 space-y-4 pt-2 border-t">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center space-x-2">
-                <input 
-                  type="checkbox" 
-                  id="link_tracking" 
-                  checked={linkTracking} 
-                  onChange={(e) => setLinkTracking(e.target.checked)} 
-                />
-                <Label htmlFor="link_tracking" className="text-xs cursor-pointer">Трекинг ссылок и кликов</Label>
-              </div>
-              <div className="flex-1 flex items-center gap-2">
-                <Label htmlFor="click_tag" className="text-xs shrink-0">Тег для кликнувших:</Label>
-                <Input 
-                  id="click_tag" 
-                  value={clickTag} 
-                  onChange={(e) => setClickTag(e.target.value)} 
-                  placeholder="lead_from_ig"
-                  className="h-7 text-xs"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button type="submit" disabled={savingAuto}>
-                {savingAuto ? "Сохранение..." : editingId ? "💾 Сохранить изменения" : "➕ Добавить автоматизацию"}
-              </Button>
-              {editingId && (
-                <Button variant="ghost" onClick={handleResetForm}>
-                  Отмена
-                </Button>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {automations.map((auto: any) => (
+                    <Card key={auto.id} className={`transition-all ${auto.isActive ? 'border-l-4 border-l-primary' : 'opacity-70'}`}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold truncate">{auto.name}</span>
+                              {!auto.isActive && <Badge variant="secondary" className="text-[9px] h-4">Пауза</Badge>}
+                              {auto.trigger === "story_reply" && <Badge variant="outline" className="text-[9px] h-4 bg-purple-50 text-purple-600 border-purple-200">Story</Badge>}
+                            </div>
+                            <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Zap className="w-3 h-3" /> {auto.stats?.triggered || 0}
+                              </span>
+                              {auto.stats?.linkClicks > 0 && (
+                                <span className="flex items-center gap-1 text-blue-600 font-medium">
+                                  <ExternalLink className="w-3 h-3" /> {auto.stats.linkClicks} кликов
+                                </span>
+                              )}
+                              <span className="truncate">
+                                • Ключи: {auto.keywords?.length ? auto.keywords.join(", ") : "Любые"}
+                              </span>
+                            </div>
+                            {auto.platformPostId && (
+                              <div className="text-[10px] bg-muted/50 px-2 py-1 rounded inline-block mt-1 truncate max-w-full">
+                                Target: {auto.platformPostId}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditAutomation(auto)}>
+                              <Settings2 className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggleAutomation(auto.id, auto.isActive)}>
+                              {auto.isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleDeleteAutomation(auto.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               )}
             </div>
           </div>
-        </form>
+        </TabsContent>
 
-        {/* Список автоматизаций */}
-        <div className="space-y-3 mt-4">
-          <h3 className="font-medium text-sm">Активные правила ({automations.length})</h3>
-          {automations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Правила пока не добавлены.</p>
-          ) : (
-            <div className="space-y-2">
-              {automations.map((auto: any) => (
-                <div key={auto.id} className="p-4 border rounded-md flex flex-col md:flex-row md:items-center justify-between gap-3 bg-card">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold">{auto.name}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${auto.isActive ? 'bg-green-500/10 text-green-600' : 'bg-muted text-muted-foreground'}`}>
-                        {auto.isActive ? 'Активно' : 'Отключено'}
-                      </span>
-                      <span className="text-xs text-muted-foreground">Срабатываний: {auto.stats?.triggered || 0}</span>
-                      {auto.stats?.linkClicks > 0 && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 font-medium">
-                          Кликнули: {auto.stats.linkClicks}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground flex gap-2">
-                      <span>Тип: {auto.trigger === 'story_reply' ? '📱 Story' : '💬 Пост'}</span>
-                      <span>•</span>
-                      <span>Ключевые слова: {auto.keywords && auto.keywords.length > 0 ? auto.keywords.join(", ") : "Любые"}</span>
-                    </div>
-                    {auto.platformPostId && (
-                      <div className="flex items-center gap-2 mt-1 p-1.5 border rounded-md bg-muted/30 w-fit max-w-xs">
-                        {(() => {
-                          const p = posts.find((x: any) => (x.platformPostId || x._id || x.id) === auto.platformPostId);
-                          if (!p) return <span className="text-[10px] text-muted-foreground italic">Привязано к посту (ID: {auto.platformPostId.substring(0, 8)}...)</span>;
-                          
-                          const text = p.caption || p.content || "Без текста";
-                          const thumb = p._thumbnail || p.thumbnailUrl || p.thumbnail_url || null;
-                          
-	                          return (
-	                            <>
-	                              {thumb && <img src={thumb} className="w-6 h-6 object-cover rounded shrink-0 bg-muted" alt="" />}
-	                              <div className="flex flex-col min-w-0">
-	                                <span className="text-[10px] truncate">{text}</span>
-	                                <span className="text-[8px] font-mono text-muted-foreground">Post ID: {auto.platformPostId}</span>
-	                              </div>
-	                            </>
-	                          );
-                        })()}
-                      </div>
+        {/* LOGS TAB */}
+        <TabsContent value="logs">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>Журнал событий</CardTitle>
+                <CardDescription>Последние действия автоматизации</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["ig_logs"] })}>
+                <RefreshCcw className="w-4 h-4 mr-2" /> Обновить
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 border-b">
+                    <tr>
+                      <th className="p-3 text-left font-medium">Время</th>
+                      <th className="p-3 text-left font-medium">Событие</th>
+                      <th className="p-3 text-left font-medium">Статус</th>
+                      <th className="p-3 text-right font-medium">Действие</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {logs.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-muted-foreground">Логов пока нет</td>
+                      </tr>
+                    ) : (
+                      logs.map((log: any) => (
+                        <tr key={log.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="p-3 text-xs whitespace-nowrap">
+                            {new Date(log.created_at).toLocaleString("ru-RU", { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex flex-col">
+                              <span className="font-mono text-[11px] uppercase">{log.event_type}</span>
+                              {log.payload?.data?.senderUsername && (
+                                <span className="text-[10px] text-primary">@{log.payload.data.senderUsername}</span>
+                              )}
+                              {log.payload?.data?.commentText && (
+                                <span className="text-[10px] italic text-muted-foreground truncate max-w-[200px]">
+                                  "{log.payload.data.commentText}"
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-[10px]">
+                              {log.status}
+                            </Badge>
+                          </td>
+                          <td className="p-3 text-right">
+                            <Button variant="ghost" size="xs" onClick={() => alert(JSON.stringify(log.payload, null, 2))}>
+                              <Eye className="w-3 h-3" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
                     )}
-                    {auto.commentReply && <div className="text-xs">💬 Ответ: "{auto.commentReply}"</div>}
-                    {auto.dmMessage && <div className="text-xs">📩 DM: "{auto.dmMessage}"</div>}
-                    {(auto.dmAttachmentUrl || auto.dmAttachment) && (
-                      <div className="text-[10px] text-blue-600 flex flex-col gap-1 mt-1">
-                        <div className="flex items-center gap-1">
-                          <Paperclip className="w-3 h-3" />
-                          Файл прикреплен ({auto.dmAttachmentType || "media"})
-                        </div>
-                        <div className="bg-blue-50 p-1 rounded border border-blue-100 font-mono text-[9px] break-all text-blue-800">
-                          URL: {auto.dmAttachmentUrl || auto.dmAttachment}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleEditAutomation(auto)}>
-                      Редактировать
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleToggleAutomation(auto.id, auto.isActive)}>
-                      {auto.isActive ? "Выключить" : "Включить"}
-                    </Button>
-                    <Button variant="destructive" size="sm" onClick={() => handleDeleteAutomation(auto.id)}>
-                      Удалить
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* 3. Журнал событий */}
-      <div className="border rounded-lg p-5 bg-card space-y-4">
-        <h2 className="text-lg font-semibold">Журнал событий</h2>
-        <p className="text-sm text-muted-foreground">Последние системные события интеграции</p>
-
-        {logs.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Событий пока не зафиксировано.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left border-collapse">
-              <thead>
-                <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
-                  <th className="p-2">Время</th>
-                  <th className="p-2">Тип события</th>
-                  <th className="p-2">Event ID</th>
-                  <th className="p-2">Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((log: any) => (
-                  <tr key={log.id} className="border-b hover:bg-muted/20">
-                    <td className="p-2 text-xs">{new Date(log.created_at).toLocaleString("ru-RU")}</td>
-                    <td className="p-2 font-mono text-xs">{log.event_type}</td>
-                    <td className="p-2 font-mono text-xs">{log.event_id || "-"}</td>
-                    <td className="p-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-600">
-                          {log.status}
-                        </span>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-6 text-[10px] px-2"
-                          onClick={() => {
-                            console.log("Event Payload:", log.payload);
-                            alert(JSON.stringify(log.payload, null, 2));
-                          }}
-                        >
-                          👁️
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* ACCOUNTS TAB */}
+        <TabsContent value="accounts">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {accounts.map((acc: any) => (
+              <Card key={acc._id}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">{acc.name || acc.username || "Instagram Account"}</CardTitle>
+                    <Badge className="bg-green-500">Активен</Badge>
+                  </div>
+                  <CardDescription>ID: {acc._id}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4 text-xs">
+                    <div className="p-3 bg-muted rounded-lg">
+                      <div className="text-muted-foreground mb-1">Платформа</div>
+                      <div className="font-bold uppercase">{acc.platform}</div>
+                    </div>
+                    <div className="p-3 bg-muted rounded-lg">
+                      <div className="text-muted-foreground mb-1">Профиль Zernio</div>
+                      <div className="font-bold truncate">{acc.profileId}</div>
+                    </div>
+                  </div>
+                </CardContent>
+                <CardFooter className="border-t pt-4">
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    className="w-full" 
+                    disabled={disconnecting === acc._id}
+                    onClick={() => handleDisconnectAccount(acc._id, acc.name || acc.username)}
+                  >
+                    {disconnecting === acc._id ? "Отключение..." : "🔓 Отключить аккаунт"}
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
           </div>
-        )}
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

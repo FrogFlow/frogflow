@@ -484,7 +484,11 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         
         // Normalize date for UI display
         // Zernio API returns: publishedAt (ISO date-time), createdAt (post creation in Zernio)
-        p._date = p.publishedAt || p.createdAt || p.scheduledFor || null;
+        // Meta API often uses 'timestamp' for external posts
+        p._date = p.publishedAt || p.metadata?.timestamp || p.timestamp || p.createdAt || p.scheduledFor || null;
+        
+        // Mark if it's a story
+        p._isStory = p.type === 'story' || p.metadata?.type === 'story' || !!p.metadata?.story_id;
         
         uniquePosts.push(p);
       }
