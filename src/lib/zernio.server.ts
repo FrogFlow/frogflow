@@ -479,7 +479,13 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         platformPostId: platformData?.platformPostId || post.platformPostId || null,
       };
     });
-    const allPosts = [...analyticsPosts, ...(externalRes.posts || []), ...(zernioRes.posts || []), ...(storiesRes.stories || []).map((story) => ({ ...story, platformPostId: story.platformPostId || story.id || story._id, thumbnailUrl: story.thumbnailUrl || story.mediaUrl, publishedAt: story.timestamp, type: "story" }))];
+    // Analytics is authoritative and already contains the platform media ID.
+    // Fall back to /posts only when analytics is unavailable, otherwise every
+    // Instagram post appears twice with different internal Zernio IDs.
+    const regularPosts = analyticsPosts.length > 0
+      ? analyticsPosts
+      : [...(externalRes.posts || []), ...(zernioRes.posts || [])];
+    const allPosts = [...regularPosts, ...(storiesRes.stories || []).map((story) => ({ ...story, platformPostId: story.platformPostId || story.id || story._id, thumbnailUrl: story.thumbnailUrl || story.mediaUrl, publishedAt: story.timestamp, type: "story" }))];
     
     const uniquePosts: any[] = [];
     const seen = new Set();
