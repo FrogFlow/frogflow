@@ -75,8 +75,6 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         platformPostId: z.string().optional().nullable(),
         postId: z.string().optional().nullable(),
         postTitle: z.string().max(500).optional(),
-        dmMediaPath: z.string().optional().nullable(),
-        dmMediaType: z.enum(["image", "video", "audio"]).optional().nullable(),
         buttons: z.array(z.object({ type: z.enum(["url", "postback", "phone"]), title: z.string().min(1), url: z.string().optional(), payload: z.string().optional(), phone: z.string().optional() })).max(3).optional(),
         dmMessageVariations: z.array(z.string()).max(5).optional(),
         commentReplyVariations: z.array(z.string()).max(5).optional(),
@@ -102,8 +100,6 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     const automation = {
       ...automationData,
       profileId,
-      dmMediaPath: data.dmMediaPath || null,
-      dmMediaType: data.dmMediaType || null,
     };
     // Zernio PATCH cannot change platformPostId, postId, or trigger. If those
     // fields are unchanged, preserve the rule and its statistics with PATCH.
@@ -184,21 +180,6 @@ export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(asyn
 /**
  * Сгенерировать signed upload URL для медиа-вложения в Instagram DM
  */
-export const getInstagramMediaUploadUrlFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ filename: z.string().min(1) }).parse(d))
-  .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
-    await requireAdmin();
-    const ext = (data.filename.split(".").pop() || "jpg").toLowerCase().slice(0, 10);
-    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-    const { data: signed, error } = await supabaseAdmin.storage
-      .from("instagram-media")
-      .createSignedUploadUrl(key);
-    if (error || !signed) throw new Error(error?.message || "Upload error");
-    return { path: key, signedUrl: signed.signedUrl };
-  });
-
 export const disconnectInstagramAccountFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ accountId: z.string() }).parse(d))
   .handler(async ({ data }) => {

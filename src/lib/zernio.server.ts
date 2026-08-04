@@ -59,10 +59,6 @@ export type ZernioCommentAutomation = {
   linkTracking?: boolean;
   clickTag?: string;
   isActive?: boolean;
-  dmMediaPath?: string | null;
-  dmMediaType?: "image" | "video" | "audio" | null;
-  dmAttachmentUrl?: string;
-  dmAttachmentType?: string;
   stats?: {
     triggered?: number;
     dmsSent?: number;
@@ -370,7 +366,6 @@ export async function listCommentAutomations(profileId?: string): Promise<{ auto
 export async function createCommentAutomation(data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; automation?: ZernioCommentAutomation }> {
   try {
     const body: Record<string, any> = { ...data };
-    addCommentAutomationMediaLink(body);
 
     // Ensure keywords are lowercase for better matching
     if (body.keywords) {
@@ -394,7 +389,6 @@ export async function createCommentAutomation(data: Partial<ZernioCommentAutomat
 export async function updateCommentAutomation(automationId: string, data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; automation?: ZernioCommentAutomation }> {
   try {
     const body: Record<string, any> = { ...data };
-    addCommentAutomationMediaLink(body);
     
     if (body.keywords) {
       body.keywords = body.keywords.map(k => k.toLowerCase());
@@ -409,32 +403,6 @@ export async function updateCommentAutomation(automationId: string, data: Partia
     console.error("[zernio] updateCommentAutomation error", e);
     return { ok: false };
   }
-}
-
-/**
- * Instagram Comment-to-DM supports text and buttons, not file attachments.
- * Preserve the uploaded media as a secure public link in an inline button.
- */
-function addCommentAutomationMediaLink(body: Record<string, any>) {
-  const mediaPath = body.dmMediaPath;
-  if (!mediaPath) return;
-
-  let host = process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
-  if (host && !host.startsWith("http")) host = `https://${host}`;
-  const mediaUrl = `${host.replace(/\/$/, "")}/api/public/img/instagram-media/${encodeURIComponent(mediaPath)}`;
-  const labels: Record<string, string> = { image: "Открыть изображение", video: "Открыть видео", audio: "Открыть аудио" };
-  const buttons = Array.isArray(body.buttons) ? body.buttons : [];
-  if (buttons.length < 3) {
-    body.buttons = [...buttons, { type: "url", title: labels[body.dmMediaType] || "Открыть медиа", url: mediaUrl }];
-  } else {
-    body.dmMessage = `${body.dmMessage || ""}\n${mediaUrl}`.trim();
-  }
-  delete body.dmAttachmentUrl;
-  delete body.dmAttachmentType;
-  delete body.dmMediaPath;
-  delete body.dmMediaType;
 }
 
 /**

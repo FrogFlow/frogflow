@@ -17,7 +17,6 @@ import {
   getInstagramLogsFn,
   getZernioPostsFn,
   disconnectInstagramAccountFn,
-  getInstagramMediaUploadUrlFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -28,7 +27,6 @@ import {
 } from "@/components-ui/select";
 import { 
   ImageIcon, 
-  Paperclip, 
   X, 
   Settings2, 
   MessageSquare, 
@@ -116,36 +114,6 @@ function AdminInstagramPage() {
   const [originalPlatformPostId, setOriginalPlatformPostId] = useState<string | null>(null);
   const [originalTrigger, setOriginalTrigger] = useState<"comment" | "story_reply">("comment");
 
-  // Media attachment state
-  const [dmMediaPath, setDmMediaPath] = useState<string | null>(null);
-  const [dmMediaType, setDmMediaType] = useState<"image" | "video" | "audio">("image");
-  const [dmMediaName, setDmMediaName] = useState<string | null>(null);
-  const [uploadingMedia, setUploadingMedia] = useState(false);
-
-  const handleMediaUpload = async (files: FileList | null) => {
-    if (!files?.length) return;
-    const file = files[0];
-    setUploadingMedia(true);
-    try {
-      const { path, signedUrl } = await getInstagramMediaUploadUrlFn({ data: { filename: file.name } });
-      const res = await fetch(signedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-      });
-      if (!res.ok) throw new Error(`Не удалось загрузить файл`);
-      setDmMediaPath(path);
-      setDmMediaName(file.name);
-      if (file.type.startsWith("video/")) setDmMediaType("video");
-      else if (file.type.startsWith("audio/")) setDmMediaType("audio");
-      else setDmMediaType("image");
-    } catch (e: any) {
-      alert(`Ошибка загрузки: ${e.message}`);
-    } finally {
-      setUploadingMedia(false);
-    }
-  };
-
   const handleRefreshPosts = () => {
     qc.invalidateQueries({ queryKey: ["ig_posts"] });
   };
@@ -220,8 +188,6 @@ function AdminInstagramPage() {
         platformPostId: (postId && postId !== "ALL_POSTS") ? (selectedPost?.platformPostId || postId.trim()) : null,
         postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || null) : null,
         postTitle: selectedPost ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500) : undefined,
-        dmMediaPath: dmMediaPath || null,
-        dmMediaType: dmMediaPath ? dmMediaType : null,
         buttons: buttons.length > 0 ? buttons : undefined,
         dmMessageVariations: dmVariations.filter(Boolean),
         commentReplyVariations: replyVariations.filter(Boolean),
@@ -258,9 +224,6 @@ function AdminInstagramPage() {
     setEditingId(null);
     setOriginalPlatformPostId(null);
     setOriginalTrigger("comment");
-    setDmMediaPath(null);
-    setDmMediaName(null);
-    setDmMediaType("image");
   };
 
   const handleEditAutomation = (auto: any) => {
@@ -279,9 +242,6 @@ function AdminInstagramPage() {
     setReplyVariations(auto.commentReplyVariations || []);
     setLinkTracking(auto.linkTracking !== false);
     setClickTag(auto.clickTag || "");
-    setDmMediaPath(auto.dmMediaPath || null);
-    setDmMediaName(auto.dmMediaName || (auto.dmMediaPath ? "Файл прикреплен" : null));
-    setDmMediaType(auto.dmMediaType || "image");
     
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -533,25 +493,6 @@ function AdminInstagramPage() {
                           </div>
                         </div>
 
-                        {/* Media Attachment */}
-                        <div className="pt-2">
-                          {dmMediaPath ? (
-                            <div className="flex items-center gap-2 p-2 border rounded-md bg-green-500/5 border-green-500/20">
-                              <ImageIcon className="w-4 h-4 text-green-600" />
-                              <span className="text-[11px] truncate flex-1">{dmMediaName}</span>
-                              <Button type="button" variant="ghost" size="sm" onClick={() => { setDmMediaPath(null); setDmMediaName(null); }} className="h-6 w-6 p-0">
-                                <X className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <Input type="file" className="hidden" id="file-up" onChange={(e) => handleMediaUpload(e.target.files)} />
-                              <Button type="button" variant="outline" size="sm" className="w-full border-dashed h-8 text-xs" onClick={() => document.getElementById("file-up")?.click()} disabled={uploadingMedia}>
-                                <Paperclip className="w-3 h-3 mr-2" /> {uploadingMedia ? "Загрузка..." : "Прикрепить медиа"}
-                              </Button>
-                            </div>
-                          )}
-                        </div>
                       </div>
                     </div>
 
