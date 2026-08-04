@@ -61,6 +61,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
     z
       .object({
+        id: z.string().optional(),
         accountId: z.string().min(1, "Укажите accountId"),
         profileId: z.any().optional(),
         name: z.string().min(1, "Укажите название"),
@@ -83,8 +84,11 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
-    const { createCommentAutomation, ensureDefaultZernioProfile } = await import("./zernio.server");
+    const { createCommentAutomation, updateCommentAutomation, ensureDefaultZernioProfile } = await import("./zernio.server");
     await requireAdmin();
+    if (data.platformPostId && data.platformPostId === data.accountId) {
+      throw new Error("Выбран ID аккаунта вместо ID публикации. Обновите список и выберите пост заново.");
+    }
     
     let profileId = typeof data.profileId === "string" ? data.profileId : "";
     if (!profileId) {
@@ -92,12 +96,15 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
       profileId = defaultProfile._id;
     }
 
-    return await createCommentAutomation({
+    const automation = {
       ...data,
       profileId,
       dmMediaPath: data.dmMediaPath || null,
       dmMediaType: data.dmMediaType || null,
-    });
+    };
+    return data.id
+      ? await updateCommentAutomation(data.id, automation)
+      : await createCommentAutomation(automation);
   });
 
 /**

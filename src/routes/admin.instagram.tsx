@@ -206,7 +206,7 @@ function AdminInstagramPage() {
       const automationData = {
         id: editingId || undefined,
         accountId: acc._id,
-        profileId: acc.profileId || "",
+        profileId: typeof acc.profileId === "string" ? acc.profileId : acc.profileId?._id || "",
         name: title,
         trigger,
         keywords,
