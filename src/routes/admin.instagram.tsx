@@ -403,7 +403,7 @@ function AdminInstagramPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <Label>{trigger === "story_reply" ? "Целевая Story" : "Целевой пост"}</Label>
-                        <Button type="button" variant="ghost" size="xs" onClick={handleRefreshPosts} className="h-6 text-[10px]">
+                        <Button type="button" variant="ghost" size="sm" onClick={handleRefreshPosts} className="h-6 text-[10px] px-2">
                           <RefreshCcw className="w-3 h-3 mr-1" /> Обновить список
                         </Button>
                       </div>
@@ -479,9 +479,10 @@ function AdminInstagramPage() {
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold uppercase text-muted-foreground">Кнопки в DM ({buttons.length}/3)</span>
-                            <Button type="button" variant="outline" size="xs" onClick={handleAddButton} disabled={buttons.length >= 3}>
-                              + Добавить
-                            </Button>
+                                            <Button type="button" variant="outline" size="sm" onClick={handleAddButton} disabled={buttons.length >= 3} className="h-7 text-[10px]">
+                  + Добавить
+                </Button>
+
                           </div>
                           <div className="grid grid-cols-1 gap-2">
                             {buttons.map((btn, i) => (
@@ -509,7 +510,7 @@ function AdminInstagramPage() {
                                     />
                                   )}
                                 </div>
-                                <Button type="button" variant="ghost" size="xs" onClick={() => handleRemoveButton(i)} className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100">
+                                <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveButton(i)} className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100">
                                   <X className="w-3 h-3" />
                                 </Button>
                               </div>
@@ -523,14 +524,14 @@ function AdminInstagramPage() {
                             <div className="flex items-center gap-2 p-2 border rounded-md bg-green-500/5 border-green-500/20">
                               <ImageIcon className="w-4 h-4 text-green-600" />
                               <span className="text-[11px] truncate flex-1">{dmMediaName}</span>
-                              <Button type="button" variant="ghost" size="xs" onClick={() => { setDmMediaPath(null); setDmMediaName(null); }}>
+                              <Button type="button" variant="ghost" size="sm" onClick={() => { setDmMediaPath(null); setDmMediaName(null); }} className="h-6 w-6 p-0">
                                 <X className="w-3 h-3" />
                               </Button>
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
                               <Input type="file" className="hidden" id="file-up" onChange={(e) => handleMediaUpload(e.target.files)} />
-                              <Button type="button" variant="outline" size="xs" className="w-full border-dashed" onClick={() => document.getElementById("file-up")?.click()} disabled={uploadingMedia}>
+                              <Button type="button" variant="outline" size="sm" className="w-full border-dashed h-8 text-xs" onClick={() => document.getElementById("file-up")?.click()} disabled={uploadingMedia}>
                                 <Paperclip className="w-3 h-3 mr-2" /> {uploadingMedia ? "Загрузка..." : "Прикрепить медиа"}
                               </Button>
                             </div>
@@ -685,7 +686,7 @@ function AdminInstagramPage() {
                             </Badge>
                           </td>
                           <td className="p-3 text-right">
-                            <Button variant="ghost" size="xs" onClick={() => alert(JSON.stringify(log.payload, null, 2))}>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => alert(JSON.stringify(log.payload, null, 2))}>
                               <Eye className="w-3 h-3" />
                             </Button>
                           </td>
@@ -702,40 +703,46 @@ function AdminInstagramPage() {
         {/* ACCOUNTS TAB */}
         <TabsContent value="accounts">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {accounts.map((acc: any) => (
-              <Card key={acc._id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">{acc.name || acc.username || "Instagram Account"}</CardTitle>
-                    <Badge className="bg-green-500">Активен</Badge>
-                  </div>
-                  <CardDescription>ID: {acc._id}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4 text-xs">
-                    <div className="p-3 bg-muted rounded-lg">
-                      <div className="text-muted-foreground mb-1">Платформа</div>
-                      <div className="font-bold uppercase">{acc.platform}</div>
+            {Array.isArray(accounts) && accounts.length > 0 ? (
+              accounts.map((account: any) => (
+                <Card key={account._id || Math.random().toString()}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">{account.name || account.username || "Instagram Account"}</CardTitle>
+                      <Badge className="bg-green-600 text-white border-none">Активен</Badge>
                     </div>
-                    <div className="p-3 bg-muted rounded-lg">
-                      <div className="text-muted-foreground mb-1">Профиль Zernio</div>
-                      <div className="font-bold truncate">{acc.profileId}</div>
+                    <CardDescription>ID: {account._id || "N/A"}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-xs">
+                      <div className="p-3 bg-muted rounded-lg">
+                        <div className="text-muted-foreground mb-1">Платформа</div>
+                        <div className="font-bold uppercase">{account.platform || "instagram"}</div>
+                      </div>
+                      <div className="p-3 bg-muted rounded-lg">
+                        <div className="text-muted-foreground mb-1">Профиль Zernio</div>
+                        <div className="font-bold truncate">{account.profileId || "default"}</div>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-                <CardFooter className="border-t pt-4">
-                  <Button 
-                    variant="destructive" 
-                    size="sm" 
-                    className="w-full" 
-                    disabled={disconnecting === acc._id}
-                    onClick={() => handleDisconnectAccount(acc._id, acc.name || acc.username)}
-                  >
-                    {disconnecting === acc._id ? "Отключение..." : "🔓 Отключить аккаунт"}
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
+                  </CardContent>
+                  <CardFooter className="border-t pt-4">
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="w-full" 
+                      disabled={disconnecting === account._id}
+                      onClick={() => handleDisconnectAccount(account._id, account.name || account.username || "Account")}
+                    >
+                      {disconnecting === account._id ? "Отключение..." : "🔓 Отключить аккаунт"}
+                    </Button>
+                  </CardFooter>
+                </Card>
+              ))
+            ) : (
+              <div className="col-span-2 text-center py-12 border-2 border-dashed rounded-xl bg-muted/10">
+                <p className="text-muted-foreground">Нет подключенных аккаунтов</p>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
