@@ -471,7 +471,18 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
     const seen = new Set();
     
     for (const p of allPosts) {
-      const id = p.platformPostId || p._id || p.id;
+      // A Zernio-created post has two IDs. The root ID identifies the Zernio
+      // record, while platformAnalytics.platformPostId is the native Instagram
+      // media ID required by Comment-to-DM targeting.
+      const platformAnalytics = Array.isArray(p.platformAnalytics)
+        ? p.platformAnalytics.find((item: any) => item.accountId === accountId && item.platform === "instagram")
+        : null;
+      const platformTarget = Array.isArray(p.platforms)
+        ? p.platforms.find((item: any) => item.accountId === accountId && item.platform === "instagram")
+        : null;
+      p._zernioPostId = p._id || p.id || p.postId || null;
+      p.platformPostId = platformAnalytics?.platformPostId || platformTarget?.platformPostId || p.platformPostId || p.metadata?.platformPostId || null;
+      const id = p.platformPostId || p._zernioPostId;
       if (id && !seen.has(id)) {
         seen.add(id);
         
@@ -488,9 +499,6 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         // Normalize date for UI display
         // `createdAt` is the time the record was created in Zernio, not when it
         // was published to Instagram, so it must never be shown as a post date.
-        const platformTarget = Array.isArray(p.platforms)
-          ? p.platforms.find((target: any) => target.accountId === accountId && target.platform === "instagram")
-          : null;
         const rawDate = p.publishedAt || p.metadata?.publishedAt || p.metadata?.timestamp || p.timestamp ||
           platformTarget?.publishedAt || platformTarget?.published_at || p.scheduledFor || null;
         // Some Meta payloads use Unix seconds; Date expects milliseconds.

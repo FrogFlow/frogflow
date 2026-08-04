@@ -214,7 +214,7 @@ function AdminInstagramPage() {
         dmMessage: dmText,
         commentReply: replyText,
         platformPostId: (postId && postId !== "ALL_POSTS") ? (selectedPost?.platformPostId || postId.trim()) : null,
-        postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._id || selectedPost?.id || null) : null,
+        postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || null) : null,
         postTitle: selectedPost ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500) : undefined,
         dmMediaPath: dmMediaPath || null,
         dmMediaType: dmMediaPath ? dmMediaType : null,
