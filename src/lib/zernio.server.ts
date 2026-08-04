@@ -486,11 +486,16 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         p._thumbnail = p.thumbnailUrl || mediaItem?.thumbnail || mediaItem?.url || null;
         
         // Normalize date for UI display
-        // Zernio API returns: publishedAt (ISO date-time), createdAt (post creation in Zernio)
-        // Meta API often uses 'timestamp' for external posts
-        const rawDate = p.publishedAt || p.metadata?.timestamp || p.timestamp || p.createdAt || p.scheduledFor || null;
+        // `createdAt` is the time the record was created in Zernio, not when it
+        // was published to Instagram, so it must never be shown as a post date.
+        const platformTarget = Array.isArray(p.platforms)
+          ? p.platforms.find((target: any) => target.accountId === accountId && target.platform === "instagram")
+          : null;
+        const rawDate = p.publishedAt || p.metadata?.publishedAt || p.metadata?.timestamp || p.timestamp ||
+          platformTarget?.publishedAt || platformTarget?.published_at || p.scheduledFor || null;
         // Some Meta payloads use Unix seconds; Date expects milliseconds.
-        p._date = typeof rawDate === "number" && rawDate < 10_000_000_000 ? rawDate * 1000 : rawDate;
+        const timestamp = typeof rawDate === "string" && /^\d+$/.test(rawDate) ? Number(rawDate) : rawDate;
+        p._date = typeof timestamp === "number" && timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
         
         // Mark if it's a story
         p._isStory = p.type === 'story' || p.metadata?.type === 'story' || !!p.metadata?.story_id;

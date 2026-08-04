@@ -61,6 +61,11 @@ function AdminInstagramPage() {
   
   const accounts = accountsQuery.data?.accounts || [];
   const acc = accounts[0];
+  const displayProfile = (profile: any) => {
+    if (!profile) return "default";
+    if (typeof profile === "string") return profile;
+    return profile.name || profile._id || "default";
+  };
   
   const postsQuery = useQuery({ 
     queryKey: ["ig_posts", acc?._id], 
@@ -722,7 +727,7 @@ function AdminInstagramPage() {
                       </div>
                       <div className="p-3 bg-muted rounded-lg">
                         <div className="text-muted-foreground mb-1">Профиль Zernio</div>
-                        <div className="font-bold truncate">{account.profileId || "default"}</div>
+                        <div className="font-bold truncate">{displayProfile(account.profileId)}</div>
                       </div>
                     </div>
                   </CardContent>
