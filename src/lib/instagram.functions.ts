@@ -84,7 +84,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
-    const { createCommentAutomation, updateCommentAutomation, ensureDefaultZernioProfile } = await import("./zernio.server");
+    const { createCommentAutomation, deleteCommentAutomation, ensureDefaultZernioProfile } = await import("./zernio.server");
     await requireAdmin();
     if (data.platformPostId && data.platformPostId === data.accountId) {
       throw new Error("Выбран ID аккаунта вместо ID публикации. Обновите список и выберите пост заново.");
@@ -96,15 +96,20 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
       profileId = defaultProfile._id;
     }
 
+    const { id: automationId, ...automationData } = data;
     const automation = {
-      ...data,
+      ...automationData,
       profileId,
       dmMediaPath: data.dmMediaPath || null,
       dmMediaType: data.dmMediaType || null,
     };
-    return data.id
-      ? await updateCommentAutomation(data.id, automation)
-      : await createCommentAutomation(automation);
+    // Zernio PATCH deliberately cannot change platformPostId, postId, or trigger.
+    // Recreate an edited rule so a newly selected post actually takes effect.
+    if (automationId) {
+      const deleted = await deleteCommentAutomation(automationId);
+      if (!deleted.ok) throw new Error("Не удалось заменить старое правило автоматизации");
+    }
+    return await createCommentAutomation(automation);
   });
 
 /**
