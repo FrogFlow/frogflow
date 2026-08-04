@@ -489,6 +489,7 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
     
     const uniquePosts: any[] = [];
     const seen = new Set();
+    const seenPostFingerprints = new Set();
     
     for (const p of allPosts) {
       // A Zernio-created post has two IDs. The root ID identifies the Zernio
@@ -524,6 +525,16 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         // Some Meta payloads use Unix seconds; Date expects milliseconds.
         const timestamp = typeof rawDate === "string" && /^\d+$/.test(rawDate) ? Number(rawDate) : rawDate;
         p._date = typeof timestamp === "number" && timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+
+        // Zernio can return the same Instagram media from separate analytics
+        // records. Their internal IDs differ, so also deduplicate by content.
+        const parsedDate = p._date ? new Date(p._date) : null;
+        const dateKey = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : "";
+        const textKey = String(p.caption || p.content || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const mediaKey = p.platformPostUrl || p.permalink || p._thumbnail || "";
+        const fingerprint = `${dateKey}|${textKey}|${mediaKey}`;
+        if (fingerprint !== "||" && seenPostFingerprints.has(fingerprint)) continue;
+        seenPostFingerprints.add(fingerprint);
         
         // Mark if it's a story
         p._isStory = p.type === 'story' || p.metadata?.type === 'story' || !!p.metadata?.story_id;
