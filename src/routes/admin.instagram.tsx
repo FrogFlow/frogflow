@@ -210,6 +210,7 @@ function AdminInstagramPage() {
         commentReply: replyText,
         platformPostId: (postId && postId !== "ALL_POSTS") ? (selectedPost?.platformPostId || postId.trim()) : null,
         postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._id || selectedPost?.id || null) : null,
+        postTitle: selectedPost ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500) : undefined,
         dmMediaPath: dmMediaPath || null,
         dmMediaType: dmMediaPath ? dmMediaType : null,
         buttons: buttons.length > 0 ? buttons : undefined,

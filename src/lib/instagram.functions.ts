@@ -68,9 +68,16 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         matchMode: z.enum(["exact", "contains"]).default("contains"),
         dmMessage: z.string().default(""),
         commentReply: z.string().default(""),
+        trigger: z.enum(["comment", "story_reply"]).default("comment"),
         platformPostId: z.string().optional().nullable(),
+        postId: z.string().optional().nullable(),
+        postTitle: z.string().max(500).optional(),
         dmMediaPath: z.string().optional().nullable(),
         dmMediaType: z.enum(["image", "video", "audio"]).optional().nullable(),
+        buttons: z.array(z.object({ type: z.enum(["url", "postback", "phone"]), title: z.string().min(1), url: z.string().optional(), payload: z.string().optional(), phone: z.string().optional() })).max(3).optional(),
+        dmMessageVariations: z.array(z.string()).max(5).optional(),
+        commentReplyVariations: z.array(z.string()).max(5).optional(),
+        linkTracking: z.boolean().optional(), clickTag: z.string().max(100).optional(), isActive: z.boolean().optional(),
       })
       .parse(d),
   )

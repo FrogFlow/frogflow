@@ -48,6 +48,7 @@ export type ZernioCommentAutomation = {
   profileId?: string;
   platformPostId?: string;
   postId?: string;
+  postTitle?: string;
   keywords: string[];
   matchMode?: "exact" | "contains";
   dmMessage: string;
@@ -454,15 +455,17 @@ export async function getCommentAutomationLogs(automationId: string): Promise<{ 
  */
 export async function listZernioPosts(accountId: string): Promise<any[]> {
   try {
-    const externalRes = await zernioRequest<{ posts: any[] }>(`/posts`, {
-      query: { accountId, source: "external", limit: "50" },
-    });
-    
-    const zernioRes = await zernioRequest<{ posts: any[] }>(`/posts`, {
-      query: { accountId, source: "zernio", limit: "50" },
-    });
-    
-    const allPosts = [...(externalRes.posts || []), ...(zernioRes.posts || [])];
+    const [externalResult, zernioResult, storiesResult] = await Promise.allSettled([
+      zernioRequest<{ posts: any[] }>(`/posts`, { query: { accountId, source: "external", limit: "50" } }),
+      zernioRequest<{ posts: any[] }>(`/posts`, { query: { accountId, source: "zernio", limit: "50" } }),
+      // Active stories are intentionally not returned by GET /posts.
+      zernioRequest<{ stories?: any[] }>(`/accounts/${encodeURIComponent(accountId)}/instagram/stories`),
+    ]);
+    const externalRes = externalResult.status === "fulfilled" ? externalResult.value : { posts: [] };
+    const zernioRes = zernioResult.status === "fulfilled" ? zernioResult.value : { posts: [] };
+    const storiesRes = storiesResult.status === "fulfilled" ? storiesResult.value : { stories: [] };
+    if (storiesResult.status === "rejected") console.warn("[zernio] unable to load active Instagram stories", storiesResult.reason);
+    const allPosts = [...(externalRes.posts || []), ...(zernioRes.posts || []), ...(storiesRes.stories || []).map((story) => ({ ...story, platformPostId: story.platformPostId || story.id || story._id, thumbnailUrl: story.thumbnailUrl || story.mediaUrl, publishedAt: story.timestamp, type: "story" }))];
     
     const uniquePosts: any[] = [];
     const seen = new Set();
@@ -485,7 +488,9 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         // Normalize date for UI display
         // Zernio API returns: publishedAt (ISO date-time), createdAt (post creation in Zernio)
         // Meta API often uses 'timestamp' for external posts
-        p._date = p.publishedAt || p.metadata?.timestamp || p.timestamp || p.createdAt || p.scheduledFor || null;
+        const rawDate = p.publishedAt || p.metadata?.timestamp || p.timestamp || p.createdAt || p.scheduledFor || null;
+        // Some Meta payloads use Unix seconds; Date expects milliseconds.
+        p._date = typeof rawDate === "number" && rawDate < 10_000_000_000 ? rawDate * 1000 : rawDate;
         
         // Mark if it's a story
         p._isStory = p.type === 'story' || p.metadata?.type === 'story' || !!p.metadata?.story_id;
