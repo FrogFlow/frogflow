@@ -81,6 +81,12 @@ function AdminInstagramPage() {
   const [dmText, setDmText] = useState("");
   const [postId, setPostId] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [trigger, setTrigger] = useState<"comment" | "story_reply">("comment");
+  const [buttons, setButtons] = useState<any[]>([]);
+  const [dmVariations, setDmVariations] = useState<string[]>([]);
+  const [replyVariations, setReplyVariations] = useState<string[]>([]);
+  const [linkTracking, setLinkTracking] = useState(true);
+  const [clickTag, setClickTag] = useState("");
   const [savingAuto, setSavingAuto] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -190,24 +196,28 @@ function AdminInstagramPage() {
         // Better: I'll stick to the current UI fix and post text fix first.
       }
 
-      await saveAutomationFn({
-        data: {
-          accountId: acc._id,
-          profileId: acc.profileId || "",
-          name: title,
-          keywords,
-          matchMode: "contains",
-          dmMessage: dmText,
-          commentReply: replyText,
-          platformPostId: (postId && postId !== "ALL_POSTS") ? postId.trim() : null,
-          dmMediaPath: dmMediaPath || null,
-          dmMediaType: dmMediaPath ? dmMediaType : null,
-        },
-      });
+      const automationData = {
+        id: editingId || undefined,
+        accountId: acc._id,
+        profileId: acc.profileId || "",
+        name: title,
+        trigger,
+        keywords,
+        matchMode: "contains" as const,
+        dmMessage: dmText,
+        commentReply: replyText,
+        platformPostId: (postId && postId !== "ALL_POSTS") ? postId.trim() : null,
+        dmMediaPath: dmMediaPath || null,
+        dmMediaType: dmMediaPath ? dmMediaType : null,
+        buttons: buttons.length > 0 ? buttons : undefined,
+        dmMessageVariations: dmVariations.filter(Boolean),
+        commentReplyVariations: replyVariations.filter(Boolean),
+        linkTracking,
+        clickTag: clickTag || undefined,
+        isActive,
+      };
 
-      if (editingId) {
-        await deleteAutomationFn({ data: { id: editingId } });
-      }
+      await saveAutomationFn({ data: automationData });
 
       handleResetForm();
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
@@ -225,6 +235,12 @@ function AdminInstagramPage() {
     setDmText("");
     setPostId("");
     setIsActive(true);
+    setTrigger("comment");
+    setButtons([]);
+    setDmVariations([]);
+    setReplyVariations([]);
+    setLinkTracking(true);
+    setClickTag("");
     setEditingId(null);
     setDmMediaPath(null);
     setDmMediaName(null);
@@ -239,7 +255,33 @@ function AdminInstagramPage() {
     setDmText(auto.dmMessage || "");
     setPostId(auto.platformPostId || "ALL_POSTS");
     setIsActive(auto.isActive);
+    setTrigger(auto.trigger || "comment");
+    setButtons(auto.buttons || []);
+    setDmVariations(auto.dmMessageVariations || []);
+    setReplyVariations(auto.commentReplyVariations || []);
+    setLinkTracking(auto.linkTracking !== false);
+    setClickTag(auto.clickTag || "");
+    // Note: dmMediaPath/Name/Type might not be returned in simple list, but if they are:
+    setDmMediaPath(auto.dmMediaPath || null);
+    setDmMediaName(auto.dmMediaName || (auto.dmMediaPath ? "Файл прикреплен" : null));
+    setDmMediaType(auto.dmMediaType || "image");
+    
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleAddButton = () => {
+    if (buttons.length >= 3) return;
+    setButtons([...buttons, { type: "url", title: "Купить", url: "" }]);
+  };
+
+  const handleRemoveButton = (index: number) => {
+    setButtons(buttons.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateButton = (index: number, field: string, value: string) => {
+    const newButtons = [...buttons];
+    newButtons[index] = { ...newButtons[index], [field]: value };
+    setButtons(newButtons);
   };
 
   const handleToggleAutomation = async (id: string, currentIsActive: boolean) => {
@@ -368,7 +410,22 @@ function AdminInstagramPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="auto_post_id">Прикрепить к посту (необязательно)</Label>
+            <Label htmlFor="auto_trigger">Тип триггера</Label>
+            <Select value={trigger} onValueChange={(v: any) => setTrigger(v)}>
+              <SelectTrigger id="auto_trigger">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="comment">💬 Комментарий под постом</SelectItem>
+                <SelectItem value="story_reply">📱 Ответ на Story</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="auto_post_id">
+              {trigger === "story_reply" ? "Прикрепить к конкретной Story (необязательно)" : "Прикрепить к посту (необязательно)"}
+            </Label>
             <Select value={postId} onValueChange={setPostId}>
               <SelectTrigger id="auto_post_id" className="h-auto py-2">
                 <SelectValue placeholder="Выберите пост или оставьте для всех" />
@@ -432,6 +489,15 @@ function AdminInstagramPage() {
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
             />
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Вариации ответа (по одной на строку, для рандомизации)</Label>
+              <Textarea
+                className="text-xs min-h-[60px]"
+                placeholder="Ответили в ЛС!&#10;Проверьте директ!"
+                value={replyVariations.join("\n")}
+                onChange={(e) => setReplyVariations(e.target.value.split("\n"))}
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -443,6 +509,69 @@ function AdminInstagramPage() {
               value={dmText}
               onChange={(e) => setDmText(e.target.value)}
             />
+            {/* Кнопки в DM */}
+            <div className="mt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">Кнопки в сообщении (макс. 3)</Label>
+                <Button type="button" variant="outline" size="xs" onClick={handleAddButton} disabled={buttons.length >= 3}>
+                  + Добавить кнопку
+                </Button>
+              </div>
+              {buttons.map((btn, i) => (
+                <div key={i} className="p-3 border rounded-md bg-muted/10 space-y-2 relative">
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="xs" 
+                    className="absolute top-1 right-1 h-6 w-6 p-0" 
+                    onClick={() => handleRemoveButton(i)}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Текст кнопки</Label>
+                      <Input 
+                        value={btn.title} 
+                        onChange={(e) => handleUpdateButton(i, "title", e.target.value)} 
+                        placeholder="Купить"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">Тип</Label>
+                      <Select value={btn.type} onValueChange={(v) => handleUpdateButton(i, "type", v)}>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="url">🔗 Ссылка</SelectItem>
+                          <SelectItem value="postback">🤖 Команда</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {btn.type === "url" && (
+                    <div className="space-y-1">
+                      <Label className="text-[10px]">URL адрес</Label>
+                      <Input 
+                        value={btn.url} 
+                        onChange={(e) => handleUpdateButton(i, "url", e.target.value)} 
+                        placeholder="https://..."
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1 mt-2">
+              <Label className="text-[10px] text-muted-foreground">Вариации DM (по одной на строку)</Label>
+              <Textarea
+                className="text-xs min-h-[60px]"
+                placeholder="Привет! Вот ссылка...&#10;Добрый день! Ваш материал тут..."
+                value={dmVariations.join("\n")}
+                onChange={(e) => setDmVariations(e.target.value.split("\n"))}
+              />
+            </div>
           </div>
 
           {/* Media attachment for DM */}
@@ -493,7 +622,29 @@ function AdminInstagramPage() {
             <Label htmlFor="auto_active" className="cursor-pointer">Правило активно</Label>
           </div>
 
-          <div className="md:col-span-2">
+          <div className="md:col-span-2 space-y-4 pt-2 border-t">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  id="link_tracking" 
+                  checked={linkTracking} 
+                  onChange={(e) => setLinkTracking(e.target.checked)} 
+                />
+                <Label htmlFor="link_tracking" className="text-xs cursor-pointer">Трекинг ссылок и кликов</Label>
+              </div>
+              <div className="flex-1 flex items-center gap-2">
+                <Label htmlFor="click_tag" className="text-xs shrink-0">Тег для кликнувших:</Label>
+                <Input 
+                  id="click_tag" 
+                  value={clickTag} 
+                  onChange={(e) => setClickTag(e.target.value)} 
+                  placeholder="lead_from_ig"
+                  className="h-7 text-xs"
+                />
+              </div>
+            </div>
+
             <div className="flex gap-2">
               <Button type="submit" disabled={savingAuto}>
                 {savingAuto ? "Сохранение..." : editingId ? "💾 Сохранить изменения" : "➕ Добавить автоматизацию"}
@@ -523,9 +674,16 @@ function AdminInstagramPage() {
                         {auto.isActive ? 'Активно' : 'Отключено'}
                       </span>
                       <span className="text-xs text-muted-foreground">Срабатываний: {auto.stats?.triggered || 0}</span>
+                      {auto.stats?.linkClicks > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 font-medium">
+                          Кликнули: {auto.stats.linkClicks}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Ключевые слова: {auto.keywords && auto.keywords.length > 0 ? auto.keywords.join(", ") : "Все комментарии"}
+                    <div className="text-xs text-muted-foreground flex gap-2">
+                      <span>Тип: {auto.trigger === 'story_reply' ? '📱 Story' : '💬 Пост'}</span>
+                      <span>•</span>
+                      <span>Ключевые слова: {auto.keywords && auto.keywords.length > 0 ? auto.keywords.join(", ") : "Любые"}</span>
                     </div>
                     {auto.platformPostId && (
                       <div className="flex items-center gap-2 mt-1 p-1.5 border rounded-md bg-muted/30 w-fit max-w-xs">

@@ -30,15 +30,46 @@ export type ZernioAccount = {
   metadata?: Record<string, unknown>;
 };
 
+export type ZernioDmButton = {
+  type: "url" | "postback" | "phone";
+  title: string;
+  url?: string;
+  payload?: string;
+  phone?: string;
+};
+
 export type ZernioCommentAutomation = {
   id?: string;
   _id?: string;
-  title: string;
-  keywords: string[];
-  replyText: string;
-  dmText?: string;
+  name: string;
+  platform?: "instagram" | "facebook";
+  trigger?: "comment" | "story_reply";
+  accountId: string;
+  profileId?: string;
+  platformPostId?: string;
   postId?: string;
+  keywords: string[];
+  matchMode?: "exact" | "contains";
+  dmMessage: string;
+  buttons?: ZernioDmButton[];
+  commentReply?: string;
+  dmMessageVariations?: string[];
+  commentReplyVariations?: string[];
+  linkTracking?: boolean;
+  clickTag?: string;
   isActive?: boolean;
+  dmMediaPath?: string | null;
+  dmMediaType?: "image" | "video" | "audio" | null;
+  dmAttachmentUrl?: string;
+  dmAttachmentType?: string;
+  stats?: {
+    triggered?: number;
+    dmsSent?: number;
+    dmsFailed?: number;
+    uniqueContacts?: number;
+    linkClicks?: number;
+    read?: number;
+  };
 };
 
 export type ZernioWebhookMessagePayload = {
@@ -335,72 +366,33 @@ export async function listCommentAutomations(profileId?: string): Promise<{ auto
 /**
  * Создать Comment-to-DM автоматизацию
  */
-export async function createCommentAutomation(data: {
-  accountId: string;
-  profileId: string;
-  name: string;
-  keywords?: string[];
-  matchMode?: "exact" | "contains";
-  dmMessage?: string;
-  commentReply?: string;
-  platformPostId?: string | null;
-  dmMediaPath?: string | null;
-  dmMediaType?: "image" | "video" | "audio" | null;
-}): Promise<{ ok: boolean }> {
+export async function createCommentAutomation(data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; automation?: ZernioCommentAutomation }> {
   try {
-    const body: Record<string, any> = {
-      profileId: data.profileId,
-      accountId: data.accountId,
-      trigger: "comment",
-      name: data.name,
-      // Приводим ключи к нижнему регистру для надежности
-      keywords: (data.keywords || []).map(k => k.toLowerCase()),
-      matchMode: data.matchMode || "contains",
-      dmMessage: data.dmMessage || "",
-    };
-    if (data.commentReply) body.commentReply = data.commentReply;
+    const body: Record<string, any> = { ...data };
     
-    if (data.platformPostId) {
-      // Zernio может ожидать либо postId (внутренний), либо platformPostId (инстаграмовский)
-      // Для надежности передаем оба, если они отличаются
-      body.platformPostId = data.platformPostId;
-      body.postId = data.platformPostId;
-      
-      console.log("[zernio] Targeting specific post:", data.platformPostId);
-    }
+    // Process media path if provided (legacy field support)
     if (data.dmMediaPath) {
-      // Build a public URL for the media attachment
-      // Use VERCEL_URL if PUBLIC_APP_URL is missing
       let host = process.env.PUBLIC_APP_URL || 
                    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
                    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
       
-      if (host && !host.startsWith("http")) {
-        host = `https://${host}`;
-      }
-      
+      if (host && !host.startsWith("http")) host = `https://${host}`;
       const baseUrl = (host || "").replace(/\/$/, "");
       
-      if (!baseUrl) {
-        console.warn("[zernio] Warning: No base URL found for media attachment. Link might be broken.");
-      }
-
       body.dmAttachmentUrl = `${baseUrl}/api/public/img/instagram-media/${encodeURIComponent(data.dmMediaPath)}`;
       body.dmAttachmentType = data.dmMediaType || "image";
-      
-      console.log("[zernio] Creating automation with media:", {
-        url: body.dmAttachmentUrl,
-        type: body.dmAttachmentType
-      });
     }
 
-    console.log("[zernio] Sending automation request body:", JSON.stringify(body, null, 2));
-    
-    await zernioRequest("/comment-automations", {
+    // Ensure keywords are lowercase for better matching
+    if (body.keywords) {
+      body.keywords = body.keywords.map(k => k.toLowerCase());
+    }
+
+    const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation }>("/comment-automations", {
       method: "POST",
       body,
     });
-    return { ok: true };
+    return { ok: res.success, automation: res.automation };
   } catch (e) {
     console.error("[zernio] createCommentAutomation error", e);
     return { ok: false };
@@ -410,13 +402,19 @@ export async function createCommentAutomation(data: {
 /**
  * Обновить Comment-to-DM автоматизацию
  */
-export async function updateCommentAutomation(automationId: string, data: { isActive: boolean }): Promise<{ ok: boolean }> {
+export async function updateCommentAutomation(automationId: string, data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; automation?: ZernioCommentAutomation }> {
   try {
-    await zernioRequest(`/comment-automations/${automationId}`, {
+    const body: Record<string, any> = { ...data };
+    
+    if (body.keywords) {
+      body.keywords = body.keywords.map(k => k.toLowerCase());
+    }
+
+    const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation }>(`/comment-automations/${automationId}`, {
       method: "PATCH",
-      body: data,
+      body,
     });
-    return { ok: true };
+    return { ok: res.success, automation: res.automation };
   } catch (e) {
     console.error("[zernio] updateCommentAutomation error", e);
     return { ok: false };
