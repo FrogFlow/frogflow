@@ -455,17 +455,31 @@ export async function getCommentAutomationLogs(automationId: string): Promise<{ 
  */
 export async function listZernioPosts(accountId: string): Promise<any[]> {
   try {
-    const [externalResult, zernioResult, storiesResult] = await Promise.allSettled([
+    const [analyticsResult, externalResult, zernioResult, storiesResult] = await Promise.allSettled([
+      // This endpoint is the authoritative source for the native Instagram media
+      // ID: platformAnalytics[].platformPostId. /posts may expose only a Zernio ID.
+      zernioRequest<{ posts?: any[] }>(`/analytics`, { query: { accountId, platform: "instagram", source: "all", limit: "50" } }),
       zernioRequest<{ posts: any[] }>(`/posts`, { query: { accountId, source: "external", limit: "50" } }),
       zernioRequest<{ posts: any[] }>(`/posts`, { query: { accountId, source: "zernio", limit: "50" } }),
       // Active stories are intentionally not returned by GET /posts.
       zernioRequest<{ stories?: any[] }>(`/accounts/${encodeURIComponent(accountId)}/instagram/stories`),
     ]);
+    const analyticsRes = analyticsResult.status === "fulfilled" ? analyticsResult.value : { posts: [] };
     const externalRes = externalResult.status === "fulfilled" ? externalResult.value : { posts: [] };
     const zernioRes = zernioResult.status === "fulfilled" ? zernioResult.value : { posts: [] };
     const storiesRes = storiesResult.status === "fulfilled" ? storiesResult.value : { stories: [] };
     if (storiesResult.status === "rejected") console.warn("[zernio] unable to load active Instagram stories", storiesResult.reason);
-    const allPosts = [...(externalRes.posts || []), ...(zernioRes.posts || []), ...(storiesRes.stories || []).map((story) => ({ ...story, platformPostId: story.platformPostId || story.id || story._id, thumbnailUrl: story.thumbnailUrl || story.mediaUrl, publishedAt: story.timestamp, type: "story" }))];
+    const analyticsPosts = (analyticsRes.posts || []).map((post: any) => {
+      const platformData = Array.isArray(post.platformAnalytics)
+        ? post.platformAnalytics.find((item: any) => item.accountId === accountId && item.platform === "instagram")
+        : null;
+      return {
+        ...post,
+        _zernioPostId: post.latePostId || post.postId || post._id || post.id || null,
+        platformPostId: platformData?.platformPostId || post.platformPostId || null,
+      };
+    });
+    const allPosts = [...analyticsPosts, ...(externalRes.posts || []), ...(zernioRes.posts || []), ...(storiesRes.stories || []).map((story) => ({ ...story, platformPostId: story.platformPostId || story.id || story._id, thumbnailUrl: story.thumbnailUrl || story.mediaUrl, publishedAt: story.timestamp, type: "story" }))];
     
     const uniquePosts: any[] = [];
     const seen = new Set();
@@ -480,7 +494,7 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
       const platformTarget = Array.isArray(p.platforms)
         ? p.platforms.find((item: any) => item.accountId === accountId && item.platform === "instagram")
         : null;
-      p._zernioPostId = p._id || p.id || p.postId || null;
+      p._zernioPostId = p._zernioPostId || p.latePostId || p._id || p.id || p.postId || null;
       p.platformPostId = platformAnalytics?.platformPostId || platformTarget?.platformPostId || p.platformPostId || p.metadata?.platformPostId || null;
       const id = p.platformPostId || p._zernioPostId;
       if (id && !seen.has(id)) {
