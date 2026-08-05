@@ -129,8 +129,18 @@ async function zernioRequest<T>(
  * Получить список профилей Zernio или создать дефолтный профиль магазина.
  */
 export async function ensureDefaultZernioProfile(): Promise<ZernioProfile> {
+  const envProfileId = process.env.ZERNIO_PROFILE_ID?.trim();
+  
   try {
     const listRes = await zernioRequest<{ profiles: ZernioProfile[] }>("/profiles");
+    
+    // If ZERNIO_PROFILE_ID is set, try to find that specific profile
+    if (envProfileId) {
+      const found = listRes.profiles?.find(p => p._id === envProfileId);
+      if (found) return found;
+      console.warn(`[zernio] Profile ${envProfileId} not found in account, falling back to first available or create`);
+    }
+
     if (listRes.profiles && listRes.profiles.length > 0) {
       return listRes.profiles[0];
     }
@@ -181,7 +191,8 @@ export async function getZernioConnectUrl(
 export async function listZernioAccounts(profileId?: string): Promise<ZernioAccount[]> {
   try {
     const query: Record<string, string> = {};
-    if (profileId) query.profileId = profileId;
+    const targetProfileId = profileId || process.env.ZERNIO_PROFILE_ID?.trim();
+    if (targetProfileId) query.profileId = targetProfileId;
     const res = await zernioRequest<{ accounts: ZernioAccount[] }>("/accounts", { query });
     return res.accounts || [];
   } catch (e) {
@@ -352,7 +363,8 @@ export async function disconnectZernioAccount(accountId: string): Promise<{ ok: 
 export async function listCommentAutomations(profileId?: string): Promise<{ automations: any[] }> {
   try {
     const query: Record<string, string> = {};
-    if (profileId) query.profileId = profileId;
+    const targetProfileId = profileId || process.env.ZERNIO_PROFILE_ID?.trim();
+    if (targetProfileId) query.profileId = targetProfileId;
     const res = await zernioRequest<{ automations: any[] }>("/comment-automations", { query });
     return res;
   } catch (e) {
