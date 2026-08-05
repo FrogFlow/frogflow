@@ -51,7 +51,17 @@ export const getAutomationsFn = createServerFn({ method: "GET" }).handler(async 
   const { requireAdmin } = await import("./admin-session.server");
   const { listCommentAutomations } = await import("./zernio.server");
   await requireAdmin();
-  return await listCommentAutomations();
+  const res = await listCommentAutomations();
+  
+  // Добавляем флаг replyToAll для удобства фронтенда
+  if (res.automations) {
+    res.automations = res.automations.map((a: any) => ({
+      ...a,
+      replyToAll: !a.keywords || a.keywords.length === 0
+    }));
+  }
+  
+  return res;
 });
 
 /**
@@ -68,6 +78,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         profileId: z.any().optional(),
         name: z.string().min(1, "Укажите название"),
         keywords: z.array(z.string()).default([]),
+        replyToAll: z.boolean().optional().default(false),
         matchMode: z.enum(["exact", "contains"]).default("contains"),
         dmMessage: z.string().default(""),
         commentReply: z.string().default(""),
@@ -96,7 +107,13 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
       profileId = defaultProfile._id;
     }
 
-    const { id: automationId, originalPlatformPostId, originalTrigger, ...automationData } = data;
+    const { id: automationId, originalPlatformPostId, originalTrigger, replyToAll, ...automationData } = data;
+    
+    // Если включен режим "Отвечать всем", очищаем ключевые слова
+    if (replyToAll) {
+      automationData.keywords = [];
+    }
+
     const automation = {
       ...automationData,
       profileId,

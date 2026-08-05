@@ -50,6 +50,7 @@ export type ZernioCommentAutomation = {
   postId?: string;
   postTitle?: string;
   keywords: string[];
+  replyToAll?: boolean;
   matchMode?: "exact" | "contains";
   dmMessage: string;
   buttons?: ZernioDmButton[];
