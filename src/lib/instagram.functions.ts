@@ -109,9 +109,17 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
 
     const { id: automationId, originalPlatformPostId, originalTrigger, replyToAll, ...automationData } = data;
     
-    // Если включен режим "Отвечать всем", очищаем ключевые слова
-    if (replyToAll) {
+    // Если включен режим "Отвечать всем", очищаем ключевые слова, 
+    // но ТОЛЬКО если выбран конкретный пост. 
+    // На уровне "Все посты" отвечать на всё опасно (конфликты с другими ботами).
+    const isSpecificPost = !!automationData.platformPostId;
+    if (replyToAll && isSpecificPost) {
       automationData.keywords = [];
+    } else if (replyToAll && !isSpecificPost) {
+      // Если это не конкретный пост, игнорируем флаг replyToAll и требуем ключи
+      if (!automationData.keywords || automationData.keywords.length === 0) {
+        throw new Error("Для автоматизации на все посты необходимо указать хотя бы одно ключевое слово.");
+      }
     }
 
     const automation = {

@@ -384,10 +384,19 @@ function AdminInstagramPage() {
                       <Checkbox 
                         id="reply_to_all" 
                         checked={replyToAll} 
+                        disabled={!postId || postId === "ALL_POSTS"}
                         onCheckedChange={(v: boolean) => setReplyToAll(v)} 
                       />
-                      <Label htmlFor="reply_to_all" className="text-sm font-medium leading-none cursor-pointer">
+                      <Label 
+                        htmlFor="reply_to_all" 
+                        className={`text-sm font-medium leading-none cursor-pointer ${(!postId || postId === "ALL_POSTS") ? "opacity-50" : ""}`}
+                      >
                         Отвечать на все комментарии (без ключевых слов)
+                        {(!postId || postId === "ALL_POSTS") && (
+                          <span className="block text-[10px] text-muted-foreground font-normal mt-1">
+                            Доступно только при выборе конкретного поста
+                          </span>
+                        )}
                       </Label>
                     </div>
 
