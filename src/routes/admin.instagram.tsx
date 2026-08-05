@@ -99,6 +99,7 @@ function AdminInstagramPage() {
   // Form state
   const [title, setTitle] = useState("");
   const [keywordsStr, setKeywordsStr] = useState("");
+  const [replyToAll, setReplyToAll] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [dmText, setDmText] = useState("");
   const [postId, setPostId] = useState("ALL_POSTS");
@@ -182,6 +183,7 @@ function AdminInstagramPage() {
         name: title,
         trigger,
         keywords,
+        replyToAll,
         matchMode: "contains" as const,
         dmMessage: dmText,
         commentReply: replyText,
@@ -211,6 +213,7 @@ function AdminInstagramPage() {
   const handleResetForm = () => {
     setTitle("");
     setKeywordsStr("");
+    setReplyToAll(false);
     setReplyText("");
     setDmText("");
     setPostId("ALL_POSTS");
@@ -232,6 +235,7 @@ function AdminInstagramPage() {
     setOriginalTrigger(auto.trigger || "comment");
     setTitle(auto.name || "");
     setKeywordsStr(auto.keywords?.join(", ") || "");
+    setReplyToAll(!!auto.replyToAll);
     setReplyText(auto.commentReply || "");
     setDmText(auto.dmMessage || "");
     setPostId(auto.platformPostId || auto.postId || "ALL_POSTS");
@@ -370,9 +374,21 @@ function AdminInstagramPage() {
                         <Input 
                           value={keywordsStr} 
                           onChange={(e) => setKeywordsStr(e.target.value)} 
-                          placeholder="хочу, инфо, +" 
+                          placeholder={replyToAll ? "Отвечает на все" : "хочу, инфо, +"}
+                          disabled={replyToAll}
                         />
                       </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 py-1">
+                      <Checkbox 
+                        id="reply_to_all" 
+                        checked={replyToAll} 
+                        onCheckedChange={(v: boolean) => setReplyToAll(v)} 
+                      />
+                      <Label htmlFor="reply_to_all" className="text-sm font-medium leading-none cursor-pointer">
+                        Отвечать на все комментарии (без ключевых слов)
+                      </Label>
                     </div>
 
                     <div className="space-y-2">
@@ -558,8 +574,12 @@ function AdminInstagramPage() {
                                   <ExternalLink className="w-3 h-3" /> {auto.stats.linkClicks} кликов
                                 </span>
                               )}
-                              <span className="truncate">
-                                • Ключи: {auto.keywords?.length ? auto.keywords.join(", ") : "Любые"}
+                              <span className="truncate flex items-center gap-1">
+                                • {auto.replyToAll ? (
+                                  <Badge variant="outline" className="text-[9px] h-4 bg-primary/5 text-primary border-primary/20">Отвечать всем</Badge>
+                                ) : (
+                                  <>Ключи: {auto.keywords?.length ? auto.keywords.join(", ") : "Любые"}</>
+                                )}
                               </span>
                             </div>
                             {auto.platformPostId && (
