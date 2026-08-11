@@ -455,7 +455,12 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
       // This endpoint is the authoritative source for the native Instagram media
       // ID: platformAnalytics[].platformPostId. /posts may expose only a Zernio ID.
       zernioRequest<{ posts?: any[] }>(`/analytics`, { query: { accountId, platform: "instagram", source: "all", limit: "50" } }),
-      zernioRequest<{ posts: any[] }>(`/posts`, { query: { accountId, source: "external", limit: "50" } }),
+      // GET /posts?source=external only reflects Zernio's background sync, which
+      // refreshes each account at most every ~90 minutes — far too slow for a
+      // "just published, refresh now" flow. sync-external forces an on-demand
+      // live fetch from the platform instead (debounced ~15s per account server
+      // side, so calling it on every refresh click is safe).
+      zernioRequest<{ posts?: any[] }>(`/posts/sync-external`, { method: "POST", body: { accountId } }),
       zernioRequest<{ posts: any[] }>(`/posts`, { query: { accountId, source: "zernio", limit: "50" } }),
       // Active stories are intentionally not returned by GET /posts.
       zernioRequest<{ stories?: any[] }>(`/accounts/${encodeURIComponent(accountId)}/instagram/stories`),
@@ -475,11 +480,18 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         platformPostId: platformData?.platformPostId || post.platformPostId || null,
       };
     });
-    // Analytics is authoritative and already contains the platform media ID.
-    // Fall back to /posts only when analytics is unavailable, otherwise every
-    // Instagram post appears twice with different internal Zernio IDs.
+    // Analytics is authoritative and already contains the platform media ID, so
+    // it's the base list. But analytics indexing can itself lag a freshly
+    // synced post, so any externally-synced post analytics doesn't have yet
+    // (matched by the platform's own platformPostId, not a Zernio-internal id)
+    // is appended rather than dropped — that's exactly the post that was just
+    // published and is why the refresh was clicked.
+    const analyticsPlatformIds = new Set(analyticsPosts.map((p: any) => p.platformPostId).filter(Boolean));
+    const newlySyncedExternalPosts = (externalRes.posts || []).filter(
+      (p: any) => p.platformPostId && !analyticsPlatformIds.has(p.platformPostId),
+    );
     const regularPosts = analyticsPosts.length > 0
-      ? analyticsPosts
+      ? [...analyticsPosts, ...newlySyncedExternalPosts]
       : [...(externalRes.posts || []), ...(zernioRes.posts || [])];
     const allPosts = [...regularPosts, ...(storiesRes.stories || []).map((story) => ({ ...story, platformPostId: story.platformPostId || story.id || story._id, thumbnailUrl: story.thumbnailUrl || story.mediaUrl, publishedAt: story.timestamp, type: "story" }))];
     
