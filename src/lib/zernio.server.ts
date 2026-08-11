@@ -475,12 +475,12 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         platformPostId: platformData?.platformPostId || post.platformPostId || null,
       };
     });
-    // Analytics is authoritative once it has indexed a post, but indexing lags
-    // behind publication (sometimes by many minutes). /posts reflects freshly
-    // published media sooner, so always merge it in — analyticsPosts is listed
-    // first so its authoritative platformPostId still wins the dedup below, and
-    // any post analytics hasn't caught up with yet still comes through from /posts.
-    const regularPosts = [...analyticsPosts, ...(externalRes.posts || []), ...(zernioRes.posts || [])];
+    // Analytics is authoritative and already contains the platform media ID.
+    // Fall back to /posts only when analytics is unavailable, otherwise every
+    // Instagram post appears twice with different internal Zernio IDs.
+    const regularPosts = analyticsPosts.length > 0
+      ? analyticsPosts
+      : [...(externalRes.posts || []), ...(zernioRes.posts || [])];
     const allPosts = [...regularPosts, ...(storiesRes.stories || []).map((story) => ({ ...story, platformPostId: story.platformPostId || story.id || story._id, thumbnailUrl: story.thumbnailUrl || story.mediaUrl, publishedAt: story.timestamp, type: "story" }))];
     
     const uniquePosts: any[] = [];
