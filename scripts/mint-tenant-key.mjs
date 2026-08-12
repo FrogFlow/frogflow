@@ -13,8 +13,12 @@
  *   SUPABASE_JWT_SECRET=… node scripts/mint-tenant-key.mjs <bot_id> [years]
  *
  * The secret is in Supabase → Settings → API → JWT Secret (legacy HS256).
- * Put the printed token in the deployment's SUPABASE_SERVICE_ROLE_KEY, and the
- * bot id in BOT_ID.
+ *
+ * The printed token goes in SUPABASE_TENANT_KEY — alongside, not instead of,
+ * SUPABASE_SERVICE_ROLE_KEY: the API gateway only accepts one of the project's
+ * own keys in the `apikey` header, while the role is resolved from this token
+ * in `Authorization`. Removing SUPABASE_TENANT_KEY reverts the deployment to
+ * unrestricted service_role access, which makes the rollout reversible.
  */
 import crypto from "node:crypto";
 
@@ -49,6 +53,6 @@ const signature = b64url(crypto.createHmac("sha256", secret).update(signingInput
 
 console.log(`\nbot_id : ${botId}`);
 console.log(`годен до: ${new Date(payload.exp * 1000).toISOString().slice(0, 10)}\n`);
-console.log("Переменные окружения для этого деплоя:\n");
+console.log("Добавить в переменные окружения деплоя (SUPABASE_SERVICE_ROLE_KEY оставить как есть):\n");
 console.log(`BOT_ID=${botId}`);
-console.log(`SUPABASE_SERVICE_ROLE_KEY=${signingInput}.${signature}\n`);
+console.log(`SUPABASE_TENANT_KEY=${signingInput}.${signature}\n`);
