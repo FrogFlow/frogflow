@@ -102,7 +102,7 @@ export async function deliverOrder(
     for (let n = 0; n < BATCH_SIZE; n++) {
       const { data: fresh, error: readErr } = await supabaseAdmin
         .from("orders")
-        .select("status, delivery_index, telegram_id")
+        .select("status, delivery_index, telegram_id, order_no")
         .eq("id", orderId)
         .single();
       if (readErr || !fresh) throw new Error(readErr?.message || "Order not found");
@@ -119,13 +119,13 @@ export async function deliverOrder(
       if (idx === 0) {
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
-          text: `✅ Оплата подтверждена! Заказ #${orderId}.\nОтправляю ваши материалы файлами (${items.length} шт.)…`,
+          text: `✅ Оплата подтверждена! Заказ #${(fresh as any).order_no ?? orderId}.\nОтправляю ваши материалы файлами (${items.length} шт.)…`,
         });
       } else if (!announcedContinue) {
         announcedContinue = true;
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
-          text: `📤 Продолжаю выдачу заказа #${orderId}: с позиции ${idx + 1} из ${items.length}…`,
+          text: `📤 Продолжаю выдачу заказа #${(fresh as any).order_no ?? orderId}: с позиции ${idx + 1} из ${items.length}…`,
         });
       }
 

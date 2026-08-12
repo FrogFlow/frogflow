@@ -283,7 +283,7 @@ async function sendOrders(conversationId: string, accountId: string, userKey: st
 
   let msg = `📋 Ваши заказы:\n\n`;
   orders.forEach((o: any) => {
-    msg += `Заказ #${o.id} — ${o.total} ${o.currency} [${statusMap[o.status] || o.status}]\n`;
+    msg += `Заказ #${o.order_no ?? o.id} — ${o.total} ${o.currency} [${statusMap[o.status] || o.status}]\n`;
   });
 
   await sendZernioInboxMessage(conversationId, accountId, msg);

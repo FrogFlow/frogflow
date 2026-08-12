@@ -101,12 +101,12 @@ export const rejectOrder = createServerFn({ method: "POST" })
       .from("orders")
       .update({ status: "rejected", admin_note: data.note ?? null })
       .eq("id", data.id)
-      .select("telegram_id")
+      .select("telegram_id, order_no")
       .single();
     if (error) throw new Error(error.message);
     await tg("sendMessage", {
       chat_id: order!.telegram_id,
-      text: `❌ Ваш заказ #${data.id} отклонён.\n${data.note ? `\nПричина: ${data.note}\n` : ""}\nЕсли это ошибка — напишите продавцу.`,
+      text: `❌ Ваш заказ #${(order as any)?.order_no ?? data.id} отклонён.\n${data.note ? `\nПричина: ${data.note}\n` : ""}\nЕсли это ошибка — напишите продавцу.`,
     });
     return { ok: true as const };
   });

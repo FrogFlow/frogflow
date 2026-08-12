@@ -580,9 +580,20 @@ async function sendLongHtmlMessage(chat_id: number, text: string) {
   if (chunk) await tg("sendMessage", { chat_id, text: chunk, parse_mode: "HTML" });
 }
 
-async function sendCoverPreviews(adminChatId: string, orderId: number, coverUrls: string[]) {
+/**
+ * Сквозной номер заказа в пределах одного бота — то, что видит покупатель.
+ * Внутренний orders.id остаётся глобальным (FK, callback_data, InvId Robokassa),
+ * поэтому показывать его нельзя: у разных клиентов номера шли бы вперемешку.
+ */
+async function displayNoFor(orderId: number): Promise<number> {
+  const s = await db();
+  const { data } = await s.from("orders").select("order_no").eq("id", orderId).maybeSingle();
+  return ((data as any)?.order_no as number) ?? orderId;
+}
+
+async function sendCoverPreviews(adminChatId: string, displayNo: number, coverUrls: string[]) {
   if (coverUrls.length === 0) return;
-  const shortCaption = `📦 <b>Материалы заказа #${orderId}</b> (${coverUrls.length} шт.)`;
+  const shortCaption = `📦 <b>Материалы заказа #${displayNo}</b> (${coverUrls.length} шт.)`;
   for (let offset = 0; offset < coverUrls.length; offset += TELEGRAM_MEDIA_GROUP_MAX) {
     const batch = coverUrls.slice(offset, offset + TELEGRAM_MEDIA_GROUP_MAX);
     try {
@@ -604,7 +615,7 @@ async function sendCoverPreviews(adminChatId: string, orderId: number, coverUrls
         });
       }
     } catch (err) {
-      console.error(`[bot] cover preview batch failed for order #${orderId}`, err);
+      console.error(`[bot] cover preview batch failed for order #${displayNo}`, err);
     }
     if (offset + TELEGRAM_MEDIA_GROUP_MAX < coverUrls.length) await sleep(300);
   }
@@ -846,6 +857,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
+      displayNo: ((order as any).order_no ?? order.id) as number,
       total,
       currency,
       instructions,
@@ -861,6 +873,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
+      displayNo: ((order as any).order_no ?? order.id) as number,
       total,
       currency,
       instructions,
@@ -876,6 +889,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
+      displayNo: ((order as any).order_no ?? order.id) as number,
       total,
       currency,
     });
@@ -888,6 +902,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     telegram_id,
     userState: user.state,
     orderId: order.id as number,
+    displayNo: ((order as any).order_no ?? order.id) as number,
     total,
     currency,
     rk,
@@ -899,7 +914,7 @@ export async function remindOrderPayment(orderId: number) {
   const s = await db();
   const { data: order, error } = await s
     .from("orders")
-    .select("id, telegram_id, status, total, currency, country_code, country_name")
+    .select("id, order_no, telegram_id, status, total, currency, country_code, country_name")
     .eq("id", orderId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -924,7 +939,7 @@ export async function remindOrderPayment(orderId: number) {
   await tg("sendMessage", {
     chat_id,
     text:
-      `🔔 <b>Напоминание по заказу #${orderId}</b>\n\n` +
+      `🔔 <b>Напоминание по заказу #${(order as any).order_no ?? orderId}</b>\n\n` +
       `Заказ ещё ожидает оплаты (${formatMoney(total, currency)}).\n` +
       `Ниже — актуальный способ оплаты. Если уже платили — пришлите чек в этот чат.`,
     parse_mode: "HTML",
@@ -939,6 +954,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
+      displayNo: (order as any).order_no ?? orderId,
       total,
       currency,
       instructions,
@@ -954,6 +970,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
+      displayNo: (order as any).order_no ?? orderId,
       total,
       currency,
       instructions,
@@ -969,6 +986,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
+      displayNo: (order as any).order_no ?? orderId,
       total,
       currency,
       reminder: true,
@@ -979,6 +997,7 @@ export async function remindOrderPayment(orderId: number) {
   await sendRobokassaPayLink({
     chat_id,
     telegram_id,
+    displayNo: (order as any).order_no ?? orderId,
     userState,
     orderId,
     total,
@@ -994,6 +1013,7 @@ async function sendKzPaymentChoice(params: {
   telegram_id: number;
   userState: BotUser["state"];
   orderId: number;
+  displayNo: number;
   total: number;
   currency: string;
   reminder?: boolean;
@@ -1005,8 +1025,8 @@ async function sendKzPaymentChoice(params: {
     proof_auto: false,
   });
   const title = params.reminder
-    ? `🔔 <b>Заказ #${params.orderId}</b> — выберите способ оплаты`
-    : `🧾 <b>Заказ #${params.orderId}</b> создан.`;
+    ? `🔔 <b>Заказ #${params.displayNo}</b> — выберите способ оплаты`
+    : `🧾 <b>Заказ #${params.displayNo}</b> создан.`;
   await tg("sendMessage", {
     chat_id: params.chat_id,
     text:
@@ -1041,6 +1061,7 @@ async function sendRobokassaPayLink(params: {
   telegram_id: number;
   userState: BotUser["state"];
   orderId: number;
+  displayNo: number;
   total: number;
   currency: string;
   rk: Awaited<ReturnType<typeof loadRobokassaSettings>>;
@@ -1053,7 +1074,7 @@ async function sendRobokassaPayLink(params: {
     pass1: params.rk.pass1,
     outSum,
     invId: params.orderId,
-    description: `Заказ #${params.orderId}`,
+    description: `Заказ #${params.displayNo}`,
     isTest: params.rk.testMode,
   });
 
@@ -1064,8 +1085,8 @@ async function sendRobokassaPayLink(params: {
     proof_auto: false,
   });
   const title = params.reminder
-    ? `🔔 <b>Заказ #${params.orderId}</b> — оплата`
-    : `🧾 <b>Заказ #${params.orderId}</b>`;
+    ? `🔔 <b>Заказ #${params.displayNo}</b> — оплата`
+    : `🧾 <b>Заказ #${params.displayNo}</b>`;
   await tg("sendMessage", {
     chat_id: params.chat_id,
     text:
@@ -1084,6 +1105,7 @@ async function startManualProofPath(params: {
   telegram_id: number;
   userState: BotUser["state"];
   orderId: number;
+  displayNo: number;
   total: number;
   currency: string;
   instructions: string;
@@ -1107,8 +1129,8 @@ async function startManualProofPath(params: {
     : `После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`;
 
   const title = params.reminder
-    ? `🔔 <b>Заказ #${params.orderId}</b> — оплата по реквизитам`
-    : `🧾 <b>Заказ #${params.orderId}</b> создан.`;
+    ? `🔔 <b>Заказ #${params.displayNo}</b> — оплата по реквизитам`
+    : `🧾 <b>Заказ #${params.displayNo}</b> создан.`;
 
   await tg("sendMessage", {
     chat_id: params.chat_id,
@@ -1147,6 +1169,9 @@ async function notifyAdminNewOrder(
     .eq("id", orderId)
     .single();
   if (!order) return;
+  // Покупателю и админу показывается сквозной номер этого бота, а не глобальный
+  // id (id остаётся во внутренних ссылках, callback_data и InvId Robokassa).
+  const displayNo = (order as any).order_no ?? order.id;
   const items = ((order as any).order_items as Array<{ product_id: string | null; name_snapshot: string; price_snapshot: number; quantity: number }>) || [];
 
   // --- Задача 4: обложки товаров отдельным сообщением (чтобы админ сразу видел, что продаётся) ---
@@ -1172,10 +1197,10 @@ async function notifyAdminNewOrder(
   const reviewReason = options?.reviewReason?.trim();
   const summaryText =
     (autoDelivered
-      ? `🆕 <b>Заказ #${order.id}</b> — автовыдача по чеку\n\n`
+      ? `🆕 <b>Заказ #${displayNo}</b> — автовыдача по чеку\n\n`
       : reviewReason
-        ? `🆕 <b>Заказ #${order.id}</b> — нужна проверка чека\n\n`
-        : `🆕 <b>Новый заказ #${order.id}</b>\n\n`) +
+        ? `🆕 <b>Заказ #${displayNo}</b> — нужна проверка чека\n\n`
+        : `🆕 <b>Новый заказ #${displayNo}</b>\n\n`) +
     `👤 ${escapeHtml(order.display_name as string)}${order.username ? ` (@${escapeHtml(order.username)})` : ""}
 📞 ${escapeHtml((order.contact as string) || "—")}
 🌍 ${escapeHtml((order.country_name as string) || "—")}
@@ -1190,7 +1215,7 @@ async function notifyAdminNewOrder(
 
   const itemsMessage =
     items.length > 0
-      ? `📋 <b>Состав заказа #${order.id}</b>\n\n${items.map((i) => `• ${escapeHtml(i.name_snapshot)} × ${i.quantity} — ${i.price_snapshot} ${order.currency}`).join("\n")}`
+      ? `📋 <b>Состав заказа #${displayNo}</b>\n\n${items.map((i) => `• ${escapeHtml(i.name_snapshot)} × ${i.quantity} — ${i.price_snapshot} ${order.currency}`).join("\n")}`
       : "";
 
   const reply_markup = autoDelivered
@@ -1227,7 +1252,7 @@ async function notifyAdminNewOrder(
     }
 
     // 3) Чек оплаты — короткая подпись, без длинного списка товаров.
-    const proofCaption = `🧾 <b>Чек оплаты — заказ #${order.id}</b>`;
+    const proofCaption = `🧾 <b>Чек оплаты — заказ #${displayNo}</b>`;
     try {
       if (proofFileId && proofKind === "document") {
         await tg("sendDocument", {
@@ -1256,7 +1281,7 @@ async function notifyAdminNewOrder(
 
     // 4) Превью обложек — опционально, батчами по 10 (лимит Telegram).
     try {
-      await sendCoverPreviews(adminChatId, order.id as number, coverUrls);
+      await sendCoverPreviews(adminChatId, displayNo as number, coverUrls);
     } catch (err) {
       console.error(`[bot] failed to notify admin ${adminChatId} (covers)`, err);
     }
@@ -1316,7 +1341,7 @@ async function showMyOrders(chat_id: number, telegram_id: number) {
   const s = await db();
   const { data } = await s
     .from("orders")
-    .select("id, status, total, currency, created_at")
+    .select("id, order_no, status, total, currency, created_at")
     .eq("telegram_id", telegram_id)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -1334,7 +1359,7 @@ async function showMyOrders(chat_id: number, telegram_id: number) {
   const text = data
     .map(
       (o) =>
-        `#${o.id} — ${o.total} ${o.currency} — ${statusMap[o.status as string] || o.status}`,
+        `#${o.order_no ?? o.id} — ${o.total} ${o.currency} — ${statusMap[o.status as string] || o.status}`,
     )
     .join("\n");
   await tg("sendMessage", { chat_id, text: `📋 Ваши заказы:\n\n${text}` });
@@ -1412,6 +1437,7 @@ export async function handleUpdate(update: any) {
             telegram_id: from_id,
             userState: user.state,
             orderId,
+      displayNo: (order as any).order_no ?? orderId,
             total: Number(order.total),
             currency: (order.currency as string) || "KZT",
             rk,
@@ -1429,6 +1455,7 @@ export async function handleUpdate(update: any) {
           telegram_id: from_id,
           userState: user.state,
           orderId,
+      displayNo: (order as any).order_no ?? orderId,
           total: Number(order.total),
           currency: (order.currency as string) || "KZT",
           instructions: (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.",
@@ -1557,14 +1584,18 @@ export async function handleUpdate(update: any) {
             reply_markup: { inline_keyboard: [] },
           });
         }
-        await tg("sendMessage", { chat_id, text: `⏳ Выдаю заказ #${orderId}...` });
+        // Админу показываем сквозной номер этого бота, а не внутренний id.
+        const { data: ordRow } = await (await db())
+          .from("orders").select("order_no").eq("id", orderId).maybeSingle();
+        const shownNo = (ordRow as any)?.order_no ?? orderId;
+        await tg("sendMessage", { chat_id, text: `⏳ Выдаю заказ #${shownNo}...` });
         const { deliverOrder } = await import("./orders.server");
         try {
           const result = await deliverOrder(orderId);
           if (result.alreadyDelivered) {
-            await tg("sendMessage", { chat_id, text: `ℹ️ Заказ #${orderId} уже выдаётся или выдан.` });
+            await tg("sendMessage", { chat_id, text: `ℹ️ Заказ #${shownNo} уже выдаётся или выдан.` });
           } else {
-            await tg("sendMessage", { chat_id, text: `✅ Заказ #${orderId} выдан.` });
+            await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} выдан.` });
           }
         } catch (e: any) {
           await tg("sendMessage", { chat_id, text: `Ошибка: ${e.message}` });
