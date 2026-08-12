@@ -43,6 +43,60 @@ function tsType(prop) {
   return "string";
 }
 
+/**
+ * Is the column safe to omit on insert?
+ *
+ * Nullable, or the database fills it in. PostgREST does not report defaults it
+ * cannot express in OpenAPI — notably `'[]'::jsonb` — so a NOT NULL jsonb with
+ * no stated default is treated as optional too, otherwise correct inserts that
+ * rely on that default would fail typecheck.
+ */
+function optionalOnInsert(prop, isRequired) {
+  if (!isRequired) return true;
+  if (prop.default !== undefined) return true;
+  return (prop.format ?? "").includes("json");
+}
+
+/** Renders a whole table block for a table types.ts has never seen. */
+function renderTable(table, def) {
+  const required = new Set(def.required ?? []);
+  const props = def.properties ?? {};
+  const cols = Object.keys(props);
+
+  const line = (col, kind) => {
+    const t = tsType(props[col]);
+    const nullable = !required.has(col);
+    const optional =
+      kind === "update" ? true : kind === "insert" ? optionalOnInsert(props[col], required.has(col)) : false;
+    return `          ${col}${optional ? "?" : ""}: ${t}${nullable ? " | null" : ""}`;
+  };
+
+  // PostgREST notes foreign keys in the column description, e.g.
+  //   <fk table='bots' column='id'/>
+  const rels = cols.flatMap((col) => {
+    const m = /<fk table='([^']+)' column='([^']+)'\/>/.exec(props[col].description ?? "");
+    if (!m) return [];
+    return [
+      `          {
+            foreignKeyName: "${table}_${col}_fkey"
+            columns: ["${col}"]
+            isOneToOne: false
+            referencedRelation: "${m[1]}"
+            referencedColumns: ["${m[2]}"]
+          },`,
+    ];
+  });
+
+  return (
+    `      ${table}: {\n` +
+    `        Row: {\n${cols.map((c) => line(c, "row")).join("\n")}\n        }\n` +
+    `        Insert: {\n${cols.map((c) => line(c, "insert")).join("\n")}\n        }\n` +
+    `        Update: {\n${cols.map((c) => line(c, "update")).join("\n")}\n        }\n` +
+    `        Relationships: [${rels.length ? "\n" + rels.join("\n") + "\n        " : ""}]\n` +
+    `      }\n`
+  );
+}
+
 let src = fs.readFileSync(TYPES_PATH, "utf8");
 const report = [];
 
@@ -51,7 +105,8 @@ for (const [table, def] of Object.entries(defs)) {
   const blockRe = new RegExp(`(^ {6}${table}: \\{\\n)([\\s\\S]*?)(\\n {6}\\}\\n)`, "m");
   const block = src.match(blockRe);
   if (!block) {
-    report.push(`  ⚠ ${table}: нет в types.ts (новая таблица — нужна полная регенерация)`);
+    src = src.replace(/( {4}Tables: \{\n)/, `$1${renderTable(table, def)}`);
+    report.push(`  + ${table}: таблица добавлена целиком`);
     continue;
   }
 
@@ -72,11 +127,9 @@ for (const [table, def] of Object.entries(defs)) {
   for (const col of missing) {
     const t = tsType(props[col]);
     const nullable = !required.has(col);
-    const hasDefault = props[col].default !== undefined;
 
     const rowLine = `          ${col}: ${t}${nullable ? " | null" : ""}`;
-    // Optional on insert when the database can fill it in itself.
-    const insLine = `          ${col}${nullable || hasDefault ? "?" : ""}: ${t}${nullable ? " | null" : ""}`;
+    const insLine = `          ${col}${optionalOnInsert(props[col], required.has(col)) ? "?" : ""}: ${t}${nullable ? " | null" : ""}`;
     const updLine = `          ${col}?: ${t}${nullable ? " | null" : ""}`;
 
     updated = updated

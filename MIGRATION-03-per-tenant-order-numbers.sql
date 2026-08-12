@@ -1,7 +1,11 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ФАЗА 3 — своя нумерация заказов у каждого клиента.
 --
--- ПРИМЕНЯТЬ ПОСЛЕ ФАЗЫ 2.
+-- ПРИМЕНЯТЬ ПОСЛЕ ФАЗЫ 1, ДО ДЕПЛОЯ КОДА. От Фазы 2 не зависит: всё, что
+-- касается роли tenant_bot, выполняется только если роль уже создана, а
+-- current_bot_id() создаётся здесь же (CREATE OR REPLACE, повторно безопасно).
+-- Причина такого порядка: код показывает order_no, и без этой колонки его
+-- запросы к orders вернут ошибку, а не пустое поле.
 --
 -- orders.id остаётся глобальным и внутренним: на него ссылается order_items,
 -- им же уходит InvId в Robokassa и callback_data кнопок админа. Менять его
@@ -14,6 +18,15 @@
 
 BEGIN;
 
+-- Та же функция, что и в Фазе 2 — продублирована, чтобы этот файл можно было
+-- применить раньше неё. CREATE OR REPLACE делает повтор безопасным.
+CREATE OR REPLACE FUNCTION public.current_bot_id() RETURNS uuid
+LANGUAGE sql STABLE
+SET search_path = public
+AS $$
+  SELECT nullif(current_setting('request.jwt.claims', true)::json ->> 'bot_id', '')::uuid
+$$;
+
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS order_no BIGINT;
 
 -- Счётчик на каждого арендатора. Отдельная таблица, а не max(order_no)+1:
@@ -25,7 +38,12 @@ CREATE TABLE IF NOT EXISTS public.order_counters (
   last_no BIGINT NOT NULL DEFAULT 0
 );
 GRANT ALL ON public.order_counters TO service_role;
-GRANT SELECT, INSERT, UPDATE ON public.order_counters TO tenant_bot;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tenant_bot') THEN
+    GRANT SELECT, INSERT, UPDATE ON public.order_counters TO tenant_bot;
+  END IF;
+END $$;
 
 -- ─── Бэкфилл: сохраняем текущие номера как есть ──────────────────────────
 UPDATE public.orders SET order_no = id WHERE order_no IS NULL;
@@ -72,11 +90,16 @@ CREATE TRIGGER trg_zz_assign_order_no
 
 -- Полный сброс данных клиента должен обнулять и его нумерацию.
 ALTER TABLE public.order_counters ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS tenant_isolation ON public.order_counters;
-CREATE POLICY tenant_isolation ON public.order_counters
-  FOR ALL TO tenant_bot
-  USING (bot_id = public.current_bot_id())
-  WITH CHECK (bot_id = public.current_bot_id());
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tenant_bot') THEN
+    DROP POLICY IF EXISTS tenant_isolation ON public.order_counters;
+    CREATE POLICY tenant_isolation ON public.order_counters
+      FOR ALL TO tenant_bot
+      USING (bot_id = public.current_bot_id())
+      WITH CHECK (bot_id = public.current_bot_id());
+  END IF;
+END $$;
 
 COMMIT;
 

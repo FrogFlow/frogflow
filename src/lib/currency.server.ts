@@ -21,10 +21,24 @@ async function loadCache(): Promise<Cached | null> {
 
 async function saveCache(c: Cached) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  await supabaseAdmin
+  const value = JSON.stringify(c);
+
+  // Deliberately not an upsert: ON CONFLICT has to name the exact unique
+  // constraint, and app_settings' key changes from (key) to (bot_id, key)
+  // partway through the migration — either spelling would be wrong on one side
+  // of it. Update-then-insert works under both, so the rate cache keeps
+  // working while the phases are applied. A lost race here just re-fetches.
+  const { data: existing } = await supabaseAdmin
     .from("app_settings")
-    // app_settings is keyed per tenant — (bot_id, key), not key alone.
-    .upsert({ key: CACHE_KEY, value: JSON.stringify(c) }, { onConflict: "bot_id,key" });
+    .select("key")
+    .eq("key", CACHE_KEY)
+    .maybeSingle();
+
+  if (existing) {
+    await supabaseAdmin.from("app_settings").update({ value }).eq("key", CACHE_KEY);
+  } else {
+    await supabaseAdmin.from("app_settings").insert({ key: CACHE_KEY, value });
+  }
 }
 
 async function fetchRates(): Promise<Record<string, number>> {

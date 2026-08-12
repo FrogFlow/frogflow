@@ -14,6 +14,496 @@ export type Database = {
   }
   public: {
     Tables: {
+      broadcast_recipients: {
+        Row: {
+          id: string
+          broadcast_id: string
+          telegram_id: number
+          status: string
+          error_message: string | null
+          sent_at: string | null
+          bot_id: string | null
+        }
+        Insert: {
+          id?: string
+          broadcast_id: string
+          telegram_id: number
+          status?: string
+          error_message?: string | null
+          sent_at?: string | null
+          bot_id?: string | null
+        }
+        Update: {
+          id?: string
+          broadcast_id?: string
+          telegram_id?: number
+          status?: string
+          error_message?: string | null
+          sent_at?: string | null
+          bot_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcast_recipients_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "broadcast_recipients_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bots: {
+        Row: {
+          id: string
+          bot_token: string
+          bot_name: string
+          owner_id: string
+          status: string | null
+          modules: Json | null
+          settings: Json | null
+          subscription_plan: string | null
+          subscription_expires_at: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          bot_token: string
+          bot_name: string
+          owner_id: string
+          status?: string | null
+          modules?: Json | null
+          settings?: Json | null
+          subscription_plan?: string | null
+          subscription_expires_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          bot_token?: string
+          bot_name?: string
+          owner_id?: string
+          status?: string | null
+          modules?: Json | null
+          settings?: Json | null
+          subscription_plan?: string | null
+          subscription_expires_at?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      zernio_logs: {
+        Row: {
+          id: string
+          event_id: string | null
+          event_type: string
+          status: string
+          payload: Json
+          error_message: string | null
+          created_at: string
+          bot_id: string | null
+        }
+        Insert: {
+          id?: string
+          event_id?: string | null
+          event_type: string
+          status?: string
+          payload?: Json
+          error_message?: string | null
+          created_at?: string
+          bot_id?: string | null
+        }
+        Update: {
+          id?: string
+          event_id?: string | null
+          event_type?: string
+          status?: string
+          payload?: Json
+          error_message?: string | null
+          created_at?: string
+          bot_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zernio_logs_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vip_member_profiles: {
+        Row: {
+          bot_id: string
+          telegram_id: number
+          username: string | null
+          first_name: string | null
+          last_name: string | null
+          assigned_tariff_id: string | null
+          assigned_at: string
+          assigned_source: string
+        }
+        Insert: {
+          bot_id: string
+          telegram_id: number
+          username?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          assigned_tariff_id?: string | null
+          assigned_at?: string
+          assigned_source?: string
+        }
+        Update: {
+          bot_id?: string
+          telegram_id?: number
+          username?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          assigned_tariff_id?: string | null
+          assigned_at?: string
+          assigned_source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vip_member_profiles_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vip_member_profiles_assigned_tariff_id_fkey"
+            columns: ["assigned_tariff_id"]
+            isOneToOne: false
+            referencedRelation: "vip_tariffs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vip_tariffs: {
+        Row: {
+          id: string
+          bot_id: string
+          name: string
+          description: string
+          price: number
+          currency: string
+          duration_days: number
+          is_active: boolean
+          sort_order: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          bot_id: string
+          name: string
+          description?: string
+          price?: number
+          currency?: string
+          duration_days?: number
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          bot_id?: string
+          name?: string
+          description?: string
+          price?: number
+          currency?: string
+          duration_days?: number
+          is_active?: boolean
+          sort_order?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vip_tariffs_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blocked_users: {
+        Row: {
+          bot_id: string
+          telegram_id: number
+          username: string | null
+          first_name: string | null
+          reason: string | null
+          blocked_at: string
+        }
+        Insert: {
+          bot_id: string
+          telegram_id: number
+          username?: string | null
+          first_name?: string | null
+          reason?: string | null
+          blocked_at?: string
+        }
+        Update: {
+          bot_id?: string
+          telegram_id?: number
+          username?: string | null
+          first_name?: string | null
+          reason?: string | null
+          blocked_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blocked_users_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      broadcasts: {
+        Row: {
+          id: string
+          status: string
+          message_text: string
+          photo_paths: Json
+          product_ids: Json
+          show_catalog: boolean
+          audience_type: string
+          audience_filter: Json
+          total_count: number
+          sent_count: number
+          failed_count: number
+          blocked_count: number
+          created_at: string
+          started_at: string | null
+          completed_at: string | null
+          bot_id: string | null
+        }
+        Insert: {
+          id?: string
+          status?: string
+          message_text: string
+          photo_paths?: Json
+          product_ids?: Json
+          show_catalog?: boolean
+          audience_type?: string
+          audience_filter?: Json
+          total_count?: number
+          sent_count?: number
+          failed_count?: number
+          blocked_count?: number
+          created_at?: string
+          started_at?: string | null
+          completed_at?: string | null
+          bot_id?: string | null
+        }
+        Update: {
+          id?: string
+          status?: string
+          message_text?: string
+          photo_paths?: Json
+          product_ids?: Json
+          show_catalog?: boolean
+          audience_type?: string
+          audience_filter?: Json
+          total_count?: number
+          sent_count?: number
+          failed_count?: number
+          blocked_count?: number
+          created_at?: string
+          started_at?: string | null
+          completed_at?: string | null
+          bot_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcasts_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vip_subscriptions: {
+        Row: {
+          id: string
+          bot_id: string
+          telegram_id: number
+          username: string | null
+          first_name: string | null
+          last_name: string | null
+          tariff_id: string | null
+          status: string
+          payment_proof_path: string | null
+          group_invite_link: string | null
+          started_at: string | null
+          expires_at: string
+          imported: boolean
+          admin_note: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          bot_id: string
+          telegram_id: number
+          username?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          tariff_id?: string | null
+          status?: string
+          payment_proof_path?: string | null
+          group_invite_link?: string | null
+          started_at?: string | null
+          expires_at: string
+          imported?: boolean
+          admin_note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          bot_id?: string
+          telegram_id?: number
+          username?: string | null
+          first_name?: string | null
+          last_name?: string | null
+          tariff_id?: string | null
+          status?: string
+          payment_proof_path?: string | null
+          group_invite_link?: string | null
+          started_at?: string | null
+          expires_at?: string
+          imported?: boolean
+          admin_note?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vip_subscriptions_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vip_subscriptions_tariff_id_fkey"
+            columns: ["tariff_id"]
+            isOneToOne: false
+            referencedRelation: "vip_tariffs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_material_files: {
+        Row: {
+          id: string
+          bot_id: string
+          product_id: string
+          language: string
+          file_path: string
+          file_name: string | null
+          sort_order: number
+        }
+        Insert: {
+          id?: string
+          bot_id: string
+          product_id: string
+          language?: string
+          file_path: string
+          file_name?: string | null
+          sort_order?: number
+        }
+        Update: {
+          id?: string
+          bot_id?: string
+          product_id?: string
+          language?: string
+          file_path?: string
+          file_name?: string | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_material_files_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_material_files_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      zernio_automations: {
+        Row: {
+          id: string
+          title: string
+          keywords: string[]
+          reply_text: string
+          dm_text: string | null
+          post_id: string | null
+          is_active: boolean
+          trigger_count: number
+          created_at: string
+          updated_at: string
+          bot_id: string | null
+        }
+        Insert: {
+          id?: string
+          title: string
+          keywords: string[]
+          reply_text: string
+          dm_text?: string | null
+          post_id?: string | null
+          is_active?: boolean
+          trigger_count?: number
+          created_at?: string
+          updated_at?: string
+          bot_id?: string | null
+        }
+        Update: {
+          id?: string
+          title?: string
+          keywords?: string[]
+          reply_text?: string
+          dm_text?: string | null
+          post_id?: string | null
+          is_active?: boolean
+          trigger_count?: number
+          created_at?: string
+          updated_at?: string
+          bot_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zernio_automations_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_settings: {
         Row: {
           bot_id: string | null
@@ -37,6 +527,7 @@ export type Database = {
       }
       bot_users: {
         Row: {
+          bot_id: string | null
           last_auto_dm_at: string | null
           opt_out: boolean
           zernio_account_id: string | null
@@ -54,6 +545,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          bot_id?: string | null
           last_auto_dm_at?: string | null
           opt_out?: boolean
           zernio_account_id?: string | null
@@ -71,6 +563,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          bot_id?: string | null
           last_auto_dm_at?: string | null
           opt_out?: boolean
           zernio_account_id?: string | null
@@ -91,6 +584,7 @@ export type Database = {
       }
       cart_items: {
         Row: {
+          bot_id: string | null
           user_key: string | null
           created_at: string
           id: string
@@ -99,6 +593,7 @@ export type Database = {
           telegram_id: number
         }
         Insert: {
+          bot_id?: string | null
           user_key?: string | null
           created_at?: string
           id?: string
@@ -107,6 +602,7 @@ export type Database = {
           telegram_id: number
         }
         Update: {
+          bot_id?: string | null
           user_key?: string | null
           created_at?: string
           id?: string
@@ -171,6 +667,10 @@ export type Database = {
       }
       order_items: {
         Row: {
+          material_files_kz_snapshot: Json
+          material_files_snapshot: Json
+          file_url_kz_snapshot: string | null
+          file_url_snapshot: string | null
           bot_id: string | null
           file_name_kz_snapshot: string | null
           file_path_kz_snapshot: string | null
@@ -185,6 +685,10 @@ export type Database = {
           quantity: number
         }
         Insert: {
+          material_files_kz_snapshot?: Json
+          material_files_snapshot?: Json
+          file_url_kz_snapshot?: string | null
+          file_url_snapshot?: string | null
           bot_id?: string | null
           file_name_kz_snapshot?: string | null
           file_path_kz_snapshot?: string | null
@@ -199,6 +703,10 @@ export type Database = {
           quantity?: number
         }
         Update: {
+          material_files_kz_snapshot?: Json
+          material_files_snapshot?: Json
+          file_url_kz_snapshot?: string | null
+          file_url_snapshot?: string | null
           bot_id?: string | null
           file_name_kz_snapshot?: string | null
           file_path_kz_snapshot?: string | null
@@ -305,6 +813,7 @@ export type Database = {
       }
       payment_methods: {
         Row: {
+          qr_code_path: string | null
           bot_id: string | null
           country_code: string
           country_name: string
@@ -316,6 +825,7 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          qr_code_path?: string | null
           bot_id?: string | null
           country_code: string
           country_name: string
@@ -327,6 +837,7 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          qr_code_path?: string | null
           bot_id?: string | null
           country_code?: string
           country_name?: string
@@ -341,6 +852,7 @@ export type Database = {
       }
       ig_keywords: {
         Row: {
+          bot_id: string | null
           comment_reply_text: string | null
           comments_post_id: string | null
           created_at: string
@@ -357,6 +869,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          bot_id?: string | null
           comment_reply_text?: string | null
           comments_post_id?: string | null
           created_at?: string
@@ -373,6 +886,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          bot_id?: string | null
           comment_reply_text?: string | null
           comments_post_id?: string | null
           created_at?: string
@@ -440,6 +954,7 @@ export type Database = {
       }
       ig_watched_posts: {
         Row: {
+          bot_id: string | null
           caption_snapshot: string | null
           comments_post_id: string | null
           created_at: string
@@ -451,6 +966,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          bot_id?: string | null
           caption_snapshot?: string | null
           comments_post_id?: string | null
           created_at?: string
@@ -462,6 +978,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          bot_id?: string | null
           caption_snapshot?: string | null
           comments_post_id?: string | null
           created_at?: string
@@ -476,6 +993,7 @@ export type Database = {
       }
       ig_exclusions: {
         Row: {
+          bot_id: string | null
           created_at: string
           id: string
           provider_user_id: string | null
@@ -483,6 +1001,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          bot_id?: string | null
           created_at?: string
           id?: string
           provider_user_id?: string | null
@@ -490,6 +1009,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          bot_id?: string | null
           created_at?: string
           id?: string
           provider_user_id?: string | null
@@ -500,6 +1020,7 @@ export type Database = {
       }
       ig_comment_actions: {
         Row: {
+          bot_id: string | null
           attempt_no: number
           comment_id: string
           comment_text: string | null
@@ -515,6 +1036,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          bot_id?: string | null
           attempt_no?: number
           comment_id: string
           comment_text?: string | null
@@ -530,6 +1052,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          bot_id?: string | null
           attempt_no?: number
           comment_id?: string
           comment_text?: string | null
@@ -563,6 +1086,7 @@ export type Database = {
       }
       ig_post_leads: {
         Row: {
+          bot_id: string | null
           author_profile_id: string | null
           closed_reason: string | null
           comment_replied_at: string | null
@@ -588,6 +1112,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          bot_id?: string | null
           author_profile_id?: string | null
           closed_reason?: string | null
           comment_replied_at?: string | null
@@ -613,6 +1138,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          bot_id?: string | null
           author_profile_id?: string | null
           closed_reason?: string | null
           comment_replied_at?: string | null
@@ -649,6 +1175,7 @@ export type Database = {
       }
       product_images: {
         Row: {
+          bot_id: string | null
           created_at: string
           id: string
           image_path: string
@@ -656,6 +1183,7 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          bot_id?: string | null
           created_at?: string
           id?: string
           image_path: string
@@ -663,6 +1191,7 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          bot_id?: string | null
           created_at?: string
           id?: string
           image_path?: string
@@ -681,6 +1210,8 @@ export type Database = {
       }
       products: {
         Row: {
+          file_url_kz: string | null
+          file_url: string | null
           bot_id: string | null
           file_name_kz: string | null
           file_path_kz: string | null
@@ -700,6 +1231,8 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          file_url_kz?: string | null
+          file_url?: string | null
           bot_id?: string | null
           file_name_kz?: string | null
           file_path_kz?: string | null
@@ -719,6 +1252,8 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          file_url_kz?: string | null
+          file_url?: string | null
           bot_id?: string | null
           file_name_kz?: string | null
           file_path_kz?: string | null

@@ -1,10 +1,12 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ФАЗА 2 — изоляция арендаторов средствами Postgres (RLS + JWT).
 --
--- ПРИМЕНЯТЬ ТОЛЬКО ПОСЛЕ:
---   1. успешной ФАЗЫ 1;
---   2. деплоя кода, где currency.server.ts использует onConflict "bot_id,key"
---      (старое значение "key" перестанет работать сразу после этой миграции).
+-- ПРИМЕНЯТЬ ПОСЛЕ ФАЗ 1 и 3 И ПОСЛЕ ДЕПЛОЯ КОДА.
+--
+-- Причина: здесь меняется первичный ключ app_settings и bot_users. Старый код
+-- писал кэш курсов через ON CONFLICT (key) — после смены ключа такая вставка
+-- падает. В новом коде этот upsert заменён на update-then-insert, который
+-- работает при любой схеме ключей.
 --
 -- Пока приложение ходит под service_role, эта миграция НИЧЕГО не меняет в его
 -- поведении: service_role обходит RLS. Политики начинают действовать в момент,
@@ -84,10 +86,13 @@ DECLARE
     'product_images','broadcast_recipients','zernio_logs','zernio_automations',
     'ig_watched_posts','ig_keywords','ig_exclusions','ig_comment_actions',
     'ig_post_leads','blocked_users','vip_tariffs','vip_subscriptions',
-    'vip_member_profiles','product_material_files'
+    'vip_member_profiles','product_material_files','order_counters'
   ];
 BEGIN
   FOREACH t IN ARRAY tables LOOP
+    -- Фаза 3 может быть ещё не применена (order_counters создаётся там).
+    CONTINUE WHEN to_regclass('public.' || quote_ident(t)) IS NULL;
+
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
 
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON public.%I', t);
