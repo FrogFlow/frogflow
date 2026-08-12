@@ -20,6 +20,7 @@ DECLARE
   r          RECORD;
   cols       TEXT;
   new_name   TEXT;
+  con_name   TEXT;
 BEGIN
   FOR r IN
     SELECT
@@ -62,7 +63,16 @@ BEGIN
 
     RAISE NOTICE 'Переношу % (%) → уникальность в пределах бота', r.idx_name, cols;
 
-    EXECUTE format('DROP INDEX IF EXISTS %s', r.idx_name);
+    -- Индекс может быть создан не сам по себе, а как UNIQUE-ограничение.
+    -- Тогда DROP INDEX запрещён — снимать нужно ограничение, индекс уйдёт с ним.
+    SELECT conname INTO con_name FROM pg_constraint WHERE conindid = r.idx_oid;
+
+    IF con_name IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I DROP CONSTRAINT %I', r.tbl_name, con_name);
+    ELSE
+      EXECUTE format('DROP INDEX IF EXISTS %s', r.idx_name);
+    END IF;
+
     EXECUTE format('CREATE UNIQUE INDEX IF NOT EXISTS %I ON public.%I (bot_id, %s)',
                    left(new_name, 63), r.tbl_name, cols);
   END LOOP;
