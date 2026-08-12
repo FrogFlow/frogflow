@@ -23,7 +23,8 @@ async function saveCache(c: Cached) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   await supabaseAdmin
     .from("app_settings")
-    .upsert({ key: CACHE_KEY, value: JSON.stringify(c) }, { onConflict: "key" });
+    // app_settings is keyed per tenant — (bot_id, key), not key alone.
+    .upsert({ key: CACHE_KEY, value: JSON.stringify(c) }, { onConflict: "bot_id,key" });
 }
 
 async function fetchRates(): Promise<Record<string, number>> {

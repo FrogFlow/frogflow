@@ -16,16 +16,19 @@ export type Database = {
     Tables: {
       app_settings: {
         Row: {
+          bot_id: string | null
           key: string
           updated_at: string
           value: string | null
         }
         Insert: {
+          bot_id?: string | null
           key: string
           updated_at?: string
           value?: string | null
         }
         Update: {
+          bot_id?: string | null
           key?: string
           updated_at?: string
           value?: string | null
@@ -34,6 +37,12 @@ export type Database = {
       }
       bot_users: {
         Row: {
+          last_auto_dm_at: string | null
+          opt_out: boolean
+          zernio_account_id: string | null
+          zernio_conversation_id: string | null
+          user_key: string
+          platform: string
           contact_phone: string | null
           created_at: string
           first_name: string | null
@@ -45,6 +54,12 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          last_auto_dm_at?: string | null
+          opt_out?: boolean
+          zernio_account_id?: string | null
+          zernio_conversation_id?: string | null
+          user_key: string
+          platform?: string
           contact_phone?: string | null
           created_at?: string
           first_name?: string | null
@@ -56,6 +71,12 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          last_auto_dm_at?: string | null
+          opt_out?: boolean
+          zernio_account_id?: string | null
+          zernio_conversation_id?: string | null
+          user_key?: string
+          platform?: string
           contact_phone?: string | null
           created_at?: string
           first_name?: string | null
@@ -70,6 +91,7 @@ export type Database = {
       }
       cart_items: {
         Row: {
+          user_key: string | null
           created_at: string
           id: string
           product_id: string
@@ -77,6 +99,7 @@ export type Database = {
           telegram_id: number
         }
         Insert: {
+          user_key?: string | null
           created_at?: string
           id?: string
           product_id: string
@@ -84,6 +107,7 @@ export type Database = {
           telegram_id: number
         }
         Update: {
+          user_key?: string | null
           created_at?: string
           id?: string
           product_id?: string
@@ -109,6 +133,7 @@ export type Database = {
       }
       categories: {
         Row: {
+          bot_id: string | null
           created_at: string
           id: string
           is_visible: boolean
@@ -117,6 +142,7 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          bot_id?: string | null
           created_at?: string
           id?: string
           is_visible?: boolean
@@ -125,6 +151,7 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          bot_id?: string | null
           created_at?: string
           id?: string
           is_visible?: boolean
@@ -144,6 +171,9 @@ export type Database = {
       }
       order_items: {
         Row: {
+          bot_id: string | null
+          file_name_kz_snapshot: string | null
+          file_path_kz_snapshot: string | null
           delivered_language: string | null
           file_name_snapshot: string | null
           file_path_snapshot: string | null
@@ -155,6 +185,9 @@ export type Database = {
           quantity: number
         }
         Insert: {
+          bot_id?: string | null
+          file_name_kz_snapshot?: string | null
+          file_path_kz_snapshot?: string | null
           delivered_language?: string | null
           file_name_snapshot?: string | null
           file_path_snapshot?: string | null
@@ -166,6 +199,9 @@ export type Database = {
           quantity?: number
         }
         Update: {
+          bot_id?: string | null
+          file_name_kz_snapshot?: string | null
+          file_path_kz_snapshot?: string | null
           delivered_language?: string | null
           file_name_snapshot?: string | null
           file_path_snapshot?: string | null
@@ -195,6 +231,11 @@ export type Database = {
       }
       orders: {
         Row: {
+          bot_id: string | null
+          zernio_conversation_id: string | null
+          user_key: string | null
+          platform: string
+          delivery_index: number
           admin_note: string | null
           contact: string | null
           country_code: string | null
@@ -211,6 +252,11 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          bot_id?: string | null
+          zernio_conversation_id?: string | null
+          user_key?: string | null
+          platform?: string
+          delivery_index?: number
           admin_note?: string | null
           contact?: string | null
           country_code?: string | null
@@ -227,6 +273,11 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          bot_id?: string | null
+          zernio_conversation_id?: string | null
+          user_key?: string | null
+          platform?: string
+          delivery_index?: number
           admin_note?: string | null
           contact?: string | null
           country_code?: string | null
@@ -254,6 +305,7 @@ export type Database = {
       }
       payment_methods: {
         Row: {
+          bot_id: string | null
           country_code: string
           country_name: string
           created_at: string
@@ -264,6 +316,7 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          bot_id?: string | null
           country_code: string
           country_name: string
           created_at?: string
@@ -274,6 +327,7 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          bot_id?: string | null
           country_code?: string
           country_name?: string
           created_at?: string
@@ -338,6 +392,7 @@ export type Database = {
       }
       ig_poll_runs: {
         Row: {
+          bot_id: string | null
           comments_scanned: number
           errors: string | null
           finished_at: string | null
@@ -352,6 +407,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          bot_id?: string | null
           comments_scanned?: number
           errors?: string | null
           finished_at?: string | null
@@ -366,6 +422,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          bot_id?: string | null
           comments_scanned?: number
           errors?: string | null
           finished_at?: string | null
@@ -624,6 +681,11 @@ export type Database = {
       }
       products: {
         Row: {
+          bot_id: string | null
+          file_name_kz: string | null
+          file_path_kz: string | null
+          category_ids: Json
+          country_prices: Json
           category_id: string | null
           created_at: string
           currency: string
@@ -638,6 +700,11 @@ export type Database = {
           sort_order: number
         }
         Insert: {
+          bot_id?: string | null
+          file_name_kz?: string | null
+          file_path_kz?: string | null
+          category_ids: Json
+          country_prices: Json
           category_id?: string | null
           created_at?: string
           currency?: string
@@ -652,6 +719,11 @@ export type Database = {
           sort_order?: number
         }
         Update: {
+          bot_id?: string | null
+          file_name_kz?: string | null
+          file_path_kz?: string | null
+          category_ids?: Json
+          country_prices?: Json
           category_id?: string | null
           created_at?: string
           currency?: string
