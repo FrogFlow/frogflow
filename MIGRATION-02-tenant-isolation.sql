@@ -47,16 +47,34 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT                  O
 -- Два разных клиента обязаны иметь право на одинаковый ключ настройки и на
 -- одного и того же покупателя в Telegram.
 
+-- Имя первичного ключа угадывать нельзя: у bot_users он называется
+-- bot_users_user_key_pkey, а не bot_users_pkey. DROP CONSTRAINT IF EXISTS по
+-- неверному имени молча ничего не делает, и следом ADD PRIMARY KEY падает с
+-- «multiple primary keys for table are not allowed». Берём имя из каталога.
+DO $$
+DECLARE pk text;
+BEGIN
+  FOREACH pk IN ARRAY ARRAY['public.app_settings','public.bot_users'] LOOP
+    DECLARE cname text;
+    BEGIN
+      SELECT conname INTO cname
+      FROM pg_constraint
+      WHERE conrelid = pk::regclass AND contype = 'p';
+      IF cname IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I CASCADE', pk, cname);
+      END IF;
+    END;
+  END LOOP;
+END $$;
+
 -- app_settings: PK (key) → (bot_id, key)
 ALTER TABLE public.app_settings ALTER COLUMN bot_id SET NOT NULL;
-ALTER TABLE public.app_settings DROP CONSTRAINT IF EXISTS app_settings_pkey CASCADE;
-ALTER TABLE public.app_settings ADD  CONSTRAINT app_settings_pkey PRIMARY KEY (bot_id, key);
+ALTER TABLE public.app_settings ADD CONSTRAINT app_settings_pkey PRIMARY KEY (bot_id, key);
 
 -- bot_users: PK (user_key) → (bot_id, user_key), плюс уникальность telegram_id
 -- в пределах одного бота.
 ALTER TABLE public.bot_users ALTER COLUMN bot_id SET NOT NULL;
-ALTER TABLE public.bot_users DROP CONSTRAINT IF EXISTS bot_users_pkey CASCADE;
-ALTER TABLE public.bot_users ADD  CONSTRAINT bot_users_pkey PRIMARY KEY (bot_id, user_key);
+ALTER TABLE public.bot_users ADD CONSTRAINT bot_users_pkey PRIMARY KEY (bot_id, user_key);
 DROP INDEX IF EXISTS bot_users_user_key_idx;
 CREATE UNIQUE INDEX IF NOT EXISTS bot_users_bot_telegram_idx ON public.bot_users(bot_id, telegram_id);
 
