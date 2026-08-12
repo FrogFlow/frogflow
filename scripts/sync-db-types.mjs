@@ -44,6 +44,13 @@ function tsType(prop) {
 }
 
 /**
+ * NOT NULL columns filled by a BEFORE INSERT trigger rather than a column
+ * DEFAULT. PostgREST reports no default for these, so without this list they
+ * would be typed as required and correct inserts would fail typecheck.
+ */
+const TRIGGER_POPULATED = new Set(["orders.order_no"]);
+
+/**
  * Is the column safe to omit on insert?
  *
  * Nullable, or the database fills it in. PostgREST does not report defaults it
@@ -51,9 +58,10 @@ function tsType(prop) {
  * no stated default is treated as optional too, otherwise correct inserts that
  * rely on that default would fail typecheck.
  */
-function optionalOnInsert(prop, isRequired) {
+function optionalOnInsert(prop, isRequired, table, col) {
   if (!isRequired) return true;
   if (prop.default !== undefined) return true;
+  if (TRIGGER_POPULATED.has(`${table}.${col}`)) return true;
   return (prop.format ?? "").includes("json");
 }
 
@@ -67,7 +75,7 @@ function renderTable(table, def) {
     const t = tsType(props[col]);
     const nullable = !required.has(col);
     const optional =
-      kind === "update" ? true : kind === "insert" ? optionalOnInsert(props[col], required.has(col)) : false;
+      kind === "update" ? true : kind === "insert" ? optionalOnInsert(props[col], required.has(col), table, col) : false;
     return `          ${col}${optional ? "?" : ""}: ${t}${nullable ? " | null" : ""}`;
   };
 
@@ -129,7 +137,7 @@ for (const [table, def] of Object.entries(defs)) {
     const nullable = !required.has(col);
 
     const rowLine = `          ${col}: ${t}${nullable ? " | null" : ""}`;
-    const insLine = `          ${col}${optionalOnInsert(props[col], required.has(col)) ? "?" : ""}: ${t}${nullable ? " | null" : ""}`;
+    const insLine = `          ${col}${optionalOnInsert(props[col], required.has(col), table, col) ? "?" : ""}: ${t}${nullable ? " | null" : ""}`;
     const updLine = `          ${col}?: ${t}${nullable ? " | null" : ""}`;
 
     updated = updated

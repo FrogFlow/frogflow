@@ -14,6 +14,29 @@ export type Database = {
   }
   public: {
     Tables: {
+      order_counters: {
+        Row: {
+          bot_id: string
+          last_no: number
+        }
+        Insert: {
+          bot_id: string
+          last_no?: number
+        }
+        Update: {
+          bot_id?: string
+          last_no?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_counters_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       broadcast_recipients: {
         Row: {
           id: string
@@ -739,6 +762,7 @@ export type Database = {
       }
       orders: {
         Row: {
+          order_no: number
           bot_id: string | null
           zernio_conversation_id: string | null
           user_key: string | null
@@ -760,6 +784,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          order_no?: number
           bot_id?: string | null
           zernio_conversation_id?: string | null
           user_key?: string | null
@@ -781,6 +806,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          order_no?: number
           bot_id?: string | null
           zernio_conversation_id?: string | null
           user_key?: string | null
