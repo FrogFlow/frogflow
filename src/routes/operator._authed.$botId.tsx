@@ -30,8 +30,17 @@ const STATUS_LABEL: Record<
   suspended: { text: "Приостановлен", variant: "destructive" },
 };
 
-// Порядок групп — как в прайсе: сперва базовые/каталожные, платёжные и Instagram.
-const GROUP_ORDER = ["База", "Каталог", "Сервис", "Instagram", "Оплата", "Удержание"];
+// Порядок групп — как разделы в прайсе.
+const GROUP_ORDER = [
+  "База",
+  "Оплата",
+  "Каталог",
+  "Instagram",
+  "Удержание",
+  "Сервис",
+  "Аналитика",
+  "Физические товары",
+];
 
 function OperatorClientCard() {
   const { botId } = Route.useParams();
