@@ -44,7 +44,19 @@ export async function tg(method: string, payload: unknown) {
       }
     }
 
-    if (!res.ok || (data && data.ok === false)) {
+    // Telegram's own 5xx (unlike a network failure, this reaches Telegram but
+    // it fails there) — retry with backoff same as a dropped connection.
+    if (res.status >= 500 && attempt < MAX_RETRIES) {
+      console.warn(`[telegram] ${method} got ${res.status}, retrying (attempt ${attempt}/${MAX_RETRIES})`);
+      await sleep(Math.min(1000 * 2 ** (attempt - 1), 5000));
+      continue;
+    }
+
+    // editMessageText/editMessageMedia re-rendering onto identical content is
+    // an expected no-op, not a real failure worth logging as one.
+    const benign = typeof data?.description === "string" && /message is not modified/i.test(data.description);
+
+    if ((!res.ok || (data && data.ok === false)) && !benign) {
       console.error(`[telegram] ${method} failed`, res.status, data);
     }
     return data as { ok: boolean; result?: unknown; description?: string };
@@ -101,6 +113,13 @@ export async function tgSendMultipartMany(
         await sleep(retryAfter * 1000);
         continue;
       }
+    }
+
+    // Telegram's own 5xx — retry with backoff same as a dropped connection.
+    if (res.status >= 500 && attempt < MAX_RETRIES) {
+      console.warn(`[telegram] ${method} multipart got ${res.status}, retrying (attempt ${attempt}/${MAX_RETRIES})`);
+      await sleep(Math.min(1000 * 2 ** (attempt - 1), 5000));
+      continue;
     }
 
     if (!res.ok || (data && data.ok === false)) {
