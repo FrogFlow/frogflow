@@ -10,6 +10,7 @@ import {
 import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { getRuntimeModulesFn } from "@/lib/modules/modules.functions";
 
 function NotFoundComponent() {
   return (
@@ -69,6 +70,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 }
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  beforeLoad: async () => {
+    // Module flags and bot status now come from bots.modules/status (Фаза 1),
+    // not build-time VITE_FEATURE_* — same code, toggled per deployment
+    // without a rebuild. See src/lib/modules/modules.server.ts.
+    const runtime = await getRuntimeModulesFn();
+    return runtime;
+  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },

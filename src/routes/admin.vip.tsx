@@ -1,9 +1,8 @@
 import { createFileRoute, Outlet, Link, redirect } from "@tanstack/react-router";
-import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export const Route = createFileRoute("/admin/vip")({
-  beforeLoad: () => {
-    if (!FEATURE_FLAGS.vip) throw redirect({ to: "/admin" });
+  beforeLoad: ({ context }) => {
+    if (!context.modules.vip) throw redirect({ to: "/admin" });
   },
   component: AdminVipLayout,
 });

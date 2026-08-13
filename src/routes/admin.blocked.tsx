@@ -7,11 +7,10 @@ import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
-import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export const Route = createFileRoute("/admin/blocked")({
-  beforeLoad: () => {
-    if (!FEATURE_FLAGS.blocked) throw redirect({ to: "/admin" });
+  beforeLoad: ({ context }) => {
+    if (!context.modules.blocked) throw redirect({ to: "/admin" });
   },
   component: BlockedUsersPage,
 });
