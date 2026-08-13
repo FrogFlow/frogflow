@@ -1,5 +1,6 @@
 import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { callInternal } from "./internal-client.server";
 import type { Json } from "@/integrations-supabase/types";
 
 type BotStatus = "active" | "paused" | "suspended";
@@ -104,6 +105,26 @@ export async function setModule(botId: string, key: ModuleKey, enabled: boolean,
     kind: enabled ? "module_on" : "module_off",
     payload: { key },
   });
+
+  await nudgeDeployment(botId);
+}
+
+/**
+ * Просит деплой сбросить кеш модулей, чтобы тумблер сработал сразу, а не в
+ * течение минуты. Best-effort и намеренно не влияет на исход: значение уже
+ * сохранено в базе, а деплой подтянет его по TTL даже если сейчас лежит.
+ * Ошибку показываем только в логах — иначе успешное переключение выглядело бы
+ * в панели как неудача.
+ */
+async function nudgeDeployment(botId: string) {
+  const s = await db();
+  const { data } = await s.from("bots").select("app_url, internal_secret").eq("id", botId).single();
+  if (!data) return;
+
+  const res = await callInternal(data, "/api/internal/reload", {});
+  if (!res.ok) {
+    console.warn(`[operator] сброс кеша ${botId} не удался (${res.kind}): ${res.error}`);
+  }
 }
 
 export async function setBotStatus(botId: string, status: BotStatus, actor: string) {
@@ -119,6 +140,9 @@ export async function setBotStatus(botId: string, status: BotStatus, actor: stri
     kind: status === "active" ? "resume" : "pause",
     payload: { status },
   });
+
+  // Тем же кешем читается и статус — пауза должна вступать в силу сразу.
+  await nudgeDeployment(botId);
 }
 
 export type BotMetaPatch = Partial<{

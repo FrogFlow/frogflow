@@ -35,6 +35,8 @@ function OperatorLayout() {
             >
               Панель оператора
             </Link>
+            <NavLink to="/operator">Клиенты</NavLink>
+            <NavLink to="/operator/broadcast">Рассылка</NavLink>
           </div>
           <Button
             variant="ghost"
@@ -52,5 +54,18 @@ function OperatorLayout() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="px-3 py-1.5 rounded-md text-sm hover:bg-accent shrink-0"
+      activeProps={{ className: "px-3 py-1.5 rounded-md text-sm bg-accent font-medium shrink-0" }}
+      activeOptions={{ exact: to === "/operator" }}
+    >
+      {children}
+    </Link>
   );
 }

@@ -1,0 +1,107 @@
+/**
+ * Внутренний API клиентского деплоя — то, ради чего панель не хранит ни одного
+ * токена Telegram (CONTROL-PLANE-PLAN.md §5–6).
+ *
+ * Панель знает `bots.app_url` и `bots.internal_secret`, стучится сюда, а токен
+ * берёт уже сам деплой — из своих же переменных окружения. Утечка секрета даёт
+ * максимум возможность отправить сообщение владельцу; утечка токена означала бы
+ * полный контроль над ботом.
+ */
+import { createHash, timingSafeEqual } from "node:crypto";
+
+async function db() {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  return supabaseAdmin;
+}
+
+function requireBotId(): string {
+  const id = process.env.BOT_ID?.trim();
+  if (!id) throw new Error("BOT_ID не задан в переменных окружения");
+  return id;
+}
+
+/**
+ * Сравнение постоянного времени. Хеширование до сравнения выравнивает длину:
+ * timingSafeEqual на буферах разной длины бросает исключение, а проверка длины
+ * до него утекала бы длиной секрета.
+ */
+function secretsMatch(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
+
+export type InternalAuthResult = { ok: true } | { ok: false; status: number; message: string };
+
+/**
+ * Проверяет заголовок x-internal-secret против bots.internal_secret своей же
+ * строки. Деплой ходит под ключом арендатора, которому RLS оставляет ровно
+ * свою строку в `bots` — чужой секрет отсюда не прочитать в принципе.
+ */
+export async function authenticateInternalRequest(request: Request): Promise<InternalAuthResult> {
+  const provided = request.headers.get("x-internal-secret");
+  if (!provided) {
+    return { ok: false, status: 401, message: "Missing x-internal-secret" };
+  }
+
+  const s = await db();
+  const { data, error } = await s
+    .from("bots")
+    .select("internal_secret")
+    .eq("id", requireBotId())
+    .single();
+
+  if (error || !data) {
+    console.error("[internal] не удалось прочитать internal_secret:", error?.message);
+    return { ok: false, status: 500, message: "Internal secret unavailable" };
+  }
+  // Пустой секрет в базе не должен превращаться в «пускаем всех».
+  if (!data.internal_secret) {
+    return { ok: false, status: 503, message: "Internal secret is not configured for this bot" };
+  }
+  if (!secretsMatch(provided, data.internal_secret)) {
+    return { ok: false, status: 403, message: "Invalid secret" };
+  }
+  return { ok: true };
+}
+
+export type NotifyOwnerResult = { ok: true } | { ok: false; status: number; message: string };
+
+/** Шлёт текст владельцу от имени ЭТОГО бота, своим TELEGRAM_BOT_TOKEN. */
+export async function notifyOwner(text: string): Promise<NotifyOwnerResult> {
+  const s = await db();
+  const { data, error } = await s
+    .from("bots")
+    .select("owner_telegram_id")
+    .eq("id", requireBotId())
+    .single();
+
+  if (error || !data) {
+    return { ok: false, status: 500, message: `Не удалось прочитать владельца: ${error?.message}` };
+  }
+  if (!data.owner_telegram_id) {
+    // Не 500: деплой исправен, просто в панели не заполнен Telegram ID владельца.
+    return { ok: false, status: 409, message: "owner_telegram_id не заполнен в панели" };
+  }
+
+  const { tg } = await import("@/lib/telegram.server");
+  let res: { ok: boolean; description?: string };
+  try {
+    res = await tg("sendMessage", { chat_id: Number(data.owner_telegram_id), text });
+  } catch (e: any) {
+    // Сюда попадает только незаданный TELEGRAM_BOT_TOKEN: сетевые сбои tg()
+    // переживает сам и возвращает ok: false.
+    return { ok: false, status: 500, message: `Отправка не удалась: ${e?.message || e}` };
+  }
+  // tg() не бросает при отказе Telegram, а возвращает ok: false. Проглотить
+  // это значило бы отрапортовать панели об успешной доставке несуществующего
+  // сообщения — ровно та ошибка, против которой написан §6 плана.
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: 502,
+      message: `Telegram отклонил отправку: ${res.description || "неизвестная ошибка"}`,
+    };
+  }
+  return { ok: true };
+}

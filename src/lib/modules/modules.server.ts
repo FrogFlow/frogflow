@@ -23,10 +23,20 @@ function requireBotId(): string {
 }
 
 // Кеш в памяти процесса. «Включил тумблер в панели — заработало в течение
-// минуты» — приемлемо; мгновенно сделает сброс кеша из Фазы 3
-// (POST /api/internal/reload), которого пока нет.
+// минуты» — приемлемо; мгновенно делает сброс кеша панелью через
+// POST /api/internal/reload (resetModuleCache ниже).
 let cache: { at: number; row: BotRow } | null = null;
 const TTL_MS = 60_000;
+
+/**
+ * Сбрасывает кеш, чтобы следующее чтение сходило в базу. Serverless держит
+ * несколько инстансов, и вызов доходит только до одного из них — поэтому это
+ * ускорение, а не гарантия: остальные подтянут новое значение по истечении
+ * TTL. Полагаться на мгновенность нельзя, для корректности достаточно TTL.
+ */
+export function resetModuleCache() {
+  cache = null;
+}
 
 async function loadBot(): Promise<BotRow> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.row;
@@ -49,10 +59,17 @@ async function loadBot(): Promise<BotRow> {
   return row;
 }
 
+/** Канонический набор ключей, все выключены — для деплоя без своего арендатора (панель оператора). */
+export function emptyModules(): Record<ModuleKey, boolean> {
+  const result = {} as Record<ModuleKey, boolean>;
+  for (const key of MODULE_KEYS) result[key] = false;
+  return result;
+}
+
 /** Полный канонический набор — ключи реестра, которых нет в строке (например, ещё не забэкфилены), читаются как выключенные. */
 export async function loadModules(): Promise<Record<ModuleKey, boolean>> {
   const { modules } = await loadBot();
-  const result = {} as Record<ModuleKey, boolean>;
+  const result = emptyModules();
   for (const key of MODULE_KEYS) {
     result[key] = modules?.[key] === true;
   }
