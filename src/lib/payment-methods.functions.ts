@@ -23,6 +23,7 @@ const SaveInput = z.object({
   instructions: z.string().min(1).max(4000),
   sort_order: z.number().int().default(0),
   is_active: z.boolean().default(true),
+  qr_code_path: z.string().nullable().optional(),
 });
 
 export const savePaymentMethod = createServerFn({ method: "POST" })
@@ -36,10 +37,11 @@ export const savePaymentMethod = createServerFn({ method: "POST" })
         .update({
           country_code: data.country_code,
           country_name: data.country_name,
-        currency: data.currency,
+          currency: data.currency,
           instructions: data.instructions,
           sort_order: data.sort_order,
           is_active: data.is_active,
+          qr_code_path: data.qr_code_path,
         })
         .eq("id", data.id);
       if (error) throw new Error(error.message);
@@ -51,6 +53,7 @@ export const savePaymentMethod = createServerFn({ method: "POST" })
         instructions: data.instructions,
         sort_order: data.sort_order,
         is_active: data.is_active,
+        qr_code_path: data.qr_code_path,
       });
       if (error) throw new Error(error.message);
     }
