@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components-ui/dialog";
 import { confirmOrder, continueDeliveryOrder, deleteOrder, listOrders, redeliverOrder, rejectOrder, remindPaymentOrder } from "@/lib/orders.functions";
+import { blockTelegramUserFn } from "@/lib/blocked-users.functions";
 import { useState } from "react";
 
 // Тип чека определяется по расширению сохранённого пути.
@@ -39,14 +40,14 @@ function OrdersPage() {
   const list = (orders.data ?? []) as any[];
   const [busy, setBusy] = useState<number | null>(null);
 
-  async function onConfirm(id: number) {
-    if (!confirm(`Подтвердить оплату заказа #${id} и выдать файлы?`)) return;
+  async function onConfirm(id: number, displayNo: number) {
+    if (!confirm(`Подтвердить оплату заказа #${displayNo} и выдать файлы?`)) return;
     setBusy(id);
     try {
       const result = await confirmOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
       if (result.alreadyDelivered) {
-        alert(`Заказ #${id} уже выдаётся или выдан.`);
+        alert(`Заказ #${displayNo} уже выдаётся или выдан.`);
       }
     } catch (e: any) {
       alert(e.message);
@@ -54,8 +55,8 @@ function OrdersPage() {
       setBusy(null);
     }
   }
-  async function onRedeliver(id: number) {
-    if (!confirm(`Отправить файлы заказа #${id} покупателю ещё раз?`)) return;
+  async function onRedeliver(id: number, displayNo: number) {
+    if (!confirm(`Отправить файлы заказа #${displayNo} покупателю ещё раз?`)) return;
     setBusy(id);
     try {
       await redeliverOrder({ data: { id } });
@@ -66,8 +67,8 @@ function OrdersPage() {
       setBusy(null);
     }
   }
-  async function onContinue(id: number) {
-    if (!confirm(`Продолжить выдачу файлов заказа #${id}? (следующая порция)`)) return;
+  async function onContinue(id: number, displayNo: number) {
+    if (!confirm(`Продолжить выдачу файлов заказа #${displayNo}? (следующая порция)`)) return;
     setBusy(id);
     try {
       const res = await continueDeliveryOrder({ data: { id } });
@@ -77,7 +78,7 @@ function OrdersPage() {
           `Отправлена порция файлов (${(res as any).sent}). Ещё осталось — нажмите «Продолжить» снова или дождитесь cron.`,
         );
       } else {
-        alert(`Заказ #${id} выдан полностью.`);
+        alert(`Заказ #${displayNo} выдан полностью.`);
       }
     } catch (e: any) {
       alert(e.message);
@@ -95,24 +96,48 @@ function OrdersPage() {
       setBusy(null);
     }
   }
-  async function onRemindPayment(id: number) {
-    if (!confirm(`Отправить покупателю напоминание и актуальный способ оплаты по заказу #${id}?`)) return;
+  async function onRemindPayment(id: number, displayNo: number) {
+    if (!confirm(`Отправить покупателю напоминание и актуальный способ оплаты по заказу #${displayNo}?`)) return;
     setBusy(id);
     try {
       await remindPaymentOrder({ data: { id } });
-      alert(`Напоминание по заказу #${id} отправлено в Telegram.`);
+      alert(`Напоминание по заказу #${displayNo} отправлено в Telegram.`);
     } catch (e: any) {
       alert(e.message || "Не удалось отправить напоминание");
     } finally {
       setBusy(null);
     }
   }
-  async function onDelete(id: number) {
-    if (!confirm(`Удалить заказ #${id}? Это действие необратимо.`)) return;
-    if (!confirm(`Точно удалить заказ #${id}? Нумерация следующих заказов сбросится до текущего максимума.`)) return;
+  async function onDelete(id: number, displayNo: number) {
+    if (!confirm(`Удалить заказ #${displayNo}? Это действие необратимо.`)) return;
+    if (!confirm(`Точно удалить заказ #${displayNo}? Это нельзя отменить.`)) return;
     setBusy(id);
     try {
       await deleteOrder({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function onBlock(o: { id: number; telegram_id: number; username?: string | null; display_name?: string | null }) {
+    if (
+      !confirm(
+        `Заблокировать ${o.display_name || o.telegram_id}?\n\nБот перестанет отвечать, доступ к VIP-группе закроется.`,
+      )
+    )
+      return;
+    setBusy(o.id);
+    try {
+      await blockTelegramUserFn({
+        data: {
+          telegram_id: o.telegram_id,
+          username: o.username ?? undefined,
+          first_name: o.display_name ?? undefined,
+          reason: "заблокирован из заказов",
+        },
+      });
       qc.invalidateQueries({ queryKey: ["orders"] });
     } catch (e: any) {
       alert(e.message);
@@ -177,10 +202,10 @@ function OrdersPage() {
                     ⏳ Заказ выдаётся порциями (файлы). Если зависло — нажмите «Продолжить выдачу».
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => onContinue(o.id)} disabled={busy === o.id}>
+                    <Button onClick={() => onContinue(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
                       ▶️ Продолжить выдачу
                     </Button>
-                    <Button variant="outline" onClick={() => onRedeliver(o.id)} disabled={busy === o.id}>
+                    <Button variant="outline" onClick={() => onRedeliver(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
                       Выдать заново с начала
                     </Button>
                   </div>
@@ -189,11 +214,11 @@ function OrdersPage() {
               {(o.status === "awaiting_confirmation" || o.status === "awaiting_payment") && (
                 <div className="flex flex-wrap gap-2 pt-2">
                   {o.status === "awaiting_payment" && (
-                    <Button variant="outline" onClick={() => onRemindPayment(o.id)} disabled={busy === o.id}>
+                    <Button variant="outline" onClick={() => onRemindPayment(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
                       📩 Напомнить об оплате
                     </Button>
                   )}
-                  <Button onClick={() => onConfirm(o.id)} disabled={busy === o.id}>
+                  <Button onClick={() => onConfirm(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
                     ✅ Подтвердить и выдать
                   </Button>
                   <Button variant="destructive" onClick={() => onReject(o.id)} disabled={busy === o.id}>
@@ -202,16 +227,25 @@ function OrdersPage() {
                 </div>
               )}
               {o.status === "delivered" && (
-                <Button size="sm" variant="outline" onClick={() => onRedeliver(o.id)} disabled={busy === o.id}>
+                <Button size="sm" variant="outline" onClick={() => onRedeliver(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
                   Отправить файлы ещё раз
                 </Button>
               )}
-              <div className="flex justify-end pt-1">
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                  onClick={() => onBlock(o)}
+                  disabled={busy === o.id}
+                >
+                  Заблокировать
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   className="text-muted-foreground hover:text-destructive"
-                  onClick={() => onDelete(o.id)}
+                  onClick={() => onDelete(o.id, o.order_no ?? o.id)}
                   disabled={busy === o.id}
                 >
                   🗑️ Удалить

@@ -20,6 +20,7 @@ export const Route = createFileRoute("/admin/products")({
 });
 
 type Img = { id?: string; image_path: string; sort_order: number };
+type MaterialFile = { id?: string; file_path: string; file_name: string | null; sort_order: number };
 type Product = {
   id?: string;
   category_id: string | null;
@@ -35,7 +36,10 @@ type Product = {
   file_name: string | null;
   file_path_kz?: string | null;
   file_name_kz?: string | null;
+  file_url?: string | null;
+  file_url_kz?: string | null;
   product_images?: Img[];
+  product_material_files?: (MaterialFile & { language: "ru" | "kz" })[];
   country_prices?: Record<string, number>;
 };
 
@@ -53,6 +57,8 @@ const empty: Product = {
   file_name: null,
   file_path_kz: null,
   file_name_kz: null,
+  file_url: null,
+  file_url_kz: null,
   product_images: [],
   country_prices: {},
 };
@@ -76,7 +82,13 @@ function mimeForFile(filename: string, fallback?: string): string {
   return MIME_BY_EXT[ext] || fallback || "application/octet-stream";
 }
 
-async function uploadFile(file: File, bucket: "product-images" | "product-files") {
+// fetch() gives no upload progress at all — XMLHttpRequest does, via
+// upload.onprogress, so the direct-to-Supabase PUT uses that instead.
+async function uploadFile(
+  file: File,
+  bucket: "product-images" | "product-files",
+  onProgress?: (percent: number) => void,
+): Promise<{ path: string; name: string }> {
   // 1. Получаем одноразовую ссылку для прямой загрузки от сервера
   const { path, name, signedUrl } = await getSignedUploadUrl({ data: { bucket, filename: file.name } });
 
@@ -86,16 +98,78 @@ async function uploadFile(file: File, bucket: "product-images" | "product-files"
   const contentType =
     bucket === "product-files" ? mimeForFile(file.name, file.type) : file.type || "application/octet-stream";
 
-  const resUpload = await fetch(signedUrl, {
-    method: "PUT",
-    body: file,
-    headers: {
-      "Content-Type": contentType,
-    },
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", signedUrl);
+    xhr.setRequestHeader("Content-Type", contentType);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(xhr.responseText || `Upload failed HTTP ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new Error("Ошибка сети при загрузке"));
+    xhr.send(file);
   });
-  if (!resUpload.ok) throw new Error(await resUpload.text());
 
   return { path, name };
+}
+
+type UploadStatus = { label: string; index: number; total: number; percent: number };
+
+async function uploadManyWithProgress(
+  files: FileList,
+  bucket: "product-images" | "product-files",
+  setStatus: (s: UploadStatus | null) => void,
+): Promise<{ path: string; name: string }[]> {
+  const list = Array.from(files);
+  const results: { path: string; name: string }[] = [];
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      const update = (percent: number) => setStatus({ label: f.name, index: i + 1, total: list.length, percent });
+      update(0);
+      results.push(await uploadFile(f, bucket, update));
+    }
+  } finally {
+    setStatus(null);
+  }
+  return results;
+}
+
+function UploadProgressBar({ status }: { status: UploadStatus | null }) {
+  if (!status) return null;
+  return (
+    <div className="space-y-1 mt-1">
+      <div className="text-xs text-muted-foreground">
+        Загружаю {status.index} из {status.total}: {status.label} — {status.percent}%
+      </div>
+      <div className="h-1.5 w-full bg-muted rounded overflow-hidden">
+        <div className="h-full bg-primary transition-[width]" style={{ width: `${status.percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function MaterialFilesList({ files, onRemove }: { files: MaterialFile[]; onRemove: (idx: number) => void }) {
+  if (files.length === 0) return null;
+  return (
+    <ul className="text-sm space-y-1 mt-1">
+      {files.map((f, idx) => (
+        <li key={`${f.file_path}-${idx}`} className="flex items-center justify-between gap-2 text-muted-foreground">
+          <span className="truncate">📎 {f.file_name || f.file_path}</span>
+          <button
+            type="button"
+            onClick={() => onRemove(idx)}
+            className="shrink-0 text-destructive hover:underline"
+          >
+            Убрать
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function ProductsPage() {
@@ -113,6 +187,11 @@ function ProductsPage() {
   const [catQuery, setCatQuery] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);
   const [images, setImages] = useState<Img[]>([]);
+  const [materialFilesRu, setMaterialFilesRu] = useState<MaterialFile[]>([]);
+  const [materialFilesKz, setMaterialFilesKz] = useState<MaterialFile[]>([]);
+  const [imagesUpload, setImagesUpload] = useState<UploadStatus | null>(null);
+  const [materialsRuUpload, setMaterialsRuUpload] = useState<UploadStatus | null>(null);
+  const [materialsKzUpload, setMaterialsKzUpload] = useState<UploadStatus | null>(null);
   const [saving, setSaving] = useState(false);
 
   const catsTree = useMemo(() => sortCategoriesTree((cats.data ?? []) as any[]), [cats.data]);
@@ -135,6 +214,8 @@ function ProductsPage() {
   function startNew() {
     setEditing({ ...empty });
     setImages([]);
+    setMaterialFilesRu([]);
+    setMaterialFilesKz([]);
   }
   function startEdit(p: any) {
     setEditing({
@@ -152,43 +233,43 @@ function ProductsPage() {
       file_name: p.file_name,
       file_path_kz: p.file_path_kz,
       file_name_kz: p.file_name_kz,
+      file_url: p.file_url,
+      file_url_kz: p.file_url_kz,
       country_prices: p.country_prices || {},
     });
     const imgs = (p.product_images ?? []).slice().sort((a: Img, b: Img) => a.sort_order - b.sort_order);
     setImages(imgs);
+
+    const materialRows = (p.product_material_files ?? []) as (MaterialFile & { language: "ru" | "kz" })[];
+    const ru = materialRows.filter((f) => f.language === "ru").sort((a, b) => a.sort_order - b.sort_order);
+    const kz = materialRows.filter((f) => f.language === "kz").sort((a, b) => a.sort_order - b.sort_order);
+    // Products saved before multi-file materials existed only have the
+    // single legacy file_path column — show that as one item so it stays
+    // visible/editable instead of silently disappearing from the list.
+    setMaterialFilesRu(ru.length ? ru : p.file_path ? [{ file_path: p.file_path, file_name: p.file_name, sort_order: 0 }] : []);
+    setMaterialFilesKz(kz.length ? kz : p.file_path_kz ? [{ file_path: p.file_path_kz, file_name: p.file_name_kz, sort_order: 0 }] : []);
   }
 
   async function onImagesChange(files: FileList | null) {
     if (!files) return;
-    const uploaded: Img[] = [];
     try {
-      for (const f of Array.from(files)) {
-        const r = await uploadFile(f, "product-images");
-        uploaded.push({ image_path: r.path, sort_order: images.length + uploaded.length });
-      }
-      setImages([...images, ...uploaded]);
+      const uploaded = await uploadManyWithProgress(files, "product-images", setImagesUpload);
+      setImages([...images, ...uploaded.map((r, i) => ({ image_path: r.path, sort_order: images.length + i }))]);
     } catch (e: any) {
       alert("Ошибка загрузки фото: " + e.message);
     }
   }
 
-  async function onFileChange(file: File | null) {
-    if (!file) return;
+  async function onMaterialFilesChange(files: FileList | null, lang: "ru" | "kz") {
+    if (!files) return;
+    const setList = lang === "ru" ? setMaterialFilesRu : setMaterialFilesKz;
+    const current = lang === "ru" ? materialFilesRu : materialFilesKz;
+    const setStatus = lang === "ru" ? setMaterialsRuUpload : setMaterialsKzUpload;
     try {
-      const r = await uploadFile(file, "product-files");
-      setEditing((prev) => prev ? { ...prev, file_path: r.path, file_name: r.name } : prev);
+      const uploaded = await uploadManyWithProgress(files, "product-files", setStatus);
+      setList([...current, ...uploaded.map((r, i) => ({ file_path: r.path, file_name: r.name, sort_order: current.length + i }))]);
     } catch (e: any) {
-      alert("Ошибка загрузки файла: " + e.message);
-    }
-  }
-
-  async function onFileChangeKz(file: File | null) {
-    if (!file) return;
-    try {
-      const r = await uploadFile(file, "product-files");
-      setEditing((prev) => prev ? { ...prev, file_path_kz: r.path, file_name_kz: r.name } : prev);
-    } catch (e: any) {
-      alert("Ошибка загрузки файла (KZ): " + e.message);
+      alert(`Ошибка загрузки файла${lang === "kz" ? " (KZ)" : ""}: ${e.message}`);
     }
   }
 
@@ -208,16 +289,24 @@ function ProductsPage() {
           currency: editing.currency,
           is_active: editing.is_active,
           sort_order: Number(editing.sort_order),
-          file_path: editing.file_path,
-          file_name: editing.file_name,
-          file_path_kz: editing.file_path_kz,
-          file_name_kz: editing.file_name_kz,
+          // The multi-file uploader below is now the source of truth for the
+          // deliverable — legacy single-file columns are cleared on save.
+          file_path: null,
+          file_name: null,
+          file_path_kz: null,
+          file_name_kz: null,
+          file_url: editing.file_url,
+          file_url_kz: editing.file_url_kz,
           image_paths: images.map((i) => i.image_path),
+          material_files_ru: materialFilesRu.map((f) => ({ file_path: f.file_path, file_name: f.file_name })),
+          material_files_kz: materialFilesKz.map((f) => ({ file_path: f.file_path, file_name: f.file_name })),
           country_prices: editing.country_prices,
         },
       });
       setEditing(null);
       setImages([]);
+      setMaterialFilesRu([]);
+      setMaterialFilesKz([]);
       qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: any) {
       alert("Ошибка сохранения: " + (e?.message || "Неизвестная ошибка"));
@@ -348,6 +437,7 @@ function ProductsPage() {
               multiple
               onChange={(e) => onImagesChange(e.target.files)}
             />
+            <UploadProgressBar status={imagesUpload} />
             <div className="flex flex-wrap gap-2 mt-2">
               {images.map((im, idx) => (
                 <div key={im.image_path} className="relative">
@@ -398,21 +488,38 @@ function ProductsPage() {
           )}
 
           <div className="space-y-2 pt-4 border-t">
-            <Label htmlFor="file-ru">📄 Файл товара (Русский)</Label>
-            <Input id="file-ru" type="file" onChange={(e) => onFileChange(e.target.files?.[0] ?? null)} />
-            {editing.file_name && (
-              <p className="text-sm text-muted-foreground">📎 {editing.file_name}</p>
-            )}
+            <Label htmlFor="file-ru">📄 Материал (Русский) — можно несколько файлов/фото</Label>
+            <Input id="file-ru" type="file" multiple disabled={!!materialsRuUpload} onChange={(e) => onMaterialFilesChange(e.target.files, "ru")} />
+            <UploadProgressBar status={materialsRuUpload} />
+            <MaterialFilesList files={materialFilesRu} onRemove={(idx) => setMaterialFilesRu(materialFilesRu.filter((_, i) => i !== idx))} />
+            <div className="pt-2">
+              <Label>Или внешняя ссылка на файл (Русский)</Label>
+              <Input
+                value={editing.file_url || ""}
+                onChange={(e) => setEditing({ ...editing, file_url: e.target.value || null })}
+                placeholder="https://drive.google.com/..."
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Ссылка используется, только если выше не загружено ни одного файла.
+              </p>
+            </div>
           </div>
 
           <div className="space-y-2 pt-4 border-t">
-            <Label htmlFor="file-kz">📄 Файл товара (Қазақша)</Label>
-            <Input id="file-kz" type="file" onChange={(e) => onFileChangeKz(e.target.files?.[0] ?? null)} />
-            {editing.file_name_kz && (
-              <p className="text-sm text-muted-foreground">📎 {editing.file_name_kz}</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Если загрузить только Русский файл, бот не будет спрашивать язык при выдаче заказа.
+            <Label htmlFor="file-kz">📄 Материал (Қазақша) — можно несколько файлов/фото</Label>
+            <Input id="file-kz" type="file" multiple disabled={!!materialsKzUpload} onChange={(e) => onMaterialFilesChange(e.target.files, "kz")} />
+            <UploadProgressBar status={materialsKzUpload} />
+            <MaterialFilesList files={materialFilesKz} onRemove={(idx) => setMaterialFilesKz(materialFilesKz.filter((_, i) => i !== idx))} />
+            <div className="pt-2">
+              <Label>Или внешняя ссылка на файл (Қазақша)</Label>
+              <Input
+                value={editing.file_url_kz || ""}
+                onChange={(e) => setEditing({ ...editing, file_url_kz: e.target.value || null })}
+                placeholder="https://drive.google.com/..."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Если загрузить материал только на русском, бот не будет спрашивать язык при выдаче заказа.
             </p>
           </div>
 
@@ -475,10 +582,15 @@ function ProductsPage() {
                         .filter(Boolean)
                         .join(", ") || "без категории"
                     : p.categories?.name || "без категории"} · {p.price} {p.currency}
-                  {!p.file_path && !p.file_path_kz && <span className="text-destructive"> · нет файла</span>}
-                  {p.file_path && p.file_path_kz && <span className="text-green-500"> · 🇷🇺🇰🇿</span>}
-                  {p.file_path && !p.file_path_kz && <span className="text-muted-foreground"> · 🇷🇺</span>}
-                  {!p.file_path && p.file_path_kz && <span className="text-muted-foreground"> · 🇰🇿</span>}
+                  {(() => {
+                    const materials = (p.product_material_files ?? []) as { language: "ru" | "kz" }[];
+                    const hasRu = materials.some((f) => f.language === "ru") || !!p.file_path || !!p.file_url;
+                    const hasKz = materials.some((f) => f.language === "kz") || !!p.file_path_kz || !!p.file_url_kz;
+                    if (!hasRu && !hasKz) return <span className="text-destructive"> · нет файла</span>;
+                    if (hasRu && hasKz) return <span className="text-green-500"> · 🇷🇺🇰🇿</span>;
+                    if (hasRu) return <span className="text-muted-foreground"> · 🇷🇺</span>;
+                    return <span className="text-muted-foreground"> · 🇰🇿</span>;
+                  })()}
                 </div>
               </div>
               <div className="flex gap-1 shrink-0">

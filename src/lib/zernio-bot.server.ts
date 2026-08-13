@@ -113,6 +113,18 @@ export async function handleZernioMessage(payload: any) {
 
   const lower = text.toLowerCase();
 
+  // A DM button click (postback) carries no text — only its payload, set when
+  // the automation's button was configured in the admin panel. Generic
+  // routing only: a specific payload's reply is business content that
+  // belongs in the automation's own DM message, not hardcoded here.
+  const buttonMetadata = msgObj.metadata || {};
+  const isPostback = buttonMetadata.interactiveType === "postback";
+  const postbackPayload = buttonMetadata.interactiveId || "";
+  if (isPostback) {
+    console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
+    if (postbackPayload) return; // handled by the automation that sent the button
+  }
+
   // Команда /start или каталог / меню
   if (lower === "/start" || lower.includes("старт") || lower.includes("меню") || lower.includes("каталог")) {
     await sendCatalogMenu(conversationId, accountId, user);

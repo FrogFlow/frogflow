@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
@@ -46,6 +47,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Badge } from "@/components-ui/badge";
 
 export const Route = createFileRoute("/admin/instagram")({
+  beforeLoad: () => {
+    if (!FEATURE_FLAGS.instagram) throw redirect({ to: "/admin" });
+  },
   head: () => ({ meta: [{ title: "Instagram Automation — Zernio" }] }),
   component: AdminInstagramPage,
 });
@@ -187,10 +191,13 @@ function AdminInstagramPage() {
         matchMode: "contains" as const,
         dmMessage: dmText,
         commentReply: replyText,
-        platformPostId: (postId && postId !== "ALL_POSTS") ? (selectedPost?.platformPostId || postId.trim()) : null,
-        postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || null) : null,
+        platformPostId: (postId && postId !== "ALL_POSTS") ? (selectedPost?.platformPostId || postId.trim()) : undefined,
+        postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || undefined) : undefined,
         postTitle: selectedPost ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500) : undefined,
-        buttons: buttons.length > 0 ? buttons : undefined,
+        buttons: buttons.length > 0 ? buttons.map(b => ({
+          ...b,
+          url: b.url && b.type === 'url' ? (b.url.startsWith('http') ? b.url : `https://${b.url}`) : b.url
+        })) : undefined,
         dmMessageVariations: dmVariations.filter(Boolean),
         commentReplyVariations: replyVariations.filter(Boolean),
         linkTracking,
@@ -199,7 +206,13 @@ function AdminInstagramPage() {
       };
 
       const result = await saveAutomationFn({ data: automationData });
-      if (!result?.ok) throw new Error("Zernio отклонил создание правила. Старое правило сохранено.");
+      if (!result?.ok) {
+        let errMsg = (result as any)?.error || "Zernio отклонил создание правила.";
+        if (errMsg.includes("409")) {
+          errMsg = "Для этого поста уже есть активная автоматизация. Отредактируйте существующую или удалите её перед созданием новой.";
+        }
+        throw new Error(errMsg);
+      }
 
       handleResetForm();
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
@@ -287,6 +300,10 @@ function AdminInstagramPage() {
   const automations = automationsQuery.data?.automations || [];
   const logs = logsQuery.data?.logs || [];
   const posts = postsQuery.data?.posts || [];
+
+  const existingAutoForPost = postId !== "ALL_POSTS" 
+    ? automations.find((a: any) => a.platformPostId === postId && a.id !== editingId)
+    : null;
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-8 pb-20">
@@ -402,7 +419,14 @@ function AdminInstagramPage() {
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <Label>{trigger === "story_reply" ? "Целевая Story" : "Целевой пост"}</Label>
+                        <Label className="flex items-center gap-2">
+                          {trigger === "story_reply" ? "Целевая Story" : "Целевой пост"}
+                          {existingAutoForPost && (
+                            <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200 animate-pulse">
+                              ⚠️ Занят: "{existingAutoForPost.name}"
+                            </Badge>
+                          )}
+                        </Label>
                         <Button type="button" variant="ghost" size="sm" onClick={handleRefreshPosts} className="h-6 text-[10px] px-2">
                           <RefreshCcw className="w-3 h-3 mr-1" /> Обновить список
                         </Button>
@@ -501,11 +525,18 @@ function AdminInstagramPage() {
                                       <SelectItem value="postback">🤖 CMD</SelectItem>
                                     </SelectContent>
                                   </Select>
-                                  {btn.type === "url" && (
+                                  {btn.type === "url" ? (
                                     <Input 
                                       value={btn.url} 
                                       onChange={(e) => handleUpdateButton(i, "url", e.target.value)} 
                                       placeholder="https://..." 
+                                      className="h-7 text-[11px] col-span-2"
+                                    />
+                                  ) : (
+                                    <Input 
+                                      value={btn.payload} 
+                                      onChange={(e) => handleUpdateButton(i, "payload", e.target.value)} 
+                                      placeholder="Команда (напр: BUY_NOW)" 
                                       className="h-7 text-[11px] col-span-2"
                                     />
                                   )}

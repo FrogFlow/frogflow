@@ -21,8 +21,23 @@ type OrderItem = {
   file_name_snapshot: string | null;
   file_path_kz_snapshot?: string | null;
   file_name_kz_snapshot?: string | null;
+  file_url_snapshot?: string | null;
+  file_url_kz_snapshot?: string | null;
+  material_files_snapshot?: MaterialFile[] | null;
+  material_files_kz_snapshot?: MaterialFile[] | null;
   quantity: number;
 };
+
+export type MaterialFile = { path?: string | null; name?: string | null; url?: string | null };
+
+// Orders placed before multi-file materials existed only have the single
+// *_snapshot columns — wrap that into the same array shape so delivery code
+// has one path to follow.
+export function legacyAsMaterials(path?: string | null, name?: string | null, url?: string | null): MaterialFile[] {
+  if (url) return [{ url }];
+  if (path) return [{ path, name }];
+  return [];
+}
 
 async function claimOrderForDelivery(orderId: number) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -130,8 +145,15 @@ export async function deliverOrder(
       }
 
       const item = items[idx];
-      const path_ru = item.file_path_snapshot;
-      const path_kz = item.file_path_kz_snapshot;
+      // Orders placed before multi-file materials existed only have the
+      // single *_snapshot columns — fall back to those when the new arrays
+      // are empty.
+      const materialsRu = item.material_files_snapshot?.length
+        ? item.material_files_snapshot
+        : legacyAsMaterials(item.file_path_snapshot, item.file_name_snapshot, item.file_url_snapshot);
+      const materialsKz = item.material_files_kz_snapshot?.length
+        ? item.material_files_kz_snapshot
+        : legacyAsMaterials(item.file_path_kz_snapshot, item.file_name_kz_snapshot, item.file_url_kz_snapshot);
 
       // 1. Продвигаем индекс вперёд с помощью CAS ДО отправки файла
       const { data: updated } = await supabaseAdmin
@@ -150,10 +172,10 @@ export async function deliverOrder(
 
       let itemOk = true;
       try {
-        if (!path_ru && !path_kz) {
+        if (materialsRu.length === 0 && materialsKz.length === 0) {
           // Нет файла — ничего не отправляем
           itemOk = true;
-        } else if (path_ru && path_kz) {
+        } else if (materialsRu.length > 0 && materialsKz.length > 0) {
           await tg("sendMessage", {
             chat_id: fresh.telegram_id,
             text: `📚 Материал «<b>${item.name_snapshot}</b>»\nВыберите язык, на котором хотите получить файл:`,
@@ -169,13 +191,9 @@ export async function deliverOrder(
           });
           itemOk = true;
         } else {
-          const path = path_ru || path_kz!;
-          const name =
-            (path_ru ? item.file_name_snapshot : item.file_name_kz_snapshot) ||
-            item.file_name_snapshot ||
-            "file.bin";
+          const materials = materialsRu.length > 0 ? materialsRu : materialsKz;
           // Always 1 copy — quantity is for cart price, not file copies
-          itemOk = await sendFileToUser(fresh.telegram_id, path, name, item.name_snapshot, 1);
+          itemOk = await sendMaterials(fresh.telegram_id, materials, item.name_snapshot, 1);
         }
       } catch (e) {
         itemOk = false;
@@ -270,6 +288,40 @@ export async function processPendingDeliveries(limit = 3) {
   return { processed: rows.length, continued, finished };
 }
 
+// Sends every material for one order item — the deliverable can be a single
+// file or a set of photos (e.g. several worksheet pages), each sent in turn.
+// Returns true only if every file in the set reached Telegram: the caller's
+// CAS lock treats the item as one unit and retries the whole set on failure,
+// so a partial send (2 of 3 photos) is not tracked separately.
+export async function sendMaterials(
+  chat_id: number,
+  materials: MaterialFile[],
+  caption: string,
+  quantity: number,
+): Promise<boolean> {
+  let allOk = true;
+  // With several photos for one material, repeating the product name on
+  // every single one reads as spam — caption only the first file. A plain
+  // for-loop (not forEach) so each send is awaited before the next starts.
+  for (let idx = 0; idx < materials.length; idx++) {
+    const m = materials[idx];
+    const itemCaption = idx === 0 ? caption : "";
+    if (m.url) {
+      await tg("sendMessage", {
+        chat_id,
+        text: itemCaption
+          ? `📁 <b>${itemCaption}</b>\n\n📥 <a href="${m.url}">Нажмите здесь, чтобы скачать файл</a>`
+          : `📥 <a href="${m.url}">Нажмите здесь, чтобы скачать файл</a>`,
+        parse_mode: "HTML",
+      });
+    } else if (m.path) {
+      const ok = await sendFileToUser(chat_id, m.path, m.name || "file.bin", itemCaption, quantity);
+      if (!ok) allOk = false;
+    }
+  }
+  return allOk;
+}
+
 /** Returns true if the document reached Telegram. */
 export async function sendFileToUser(
   chat_id: number,
@@ -357,6 +409,20 @@ export async function sendFileToUser(
     });
     // Permanent size problem — treat as handled so we don't infinite-retry
     return true;
+  }
+
+  // Telegram renders sendPhoto inline in the chat — what the client asked
+  // for instead of a downloadable file attachment. sendPhoto's own upload
+  // limit is 10MB and it rejects some image subtypes, so fall back to
+  // sendDocument below whenever it fails.
+  if (mime.startsWith("image/") && dl.size < 10 * 1024 * 1024) {
+    const photoRes = await tgSendMultipart(
+      "sendPhoto",
+      { chat_id, caption },
+      { field: "photo", filename, blob: dl, contentType: mime },
+    );
+    if (photoRes?.ok) return true;
+    console.error("[orders] sendPhoto multipart failed, falling back to sendDocument", photoRes);
   }
 
   const res = await tgSendMultipart(
