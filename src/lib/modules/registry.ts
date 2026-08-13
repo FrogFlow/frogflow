@@ -122,3 +122,14 @@ export const MODULES = {
 export type ModuleKey = keyof typeof MODULES;
 
 export const MODULE_KEYS = Object.keys(MODULES) as ModuleKey[];
+
+/**
+ * `MODULES[key]` alone narrows to the exact literal shape of that one entry
+ * (a side effect of `as const satisfies …`) — modules that never set
+ * `requires`/`note` lose those optional properties from their type entirely
+ * instead of typing them as `undefined`. Use this where code needs the full
+ * ModuleDef shape uniformly.
+ */
+export function moduleDef(key: ModuleKey): ModuleDef {
+  return MODULES[key];
+}

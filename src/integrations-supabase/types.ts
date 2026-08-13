@@ -14,6 +14,68 @@ export type Database = {
   }
   public: {
     Tables: {
+      bot_events: {
+        Row: {
+          id: string
+          bot_id: string
+          at: string
+          actor: string
+          kind: string
+          payload: Json
+        }
+        Insert: {
+          id?: string
+          bot_id?: string
+          at?: string
+          actor: string
+          kind: string
+          payload?: Json
+        }
+        Update: {
+          id?: string
+          bot_id?: string
+          at?: string
+          actor?: string
+          kind?: string
+          payload?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_events_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_broadcasts: {
+        Row: {
+          id: string
+          created_at: string
+          actor: string
+          message_text: string
+          target: string
+          results: Json
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          actor: string
+          message_text: string
+          target: string
+          results?: Json
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          actor?: string
+          message_text?: string
+          target?: string
+          results?: Json
+        }
+        Relationships: []
+      }
       order_counters: {
         Row: {
           bot_id: string
@@ -84,6 +146,13 @@ export type Database = {
       }
       bots: {
         Row: {
+          notes: string | null
+          paused_message: string | null
+          owner_contact: string | null
+          owner_name: string | null
+          owner_telegram_id: number | null
+          internal_secret: string | null
+          app_url: string | null
           id: string
           bot_token: string
           bot_name: string
@@ -97,6 +166,13 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          notes?: string | null
+          paused_message?: string | null
+          owner_contact?: string | null
+          owner_name?: string | null
+          owner_telegram_id?: number | null
+          internal_secret?: string | null
+          app_url?: string | null
           id?: string
           bot_token: string
           bot_name: string
@@ -110,6 +186,13 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          notes?: string | null
+          paused_message?: string | null
+          owner_contact?: string | null
+          owner_name?: string | null
+          owner_telegram_id?: number | null
+          internal_secret?: string | null
+          app_url?: string | null
           id?: string
           bot_token?: string
           bot_name?: string

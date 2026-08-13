@@ -9,10 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as OperatorLoginRouteImport } from './routes/operator.login'
+import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
 import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
 import { Route as AdminVipRouteImport } from './routes/admin.vip'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
@@ -23,7 +26,9 @@ import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
 import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
 import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
+import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
 import { Route as AdminVipIndexRouteImport } from './routes/admin.vip.index'
+import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
@@ -41,6 +46,11 @@ import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
 import { Route as ApiAdminFileSplatRouteImport } from './routes/api/admin/file/$'
 
+const OperatorRoute = OperatorRouteImport.update({
+  id: '/operator',
+  path: '/operator',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -60,6 +70,15 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminRoute,
+} as any)
+const OperatorLoginRoute = OperatorLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => OperatorRoute,
+} as any)
+const OperatorAuthedRoute = OperatorAuthedRouteImport.update({
+  id: '/_authed',
+  getParentRoute: () => OperatorRoute,
 } as any)
 const LegalSlugRoute = LegalSlugRouteImport.update({
   id: '/legal/$slug',
@@ -111,10 +130,20 @@ const AdminBlockedRoute = AdminBlockedRouteImport.update({
   path: '/blocked',
   getParentRoute: () => AdminRoute,
 } as any)
+const OperatorAuthedIndexRoute = OperatorAuthedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
 const AdminVipIndexRoute = AdminVipIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminVipRoute,
+} as any)
+const OperatorAuthedBotIdRoute = OperatorAuthedBotIdRouteImport.update({
+  id: '/$botId',
+  path: '/$botId',
+  getParentRoute: () => OperatorAuthedRoute,
 } as any)
 const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
   id: '/api/cron/ensure-webhook',
@@ -206,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/operator': typeof OperatorRouteWithChildren
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -216,6 +246,7 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/legal/$slug': typeof LegalSlugRoute
+  '/operator/login': typeof OperatorLoginRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/vip/settings': typeof AdminVipSettingsRoute
   '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
@@ -223,7 +254,9 @@ export interface FileRoutesByFullPath {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/admin/vip/': typeof AdminVipIndexRoute
+  '/operator/': typeof OperatorAuthedIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
@@ -238,6 +271,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/operator': typeof OperatorAuthedIndexRoute
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -247,6 +281,7 @@ export interface FileRoutesByTo {
   '/admin/products': typeof AdminProductsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/legal/$slug': typeof LegalSlugRoute
+  '/operator/login': typeof OperatorLoginRoute
   '/admin': typeof AdminIndexRoute
   '/admin/vip/settings': typeof AdminVipSettingsRoute
   '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
@@ -254,6 +289,7 @@ export interface FileRoutesByTo {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/admin/vip': typeof AdminVipIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
@@ -271,6 +307,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/operator': typeof OperatorRouteWithChildren
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -281,6 +318,8 @@ export interface FileRoutesById {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/legal/$slug': typeof LegalSlugRoute
+  '/operator/_authed': typeof OperatorAuthedRouteWithChildren
+  '/operator/login': typeof OperatorLoginRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/vip/settings': typeof AdminVipSettingsRoute
   '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
@@ -288,7 +327,9 @@ export interface FileRoutesById {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
   '/admin/vip/': typeof AdminVipIndexRoute
+  '/operator/_authed/': typeof OperatorAuthedIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
@@ -306,6 +347,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/login'
+    | '/operator'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -316,6 +358,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/vip'
     | '/legal/$slug'
+    | '/operator/login'
     | '/admin/'
     | '/admin/vip/settings'
     | '/admin/vip/subscribers'
@@ -323,7 +366,9 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/operator/$botId'
     | '/admin/vip/'
+    | '/operator/'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/robokassa/fail'
@@ -338,6 +383,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/operator'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -347,6 +393,7 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/admin/settings'
     | '/legal/$slug'
+    | '/operator/login'
     | '/admin'
     | '/admin/vip/settings'
     | '/admin/vip/subscribers'
@@ -354,6 +401,7 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/operator/$botId'
     | '/admin/vip'
     | '/api/admin/file/$'
     | '/api/public/img/$'
@@ -370,6 +418,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/login'
+    | '/operator'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -380,6 +429,8 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/vip'
     | '/legal/$slug'
+    | '/operator/_authed'
+    | '/operator/login'
     | '/admin/'
     | '/admin/vip/settings'
     | '/admin/vip/subscribers'
@@ -387,7 +438,9 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/operator/_authed/$botId'
     | '/admin/vip/'
+    | '/operator/_authed/'
     | '/api/admin/file/$'
     | '/api/public/img/$'
     | '/api/public/robokassa/fail'
@@ -404,6 +457,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
+  OperatorRoute: typeof OperatorRouteWithChildren
   LegalSlugRoute: typeof LegalSlugRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
@@ -422,6 +476,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/operator': {
+      id: '/operator'
+      path: '/operator'
+      fullPath: '/operator'
+      preLoaderRoute: typeof OperatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -449,6 +510,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/operator/login': {
+      id: '/operator/login'
+      path: '/login'
+      fullPath: '/operator/login'
+      preLoaderRoute: typeof OperatorLoginRouteImport
+      parentRoute: typeof OperatorRoute
+    }
+    '/operator/_authed': {
+      id: '/operator/_authed'
+      path: ''
+      fullPath: '/operator'
+      preLoaderRoute: typeof OperatorAuthedRouteImport
+      parentRoute: typeof OperatorRoute
     }
     '/legal/$slug': {
       id: '/legal/$slug'
@@ -520,12 +595,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminBlockedRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/operator/_authed/': {
+      id: '/operator/_authed/'
+      path: '/'
+      fullPath: '/operator/'
+      preLoaderRoute: typeof OperatorAuthedIndexRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
     '/admin/vip/': {
       id: '/admin/vip/'
       path: '/'
       fullPath: '/admin/vip/'
       preLoaderRoute: typeof AdminVipIndexRouteImport
       parentRoute: typeof AdminVipRoute
+    }
+    '/operator/_authed/$botId': {
+      id: '/operator/_authed/$botId'
+      path: '/$botId'
+      fullPath: '/operator/$botId'
+      preLoaderRoute: typeof OperatorAuthedBotIdRouteImport
+      parentRoute: typeof OperatorAuthedRoute
     }
     '/api/cron/ensure-webhook': {
       id: '/api/cron/ensure-webhook'
@@ -688,10 +777,39 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface OperatorAuthedRouteChildren {
+  OperatorAuthedBotIdRoute: typeof OperatorAuthedBotIdRoute
+  OperatorAuthedIndexRoute: typeof OperatorAuthedIndexRoute
+}
+
+const OperatorAuthedRouteChildren: OperatorAuthedRouteChildren = {
+  OperatorAuthedBotIdRoute: OperatorAuthedBotIdRoute,
+  OperatorAuthedIndexRoute: OperatorAuthedIndexRoute,
+}
+
+const OperatorAuthedRouteWithChildren = OperatorAuthedRoute._addFileChildren(
+  OperatorAuthedRouteChildren,
+)
+
+interface OperatorRouteChildren {
+  OperatorAuthedRoute: typeof OperatorAuthedRouteWithChildren
+  OperatorLoginRoute: typeof OperatorLoginRoute
+}
+
+const OperatorRouteChildren: OperatorRouteChildren = {
+  OperatorAuthedRoute: OperatorAuthedRouteWithChildren,
+  OperatorLoginRoute: OperatorLoginRoute,
+}
+
+const OperatorRouteWithChildren = OperatorRoute._addFileChildren(
+  OperatorRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
+  OperatorRoute: OperatorRouteWithChildren,
   LegalSlugRoute: LegalSlugRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
