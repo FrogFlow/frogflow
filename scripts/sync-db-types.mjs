@@ -51,6 +51,15 @@ function tsType(prop) {
 const TRIGGER_POPULATED = new Set(["orders.order_no"]);
 
 /**
+ * Columns any table gets for free from a BEFORE INSERT trigger. `bot_id` is
+ * NOT NULL everywhere, but application code never sets it: the force_bot_id
+ * trigger derives it from the connection's tenant claim, and a value passed
+ * from the app would be overwritten anyway. Typing it as required would make
+ * every correct insert in the codebase fail typecheck.
+ */
+const TRIGGER_POPULATED_ANY_TABLE = new Set(["bot_id"]);
+
+/**
  * Is the column safe to omit on insert?
  *
  * Nullable, or the database fills it in. PostgREST does not report defaults it
@@ -62,6 +71,7 @@ function optionalOnInsert(prop, isRequired, table, col) {
   if (!isRequired) return true;
   if (prop.default !== undefined) return true;
   if (TRIGGER_POPULATED.has(`${table}.${col}`)) return true;
+  if (TRIGGER_POPULATED_ANY_TABLE.has(col)) return true;
   return (prop.format ?? "").includes("json");
 }
 
