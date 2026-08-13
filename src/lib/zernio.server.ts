@@ -376,7 +376,7 @@ export async function listCommentAutomations(profileId?: string): Promise<{ auto
 /**
  * Создать Comment-to-DM автоматизацию
  */
-export async function createCommentAutomation(data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; automation?: ZernioCommentAutomation }> {
+export async function createCommentAutomation(data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; error?: string; automation?: ZernioCommentAutomation }> {
   try {
     const body: Record<string, any> = { ...data };
 
@@ -385,36 +385,36 @@ export async function createCommentAutomation(data: Partial<ZernioCommentAutomat
       body.keywords = body.keywords.map(k => k.toLowerCase());
     }
 
-    const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation }>("/comment-automations", {
+    const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation; error?: string }>("/comment-automations", {
       method: "POST",
       body,
     });
-    return { ok: res.success, automation: res.automation };
-  } catch (e) {
+    return { ok: res.success, automation: res.automation, error: res.error };
+  } catch (e: any) {
     console.error("[zernio] createCommentAutomation error", e);
-    return { ok: false };
+    return { ok: false, error: e.message };
   }
 }
 
 /**
  * Обновить Comment-to-DM автоматизацию
  */
-export async function updateCommentAutomation(automationId: string, data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; automation?: ZernioCommentAutomation }> {
+export async function updateCommentAutomation(automationId: string, data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; error?: string; automation?: ZernioCommentAutomation }> {
   try {
     const body: Record<string, any> = { ...data };
-    
+
     if (body.keywords) {
       body.keywords = body.keywords.map(k => k.toLowerCase());
     }
 
-    const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation }>(`/comment-automations/${automationId}`, {
+    const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation; error?: string }>(`/comment-automations/${automationId}`, {
       method: "PATCH",
       body,
     });
-    return { ok: res.success, automation: res.automation };
-  } catch (e) {
+    return { ok: res.success, automation: res.automation, error: res.error };
+  } catch (e: any) {
     console.error("[zernio] updateCommentAutomation error", e);
-    return { ok: false };
+    return { ok: false, error: e.message };
   }
 }
 
