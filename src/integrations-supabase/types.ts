@@ -20,7 +20,7 @@ export type Database = {
           last_no: number
         }
         Insert: {
-          bot_id: string
+          bot_id?: string
           last_no?: number
         }
         Update: {
@@ -167,6 +167,8 @@ export type Database = {
       }
       vip_member_profiles: {
         Row: {
+          legacy_locked: boolean
+          admin_label: string | null
           bot_id: string
           telegram_id: number
           username: string | null
@@ -177,7 +179,9 @@ export type Database = {
           assigned_source: string
         }
         Insert: {
-          bot_id: string
+          legacy_locked?: boolean
+          admin_label?: string | null
+          bot_id?: string
           telegram_id: number
           username?: string | null
           first_name?: string | null
@@ -187,6 +191,8 @@ export type Database = {
           assigned_source?: string
         }
         Update: {
+          legacy_locked?: boolean
+          admin_label?: string | null
           bot_id?: string
           telegram_id?: number
           username?: string | null
@@ -215,6 +221,9 @@ export type Database = {
       }
       vip_tariffs: {
         Row: {
+          is_public: boolean
+          is_entry: boolean
+          duration_minutes: number | null
           id: string
           bot_id: string
           name: string
@@ -227,8 +236,11 @@ export type Database = {
           created_at: string
         }
         Insert: {
+          is_public?: boolean
+          is_entry?: boolean
+          duration_minutes?: number | null
           id?: string
-          bot_id: string
+          bot_id?: string
           name: string
           description?: string
           price?: number
@@ -239,6 +251,9 @@ export type Database = {
           created_at?: string
         }
         Update: {
+          is_public?: boolean
+          is_entry?: boolean
+          duration_minutes?: number | null
           id?: string
           bot_id?: string
           name?: string
@@ -270,7 +285,7 @@ export type Database = {
           blocked_at: string
         }
         Insert: {
-          bot_id: string
+          bot_id?: string
           telegram_id: number
           username?: string | null
           first_name?: string | null
@@ -381,7 +396,7 @@ export type Database = {
         }
         Insert: {
           id?: string
-          bot_id: string
+          bot_id?: string
           telegram_id: number
           username?: string | null
           first_name?: string | null
@@ -444,7 +459,7 @@ export type Database = {
         }
         Insert: {
           id?: string
-          bot_id: string
+          bot_id?: string
           product_id: string
           language?: string
           file_path: string
@@ -550,6 +565,7 @@ export type Database = {
       }
       bot_users: {
         Row: {
+          metadata: Json
           bot_id: string | null
           last_auto_dm_at: string | null
           opt_out: boolean
@@ -568,6 +584,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          metadata?: Json
           bot_id?: string | null
           last_auto_dm_at?: string | null
           opt_out?: boolean
@@ -586,6 +603,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          metadata?: Json
           bot_id?: string | null
           last_auto_dm_at?: string | null
           opt_out?: boolean

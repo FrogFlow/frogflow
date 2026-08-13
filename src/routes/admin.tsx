@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, Link, redirect, useRouter, useRouterState } fr
 import { useServerFn } from "@tanstack/react-start";
 import { adminCheck, adminLogout } from "@/lib/admin.functions";
 import { Button } from "@/components-ui/button";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: async () => {
@@ -30,7 +31,21 @@ function AdminLayout() {
             <NavLink to="/admin/orders">Заказы</NavLink>
             <NavLink to="/admin/broadcast">Рассылка</NavLink>
             <NavLink to="/admin/payment-methods">Реквизиты</NavLink>
-            <NavLink to="/admin/instagram">Instagram (Zernio)</NavLink>
+            {FEATURE_FLAGS.instagram ? (
+              <NavLink to="/admin/instagram">📸 Instagram</NavLink>
+            ) : (
+              <LockedNavLink>📸 Instagram</LockedNavLink>
+            )}
+            {FEATURE_FLAGS.vip ? (
+              <NavLink to="/admin/vip">👑 VIP-группа</NavLink>
+            ) : (
+              <LockedNavLink>👑 VIP-группа</LockedNavLink>
+            )}
+            {FEATURE_FLAGS.blocked ? (
+              <NavLink to="/admin/blocked">🚫 Блокировка</NavLink>
+            ) : (
+              <LockedNavLink>🚫 Блокировка</LockedNavLink>
+            )}
             <NavLink to="/admin/settings">Настройки</NavLink>
           </div>
           <Button
@@ -62,5 +77,24 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
     >
       {children}
     </Link>
+  );
+}
+
+/** Non-clickable stand-in for a nav item whose module isn't part of this client's package yet. */
+function LockedNavLink({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      role="button"
+      aria-disabled="true"
+      title="Модуль не подключён. Чтобы активировать — свяжитесь с администратором."
+      className="px-3 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
+      onClick={(e) => {
+        e.preventDefault();
+        alert("Этот раздел не подключён к вашему тарифу.\nЧтобы активировать — свяжитесь с администратором.");
+      }}
+    >
+      {children}
+      <span aria-hidden="true">🔒</span>
+    </span>
   );
 }
