@@ -1,15 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components-ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components-ui/dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components-ui/dialog";
-import { confirmOrder, continueDeliveryOrder, deleteOrder, listOrders, redeliverOrder, rejectOrder, remindPaymentOrder } from "@/lib/orders.functions";
+  confirmOrder,
+  continueDeliveryOrder,
+  deleteOrder,
+  listOrders,
+  redeliverOrder,
+  rejectOrder,
+  remindPaymentOrder,
+} from "@/lib/orders.functions";
 import { blockTelegramUserFn } from "@/lib/blocked-users.functions";
 import { useState } from "react";
+import { Input } from "@/components-ui/input";
+import { exportOrdersCsvFn, exportCustomersCsvFn } from "@/lib/export.functions";
 
 // Тип чека определяется по расширению сохранённого пути.
 // Фото показываем через <img>, PDF — через <iframe>, прочее — ссылкой на скачивание.
@@ -97,7 +102,12 @@ function OrdersPage() {
     }
   }
   async function onRemindPayment(id: number, displayNo: number) {
-    if (!confirm(`Отправить покупателю напоминание и актуальный способ оплаты по заказу #${displayNo}?`)) return;
+    if (
+      !confirm(
+        `Отправить покупателю напоминание и актуальный способ оплаты по заказу #${displayNo}?`,
+      )
+    )
+      return;
     setBusy(id);
     try {
       await remindPaymentOrder({ data: { id } });
@@ -121,7 +131,12 @@ function OrdersPage() {
       setBusy(null);
     }
   }
-  async function onBlock(o: { id: number; telegram_id: number; username?: string | null; display_name?: string | null }) {
+  async function onBlock(o: {
+    id: number;
+    telegram_id: number;
+    username?: string | null;
+    display_name?: string | null;
+  }) {
     if (
       !confirm(
         `Заблокировать ${o.display_name || o.telegram_id}?\n\nБот перестанет отвечать, доступ к VIP-группе закроется.`,
@@ -155,6 +170,7 @@ function OrdersPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Заказы</h1>
+      <ExportBar />
       {list.length === 0 && <p className="text-sm text-muted-foreground">Пока нет заказов.</p>}
       <div className="space-y-3">
         {list.map((o) => {
@@ -176,7 +192,21 @@ function OrdersPage() {
               <div className="text-sm">
                 <div>
                   👤 <b>{o.display_name}</b>
-                  {o.username && <> (<a className="text-primary" href={`https://t.me/${o.username}`} target="_blank" rel="noreferrer">@{o.username}</a>)</>}
+                  {o.username && (
+                    <>
+                      {" "}
+                      (
+                      <a
+                        className="text-primary"
+                        href={`https://t.me/${o.username}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        @{o.username}
+                      </a>
+                      )
+                    </>
+                  )}
                 </div>
                 <div>📞 {o.contact || "—"}</div>
                 <div>🌍 {o.country_name || "—"}</div>
@@ -202,10 +232,17 @@ function OrdersPage() {
                     ⏳ Заказ выдаётся порциями (файлы). Если зависло — нажмите «Продолжить выдачу».
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => onContinue(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
+                    <Button
+                      onClick={() => onContinue(o.id, o.order_no ?? o.id)}
+                      disabled={busy === o.id}
+                    >
                       ▶️ Продолжить выдачу
                     </Button>
-                    <Button variant="outline" onClick={() => onRedeliver(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
+                    <Button
+                      variant="outline"
+                      onClick={() => onRedeliver(o.id, o.order_no ?? o.id)}
+                      disabled={busy === o.id}
+                    >
                       Выдать заново с начала
                     </Button>
                   </div>
@@ -214,20 +251,36 @@ function OrdersPage() {
               {(o.status === "awaiting_confirmation" || o.status === "awaiting_payment") && (
                 <div className="flex flex-wrap gap-2 pt-2">
                   {o.status === "awaiting_payment" && (
-                    <Button variant="outline" onClick={() => onRemindPayment(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
+                    <Button
+                      variant="outline"
+                      onClick={() => onRemindPayment(o.id, o.order_no ?? o.id)}
+                      disabled={busy === o.id}
+                    >
                       📩 Напомнить об оплате
                     </Button>
                   )}
-                  <Button onClick={() => onConfirm(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
+                  <Button
+                    onClick={() => onConfirm(o.id, o.order_no ?? o.id)}
+                    disabled={busy === o.id}
+                  >
                     ✅ Подтвердить и выдать
                   </Button>
-                  <Button variant="destructive" onClick={() => onReject(o.id)} disabled={busy === o.id}>
+                  <Button
+                    variant="destructive"
+                    onClick={() => onReject(o.id)}
+                    disabled={busy === o.id}
+                  >
                     ❌ Отклонить
                   </Button>
                 </div>
               )}
               {o.status === "delivered" && (
-                <Button size="sm" variant="outline" onClick={() => onRedeliver(o.id, o.order_no ?? o.id)} disabled={busy === o.id}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onRedeliver(o.id, o.order_no ?? o.id)}
+                  disabled={busy === o.id}
+                >
                   Отправить файлы ещё раз
                 </Button>
               )}
@@ -262,34 +315,119 @@ function OrdersPage() {
           <DialogHeader>
             <DialogTitle>Чек оплаты</DialogTitle>
           </DialogHeader>
-          {proofModal && (() => {
-            const kind = proofKind(proofModal.path);
-            const src = `/api/admin/file/${proofModal.path}?bucket=payment-proofs`;
-            if (kind === "image") {
-              return <img src={src} alt="Чек оплаты" className="max-h-[80vh] mx-auto rounded" />;
-            }
-            if (kind === "pdf") {
+          {proofModal &&
+            (() => {
+              const kind = proofKind(proofModal.path);
+              const src = `/api/admin/file/${proofModal.path}?bucket=payment-proofs`;
+              if (kind === "image") {
+                return <img src={src} alt="Чек оплаты" className="max-h-[80vh] mx-auto rounded" />;
+              }
+              if (kind === "pdf") {
+                return (
+                  <iframe src={src} className="w-full h-[80vh] rounded border" title="Чек оплаты" />
+                );
+              }
               return (
-                <iframe
-                  src={src}
-                  className="w-full h-[80vh] rounded border"
-                  title="Чек оплаты"
-                />
+                <div className="text-center py-6 space-y-3">
+                  <p className="text-muted-foreground">
+                    Формат не поддерживается для предпросмотра.
+                  </p>
+                  <Button asChild>
+                    <a href={src} target="_blank" rel="noreferrer">
+                      📥 Скачать чек
+                    </a>
+                  </Button>
+                </div>
               );
-            }
-            return (
-              <div className="text-center py-6 space-y-3">
-                <p className="text-muted-foreground">Формат не поддерживается для предпросмотра.</p>
-                <Button asChild>
-                  <a href={src} target="_blank" rel="noreferrer">
-                    📥 Скачать чек
-                  </a>
-                </Button>
-              </div>
-            );
-          })()}
+            })()}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Выгрузка в CSV. Скачивание собирается в браузере из строки, которую вернул
+ * сервер: так не нужен ни отдельный роут, ни временный файл в хранилище.
+ */
+function ExportBar() {
+  const [busy, setBusy] = useState<"orders" | "customers" | null>(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+
+  function download(csv: string, name: string) {
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  async function onOrders() {
+    setBusy("orders");
+    try {
+      const res = await exportOrdersCsvFn({ data: { from: from || null, to: to || null } });
+      if (res.count === 0) {
+        alert("За выбранный период заказов нет.");
+        return;
+      }
+      download(res.csv, `orders-${today()}.csv`);
+    } catch (e: unknown) {
+      alert((e as Error)?.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onCustomers() {
+    setBusy("customers");
+    try {
+      const res = await exportCustomersCsvFn();
+      if (res.count === 0) {
+        alert("Клиентов пока нет.");
+        return;
+      }
+      download(res.csv, `customers-${today()}.csv`);
+    } catch (e: unknown) {
+      alert((e as Error)?.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="bg-card border rounded-lg p-3 flex flex-wrap items-end gap-3">
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground block">Период с</label>
+        <Input
+          type="date"
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+          className="h-9 w-[150px]"
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-xs text-muted-foreground block">по</label>
+        <Input
+          type="date"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          className="h-9 w-[150px]"
+        />
+      </div>
+      <Button variant="outline" size="sm" onClick={onOrders} disabled={busy !== null}>
+        {busy === "orders" ? "Готовлю…" : "Выгрузить заказы"}
+      </Button>
+      <Button variant="outline" size="sm" onClick={onCustomers} disabled={busy !== null}>
+        {busy === "customers" ? "Готовлю…" : "Выгрузить клиентов"}
+      </Button>
+      <p className="text-xs text-muted-foreground basis-full">
+        Файл CSV — открывается двойным щелчком в Excel и Google Таблицах. Период применяется только
+        к заказам; пустые поля — выгрузить всё.
+      </p>
     </div>
   );
 }
