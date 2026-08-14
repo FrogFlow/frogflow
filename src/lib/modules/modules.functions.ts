@@ -9,8 +9,12 @@ export const getRuntimeModulesFn = createServerFn({ method: "GET" }).handler(asy
   // деплоя отсутствие BOT_ID остаётся громкой ошибкой — там это настоящая
   // поломка конфигурации, а не штатный случай.
   if (process.env.CONTROL_PLANE === "1") {
-    return { modules: emptyModules(), status: "active" as const, pausedMessage: "" };
+    return { modules: emptyModules(), status: "active" as const, pausedMessage: "", isPanel: true };
   }
-  const [modules, status, paused] = await Promise.all([loadModules(), botStatus(), pausedMessage()]);
-  return { modules, status, pausedMessage: paused };
+  const [modules, status, paused] = await Promise.all([
+    loadModules(),
+    botStatus(),
+    pausedMessage(),
+  ]);
+  return { modules, status, pausedMessage: paused, isPanel: false };
 });

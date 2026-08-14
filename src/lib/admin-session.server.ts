@@ -1,4 +1,5 @@
 import { useSession } from "@tanstack/react-start/server";
+import { assertTenantDeployment } from "./control-plane.server";
 
 export type AdminSession = { authed?: boolean };
 
@@ -24,6 +25,9 @@ export async function isAdminAuthed(): Promise<boolean> {
 }
 
 export async function requireAdmin() {
+  // Панель — не арендатор: её подключение к базе идёт под service_role,
+  // и клиентская админка там видела бы данные всех клиентов сразу.
+  assertTenantDeployment();
   const s = await getAdminSession();
   if (s.data.authed !== true) {
     throw new Error("Unauthorized");

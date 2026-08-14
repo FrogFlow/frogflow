@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, useRouter, notFound } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { adminLogin } from "@/lib/admin.functions";
@@ -7,6 +7,11 @@ import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 
 export const Route = createFileRoute("/login")({
+  // Панель оператора — не магазин: у неё нет арендатора, и эта страница
+  // работала бы под service_role. См. lib/control-plane.server.ts.
+  beforeLoad: ({ context }) => {
+    if (context.isPanel) throw notFound();
+  },
   head: () => ({ meta: [{ title: "Вход в админ-панель" }] }),
   component: LoginPage,
 });
@@ -47,11 +52,21 @@ function LoginPage() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="username">Логин</Label>
-          <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+          <Input
+            id="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoFocus
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">Пароль</Label>
-          <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button type="submit" className="w-full" disabled={loading}>

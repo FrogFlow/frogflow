@@ -1,12 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getAdminSession, isAdminAuthed } from "./admin-session.server";
+import { assertTenantDeployment } from "./control-plane.server";
 
 const LoginInput = z.object({ username: z.string().min(1), password: z.string().min(1) });
 
 export const adminLogin = createServerFn({ method: "POST" })
   .validator((data: unknown) => LoginInput.parse(data))
   .handler(async ({ data }) => {
+    assertTenantDeployment();
     const expectedUser = process.env.ADMIN_USERNAME || "admin";
     const expectedPass = process.env.ADMIN_PASSWORD || "admin";
     if (data.username !== expectedUser || data.password !== expectedPass) {
@@ -18,11 +20,13 @@ export const adminLogin = createServerFn({ method: "POST" })
   });
 
 export const adminLogout = createServerFn({ method: "POST" }).handler(async () => {
+  assertTenantDeployment();
   const s = await getAdminSession();
   await s.clear();
   return { ok: true as const };
 });
 
 export const adminCheck = createServerFn({ method: "GET" }).handler(async () => {
+  assertTenantDeployment();
   return { authed: await isAdminAuthed() };
 });

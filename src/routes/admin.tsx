@@ -1,11 +1,20 @@
-import { createFileRoute, Outlet, Link, redirect, useRouter, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  Link,
+  redirect,
+  notFound,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { adminCheck, adminLogout } from "@/lib/admin.functions";
 import { Button } from "@/components-ui/button";
 import { useModules } from "@/lib/modules/use-modules";
 
 export const Route = createFileRoute("/admin")({
-  beforeLoad: async () => {
+  beforeLoad: async ({ context }) => {
+    if (context.isPanel) throw notFound();
     const res = await adminCheck();
     if (!res.authed) throw redirect({ to: "/login" });
   },
@@ -91,7 +100,9 @@ function LockedNavLink({ children }: { children: React.ReactNode }) {
       className="px-3 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
       onClick={(e) => {
         e.preventDefault();
-        alert("Этот раздел не подключён к вашему тарифу.\nЧтобы активировать — свяжитесь с администратором.");
+        alert(
+          "Этот раздел не подключён к вашему тарифу.\nЧтобы активировать — свяжитесь с администратором.",
+        );
       }}
     >
       {children}

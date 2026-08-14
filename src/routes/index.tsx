@@ -1,6 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
+  // Панель оператора — не магазин: у неё нет арендатора, и эта страница
+  // работала бы под service_role. См. lib/control-plane.server.ts.
+  beforeLoad: ({ context }) => {
+    if (context.isPanel) throw notFound();
+  },
   head: () => ({
     meta: [
       { title: "Магазин — админ-панель" },
