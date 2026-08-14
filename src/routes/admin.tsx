@@ -30,9 +30,16 @@ function AdminLayout() {
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="border-b bg-card">
-        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-1 overflow-x-auto">
-            <div className="font-semibold mr-4 shrink-0 px-2 text-sm uppercase tracking-wider text-muted-foreground">
+        <div className="max-w-7xl mx-auto px-4 min-h-[3.5rem] py-2 flex items-center justify-between gap-4">
+          {/*
+            Переносим пункты на новую строку, а не прячем в горизонтальный
+            скролл. Ширина меню зависит от того, сколько модулей НЕ куплено:
+            заблокированный пункт несёт ещё и замок, поэтому у клиента с одним
+            магазином меню шире, чем у клиента со всеми модулями. Скрытая
+            прокрутка в такой ситуации просто съедала «Настройки».
+          */}
+          <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1">
+            <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground">
               Админ-панель
             </div>
             <NavLink to="/admin">Дашборд</NavLink>
@@ -42,19 +49,19 @@ function AdminLayout() {
             <NavLink to="/admin/broadcast">Рассылка</NavLink>
             <NavLink to="/admin/payment-methods">Реквизиты</NavLink>
             {modules.instagram ? (
-              <NavLink to="/admin/instagram">📸 Instagram</NavLink>
+              <NavLink to="/admin/instagram">Instagram</NavLink>
             ) : (
-              <LockedNavLink>📸 Instagram</LockedNavLink>
+              <LockedNavLink>Instagram</LockedNavLink>
             )}
             {modules.vip ? (
-              <NavLink to="/admin/vip">👑 VIP-группа</NavLink>
+              <NavLink to="/admin/vip">VIP-группа</NavLink>
             ) : (
-              <LockedNavLink>👑 VIP-группа</LockedNavLink>
+              <LockedNavLink>VIP-группа</LockedNavLink>
             )}
             {modules.blocked ? (
-              <NavLink to="/admin/blocked">🚫 Блокировка</NavLink>
+              <NavLink to="/admin/blocked">Блокировка</NavLink>
             ) : (
-              <LockedNavLink>🚫 Блокировка</LockedNavLink>
+              <LockedNavLink>Блокировка</LockedNavLink>
             )}
             <NavLink to="/admin/settings">Настройки</NavLink>
           </div>
@@ -81,8 +88,8 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link
       to={to}
-      className="px-3 py-1.5 rounded-md text-sm hover:bg-accent shrink-0"
-      activeProps={{ className: "px-3 py-1.5 rounded-md text-sm bg-accent font-medium shrink-0" }}
+      className="px-2.5 py-1.5 rounded-md text-sm hover:bg-accent shrink-0"
+      activeProps={{ className: "px-2.5 py-1.5 rounded-md text-sm bg-accent font-medium shrink-0" }}
       activeOptions={{ exact: to === "/admin" }}
     >
       {children}
@@ -97,7 +104,7 @@ function LockedNavLink({ children }: { children: React.ReactNode }) {
       role="button"
       aria-disabled="true"
       title="Модуль не подключён. Чтобы активировать — свяжитесь с администратором."
-      className="px-3 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
+      className="px-2.5 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
       onClick={(e) => {
         e.preventDefault();
         alert(
