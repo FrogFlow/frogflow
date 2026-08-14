@@ -154,7 +154,7 @@ export type Database = {
           internal_secret: string | null
           app_url: string | null
           id: string
-          bot_token: string
+          bot_token: string | null
           bot_name: string
           owner_id: string
           status: string | null
@@ -174,7 +174,7 @@ export type Database = {
           internal_secret?: string | null
           app_url?: string | null
           id?: string
-          bot_token: string
+          bot_token?: string | null
           bot_name: string
           owner_id: string
           status?: string | null
@@ -194,7 +194,7 @@ export type Database = {
           internal_secret?: string | null
           app_url?: string | null
           id?: string
-          bot_token?: string
+          bot_token?: string | null
           bot_name?: string
           owner_id?: string
           status?: string | null

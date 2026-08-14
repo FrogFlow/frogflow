@@ -28,6 +28,7 @@ import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
 import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
 import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
 import { Route as AdminVipIndexRouteImport } from './routes/admin.vip.index'
+import { Route as OperatorAuthedOnboardRouteImport } from './routes/operator._authed.onboard'
 import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._authed.broadcast'
 import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
 import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/reload'
@@ -142,6 +143,11 @@ const AdminVipIndexRoute = AdminVipIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminVipRoute,
+} as any)
+const OperatorAuthedOnboardRoute = OperatorAuthedOnboardRouteImport.update({
+  id: '/onboard',
+  path: '/onboard',
+  getParentRoute: () => OperatorAuthedRoute,
 } as any)
 const OperatorAuthedBroadcastRoute = OperatorAuthedBroadcastRouteImport.update({
   id: '/broadcast',
@@ -276,6 +282,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/onboard': typeof OperatorAuthedOnboardRoute
   '/admin/vip/': typeof AdminVipIndexRoute
   '/operator/': typeof OperatorAuthedIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
@@ -314,6 +321,7 @@ export interface FileRoutesByTo {
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/onboard': typeof OperatorAuthedOnboardRoute
   '/admin/vip': typeof AdminVipIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
@@ -355,6 +363,7 @@ export interface FileRoutesById {
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/_authed/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/_authed/onboard': typeof OperatorAuthedOnboardRoute
   '/admin/vip/': typeof AdminVipIndexRoute
   '/operator/_authed/': typeof OperatorAuthedIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
@@ -397,6 +406,7 @@ export interface FileRouteTypes {
     | '/api/internal/reload'
     | '/operator/$botId'
     | '/operator/broadcast'
+    | '/operator/onboard'
     | '/admin/vip/'
     | '/operator/'
     | '/api/admin/file/$'
@@ -435,6 +445,7 @@ export interface FileRouteTypes {
     | '/api/internal/reload'
     | '/operator/$botId'
     | '/operator/broadcast'
+    | '/operator/onboard'
     | '/admin/vip'
     | '/api/admin/file/$'
     | '/api/public/img/$'
@@ -475,6 +486,7 @@ export interface FileRouteTypes {
     | '/api/internal/reload'
     | '/operator/_authed/$botId'
     | '/operator/_authed/broadcast'
+    | '/operator/_authed/onboard'
     | '/admin/vip/'
     | '/operator/_authed/'
     | '/api/admin/file/$'
@@ -646,6 +658,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/vip/'
       preLoaderRoute: typeof AdminVipIndexRouteImport
       parentRoute: typeof AdminVipRoute
+    }
+    '/operator/_authed/onboard': {
+      id: '/operator/_authed/onboard'
+      path: '/onboard'
+      fullPath: '/operator/onboard'
+      preLoaderRoute: typeof OperatorAuthedOnboardRouteImport
+      parentRoute: typeof OperatorAuthedRoute
     }
     '/operator/_authed/broadcast': {
       id: '/operator/_authed/broadcast'
@@ -839,12 +858,14 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface OperatorAuthedRouteChildren {
   OperatorAuthedBotIdRoute: typeof OperatorAuthedBotIdRoute
   OperatorAuthedBroadcastRoute: typeof OperatorAuthedBroadcastRoute
+  OperatorAuthedOnboardRoute: typeof OperatorAuthedOnboardRoute
   OperatorAuthedIndexRoute: typeof OperatorAuthedIndexRoute
 }
 
 const OperatorAuthedRouteChildren: OperatorAuthedRouteChildren = {
   OperatorAuthedBotIdRoute: OperatorAuthedBotIdRoute,
   OperatorAuthedBroadcastRoute: OperatorAuthedBroadcastRoute,
+  OperatorAuthedOnboardRoute: OperatorAuthedOnboardRoute,
   OperatorAuthedIndexRoute: OperatorAuthedIndexRoute,
 }
 

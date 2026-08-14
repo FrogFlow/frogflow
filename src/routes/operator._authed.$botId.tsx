@@ -8,6 +8,7 @@ import {
   updateBotMetaFn,
   listBotEventsFn,
 } from "@/lib/operator/bots.functions";
+import { repointWebhookFn } from "@/lib/operator/onboard.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
@@ -307,6 +308,8 @@ function OperatorClientCard() {
         </form>
       </section>
 
+      <WebhookSection botId={botId} appUrl={bot.app_url} />
+
       <section className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="font-medium">Журнал действий</h2>
         {eventsQuery.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
@@ -333,5 +336,85 @@ function OperatorClientCard() {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Вебхук ставится отдельно от подключения: проект Vercel поднимается руками уже
+ * после того, как клиент заведён, а токен панель не хранит — поэтому его вводят
+ * заново. Этим же чинится «бот молчит после смены домена».
+ */
+function WebhookSection({ botId, appUrl }: { botId: string; appUrl: string | null }) {
+  const [token, setToken] = useState("");
+  const [secret, setSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setResult(null);
+    try {
+      setResult(
+        await repointWebhookFn({
+          data: { botId, token: token.trim(), webhookSecret: secret.trim() },
+        }),
+      );
+      setToken("");
+    } catch (e: unknown) {
+      setResult({ ok: false, detail: (e as Error)?.message || "Не удалось проставить вебхук" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="bg-card border rounded-lg p-4 space-y-3">
+      <h2 className="font-medium">Вебхук</h2>
+      {!appUrl ? (
+        <p className="text-sm text-muted-foreground">
+          Сначала заполните «Адрес деплоя» выше — без него вебхук ставить некуда.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Направит бота на <code className="text-xs">{appUrl}/api/public/telegram/webhook</code>.
+            Токен вводится заново каждый раз — панель его не хранит.
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Токен от BotFather</Label>
+              <Input
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="1234567890:AA…"
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>TELEGRAM_WEBHOOK_SECRET</Label>
+              <Input
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                placeholder="Из переменных этого деплоя"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Должен совпадать со значением в Vercel, иначе деплой отклонит запросы Telegram.
+              </p>
+            </div>
+          </div>
+          {result && (
+            <p className={`text-sm ${result.ok ? "text-green-600" : "text-destructive"}`}>
+              {result.ok ? "Вебхук проставлен: " : "Не удалось: "}
+              {result.detail}
+            </p>
+          )}
+          <Button type="submit" disabled={busy || !token.trim() || !secret.trim()}>
+            {busy ? "Ставлю…" : "Проставить вебхук"}
+          </Button>
+        </form>
+      )}
+    </section>
   );
 }

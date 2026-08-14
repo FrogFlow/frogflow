@@ -1,0 +1,376 @@
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { useState } from "react";
+import { onboardClientFn, verifyBotTokenFn } from "@/lib/operator/onboard.functions";
+import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { Badge } from "@/components-ui/badge";
+import { Button } from "@/components-ui/button";
+import { Input } from "@/components-ui/input";
+import { Label } from "@/components-ui/label";
+import { Textarea } from "@/components-ui/textarea";
+import { Checkbox } from "@/components-ui/checkbox";
+
+export const Route = createFileRoute("/operator/_authed/onboard")({
+  head: () => ({ meta: [{ title: "Подключить клиента — панель оператора" }] }),
+  component: OnboardPage,
+});
+
+const GROUP_ORDER = [
+  "База",
+  "Оплата",
+  "Каталог",
+  "Instagram",
+  "Удержание",
+  "Сервис",
+  "Аналитика",
+  "Физические товары",
+];
+
+type Result = Awaited<ReturnType<typeof onboardClientFn>>;
+
+function OnboardPage() {
+  const router = useRouter();
+  const [form, setForm] = useState({
+    bot_name: "",
+    owner_slug: "",
+    bot_token: "",
+    app_url: "",
+    owner_name: "",
+    owner_contact: "",
+    owner_telegram_id: "",
+    notes: "",
+    first_order_no: "0",
+    set_webhook: false,
+  });
+  // По умолчанию — только то, что входит в базовый пакет по прайсу.
+  const [modules, setModules] = useState<ModuleKey[]>(
+    MODULE_KEYS.filter((k) => moduleDef(k).status === "available" && moduleDef(k).price === null),
+  );
+  const [checking, setChecking] = useState(false);
+  const [botIdentity, setBotIdentity] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
+
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+
+  async function onCheckToken() {
+    setChecking(true);
+    setError(null);
+    setBotIdentity(null);
+    try {
+      const me = await verifyBotTokenFn({ data: { token: form.bot_token.trim() } });
+      setBotIdentity(`@${me.username} — ${me.first_name}`);
+    } catch (e: unknown) {
+      setError((e as Error)?.message || "Не удалось проверить токен");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const tgId = form.owner_telegram_id.trim();
+      const res = await onboardClientFn({
+        data: {
+          bot_name: form.bot_name.trim(),
+          owner_slug: form.owner_slug.trim(),
+          bot_token: form.bot_token.trim(),
+          app_url: form.app_url.trim() || null,
+          modules,
+          owner_name: form.owner_name.trim() || null,
+          owner_contact: form.owner_contact.trim() || null,
+          owner_telegram_id: tgId ? Number(tgId) : null,
+          notes: form.notes.trim() || null,
+          first_order_no: Number(form.first_order_no || "0"),
+          set_webhook: form.set_webhook,
+        },
+      });
+      setResult(res);
+    } catch (e: unknown) {
+      setError((e as Error)?.message || "Не удалось подключить клиента");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (result) {
+    return <OnboardDone result={result} onDone={() => router.navigate({ to: "/operator" })} />;
+  }
+
+  const groups = new Map<string, ModuleKey[]>();
+  for (const key of MODULE_KEYS) {
+    const g = moduleDef(key).group;
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g)!.push(key);
+  }
+  const orderedGroups = [...groups.keys()].sort(
+    (a, b) => GROUP_ORDER.indexOf(a) - GROUP_ORDER.indexOf(b),
+  );
+
+  const total = modules.reduce((sum, k) => sum + (moduleDef(k).price ?? 0), 0);
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div>
+        <Link to="/operator" className="text-sm text-muted-foreground hover:underline">
+          ← Все клиенты
+        </Link>
+        <h1 className="text-2xl font-semibold mt-1">Подключить клиента</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Панель заведёт клиента в базе, выпустит ключ изоляции и выдаст готовый блок переменных.
+          Проект Vercel создаётся руками.
+        </p>
+      </div>
+
+      <form onSubmit={onSubmit} className="space-y-6">
+        <section className="bg-card border rounded-lg p-4 space-y-3">
+          <h2 className="font-medium">Бот</h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Название</Label>
+              <Input
+                value={form.bot_name}
+                onChange={(e) => set({ bot_name: e.target.value })}
+                placeholder="Например: Мастерская Айгуль"
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Идентификатор</Label>
+              <Input
+                value={form.owner_slug}
+                onChange={(e) => set({ owner_slug: e.target.value.toLowerCase() })}
+                placeholder="aigul_shop"
+                required
+              />
+              <p className="text-xs text-muted-foreground">Латиница, для служебных нужд</p>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label>Токен от BotFather</Label>
+            <div className="flex gap-2">
+              <Input
+                value={form.bot_token}
+                onChange={(e) => {
+                  set({ bot_token: e.target.value });
+                  setBotIdentity(null);
+                }}
+                placeholder="1234567890:AA…"
+                required
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCheckToken}
+                disabled={checking || !form.bot_token.trim()}
+              >
+                {checking ? "…" : "Проверить"}
+              </Button>
+            </div>
+            {botIdentity && <p className="text-xs text-green-600">Бот найден: {botIdentity}</p>}
+            <p className="text-xs text-muted-foreground">
+              Токен нужен, чтобы проставить вебхук и попасть в блок переменных. В базе панели он не
+              сохраняется.
+            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>Адрес деплоя</Label>
+            <Input
+              value={form.app_url}
+              onChange={(e) => set({ app_url: e.target.value })}
+              placeholder="https://aigul-shop.vercel.app"
+            />
+            <p className="text-xs text-muted-foreground">
+              Можно оставить пустым и заполнить позже, когда проект Vercel будет создан.
+            </p>
+          </div>
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <Checkbox
+              checked={form.set_webhook}
+              onCheckedChange={(v) => set({ set_webhook: !!v })}
+              disabled={!form.app_url.trim()}
+            />
+            <span>
+              Проставить вебхук сразу
+              <span className="block text-xs text-muted-foreground">
+                Только если проект Vercel уже поднят и отвечает. Иначе — кнопкой в карточке клиента
+                после деплоя.
+              </span>
+            </span>
+          </label>
+        </section>
+
+        <section className="bg-card border rounded-lg p-4 space-y-3">
+          <h2 className="font-medium">Владелец</h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Имя</Label>
+              <Input
+                value={form.owner_name}
+                onChange={(e) => set({ owner_name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Контакт</Label>
+              <Input
+                value={form.owner_contact}
+                onChange={(e) => set({ owner_contact: e.target.value })}
+                placeholder="+7 … / почта"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Telegram ID</Label>
+              <Input
+                value={form.owner_telegram_id}
+                onChange={(e) => set({ owner_telegram_id: e.target.value })}
+                inputMode="numeric"
+                placeholder="Куда панель шлёт сообщения"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Первый номер заказа</Label>
+              <Input
+                value={form.first_order_no}
+                onChange={(e) => set({ first_order_no: e.target.value })}
+                inputMode="numeric"
+              />
+              <p className="text-xs text-muted-foreground">
+                0 для нового клиента. При переносе данных — текущий максимум, иначе нумерация у
+                покупателей поедет назад.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label>Заметки</Label>
+            <Textarea
+              value={form.notes}
+              onChange={(e) => set({ notes: e.target.value })}
+              rows={2}
+            />
+          </div>
+        </section>
+
+        <section className="bg-card border rounded-lg p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-medium">Модули</h2>
+            <span className="text-sm text-muted-foreground">
+              Разово: {total.toLocaleString("ru-RU")} ₸
+            </span>
+          </div>
+          {orderedGroups.map((group) => (
+            <div key={group} className="space-y-2">
+              <h3 className="text-xs uppercase tracking-wider text-muted-foreground">{group}</h3>
+              <div className="divide-y rounded-md border">
+                {groups.get(group)!.map((key) => {
+                  const def = moduleDef(key);
+                  const planned = def.status === "planned";
+                  return (
+                    <label
+                      key={key}
+                      className={`flex items-center justify-between gap-4 p-3 ${
+                        planned ? "opacity-60" : "cursor-pointer"
+                      }`}
+                    >
+                      <span>
+                        <span className="text-sm font-medium flex items-center gap-2">
+                          {def.title}
+                          {planned && <Badge variant="secondary">в разработке</Badge>}
+                        </span>
+                        <span className="block text-xs text-muted-foreground">
+                          {def.price != null
+                            ? `${def.price.toLocaleString("ru-RU")} ₸`
+                            : "входит в базу"}
+                        </span>
+                      </span>
+                      <Checkbox
+                        checked={modules.includes(key)}
+                        disabled={planned}
+                        onCheckedChange={(v) =>
+                          setModules((prev) => (v ? [...prev, key] : prev.filter((k) => k !== key)))
+                        }
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <Button type="submit" disabled={busy}>
+          {busy ? "Подключаю…" : "Подключить клиента"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function OnboardDone({ result, onDone }: { result: Result; onDone: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div>
+        <h1 className="text-2xl font-semibold">Клиент подключён</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Бот @{result.botUsername}. Ключ арендатора годен до {result.tenantKeyExpiresAt}.
+        </p>
+      </div>
+
+      {result.warnings.length > 0 && (
+        <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 space-y-1">
+          {result.warnings.map((w) => (
+            <p key={w} className="text-sm text-amber-900">
+              {w}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {result.webhook.attempted && (
+        <p className={`text-sm ${result.webhook.ok ? "text-green-600" : "text-destructive"}`}>
+          Вебхук: {result.webhook.ok ? "проставлен" : "не проставлен"} — {result.webhook.detail}
+        </p>
+      )}
+
+      <section className="bg-card border rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="font-medium">Переменные для проекта Vercel</h2>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              await navigator.clipboard.writeText(result.envBlock);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+          >
+            {copied ? "Скопировано" : "Копировать"}
+          </Button>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Показывается один раз: ключ арендатора и пароль админки больше нигде не хранятся.
+          Скопируйте до того, как уйдёте со страницы.
+        </p>
+        <pre className="text-xs bg-muted rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-all">
+          {result.envBlock}
+        </pre>
+      </section>
+
+      <div className="flex gap-2">
+        <Button onClick={onDone}>К списку клиентов</Button>
+        <Link
+          to="/operator/$botId"
+          params={{ botId: result.botId }}
+          className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Открыть карточку
+        </Link>
+      </div>
+    </div>
+  );
+}
