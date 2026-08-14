@@ -14,6 +14,50 @@ export type Database = {
   }
   public: {
     Tables: {
+      subscription_payments: {
+        Row: {
+          id: string
+          bot_id: string
+          period_start: string
+          period_end: string
+          amount: number
+          currency: string
+          paid_at: string
+          note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          bot_id?: string
+          period_start: string
+          period_end: string
+          amount: number
+          currency?: string
+          paid_at?: string
+          note?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          bot_id?: string
+          period_start?: string
+          period_end?: string
+          amount?: number
+          currency?: string
+          paid_at?: string
+          note?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_payments_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bot_events: {
         Row: {
           id: string

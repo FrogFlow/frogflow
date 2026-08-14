@@ -2,6 +2,7 @@ import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { callInternal } from "./internal-client.server";
 import type { Json } from "@/integrations-supabase/types";
+import { computeState, readPolicy, type SubscriptionState } from "./subscriptions.server";
 
 type BotStatus = "active" | "paused" | "suspended";
 
@@ -10,7 +11,7 @@ async function db() {
   return supabaseAdmin;
 }
 
-export type BotListItem = {
+type BotBase = {
   id: string;
   bot_name: string;
   status: BotStatus;
@@ -21,20 +22,54 @@ export type BotListItem = {
   subscription_expires_at: string | null;
 };
 
+/**
+ * Строка списка. Состояние подписки посчитано заранее — список должен красить
+ * просрочку без запроса на каждого клиента. Карточка берёт то же самое
+ * отдельно, через subscriptions.server.ts, вместе с историей платежей.
+ */
+export type BotListItem = BotBase & {
+  subscription_state: SubscriptionState;
+  subscription_days_left: number | null;
+};
+
 export async function listBots(): Promise<BotListItem[]> {
   await requireOperator();
   const s = await db();
   const { data, error } = await s
     .from("bots")
     .select(
-      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at",
+      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings",
     )
     .order("bot_name", { ascending: true });
   if (error) throw new Error(`Не удалось получить список клиентов: ${error.message}`);
-  return (data ?? []) as BotListItem[];
+
+  // Одним запросом: у кого вообще есть платежи. Без этого дата, доставшаяся от
+  // заведения строки, выглядела бы как подтверждённая оплата.
+  const { data: paid } = await s.from("subscription_payments").select("bot_id");
+  const withPayments = new Set((paid ?? []).map((r) => r.bot_id));
+
+  return (data ?? []).map((b) => {
+    const sub = computeState(
+      b.subscription_expires_at,
+      readPolicy(b.settings),
+      withPayments.has(b.id),
+    );
+    return {
+      id: b.id,
+      bot_name: b.bot_name,
+      status: b.status as BotStatus,
+      owner_name: b.owner_name,
+      app_url: b.app_url,
+      notes: b.notes,
+      subscription_plan: b.subscription_plan,
+      subscription_expires_at: b.subscription_expires_at,
+      subscription_state: sub.state,
+      subscription_days_left: sub.daysLeft,
+    };
+  });
 }
 
-export type BotDetail = BotListItem & {
+export type BotDetail = BotBase & {
   modules: Record<ModuleKey, boolean>;
   owner_telegram_id: number | null;
   owner_contact: string | null;

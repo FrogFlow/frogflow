@@ -25,6 +25,17 @@ const STATUS_LABEL: Record<
   suspended: { text: "Приостановлен", variant: "destructive" },
 };
 
+const SUB_LABEL: Record<
+  string,
+  { text: string; variant: "default" | "secondary" | "destructive" | "outline" }
+> = {
+  no_data: { text: "нет данных", variant: "outline" },
+  ok: { text: "оплачена", variant: "default" },
+  expiring: { text: "скоро истекает", variant: "secondary" },
+  overdue: { text: "просрочена", variant: "destructive" },
+  grace_over: { text: "отсрочка кончилась", variant: "destructive" },
+};
+
 function OperatorClientsPage() {
   const bots = useQuery({ queryKey: ["operator_bots"], queryFn: () => listBotsFn() });
   const list = bots.data ?? [];
@@ -59,7 +70,7 @@ function OperatorClientsPage() {
                 <TableHead>Клиент</TableHead>
                 <TableHead>Статус</TableHead>
                 <TableHead>Владелец</TableHead>
-                <TableHead>Подписка до</TableHead>
+                <TableHead>Подписка</TableHead>
                 <TableHead>Деплой</TableHead>
                 <TableHead>Заметки</TableHead>
               </TableRow>
@@ -88,11 +99,7 @@ function OperatorClientsPage() {
                       {bot.owner_name || <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell>
-                      {bot.subscription_expires_at ? (
-                        new Date(bot.subscription_expires_at).toLocaleDateString("ru-RU")
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <SubCell bot={bot} />
                     </TableCell>
                     <TableCell>
                       {bot.app_url ? (
@@ -119,6 +126,36 @@ function OperatorClientsPage() {
           </Table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Состояние подписки + дата одной ячейкой: просрочку должно быть видно, не открывая карточку. */
+function SubCell({
+  bot,
+}: {
+  bot: {
+    subscription_state: string;
+    subscription_expires_at: string | null;
+    subscription_days_left: number | null;
+  };
+}) {
+  const label = SUB_LABEL[bot.subscription_state] ?? SUB_LABEL.no_data;
+  if (bot.subscription_state === "no_data") {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Badge variant={label.variant} className="w-fit">
+        {label.text}
+      </Badge>
+      <span className="text-xs text-muted-foreground">
+        {bot.subscription_expires_at &&
+          new Date(bot.subscription_expires_at).toLocaleDateString("ru-RU")}
+        {bot.subscription_days_left !== null &&
+          bot.subscription_days_left < 0 &&
+          ` · +${-bot.subscription_days_left} дн.`}
+      </span>
     </div>
   );
 }

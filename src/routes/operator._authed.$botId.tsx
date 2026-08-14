@@ -10,6 +10,13 @@ import {
   checkBotHealthFn,
   requestWebhookSetupFn,
 } from "@/lib/operator/bots.functions";
+import {
+  getSubscriptionFn,
+  listPaymentsFn,
+  addPaymentFn,
+  deletePaymentFn,
+  setPolicyFn,
+} from "@/lib/operator/subscriptions.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
@@ -309,6 +316,8 @@ function OperatorClientCard() {
         </form>
       </section>
 
+      <SubscriptionSection botId={botId} />
+
       <WebhookSection botId={botId} appUrl={bot.app_url} />
 
       <section className="bg-card border rounded-lg p-4 space-y-3">
@@ -440,5 +449,259 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <dt className="text-muted-foreground shrink-0">{label}:</dt>
       <dd className="break-all">{children}</dd>
     </div>
+  );
+}
+
+const SUB_LABEL: Record<
+  string,
+  { text: string; variant: "default" | "secondary" | "destructive" | "outline" }
+> = {
+  no_data: { text: "не заведена", variant: "outline" },
+  ok: { text: "оплачена", variant: "default" },
+  expiring: { text: "скоро истекает", variant: "secondary" },
+  overdue: { text: "просрочена", variant: "destructive" },
+  grace_over: { text: "отсрочка кончилась", variant: "destructive" },
+};
+
+/**
+ * Подписка. Источник истины — платежи: bots.subscription_expires_at
+ * пересчитывает триггер из MIGRATION-09, руками эта дата не правится.
+ */
+function SubscriptionSection({ botId }: { botId: string }) {
+  const qc = useQueryClient();
+  const sub = useQuery({
+    queryKey: ["operator_sub", botId],
+    queryFn: () => getSubscriptionFn({ data: { botId } }),
+  });
+  const payments = useQuery({
+    queryKey: ["operator_payments", botId],
+    queryFn: () => listPaymentsFn({ data: { botId } }),
+  });
+
+  const [form, setForm] = useState({
+    period_start: "",
+    period_end: "",
+    amount: "15000",
+    note: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [policyBusy, setPolicyBusy] = useState(false);
+  const [policy, setPolicyState] = useState({
+    on_overdue: "warn" as "warn" | "suspend",
+    warn_days_before: 5,
+    grace_days: 3,
+  });
+
+  useEffect(() => {
+    if (sub.data) setPolicyState(sub.data.policy);
+  }, [sub.data]);
+
+  async function refresh() {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["operator_sub", botId] }),
+      qc.invalidateQueries({ queryKey: ["operator_payments", botId] }),
+      qc.invalidateQueries({ queryKey: ["operator_bot", botId] }),
+      qc.invalidateQueries({ queryKey: ["operator_bot_events", botId] }),
+    ]);
+  }
+
+  async function onAdd(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await addPaymentFn({
+        data: {
+          botId,
+          period_start: form.period_start,
+          period_end: form.period_end,
+          amount: Number(form.amount || "0"),
+          currency: "KZT",
+          note: form.note.trim() || null,
+        },
+      });
+      setForm({ period_start: "", period_end: "", amount: "15000", note: "" });
+      await refresh();
+    } catch (e: unknown) {
+      alert((e as Error)?.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDelete(paymentId: string) {
+    if (!confirm("Удалить платёж? Дата «оплачен до» пересчитается.")) return;
+    try {
+      await deletePaymentFn({ data: { botId, paymentId } });
+      await refresh();
+    } catch (e: unknown) {
+      alert((e as Error)?.message);
+    }
+  }
+
+  async function onSavePolicy(e: React.FormEvent) {
+    e.preventDefault();
+    setPolicyBusy(true);
+    try {
+      await setPolicyFn({ data: { botId, ...policy } });
+      await refresh();
+    } catch (e: unknown) {
+      alert((e as Error)?.message);
+    } finally {
+      setPolicyBusy(false);
+    }
+  }
+
+  const st = sub.data ? (SUB_LABEL[sub.data.state] ?? SUB_LABEL.no_data) : null;
+  const list = payments.data ?? [];
+
+  return (
+    <section className="bg-card border rounded-lg p-4 space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <h2 className="font-medium">Подписка</h2>
+        {st && <Badge variant={st.variant}>{st.text}</Badge>}
+        {sub.data?.expiresAt && (
+          <span className="text-sm text-muted-foreground">
+            до {new Date(sub.data.expiresAt).toLocaleDateString("ru-RU")}
+            {sub.data.daysLeft !== null &&
+              (sub.data.daysLeft >= 0
+                ? ` — осталось ${sub.data.daysLeft} дн.`
+                : ` — просрочено на ${-sub.data.daysLeft} дн.`)}
+          </span>
+        )}
+      </div>
+
+      {sub.data?.expiresAt && !sub.data.backedByPayments && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+          Дата не подтверждена ни одним платежом — досталась в наследство от заведения строки. При
+          первом же записанном платеже она пересчитается по нему.
+        </p>
+      )}
+
+      <div className="space-y-2">
+        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+          Платежи ({list.length})
+        </h3>
+        {list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Пока ни одного.</p>
+        ) : (
+          <div className="divide-y rounded-md border text-sm">
+            {list.map((p) => (
+              <div key={p.id} className="flex items-center justify-between gap-3 p-2">
+                <div>
+                  <div>
+                    {new Date(p.period_start).toLocaleDateString("ru-RU")} —{" "}
+                    {new Date(p.period_end).toLocaleDateString("ru-RU")}
+                    <span className="font-medium">
+                      {" · "}
+                      {Number(p.amount).toLocaleString("ru-RU")} {p.currency}
+                    </span>
+                  </div>
+                  {p.note && <div className="text-xs text-muted-foreground">{p.note}</div>}
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => onDelete(p.id)}>
+                  Удалить
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={onAdd} className="space-y-3 border-t pt-3">
+        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">Записать платёж</h3>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label>Период с</Label>
+            <Input
+              type="date"
+              value={form.period_start}
+              onChange={(e) => setForm((f) => ({ ...f, period_start: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>по</Label>
+            <Input
+              type="date"
+              value={form.period_end}
+              onChange={(e) => setForm((f) => ({ ...f, period_end: e.target.value }))}
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Сумма, ₸</Label>
+            <Input
+              value={form.amount}
+              onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+              inputMode="numeric"
+              required
+            />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label>Примечание</Label>
+          <Input
+            value={form.note}
+            onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+            placeholder="Например: Kaspi перевод"
+          />
+        </div>
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? "Записываю…" : "Записать"}
+        </Button>
+      </form>
+
+      <form onSubmit={onSavePolicy} className="space-y-3 border-t pt-3">
+        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+          Что делать при неоплате
+        </h3>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label>Поведение</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={policy.on_overdue === "warn" ? "default" : "outline"}
+                onClick={() => setPolicyState((p) => ({ ...p, on_overdue: "warn" }))}
+              >
+                Предупредить
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={policy.on_overdue === "suspend" ? "destructive" : "outline"}
+                onClick={() => setPolicyState((p) => ({ ...p, on_overdue: "suspend" }))}
+              >
+                Приостановить
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label>Предупредить за, дней</Label>
+            <Input
+              value={policy.warn_days_before}
+              onChange={(e) =>
+                setPolicyState((p) => ({ ...p, warn_days_before: Number(e.target.value || 0) }))
+              }
+              inputMode="numeric"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>Отсрочка, дней</Label>
+            <Input
+              value={policy.grace_days}
+              onChange={(e) =>
+                setPolicyState((p) => ({ ...p, grace_days: Number(e.target.value || 0) }))
+              }
+              inputMode="numeric"
+            />
+          </div>
+        </div>
+        <Button type="submit" size="sm" variant="outline" disabled={policyBusy}>
+          {policyBusy ? "Сохранение…" : "Сохранить политику"}
+        </Button>
+      </form>
+    </section>
   );
 }
