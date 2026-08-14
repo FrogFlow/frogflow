@@ -1458,7 +1458,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      // Добавлено вручную: scripts/sync-db-types.mjs переносит только таблицы.
+      // MIGRATION-10. Вызывать может лишь service_role (панель) — у anon,
+      // authenticated и tenant_bot права отозваны.
+      operator_bot_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          bot_id: string
+          orders_total: number
+          orders_30d: number
+          last_order_at: string | null
+          products_total: number
+          customers_total: number
+          storage_bytes: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

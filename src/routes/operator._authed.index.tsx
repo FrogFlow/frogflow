@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { listBotsFn } from "@/lib/operator/bots.functions";
+import { listBotsFn, listStatsFn } from "@/lib/operator/bots.functions";
+import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
 import {
   Table,
@@ -38,6 +39,9 @@ const SUB_LABEL: Record<
 
 function OperatorClientsPage() {
   const bots = useQuery({ queryKey: ["operator_bots"], queryFn: () => listBotsFn() });
+  // Отдельным запросом: сводка тяжелее списка (считает место в хранилище), и
+  // таблица не должна ждать её, чтобы отрисоваться.
+  const stats = useQuery({ queryKey: ["operator_stats"], queryFn: () => listStatsFn() });
   const list = bots.data ?? [];
 
   return (
@@ -71,8 +75,9 @@ function OperatorClientsPage() {
                 <TableHead>Статус</TableHead>
                 <TableHead>Владелец</TableHead>
                 <TableHead>Подписка</TableHead>
+                <TableHead>Заказы за 30 дн</TableHead>
+                <TableHead>Место</TableHead>
                 <TableHead>Деплой</TableHead>
-                <TableHead>Заметки</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -102,6 +107,12 @@ function OperatorClientsPage() {
                       <SubCell bot={bot} />
                     </TableCell>
                     <TableCell>
+                      <OrdersCell s={stats.data?.[bot.id]} />
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {stats.data?.[bot.id] ? formatBytes(stats.data[bot.id].storage_bytes) : "…"}
+                    </TableCell>
+                    <TableCell>
                       {bot.app_url ? (
                         <a
                           href={bot.app_url}
@@ -115,9 +126,6 @@ function OperatorClientsPage() {
                       ) : (
                         <span className="text-muted-foreground">не задан</span>
                       )}
-                    </TableCell>
-                    <TableCell className="max-w-[240px] truncate text-muted-foreground">
-                      {bot.notes || "—"}
                     </TableCell>
                   </TableRow>
                 );
@@ -155,6 +163,29 @@ function SubCell({
         {bot.subscription_days_left !== null &&
           bot.subscription_days_left < 0 &&
           ` · +${-bot.subscription_days_left} дн.`}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Заказы за месяц плюс дата последнего. Молчание бота — главный признак, что
+ * с клиентом что-то не так, поэтому давнее «последний заказ» подсвечивается.
+ */
+function OrdersCell({
+  s,
+}: {
+  s?: { orders_30d: number; orders_total: number; last_order_at: string | null };
+}) {
+  if (!s) return <span className="text-muted-foreground">…</span>;
+  const last = s.last_order_at ? new Date(s.last_order_at) : null;
+  const days = daysSince(s.last_order_at);
+  const stale = days !== null && days > 14;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="font-medium">{s.orders_30d}</span>
+      <span className={`text-xs ${stale ? "text-amber-700" : "text-muted-foreground"}`}>
+        {last === null ? "заказов не было" : days === 0 ? "сегодня" : `${days} дн. назад`}
       </span>
     </div>
   );

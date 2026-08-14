@@ -9,6 +9,7 @@ import {
   listBotEventsFn,
   checkBotHealthFn,
   requestWebhookSetupFn,
+  listStatsFn,
 } from "@/lib/operator/bots.functions";
 import {
   getSubscriptionFn,
@@ -18,6 +19,7 @@ import {
   setPolicyFn,
 } from "@/lib/operator/subscriptions.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
@@ -315,6 +317,8 @@ function OperatorClientCard() {
           </Button>
         </form>
       </section>
+
+      <StatsSection botId={botId} />
 
       <SubscriptionSection botId={botId} />
 
@@ -702,6 +706,57 @@ function SubscriptionSection({ botId }: { botId: string }) {
           {policyBusy ? "Сохранение…" : "Сохранить политику"}
         </Button>
       </form>
+    </section>
+  );
+}
+
+/** Сводка по клиенту. Только агрегаты — см. MIGRATION-10: содержимое чужого магазина панель не читает. */
+function StatsSection({ botId }: { botId: string }) {
+  const stats = useQuery({ queryKey: ["operator_stats"], queryFn: () => listStatsFn() });
+  const s = stats.data?.[botId];
+
+  if (stats.isLoading) {
+    return (
+      <section className="bg-card border rounded-lg p-4">
+        <p className="text-sm text-muted-foreground">Загрузка статистики…</p>
+      </section>
+    );
+  }
+  if (!s) return null;
+
+  const last = s.last_order_at ? new Date(s.last_order_at) : null;
+  const days = daysSince(s.last_order_at);
+
+  const cells: Array<[string, React.ReactNode]> = [
+    ["Заказов за 30 дней", s.orders_30d],
+    ["Заказов всего", s.orders_total],
+    [
+      "Последний заказ",
+      last === null ? (
+        <span className="text-muted-foreground">не было</span>
+      ) : (
+        <span className={days !== null && days > 14 ? "text-amber-700" : undefined}>
+          {last.toLocaleDateString("ru-RU")}
+          {days !== null && days > 0 && ` · ${days} дн. назад`}
+        </span>
+      ),
+    ],
+    ["Товаров", s.products_total],
+    ["Покупателей", s.customers_total],
+    ["Место в хранилище", formatBytes(s.storage_bytes)],
+  ];
+
+  return (
+    <section className="bg-card border rounded-lg p-4 space-y-3">
+      <h2 className="font-medium">Показатели</h2>
+      <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3">
+        {cells.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="text-lg font-medium">{value}</dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }

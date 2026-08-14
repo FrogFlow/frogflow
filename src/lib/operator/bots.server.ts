@@ -280,3 +280,37 @@ export async function requestWebhookSetup(
   });
   return outcome;
 }
+
+export type BotStats = {
+  orders_total: number;
+  orders_30d: number;
+  last_order_at: string | null;
+  products_total: number;
+  customers_total: number;
+  storage_bytes: number;
+};
+
+/**
+ * Сводка по всем клиентам одним вызовом (MIGRATION-10). Только агрегаты —
+ * счётчики, даты, байты. Содержимого чужих магазинов панель не читает: это
+ * решение, а не ограничение service_role, который видит всё.
+ */
+export async function loadStats(): Promise<Map<string, BotStats>> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s.rpc("operator_bot_stats");
+  if (error) throw new Error(`Не удалось получить статистику: ${error.message}`);
+
+  const map = new Map<string, BotStats>();
+  for (const row of data ?? []) {
+    map.set(row.bot_id, {
+      orders_total: Number(row.orders_total),
+      orders_30d: Number(row.orders_30d),
+      last_order_at: row.last_order_at,
+      products_total: Number(row.products_total),
+      customers_total: Number(row.customers_total),
+      storage_bytes: Number(row.storage_bytes),
+    });
+  }
+  return map;
+}
