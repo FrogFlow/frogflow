@@ -16,9 +16,41 @@ function publicAppOrigin(): string {
     (process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    "https://tg-bot-ashen-one.vercel.app"
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
   ).replace(/\/$/, "");
+}
+
+/**
+ * Имеет ли этот деплой право распоряжаться вебхуком своего бота.
+ *
+ * Самовосстановление задумано против случайно сброшенного вебхука, но при двух
+ * живых деплоях с одним токеном оно превращается в перетягивание каната: у
+ * каждого свой PUBLIC_APP_URL, каждый считает чужой адрес неправильным и
+ * возвращает бота себе. Так после переезда клиента старый деплой отбирал бота
+ * обратно каждые несколько минут — ловили на Развивашке и на Анастасии.
+ *
+ * Владельца называет панель: bots.app_url. Если он заполнен и указывает не на
+ * нас — молчим. Это делает базу единственным источником истины о том, где
+ * живёт бот, ровно как со статусом и модулями.
+ *
+ * Если app_url пуст (клиента ещё не завели в панели) или прочитать его не
+ * вышло — ведём себя как раньше и восстанавливаем вебхук: потерять
+ * самолечение из-за недоступной базы хуже, чем изредка перетянуть канат.
+ */
+async function ownsWebhook(): Promise<{ allowed: boolean; owner: string | null }> {
+  const botId = process.env.BOT_ID?.trim();
+  const mine = publicAppOrigin();
+  if (!botId || !mine) return { allowed: true, owner: null };
+
+  try {
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    const { data } = await supabaseAdmin.from("bots").select("app_url").eq("id", botId).single();
+    const owner = (data?.app_url || "").trim().replace(/\/$/, "");
+    if (!owner) return { allowed: true, owner: null };
+    return { allowed: owner === mine, owner };
+  } catch {
+    return { allowed: true, owner: null };
+  }
 }
 
 export function expectedWebhookUrl(): string {
@@ -27,7 +59,7 @@ export function expectedWebhookUrl(): string {
 
 export type EnsureWebhookResult = {
   ok: boolean;
-  action: "unchanged" | "set" | "error";
+  action: "unchanged" | "set" | "error" | "not_owner";
   expected: string;
   previousUrl: string;
   currentUrl?: string;
@@ -37,6 +69,17 @@ export type EnsureWebhookResult = {
 
 export async function ensureTelegramWebhook(): Promise<EnsureWebhookResult> {
   const expected = expectedWebhookUrl();
+
+  const own = await ownsWebhook();
+  if (!own.allowed) {
+    return {
+      ok: true,
+      action: "not_owner",
+      expected,
+      previousUrl: "",
+      error: `Бот закреплён в панели за ${own.owner}, этот деплой вебхук не трогает`,
+    };
+  }
 
   try {
     const info = await tg("getWebhookInfo", {});
@@ -87,8 +130,7 @@ export async function ensureTelegramWebhook(): Promise<EnsureWebhookResult> {
     }
 
     const after = await tg("getWebhookInfo", {});
-    const afterUrl =
-      ((after.result as { url?: string } | undefined)?.url || "").trim() || expected;
+    const afterUrl = ((after.result as { url?: string } | undefined)?.url || "").trim() || expected;
 
     console.log("[webhook] restored", { previousUrl, afterUrl });
     try {
@@ -121,7 +163,7 @@ export async function ensureTelegramWebhook(): Promise<EnsureWebhookResult> {
 type EnsureOne = {
   name: "SHOP" | "VIP";
   ok: boolean;
-  action: "unchanged" | "set" | "skipped" | "error";
+  action: "unchanged" | "set" | "skipped" | "error" | "not_owner";
   expected: string;
   previousUrl: string;
   currentUrl?: string;
@@ -223,10 +265,13 @@ async function ensureOne(
     }
 
     const after = await tgApi(token, "getWebhookInfo");
-    const afterUrl =
-      ((after.result as { url?: string } | undefined)?.url || "").trim() || expected;
+    const afterUrl = ((after.result as { url?: string } | undefined)?.url || "").trim() || expected;
 
-    console.log(`[webhook-ensure] ${name} restored`, { previousUrl, afterUrl, hadError: !!lastErr });
+    console.log(`[webhook-ensure] ${name} restored`, {
+      previousUrl,
+      afterUrl,
+      hadError: !!lastErr,
+    });
 
     // Only the shop bot has a public profile (name/description) worth keeping
     // in sync — the VIP bot's profile isn't customer-facing the same way.
@@ -263,6 +308,24 @@ async function ensureOne(
 
 /** Ensure shop + VIP webhooks point at this deployment (and matching secret_token). */
 export async function ensureDidWebhooks(): Promise<{ ok: boolean; bots: EnsureOne[] }> {
+  // Проверка владельца одна на оба бота: они принадлежат одному арендатору и
+  // переезжают вместе.
+  const own = await ownsWebhook();
+  if (!own.allowed) {
+    const note = `Бот закреплён в панели за ${own.owner}, этот деплой вебхук не трогает`;
+    return {
+      ok: true,
+      bots: (["SHOP", "VIP"] as const).map((name) => ({
+        name,
+        ok: true,
+        action: "not_owner" as const,
+        expected: "",
+        previousUrl: "",
+        error: note,
+      })),
+    };
+  }
+
   const shopSecret = (process.env.TELEGRAM_WEBHOOK_SECRET || "").trim();
   const vipSecret = (
     process.env.VIP_TELEGRAM_WEBHOOK_SECRET ||
