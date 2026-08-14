@@ -249,35 +249,6 @@ async function setTelegramWebhook(
   }
 }
 
-/**
- * Ставит вебхук отдельно от подключения — деплой Vercel поднимается руками уже
- * после создания клиента, а токен в панели не хранится, поэтому его приходится
- * вводить заново. Тот же метод чинит и «бот перестал отвечать после смены
- * домена».
- */
-export async function repointWebhook(
-  botId: string,
-  token: string,
-  webhookSecret: string,
-  actor: string,
-): Promise<{ ok: boolean; detail: string }> {
-  await requireOperator();
-  const s = await db();
-  const { data, error } = await s.from("bots").select("app_url").eq("id", botId).single();
-  if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
-
-  await verifyBotToken(token);
-  const res = await setTelegramWebhook(token, data.app_url, webhookSecret);
-
-  await s.from("bot_events").insert({
-    bot_id: botId,
-    actor,
-    kind: "onboard",
-    payload: { action: "set_webhook", ok: res.ok, detail: res.detail },
-  });
-  return { ok: res.ok, detail: res.detail };
-}
-
 function buildEnvBlock(v: {
   botId: string;
   tenantKey: string;

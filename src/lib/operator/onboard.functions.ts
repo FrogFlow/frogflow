@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOperator, getOperatorSession } from "./guard.server";
 import { MODULE_KEYS, type ModuleKey } from "@/lib/modules/registry";
-import { onboardClient, repointWebhook, verifyBotToken } from "./onboard.server";
+import { onboardClient, verifyBotToken } from "./onboard.server";
 
 async function actor(): Promise<string> {
   const s = await getOperatorSession();
@@ -45,19 +45,4 @@ export const onboardClientFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     return onboardClient({ ...data, modules: data.modules as ModuleKey[] }, await actor());
-  });
-
-export const repointWebhookFn = createServerFn({ method: "POST" })
-  .validator((data: unknown) =>
-    z
-      .object({
-        botId: z.string().uuid(),
-        token: TokenSchema,
-        webhookSecret: z.string().min(1),
-      })
-      .parse(data),
-  )
-  .handler(async ({ data }) => {
-    await requireOperator();
-    return repointWebhook(data.botId, data.token, data.webhookSecret, await actor());
   });

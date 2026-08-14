@@ -182,3 +182,66 @@ export async function listBotEvents(botId: string, limit = 50): Promise<BotEvent
   if (error) throw new Error(`Не удалось получить журнал: ${error.message}`);
   return (data ?? []) as BotEvent[];
 }
+
+export type BotHealthReport = {
+  bot_username: string | null;
+  webhook_url: string | null;
+  pending_updates: number | null;
+  last_error: string | null;
+  last_error_at: string | null;
+};
+
+export type BotHealthOutcome = { ok: true; report: BotHealthReport } | { ok: false; error: string };
+
+/**
+ * Спрашивает деплой, что о его боте думает Telegram. Токен для этого нужен —
+ * но он остаётся на деплое: панель зовёт /api/internal/health, деплой ходит в
+ * Telegram сам. См. CONTROL-PLANE-PLAN.md §5.
+ */
+export async function checkBotHealth(botId: string): Promise<BotHealthOutcome> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s
+    .from("bots")
+    .select("app_url, internal_secret")
+    .eq("id", botId)
+    .single();
+  if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
+
+  const res = await callInternal<{ report: BotHealthReport }>(data, "/api/internal/health", {});
+  if (!res.ok) return { ok: false, error: res.error };
+  if (!res.body?.report) return { ok: false, error: "Деплой ответил без отчёта" };
+  return { ok: true, report: res.body.report };
+}
+
+/**
+ * Просит деплой направить своего бота на себя же. Панель не передаёт ни токен,
+ * ни TELEGRAM_WEBHOOK_SECRET — деплой берёт оба из своих переменных, а адрес
+ * вебхука складывает из своего же PUBLIC_APP_URL. Ошибиться доменом нельзя.
+ */
+export async function requestWebhookSetup(
+  botId: string,
+  actor: string,
+): Promise<{ ok: boolean; detail: string }> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s
+    .from("bots")
+    .select("app_url, internal_secret")
+    .eq("id", botId)
+    .single();
+  if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
+
+  const res = await callInternal<{ url?: string }>(data, "/api/internal/set-webhook", {});
+  const outcome = res.ok
+    ? { ok: true, detail: res.body?.url ?? "вебхук проставлен" }
+    : { ok: false, detail: res.error };
+
+  await s.from("bot_events").insert({
+    bot_id: botId,
+    actor,
+    kind: "onboard",
+    payload: { action: "set_webhook", ok: outcome.ok, detail: outcome.detail },
+  });
+  return outcome;
+}

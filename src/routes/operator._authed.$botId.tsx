@@ -7,8 +7,9 @@ import {
   setBotStatusFn,
   updateBotMetaFn,
   listBotEventsFn,
+  checkBotHealthFn,
+  requestWebhookSetupFn,
 } from "@/lib/operator/bots.functions";
-import { repointWebhookFn } from "@/lib/operator/onboard.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
@@ -340,81 +341,104 @@ function OperatorClientCard() {
 }
 
 /**
- * Вебхук ставится отдельно от подключения: проект Vercel поднимается руками уже
- * после того, как клиент заведён, а токен панель не хранит — поэтому его вводят
- * заново. Этим же чинится «бот молчит после смены домена».
+ * Вебхук и диагностика — обе операции требуют токена Telegram, и обе делает сам
+ * деплой: панель просто зовёт его внутренний API. Токен не вводится, не
+ * передаётся по сети и не хранится в панели (CONTROL-PLANE-PLAN.md §5).
  */
 function WebhookSection({ botId, appUrl }: { botId: string; appUrl: string | null }) {
-  const [token, setToken] = useState("");
-  const [secret, setSecret] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [busy, setBusy] = useState<"hook" | "health" | null>(null);
+  const [hook, setHook] = useState<{ ok: boolean; detail: string } | null>(null);
+  const [health, setHealth] = useState<Awaited<ReturnType<typeof checkBotHealthFn>> | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setResult(null);
+  async function onSetWebhook() {
+    if (!confirm("Направить бота на этот деплой? Текущий вебхук будет перезаписан.")) return;
+    setBusy("hook");
+    setHook(null);
     try {
-      setResult(
-        await repointWebhookFn({
-          data: { botId, token: token.trim(), webhookSecret: secret.trim() },
-        }),
-      );
-      setToken("");
+      setHook(await requestWebhookSetupFn({ data: { botId } }));
     } catch (e: unknown) {
-      setResult({ ok: false, detail: (e as Error)?.message || "Не удалось проставить вебхук" });
+      setHook({ ok: false, detail: (e as Error)?.message || "Не удалось" });
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function onCheck() {
+    setBusy("health");
+    setHealth(null);
+    try {
+      setHealth(await checkBotHealthFn({ data: { botId } }));
+    } catch (e: unknown) {
+      setHealth({ ok: false, error: (e as Error)?.message || "Не удалось" });
+    } finally {
+      setBusy(null);
     }
   }
 
   return (
     <section className="bg-card border rounded-lg p-4 space-y-3">
-      <h2 className="font-medium">Вебхук</h2>
+      <h2 className="font-medium">Вебхук и диагностика</h2>
       {!appUrl ? (
         <p className="text-sm text-muted-foreground">
-          Сначала заполните «Адрес деплоя» выше — без него вебхук ставить некуда.
+          Сначала заполните «Адрес деплоя» выше — без него панели некуда обратиться.
         </p>
       ) : (
-        <form onSubmit={onSubmit} className="space-y-3">
+        <>
           <p className="text-sm text-muted-foreground">
-            Направит бота на <code className="text-xs">{appUrl}/api/public/telegram/webhook</code>.
-            Токен вводится заново каждый раз — панель его не хранит.
+            Обе кнопки выполняет сам деплой своим токеном. Панель токена не знает, вводить его не
+            нужно.
           </p>
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Токен от BotFather</Label>
-              <Input
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="1234567890:AA…"
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>TELEGRAM_WEBHOOK_SECRET</Label>
-              <Input
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder="Из переменных этого деплоя"
-                required
-              />
-              <p className="text-xs text-muted-foreground">
-                Должен совпадать со значением в Vercel, иначе деплой отклонит запросы Telegram.
-              </p>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={onCheck} disabled={busy !== null}>
+              {busy === "health" ? "Проверяю…" : "Проверить бота"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={onSetWebhook} disabled={busy !== null}>
+              {busy === "hook" ? "Ставлю…" : "Проставить вебхук"}
+            </Button>
           </div>
-          {result && (
-            <p className={`text-sm ${result.ok ? "text-green-600" : "text-destructive"}`}>
-              {result.ok ? "Вебхук проставлен: " : "Не удалось: "}
-              {result.detail}
+
+          {hook && (
+            <p className={`text-sm ${hook.ok ? "text-green-600" : "text-destructive"}`}>
+              {hook.ok ? "Вебхук проставлен: " : "Не удалось: "}
+              {hook.detail}
             </p>
           )}
-          <Button type="submit" disabled={busy || !token.trim() || !secret.trim()}>
-            {busy ? "Ставлю…" : "Проставить вебхук"}
-          </Button>
-        </form>
+
+          {health && !health.ok && <p className="text-sm text-destructive">{health.error}</p>}
+          {health?.ok && (
+            <dl className="text-sm grid sm:grid-cols-2 gap-x-4 gap-y-1">
+              <Row label="Бот">
+                {health.report.bot_username ? `@${health.report.bot_username}` : "—"}
+              </Row>
+              <Row label="Вебхук">{health.report.webhook_url || "не установлен"}</Row>
+              <Row label="Очередь">
+                {health.report.pending_updates ?? "—"}
+                {(health.report.pending_updates ?? 0) > 0 && " — апдейты не разбираются"}
+              </Row>
+              <Row label="Последняя ошибка">
+                {health.report.last_error ? (
+                  <span className="text-destructive">
+                    {health.report.last_error}
+                    {health.report.last_error_at &&
+                      ` (${new Date(health.report.last_error_at).toLocaleString("ru-RU")})`}
+                  </span>
+                ) : (
+                  "нет"
+                )}
+              </Row>
+            </dl>
+          )}
+        </>
       )}
     </section>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="text-muted-foreground shrink-0">{label}:</dt>
+      <dd className="break-all">{children}</dd>
+    </div>
   );
 }

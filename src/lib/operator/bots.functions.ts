@@ -9,6 +9,8 @@ import {
   setBotStatus,
   updateBotMeta,
   listBotEvents,
+  checkBotHealth,
+  requestWebhookSetup,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -80,4 +82,18 @@ export const listBotEventsFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireOperator();
     return listBotEvents(data.botId);
+  });
+
+export const checkBotHealthFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return checkBotHealth(data.botId);
+  });
+
+export const requestWebhookSetupFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return requestWebhookSetup(data.botId, await actor());
   });

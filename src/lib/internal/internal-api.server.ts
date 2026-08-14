@@ -105,3 +105,129 @@ export async function notifyOwner(text: string): Promise<NotifyOwnerResult> {
   }
   return { ok: true };
 }
+
+export type WebhookActionResult =
+  { ok: true; url: string } | { ok: false; status: number; message: string };
+
+/**
+ * Деплой сам направляет своего бота на себя же.
+ *
+ * Так панели не нужен ни токен, ни TELEGRAM_WEBHOOK_SECRET: и то, и другое
+ * уже лежит здесь, в переменных окружения этого деплоя. Заодно исчезает
+ * целый класс ошибок — адрес вебхука берётся не из того, что оператор набрал
+ * руками в панели, а из того, где деплой реально работает.
+ */
+export async function setOwnWebhook(): Promise<WebhookActionResult> {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) {
+    return { ok: false, status: 500, message: "TELEGRAM_BOT_TOKEN не задан в этом деплое" };
+  }
+
+  const base = (
+    process.env.PUBLIC_APP_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : "")
+  )
+    .trim()
+    .replace(/\/$/, "");
+  if (!base) {
+    return { ok: false, status: 500, message: "PUBLIC_APP_URL не задан в этом деплое" };
+  }
+
+  const url = `${base}/api/public/telegram/webhook`;
+  const body: Record<string, string | boolean> = { url, drop_pending_updates: false };
+  // Если секрет задан, вебхук обязан его нести: без него телеграмные апдейты
+  // начнёт отклонять сам обработчик.
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  if (secret) body.secret_token = secret;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      description?: string;
+    } | null;
+    if (!json?.ok) {
+      return {
+        ok: false,
+        status: 502,
+        message: `Telegram отклонил setWebhook: ${json?.description ?? `HTTP ${res.status}`}`,
+      };
+    }
+    return { ok: true, url };
+  } catch (e: unknown) {
+    return {
+      ok: false,
+      status: 502,
+      message: `Не удалось вызвать Telegram: ${(e as Error)?.message}`,
+    };
+  }
+}
+
+export type HealthReport = {
+  bot_username: string | null;
+  webhook_url: string | null;
+  pending_updates: number | null;
+  /** Последняя ошибка доставки со стороны Telegram — самый честный признак «бот сломан». */
+  last_error: string | null;
+  last_error_at: string | null;
+};
+
+/**
+ * Состояние бота глазами Telegram. Панель спрашивает деплой, деплой
+ * спрашивает Telegram своим токеном — токен снова остаётся здесь.
+ */
+export async function botHealth(): Promise<
+  { ok: true; report: HealthReport } | { ok: false; status: number; message: string }
+> {
+  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  if (!token) {
+    return { ok: false, status: 500, message: "TELEGRAM_BOT_TOKEN не задан в этом деплое" };
+  }
+
+  try {
+    const [meRes, hookRes] = await Promise.all([
+      fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(10_000) }),
+      fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`, {
+        signal: AbortSignal.timeout(10_000),
+      }),
+    ]);
+    const me = (await meRes.json().catch(() => null)) as any;
+    const hook = (await hookRes.json().catch(() => null)) as any;
+
+    if (!me?.ok) {
+      return {
+        ok: false,
+        status: 502,
+        message: `Telegram отклонил getMe: ${me?.description ?? `HTTP ${meRes.status}`}`,
+      };
+    }
+
+    const info = hook?.ok ? hook.result : null;
+    return {
+      ok: true,
+      report: {
+        bot_username: me.result?.username ?? null,
+        webhook_url: info?.url || null,
+        pending_updates:
+          typeof info?.pending_update_count === "number" ? info.pending_update_count : null,
+        last_error: info?.last_error_message || null,
+        last_error_at: info?.last_error_date
+          ? new Date(info.last_error_date * 1000).toISOString()
+          : null,
+      },
+    };
+  } catch (e: unknown) {
+    return {
+      ok: false,
+      status: 502,
+      message: `Не удалось опросить Telegram: ${(e as Error)?.message}`,
+    };
+  }
+}

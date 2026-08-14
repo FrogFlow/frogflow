@@ -12,8 +12,8 @@ export type InternalTarget = {
   internal_secret: string | null;
 };
 
-export type InternalCallResult =
-  | { ok: true }
+export type InternalCallResult<T = unknown> =
+  | { ok: true; body: T }
   /** Звать нечего — не заполнена карточка клиента, а не сбой доставки. */
   | { ok: false; kind: "skipped"; error: string }
   /** Деплой ответил и отказал: не тот секрет, нет владельца, Telegram отклонил. */
@@ -22,11 +22,11 @@ export type InternalCallResult =
   | { ok: false; kind: "unreachable"; error: string };
 
 /** Никогда не бросает: любой исход — это данные для отчёта, а не обрыв работы. */
-export async function callInternal(
+export async function callInternal<T = unknown>(
   target: InternalTarget,
   path: `/api/internal/${string}`,
   body: unknown,
-): Promise<InternalCallResult> {
+): Promise<InternalCallResult<T>> {
   if (!target.app_url) {
     return { ok: false, kind: "skipped", error: "Адрес деплоя (app_url) не заполнен" };
   }
@@ -60,7 +60,8 @@ export async function callInternal(
         error: `HTTP ${res.status}${detail ? `: ${detail}` : ""}`,
       };
     }
-    return { ok: true };
+    const parsed = (await res.json().catch(() => null)) as T;
+    return { ok: true, body: parsed };
   } catch (e: any) {
     const reason =
       e?.name === "AbortError"
