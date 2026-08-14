@@ -14,6 +14,112 @@ export type Database = {
   }
   public: {
     Tables: {
+      subscription_payments: {
+        Row: {
+          id: string
+          bot_id: string
+          period_start: string
+          period_end: string
+          amount: number
+          currency: string
+          paid_at: string
+          note: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          bot_id?: string
+          period_start: string
+          period_end: string
+          amount: number
+          currency?: string
+          paid_at?: string
+          note?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          bot_id?: string
+          period_start?: string
+          period_end?: string
+          amount?: number
+          currency?: string
+          paid_at?: string
+          note?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_payments_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bot_events: {
+        Row: {
+          id: string
+          bot_id: string
+          at: string
+          actor: string
+          kind: string
+          payload: Json
+        }
+        Insert: {
+          id?: string
+          bot_id?: string
+          at?: string
+          actor: string
+          kind: string
+          payload?: Json
+        }
+        Update: {
+          id?: string
+          bot_id?: string
+          at?: string
+          actor?: string
+          kind?: string
+          payload?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bot_events_bot_id_fkey"
+            columns: ["bot_id"]
+            isOneToOne: false
+            referencedRelation: "bots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operator_broadcasts: {
+        Row: {
+          id: string
+          created_at: string
+          actor: string
+          message_text: string
+          target: string
+          results: Json
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          actor: string
+          message_text: string
+          target: string
+          results?: Json
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          actor?: string
+          message_text?: string
+          target?: string
+          results?: Json
+        }
+        Relationships: []
+      }
       order_counters: {
         Row: {
           bot_id: string
@@ -84,8 +190,15 @@ export type Database = {
       }
       bots: {
         Row: {
+          notes: string | null
+          paused_message: string | null
+          owner_contact: string | null
+          owner_name: string | null
+          owner_telegram_id: number | null
+          internal_secret: string | null
+          app_url: string | null
           id: string
-          bot_token: string
+          bot_token: string | null
           bot_name: string
           owner_id: string
           status: string | null
@@ -97,8 +210,15 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          notes?: string | null
+          paused_message?: string | null
+          owner_contact?: string | null
+          owner_name?: string | null
+          owner_telegram_id?: number | null
+          internal_secret?: string | null
+          app_url?: string | null
           id?: string
-          bot_token: string
+          bot_token?: string | null
           bot_name: string
           owner_id: string
           status?: string | null
@@ -110,8 +230,15 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          notes?: string | null
+          paused_message?: string | null
+          owner_contact?: string | null
+          owner_name?: string | null
+          owner_telegram_id?: number | null
+          internal_secret?: string | null
+          app_url?: string | null
           id?: string
-          bot_token?: string
+          bot_token?: string | null
           bot_name?: string
           owner_id?: string
           status?: string | null
@@ -1331,7 +1458,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      // Добавлено вручную: scripts/sync-db-types.mjs переносит только таблицы.
+      // MIGRATION-10. Вызывать может лишь service_role (панель) — у anon,
+      // authenticated и tenant_bot права отозваны.
+      operator_bot_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          bot_id: string
+          orders_total: number
+          orders_30d: number
+          last_order_at: string | null
+          products_total: number
+          customers_total: number
+          storage_bytes: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

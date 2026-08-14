@@ -1,6 +1,7 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
 import { convertAmount } from "./currency.server";
 import { replyIfBlocked } from "./blocked-users.server";
+import { botStatus, pausedMessage } from "./modules/modules.server";
 
 type BotUser = {
   telegram_id: number;
@@ -23,6 +24,18 @@ type BotUser = {
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
+}
+
+/**
+ * Пауза/приостановка (bots.status <> active) отвечает вежливым текстом и не
+ * трогает вебхук — Telegram не знает, что бот на паузе. Ни токен, ни отзыв
+ * вебхука не нужны: см. CONTROL-PLANE-PLAN.md §5.
+ */
+async function replyIfPaused(chat_id: number): Promise<boolean> {
+  const status = await botStatus();
+  if (status === "active") return false;
+  await tg("sendMessage", { chat_id, text: await pausedMessage() });
+  return true;
 }
 
 function originFromState(): string {
@@ -1402,6 +1415,7 @@ export async function handleUpdate(update: any) {
       const data: string = cq.data || "";
       await tg("answerCallbackQuery", { callback_query_id: cq.id });
       if (await replyIfBlocked(chat_id, from_id)) return;
+      if (await replyIfPaused(chat_id)) return;
 
       const user = await upsertUser(cq.from as any);
       if (!user) return;
@@ -1659,6 +1673,7 @@ export async function handleUpdate(update: any) {
     const from = msg.from;
     if (!from) return;
     if (await replyIfBlocked(chat_id, from.id)) return;
+    if (await replyIfPaused(chat_id)) return;
     const user = await upsertUser(from);
     if (!user) return;
 

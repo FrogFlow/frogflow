@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, Link, redirect, useRouter, useRouterState } fr
 import { useServerFn } from "@tanstack/react-start";
 import { adminCheck, adminLogout } from "@/lib/admin.functions";
 import { Button } from "@/components-ui/button";
-import { FEATURE_FLAGS } from "@/lib/feature-flags";
+import { useModules } from "@/lib/modules/use-modules";
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: async () => {
@@ -16,6 +16,7 @@ export const Route = createFileRoute("/admin")({
 function AdminLayout() {
   const router = useRouter();
   const logout = useServerFn(adminLogout);
+  const modules = useModules();
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -31,17 +32,17 @@ function AdminLayout() {
             <NavLink to="/admin/orders">Заказы</NavLink>
             <NavLink to="/admin/broadcast">Рассылка</NavLink>
             <NavLink to="/admin/payment-methods">Реквизиты</NavLink>
-            {FEATURE_FLAGS.instagram ? (
+            {modules.instagram ? (
               <NavLink to="/admin/instagram">📸 Instagram</NavLink>
             ) : (
               <LockedNavLink>📸 Instagram</LockedNavLink>
             )}
-            {FEATURE_FLAGS.vip ? (
+            {modules.vip ? (
               <NavLink to="/admin/vip">👑 VIP-группа</NavLink>
             ) : (
               <LockedNavLink>👑 VIP-группа</LockedNavLink>
             )}
-            {FEATURE_FLAGS.blocked ? (
+            {modules.blocked ? (
               <NavLink to="/admin/blocked">🚫 Блокировка</NavLink>
             ) : (
               <LockedNavLink>🚫 Блокировка</LockedNavLink>
