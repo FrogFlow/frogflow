@@ -4,20 +4,15 @@ import {
   sendInstagramPrivateReply,
 } from "./zernio.server";
 import { convertAmount } from "./currency.server";
+import { requireAppOrigin } from "./app-origin.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
-function appUrl(): string {
-  return (
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    "https://tg-bot-ashen-one.vercel.app"
-  ).replace(/\/$/, "");
-}
+// Уходит в текст сообщения покупателю в директе — ссылка на свой каталог.
+const appUrl = requireAppOrigin;
 
 /**
  * Создать или обновить пользователя Instagram в базе данных.

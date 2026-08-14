@@ -123,14 +123,9 @@ export async function setOwnWebhook(): Promise<WebhookActionResult> {
     return { ok: false, status: 500, message: "TELEGRAM_BOT_TOKEN не задан в этом деплое" };
   }
 
-  const base = (
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "")
-  )
-    .trim()
-    .replace(/\/$/, "");
+  // Мягкий вариант: панель ждёт осмысленный ответ об ошибке, а не исключение.
+  const { appOrigin } = await import("../app-origin.server");
+  const base = appOrigin();
   if (!base) {
     return { ok: false, status: 500, message: "PUBLIC_APP_URL не задан в этом деплое" };
   }

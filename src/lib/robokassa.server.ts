@@ -1,15 +1,8 @@
 import crypto from "crypto";
 
-export function publicAppOrigin(): string {
-  return (
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    "https://tg-bot-ashen-one.vercel.app"
-  ).replace(/\/$/, "");
-}
+// Адрес попадает в Result/Success/Fail URL платёжного шлюза — ошибиться тут
+// значит увести колбэки об оплате на чужой хост, поэтому вариант «примерно».
+export { requireAppOrigin as publicAppOrigin } from "./app-origin.server";
 
 export function md5Hex(input: string): string {
   return crypto.createHash("md5").update(input).digest("hex");

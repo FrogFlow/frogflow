@@ -9,16 +9,9 @@
  */
 
 import { tg } from "./telegram.server";
-
-function publicAppOrigin(): string {
-  return (
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "")
-  ).replace(/\/$/, "");
-}
+// Мягкий вариант, а не requireAppOrigin: это cron самовосстановления, он должен
+// сообщить о проблеме своим кодом ответа, а не упасть с исключением.
+import { appOrigin as publicAppOrigin } from "./app-origin.server";
 
 /**
  * Имеет ли этот деплой право распоряжаться вебхуком своего бота.

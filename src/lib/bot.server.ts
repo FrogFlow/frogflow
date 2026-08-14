@@ -1,4 +1,5 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
+import { requireAppOrigin } from "./app-origin.server";
 import { convertAmount } from "./currency.server";
 import { replyIfBlocked } from "./blocked-users.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
@@ -38,14 +39,8 @@ async function replyIfPaused(chat_id: number): Promise<boolean> {
   return true;
 }
 
-function originFromState(): string {
-  return (
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    "https://tg-bot-ashen-one.vercel.app"
-  ).replace(/\/$/, "");
-}
+// Ссылки на свой каталог и картинки товаров в сообщениях бота.
+const originFromState = requireAppOrigin;
 
 function isCountryRF(countryCode?: string | null): boolean {
   if (!countryCode) return false;

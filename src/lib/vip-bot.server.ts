@@ -1,3 +1,4 @@
+import { requireAppOrigin } from "./app-origin.server";
 import { formatDateTimeRu } from "./datetime";
 import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
 import { assignMemberTariff, getMemberAssignedTariff } from "./vip-member.server";
@@ -83,17 +84,8 @@ export async function isVipGroupMember(groupId: string, telegramId: number): Pro
   return status === "member" || status === "administrator" || status === "creator" || status === "restricted";
 }
 
-function publicAppOrigin(): string {
-  return (
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    "https://saltanat-materials-bot-7yy5.vercel.app"
-  );
-}
-
 function imageUrl(path: string): string {
-  return `${publicAppOrigin()}/api/public/img/${path}`;
+  return `${requireAppOrigin()}/api/public/img/${path}`;
 }
 
 export async function downloadVipTelegramFile(

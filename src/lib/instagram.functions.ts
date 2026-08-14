@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireAppOrigin } from "./app-origin.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -11,10 +12,7 @@ export const getInstagramConnectUrlFn = createServerFn({ method: "GET" }).handle
   const { getZernioConnectUrl } = await import("./zernio.server");
   await requireAdmin();
 
-  const origin =
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
-    "https://tg-bot-ashen-one.vercel.app";
+  const origin = requireAppOrigin();
 
   const redirectUrl = `${origin.replace(/\/$/, "")}/admin/instagram?connected=1`;
   return await getZernioConnectUrl("instagram", undefined, redirectUrl);
@@ -33,10 +31,7 @@ export const registerInstagramWebhookFn = createServerFn({ method: "POST" }).han
   const { registerZernioWebhook } = await import("./zernio.server");
   await requireAdmin();
 
-  const origin =
-    process.env.PUBLIC_APP_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "") ||
-    "https://tg-bot-ashen-one.vercel.app";
+  const origin = requireAppOrigin();
 
   const webhookUrl = `${origin.replace(/\/$/, "")}/api/public/zernio/webhook`;
   return await registerZernioWebhook(webhookUrl);
