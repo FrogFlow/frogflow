@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
+import { toCsv, fetchAll, isoDate } from "./csv";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -11,68 +12,9 @@ async function db() {
  * Выгрузка заказов и клиентской базы — «в один клик для бухгалтерии и
  * аналитики» из базовых возможностей прайса.
  *
- * Формат — CSV, а не настоящий .xlsx: файл открывается двойным щелчком в Excel
- * и в Google Таблицах, а собирать OOXML ради того же результата смысла нет.
- * Две детали, без которых Excel открывает такой файл криво:
- *   • BOM в начале — иначе кириллица превращается в кракозябры;
- *   • разделитель «;» — в русской локали Excel запятая считается десятичным
- *     знаком, и строка не разбивается на столбцы.
+ * Сборка CSV и постраничное чтение живут в ./csv — там они без серверных
+ * зависимостей и покрыты тестами.
  */
-
-const BOM = "﻿";
-const SEP = ";";
-
-/**
- * Экранирование по RFC 4180 плюс защита от формул: Excel исполняет значение,
- * начинающееся с =, +, - или @. Поля вроде имени покупателя и заметки вводит
- * человек, поэтому проверка нужна именно здесь. Собственный «@» к username мы
- * не подставляем — иначе апостроф вылезал бы в каждой строке.
- */
-function cell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  let s = String(value);
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;
-  if (s.includes(SEP) || s.includes('"') || s.includes("\n") || s.includes("\r")) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-function toCsv(headers: string[], rows: unknown[][]): string {
-  const lines = [headers.join(SEP), ...rows.map((r) => r.map(cell).join(SEP))];
-  // \r\n — Excel так надёжнее переносит строки внутри ячеек.
-  return BOM + lines.join("\r\n");
-}
-
-/**
- * PostgREST отдаёт максимум 1000 строк за запрос и делает это молча: выгрузка
- * просто обрывается на тысяче, и заметить это можно лишь сверив с базой.
- * Читаем страницами, пока страница приходит полной.
- */
-const PAGE = 1000;
-
-async function fetchAll<T>(
-  page: (
-    from: number,
-    to: number,
-  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
-  what: string,
-): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await page(from, from + PAGE - 1);
-    if (error) throw new Error(`Не удалось выгрузить ${what}: ${error.message}`);
-    const rows = data ?? [];
-    all.push(...rows);
-    if (rows.length < PAGE) return all;
-  }
-}
-
-function isoDate(v: unknown): string {
-  if (!v) return "";
-  const d = new Date(String(v));
-  return Number.isNaN(d.getTime()) ? String(v) : d.toISOString().slice(0, 19).replace("T", " ");
-}
 
 const STATUS_RU: Record<string, string> = {
   awaiting_payment: "ожидает оплаты",
