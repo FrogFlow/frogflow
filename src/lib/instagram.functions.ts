@@ -2,15 +2,26 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAppOrigin } from "./app-origin.server";
 
+/**
+ * Раздел платный: мало быть админом своего бота — модуль должен быть
+ * подключён. Без второй проверки тумблер в панели оператора прячет только
+ * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
+ */
+async function requireAdminWithModule() {
+  const { requireAdmin } = await import("./admin-session.server");
+  const { requireModule } = await import("./modules/require-module.server");
+  await requireAdmin();
+  await requireModule("instagram");
+}
+
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
 
 export const getInstagramConnectUrlFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { requireAdmin } = await import("./admin-session.server");
   const { getZernioConnectUrl } = await import("./zernio.server");
-  await requireAdmin();
+  await requireAdminWithModule();
 
   const origin = requireAppOrigin();
 
@@ -19,17 +30,15 @@ export const getInstagramConnectUrlFn = createServerFn({ method: "GET" }).handle
 });
 
 export const getInstagramAccountsFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { requireAdmin } = await import("./admin-session.server");
   const { listZernioAccounts } = await import("./zernio.server");
-  await requireAdmin();
+  await requireAdminWithModule();
   const accounts = await listZernioAccounts();
   return { accounts };
 });
 
 export const registerInstagramWebhookFn = createServerFn({ method: "POST" }).handler(async () => {
-  const { requireAdmin } = await import("./admin-session.server");
   const { registerZernioWebhook } = await import("./zernio.server");
-  await requireAdmin();
+  await requireAdminWithModule();
 
   const origin = requireAppOrigin();
 
@@ -43,9 +52,8 @@ export const registerInstagramWebhookFn = createServerFn({ method: "POST" }).han
  * Получить список Comment-to-DM автоматизаций напрямую из Zernio
  */
 export const getAutomationsFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { requireAdmin } = await import("./admin-session.server");
   const { listCommentAutomations } = await import("./zernio.server");
-  await requireAdmin();
+  await requireAdminWithModule();
   const res = await listCommentAutomations();
   
   // Добавляем флаг replyToAll для удобства фронтенда
@@ -89,9 +97,8 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { createCommentAutomation, deleteCommentAutomation, ensureDefaultZernioProfile, updateCommentAutomation } = await import("./zernio.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     if (data.platformPostId && data.platformPostId === data.accountId) {
       throw new Error("Выбран ID аккаунта вместо ID публикации. Обновите список и выберите пост заново.");
     }
@@ -144,9 +151,8 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
 export const deleteAutomationFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { deleteCommentAutomation } = await import("./zernio.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     return await deleteCommentAutomation(data.id);
   });
 
@@ -158,9 +164,8 @@ export const toggleAutomationFn = createServerFn({ method: "POST" })
     z.object({ id: z.string(), isActive: z.boolean() }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { updateCommentAutomation } = await import("./zernio.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     return await updateCommentAutomation(data.id, { isActive: data.isActive });
   });
 
@@ -170,17 +175,15 @@ export const toggleAutomationFn = createServerFn({ method: "POST" })
 export const getAutomationLogsFn = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { getCommentAutomationLogs } = await import("./zernio.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     return await getCommentAutomationLogs(data.id);
   });
 
 // ─── Webhook logs (наша БД) ───────────────────────────────────────────────────
 
 export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { requireAdmin } = await import("./admin-session.server");
-  await requireAdmin();
+  await requireAdminWithModule();
 
   const s = await db();
   const { data, error } = await s
@@ -203,18 +206,16 @@ export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(asyn
 export const disconnectInstagramAccountFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ accountId: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { disconnectZernioAccount } = await import("./zernio.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     return await disconnectZernioAccount(data.accountId);
   });
 
 export const getZernioPostsFn = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ accountId: z.string() }).parse(d))
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { listZernioPosts } = await import("./zernio.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     const posts = await listZernioPosts(data.accountId);
     return { posts };
   });

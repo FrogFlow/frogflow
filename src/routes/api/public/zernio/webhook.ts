@@ -20,6 +20,12 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
           return new Response("bad json", { status: 400 });
         }
 
+        // Как и у VIP-бота: выключенный модуль обязан гасить обработку, иначе
+        // тумблер «Instagram» убирает только раздел админки. 200 вместо ошибки —
+        // чтобы Zernio не копил повторные доставки, пока модуль выключен.
+        const { hasModule } = await import("@/lib/modules/modules.server");
+        if (!(await hasModule("instagram"))) return new Response("ok");
+
         const eventId = payload.id || payload.comment?.id || payload.message?.id || null;
         const eventType = payload.event || "unknown";
 

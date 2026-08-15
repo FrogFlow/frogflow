@@ -1,7 +1,18 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireAdmin } from "./admin-session.server";
 import { fetchVipChatMember, loadVipGroupId } from "./vip-group-members.server";
+
+/**
+ * Раздел платный: мало быть админом своего бота — модуль должен быть
+ * подключён. Без второй проверки тумблер в панели оператора прячет только
+ * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
+ */
+async function requireAdminWithModule() {
+  const { requireAdmin } = await import("./admin-session.server");
+  const { requireModule } = await import("./modules/require-module.server");
+  await requireAdmin();
+  await requireModule("vip");
+}
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -47,7 +58,7 @@ export const lookupVipGroupMemberFn = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
     const groupId = await loadVipGroupId(s);
     if (!groupId) throw new Error("Не настроен ID VIP группы в /admin/vip/settings");

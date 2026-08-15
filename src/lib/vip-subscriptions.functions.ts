@@ -1,6 +1,5 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireAdmin } from "./admin-session.server";
 import { formatDateTimeRu } from "./datetime";
 import {
   escapeHtml,
@@ -10,6 +9,18 @@ import {
   tgVip,
 } from "./vip-bot.server";
 import { assignMemberTariff } from "./vip-member.server";
+
+/**
+ * Раздел платный: мало быть админом своего бота — модуль должен быть
+ * подключён. Без второй проверки тумблер в панели оператора прячет только
+ * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
+ */
+async function requireAdminWithModule() {
+  const { requireAdmin } = await import("./admin-session.server");
+  const { requireModule } = await import("./modules/require-module.server");
+  await requireAdmin();
+  await requireModule("vip");
+}
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -146,7 +157,7 @@ async function grantVipAccessAfterManual(
 // Test function to check Supabase connection (real totals, not limit(1))
 export const testVipDbConnection = createServerFn({ method: "GET" })
   .handler(async () => {
-    await requireAdmin();
+    await requireAdminWithModule();
 
     try {
       const s = await db();
@@ -188,7 +199,7 @@ export const testVipDbConnection = createServerFn({ method: "GET" })
 export const getVipSubscriptions = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ status: z.string().optional() }).parse(d ?? {}))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
     const status = data?.status && data.status !== "all" ? data.status : null;
 
@@ -374,7 +385,7 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
 });
 
 export const getVipMemberProfiles = createServerFn({ method: "GET" }).handler(async () => {
-  await requireAdmin();
+  await requireAdminWithModule();
   try {
     const s = await db();
     const { data, error } = await s
@@ -393,7 +404,7 @@ export const getVipMemberProfiles = createServerFn({ method: "GET" }).handler(as
 });
 
 export const runVipCronNow = createServerFn({ method: "POST" }).handler(async () => {
-  await requireAdmin();
+  await requireAdminWithModule();
   const { runVipCronJob } = await import("./vip-cron.server");
   return await runVipCronJob();
 });
@@ -401,7 +412,7 @@ export const runVipCronNow = createServerFn({ method: "POST" }).handler(async ()
 export const confirmVipSubscription = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     return await activateVipSubscription(data.id);
   });
 
@@ -462,7 +473,7 @@ export const rejectVipSubscriptionCore = createServerOnlyFn(async (id: string): 
 export const rejectVipSubscription = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     return await rejectVipSubscriptionCore(data.id);
   });
 
@@ -479,7 +490,7 @@ const AddManualInput = z.object({
 export const addVipSubscriptionManual = createServerFn({ method: "POST" })
   .validator((d: unknown) => AddManualInput.parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
 
     const { data: settingsData } = await s.from("app_settings").select("*");
@@ -590,7 +601,7 @@ const ExtendInput = z.object({
 export const extendVipSubscription = createServerFn({ method: "POST" })
   .validator((d: unknown) => ExtendInput.parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
     const { data: sub } = await s.from("vip_subscriptions").select("*").eq("id", data.id).single();
     if (!sub) throw new Error("Not found");
@@ -731,7 +742,7 @@ const DeleteInput = z.object({ id: z.string().uuid() });
 export const excludeVipFromCommunity = createServerFn({ method: "POST" })
   .validator((d: unknown) => DeleteInput.parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
 
     const { data: sub } = await s.from("vip_subscriptions").select("*").eq("id", data.id).maybeSingle();
@@ -795,7 +806,7 @@ export const excludeVipFromCommunity = createServerFn({ method: "POST" })
 export const deleteVipSubscription = createServerFn({ method: "POST" })
   .validator((d: unknown) => DeleteInput.parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
     const { data: sub } = await s.from("vip_subscriptions").select("*").eq("id", data.id).maybeSingle();
     if (!sub) throw new Error("Not found");

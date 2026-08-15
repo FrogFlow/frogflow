@@ -1,10 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-export const listBlockedUsersFn = createServerFn({ method: "GET" }).handler(async () => {
+/**
+ * Раздел платный: мало быть админом своего бота — модуль должен быть
+ * подключён. Без второй проверки тумблер в панели оператора прячет только
+ * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
+ */
+async function requireAdminWithModule() {
   const { requireAdmin } = await import("./admin-session.server");
-  const { listBlockedUsers } = await import("./blocked-users.server");
+  const { requireModule } = await import("./modules/require-module.server");
   await requireAdmin();
+  await requireModule("blocked");
+}
+
+export const listBlockedUsersFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { listBlockedUsers } = await import("./blocked-users.server");
+  await requireAdminWithModule();
   return await listBlockedUsers();
 });
 
@@ -20,9 +31,8 @@ export const blockTelegramUserFn = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { blockTelegramUser } = await import("./blocked-users.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     const telegramId = Number(data.telegram_id);
     if (!Number.isFinite(telegramId) || telegramId <= 0) {
       throw new Error("Укажите корректный Telegram ID");
@@ -39,9 +49,8 @@ export const unblockTelegramUserFn = createServerFn({ method: "POST" })
     z.object({ telegram_id: z.union([z.string(), z.number()]) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { requireAdmin } = await import("./admin-session.server");
     const { unblockTelegramUser } = await import("./blocked-users.server");
-    await requireAdmin();
+    await requireAdminWithModule();
     const telegramId = Number(data.telegram_id);
     if (!Number.isFinite(telegramId) || telegramId <= 0) {
       throw new Error("Укажите корректный Telegram ID");

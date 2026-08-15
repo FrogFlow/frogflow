@@ -1,7 +1,18 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireAdmin } from "./admin-session.server";
 import type { TablesInsert, TablesUpdate } from "@/integrations-supabase/types";
+
+/**
+ * Раздел платный: мало быть админом своего бота — модуль должен быть
+ * подключён. Без второй проверки тумблер в панели оператора прячет только
+ * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
+ */
+async function requireAdminWithModule() {
+  const { requireAdmin } = await import("./admin-session.server");
+  const { requireModule } = await import("./modules/require-module.server");
+  await requireAdmin();
+  await requireModule("vip");
+}
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -22,7 +33,7 @@ const ENTRY_FALLBACK = {
 };
 
 export const getVipTariffs = createServerFn({ method: "GET" }).handler(async () => {
-  await requireAdmin();
+  await requireAdminWithModule();
   const s = await db();
   const { data, error } = await s.from("vip_tariffs").select("*").order("sort_order");
   if (error) throw new Error(error.message);
@@ -31,7 +42,7 @@ export const getVipTariffs = createServerFn({ method: "GET" }).handler(async () 
 
 /** First-entry package. Never throws for missing is_entry column — returns safe fallback. */
 export const getVipEntryTariff = createServerFn({ method: "GET" }).handler(async () => {
-  await requireAdmin();
+  await requireAdminWithModule();
   try {
     const s = await db();
     const { data: existing, error: findError } = await s
@@ -89,7 +100,7 @@ const SaveInput = z.object({
 });
 
 export const getVipBotUsername = createServerFn({ method: "GET" }).handler(async () => {
-  await requireAdmin();
+  await requireAdminWithModule();
   const { resolveVipBotUsername } = await import("./vip-bot.server");
   return { username: resolveVipBotUsername() };
 });
@@ -97,7 +108,7 @@ export const getVipBotUsername = createServerFn({ method: "GET" }).handler(async
 export const saveVipTariff = createServerFn({ method: "POST" })
   .validator((d: unknown) => SaveInput.parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
     const isEntry = data.is_entry !== undefined ? !!data.is_entry : false;
 
@@ -137,7 +148,7 @@ const DeleteInput = z.object({ id: z.string().uuid() });
 export const deleteVipTariff = createServerFn({ method: "POST" })
   .validator((d: unknown) => DeleteInput.parse(d))
   .handler(async ({ data }) => {
-    await requireAdmin();
+    await requireAdminWithModule();
     const s = await db();
     const { data: row } = await s.from("vip_tariffs").select("*").eq("id", data.id).maybeSingle();
     if (row && (row as any).is_entry === true) {

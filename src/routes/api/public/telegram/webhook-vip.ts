@@ -14,6 +14,15 @@ export const Route = createFileRoute("/api/public/telegram/webhook-vip")({
         } catch {
           return new Response("bad json", { status: 400 });
         }
+        // Выключенный в панели модуль обязан гасить и второго бота: иначе
+        // тумблер «VIP» снимает только раздел админки, а сам VIP-бот
+        // продолжает принимать оплату за подписки.
+        //
+        // Отвечаем 200, а не ошибкой: для Telegram ошибка — повод повторить
+        // доставку, и очередь апдейтов росла бы, пока модуль выключен.
+        const { hasModule } = await import("@/lib/modules/modules.server");
+        if (!(await hasModule("vip"))) return new Response("ok");
+
         const { handleVipUpdate } = await import("@/lib/vip-bot.server");
         await handleVipUpdate(update);
         return new Response("ok");
