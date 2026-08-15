@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getOperatorSession, operatorRouteStatus } from "./guard.server";
+import {
+  getOperatorSession,
+  operatorRouteStatus,
+  operatorSessionSecretReady,
+} from "./guard.server";
 
 /** Used by /operator/* routes' beforeLoad to pick notFound() vs redirect() vs render. */
 export const operatorRouteStatusFn = createServerFn({ method: "GET" }).handler(async () => {
@@ -24,9 +28,39 @@ export const operatorLoginFn = createServerFn({ method: "POST" })
         "OPERATOR_USERNAME / OPERATOR_PASSWORD не заданы в переменных окружения проекта панели.",
       );
     }
-    if (data.username !== expectedUser || data.password !== expectedPass) {
+    if (!operatorSessionSecretReady()) {
+      throw new Error(
+        "OPERATOR_SESSION_SECRET не задан или короче 32 символов. Пока он не задан, вход " +
+          "закрыт: иначе cookie оператора подписывалась бы значением из исходников, и её " +
+          "мог бы подделать кто угодно.",
+      );
+    }
+
+    const { checkLockout, recordAttempt, secretsMatch, clientIp, loginDelay } =
+      await import("./login-guard.server");
+    const ip = clientIp();
+
+    const lock = await checkLockout(data.username, ip);
+    if (lock.locked) {
+      // Саму попытку тоже пишем: иначе в журнале не видно, что перебор продолжается.
+      await recordAttempt(data.username, ip, false);
+      throw new Error(
+        `Слишком много неудачных попыток входа. Попробуйте через ${lock.retryAfterMin} минут.`,
+      );
+    }
+
+    // Задержка до сравнения — одинаковая и для верного, и для неверного пароля.
+    await loginDelay();
+    // Оба сравнения выполняются всегда: не && , чтобы неверное имя не отвечало
+    // заметно быстрее неверного пароля.
+    const userOk = secretsMatch(data.username, expectedUser);
+    const passOk = secretsMatch(data.password, expectedPass);
+    if (!userOk || !passOk) {
+      await recordAttempt(data.username, ip, false);
       return { ok: false as const };
     }
+
+    await recordAttempt(data.username, ip, true);
     const s = await getOperatorSession();
     await s.update({ authed: true, username: data.username });
     return { ok: true as const };

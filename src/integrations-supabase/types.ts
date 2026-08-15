@@ -58,6 +58,30 @@ export type Database = {
           },
         ]
       }
+      operator_login_attempts: {
+        Row: {
+          id: string
+          at: string
+          username: string
+          ip: string | null
+          ok: boolean
+        }
+        Insert: {
+          id?: string
+          at?: string
+          username: string
+          ip?: string | null
+          ok: boolean
+        }
+        Update: {
+          id?: string
+          at?: string
+          username?: string
+          ip?: string | null
+          ok?: boolean
+        }
+        Relationships: []
+      }
       bot_events: {
         Row: {
           id: string

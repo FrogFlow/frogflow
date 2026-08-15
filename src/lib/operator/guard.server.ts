@@ -1,4 +1,30 @@
+import { randomBytes } from "node:crypto";
 import { useSession } from "@tanstack/react-start/server";
+
+/**
+ * Секрет подписи cookie оператора.
+ *
+ * Раньше при отсутствии подставлялось общеизвестное значение из исходников —
+ * то есть cookie оператора можно было подделать и получить доступ ко всем
+ * клиентам сразу. Слишком короткий секрет был не лучше: iron-session требует
+ * не меньше 32 символов и падал 500-й, без объяснения причины.
+ *
+ * Теперь оба случая ведут себя одинаково и предсказуемо: подпись идёт
+ * случайным секретом этого процесса (подделать нельзя, но и войти нельзя —
+ * см. operatorSessionSecretReady), а панель говорит об этом прямым текстом
+ * в форме входа и в самопроверке.
+ */
+const MIN_SECRET_LEN = 32;
+const PROCESS_FALLBACK = randomBytes(32).toString("hex");
+
+export function operatorSessionSecretReady(): boolean {
+  return (process.env.OPERATOR_SESSION_SECRET?.trim().length ?? 0) >= MIN_SECRET_LEN;
+}
+
+function operatorSessionPassword(): string {
+  const s = process.env.OPERATOR_SESSION_SECRET?.trim();
+  return s && s.length >= MIN_SECRET_LEN ? s : PROCESS_FALLBACK;
+}
 
 /**
  * Изоляция панели — три слоя (CONTROL-PLANE-PLAN.md §2):
@@ -13,9 +39,7 @@ import { useSession } from "@tanstack/react-start/server";
 export type OperatorSession = { authed?: boolean; username?: string };
 
 const operatorSessionConfig = {
-  password:
-    process.env.OPERATOR_SESSION_SECRET ||
-    "dev-insecure-secret-please-set-OPERATOR_SESSION_SECRET-32chars",
+  password: operatorSessionPassword(),
   name: "operator-session",
   maxAge: 60 * 60 * 24 * 7,
   cookie: {

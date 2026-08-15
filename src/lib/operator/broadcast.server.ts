@@ -73,9 +73,12 @@ export async function broadcastToOwners(
     });
   }
 
-  for (const bot of recipients) {
-    results.push(await deliverToOne(bot, trimmed));
-  }
+  // Параллельно, а не по очереди. Каждый запрос ждёт до INTERNAL_TIMEOUT_MS,
+  // и последовательная доставка складывала эти ожидания: пять лежащих деплоев
+  // — уже 50 секунд, что дольше лимита serverless-функции. Оператор получал
+  // ошибку шлюза вместо отчёта, хотя часть сообщений успевала уйти. Теперь
+  // общее время равно самому медленному получателю, а не их сумме.
+  results.push(...(await Promise.all(recipients.map((bot) => deliverToOne(bot, trimmed)))));
 
   const { data: saved, error: saveErr } = await s
     .from("operator_broadcasts")

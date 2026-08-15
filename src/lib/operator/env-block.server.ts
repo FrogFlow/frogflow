@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { requireOperator } from "./guard.server";
+import { requireOperator, operatorSessionSecretReady } from "./guard.server";
 
 /**
  * Сборка блока переменных окружения для деплоя клиента.
@@ -98,6 +98,11 @@ export type PanelSelfCheck = {
 
 export function panelSelfCheck(): PanelSelfCheck {
   const vars = [
+    {
+      name: "OPERATOR_SESSION_SECRET",
+      present: operatorSessionSecretReady(),
+      why: "не задан или короче 32 символов — вход в панель закрыт",
+    },
     {
       name: "SUPABASE_JWT_SECRET",
       present: Boolean(process.env.SUPABASE_JWT_SECRET),
