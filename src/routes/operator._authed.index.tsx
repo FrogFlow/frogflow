@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { listBotsFn, listStatsFn } from "@/lib/operator/bots.functions";
+import { listBotsFn, listStatsFn, listHealthFn } from "@/lib/operator/bots.functions";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
 import {
@@ -42,14 +42,30 @@ function OperatorClientsPage() {
   // Отдельным запросом: сводка тяжелее списка (считает место в хранилище), и
   // таблица не должна ждать её, чтобы отрисоваться.
   const stats = useQuery({ queryKey: ["operator_stats"], queryFn: () => listStatsFn() });
+  // Здоровье — тоже отдельно: обход всех деплоев занимает секунды, а таблица
+  // должна появиться сразу. Обновляем раз в минуту, чтобы упавший бот не ждал
+  // перезагрузки страницы.
+  const health = useQuery({
+    queryKey: ["operator_health"],
+    queryFn: () => listHealthFn(),
+    refetchInterval: 60_000,
+  });
   const list = bots.data ?? [];
+  const troubled = Object.values(health.data ?? {}).filter((h) => !h.ok).length;
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Клиенты</h1>
-          <p className="text-sm text-muted-foreground mt-1">{list.length} клиентов на общей базе</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {list.length} клиентов на общей базе
+            {health.isLoading && " · проверяю ботов…"}
+            {!health.isLoading && health.data && troubled > 0 && (
+              <span className="text-destructive"> · не отвечают: {troubled}</span>
+            )}
+            {!health.isLoading && health.data && troubled === 0 && " · все боты отвечают"}
+          </p>
         </div>
         <Link
           to="/operator/onboard"
@@ -72,6 +88,7 @@ function OperatorClientsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Клиент</TableHead>
+                <TableHead>Бот</TableHead>
                 <TableHead>Статус</TableHead>
                 <TableHead>Владелец</TableHead>
                 <TableHead>Подписка</TableHead>
@@ -96,6 +113,9 @@ function OperatorClientsPage() {
                       >
                         {bot.bot_name}
                       </Link>
+                    </TableCell>
+                    <TableCell>
+                      <HealthCell h={health.data?.[bot.id]} loading={health.isLoading} />
                     </TableCell>
                     <TableCell>
                       <Badge variant={st.variant}>{st.text}</Badge>
@@ -189,4 +209,72 @@ function OrdersCell({
       </span>
     </div>
   );
+}
+
+/**
+ * Здоровье бота одной ячейкой. Три вещи, из-за которых магазин молча стоит:
+ * деплой не отвечает, вебхук не установлен, апдейты копятся в очереди. Всё
+ * это раньше было видно только по кнопке внутри карточки — то есть только
+ * если заранее знать, к кому заходить.
+ */
+function HealthCell({
+  h,
+  loading,
+}: {
+  h?:
+    | {
+        ok: true;
+        report: {
+          webhook_url: string | null;
+          pending_updates: number | null;
+          last_error: string | null;
+        };
+      }
+    | { ok: false; kind: string; error: string };
+  loading: boolean;
+}) {
+  if (loading || !h) return <span className="text-muted-foreground text-sm">…</span>;
+
+  if (!h.ok) {
+    // «Не заполнена карточка» — это не поломка бота, а недоделанная настройка.
+    const isSetup = h.kind === "skipped";
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant={isSetup ? "outline" : "destructive"} className="w-fit">
+          {isSetup ? "не настроен" : "не отвечает"}
+        </Badge>
+        <span className="text-xs text-muted-foreground max-w-[16rem] truncate" title={h.error}>
+          {h.error}
+        </span>
+      </div>
+    );
+  }
+
+  const queued = h.report.pending_updates ?? 0;
+  if (!h.report.webhook_url) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="destructive" className="w-fit">
+          нет вебхука
+        </Badge>
+        <span className="text-xs text-muted-foreground">бот не получает сообщений</span>
+      </div>
+    );
+  }
+  if (queued > 0 || h.report.last_error) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="destructive" className="w-fit">
+          {queued > 0 ? `очередь ${queued}` : "ошибка"}
+        </Badge>
+        <span
+          className="text-xs text-muted-foreground max-w-[16rem] truncate"
+          title={h.report.last_error ?? ""}
+        >
+          {queued > 0 ? "апдейты не разбираются" : h.report.last_error}
+        </span>
+      </div>
+    );
+  }
+  return <Badge className="w-fit">отвечает</Badge>;
 }

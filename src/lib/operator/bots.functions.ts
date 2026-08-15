@@ -12,6 +12,7 @@ import {
   checkBotHealth,
   requestWebhookSetup,
   loadStats,
+  loadHealthAll,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -98,6 +99,15 @@ export const requestWebhookSetupFn = createServerFn({ method: "POST" })
     await requireOperator();
     return requestWebhookSetup(data.botId, await actor());
   });
+
+/**
+ * Здоровье всех ботов разом. Отдельным запросом от списка: обход деплоев
+ * занимает секунды, а таблица не должна ждать его, чтобы отрисоваться.
+ */
+export const listHealthFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireOperator();
+  return loadHealthAll();
+});
 
 /** Сводка по всем клиентам разом — отдаётся объектом, Map через сериализацию не проходит. */
 export const listStatsFn = createServerFn({ method: "GET" }).handler(async () => {

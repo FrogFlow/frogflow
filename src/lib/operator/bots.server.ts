@@ -288,6 +288,44 @@ export async function requestWebhookSetup(
   return outcome;
 }
 
+/**
+ * Здоровье всех ботов разом — для списка клиентов.
+ *
+ * Раньше это можно было узнать только по одному, кнопкой в карточке: лежащий
+ * бот с растущей очередью апдейтов оставался невидим, пока кто-нибудь не
+ * догадается туда зайти. Анастасию с двумя зависшими апдейтами мы нашли
+ * руками, а не панелью.
+ *
+ * Запросы идут параллельно: каждый ждёт до INTERNAL_TIMEOUT_MS, и на пяти
+ * клиентах последовательный обход упёрся бы в лимит serverless-функции.
+ */
+export type BotHealthRow =
+  | { ok: true; report: BotHealthReport }
+  | { ok: false; kind: "skipped" | "failed" | "unreachable"; error: string };
+
+export async function loadHealthAll(): Promise<Record<string, BotHealthRow>> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s.from("bots").select("id, app_url, internal_secret");
+  if (error) throw new Error(`Не удалось получить клиентов: ${error.message}`);
+
+  const rows = await Promise.all(
+    (data ?? []).map(async (bot) => {
+      const res = await callInternal<{ report: BotHealthReport }>(bot, "/api/internal/health", {});
+      if (res.ok && res.body?.report) {
+        return [bot.id, { ok: true as const, report: res.body.report }] as const;
+      }
+      return [
+        bot.id,
+        res.ok
+          ? { ok: false as const, kind: "failed" as const, error: "деплой ответил без отчёта" }
+          : { ok: false as const, kind: res.kind, error: res.error },
+      ] as const;
+    }),
+  );
+  return Object.fromEntries(rows);
+}
+
 export type BotStats = {
   orders_total: number;
   orders_30d: number;
