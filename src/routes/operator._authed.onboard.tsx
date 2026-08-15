@@ -397,17 +397,41 @@ function OnboardDone({ result, onDone }: { result: Result; onDone: () => void })
       <section className="bg-card border rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between gap-4">
           <h2 className="font-medium">Переменные для проекта Vercel</h2>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={async () => {
-              await navigator.clipboard.writeText(result.envBlock);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-          >
-            {copied ? "Скопировано" : "Копировать"}
-          </Button>
+          <div className="flex gap-2 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await navigator.clipboard.writeText(result.envBlock);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              {copied ? "Скопировано" : "Копировать"}
+            </Button>
+            {/* Файлом — его можно перетащить в «Import .env» на стороне Vercel. */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                // Без ведущей точки и с octet-stream: иначе браузер сохранит
+                // файл как «env.txt», дописав расширение к «.env».
+                const slug = (result.botUsername || "client")
+                  .toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "-")
+                  .replace(/^-|-$/g, "");
+                const blob = new Blob([result.envBlock], { type: "application/octet-stream" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${slug || "client"}.env`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Скачать .env
+            </Button>
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           Показывается один раз: ключ арендатора и пароль админки больше нигде не хранятся.

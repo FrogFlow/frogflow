@@ -865,6 +865,29 @@ function EnvBlockSection({
     }
   }
 
+  /**
+   * Файлом, а не только текстом: в Vercel есть «Import .env», куда файл просто
+   * перетаскивается. Это надёжнее вставки — не зависит от того, как поле
+   * разберёт многострочный текст.
+   *
+   * Имя без ведущей точки и тип octet-stream: с «.env» и text/plain браузер
+   * сохраняет файл как «env.txt», дописывая расширение.
+   */
+  function onDownload() {
+    if (!result) return;
+    const slug = (result.botName || "client")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    const blob = new Blob([result.envBlock], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slug || "client"}.env`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <section className="bg-card border rounded-lg p-4 space-y-3">
       <h2 className="font-medium">Переменные окружения</h2>
@@ -976,6 +999,9 @@ function EnvBlockSection({
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Button size="sm" variant="outline" onClick={onCopy}>
               {copied ? "Скопировано" : "Скопировать"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={onDownload}>
+              Скачать .env
             </Button>
             <span>
               ключ арендатора годен до {result.tenantKeyExpiresAt}
