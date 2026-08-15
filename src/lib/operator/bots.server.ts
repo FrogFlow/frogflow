@@ -375,6 +375,143 @@ export async function loadHealthAll(): Promise<Record<string, BotHealthRow>> {
   return Object.fromEntries(rows);
 }
 
+/**
+ * Готовность клиента к работе — одной кнопкой вместо обхода вручную.
+ *
+ * Панель спрашивает деплой, что у него настроено, и добавляет то, что знает
+ * только она: сходится ли адрес деплоя с записанным в карточке и что думает
+ * Telegram о вебхуке. Именно эти три источника расходились каждый раз, когда
+ * подключение затягивалось.
+ */
+export type ReadinessCheck = { name: string; level: "ok" | "warn" | "fail"; detail: string };
+export type Readiness = {
+  ok: boolean;
+  /** Сколько пунктов не в порядке — чтобы не считать глазами. */
+  problems: number;
+  checks: ReadinessCheck[];
+};
+
+export async function checkReadiness(botId: string): Promise<Readiness> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s
+    .from("bots")
+    .select("app_url, internal_secret, bot_name")
+    .eq("id", botId)
+    .single();
+  if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
+
+  const checks: ReadinessCheck[] = [];
+
+  if (!data.app_url) {
+    checks.push({
+      name: "Адрес деплоя",
+      level: "fail",
+      detail: "не заполнен в карточке — панели некуда обращаться",
+    });
+    return { ok: false, problems: 1, checks };
+  }
+
+  // 1. Деплой вообще отвечает и знает свои переменные.
+  const diag = await callInternal<{
+    diagnostics: { bot_id: string | null; app_origin: string | null; checks: ReadinessCheck[] };
+  }>(data, "/api/internal/diagnostics", {});
+
+  if (!diag.ok) {
+    checks.push({
+      name: "Деплой",
+      level: "fail",
+      detail:
+        diag.kind === "unreachable"
+          ? `не отвечает: ${diag.error}`
+          : `отвечает, но отказывает: ${diag.error}`,
+    });
+
+    // Деплой не смог прочитать собственный internal_secret. Диагностировать
+    // себя он в таком состоянии не может — строку в bots ему не отдаёт RLS, —
+    // зато диагноз очевиден снаружи: ключ арендатора выписан не на того
+    // клиента, либо BOT_ID не тот. Это самая частая ошибка при переносе
+    // переменных, и оператору она стоила бы часа в логах.
+    if (/Internal secret unavailable/i.test(diag.error)) {
+      checks.push({
+        name: "SUPABASE_TENANT_KEY / BOT_ID",
+        level: "fail",
+        detail:
+          "деплой не видит своей строки в базе. Почти всегда это значит, что ключ арендатора " +
+          "выписан на другого клиента или BOT_ID не совпадает с ним. Соберите блок переменных " +
+          "заново и вставьте BOT_ID вместе с ключом.",
+      });
+    }
+    if (/HTTP 404/.test(diag.error)) {
+      checks.push({
+        name: "Версия деплоя",
+        level: "warn",
+        detail: "у деплоя нет проверки готовности — он собран из более старой версии репозитория",
+      });
+    }
+    return { ok: false, problems: checks.length, checks };
+  }
+  checks.push({ name: "Деплой", level: "ok", detail: data.app_url });
+
+  const d = diag.body?.diagnostics;
+  if (d) {
+    checks.push(...d.checks);
+
+    // Это знает только панель: деплой не в курсе, что записано в его карточке.
+    const mine = data.app_url.trim().replace(/\/$/, "");
+    const theirs = (d.app_origin ?? "").trim().replace(/\/$/, "");
+    if (theirs && theirs !== mine) {
+      checks.push({
+        name: "Адрес деплоя",
+        level: "fail",
+        detail: `в карточке ${mine}, а деплой считает себя ${theirs} — вебхук и ссылки разойдутся`,
+      });
+    }
+    if (d.bot_id && d.bot_id !== botId) {
+      checks.push({
+        name: "BOT_ID",
+        level: "fail",
+        detail: `деплой настроен на другого клиента (${d.bot_id})`,
+      });
+    }
+  }
+
+  // 2. Что об этом боте думает Telegram.
+  const health = await callInternal<{ report: BotHealthReport }>(data, "/api/internal/health", {});
+  if (!health.ok) {
+    checks.push({ name: "Вебхук", level: "fail", detail: health.error });
+  } else {
+    const r = health.body?.report;
+    if (!r?.webhook_url) {
+      checks.push({
+        name: "Вебхук",
+        level: "fail",
+        detail: "не установлен — бот не получает сообщений. Нажмите «Проставить вебхук»",
+      });
+    } else if (!r.webhook_url.startsWith(data.app_url.replace(/\/$/, ""))) {
+      checks.push({
+        name: "Вебхук",
+        level: "fail",
+        detail: `указывает на ${r.webhook_url} — это не этот деплой`,
+      });
+    } else {
+      const queued = r.pending_updates ?? 0;
+      checks.push({
+        name: "Вебхук",
+        level: queued > 0 || r.last_error ? "warn" : "ok",
+        detail: r.last_error
+          ? `${r.last_error}`
+          : queued > 0
+            ? `установлен, но в очереди ${queued} — апдейты не разбираются`
+            : `${r.bot_username ? "@" + r.bot_username + ", " : ""}очередь пуста`,
+      });
+    }
+  }
+
+  const problems = checks.filter((c) => c.level !== "ok").length;
+  return { ok: checks.every((c) => c.level !== "fail"), problems, checks };
+}
+
 export type BotStats = {
   orders_total: number;
   orders_30d: number;

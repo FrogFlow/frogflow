@@ -13,6 +13,7 @@ import {
   buildEnvBlockFn,
   panelSelfCheckFn,
   setArchivedFn,
+  checkReadinessFn,
 } from "@/lib/operator/bots.functions";
 import {
   getSubscriptionFn,
@@ -353,6 +354,8 @@ function OperatorClientCard() {
       <SubscriptionSection botId={botId} />
 
       <WebhookSection botId={botId} appUrl={bot.app_url} />
+
+      <ReadinessSection botId={botId} />
 
       <EnvBlockSection botId={botId} modules={bot.modules} appUrl={bot.app_url} />
 
@@ -1046,5 +1049,77 @@ function ArchiveButton({
     <Button size="sm" variant="outline" onClick={onClick} disabled={busy}>
       {busy ? "…" : archived ? "Вернуть из архива" : "В архив"}
     </Button>
+  );
+}
+
+/**
+ * «Готов ли клиент» — то, ради чего подключение перестаёт быть гаданием.
+ *
+ * Раньше после вставки переменных в Vercel оставалось открыть магазин, увидеть
+ * 500 и идти читать лог сборки. Print KZ лежал из-за отсутствующего
+ * SUPABASE_URL, Дидактика — из-за символа «•», попавшего в JWT при копировании
+ * из замаскированного поля Vercel. Оба диагноза стоили времени, хотя деплой
+ * знал ответ про себя сам.
+ */
+function ReadinessSection({ botId }: { botId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [res, setRes] = useState<Awaited<ReturnType<typeof checkReadinessFn>> | null>(null);
+
+  async function onCheck() {
+    setBusy(true);
+    setError(null);
+    setRes(null);
+    try {
+      setRes(await checkReadinessFn({ data: { botId } }));
+    } catch (e: unknown) {
+      setError((e as Error)?.message || "Не удалось проверить");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const MARK = { ok: "✓", warn: "!", fail: "✗" } as const;
+  const TONE = {
+    ok: "text-green-600 dark:text-green-500",
+    warn: "text-amber-600 dark:text-amber-500",
+    fail: "text-destructive",
+  } as const;
+
+  return (
+    <section className="bg-card border rounded-lg p-4 space-y-3">
+      <h2 className="font-medium">Готовность</h2>
+      <p className="text-sm text-muted-foreground">
+        Деплой рассказывает, что у него настроено, панель сверяет это с карточкой и спрашивает
+        Telegram про вебхук. Значения переменных не передаются — только имена и состояние.
+      </p>
+
+      <Button size="sm" onClick={onCheck} disabled={busy}>
+        {busy ? "Проверяю…" : "Проверить готовность"}
+      </Button>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {res && (
+        <div className="space-y-2">
+          <p className={`text-sm font-medium ${res.ok ? TONE.ok : TONE.fail}`}>
+            {res.ok && res.problems === 0
+              ? "Всё готово — клиента можно отдавать."
+              : res.ok
+                ? `Работает, но есть замечания: ${res.problems}`
+                : "Не готов — нужно поправить отмеченное."}
+          </p>
+          <ul className="text-sm divide-y rounded-md border">
+            {res.checks.map((c, i) => (
+              <li key={`${c.name}-${i}`} className="flex gap-3 px-3 py-1.5">
+                <span className={`${TONE[c.level]} font-mono shrink-0`}>{MARK[c.level]}</span>
+                <span className="font-medium shrink-0 min-w-0 break-words">{c.name}</span>
+                <span className="text-muted-foreground min-w-0 break-words">{c.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }

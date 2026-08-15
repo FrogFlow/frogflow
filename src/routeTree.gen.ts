@@ -36,6 +36,7 @@ import { Route as ApiInternalSetWebhookRouteImport } from './routes/api/internal
 import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/reload'
 import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
 import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/health'
+import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
@@ -188,6 +189,11 @@ const ApiInternalHealthRoute = ApiInternalHealthRouteImport.update({
   path: '/api/internal/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalDiagnosticsRoute = ApiInternalDiagnosticsRouteImport.update({
+  id: '/api/internal/diagnostics',
+  path: '/api/internal/diagnostics',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
   id: '/api/cron/ensure-webhook',
   path: '/api/cron/ensure-webhook',
@@ -297,6 +303,7 @@ export interface FileRoutesByFullPath {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
@@ -339,6 +346,7 @@ export interface FileRoutesByTo {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
@@ -384,6 +392,7 @@ export interface FileRoutesById {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
@@ -430,6 +439,7 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
@@ -472,6 +482,7 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
@@ -516,6 +527,7 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
@@ -547,6 +559,7 @@ export interface RootRouteChildren {
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronEnsureWebhookRoute: typeof ApiCronEnsureWebhookRoute
+  ApiInternalDiagnosticsRoute: typeof ApiInternalDiagnosticsRoute
   ApiInternalHealthRoute: typeof ApiInternalHealthRoute
   ApiInternalNotifyOwnerRoute: typeof ApiInternalNotifyOwnerRoute
   ApiInternalReloadRoute: typeof ApiInternalReloadRoute
@@ -755,6 +768,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/diagnostics': {
+      id: '/api/internal/diagnostics'
+      path: '/api/internal/diagnostics'
+      fullPath: '/api/internal/diagnostics'
+      preLoaderRoute: typeof ApiInternalDiagnosticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/ensure-webhook': {
       id: '/api/cron/ensure-webhook'
       path: '/api/cron/ensure-webhook'
@@ -957,6 +977,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronEnsureWebhookRoute: ApiCronEnsureWebhookRoute,
+  ApiInternalDiagnosticsRoute: ApiInternalDiagnosticsRoute,
   ApiInternalHealthRoute: ApiInternalHealthRoute,
   ApiInternalNotifyOwnerRoute: ApiInternalNotifyOwnerRoute,
   ApiInternalReloadRoute: ApiInternalReloadRoute,

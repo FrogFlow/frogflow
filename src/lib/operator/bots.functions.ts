@@ -14,6 +14,7 @@ import {
   loadStats,
   loadHealthAll,
   setArchived,
+  checkReadiness,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -116,6 +117,18 @@ export const requestWebhookSetupFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     return requestWebhookSetup(data.botId, await actor());
+  });
+
+/**
+ * «Всё ли готово у клиента» — одной кнопкой. Собирает три источника, которые
+ * при подключении расходятся чаще всего: переменные деплоя, запись в карточке
+ * и мнение Telegram о вебхуке.
+ */
+export const checkReadinessFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return checkReadiness(data.botId);
   });
 
 export const setArchivedFn = createServerFn({ method: "POST" })
