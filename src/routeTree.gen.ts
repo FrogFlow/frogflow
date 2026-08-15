@@ -29,6 +29,7 @@ import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
 import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
 import { Route as AdminVipIndexRouteImport } from './routes/admin.vip.index'
 import { Route as OperatorAuthedOnboardRouteImport } from './routes/operator._authed.onboard'
+import { Route as OperatorAuthedJournalRouteImport } from './routes/operator._authed.journal'
 import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._authed.broadcast'
 import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
 import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
@@ -151,6 +152,11 @@ const AdminVipIndexRoute = AdminVipIndexRouteImport.update({
 const OperatorAuthedOnboardRoute = OperatorAuthedOnboardRouteImport.update({
   id: '/onboard',
   path: '/onboard',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const OperatorAuthedJournalRoute = OperatorAuthedJournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
   getParentRoute: () => OperatorAuthedRoute,
 } as any)
 const OperatorAuthedBroadcastRoute = OperatorAuthedBroadcastRouteImport.update({
@@ -311,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/journal': typeof OperatorAuthedJournalRoute
   '/operator/onboard': typeof OperatorAuthedOnboardRoute
   '/admin/vip/': typeof AdminVipIndexRoute
   '/operator/': typeof OperatorAuthedIndexRoute
@@ -354,6 +361,7 @@ export interface FileRoutesByTo {
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/journal': typeof OperatorAuthedJournalRoute
   '/operator/onboard': typeof OperatorAuthedOnboardRoute
   '/admin/vip': typeof AdminVipIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
@@ -400,6 +408,7 @@ export interface FileRoutesById {
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/_authed/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/_authed/journal': typeof OperatorAuthedJournalRoute
   '/operator/_authed/onboard': typeof OperatorAuthedOnboardRoute
   '/admin/vip/': typeof AdminVipIndexRoute
   '/operator/_authed/': typeof OperatorAuthedIndexRoute
@@ -447,6 +456,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/subscriptions'
     | '/operator/$botId'
     | '/operator/broadcast'
+    | '/operator/journal'
     | '/operator/onboard'
     | '/admin/vip/'
     | '/operator/'
@@ -490,6 +500,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/subscriptions'
     | '/operator/$botId'
     | '/operator/broadcast'
+    | '/operator/journal'
     | '/operator/onboard'
     | '/admin/vip'
     | '/api/admin/file/$'
@@ -535,6 +546,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/subscriptions'
     | '/operator/_authed/$botId'
     | '/operator/_authed/broadcast'
+    | '/operator/_authed/journal'
     | '/operator/_authed/onboard'
     | '/admin/vip/'
     | '/operator/_authed/'
@@ -717,6 +729,13 @@ declare module '@tanstack/react-router' {
       path: '/onboard'
       fullPath: '/operator/onboard'
       preLoaderRoute: typeof OperatorAuthedOnboardRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
+    '/operator/_authed/journal': {
+      id: '/operator/_authed/journal'
+      path: '/journal'
+      fullPath: '/operator/journal'
+      preLoaderRoute: typeof OperatorAuthedJournalRouteImport
       parentRoute: typeof OperatorAuthedRoute
     }
     '/operator/_authed/broadcast': {
@@ -939,6 +958,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 interface OperatorAuthedRouteChildren {
   OperatorAuthedBotIdRoute: typeof OperatorAuthedBotIdRoute
   OperatorAuthedBroadcastRoute: typeof OperatorAuthedBroadcastRoute
+  OperatorAuthedJournalRoute: typeof OperatorAuthedJournalRoute
   OperatorAuthedOnboardRoute: typeof OperatorAuthedOnboardRoute
   OperatorAuthedIndexRoute: typeof OperatorAuthedIndexRoute
 }
@@ -946,6 +966,7 @@ interface OperatorAuthedRouteChildren {
 const OperatorAuthedRouteChildren: OperatorAuthedRouteChildren = {
   OperatorAuthedBotIdRoute: OperatorAuthedBotIdRoute,
   OperatorAuthedBroadcastRoute: OperatorAuthedBroadcastRoute,
+  OperatorAuthedJournalRoute: OperatorAuthedJournalRoute,
   OperatorAuthedOnboardRoute: OperatorAuthedOnboardRoute,
   OperatorAuthedIndexRoute: OperatorAuthedIndexRoute,
 }

@@ -14,6 +14,7 @@ import {
   panelSelfCheckFn,
   setArchivedFn,
   checkReadinessFn,
+  listOwnerCandidatesFn,
 } from "@/lib/operator/bots.functions";
 import {
   getSubscriptionFn,
@@ -315,6 +316,10 @@ function OperatorClientCard() {
                 onChange={(e) => setMeta((m) => ({ ...m, owner_telegram_id: e.target.value }))}
                 placeholder="Например: 123456789"
                 inputMode="numeric"
+              />
+              <OwnerPicker
+                botId={botId}
+                onPick={(id) => setMeta((m) => ({ ...m, owner_telegram_id: String(id) }))}
               />
             </div>
             <div className="space-y-1">
@@ -1147,5 +1152,84 @@ function ReadinessSection({ botId }: { botId: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Подбор владельца вместо ввода числа наугад.
+ *
+ * Telegram ID неоткуда взять — поэтому поле оставалось пустым у четверых
+ * клиентов из пяти, а без него панель не может ни написать владельцу, ни
+ * предупредить его об оплате. Ответ при этом лежит в базе: клиент сам
+ * настраивает admin_chat_id, куда бот шлёт уведомления о заказах. У
+ * единственного заполненного клиента эти значения совпадают, поэтому такой
+ * кандидат идёт первым и помечен.
+ */
+function OwnerPicker({ botId, onPick }: { botId: string; onPick: (id: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const list = useQuery({
+    queryKey: ["owner_candidates", botId],
+    queryFn: () => listOwnerCandidatesFn({ data: { botId } }),
+    enabled: open,
+  });
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs text-primary hover:underline"
+      >
+        Подобрать из тех, кто писал боту
+      </button>
+    );
+  }
+
+  return (
+    <div className="border rounded-md mt-1">
+      <div className="flex items-center justify-between px-2 py-1 border-b">
+        <span className="text-xs text-muted-foreground">
+          {list.isLoading ? "Ищу…" : `Кандидатов: ${list.data?.length ?? 0}`}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs text-muted-foreground hover:underline"
+        >
+          Скрыть
+        </button>
+      </div>
+      {list.isError && (
+        <p className="text-xs text-destructive px-2 py-1">
+          {(list.error as Error)?.message || "Не удалось получить список"}
+        </p>
+      )}
+      <ul className="max-h-52 overflow-y-auto divide-y">
+        {(list.data ?? []).map((c) => (
+          <li key={c.telegram_id}>
+            <button
+              type="button"
+              onClick={() => {
+                onPick(c.telegram_id);
+                setOpen(false);
+              }}
+              className="w-full text-left px-2 py-1.5 hover:bg-accent flex items-center gap-2"
+            >
+              <span className="text-sm">{c.name}</span>
+              {c.username && <span className="text-xs text-muted-foreground">@{c.username}</span>}
+              <span className="text-xs text-muted-foreground ml-auto font-mono">
+                {c.telegram_id}
+              </span>
+              {c.source === "admin" && <Badge variant="secondary">админ бота</Badge>}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {!list.isLoading && (list.data?.length ?? 0) === 0 && (
+        <p className="text-xs text-muted-foreground px-2 py-2">
+          Никого не нашлось: боту ещё никто не писал и admin_chat_id не настроен.
+        </p>
+      )}
+    </div>
   );
 }

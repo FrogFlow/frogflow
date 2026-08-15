@@ -32,6 +32,10 @@ export type BotListItem = BotBase & {
   subscription_state: SubscriptionState;
   subscription_days_left: number | null;
   archived_at: string | null;
+  /** Включённые модули — список видит, кто что купил, не открывая карточку. */
+  modules: ModuleKey[];
+  /** Нужен сводке: без него панель не может написать владельцу. */
+  has_owner_telegram_id: boolean;
 };
 
 /** По умолчанию — только действующие клиенты: ушедший не должен мозолить глаза в ежедневном списке. */
@@ -41,7 +45,7 @@ export async function listBots(includeArchived = false): Promise<BotListItem[]> 
   let query = s
     .from("bots")
     .select(
-      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings, archived_at",
+      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings, archived_at, modules, owner_telegram_id",
     )
     .order("bot_name", { ascending: true });
   if (!includeArchived) query = query.is("archived_at", null);
@@ -71,6 +75,10 @@ export async function listBots(includeArchived = false): Promise<BotListItem[]> 
       subscription_state: sub.state,
       subscription_days_left: sub.daysLeft,
       archived_at: b.archived_at,
+      modules: MODULE_KEYS.filter(
+        (k) => (b.modules as Record<string, boolean> | null)?.[k] === true,
+      ),
+      has_owner_telegram_id: b.owner_telegram_id != null,
     };
   });
 }
@@ -510,6 +518,143 @@ export async function checkReadiness(botId: string): Promise<Readiness> {
 
   const problems = checks.filter((c) => c.level !== "ok").length;
   return { ok: checks.every((c) => c.level !== "fail"), problems, checks };
+}
+
+/**
+ * Кандидаты в владельцы клиента.
+ *
+ * owner_telegram_id вводился числом, которое оператору неоткуда взять — и
+ * поэтому заполнен у одного клиента из пяти. А без него не работают ни
+ * рассылка владельцам, ни предупреждения о подписке: панели просто некуда
+ * слать.
+ *
+ * При этом ответ уже лежит в базе. Клиент сам настраивает admin_chat_id —
+ * туда его бот шлёт уведомления о заказах, — и у Анастасии, единственной с
+ * заполненным полем, эти два значения совпадают. Поэтому admin_chat_id идёт
+ * первым предложением, а список писавших боту — на случай, когда нужен не он.
+ */
+export type OwnerCandidate = {
+  telegram_id: number;
+  name: string;
+  username: string | null;
+  /** admin — из настроек бота, user — просто писал боту. */
+  source: "admin" | "user";
+};
+
+export async function listOwnerCandidates(botId: string): Promise<OwnerCandidate[]> {
+  await requireOperator();
+  const s = await db();
+
+  const { data: setting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", botId)
+    .eq("key", "admin_chat_id")
+    .maybeSingle();
+
+  // Поле хранит список получателей, а не одно число: в админке клиента их
+  // может быть несколько.
+  const adminIds = String(setting?.value ?? "")
+    .split(/[^0-9]+/)
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n > 0);
+
+  const { data: users } = await s
+    .from("bot_users")
+    .select("telegram_id, first_name, last_name, username, created_at")
+    .eq("bot_id", botId)
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  const byId = new Map<
+    number,
+    { first_name: string | null; last_name: string | null; username: string | null }
+  >();
+  for (const u of users ?? []) {
+    const id = Number(u.telegram_id);
+    if (Number.isFinite(id)) byId.set(id, u);
+  }
+  const label = (id: number) => {
+    const u = byId.get(id);
+    const name = [u?.first_name, u?.last_name].filter(Boolean).join(" ").trim();
+    return name || `ID ${id}`;
+  };
+
+  const out: OwnerCandidate[] = adminIds.map((id) => ({
+    telegram_id: id,
+    name: label(id),
+    username: byId.get(id)?.username ?? null,
+    source: "admin" as const,
+  }));
+
+  // Первые писавшие боту: обычно среди них сам владелец, который его и тестировал.
+  for (const u of users ?? []) {
+    const id = Number(u.telegram_id);
+    if (!Number.isFinite(id) || out.some((c) => c.telegram_id === id)) continue;
+    out.push({ telegram_id: id, name: label(id), username: u.username, source: "user" });
+    if (out.length >= 15) break;
+  }
+  return out;
+}
+
+/**
+ * Журнал по всем клиентам сразу. Внутри карточки он отвечает на «что делали с
+ * этим клиентом», но не на «что вообще происходило на неделе» — а именно это
+ * и нужно, чтобы заметить чужую активность или вспомнить свою.
+ */
+export type FeedEvent = BotEvent & { bot_name: string };
+
+export async function listFeed(limit = 100): Promise<FeedEvent[]> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s
+    .from("bot_events")
+    .select("id, bot_id, at, actor, kind, payload")
+    .order("at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Не удалось получить журнал: ${error.message}`);
+
+  const { data: bots } = await s.from("bots").select("id, bot_name");
+  const names = new Map((bots ?? []).map((b) => [b.id, b.bot_name]));
+
+  return (data ?? []).map((e) => ({
+    id: e.id,
+    at: e.at,
+    actor: e.actor,
+    kind: e.kind,
+    payload: e.payload as Json,
+    bot_name: names.get(e.bot_id) ?? "—",
+  }));
+}
+
+/** Проверка готовности сразу по всем — после общего обновления кода удобнее, чем по одному. */
+export async function checkReadinessAll(): Promise<Record<string, Readiness>> {
+  await requireOperator();
+  const s = await db();
+  const { data } = await s.from("bots").select("id").is("archived_at", null);
+  const rows = await Promise.all(
+    (data ?? []).map(async (b) => {
+      try {
+        return [b.id, await checkReadiness(b.id)] as const;
+      } catch (e: unknown) {
+        return [
+          b.id,
+          {
+            ok: false,
+            problems: 1,
+            checks: [
+              {
+                name: "Проверка",
+                level: "fail" as const,
+                detail: (e as Error)?.message ?? "не удалась",
+              },
+            ],
+          },
+        ] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(rows);
 }
 
 export type BotStats = {

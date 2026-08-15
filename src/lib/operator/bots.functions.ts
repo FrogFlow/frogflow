@@ -15,6 +15,9 @@ import {
   loadHealthAll,
   setArchived,
   checkReadiness,
+  listOwnerCandidates,
+  listFeed,
+  checkReadinessAll,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -129,6 +132,26 @@ export const checkReadinessFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     return checkReadiness(data.botId);
+  });
+
+/** Журнал по всем клиентам сразу — «что вообще происходило», а не «что с этим клиентом». */
+export const listFeedFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireOperator();
+  return listFeed();
+});
+
+/** Проверка готовности по всем действующим клиентам разом. */
+export const checkReadinessAllFn = createServerFn({ method: "POST" }).handler(async () => {
+  await requireOperator();
+  return checkReadinessAll();
+});
+
+/** Кто может быть владельцем: admin_chat_id из настроек бота плюс те, кто ему писал. */
+export const listOwnerCandidatesFn = createServerFn({ method: "GET" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return listOwnerCandidates(data.botId);
   });
 
 export const setArchivedFn = createServerFn({ method: "POST" })

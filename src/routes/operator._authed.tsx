@@ -37,6 +37,7 @@ function OperatorLayout() {
             </Link>
             <NavLink to="/operator">Клиенты</NavLink>
             <NavLink to="/operator/broadcast">Рассылка</NavLink>
+            <NavLink to="/operator/journal">Журнал</NavLink>
           </div>
           <Button
             variant="ghost"

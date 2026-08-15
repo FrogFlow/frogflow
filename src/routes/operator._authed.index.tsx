@@ -1,7 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { listBotsFn, listStatsFn, listHealthFn } from "@/lib/operator/bots.functions";
+import {
+  listBotsFn,
+  listStatsFn,
+  listHealthFn,
+  checkReadinessAllFn,
+} from "@/lib/operator/bots.functions";
+import { Button } from "@/components-ui/button";
+import { moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
 import {
@@ -61,6 +68,33 @@ function OperatorClientsPage() {
   const list = bots.data ?? [];
   const troubled = Object.values(health.data ?? {}).filter((h) => !h.ok).length;
 
+  /**
+   * Что требует внимания — одной строкой сверху. Состояние и так рассыпано по
+   * колонкам, но чтобы ответить «всё ли нормально сегодня», приходилось
+   * просматривать таблицу целиком.
+   */
+  const attention: { text: string; who: string[] }[] = [];
+  const overdue = list.filter((b) => ["overdue", "grace_over"].includes(b.subscription_state));
+  if (overdue.length)
+    attention.push({ text: "просрочена подписка", who: overdue.map((b) => b.bot_name) });
+  const dead = list.filter((b) => health.data?.[b.id] && !health.data[b.id].ok);
+  if (dead.length) attention.push({ text: "бот не отвечает", who: dead.map((b) => b.bot_name) });
+  const queued = list.filter((b) => {
+    const h = health.data?.[b.id];
+    return h?.ok && (h.report.pending_updates ?? 0) > 0;
+  });
+  if (queued.length)
+    attention.push({ text: "копится очередь апдейтов", who: queued.map((b) => b.bot_name) });
+  const noOwner = list.filter((b) => !b.has_owner_telegram_id && !b.archived_at);
+  if (noOwner.length)
+    attention.push({
+      text: "не заполнен Telegram владельца — не написать",
+      who: noOwner.map((b) => b.bot_name),
+    });
+  const noUrl = list.filter((b) => !b.app_url && !b.archived_at);
+  if (noUrl.length)
+    attention.push({ text: "не указан адрес деплоя", who: noUrl.map((b) => b.bot_name) });
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -92,6 +126,19 @@ function OperatorClientsPage() {
         </Link>
       </div>
 
+      {attention.length > 0 && (
+        <div className="border rounded-lg p-4 bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900 space-y-1">
+          <p className="font-medium text-sm text-amber-900 dark:text-amber-200">Требует внимания</p>
+          {attention.map((a) => (
+            <p key={a.text} className="text-sm text-amber-900 dark:text-amber-200/90">
+              {a.text}: <span className="font-medium">{a.who.join(", ")}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
+      <ReadinessAll />
+
       {bots.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
       {bots.isError && (
         <p className="text-sm text-destructive">
@@ -108,6 +155,7 @@ function OperatorClientsPage() {
                 <TableHead>Бот</TableHead>
                 <TableHead>Статус</TableHead>
                 <TableHead>Владелец</TableHead>
+                <TableHead>Модули</TableHead>
                 <TableHead>Подписка</TableHead>
                 <TableHead>Заказы за 30 дн</TableHead>
                 <TableHead>Место</TableHead>
@@ -144,6 +192,9 @@ function OperatorClientsPage() {
                     </TableCell>
                     <TableCell>
                       {bot.owner_name || <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      <ModulesCell modules={bot.modules} />
                     </TableCell>
                     <TableCell>
                       <SubCell bot={bot} />
@@ -299,4 +350,74 @@ function HealthCell({
     );
   }
   return <Badge className="w-fit">отвечает</Badge>;
+}
+
+/**
+ * Что куплено — коротко. Полный список из четырнадцати ключей в строку не
+ * влезет и не нужен: важно видеть платные, за которые клиент заплатил
+ * отдельно, а остальное — числом.
+ */
+function ModulesCell({ modules }: { modules: ModuleKey[] }) {
+  const paid = modules.filter((k) => moduleDef(k).price != null);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-sm">{modules.length}</span>
+      {paid.length > 0 && (
+        <span
+          className="text-xs text-muted-foreground max-w-[14rem] truncate"
+          title={paid.map((k) => moduleDef(k).title).join(", ")}
+        >
+          {paid.map((k) => moduleDef(k).title).join(", ")}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Проверка готовности по всем сразу. Та же, что на карточке, но после общего
+ * обновления кода обойти пятерых по одному — пять заходов вместо одного.
+ */
+function ReadinessAll() {
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<Awaited<ReturnType<typeof checkReadinessAllFn>> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setError(null);
+    setRes(null);
+    try {
+      setRes(await checkReadinessAllFn());
+    } catch (e: unknown) {
+      setError((e as Error)?.message || "Не удалось проверить");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const entries = Object.entries(res ?? {});
+  const bad = entries.filter(([, r]) => !r.ok);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button size="sm" variant="outline" onClick={run} disabled={busy}>
+        {busy ? "Проверяю всех…" : "Проверить готовность всех"}
+      </Button>
+      {error && <span className="text-sm text-destructive">{error}</span>}
+      {res && (
+        <span className="text-sm">
+          {bad.length === 0 ? (
+            <span className="text-green-600 dark:text-green-500">
+              Все {entries.length} в порядке
+            </span>
+          ) : (
+            <span className="text-destructive">
+              Не готовы: {bad.length} из {entries.length} — откройте карточку, там разбор по пунктам
+            </span>
+          )}
+        </span>
+      )}
+    </div>
+  );
 }
