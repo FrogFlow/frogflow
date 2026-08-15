@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { listBotsFn, listStatsFn, listHealthFn } from "@/lib/operator/bots.functions";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
@@ -38,7 +39,14 @@ const SUB_LABEL: Record<
 };
 
 function OperatorClientsPage() {
-  const bots = useQuery({ queryKey: ["operator_bots"], queryFn: () => listBotsFn() });
+  // Архивные по умолчанию скрыты, но должны быть доступны: иначе убранный
+  // клиент исчезает из панели совсем, вместе с кнопкой «Вернуть из архива» на
+  // своей карточке — попасть на неё становится неоткуда.
+  const [showArchived, setShowArchived] = useState(false);
+  const bots = useQuery({
+    queryKey: ["operator_bots", showArchived],
+    queryFn: () => listBotsFn({ data: { includeArchived: showArchived } }),
+  });
   // Отдельным запросом: сводка тяжелее списка (считает место в хранилище), и
   // таблица не должна ждать её, чтобы отрисоваться.
   const stats = useQuery({ queryKey: ["operator_stats"], queryFn: () => listStatsFn() });
@@ -66,6 +74,15 @@ function OperatorClientsPage() {
             )}
             {!health.isLoading && health.data && troubled === 0 && " · все боты отвечают"}
           </p>
+          <label className="mt-2 flex items-center gap-2 text-sm cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="accent-primary"
+            />
+            <span className="text-muted-foreground">Показывать архивных</span>
+          </label>
         </div>
         <Link
           to="/operator/onboard"
@@ -113,6 +130,11 @@ function OperatorClientsPage() {
                       >
                         {bot.bot_name}
                       </Link>
+                      {bot.archived_at && (
+                        <Badge variant="outline" className="ml-2">
+                          в архиве
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <HealthCell h={health.data?.[bot.id]} loading={health.isLoading} />
