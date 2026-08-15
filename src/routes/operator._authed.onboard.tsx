@@ -27,6 +27,38 @@ const GROUP_ORDER = [
 
 type Result = Awaited<ReturnType<typeof onboardClientFn>>;
 
+/** Всё, что входит в прайс без доплаты. */
+const BASE_MODULES = MODULE_KEYS.filter(
+  (k) => moduleDef(k).status === "available" && moduleDef(k).price === null,
+);
+
+/**
+ * Готовые наборы — по тому, что реально куплено у нынешних клиентов, а не
+ * придуманные. Мультивалютность стоит во всех, потому что она есть у всех
+ * пятерых: цены в тенге и рублях нужны каждому.
+ *
+ * Набор заменяет выбор целиком, а не добавляет к нему: «пресет» должен давать
+ * предсказуемый результат независимо от того, что было натыкано раньше.
+ * Итоговая сумма считается тут же, так что платные модули в наборе видны.
+ */
+const PRESETS: { title: string; hint: string; modules: ModuleKey[] }[] = [
+  {
+    title: "Магазин",
+    hint: "как у Print KZ и SALTANAT",
+    modules: [...BASE_MODULES, "multi_currency"] as ModuleKey[],
+  },
+  {
+    title: "Магазин + VIP",
+    hint: "как у Дидактики",
+    modules: [...BASE_MODULES, "multi_currency", "vip", "blocked"] as ModuleKey[],
+  },
+  {
+    title: "Магазин + Instagram",
+    hint: "как у Развивашки",
+    modules: [...BASE_MODULES, "multi_currency", "instagram", "vip", "blocked"] as ModuleKey[],
+  },
+];
+
 function OnboardPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -42,9 +74,7 @@ function OnboardPage() {
     set_webhook: false,
   });
   // По умолчанию — только то, что входит в базовый пакет по прайсу.
-  const [modules, setModules] = useState<ModuleKey[]>(
-    MODULE_KEYS.filter((k) => moduleDef(k).status === "available" && moduleDef(k).price === null),
-  );
+  const [modules, setModules] = useState<ModuleKey[]>(BASE_MODULES);
   const [checking, setChecking] = useState(false);
   const [botIdentity, setBotIdentity] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -260,6 +290,33 @@ function OnboardPage() {
               Разово: {total.toLocaleString("ru-RU")} ₸
             </span>
           </div>
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map((preset) => {
+              const active =
+                preset.modules.length === modules.length &&
+                preset.modules.every((k) => modules.includes(k));
+              return (
+                <Button
+                  key={preset.title}
+                  type="button"
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  onClick={() => setModules(preset.modules)}
+                  title={preset.hint}
+                >
+                  {preset.title}
+                </Button>
+              );
+            })}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setModules(BASE_MODULES)}
+            >
+              Только базовые
+            </Button>
+          </div>
           {orderedGroups.map((group) => (
             <div key={group} className="space-y-2">
               <h3 className="text-xs uppercase tracking-wider text-muted-foreground">{group}</h3>
@@ -361,15 +418,47 @@ function OnboardDone({ result, onDone }: { result: Result; onDone: () => void })
         </pre>
       </section>
 
+      {/*
+        Дальше начинается та часть, на которой раньше терялось время: переменные
+        уходят в Vercel, деплой собирается, и оператор остаётся без подсказки,
+        что проверять. Поэтому шаги перечислены здесь, а последний ведёт прямо
+        к проверке готовности на карточке.
+      */}
+      <section className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="font-medium">Что дальше</h2>
+        <ol className="text-sm space-y-2 list-decimal pl-5">
+          <li>
+            Создайте проект в Vercel из этого репозитория и вставьте блок выше — в Vercel удобнее
+            через{" "}
+            <span className="font-medium">Settings → Environment Variables → Import .env</span>.
+          </li>
+          <li>
+            Дождитесь сборки. Значения из интерфейса Vercel обратно не копируйте: там они
+            замаскированы точками, и вставится символ «•».
+          </li>
+          <li>Впишите адрес деплоя в карточке клиента, если не указали его сейчас.</li>
+          <li>
+            Нажмите <span className="font-medium">«Проверить готовность»</span> — деплой сам скажет,
+            каких переменных ему не хватает.
+          </li>
+          <li>
+            Нажмите <span className="font-medium">«Проставить вебхук»</span> и проверьте
+            <code className="mx-1">/start</code> в Telegram.
+          </li>
+        </ol>
+      </section>
+
       <div className="flex gap-2">
-        <Button onClick={onDone}>К списку клиентов</Button>
         <Link
           to="/operator/$botId"
           params={{ botId: result.botId }}
-          className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90"
         >
           Открыть карточку
         </Link>
+        <Button variant="outline" onClick={onDone}>
+          К списку клиентов
+        </Button>
       </div>
     </div>
   );
