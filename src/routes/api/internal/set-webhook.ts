@@ -11,9 +11,14 @@ export const Route = createFileRoute("/api/internal/set-webhook")({
         }
         const res = await setOwnWebhook();
         if (!res.ok) {
-          return Response.json({ ok: false, error: res.message }, { status: res.status });
+          return Response.json(
+            { ok: false, error: res.message, bots: res.bots },
+            { status: res.status },
+          );
         }
-        return Response.json({ ok: true, url: res.url });
+        // bots — по строке на каждого бота арендатора: панель показывает их
+        // раздельно, иначе не видно, что VIP-бот не встал.
+        return Response.json({ ok: true, url: res.url, bots: res.bots });
       },
     },
   },

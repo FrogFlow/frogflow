@@ -121,6 +121,15 @@ export async function onboardClient(input: OnboardInput, actor: string): Promise
     );
   }
 
+  // Мастер знает только один токен, поэтому VIP-бота отсюда направить некуда.
+  // Кнопка в карточке ставит вебхуки обоим: там их проставляет сам деплой,
+  // своими VIP_BOT_TOKEN и VIP_TELEGRAM_WEBHOOK_SECRET.
+  if (input.modules.includes("vip" as ModuleKey)) {
+    warnings.push(
+      "У клиента включён VIP: второй бот отсюда не настраивается. Добавьте VIP_BOT_TOKEN в переменные деплоя и нажмите «Проставить вебхук» в карточке — она направит обоих ботов.",
+    );
+  }
+
   // Ни токена, ни ключей: журнал читается в панели и не должен их содержать.
   await logEvent(botId, actor, "onboard", {
     bot_name: input.bot_name,

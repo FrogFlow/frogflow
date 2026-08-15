@@ -314,9 +314,23 @@ export async function requestWebhookSetup(
     .single();
   if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
 
-  const res = await callInternal<{ url?: string }>(data, "/api/internal/set-webhook", {});
+  // Деплой отчитывается по каждому своему боту: у клиентов с VIP-подписками
+  // их два, и «проставлен» без уточнения скрывало бы, что второй не встал.
+  const res = await callInternal<{
+    url?: string;
+    bots?: { name: string; ok: boolean; url: string; detail: string }[];
+  }>(data, "/api/internal/set-webhook", {});
+
   const outcome = res.ok
-    ? { ok: true, detail: res.body?.url ?? "вебхук проставлен" }
+    ? {
+        ok: true,
+        detail:
+          res.body?.bots
+            ?.map((b) => `${b.name}: ${b.ok ? b.url || b.detail : b.detail}`)
+            .join(" · ") ??
+          res.body?.url ??
+          "вебхук проставлен",
+      }
     : { ok: false, detail: res.error };
 
   await logEvent(botId, actor, "webhook", { ok: outcome.ok, detail: outcome.detail });

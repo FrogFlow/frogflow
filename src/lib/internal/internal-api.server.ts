@@ -106,39 +106,39 @@ export async function notifyOwner(text: string): Promise<NotifyOwnerResult> {
   return { ok: true };
 }
 
+/** Один бот арендатора: магазинный или VIP. */
+export type WebhookBotResult = {
+  name: "SHOP" | "VIP";
+  ok: boolean;
+  /** Куда направлен вебхук; пусто, если поставить не удалось. */
+  url: string;
+  /** Почему пропущен или не удался. */
+  detail: string;
+};
+
 export type WebhookActionResult =
-  { ok: true; url: string } | { ok: false; status: number; message: string };
+  | { ok: true; url: string; bots: WebhookBotResult[] }
+  | { ok: false; status: number; message: string; bots?: WebhookBotResult[] };
 
-/**
- * Деплой сам направляет своего бота на себя же.
- *
- * Так панели не нужен ни токен, ни TELEGRAM_WEBHOOK_SECRET: и то, и другое
- * уже лежит здесь, в переменных окружения этого деплоя. Заодно исчезает
- * целый класс ошибок — адрес вебхука берётся не из того, что оператор набрал
- * руками в панели, а из того, где деплой реально работает.
- */
-export async function setOwnWebhook(): Promise<WebhookActionResult> {
-  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
+async function setOne(
+  name: "SHOP" | "VIP",
+  token: string | undefined,
+  path: string,
+  secret: string,
+  base: string,
+): Promise<WebhookBotResult> {
   if (!token) {
-    return { ok: false, status: 500, message: "TELEGRAM_BOT_TOKEN не задан в этом деплое" };
+    // У клиента без VIP-модуля второго токена и не должно быть — это не ошибка.
+    return { name, ok: true, url: "", detail: "токен не задан, бот пропущен" };
   }
-
-  // Мягкий вариант: панель ждёт осмысленный ответ об ошибке, а не исключение.
-  const { appOrigin } = await import("../app-origin.server");
-  const base = appOrigin();
-  if (!base) {
-    return { ok: false, status: 500, message: "PUBLIC_APP_URL не задан в этом деплое" };
-  }
-
-  const url = `${base}/api/public/telegram/webhook`;
+  const url = `${base}${path}`;
   const body: Record<string, string | boolean> = { url, drop_pending_updates: false };
   // Если секрет задан, вебхук обязан его нести: без него телеграмные апдейты
   // начнёт отклонять сам обработчик.
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
   if (secret) body.secret_token = secret;
 
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+    const res = await fetch(`https://api.telegram.org/bot${token.trim()}/setWebhook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -150,19 +150,82 @@ export async function setOwnWebhook(): Promise<WebhookActionResult> {
     } | null;
     if (!json?.ok) {
       return {
+        name,
         ok: false,
-        status: 502,
-        message: `Telegram отклонил setWebhook: ${json?.description ?? `HTTP ${res.status}`}`,
+        url: "",
+        detail: `Telegram отклонил setWebhook: ${json?.description ?? `HTTP ${res.status}`}`,
       };
     }
-    return { ok: true, url };
+    return { name, ok: true, url, detail: "проставлен" };
   } catch (e: unknown) {
+    return {
+      name,
+      ok: false,
+      url: "",
+      detail: `Не удалось вызвать Telegram: ${(e as Error)?.message}`,
+    };
+  }
+}
+
+/**
+ * Деплой сам направляет своих ботов на себя же.
+ *
+ * Так панели не нужен ни токен, ни TELEGRAM_WEBHOOK_SECRET: и то, и другое
+ * уже лежит здесь, в переменных окружения этого деплоя. Заодно исчезает
+ * целый класс ошибок — адрес вебхука берётся не из того, что оператор набрал
+ * руками в панели, а из того, где деплой реально работает.
+ *
+ * Ботов может быть два. Раньше здесь ставился только магазинный, и у клиентов
+ * с VIP-подписками второй бот после переезда оставался смотреть на старый
+ * деплой: кнопка в панели отчитывалась об успехе, а половина продаж молчала.
+ * Cron самовосстановления умел оба (ensureDidWebhooks) — расходились только
+ * эти два пути.
+ */
+export async function setOwnWebhook(): Promise<WebhookActionResult> {
+  if (!process.env.TELEGRAM_BOT_TOKEN?.trim()) {
+    return { ok: false, status: 500, message: "TELEGRAM_BOT_TOKEN не задан в этом деплое" };
+  }
+
+  // Мягкий вариант: панель ждёт осмысленный ответ об ошибке, а не исключение.
+  const { appOrigin } = await import("../app-origin.server");
+  const base = appOrigin();
+  if (!base) {
+    return { ok: false, status: 500, message: "PUBLIC_APP_URL не задан в этом деплое" };
+  }
+
+  const shopSecret = (process.env.TELEGRAM_WEBHOOK_SECRET || "").trim();
+  // Свой секрет VIP-бота, иначе общий: так же, как в ensureDidWebhooks.
+  const vipSecret = (
+    process.env.VIP_TELEGRAM_WEBHOOK_SECRET ||
+    process.env.TELEGRAM_WEBHOOK_SECRET ||
+    ""
+  ).trim();
+
+  const bots = await Promise.all([
+    setOne(
+      "SHOP",
+      process.env.TELEGRAM_BOT_TOKEN,
+      "/api/public/telegram/webhook",
+      shopSecret,
+      base,
+    ),
+    setOne("VIP", process.env.VIP_BOT_TOKEN, "/api/public/telegram/webhook-vip", vipSecret, base),
+  ]);
+
+  // В сообщении — все боты, а не только упавшие: если магазинный встал, а VIP
+  // нет, оператор должен видеть обе половины, иначе непонятно, что чинить и
+  // что уже работает.
+  const failed = bots.filter((b) => !b.ok);
+  if (failed.length > 0) {
     return {
       ok: false,
       status: 502,
-      message: `Не удалось вызвать Telegram: ${(e as Error)?.message}`,
+      message: bots.map((b) => `${b.name}: ${b.ok ? b.detail : b.detail}`).join(" · "),
+      bots,
     };
   }
+  // url — магазинный бот: панель показывает его как основной адрес.
+  return { ok: true, url: bots[0]!.url, bots };
 }
 
 export type HealthReport = {
