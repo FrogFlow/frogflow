@@ -12,6 +12,7 @@ import {
   listStatsFn,
   buildEnvBlockFn,
   panelSelfCheckFn,
+  setArchivedFn,
 } from "@/lib/operator/bots.functions";
 import {
   getSubscriptionFn,
@@ -71,6 +72,8 @@ function OperatorClientCard() {
   const [busyStatus, setBusyStatus] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
   const [meta, setMeta] = useState({
+    bot_name: "",
+    owner_slug: "",
     owner_name: "",
     owner_contact: "",
     owner_telegram_id: "",
@@ -83,6 +86,8 @@ function OperatorClientCard() {
     if (!botQuery.data) return;
     const b = botQuery.data;
     setMeta({
+      bot_name: b.bot_name ?? "",
+      owner_slug: b.owner_slug ?? "",
       owner_name: b.owner_name ?? "",
       owner_contact: b.owner_contact ?? "",
       owner_telegram_id: b.owner_telegram_id != null ? String(b.owner_telegram_id) : "",
@@ -138,6 +143,8 @@ function OperatorClientCard() {
       await updateBotMetaFn({
         data: {
           botId,
+          bot_name: meta.bot_name.trim(),
+          owner_id: meta.owner_slug.trim(),
           owner_name: meta.owner_name.trim() || null,
           owner_contact: meta.owner_contact.trim() || null,
           owner_telegram_id: telegramId ? Number(telegramId) : null,
@@ -182,9 +189,11 @@ function OperatorClientCard() {
         <Link to="/operator" className="text-sm text-muted-foreground hover:underline">
           ← Все клиенты
         </Link>
-        <div className="flex items-center gap-3 mt-1">
+        <div className="flex items-center gap-3 mt-1 flex-wrap">
           <h1 className="text-2xl font-semibold">{bot.bot_name}</h1>
           <Badge variant={st.variant}>{st.text}</Badge>
+          {bot.archived_at && <Badge variant="outline">в архиве</Badge>}
+          <ArchiveButton botId={botId} archived={Boolean(bot.archived_at)} onDone={refetchBot} />
         </div>
       </div>
 
@@ -265,6 +274,25 @@ function OperatorClientCard() {
         <h2 className="font-medium">Данные клиента</h2>
         <form onSubmit={onSaveMeta} className="space-y-3">
           <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Название клиента</Label>
+              <Input
+                value={meta.bot_name}
+                onChange={(e) => setMeta((m) => ({ ...m, bot_name: e.target.value }))}
+                placeholder="Как показывать в списке"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Идентификатор</Label>
+              <Input
+                value={meta.owner_slug}
+                onChange={(e) => setMeta((m) => ({ ...m, owner_slug: e.target.value }))}
+                placeholder="saltanat"
+              />
+              <p className="text-xs text-muted-foreground">
+                Латиница, цифры, дефис и подчёркивание.
+              </p>
+            </div>
             <div className="space-y-1">
               <Label>Имя владельца</Label>
               <Input
@@ -979,5 +1007,44 @@ function EnvBlockSection({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Убрать клиента из работы, не удаляя его данные. Заказы, выгрузки и история
+ * платежей должны переживать уход: их спрашивают и через год. Поэтому архив —
+ * это дата в карточке, а строка остаётся на месте.
+ */
+function ArchiveButton({
+  botId,
+  archived,
+  onDone,
+}: {
+  botId: string;
+  archived: boolean;
+  onDone: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function onClick() {
+    const question = archived
+      ? "Вернуть клиента в работу? Бот останется приостановленным — включите его вручную."
+      : "Убрать клиента в архив? Бот будет приостановлен и перестанет отвечать. Данные сохранятся.";
+    if (!confirm(question)) return;
+    setBusy(true);
+    try {
+      await setArchivedFn({ data: { botId, archived: !archived } });
+      await onDone();
+    } catch (e: unknown) {
+      alert((e as Error)?.message || "Не удалось");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Button size="sm" variant="outline" onClick={onClick} disabled={busy}>
+      {busy ? "…" : archived ? "Вернуть из архива" : "В архив"}
+    </Button>
   );
 }

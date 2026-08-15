@@ -216,6 +216,7 @@ export type Database = {
         Row: {
           notes: string | null
           paused_message: string | null
+          archived_at: string | null
           owner_contact: string | null
           owner_name: string | null
           owner_telegram_id: number | null
@@ -236,6 +237,7 @@ export type Database = {
         Insert: {
           notes?: string | null
           paused_message?: string | null
+          archived_at?: string | null
           owner_contact?: string | null
           owner_name?: string | null
           owner_telegram_id?: number | null
@@ -256,6 +258,7 @@ export type Database = {
         Update: {
           notes?: string | null
           paused_message?: string | null
+          archived_at?: string | null
           owner_contact?: string | null
           owner_name?: string | null
           owner_telegram_id?: number | null

@@ -31,17 +31,21 @@ type BotBase = {
 export type BotListItem = BotBase & {
   subscription_state: SubscriptionState;
   subscription_days_left: number | null;
+  archived_at: string | null;
 };
 
-export async function listBots(): Promise<BotListItem[]> {
+/** По умолчанию — только действующие клиенты: ушедший не должен мозолить глаза в ежедневном списке. */
+export async function listBots(includeArchived = false): Promise<BotListItem[]> {
   await requireOperator();
   const s = await db();
-  const { data, error } = await s
+  let query = s
     .from("bots")
     .select(
-      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings",
+      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings, archived_at",
     )
     .order("bot_name", { ascending: true });
+  if (!includeArchived) query = query.is("archived_at", null);
+  const { data, error } = await query;
   if (error) throw new Error(`Не удалось получить список клиентов: ${error.message}`);
 
   // Одним запросом: у кого вообще есть платежи. Без этого дата, доставшаяся от
@@ -66,6 +70,7 @@ export async function listBots(): Promise<BotListItem[]> {
       subscription_expires_at: b.subscription_expires_at,
       subscription_state: sub.state,
       subscription_days_left: sub.daysLeft,
+      archived_at: b.archived_at,
     };
   });
 }
@@ -82,6 +87,9 @@ export type BotDetail = BotBase & {
    * об ошибке. Панели он нужен на сервере, где и читается.
    */
   has_internal_secret: boolean;
+  /** Человекочитаемый идентификатор клиента (owner_id) — попадает в имена и ссылки. */
+  owner_slug: string | null;
+  archived_at: string | null;
 };
 
 export async function getBot(botId: string): Promise<BotDetail> {
@@ -94,7 +102,7 @@ export async function getBot(botId: string): Promise<BotDetail> {
     // Одной строкой, а не конкатенацией: PostgREST выводит типы строки только
     // из строкового литерала — склейка превращает результат в GenericStringError.
     .select(
-      "id, bot_name, status, owner_name, owner_contact, owner_telegram_id, app_url, notes, paused_message, subscription_plan, subscription_expires_at, modules, internal_secret",
+      "id, bot_name, owner_id, status, owner_name, owner_contact, owner_telegram_id, app_url, notes, paused_message, subscription_plan, subscription_expires_at, modules, internal_secret, archived_at",
     )
     .eq("id", botId)
     .single();
@@ -115,6 +123,8 @@ export async function getBot(botId: string): Promise<BotDetail> {
     notes: data.notes,
     paused_message: data.paused_message,
     has_internal_secret: Boolean(data.internal_secret),
+    owner_slug: data.owner_id,
+    archived_at: data.archived_at,
     subscription_plan: data.subscription_plan,
     subscription_expires_at: data.subscription_expires_at,
     modules,
@@ -192,6 +202,8 @@ export async function setBotStatus(botId: string, status: BotStatus, actor: stri
 }
 
 export type BotMetaPatch = Partial<{
+  bot_name: string;
+  owner_id: string;
   owner_name: string | null;
   owner_contact: string | null;
   owner_telegram_id: number | null;
@@ -210,6 +222,25 @@ export async function updateBotMeta(botId: string, patch: BotMetaPatch, actor: s
   // app_url, от которого зависит, куда панель стучится и чей вебхук считается
   // своим. В журнал идут имена изменённых полей, без значений.
   await logEvent(botId, actor, "meta", { fields: Object.keys(patch) });
+}
+
+/**
+ * Архивирование клиента. Строка и все её данные остаются на месте: заказы,
+ * выгрузки и история платежей должны переживать уход клиента — их ещё
+ * спрашивают потом. Бот при этом останавливается, иначе архивный магазин
+ * продолжал бы принимать заказы.
+ */
+export async function setArchived(botId: string, archived: boolean, actor: string) {
+  await requireOperator();
+  const s = await db();
+  const patch = archived
+    ? { archived_at: new Date().toISOString(), status: "suspended" as const }
+    : { archived_at: null };
+  const { error } = await s.from("bots").update(patch).eq("id", botId);
+  if (error) throw new Error(`Не удалось изменить архив: ${error.message}`);
+
+  await logEvent(botId, actor, archived ? "suspend" : "resume", { archived });
+  await nudgeDeployment(botId);
 }
 
 export type BotEvent = {

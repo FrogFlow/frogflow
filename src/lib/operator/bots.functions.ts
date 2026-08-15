@@ -13,6 +13,7 @@ import {
   requestWebhookSetup,
   loadStats,
   loadHealthAll,
+  setArchived,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -20,10 +21,17 @@ async function actor(): Promise<string> {
   return s.data.username || "operator";
 }
 
-export const listBotsFn = createServerFn({ method: "GET" }).handler(async () => {
-  await requireOperator();
-  return listBots();
-});
+export const listBotsFn = createServerFn({ method: "GET" })
+  .validator((data: unknown) =>
+    z
+      .object({ includeArchived: z.boolean().optional() })
+      .catch({})
+      .parse(data ?? {}),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return listBots(data.includeArchived === true);
+  });
 
 const BotIdInput = z.object({ botId: z.string().uuid() });
 
@@ -62,6 +70,16 @@ export const setBotStatusFn = createServerFn({ method: "POST" })
 
 const BotMetaInput = z.object({
   botId: z.string().uuid(),
+  bot_name: z.string().trim().min(1).max(120).optional(),
+  // Идентификатор попадает в служебные имена, поэтому только латиница, цифры,
+  // дефис и подчёркивание — без пробелов и кириллицы.
+  owner_id: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .regex(/^[a-z0-9_-]+$/i, "Только латиница, цифры, дефис и подчёркивание")
+    .optional(),
   owner_name: z.string().nullable().optional(),
   owner_contact: z.string().nullable().optional(),
   owner_telegram_id: z.number().int().nullable().optional(),
@@ -98,6 +116,16 @@ export const requestWebhookSetupFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     return requestWebhookSetup(data.botId, await actor());
+  });
+
+export const setArchivedFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z.object({ botId: z.string().uuid(), archived: z.boolean() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    await setArchived(data.botId, data.archived, await actor());
+    return { ok: true as const };
   });
 
 /**
