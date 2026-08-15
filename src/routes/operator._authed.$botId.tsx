@@ -10,6 +10,8 @@ import {
   checkBotHealthFn,
   requestWebhookSetupFn,
   listStatsFn,
+  buildEnvBlockFn,
+  panelSelfCheckFn,
 } from "@/lib/operator/bots.functions";
 import {
   getSubscriptionFn,
@@ -323,6 +325,8 @@ function OperatorClientCard() {
       <SubscriptionSection botId={botId} />
 
       <WebhookSection botId={botId} appUrl={bot.app_url} />
+
+      <EnvBlockSection botId={botId} modules={bot.modules} appUrl={bot.app_url} />
 
       <section className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="font-medium">Журнал действий</h2>
@@ -757,6 +761,223 @@ function StatsSection({ botId }: { botId: string }) {
           </div>
         ))}
       </dl>
+    </section>
+  );
+}
+
+/**
+ * Переменные окружения для деплоя клиента.
+ *
+ * Два режима, потому что это два разных случая, и путать их дорого:
+ *   • «новый деплой» — нужен весь набор, включая свежие секреты;
+ *   • «уже работает» — деплой живой, и вставлять в него новый
+ *     TELEGRAM_WEBHOOK_SECRET значит уронить бота до переустановки вебхука,
+ *     а новый SESSION_SECRET — разлогинить владельца. Поэтому такие строки в
+ *     этом режиме не выдаются вовсе.
+ */
+function EnvBlockSection({
+  botId,
+  modules,
+  appUrl,
+}: {
+  botId: string;
+  modules: Record<string, boolean> | null;
+  appUrl: string | null;
+}) {
+  const [mode, setMode] = useState<"new" | "running">("running");
+  const [botToken, setBotToken] = useState("");
+  const [vipBotToken, setVipBotToken] = useState("");
+  const [zernioApiKey, setZernioApiKey] = useState("");
+  const [urlOverride, setUrlOverride] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof buildEnvBlockFn>> | null>(null);
+
+  const selfCheck = useQuery({ queryKey: ["panel_self_check"], queryFn: () => panelSelfCheckFn() });
+  const hasVip = Boolean(modules?.vip);
+  const hasInstagram = Boolean(modules?.instagram);
+
+  async function onBuild() {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    setCopied(false);
+    try {
+      setResult(
+        await buildEnvBlockFn({
+          data: {
+            botId,
+            mode,
+            botToken: mode === "new" ? botToken || null : null,
+            vipBotToken: mode === "new" && hasVip ? vipBotToken || null : null,
+            zernioApiKey: mode === "new" && hasInstagram ? zernioApiKey || null : null,
+            appUrlOverride: urlOverride.trim() || null,
+          },
+        }),
+      );
+    } catch (e: unknown) {
+      setError((e as Error)?.message || "Не удалось собрать блок");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCopy() {
+    if (!result) return;
+    try {
+      await navigator.clipboard.writeText(result.envBlock);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Буфер обмена недоступен — выделите текст и скопируйте вручную.");
+    }
+  }
+
+  return (
+    <section className="bg-card border rounded-lg p-4 space-y-3">
+      <h2 className="font-medium">Переменные окружения</h2>
+
+      {selfCheck.data && !selfCheck.data.ok && (
+        <div className="text-sm border border-destructive/40 bg-destructive/5 rounded-md p-3 space-y-1">
+          <p className="font-medium text-destructive">Панели не хватает своих переменных</p>
+          {selfCheck.data.vars
+            .filter((v) => !v.present)
+            .map((v) => (
+              <p key={v.name} className="text-muted-foreground">
+                <code>{v.name}</code> — {v.why}
+              </p>
+            ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant={mode === "running" ? "default" : "outline"}
+          onClick={() => setMode("running")}
+        >
+          Деплой уже работает
+        </Button>
+        <Button
+          size="sm"
+          variant={mode === "new" ? "default" : "outline"}
+          onClick={() => setMode("new")}
+        >
+          Новый деплой
+        </Button>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        {mode === "running"
+          ? "Только строки, которые можно вставить на ходу: ключ арендатора, адреса базы, адрес деплоя. Секреты и токены не выдаются — их замена уронила бы работающего бота."
+          : "Полный набор со свежими секретами и паролем в админку. Для проекта, который ещё не поднят."}
+      </p>
+
+      {mode === "new" && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label htmlFor="env-token">Токен бота (@BotFather)</Label>
+            <Input
+              id="env-token"
+              value={botToken}
+              onChange={(e) => setBotToken(e.target.value)}
+              placeholder="123456:AA…"
+              autoComplete="off"
+            />
+          </div>
+          {hasVip && (
+            <div className="space-y-1">
+              <Label htmlFor="env-vip">Токен VIP-бота</Label>
+              <Input
+                id="env-vip"
+                value={vipBotToken}
+                onChange={(e) => setVipBotToken(e.target.value)}
+                placeholder="123456:AA…"
+                autoComplete="off"
+              />
+            </div>
+          )}
+          {hasInstagram && (
+            <div className="space-y-1">
+              <Label htmlFor="env-zernio">Ключ Zernio</Label>
+              <Input
+                id="env-zernio"
+                value={zernioApiKey}
+                onChange={(e) => setZernioApiKey(e.target.value)}
+                placeholder="sk_…"
+                autoComplete="off"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {!appUrl && (
+        <div className="space-y-1">
+          <Label htmlFor="env-url">Адрес деплоя</Label>
+          <Input
+            id="env-url"
+            value={urlOverride}
+            onChange={(e) => setUrlOverride(e.target.value)}
+            placeholder="https://client.vercel.app"
+          />
+          <p className="text-xs text-muted-foreground">
+            В карточке он ещё не заполнен. Впишите здесь — попадёт в блок.
+          </p>
+        </div>
+      )}
+
+      <Button size="sm" onClick={onBuild} disabled={busy}>
+        {busy ? "Собираю…" : "Собрать блок"}
+      </Button>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      {result && (
+        <div className="space-y-2">
+          {result.warnings.map((w) => (
+            <p key={w} className="text-sm text-amber-600 dark:text-amber-500">
+              {w}
+            </p>
+          ))}
+
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <Button size="sm" variant="outline" onClick={onCopy}>
+              {copied ? "Скопировано" : "Скопировать"}
+            </Button>
+            <span>
+              ключ арендатора годен до {result.tenantKeyExpiresAt}
+              {result.botUsername && ` · @${result.botUsername}`}
+              {result.vipBotUsername && ` · VIP @${result.vipBotUsername}`}
+            </span>
+          </div>
+
+          <Textarea
+            readOnly
+            value={result.envBlock}
+            rows={16}
+            className="font-mono text-xs"
+            onFocus={(e) => e.currentTarget.select()}
+          />
+
+          {result.omitted.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Намеренно не выдано, чтобы не сломать работающий деплой: {result.omitted.join("; ")}.
+              Нужны и они — переключитесь на «Новый деплой», но тогда после вставки переставьте
+              вебхук: сменится <code>TELEGRAM_WEBHOOK_SECRET</code>.
+            </p>
+          )}
+
+          {mode === "new" && (
+            <p className="text-xs text-muted-foreground">
+              После сохранения переменных в Vercel нужен пересбор — <code>VITE_*</code> вшиваются в
+              браузерный бандл во время сборки. Значения из интерфейса Vercel не копируйте: там они
+              замаскированы точками.
+            </p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

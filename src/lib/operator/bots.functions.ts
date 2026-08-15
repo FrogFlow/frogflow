@@ -104,3 +104,48 @@ export const listStatsFn = createServerFn({ method: "GET" }).handler(async () =>
   await requireOperator();
   return Object.fromEntries(await loadStats());
 });
+
+/**
+ * Собрать блок переменных окружения для уже заведённого клиента.
+ *
+ * Ради этого всё и затевалось: мастер подключения умеет только нового клиента,
+ * а при переезде существующего собрать его переменные было нечем.
+ *
+ * Токен в базу не попадает — он нужен только чтобы подставить его в блок и
+ * проверить через getMe, что это действительно рабочий бот.
+ */
+export const buildEnvBlockFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        botId: z.string().uuid(),
+        mode: z.enum(["new", "running"]),
+        botToken: z.string().trim().max(200).nullable().optional(),
+        vipBotToken: z.string().trim().max(200).nullable().optional(),
+        zernioApiKey: z.string().trim().max(200).nullable().optional(),
+        zernioProfileId: z.string().trim().max(200).nullable().optional(),
+        appUrlOverride: z.string().trim().max(300).nullable().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    const { buildEnvBlockFor } = await import("./env-block.server");
+    const result = await buildEnvBlockFor(data);
+    // В журнал — сам факт, без единого секрета: журнал читается в панели.
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    await supabaseAdmin.from("bot_events").insert({
+      bot_id: data.botId,
+      actor: await actor(),
+      kind: "env_block",
+      payload: { mode: data.mode, with_vip: Boolean(data.vipBotToken) },
+    });
+    return result;
+  });
+
+/** Чего не хватает самой панели. Пустые значения в блоке иначе всплывают уже на упавшем деплое клиента. */
+export const panelSelfCheckFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireOperator();
+  const { panelSelfCheck } = await import("./env-block.server");
+  return panelSelfCheck();
+});

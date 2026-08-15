@@ -1,77 +1,13 @@
-import crypto from "node:crypto";
 import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { buildEnvBlockFor, randomSecret, verifyBotToken } from "./env-block.server";
+
+export type { TelegramBotIdentity } from "./env-block.server";
+export { verifyBotToken };
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
-}
-
-const b64url = (buf: crypto.BinaryLike) =>
-  Buffer.from(buf as never)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-/**
- * Выпускает SUPABASE_TENANT_KEY — тот же алгоритм, что в
- * scripts/mint-tenant-key.mjs. Токен несёт claim bot_id, PostgREST
- * переключается в роль tenant_bot, и RLS из MIGRATION-02 отсекает чужие
- * строки: деплой с этим ключом физически не может прочитать данные другого
- * клиента, даже если запрос забыл фильтр.
- */
-function mintTenantKey(botId: string, years = 5): { key: string; expiresAt: string } {
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  if (!secret) {
-    throw new Error(
-      "SUPABASE_JWT_SECRET не задан в переменных окружения панели — без него " +
-        "нельзя выпустить ключ арендатора. Supabase → Settings → API → JWT Secret.",
-    );
-  }
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "HS256", typ: "JWT" };
-  const payload = {
-    role: "tenant_bot",
-    bot_id: botId,
-    iss: "supabase",
-    iat: now,
-    exp: now + Math.round(years * 365 * 24 * 60 * 60),
-  };
-  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
-  const signature = b64url(crypto.createHmac("sha256", secret).update(signingInput).digest());
-  return {
-    key: `${signingInput}.${signature}`,
-    expiresAt: new Date(payload.exp * 1000).toISOString().slice(0, 10),
-  };
-}
-
-const randomSecret = (bytes = 32) => crypto.randomBytes(bytes).toString("hex");
-
-export type TelegramBotIdentity = { username: string; first_name: string };
-
-/**
- * Проверяет токен через getMe до того, как что-то создано в базе: опечатка в
- * токене иначе оставила бы наполовину заведённого клиента.
- */
-export async function verifyBotToken(token: string): Promise<TelegramBotIdentity> {
-  let res: Response;
-  try {
-    res = await fetch(`https://api.telegram.org/bot${token}/getMe`, {
-      signal: AbortSignal.timeout(10_000),
-    });
-  } catch (e: unknown) {
-    throw new Error(`Не удалось связаться с Telegram: ${(e as Error)?.message ?? e}`);
-  }
-  const body = (await res.json().catch(() => null)) as {
-    ok?: boolean;
-    result?: TelegramBotIdentity;
-    description?: string;
-  } | null;
-  if (!body?.ok || !body.result) {
-    throw new Error(`Telegram отклонил токен: ${body?.description ?? `HTTP ${res.status}`}`);
-  }
-  return body.result;
 }
 
 export type OnboardInput = {
@@ -164,31 +100,25 @@ export async function onboardClient(input: OnboardInput, actor: string): Promise
     );
   }
 
-  const { key: tenantKey, expiresAt } = mintTenantKey(botId);
-  const sessionSecret = randomSecret();
-  const cronSecret = randomSecret(16);
-  const webhookSecret = randomSecret(16);
-  const adminPassword = crypto.randomBytes(12).toString("base64url");
+  // Блок собирает общий модуль — тот же, что и карточка существующего клиента.
+  const built = await buildEnvBlockFor({
+    botId,
+    mode: "new",
+    botToken: input.bot_token,
+    appUrlOverride: appUrl,
+  });
+  warnings.push(...built.warnings);
 
   let webhook = { attempted: false, ok: false, detail: "не ставился" };
   if (input.set_webhook) {
-    webhook = await setTelegramWebhook(input.bot_token, appUrl, webhookSecret);
+    // Именно тот секрет, что попал в блок: разойдись они — обработчик деплоя
+    // начнёт отклонять апдейты Telegram с 403.
+    webhook = await setTelegramWebhook(input.bot_token, appUrl, built.webhookSecret ?? "");
   } else if (appUrl) {
     warnings.push(
       "Вебхук не проставлен. Сделайте это после того, как проект Vercel поднимется — кнопка «Проставить вебхук» в карточке клиента.",
     );
   }
-
-  const envBlock = buildEnvBlock({
-    botId,
-    tenantKey,
-    appUrl,
-    botToken: input.bot_token,
-    sessionSecret,
-    cronSecret,
-    webhookSecret,
-    adminPassword,
-  });
 
   await s.from("bot_events").insert({
     bot_id: botId,
@@ -207,8 +137,8 @@ export async function onboardClient(input: OnboardInput, actor: string): Promise
   return {
     botId,
     botUsername: identity.username,
-    tenantKeyExpiresAt: expiresAt,
-    envBlock,
+    tenantKeyExpiresAt: built.tenantKeyExpiresAt,
+    envBlock: built.envBlock,
     webhook,
     warnings,
   };
@@ -247,47 +177,4 @@ async function setTelegramWebhook(
   } catch (e: unknown) {
     return { attempted: true, ok: false, detail: (e as Error)?.message ?? String(e) };
   }
-}
-
-function buildEnvBlock(v: {
-  botId: string;
-  tenantKey: string;
-  appUrl: string | null;
-  botToken: string;
-  sessionSecret: string;
-  cronSecret: string;
-  webhookSecret: string;
-  adminPassword: string;
-}): string {
-  const supabaseUrl = process.env.SUPABASE_URL ?? "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-  const publishable = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
-
-  return [
-    "# ── Арендатор: без BOT_ID + SUPABASE_TENANT_KEY деплой видит чужие данные ──",
-    `BOT_ID=${v.botId}`,
-    `SUPABASE_TENANT_KEY=${v.tenantKey}`,
-    "",
-    "# ── Общая база ──",
-    `SUPABASE_URL=${supabaseUrl}`,
-    `SUPABASE_SERVICE_ROLE_KEY=${serviceKey}`,
-    `SUPABASE_PUBLISHABLE_KEY=${publishable}`,
-    `VITE_SUPABASE_URL=${supabaseUrl}`,
-    `VITE_SUPABASE_PUBLISHABLE_KEY=${publishable}`,
-    "",
-    "# ── Telegram ──",
-    `TELEGRAM_BOT_TOKEN=${v.botToken}`,
-    `TELEGRAM_WEBHOOK_SECRET=${v.webhookSecret}`,
-    "",
-    "# ── Приложение ──",
-    `PUBLIC_APP_URL=${v.appUrl ?? "https://<домен-проекта>"}`,
-    `SESSION_SECRET=${v.sessionSecret}`,
-    `CRON_SECRET=${v.cronSecret}`,
-    "",
-    "# ── Вход в админку клиента (пароль сгенерирован, смените при передаче) ──",
-    "ADMIN_USERNAME=admin",
-    `ADMIN_PASSWORD=${v.adminPassword}`,
-    "",
-    "# CONTROL_PLANE здесь НЕ задавать: это переменная панели оператора.",
-  ].join("\n");
 }
