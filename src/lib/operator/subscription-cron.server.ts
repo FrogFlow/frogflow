@@ -1,5 +1,6 @@
 import { callInternal } from "./internal-client.server";
 import { computeState, readPolicy } from "./subscriptions.server";
+import { logEvent } from "./events.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -116,13 +117,11 @@ async function logAction(
   marker: string,
   extra: Record<string, unknown>,
 ) {
-  const s = await db();
-  await s.from("bot_events").insert({
-    bot_id: botId,
-    actor: "cron",
-    kind,
-    payload: { ...extra, sweep_marker: marker },
-  });
+  // Метка прохода — это и есть защита от повторов: следующий вызов в тот же
+  // день найдёт её и пропустит клиента. Поэтому потерянная запись здесь не
+  // просто пробел в журнале, а ещё и риск отправить владельцу второе такое же
+  // предупреждение; logEvent сообщит о неудаче в лог.
+  await logEvent(botId, "cron", kind, { ...extra, sweep_marker: marker } as never);
 }
 
 async function notify(

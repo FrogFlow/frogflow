@@ -1,6 +1,7 @@
 import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { buildEnvBlockFor, randomSecret, verifyBotToken } from "./env-block.server";
+import { logEvent } from "./events.server";
 
 export type { TelegramBotIdentity } from "./env-block.server";
 export { verifyBotToken };
@@ -120,18 +121,13 @@ export async function onboardClient(input: OnboardInput, actor: string): Promise
     );
   }
 
-  await s.from("bot_events").insert({
-    bot_id: botId,
-    actor,
-    kind: "onboard",
-    // Ни токена, ни ключей: журнал читается в панели и не должен их содержать.
-    payload: {
-      bot_name: input.bot_name,
-      bot_username: identity.username,
-      modules: input.modules,
-      app_url: appUrl,
-      first_order_no: input.first_order_no,
-    },
+  // Ни токена, ни ключей: журнал читается в панели и не должен их содержать.
+  await logEvent(botId, actor, "onboard", {
+    bot_name: input.bot_name,
+    bot_username: identity.username,
+    modules: input.modules,
+    app_url: appUrl,
+    first_order_no: input.first_order_no,
   });
 
   return {

@@ -1,4 +1,5 @@
 import { requireOperator } from "./guard.server";
+import { logEvent } from "./events.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -143,11 +144,10 @@ export async function addPayment(botId: string, p: NewPayment, actor: string) {
   });
   if (error) throw new Error(`Не удалось записать платёж: ${error.message}`);
 
-  await s.from("bot_events").insert({
-    bot_id: botId,
-    actor,
-    kind: "message",
-    payload: { action: "payment_added", period_end: p.period_end, amount: p.amount },
+  await logEvent(botId, actor, "payment", {
+    action: "added",
+    period_end: p.period_end,
+    amount: p.amount,
   });
 }
 
@@ -161,12 +161,7 @@ export async function deletePayment(botId: string, paymentId: string, actor: str
     .eq("bot_id", botId);
   if (error) throw new Error(`Не удалось удалить платёж: ${error.message}`);
 
-  await s.from("bot_events").insert({
-    bot_id: botId,
-    actor,
-    kind: "message",
-    payload: { action: "payment_deleted", payment_id: paymentId },
-  });
+  await logEvent(botId, actor, "payment", { action: "deleted", payment_id: paymentId });
 }
 
 export async function setPolicy(botId: string, policy: OverduePolicy, actor: string) {
@@ -181,10 +176,5 @@ export async function setPolicy(botId: string, policy: OverduePolicy, actor: str
   const { error } = await s.from("bots").update({ settings }).eq("id", botId);
   if (error) throw new Error(`Не удалось сохранить политику: ${error.message}`);
 
-  await s.from("bot_events").insert({
-    bot_id: botId,
-    actor,
-    kind: "message",
-    payload: { action: "policy_changed", ...policy },
-  });
+  await logEvent(botId, actor, "policy", { ...policy });
 }

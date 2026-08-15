@@ -1,6 +1,7 @@
 import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { callInternal } from "./internal-client.server";
+import { logEvent } from "./events.server";
 import type { Json } from "@/integrations-supabase/types";
 import { computeState, readPolicy, type SubscriptionState } from "./subscriptions.server";
 
@@ -86,7 +87,17 @@ export type BotDetail = BotBase & {
 export async function getBot(botId: string): Promise<BotDetail> {
   await requireOperator();
   const s = await db();
-  const { data, error } = await s.from("bots").select("*").eq("id", botId).single();
+  // Явный список вместо select("*"): строка bots содержит и bot_token, и
+  // internal_secret, и тянуть их сюда незачем.
+  const { data, error } = await s
+    .from("bots")
+    // Одной строкой, а не конкатенацией: PostgREST выводит типы строки только
+    // из строкового литерала — склейка превращает результат в GenericStringError.
+    .select(
+      "id, bot_name, status, owner_name, owner_contact, owner_telegram_id, app_url, notes, paused_message, subscription_plan, subscription_expires_at, modules, internal_secret",
+    )
+    .eq("id", botId)
+    .single();
   if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
 
   const rawModules = (data.modules as Record<string, boolean> | null) ?? {};
@@ -140,12 +151,7 @@ export async function setModule(botId: string, key: ModuleKey, enabled: boolean,
   const { error } = await s.from("bots").update({ modules }).eq("id", botId);
   if (error) throw new Error(`Не удалось сохранить модуль: ${error.message}`);
 
-  await s.from("bot_events").insert({
-    bot_id: botId,
-    actor,
-    kind: enabled ? "module_on" : "module_off",
-    payload: { key },
-  });
+  await logEvent(botId, actor, enabled ? "module_on" : "module_off", { key });
 
   await nudgeDeployment(botId);
 }
@@ -174,13 +180,12 @@ export async function setBotStatus(botId: string, status: BotStatus, actor: stri
   const { error } = await s.from("bots").update({ status }).eq("id", botId);
   if (error) throw new Error(`Не удалось изменить статус: ${error.message}`);
 
-  const { error: evErr } = await s.from("bot_events").insert({
-    bot_id: botId,
+  await logEvent(
+    botId,
     actor,
-    kind: status === "active" ? "resume" : status === "suspended" ? "suspend" : "pause",
-    payload: { status },
-  });
-  if (evErr) console.error("[operator] не удалось записать bot_events:", evErr.message);
+    status === "active" ? "resume" : status === "suspended" ? "suspend" : "pause",
+    { status },
+  );
 
   // Тем же кешем читается и статус — пауза должна вступать в силу сразу.
   await nudgeDeployment(botId);
@@ -195,11 +200,16 @@ export type BotMetaPatch = Partial<{
   paused_message: string | null;
 }>;
 
-export async function updateBotMeta(botId: string, patch: BotMetaPatch) {
+export async function updateBotMeta(botId: string, patch: BotMetaPatch, actor: string) {
   await requireOperator();
   const s = await db();
   const { error } = await s.from("bots").update(patch).eq("id", botId);
   if (error) throw new Error(`Не удалось сохранить данные клиента: ${error.message}`);
+
+  // Правка карточки не оставляла следа вообще — а меняется тут в том числе
+  // app_url, от которого зависит, куда панель стучится и чей вебхук считается
+  // своим. В журнал идут имена изменённых полей, без значений.
+  await logEvent(botId, actor, "meta", { fields: Object.keys(patch) });
 }
 
 export type BotEvent = {
@@ -278,13 +288,7 @@ export async function requestWebhookSetup(
     ? { ok: true, detail: res.body?.url ?? "вебхук проставлен" }
     : { ok: false, detail: res.error };
 
-  const { error: evErr } = await s.from("bot_events").insert({
-    bot_id: botId,
-    actor,
-    kind: "webhook",
-    payload: { ok: outcome.ok, detail: outcome.detail },
-  });
-  if (evErr) console.error("[operator] не удалось записать bot_events:", evErr.message);
+  await logEvent(botId, actor, "webhook", { ok: outcome.ok, detail: outcome.detail });
   return outcome;
 }
 

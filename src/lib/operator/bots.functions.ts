@@ -75,7 +75,7 @@ export const updateBotMetaFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     const { botId, ...patch } = data;
-    await updateBotMeta(botId, patch);
+    await updateBotMeta(botId, patch, await actor());
     return { ok: true as const };
   });
 
@@ -143,16 +143,11 @@ export const buildEnvBlockFn = createServerFn({ method: "POST" })
     const { buildEnvBlockFor } = await import("./env-block.server");
     const result = await buildEnvBlockFor(data);
     // В журнал — сам факт, без единого секрета: журнал читается в панели.
-    // Ошибку записи не глушим: выдача ключа арендатора обязана оставлять след,
-    // и потерю следа надо видеть хотя бы в логах.
-    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-    const { error: evErr } = await supabaseAdmin.from("bot_events").insert({
-      bot_id: data.botId,
-      actor: await actor(),
-      kind: "env_block",
-      payload: { mode: data.mode, with_vip: Boolean(data.vipBotToken) },
+    const { logEvent } = await import("./events.server");
+    await logEvent(data.botId, await actor(), "env_block", {
+      mode: data.mode,
+      with_vip: Boolean(data.vipBotToken),
     });
-    if (evErr) console.error("[operator] не удалось записать bot_events:", evErr.message);
     return result;
   });
 
