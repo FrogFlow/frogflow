@@ -74,7 +74,13 @@ export type BotDetail = BotBase & {
   owner_telegram_id: number | null;
   owner_contact: string | null;
   paused_message: string | null;
-  internal_secret: string | null;
+  /**
+   * Заполнен ли internal_secret — но не он сам. Само значение это пароль
+   * панели ко внутреннему API деплоя; интерфейсу оно не нужно, а отдавать его
+   * в браузер значит класть его в память вкладки, в devtools и в любой отчёт
+   * об ошибке. Панели он нужен на сервере, где и читается.
+   */
+  has_internal_secret: boolean;
 };
 
 export async function getBot(botId: string): Promise<BotDetail> {
@@ -97,7 +103,7 @@ export async function getBot(botId: string): Promise<BotDetail> {
     app_url: data.app_url,
     notes: data.notes,
     paused_message: data.paused_message,
-    internal_secret: data.internal_secret,
+    has_internal_secret: Boolean(data.internal_secret),
     subscription_plan: data.subscription_plan,
     subscription_expires_at: data.subscription_expires_at,
     modules,
@@ -168,13 +174,13 @@ export async function setBotStatus(botId: string, status: BotStatus, actor: stri
   const { error } = await s.from("bots").update({ status }).eq("id", botId);
   if (error) throw new Error(`Не удалось изменить статус: ${error.message}`);
 
-  await s.from("bot_events").insert({
+  const { error: evErr } = await s.from("bot_events").insert({
     bot_id: botId,
     actor,
-    // bot_events.kind допускает только pause/resume — suspended логируется тем же "pause".
-    kind: status === "active" ? "resume" : "pause",
+    kind: status === "active" ? "resume" : status === "suspended" ? "suspend" : "pause",
     payload: { status },
   });
+  if (evErr) console.error("[operator] не удалось записать bot_events:", evErr.message);
 
   // Тем же кешем читается и статус — пауза должна вступать в силу сразу.
   await nudgeDeployment(botId);
@@ -272,12 +278,13 @@ export async function requestWebhookSetup(
     ? { ok: true, detail: res.body?.url ?? "вебхук проставлен" }
     : { ok: false, detail: res.error };
 
-  await s.from("bot_events").insert({
+  const { error: evErr } = await s.from("bot_events").insert({
     bot_id: botId,
     actor,
-    kind: "onboard",
-    payload: { action: "set_webhook", ok: outcome.ok, detail: outcome.detail },
+    kind: "webhook",
+    payload: { ok: outcome.ok, detail: outcome.detail },
   });
+  if (evErr) console.error("[operator] не удалось записать bot_events:", evErr.message);
   return outcome;
 }
 

@@ -133,13 +133,16 @@ export const buildEnvBlockFn = createServerFn({ method: "POST" })
     const { buildEnvBlockFor } = await import("./env-block.server");
     const result = await buildEnvBlockFor(data);
     // В журнал — сам факт, без единого секрета: журнал читается в панели.
+    // Ошибку записи не глушим: выдача ключа арендатора обязана оставлять след,
+    // и потерю следа надо видеть хотя бы в логах.
     const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-    await supabaseAdmin.from("bot_events").insert({
+    const { error: evErr } = await supabaseAdmin.from("bot_events").insert({
       bot_id: data.botId,
       actor: await actor(),
       kind: "env_block",
       payload: { mode: data.mode, with_vip: Boolean(data.vipBotToken) },
     });
+    if (evErr) console.error("[operator] не удалось записать bot_events:", evErr.message);
     return result;
   });
 
