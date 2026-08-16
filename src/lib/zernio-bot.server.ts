@@ -6,6 +6,7 @@ import {
 import crypto from "node:crypto";
 import { convertAmount } from "./currency.server";
 import { requireAppOrigin } from "./app-origin.server";
+import type { TablesUpdate } from "@/integrations-supabase/types";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -42,7 +43,7 @@ export async function upsertZernioUser(
     .maybeSingle();
 
   if (existing) {
-    const updates: Record<string, unknown> = {
+    const updates: TablesUpdate<"bot_users"> = {
       updated_at: new Date().toISOString(),
     };
     if (conversationId) updates.zernio_conversation_id = conversationId;
@@ -50,7 +51,14 @@ export async function upsertZernioUser(
     if (username) updates.username = username;
     if (firstName) updates.first_name = firstName;
     if (metadata) {
-      updates.metadata = { ...(existing.metadata || {}), ...metadata };
+      // `metadata` в базе — jsonb, то есть с точки зрения типов это Json:
+      // строка, число и массив там столь же допустимы, как объект. Разворачивать
+      // спредом можно только объект, поэтому всё остальное (включая null и
+      // случайно записанный скаляр) считаем «накопленного нет» и начинаем с
+      // пустого — иначе на такой строке падал бы весь разбор входящего сообщения.
+      const prev = existing.metadata;
+      const base = prev && typeof prev === "object" && !Array.isArray(prev) ? prev : {};
+      updates.metadata = { ...base, ...metadata };
     }
 
     await s.from("bot_users").update(updates).eq("user_key", userKey);

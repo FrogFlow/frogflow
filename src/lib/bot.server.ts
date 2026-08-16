@@ -208,9 +208,18 @@ async function setState(telegram_id: number, state: BotUser["state"]) {
       .eq("telegram_id", telegram_id)
       .maybeSingle();
     
-    if (existing?.state?.country_code) {
-      state.country_code = existing.state.country_code;
-      state.country_name = existing.state.country_name;
+    // `state` в базе — jsonb, то есть по типам это Json: скаляр и массив там
+    // не менее допустимы, чем объект. Читаем страну только из настоящего
+    // объекта, иначе обращение к полю на строке молча дало бы undefined.
+    const prev = existing?.state;
+    const prevState =
+      prev && typeof prev === "object" && !Array.isArray(prev)
+        ? (prev as NonNullable<BotUser["state"]>)
+        : null;
+
+    if (prevState?.country_code) {
+      state.country_code = prevState.country_code;
+      state.country_name = prevState.country_name;
     }
   }
 
@@ -570,7 +579,10 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function sendLongHtmlMessage(chat_id: number, text: string) {
+// chat_id — number | string, как и у самого Telegram: идентификаторы админов
+// читаются из app_settings строкой ("123,456" через запятую) и по пути к отправке
+// в число не переводятся. Соседний sendCoverPreviews принимает их так же.
+async function sendLongHtmlMessage(chat_id: number | string, text: string) {
   if (text.length <= TELEGRAM_MESSAGE_MAX) {
     await tg("sendMessage", { chat_id, text, parse_mode: "HTML" });
     return;

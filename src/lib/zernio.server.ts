@@ -1,6 +1,7 @@
 /**
  * Zernio API Client for Instagram & Multi-channel Integration
  */
+import type { Json } from "@/integrations-supabase/types";
 
 function getZernioKey(): string {
   const key = process.env.ZERNIO_API_KEY?.trim();
@@ -25,9 +26,15 @@ export type ZernioAccount = {
   platform: string;
   name?: string;
   username?: string;
-  profileId?: string;
+  // Zernio отдаёт ссылку на профиль либо строкой-идентификатором, либо уже
+  // развёрнутым объектом — зависит от эндпоинта. Форма в admin.instagram.tsx
+  // разбирает оба случая, и тип должен описывать то же самое.
+  profileId?: string | { _id: string };
   isExpired?: boolean;
-  metadata?: Record<string, unknown>;
+  // Json, а не Record<string, unknown>: тип уезжает на клиент через
+  // getInstagramAccountsFn, а `unknown` в TanStack Start не проходит проверку
+  // сериализуемости — это ведь просто разобранный ответ Zernio, то есть JSON.
+  metadata?: Record<string, Json>;
 };
 
 export type ZernioAccountHealth = {
@@ -80,8 +87,11 @@ export type ZernioCommentAutomation = {
   trigger?: "comment" | "story_reply";
   accountId: string;
   profileId?: string;
-  platformPostId?: string;
-  postId?: string;
+  // null — «все посты», а не «значение не задано»: именно его кладёт сюда
+  // разбор постов ниже (`… || null`) и валидатор формы в instagram.functions.ts
+  // (`.optional().nullable()`). Тип обязан это допускать.
+  platformPostId?: string | null;
+  postId?: string | null;
   postTitle?: string;
   keywords: string[];
   replyToAll?: boolean;
@@ -528,7 +538,7 @@ export async function createCommentAutomation(data: Partial<ZernioCommentAutomat
 
     // Ensure keywords are lowercase for better matching
     if (body.keywords) {
-      body.keywords = body.keywords.map(k => k.toLowerCase());
+      body.keywords = body.keywords.map((k: string) => k.toLowerCase());
     }
 
     const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation; error?: string }>("/comment-automations", {
@@ -550,7 +560,7 @@ export async function updateCommentAutomation(automationId: string, data: Partia
     const body: Record<string, any> = { ...data };
 
     if (body.keywords) {
-      body.keywords = body.keywords.map(k => k.toLowerCase());
+      body.keywords = body.keywords.map((k: string) => k.toLowerCase());
     }
 
     const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation; error?: string }>(`/comment-automations/${automationId}`, {

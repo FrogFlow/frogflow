@@ -1500,6 +1500,20 @@ export type Database = {
           storage_bytes: number
         }[]
       }
+      // Добавлено вручную по той же причине, что и operator_bot_stats.
+      // PATCH-BROADCASTS. Атомарный инкремент счётчиков рассылки: без него
+      // параллельные воркеры затирают счёт друг друга (read-then-write).
+      // Все три p_* в базе имеют DEFAULT 0, но broadcast.server.ts всегда
+      // передаёт их явно, поэтому здесь они не опциональны.
+      increment_broadcast_counts: {
+        Args: {
+          p_broadcast_id: string
+          p_sent: number
+          p_failed: number
+          p_blocked: number
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
