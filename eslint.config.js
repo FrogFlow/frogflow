@@ -36,5 +36,17 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  {
+    /**
+     * `useSession` из «@tanstack/react-start/server» — серверный хелпер работы
+     * с cookie-сессией, а не React-хук: плагин react-hooks опознаёт его лишь по
+     * имени на `use*` и требует React-контекста, которого на сервере нет.
+     * Правило снимается только с серверных модулей — React-компонентов в них не
+     * бывает по определению (`*.server.ts` не попадает в браузерный бандл), так
+     * что настоящих нарушений это не спрячет.
+     */
+    files: ["**/*.server.ts"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
   eslintPluginPrettier,
 );

@@ -25,11 +25,17 @@ if (!token) {
   process.exit(1);
 }
 
-const base = (
-  process.env.PUBLIC_APP_URL || "https://tg-bot-ashen-one.vercel.app"
-).replace(/\/$/, "");
+// Своего адреса у скрипта быть не может: у каждого клиентского деплоя он свой.
+// Молчаливая подстановка чужого URL увела бы вебхук бота на другой деплой —
+// поэтому отсутствие переменной здесь ошибка, а не повод взять умолчание.
+if (!process.env.PUBLIC_APP_URL) {
+  console.error("PUBLIC_APP_URL missing — без него неизвестно, на какой деплой ставить вебхук");
+  process.exit(1);
+}
+
+const base = process.env.PUBLIC_APP_URL.replace(/\/$/, "");
 const url = `${base}/api/public/telegram/webhook`;
-const body: Record<string, string | boolean> = { url, drop_pending_updates: false };
+const body = { url, drop_pending_updates: false };
 if (process.env.TELEGRAM_WEBHOOK_SECRET) {
   body.secret_token = process.env.TELEGRAM_WEBHOOK_SECRET;
 }
