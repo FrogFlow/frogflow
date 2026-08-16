@@ -34,6 +34,14 @@ export default tseslint.config(
       ],
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      /**
+       * В подписях интерфейса стоит узкий неразрывный пробел (U+202F) как
+       * разделитель разрядов — «10 000 ₸». Для русской типографики это верно,
+       * и правило ругалось на неё как на случайный символ. Послабление
+       * распространяется только на текст JSX: в самом коде необычный пробел
+       * по-прежнему ошибка, а там он как раз и опасен.
+       */
+      "no-irregular-whitespace": ["error", { skipJSXText: true }],
     },
   },
   {

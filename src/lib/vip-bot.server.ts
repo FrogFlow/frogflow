@@ -241,7 +241,7 @@ export function isAlreadyNotInChat(description?: string): boolean {
 async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: boolean }) {
   const s = await db();
   // Renewal list: public active tariffs, but never the first-entry package
-  let q = s
+  const q = s
     .from("vip_tariffs")
     .select("*")
     .eq("is_active", true)

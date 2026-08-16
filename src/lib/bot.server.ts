@@ -818,7 +818,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   }
 
   let total = 0;
-  let currency = (method?.currency as string) || "KZT";
+  const currency = (method?.currency as string) || "KZT";
   for (const it of items as any[]) {
     if (!it.products) continue;
     
