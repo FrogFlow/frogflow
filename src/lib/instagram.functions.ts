@@ -383,3 +383,55 @@ export const retryInstagramPostFn = createServerFn({ method: "POST" })
     await requireAdminWithModule();
     return await retryZernioPost(data.postId);
   });
+
+/**
+ * Что мы знаем о собеседниках из Direct: подписан ли человек, сколько у него
+ * подписчиков, верифицирован ли аккаунт.
+ *
+ * Эти данные приходят в каждом входящем событии, но до недавнего времени
+ * терялись при разборе (см. parseZernioMessage) — колонка `bot_users.metadata`
+ * была заведена под них и стояла пустой у всех. Теперь они собираются, и здесь
+ * отдаются экрану Direct, чтобы продавец видел, с кем разговаривает.
+ *
+ * У диалогов, начатых до починки, метаданных нет и не появится задним числом —
+ * такие просто не попадут в ответ, и интерфейс ничего про них не покажет.
+ */
+export const getInstagramContactProfilesFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ participantIds: z.array(z.string()).max(100) }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    if (data.participantIds.length === 0) return { profiles: {} };
+
+    const s = await db();
+    const userKeys = data.participantIds.map((id) => `ig_${id}`);
+    const { data: rows, error } = await s
+      .from("bot_users")
+      .select("user_key, metadata")
+      .in("user_key", userKeys);
+
+    if (error) {
+      console.error("[instagram.functions] getInstagramContactProfiles error:", error);
+      return { profiles: {} };
+    }
+
+    const profiles: Record<
+      string,
+      { isFollower?: boolean; followerCount?: number; isVerified?: boolean }
+    > = {};
+    for (const row of rows ?? []) {
+      const meta = row.metadata;
+      if (!meta || typeof meta !== "object" || Array.isArray(meta)) continue;
+      const { isFollower, followerCount, isVerified } = meta as Record<string, unknown>;
+      // Пустую карточку не отдаём: интерфейсу нужно отличать «не подписан» от
+      // «мы про этого человека ничего не знаем».
+      if (isFollower === undefined && followerCount === undefined && isVerified === undefined) {
+        continue;
+      }
+      profiles[row.user_key.replace(/^ig_/, "")] = {
+        isFollower: typeof isFollower === "boolean" ? isFollower : undefined,
+        followerCount: typeof followerCount === "number" ? followerCount : undefined,
+        isVerified: typeof isVerified === "boolean" ? isVerified : undefined,
+      };
+    }
+    return { profiles };
+  });

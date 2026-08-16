@@ -31,6 +31,7 @@ import {
   createInstagramPostFn,
   cancelInstagramPostFn,
   retryInstagramPostFn,
+  getInstagramContactProfilesFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -55,6 +56,10 @@ import {
   Eye,
   Info,
   CalendarClock,
+  BarChart3,
+  Bot,
+  Inbox,
+  UserCircle2,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components-ui/card";
@@ -64,7 +69,7 @@ export const Route = createFileRoute("/admin/instagram")({
   beforeLoad: ({ context }) => {
     if (!context.modules.instagram) throw redirect({ to: "/admin" });
   },
-  head: () => ({ meta: [{ title: "Instagram Automation" }] }),
+  head: () => ({ meta: [{ title: "Instagram" }] }),
   component: AdminInstagramPage,
 });
 
@@ -126,6 +131,19 @@ function AdminInstagramPage() {
     queryKey: ["ig_conversation_messages", acc?._id, selectedConversationId],
     queryFn: () => getInstagramConversationMessagesFn({ data: { accountId: acc?._id, conversationId: selectedConversationId! } }),
     enabled: !!acc?._id && !!selectedConversationId,
+  });
+
+  // Что мы знаем о собеседниках: подписчик или нет, сколько у него подписчиков.
+  // Диалоги приходят из Instagram, а профиль лежит у нас в bot_users, поэтому
+  // это отдельный запрос, привязанный к составу списка диалогов.
+  const conversationParticipantIds = (conversationsQuery.data?.conversations || [])
+    .map((conversation: any) => conversation.participantId)
+    .filter(Boolean)
+    .slice(0, 100);
+  const contactProfilesQuery = useQuery({
+    queryKey: ["ig_contact_profiles", conversationParticipantIds.join(",")],
+    queryFn: () => getInstagramContactProfilesFn({ data: { participantIds: conversationParticipantIds } }),
+    enabled: conversationParticipantIds.length > 0,
   });
 
   const handleInboxReply = async () => {
@@ -457,10 +475,12 @@ function AdminInstagramPage() {
     <div className="max-w-6xl mx-auto p-4 space-y-8 pb-20">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
         <div className="space-y-1">
-          <h1 className="text-3xl font-extrabold tracking-tight">Instagram Automation</h1>
-          <p className="text-muted-foreground flex items-center gap-2">
-            <Badge variant="outline" className="bg-green-500/5 text-green-600 border-green-500/20">Instagram API</Badge>
-            Управление автоответами, Direct и CRM-лидами
+          {/* Заголовок по-русски, как на остальных экранах админки. Бейдж с
+              названием сервиса-посредника убран: клиенту он ничего не
+              объясняет, а нам незачем показывать, чьими руками это сделано. */}
+          <h1 className="text-3xl font-extrabold tracking-tight">Instagram</h1>
+          <p className="text-muted-foreground">
+            Автоответы на комментарии, продажи в Direct и публикации
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -483,48 +503,49 @@ function AdminInstagramPage() {
       )}
 
       <Tabs defaultValue="automations" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-7 max-w-5xl">
+        {/*
+          Семь вкладок в один ряд на узком экране превращались в нечитаемую
+          полосу, а иконка MessageSquare стояла сразу у трёх из них
+          («Автоответчик», «Direct», «Аккаунты») — глазу не за что зацепиться.
+          Теперь ряд переносится, и у каждой вкладки свой знак. Подписи скрыты
+          только на самых узких экранах, где иначе не помещается ничего.
+        */}
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="direct-bot" className="gap-2">
-            <MessageSquare className="w-4 h-4" /> Автоответчик
+            <Bot className="w-4 h-4" /> <span className="hidden sm:inline">Автоответчик</span>
           </TabsTrigger>
           <TabsTrigger value="automations" className="gap-2">
-            <Settings2 className="w-4 h-4" /> Автоматизации
+            <Settings2 className="w-4 h-4" /> <span className="hidden sm:inline">Автоматизации</span>
           </TabsTrigger>
           <TabsTrigger value="publish" className="gap-2">
-            <CalendarClock className="w-4 h-4" /> Публикации
+            <CalendarClock className="w-4 h-4" /> <span className="hidden sm:inline">Публикации</span>
           </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
-            <History className="w-4 h-4" /> Журнал
+            <History className="w-4 h-4" /> <span className="hidden sm:inline">Журнал</span>
           </TabsTrigger>
           <TabsTrigger value="inbox" className="gap-2">
-            <MessageSquare className="w-4 h-4" /> Direct
+            <Inbox className="w-4 h-4" /> <span className="hidden sm:inline">Direct</span>
           </TabsTrigger>
           <TabsTrigger value="analytics" className="gap-2">
-            <Zap className="w-4 h-4" /> Аналитика
+            <BarChart3 className="w-4 h-4" /> <span className="hidden sm:inline">Аналитика</span>
           </TabsTrigger>
           <TabsTrigger value="accounts" className="gap-2">
-            <MessageSquare className="w-4 h-4" /> Аккаунты
+            <UserCircle2 className="w-4 h-4" /> <span className="hidden sm:inline">Аккаунты</span>
           </TabsTrigger>
         </TabsList>
 
+        {/*
+          Автоответчик живёт ровно в одной вкладке. Раньше эта карточка стояла
+          и здесь, и вверху «Автоматизаций» — два набора одних и тех же
+          переключателей поверх одних и тех же настроек, так что оператор не
+          мог понять, где из них «настоящий».
+        */}
         <TabsContent value="direct-bot" className="space-y-6">
-          <Card className="border-amber-200 bg-amber-50/40">
-            <CardHeader><CardTitle>Автоответчик Instagram Direct</CardTitle><CardDescription>Настраивайте ответы на личные сообщения отдельно от правил комментариев.</CardDescription></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between gap-4"><div><p className="font-medium">{directBotSettingsQuery.data?.enabled === false ? "Остановлен" : "Включён"}</p><p className="text-sm text-muted-foreground">Поиск использует активные товары каталога этого клиента.</p></div><label className="flex items-center gap-2 text-sm"><Checkbox checked={directBotSettingsQuery.data?.enabled !== false} onCheckedChange={(v) => handleDirectBotToggle(v === true)} />Включить</label></div>
-              <div className="space-y-2"><Label htmlFor="direct-bot-script-page">Ответ на непонятное сообщение</Label><Textarea id="direct-bot-script-page" value={directBotScript} onChange={(e) => setDirectBotScript(e.target.value)} rows={4} placeholder="Стандартное приветствие, если оставить пустым." /><Button size="sm" onClick={handleSaveDirectBotScript}>Сохранить текст</Button></div>
-              <div className="space-y-2"><Label>Сценарии</Label><div className="grid gap-2 sm:grid-cols-2">{[["catalog", "Каталог"], ["search", "Поиск товаров"], ["cart", "Корзина"], ["checkout", "Оформление заказа"]].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><Checkbox checked={(directBotFeaturesQuery.data as any)?.[key] !== false} onCheckedChange={(v) => handleFeatureToggle(key as any, v === true)} />{label}</label>)}</div></div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* AUTOMATIONS TAB */}
-        <TabsContent value="automations" className="space-y-6">
-          <Card className="border-amber-200 bg-amber-50/40">
+          <Card>
             <CardHeader>
-              <CardTitle>Автоответчик Instagram Direct</CardTitle>
+              <CardTitle>Автоответчик в Direct</CardTitle>
               <CardDescription>
-                Отвечает на входящие Direct: показывает каталог, ищет товары, ведёт корзину и оформление заказа. Он не зависит от правил «Комментарий → Direct» ниже.
+                Отвечает на входящие сообщения: показывает каталог, ищет товары, ведёт корзину и оформление заказа. От правил «Комментарий → Direct» не зависит.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex items-center justify-between gap-4">
@@ -548,13 +569,17 @@ function AdminInstagramPage() {
               <div className="flex items-center justify-between"><p className="text-xs text-muted-foreground">Этот текст не заменяет поиск товаров, корзину и оформление заказа.</p><Button size="sm" onClick={handleSaveDirectBotScript}>Сохранить текст</Button></div>
             </CardContent>
             <CardContent className="space-y-2 pt-0">
-              <Label>Сценарии Direct</Label>
+              <Label>Сценарии</Label>
               <p className="text-xs text-muted-foreground">Товары берутся из активного каталога этого клиента: название, описание и ключевые слова.</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {[["catalog", "Каталог"], ["search", "Поиск товаров"], ["cart", "Корзина"], ["checkout", "Оформление заказа"]].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><Checkbox checked={(directBotFeaturesQuery.data as any)?.[key] !== false} onCheckedChange={(value) => handleFeatureToggle(key as any, value === true)} />{label}</label>)}
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* AUTOMATIONS TAB */}
+        <TabsContent value="automations" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Editor Side */}
             <div className="lg:col-span-5 space-y-6">
@@ -565,7 +590,7 @@ function AdminInstagramPage() {
                     {editingId ? "Редактировать правило" : "Новая автоматизация"}
                   </CardTitle>
                   <CardDescription>
-                    Настройте триггер и автоматический ответ
+                    Что должно сработать и что ответить в Direct
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -576,7 +601,7 @@ function AdminInstagramPage() {
                         id="auto_title" 
                         value={title} 
                         onChange={(e) => setTitle(e.target.value)} 
-                        placeholder="Напр: Рассылка чек-листа"
+                        placeholder="Например: рассылка чек-листа"
                         required 
                       />
                     </div>
@@ -684,10 +709,10 @@ function AdminInstagramPage() {
                           rows={2}
                         />
                         <div className="bg-muted/30 p-2 rounded text-[10px] space-y-1">
-                          <span className="text-muted-foreground font-semibold uppercase">Вариации для анти-спама:</span>
+                          <span className="text-muted-foreground font-semibold uppercase">Вариации против однотипных ответов:</span>
                           <Textarea 
                             className="text-[11px] min-h-[40px] bg-transparent border-none focus-visible:ring-0 p-0"
-                            placeholder="Одна вариация на строку..."
+                            placeholder="Одна вариация на строку"
                             value={replyVariations.join("\n")}
                             onChange={(e) => setReplyVariations(e.target.value.split("\n"))}
                           />
@@ -742,7 +767,7 @@ function AdminInstagramPage() {
                                     <Input 
                                       value={btn.payload} 
                                       onChange={(e) => handleUpdateButton(i, "payload", e.target.value)} 
-                                      placeholder="Команда (напр: BUY_NOW)" 
+                                      placeholder="Команда, например BUY_NOW" 
                                       className="h-7 text-[11px] col-span-2"
                                     />
                                   )}
@@ -985,12 +1010,33 @@ function AdminInstagramPage() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
               <div className="max-h-[520px] space-y-2 overflow-y-auto border-r pr-3">
-                {(conversationsQuery.data?.conversations || []).map((conversation: any) => (
-                  <button key={conversation.id} type="button" onClick={() => setSelectedConversationId(conversation.id)} className={`w-full rounded-md border p-3 text-left ${selectedConversationId === conversation.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}>
-                    <div className="flex justify-between gap-2"><span className="font-medium truncate">{conversation.participantName || conversation.participantUsername || "Диалог"}</span>{conversation.unreadCount ? <Badge>{conversation.unreadCount}</Badge> : null}</div>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">{conversation.lastMessage || "Нет сообщений"}</p>
-                  </button>
-                ))}
+                {(conversationsQuery.data?.conversations || []).map((conversation: any) => {
+                  // Профиль есть только у тех, кто писал после того, как его
+                  // начали собирать. Для остальных не показываем ничего —
+                  // «неизвестно» и «не подписан» это разные вещи.
+                  const profile = contactProfilesQuery.data?.profiles?.[conversation.participantId];
+                  return (
+                    <button key={conversation.id} type="button" onClick={() => setSelectedConversationId(conversation.id)} className={`w-full rounded-md border p-3 text-left ${selectedConversationId === conversation.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}>
+                      <div className="flex justify-between gap-2"><span className="font-medium truncate">{conversation.participantName || conversation.participantUsername || "Диалог"}</span>{conversation.unreadCount ? <Badge>{conversation.unreadCount}</Badge> : null}</div>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{conversation.lastMessage || "Нет сообщений"}</p>
+                      {profile && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1">
+                          {profile.isFollower !== undefined && (
+                            <Badge variant={profile.isFollower ? "secondary" : "outline"} className="text-[10px]">
+                              {profile.isFollower ? "Подписчик" : "Не подписан"}
+                            </Badge>
+                          )}
+                          {profile.isVerified && <Badge variant="outline" className="text-[10px]">Верифицирован</Badge>}
+                          {profile.followerCount !== undefined && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {profile.followerCount.toLocaleString("ru-RU")} подписчиков
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
                 {!conversationsQuery.isLoading && !(conversationsQuery.data?.conversations || []).length && <p className="text-sm text-muted-foreground">Диалогов пока нет.</p>}
               </div>
               <div className="flex min-h-[440px] flex-col gap-3">
