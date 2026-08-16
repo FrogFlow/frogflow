@@ -100,6 +100,17 @@ export async function handleZernioMessage(payload: any) {
     return;
   }
 
+  const s = await db();
+  const { data: directBotSetting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", "instagram_direct_bot_enabled")
+    .maybeSingle();
+  if (directBotSetting?.value === "false") {
+    console.log("[zernio-bot] Direct assistant is disabled; event recorded without a reply");
+    return;
+  }
+
   // Логируем сообщение
   console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
 

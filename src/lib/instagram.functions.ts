@@ -44,6 +44,26 @@ export const getInstagramAccountHealthFn = createServerFn({ method: "GET" })
     return { health: await getZernioAccountHealth(data.accountId) };
   });
 
+/** Settings for the in-app Direct assistant (separate from comment rules). */
+export const getInstagramDirectBotSettingsFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdminWithModule();
+  const s = await db();
+  const { data } = await s.from("app_settings").select("key, value").eq("key", "instagram_direct_bot_enabled").maybeSingle();
+  return { enabled: data?.value !== "false" };
+});
+
+export const saveInstagramDirectBotSettingsFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ enabled: z.boolean() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { error } = await s
+      .from("app_settings")
+      .upsert({ key: "instagram_direct_bot_enabled", value: String(data.enabled), updated_at: new Date().toISOString() });
+    if (error) throw new Error(error.message);
+    return { ok: true, enabled: data.enabled };
+  });
+
 export const getInstagramConversationsFn = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ accountId: z.string().min(1) }).parse(d))
   .handler(async ({ data }) => {

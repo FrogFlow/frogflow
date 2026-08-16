@@ -10,6 +10,8 @@ import {
   getInstagramConnectUrlFn,
   getInstagramAccountsFn,
   getInstagramAccountHealthFn,
+  getInstagramDirectBotSettingsFn,
+  saveInstagramDirectBotSettingsFn,
   getInstagramConversationsFn,
   getInstagramConversationMessagesFn,
   sendInstagramConversationMessageFn,
@@ -93,6 +95,7 @@ function AdminInstagramPage() {
     enabled: !!acc?._id,
   });
   const dashboardQuery = useQuery({ queryKey: ["ig_dashboard"], queryFn: () => getInstagramDashboardFn() });
+  const directBotSettingsQuery = useQuery({ queryKey: ["ig_direct_bot_settings"], queryFn: () => getInstagramDirectBotSettingsFn() });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
@@ -127,6 +130,16 @@ function AdminInstagramPage() {
       qc.invalidateQueries({ queryKey: ["ig_conversations", acc._id] });
     } catch (e: any) {
       setStatusMsg(`Ошибка отправки: ${e.message}`);
+    }
+  };
+
+  const handleDirectBotToggle = async (enabled: boolean) => {
+    try {
+      await saveInstagramDirectBotSettingsFn({ data: { enabled } });
+      qc.invalidateQueries({ queryKey: ["ig_direct_bot_settings"] });
+      setStatusMsg(enabled ? "✅ Автоответчик Direct включён." : "✅ Автоответчик Direct остановлен.");
+    } catch (e: any) {
+      setStatusMsg(`Ошибка настройки автоответчика: ${e.message}`);
     }
   };
 
@@ -471,6 +484,29 @@ function AdminInstagramPage() {
 
         {/* AUTOMATIONS TAB */}
         <TabsContent value="automations" className="space-y-6">
+          <Card className="border-amber-200 bg-amber-50/40">
+            <CardHeader>
+              <CardTitle>Автоответчик Instagram Direct</CardTitle>
+              <CardDescription>
+                Отвечает на входящие Direct: показывает каталог, ищет товары, ведёт корзину и оформление заказа. Он не зависит от правил «Комментарий → Direct» ниже.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium">{directBotSettingsQuery.data?.enabled === false ? "Остановлен" : "Включён"}</p>
+                <p className="text-sm text-muted-foreground">Выключение прекращает новые автоматические ответы, но не отключает ручную переписку и правила комментариев.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="instagram-direct-bot-enabled"
+                  checked={directBotSettingsQuery.data?.enabled !== false}
+                  disabled={directBotSettingsQuery.isLoading}
+                  onCheckedChange={(value) => handleDirectBotToggle(value === true)}
+                />
+                <Label htmlFor="instagram-direct-bot-enabled">Включить</Label>
+              </div>
+            </CardContent>
+          </Card>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Editor Side */}
             <div className="lg:col-span-5 space-y-6">
