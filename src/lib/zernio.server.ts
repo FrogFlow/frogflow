@@ -67,6 +67,11 @@ export type ZernioDmButton = {
   phone?: string;
 };
 
+/** A normal Direct reply must not carry an out-of-window message tag. */
+export function buildInstagramInboxMessageBody(accountId: string, message: string): Record<string, string> {
+  return { accountId, message };
+}
+
 export type ZernioCommentAutomation = {
   id?: string;
   _id?: string;
@@ -242,12 +247,7 @@ export async function sendZernioInboxMessage(
   buttons?: ZernioDmButton[],
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const body: Record<string, unknown> = {
-      accountId,
-      message,
-      messagingType: "MESSAGE_TAG",
-      messageTag: "HUMAN_AGENT",
-    };
+    const body: Record<string, unknown> = buildInstagramInboxMessageBody(accountId, message);
 
     if (attachmentUrl) {
       body.attachmentUrl = attachmentUrl;
@@ -269,7 +269,7 @@ export async function sendZernioInboxMessage(
   } catch (e) {
     console.error(`[zernio] sendZernioInboxMessage failed for conversation ${conversationId}`, e);
     const details = e instanceof Error ? e.message : "";
-    const error = /403|inbox add-on|required/i.test(details)
+    const error = /inbox add-on required/i.test(details)
       ? "Для этого аккаунта недоступна отправка в Direct. Проверьте права подключения и тариф сервиса."
       : "Не удалось отправить сообщение. Проверьте подключение Instagram и повторите попытку.";
     return { ok: false, error };
