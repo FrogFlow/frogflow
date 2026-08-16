@@ -188,6 +188,17 @@ export async function handleZernioMessage(payload: any) {
   }
 
   // Дефолтный приветственный ответ
+  const { data: scriptSetting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("key", "instagram_direct_bot_script")
+    .maybeSingle();
+  if (scriptSetting?.value?.trim()) {
+    await sendZernioInboxMessage(conversationId, accountId, scriptSetting.value.trim());
+    return;
+  }
+
   const defaultReply =
     `Здравствуйте, ${senderName}! 👋\n` +
     `Добро пожаловать в наш магазин учебных материалов.\n\n` +

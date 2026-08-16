@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
@@ -12,6 +12,8 @@ import {
   getInstagramAccountHealthFn,
   getInstagramDirectBotSettingsFn,
   saveInstagramDirectBotSettingsFn,
+  getInstagramDirectBotScriptFn,
+  saveInstagramDirectBotScriptFn,
   getInstagramConversationsFn,
   getInstagramConversationMessagesFn,
   sendInstagramConversationMessageFn,
@@ -96,11 +98,13 @@ function AdminInstagramPage() {
   });
   const dashboardQuery = useQuery({ queryKey: ["ig_dashboard"], queryFn: () => getInstagramDashboardFn() });
   const directBotSettingsQuery = useQuery({ queryKey: ["ig_direct_bot_settings"], queryFn: () => getInstagramDirectBotSettingsFn() });
+  const directBotScriptQuery = useQuery({ queryKey: ["ig_direct_bot_script"], queryFn: () => getInstagramDirectBotScriptFn() });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [directBotScript, setDirectBotScript] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishContent, setPublishContent] = useState("");
   const [mediaUrlsText, setMediaUrlsText] = useState("");
@@ -111,6 +115,7 @@ function AdminInstagramPage() {
   const [collaboratorsText, setCollaboratorsText] = useState("");
   const [shareToFeed, setShareToFeed] = useState(true);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
+  useEffect(() => { if (directBotScriptQuery.data) setDirectBotScript(directBotScriptQuery.data.text); }, [directBotScriptQuery.data]);
   const [postActionId, setPostActionId] = useState<string | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [inboxReply, setInboxReply] = useState("");
@@ -141,6 +146,14 @@ function AdminInstagramPage() {
     } catch (e: any) {
       setStatusMsg(`Ошибка настройки автоответчика: ${e.message}`);
     }
+  };
+
+  const handleSaveDirectBotScript = async () => {
+    try {
+      await saveInstagramDirectBotScriptFn({ data: { text: directBotScript } });
+      qc.invalidateQueries({ queryKey: ["ig_direct_bot_script"] });
+      setStatusMsg("✅ Текст автоответчика сохранён.");
+    } catch (e: any) { setStatusMsg(`Ошибка сохранения: ${e.message}`); }
   };
 
   const handlePostAction = async (postId: string, action: "cancel" | "retry") => {
@@ -505,6 +518,11 @@ function AdminInstagramPage() {
                 />
                 <Label htmlFor="instagram-direct-bot-enabled">Включить</Label>
               </div>
+            </CardContent>
+            <CardContent className="space-y-2 pt-0">
+              <Label htmlFor="direct-bot-script">Ответ на короткое или непонятное сообщение</Label>
+              <Textarea id="direct-bot-script" value={directBotScript} onChange={(event) => setDirectBotScript(event.target.value)} placeholder="Оставьте пустым, чтобы использовать стандартное приветствие и каталог." rows={4} maxLength={1500} />
+              <div className="flex items-center justify-between"><p className="text-xs text-muted-foreground">Этот текст не заменяет поиск товаров, корзину и оформление заказа.</p><Button size="sm" onClick={handleSaveDirectBotScript}>Сохранить текст</Button></div>
             </CardContent>
           </Card>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

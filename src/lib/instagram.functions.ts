@@ -70,6 +70,16 @@ export const saveInstagramDirectBotSettingsFn = createServerFn({ method: "POST" 
     return { ok: true, enabled: data.enabled };
   });
 
+export const getInstagramDirectBotScriptFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdminWithModule(); const s = await db();
+  const { data } = await s.from("app_settings").select("value").eq("bot_id", requireBotId()).eq("key", "instagram_direct_bot_script").maybeSingle();
+  return { text: data?.value || "" };
+});
+
+export const saveInstagramDirectBotScriptFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ text: z.string().trim().max(1500) }).parse(d))
+  .handler(async ({ data }) => { await requireAdminWithModule(); const s = await db(); const { error } = await s.from("app_settings").upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_script", value: data.text, updated_at: new Date().toISOString() }); if (error) throw new Error(error.message); return { ok: true }; });
+
 export const getInstagramConversationsFn = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ accountId: z.string().min(1) }).parse(d))
   .handler(async ({ data }) => {
