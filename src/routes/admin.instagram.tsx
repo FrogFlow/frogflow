@@ -483,7 +483,10 @@ function AdminInstagramPage() {
       )}
 
       <Tabs defaultValue="automations" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6 max-w-4xl">
+        <TabsList className="grid w-full grid-cols-7 max-w-5xl">
+          <TabsTrigger value="direct-bot" className="gap-2">
+            <MessageSquare className="w-4 h-4" /> Автоответчик
+          </TabsTrigger>
           <TabsTrigger value="automations" className="gap-2">
             <Settings2 className="w-4 h-4" /> Автоматизации
           </TabsTrigger>
@@ -503,6 +506,17 @@ function AdminInstagramPage() {
             <MessageSquare className="w-4 h-4" /> Аккаунты
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="direct-bot" className="space-y-6">
+          <Card className="border-amber-200 bg-amber-50/40">
+            <CardHeader><CardTitle>Автоответчик Instagram Direct</CardTitle><CardDescription>Настраивайте ответы на личные сообщения отдельно от правил комментариев.</CardDescription></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-4"><div><p className="font-medium">{directBotSettingsQuery.data?.enabled === false ? "Остановлен" : "Включён"}</p><p className="text-sm text-muted-foreground">Поиск использует активные товары каталога этого клиента.</p></div><label className="flex items-center gap-2 text-sm"><Checkbox checked={directBotSettingsQuery.data?.enabled !== false} onCheckedChange={(v) => handleDirectBotToggle(v === true)} />Включить</label></div>
+              <div className="space-y-2"><Label htmlFor="direct-bot-script-page">Ответ на непонятное сообщение</Label><Textarea id="direct-bot-script-page" value={directBotScript} onChange={(e) => setDirectBotScript(e.target.value)} rows={4} placeholder="Стандартное приветствие, если оставить пустым." /><Button size="sm" onClick={handleSaveDirectBotScript}>Сохранить текст</Button></div>
+              <div className="space-y-2"><Label>Сценарии</Label><div className="grid gap-2 sm:grid-cols-2">{[["catalog", "Каталог"], ["search", "Поиск товаров"], ["cart", "Корзина"], ["checkout", "Оформление заказа"]].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><Checkbox checked={(directBotFeaturesQuery.data as any)?.[key] !== false} onCheckedChange={(v) => handleFeatureToggle(key as any, v === true)} />{label}</label>)}</div></div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* AUTOMATIONS TAB */}
         <TabsContent value="automations" className="space-y-6">
