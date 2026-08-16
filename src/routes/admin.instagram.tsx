@@ -14,6 +14,8 @@ import {
   saveInstagramDirectBotSettingsFn,
   getInstagramDirectBotScriptFn,
   saveInstagramDirectBotScriptFn,
+  getInstagramDirectBotFeaturesFn,
+  saveInstagramDirectBotFeaturesFn,
   getInstagramConversationsFn,
   getInstagramConversationMessagesFn,
   sendInstagramConversationMessageFn,
@@ -99,6 +101,7 @@ function AdminInstagramPage() {
   const dashboardQuery = useQuery({ queryKey: ["ig_dashboard"], queryFn: () => getInstagramDashboardFn() });
   const directBotSettingsQuery = useQuery({ queryKey: ["ig_direct_bot_settings"], queryFn: () => getInstagramDirectBotSettingsFn() });
   const directBotScriptQuery = useQuery({ queryKey: ["ig_direct_bot_script"], queryFn: () => getInstagramDirectBotScriptFn() });
+  const directBotFeaturesQuery = useQuery({ queryKey: ["ig_direct_bot_features"], queryFn: () => getInstagramDirectBotFeaturesFn() });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
@@ -154,6 +157,12 @@ function AdminInstagramPage() {
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_script"] });
       setStatusMsg("✅ Текст автоответчика сохранён.");
     } catch (e: any) { setStatusMsg(`Ошибка сохранения: ${e.message}`); }
+  };
+
+  const handleFeatureToggle = async (key: "catalog" | "search" | "cart" | "checkout", value: boolean) => {
+    const current = directBotFeaturesQuery.data || { catalog: true, search: true, cart: true, checkout: true };
+    await saveInstagramDirectBotFeaturesFn({ data: { ...current, [key]: value } });
+    qc.invalidateQueries({ queryKey: ["ig_direct_bot_features"] });
   };
 
   const handlePostAction = async (postId: string, action: "cancel" | "retry") => {
@@ -523,6 +532,13 @@ function AdminInstagramPage() {
               <Label htmlFor="direct-bot-script">Ответ на короткое или непонятное сообщение</Label>
               <Textarea id="direct-bot-script" value={directBotScript} onChange={(event) => setDirectBotScript(event.target.value)} placeholder="Оставьте пустым, чтобы использовать стандартное приветствие и каталог." rows={4} maxLength={1500} />
               <div className="flex items-center justify-between"><p className="text-xs text-muted-foreground">Этот текст не заменяет поиск товаров, корзину и оформление заказа.</p><Button size="sm" onClick={handleSaveDirectBotScript}>Сохранить текст</Button></div>
+            </CardContent>
+            <CardContent className="space-y-2 pt-0">
+              <Label>Сценарии Direct</Label>
+              <p className="text-xs text-muted-foreground">Товары берутся из активного каталога этого клиента: название, описание и ключевые слова.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {[["catalog", "Каталог"], ["search", "Поиск товаров"], ["cart", "Корзина"], ["checkout", "Оформление заказа"]].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><Checkbox checked={(directBotFeaturesQuery.data as any)?.[key] !== false} onCheckedChange={(value) => handleFeatureToggle(key as any, value === true)} />{label}</label>)}
+              </div>
             </CardContent>
           </Card>
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

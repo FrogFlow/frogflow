@@ -111,6 +111,9 @@ export async function handleZernioMessage(payload: any) {
     console.log("[zernio-bot] Direct assistant is disabled; event recorded without a reply");
     return;
   }
+  const { data: featureSetting } = await s.from("app_settings").select("value").eq("bot_id", process.env.BOT_ID?.trim() || "").eq("key", "instagram_direct_bot_features").maybeSingle();
+  let features = { catalog: true, search: true, cart: true, checkout: true };
+  try { features = { ...features, ...JSON.parse(featureSetting?.value || "{}") }; } catch { /* defaults */ }
 
   // Логируем сообщение
   console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
@@ -143,15 +146,15 @@ export async function handleZernioMessage(payload: any) {
       await addProductToCart(conversationId, accountId, user, postbackPayload.slice(4));
       return;
     }
-    if (postbackPayload === "CART") {
+    if (features.cart && postbackPayload === "CART") {
       await sendCart(conversationId, accountId, user);
       return;
     }
-    if (postbackPayload === "CHECKOUT") {
+    if (features.checkout && postbackPayload === "CHECKOUT") {
       await startInstagramCheckout(conversationId, accountId, user);
       return;
     }
-    if (postbackPayload === "CATALOG") {
+    if (features.catalog && postbackPayload === "CATALOG") {
       await sendCatalogMenu(conversationId, accountId, user);
       return;
     }
@@ -182,7 +185,7 @@ export async function handleZernioMessage(payload: any) {
   }
 
   // Если пользователь отправил текстовый запрос — ищем товары
-  if (text.length > 1) {
+  if (features.search && text.length > 1) {
     await sendInteractiveProductResults(conversationId, accountId, user, text);
     return;
   }
