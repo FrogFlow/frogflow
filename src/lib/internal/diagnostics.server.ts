@@ -191,6 +191,15 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
         : "модуль Instagram включён, а ключ Zernio не задан",
     );
   }
+  if (modules.instagram) {
+    add(
+      "ZERNIO_WEBHOOK_SECRET",
+      has(process.env.ZERNIO_WEBHOOK_SECRET) ? "ok" : "fail",
+      has(process.env.ZERNIO_WEBHOOK_SECRET)
+        ? "configured"
+        : "Instagram is enabled but Zernio webhook signature verification is not configured",
+    );
+  }
   if (modules.receipt_ocr) {
     add(
       "GOOGLE_VISION_API_KEY",
