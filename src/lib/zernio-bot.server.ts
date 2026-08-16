@@ -539,14 +539,11 @@ export async function deliverInstagramOrder(orderId: number) {
   await s.from("orders").update({ status: "delivered" }).eq("id", orderId);
 }
 
-export async function handleZernioComment(payload: any) {
-  const commentObj = payload.comment || {};
-  const commentText = (commentObj.text || commentObj.content || "").trim();
-  const commentId = commentObj.id;
-  
-  // Zernio's native Comment-to-DM automations will automatically handle
-  // matching keywords and sending DMs / Public Replies.
-  // Here we just log the event for our records.
-  
-  console.log(`[zernio-bot] Received comment (handled by Zernio Automations): "${commentText}" (ID: ${commentId})`);
-}
+/*
+ * Обработчика комментариев здесь намеренно нет. Ответы на комментарии и DM по
+ * ключевым словам делают родные Comment-to-DM автоматизации Zernio — им наше
+ * участие не нужно, и прежний handleZernioComment сводился к console.log.
+ * Вместе с ним снята и подписка на `comment.received` (см. комментарий к
+ * событиям в registerZernioWebhook): она давала 69 % всего трафика вебхука без
+ * единого полезного действия.
+ */

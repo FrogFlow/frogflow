@@ -139,7 +139,17 @@ export type ZernioWebhookMessagePayload = {
 
 async function zernioRequest<T>(
   endpoint: string,
-  options: { method?: string; body?: unknown; query?: Record<string, string> } = {},
+  options: {
+    method?: string;
+    body?: unknown;
+    query?: Record<string, string>;
+    /**
+     * Значение заголовка `Idempotency-Key`. Zernio хранит ключ сутки: тот же
+     * ключ с тем же телом возвращает исходный ответ вместо повторного действия,
+     * тот же ключ с другим телом — 422, ключ ещё в работе — 409.
+     */
+    idempotencyKey?: string;
+  } = {},
 ): Promise<T> {
   const apiKey = getZernioKey();
   const baseUrl = getZernioBaseUrl();
@@ -156,6 +166,7 @@ async function zernioRequest<T>(
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -271,9 +282,14 @@ export async function sendZernioInboxMessage(
       body.buttons = [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }];
     }
 
+    // Внутри обработки вебхука повтор доставки не должен обернуться вторым
+    // сообщением у клиента — Zernio по этому ключу вернёт исходный ответ.
+    const { idempotencyKeyFor } = await import("./zernio-event-context.server");
+
     await zernioRequest(`/inbox/conversations/${conversationId}/messages`, {
       method: "POST",
       body,
+      idempotencyKey: idempotencyKeyFor(body),
     });
     return { ok: true };
   } catch (e) {
@@ -286,11 +302,47 @@ export async function sendZernioInboxMessage(
   }
 }
 
+/**
+ * Кеш состава профиля на минуту.
+ *
+ * Проверка ниже стоит на горячем пути вебхука: она выполняется до того, как мы
+ * ответим Zernio, а у Zernio на ответ ровно 5 секунд — дальше доставка
+ * считается неуспешной и уходит в повтор. Без кеша каждое входящее событие
+ * тянуло за собой исходящий запрос `GET /accounts` к тому же Zernio, то есть на
+ * ~1670 событиях в сутки столько же лишних round-trip'ов внутри этого бюджета.
+ *
+ * Состав профиля меняется редко (подключили или отключили аккаунт), так что
+ * минута расхождения безобидна: свежеподключённый аккаунт начнёт обслуживаться
+ * не позже чем через минуту, а отключённый столько же будет считаться своим —
+ * и это не дыра в изоляции, потому что чужой аккаунт в кеше не появится.
+ * Ошибку и пустой ответ не кешируем: иначе разовый сбой Zernio погасил бы
+ * обработку на всю минуту.
+ */
+const PROFILE_ACCOUNTS_TTL_MS = 60_000;
+let profileAccountsCache: { at: number; profileId: string; accounts: ZernioAccount[] } | null = null;
+
+async function accountsInProfile(profileId: string): Promise<ZernioAccount[]> {
+  const cached = profileAccountsCache;
+  if (cached && cached.profileId === profileId && Date.now() - cached.at < PROFILE_ACCOUNTS_TTL_MS) {
+    return cached.accounts;
+  }
+  const accounts = await listZernioAccounts(profileId);
+  if (accounts.length > 0) {
+    profileAccountsCache = { at: Date.now(), profileId, accounts };
+  }
+  return accounts;
+}
+
+/** Сбрасывает кеш состава профиля — после подключения или отключения аккаунта. */
+export function resetProfileAccountsCache() {
+  profileAccountsCache = null;
+}
+
 /** Fail closed: a deployment may process only accounts in its configured profile. */
 export async function isInstagramAccountInConfiguredProfile(accountId: string): Promise<boolean> {
   const profileId = process.env.ZERNIO_PROFILE_ID?.trim();
   if (!profileId || !accountId) return false;
-  const accounts = await listZernioAccounts(profileId);
+  const accounts = await accountsInProfile(profileId);
   return accounts.some((account) => account._id === accountId && account.platform === "instagram");
 }
 
@@ -351,10 +403,27 @@ export async function registerZernioWebhook(webhookUrl: string): Promise<{ ok: b
   try {
     const secret = process.env.ZERNIO_WEBHOOK_SECRET?.trim();
     if (!secret) return { ok: false, error: "Не задана переменная окружения ZERNIO_WEBHOOK_SECRET." };
-    const events = [
-      "message.received", "message.sent", "message.delivered", "message.read", "message.failed",
-      "comment.received", "account.connected", "account.disconnected", "post.published", "post.failed",
-    ];
+    /**
+     * Только то, что действительно обрабатывается — первое правило из
+     * руководства Zernio по вебхукам, и здесь оно нарушалось дороже всего.
+     *
+     * Подписка была на десять событий при двух обработчиках, причём один из них
+     * (`comment.received`) сводился к console.log: комментарии закрывают родные
+     * Comment-to-DM автоматизации Zernio, наше участие там не требуется. При
+     * этом на `comment.received` приходилось 19 088 событий из 26 865 — 69 % и
+     * всего трафика, и таблицы логов. Каждое из них стоило вставки в базу,
+     * обновления статуса и места на диске ради строчки в консоли.
+     *
+     * Статистика по комментариям в админке от этого не пострадала: она читается
+     * из `rule.stats` в ответе Zernio (см. getInstagramDashboardFn), а не из
+     * наших логов.
+     *
+     * `account.disconnected` не подписан намеренно — обработчика у него нет, а
+     * заводить ещё один игнорируемый поток незачем. Событие полезное (истёкший
+     * токен = бот молча перестаёт отвечать), и подписаться на него стоит
+     * одновременно с обработчиком, а не заранее.
+     */
+    const events = ["message.received"];
     const current = await zernioRequest<{ webhooks?: Array<{ _id?: string; id?: string; url?: string; name?: string }> }>("/webhooks/settings");
     const existing = (current.webhooks || []).find((webhook) => webhook.url === webhookUrl || webhook.name === "Instagram Store Webhook");
     const response = await zernioRequest<{ success?: boolean; error?: string }>("/webhooks/settings", {

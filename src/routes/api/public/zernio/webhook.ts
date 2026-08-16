@@ -54,49 +54,67 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
 
-        // Проверка дедупликации
-        if (eventId) {
-          const { data: existing } = await supabaseAdmin
-            .from("zernio_logs")
-            .select("id")
-            .eq("event_id", String(eventId))
-            .maybeSingle();
-
-          if (existing) {
-            return new Response("already processed", { status: 200 });
-          }
-        }
-
-        // Логирование входящего события
-        const { data: logEntry, error: insertError } = await supabaseAdmin.from("zernio_logs").insert({
-          event_id: eventId ? String(eventId) : null,
-          event_type: eventType,
-          status: "pending",
-          payload,
-        }).select("id").single();
+        /**
+         * Дедупликация — на уникальном индексе, а не на «сначала посмотрим, потом
+         * вставим». У Zernio доставка at-least-once с семью попытками, и одно и то
+         * же событие приходит повторно, если ответ потерялся. Прежняя проверка
+         * читала таблицу и вставляла отдельным запросом: две одновременные
+         * доставки обе не находили строку, обе вставляли, нарушение индекса
+         * `zernio_logs_bot_event_id_key` просто писалось в консоль — и обработка
+         * шла дальше в обоих. Для клиента это второй одинаковый DM.
+         *
+         * Теперь конфликт вставки и есть ответ «уже принято»: строку держит тот,
+         * кто вставил первым, остальные уходят с 200 и ничего не обрабатывают.
+         * Код 23505 — unique_violation в PostgreSQL.
+         */
+        const { data: logEntry, error: insertError } = await supabaseAdmin
+          .from("zernio_logs")
+          .insert({
+            event_id: eventId ? String(eventId) : null,
+            event_type: eventType,
+            status: "pending",
+            payload,
+          })
+          .select("id")
+          .single();
 
         if (insertError) {
-          console.error("Failed to insert zernio log:", insertError);
+          if (insertError.code === "23505") {
+            return new Response("already processed", { status: 200 });
+          }
+          // Записать не вышло по другой причине. Обрабатывать вслепую нельзя:
+          // без строки некому пометить событие обработанным, а повторная
+          // доставка не отсеется — уж лучше отдать не-2xx и получить повтор
+          // по расписанию Zernio.
+          console.error("[instagram-webhook] failed to record event", insertError);
+          return new Response("failed to record event", { status: 500 });
         }
 
-        // Запуск асинхронной обработки события
+        // Обрабатывается ровно то, на что мы подписаны (см. registerZernioWebhook).
         runInBackground(async () => {
           try {
-            const { handleZernioMessage, handleZernioComment } = await import("@/lib/zernio-bot.server");
-            if (eventType === "message.received") {
-              await handleZernioMessage(payload);
-            } else if (eventType === "comment.received") {
-              await handleZernioComment(payload);
-            }
-            
-            if (logEntry?.id) {
-              await supabaseAdmin.from("zernio_logs").update({ status: "processed" }).eq("id", logEntry.id);
-            }
+            const { handleZernioMessage } = await import("@/lib/zernio-bot.server");
+            const { runWithZernioEvent } = await import("@/lib/zernio-event-context.server");
+
+            // Идентификатор события выставляется на всю обработку: отправки
+            // внутри выводят из него Idempotency-Key, чтобы повторная доставка
+            // не превратилась во второе сообщение клиенту.
+            await runWithZernioEvent(eventId ? String(eventId) : null, async () => {
+              if (eventType === "message.received") {
+                await handleZernioMessage(payload);
+              }
+            });
+
+            await supabaseAdmin
+              .from("zernio_logs")
+              .update({ status: "processed" })
+              .eq("id", logEntry.id);
           } catch (err) {
             console.error(`Error processing zernio event ${eventId}:`, err);
-            if (logEntry?.id) {
-              await supabaseAdmin.from("zernio_logs").update({ status: "error" }).eq("id", logEntry.id);
-            }
+            await supabaseAdmin
+              .from("zernio_logs")
+              .update({ status: "error" })
+              .eq("id", logEntry.id);
           }
         });
 
