@@ -6,7 +6,7 @@ import {
 import crypto from "node:crypto";
 import { convertAmount } from "./currency.server";
 import { requireAppOrigin } from "./app-origin.server";
-import type { TablesUpdate } from "@/integrations-supabase/types";
+import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -90,18 +90,17 @@ export async function upsertZernioUser(
  * Соответствует спецификации Zernio Webhooks: payload.message, payload.conversation, payload.account
  */
 export async function handleZernioMessage(payload: any) {
-  const msgObj = payload.message || {};
-  const convObj = payload.conversation || {};
-  const accObj = payload.account || {};
-
-  const conversationId = msgObj.conversationId || convObj.id;
-  const accountId = accObj.accountId || accObj.id || msgObj.accountId;
-  const senderObj = msgObj.sender || {};
-  const senderId = senderObj.id || senderObj.username || convObj.participantId || "unknown";
-  const senderUsername = senderObj.username || convObj.participantUsername || "";
-  const senderName = senderObj.name || convObj.participantName || senderUsername || "друг";
-  const userKey = `ig_${senderId}`;
-  const text = (msgObj.text || "").trim();
+  const { parseZernioMessage } = await import("./zernio-message");
+  const {
+    conversationId,
+    accountId,
+    userKey,
+    senderUsername,
+    senderName,
+    text,
+    metadata,
+    postbackPayload,
+  } = parseZernioMessage(payload);
 
   if (!conversationId || !accountId) {
     console.warn("[zernio-bot] message.received missing conversationId or accountId:", payload);
@@ -126,9 +125,6 @@ export async function handleZernioMessage(payload: any) {
   // Логируем сообщение
   console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
 
-  // Извлекаем метаданные профиля Instagram
-  const metadata = payload.data?.instagramProfile || {};
-  
   // Обновляем/создаем пользователя
   const user = await upsertZernioUser(
     userKey,
@@ -145,10 +141,7 @@ export async function handleZernioMessage(payload: any) {
   // the automation's button was configured in the admin panel. Generic
   // routing only: a specific payload's reply is business content that
   // belongs in the automation's own DM message, not hardcoded here.
-  const buttonMetadata = msgObj.metadata || {};
-  const isPostback = buttonMetadata.interactiveType === "postback";
-  const postbackPayload = buttonMetadata.interactiveId || "";
-  if (isPostback) {
+  if (postbackPayload !== null) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
     if (postbackPayload.startsWith("BUY:")) {
       await addProductToCart(conversationId, accountId, user, postbackPayload.slice(4));

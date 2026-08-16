@@ -114,27 +114,61 @@ export type ZernioCommentAutomation = {
   };
 };
 
+/**
+ * Полезная нагрузка `message.received` — по документации Zernio и по факту.
+ *
+ * Прежний вариант этого типа описывал объект `data` с плоскими полями
+ * (`senderId`, `senderUsername`, `commentText`…). Такого поля Zernio не
+ * присылает вовсе: в 26 865 сохранённых событиях `data` не встречается ни
+ * разу. Тип был выдумкой, и написанный по нему разбор молча читал undefined.
+ */
 export type ZernioWebhookMessagePayload = {
-  event: "message.received" | "comment.received" | "account.connected" | string;
+  /** Стабильный идентификатор события — он же ключ дедупликации. */
   id?: string;
-  data?: {
+  event: "message.received" | string;
+  message?: {
+    id?: string;
     conversationId?: string;
-    accountId?: string;
-    senderId?: string;
-    senderUsername?: string;
-    senderName?: string;
-    message?: string;
-    mediaUrl?: string;
-    commentId?: string;
-    postId?: string;
-    commentText?: string;
-    instagramProfile?: {
-      isFollower?: boolean;
-      isFollowing?: boolean;
-      followerCount?: number;
-      isVerified?: boolean;
+    platform?: string;
+    platformMessageId?: string;
+    direction?: "incoming" | "outgoing";
+    /** Может быть null: у сообщения бывает одно вложение без текста. */
+    text?: string | null;
+    attachments?: Array<{ type: string; url: string; payload?: Record<string, Json> }>;
+    sender?: {
+      id?: string;
+      /** Идентификатор карточки контакта в CRM самого Zernio. */
+      contactId?: string;
+      name?: string;
+      username?: string;
+      picture?: string;
+      instagramProfile?: {
+        isFollower?: boolean | null;
+        isFollowing?: boolean | null;
+        followerCount?: number | null;
+        isVerified?: boolean | null;
+      };
     };
+    /** Приходит при нажатии кнопки в DM: тип и идентификатор нажатого. */
+    metadata?: { interactiveType?: string; interactiveId?: string };
+    sentAt?: string;
+    isRead?: boolean;
   };
+  conversation?: {
+    id?: string;
+    participantId?: string;
+    participantName?: string;
+    participantUsername?: string;
+    participantPicture?: string | null;
+  };
+  account?: {
+    id?: string;
+    /** Тот же идентификатор, что и `id`; каноническое поле для фильтрации. */
+    accountId?: string;
+    platform?: string;
+    username?: string;
+  };
+  timestamp?: string;
 };
 
 async function zernioRequest<T>(
@@ -598,17 +632,82 @@ export async function listCommentAutomations(profileId?: string): Promise<{ auto
   }
 }
 
+/** Предел длины текста DM: с кнопками это button_template, и он строже. */
+const DM_LIMIT_WITH_BUTTONS = 640;
+const DM_LIMIT_PLAIN = 1000;
+
+/**
+ * Готовит тело запроса к автоматизации так, как его описывает документация.
+ *
+ * Две вещи, которые нельзя оставить вызывающему коду.
+ *
+ * Во-первых, пустые поля надо **опускать, а не слать null**. Для автоматизации
+ * «на все посты» доки прямо говорят: omit `platformPostId` и `postId`. Форма же
+ * отдаёт явный null (валидатор описан как `.optional().nullable()`), и такой
+ * null уходил в Zernio как значение.
+ *
+ * Во-вторых, длина текста DM ограничена, причём по-разному: с кнопками
+ * сообщение превращается в button_template и обязано уложиться в 640 символов,
+ * без них предел около 1000. Без проверки Zernio отвечает 400 уже после того,
+ * как оператор нажал «Сохранить», и видит он сырую английскую ошибку.
+ */
+export function buildAutomationBody(data: Partial<ZernioCommentAutomation>): Record<string, unknown> {
+  /**
+   * Пропускаем null и undefined — именно ими форма обозначает «поле не
+   * заполнено», и именно их доки велят опускать. Пустую строку, наоборот,
+   * оставляем: при редактировании ею оператор стирает публичный ответ или
+   * метку клика, и если её проглотить, Zernio сохранит прежнее значение —
+   * поле будет невозможно очистить. Пустой массив ключевых слов тоже
+   * значащий: по докам это «срабатывать на любой комментарий».
+   */
+  const body: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === null || value === undefined) continue;
+    // Идентификаторы поста пустой строкой не задают — это то же «на все посты».
+    if ((key === "platformPostId" || key === "postId") && value === "") continue;
+    body[key] = value;
+  }
+
+  // Ключевые слова сравниваются в нижнем регистре — иначе «Хочу» и «хочу»
+  // станут разными правилами.
+  if (Array.isArray(body.keywords)) {
+    body.keywords = (body.keywords as string[]).map((k) => k.toLowerCase().trim()).filter(Boolean);
+  }
+
+  const dmMessage = typeof body.dmMessage === "string" ? body.dmMessage : "";
+  if (!dmMessage.trim()) {
+    throw new Error("Текст сообщения в Direct обязателен — без него автоматизации нечего отправить.");
+  }
+
+  const hasButtons = Array.isArray(body.buttons) && (body.buttons as unknown[]).length > 0;
+  const limit = hasButtons ? DM_LIMIT_WITH_BUTTONS : DM_LIMIT_PLAIN;
+  if (dmMessage.length > limit) {
+    throw new Error(
+      hasButtons
+        ? `Сообщение в Direct — ${dmMessage.length} символов, а с кнопками помещается ${limit}. Сократите текст или уберите кнопки.`
+        : `Сообщение в Direct — ${dmMessage.length} символов, предел ${limit}. Сократите текст.`,
+    );
+  }
+
+  // Варианты текста ротируются вместе с основным, поэтому предел тот же.
+  for (const field of ["dmMessageVariations", "commentReplyVariations"] as const) {
+    const variations = body[field];
+    if (!Array.isArray(variations)) continue;
+    const tooLong = (variations as string[]).find((text) => text.length > limit);
+    if (tooLong) {
+      throw new Error(`Один из вариантов текста длиннее ${limit} символов. Сократите его.`);
+    }
+  }
+
+  return body;
+}
+
 /**
  * Создать Comment-to-DM автоматизацию
  */
 export async function createCommentAutomation(data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; error?: string; automation?: ZernioCommentAutomation }> {
   try {
-    const body: Record<string, any> = { ...data };
-
-    // Ensure keywords are lowercase for better matching
-    if (body.keywords) {
-      body.keywords = body.keywords.map((k: string) => k.toLowerCase());
-    }
+    const body = buildAutomationBody(data);
 
     const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation; error?: string }>("/comment-automations", {
       method: "POST",
@@ -626,11 +725,7 @@ export async function createCommentAutomation(data: Partial<ZernioCommentAutomat
  */
 export async function updateCommentAutomation(automationId: string, data: Partial<ZernioCommentAutomation>): Promise<{ ok: boolean; error?: string; automation?: ZernioCommentAutomation }> {
   try {
-    const body: Record<string, any> = { ...data };
-
-    if (body.keywords) {
-      body.keywords = body.keywords.map((k: string) => k.toLowerCase());
-    }
+    const body = buildAutomationBody(data);
 
     const res = await zernioRequest<{ success: boolean; automation: ZernioCommentAutomation; error?: string }>(`/comment-automations/${automationId}`, {
       method: "PATCH",
