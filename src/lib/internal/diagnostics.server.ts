@@ -184,20 +184,20 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
   }
   if (modules.instagram) {
     add(
-      "ZERNIO_API_KEY",
+      "Ключ Instagram API",
       has(process.env.ZERNIO_API_KEY) ? "ok" : "fail",
       has(process.env.ZERNIO_API_KEY)
         ? "задан"
-        : "модуль Instagram включён, а ключ Zernio не задан",
+        : "модуль Instagram включён, а ключ сервиса не задан",
     );
   }
   if (modules.instagram) {
     add(
-      "ZERNIO_WEBHOOK_SECRET",
+      "Секрет Instagram webhook",
       has(process.env.ZERNIO_WEBHOOK_SECRET) ? "ok" : "fail",
       has(process.env.ZERNIO_WEBHOOK_SECRET)
-        ? "configured"
-        : "Instagram is enabled but Zernio webhook signature verification is not configured",
+        ? "задан"
+        : "Instagram включён, но секрет webhook не задан — подпись событий нельзя проверить",
     );
   }
   if (modules.receipt_ocr) {

@@ -240,7 +240,7 @@ export async function sendZernioInboxMessage(
   attachmentUrl?: string,
   attachmentType?: "image" | "video" | "audio" | "file",
   buttons?: ZernioDmButton[],
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const body: Record<string, unknown> = {
       accountId,
@@ -268,7 +268,11 @@ export async function sendZernioInboxMessage(
     return { ok: true };
   } catch (e) {
     console.error(`[zernio] sendZernioInboxMessage failed for conversation ${conversationId}`, e);
-    return { ok: false };
+    const details = e instanceof Error ? e.message : "";
+    const error = /403|inbox add-on|required/i.test(details)
+      ? "Для этого аккаунта недоступна отправка в Direct. Проверьте права подключения и тариф сервиса."
+      : "Не удалось отправить сообщение. Проверьте подключение Instagram и повторите попытку.";
+    return { ok: false, error };
   }
 }
 

@@ -58,7 +58,7 @@ export const Route = createFileRoute("/admin/instagram")({
   beforeLoad: ({ context }) => {
     if (!context.modules.instagram) throw redirect({ to: "/admin" });
   },
-  head: () => ({ meta: [{ title: "Instagram Automation — Zernio" }] }),
+  head: () => ({ meta: [{ title: "Instagram Automation" }] }),
   component: AdminInstagramPage,
 });
 
@@ -121,7 +121,7 @@ function AdminInstagramPage() {
     if (!acc?._id || !selectedConversationId || !inboxReply.trim()) return;
     try {
       const result = await sendInstagramConversationMessageFn({ data: { accountId: acc._id, conversationId: selectedConversationId, message: inboxReply } });
-      if (!result.ok) throw new Error("Zernio не отправил сообщение.");
+      if (!result.ok) throw new Error(result.error || "Не удалось отправить сообщение. Повторите попытку.");
       setInboxReply("");
       qc.invalidateQueries({ queryKey: ["ig_conversation_messages", acc._id, selectedConversationId] });
       qc.invalidateQueries({ queryKey: ["ig_conversations", acc._id] });
@@ -138,7 +138,7 @@ function AdminInstagramPage() {
       const result = action === "cancel"
         ? await cancelInstagramPostFn({ data: { postId } })
         : await retryInstagramPostFn({ data: { postId } });
-      if (!result.ok) throw new Error(result.error || "Zernio не выполнил действие.");
+      if (!result.ok) throw new Error(result.error || "Сервис публикаций не выполнил действие.");
       setStatusMsg(action === "cancel" ? "✅ Публикация отменена." : "✅ Повторная публикация поставлена в очередь.");
       qc.invalidateQueries({ queryKey: ["ig_posts"] });
     } catch (e: any) {
@@ -217,7 +217,7 @@ function AdminInstagramPage() {
       if (res?.ok) {
         setStatusMsg("✅ Соединение успешно обновлено!");
       } else {
-        setStatusMsg(`❌ Ошибка при обновлении соединения: ${res?.error || "Zernio отклонил настройки webhook."}`);
+        setStatusMsg(`❌ Ошибка при обновлении соединения: ${res?.error || "Не удалось сохранить настройки webhook."}`);
       }
     } catch (e: any) {
       setStatusMsg(`Ошибка: ${e.message}`);
@@ -254,7 +254,7 @@ function AdminInstagramPage() {
           isAiGenerated,
         },
       });
-      if (!result?.ok) throw new Error(result?.error || "Zernio не принял публикацию.");
+      if (!result?.ok) throw new Error(result?.error || "Сервис публикаций не принял публикацию.");
       const timing = result.scheduledFor ? ` запланирована на ${new Date(result.scheduledFor).toLocaleString("ru-RU")}` : " отправлена на публикацию";
       setStatusMsg(`✅ Публикация${timing}.`);
       setPublishContent("");
@@ -320,7 +320,7 @@ function AdminInstagramPage() {
 
       const result = await saveAutomationFn({ data: automationData });
       if (!result?.ok) {
-        let errMsg = (result as any)?.error || "Zernio отклонил создание правила.";
+        let errMsg = (result as any)?.error || "Сервис автоматизации отклонил создание правила.";
         if (errMsg.includes("409")) {
           errMsg = "Для этого поста уже есть активная автоматизация. Отредактируйте существующую или удалите её перед созданием новой.";
         }
@@ -424,7 +424,7 @@ function AdminInstagramPage() {
         <div className="space-y-1">
           <h1 className="text-3xl font-extrabold tracking-tight">Instagram Automation</h1>
           <p className="text-muted-foreground flex items-center gap-2">
-            <Badge variant="outline" className="bg-green-500/5 text-green-600 border-green-500/20">Zernio API v1</Badge>
+            <Badge variant="outline" className="bg-green-500/5 text-green-600 border-green-500/20">Instagram API</Badge>
             Управление автоответами, Direct и CRM-лидами
           </p>
         </div>
@@ -852,7 +852,7 @@ function AdminInstagramPage() {
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle>Очередь публикаций</CardTitle>
-                <CardDescription>Запланированные, опубликованные и неудачные посты из Zernio.</CardDescription>
+                <CardDescription>Запланированные, опубликованные и неудачные посты.</CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={handleRefreshPosts} disabled={postsQuery.isFetching}>
                 <RefreshCcw className="w-4 h-4 mr-2" /> Обновить
@@ -896,7 +896,7 @@ function AdminInstagramPage() {
         <TabsContent value="inbox" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <div><CardTitle>Instagram Direct</CardTitle><CardDescription>Диалоги подключённого аккаунта через Zernio.</CardDescription></div>
+              <div><CardTitle>Instagram Direct</CardTitle><CardDescription>Диалоги подключённого аккаунта.</CardDescription></div>
               <Button size="sm" variant="outline" onClick={() => qc.invalidateQueries({ queryKey: ["ig_conversations"] })}><RefreshCcw className="w-4 h-4 mr-2" /> Обновить</Button>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
@@ -936,7 +936,7 @@ function AdminInstagramPage() {
               ["Ошибки обработки", dashboardQuery.data?.direct.errors || 0],
             ].map(([label, value]) => <Card key={String(label)}><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold">{value}</p></CardContent></Card>)}
           </div>}
-          <Card><CardHeader><CardTitle>Правила автоматизации</CardTitle><CardDescription>Активных правил: {dashboardQuery.data?.automation.rules || 0}</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground">Показатели считаются по данным Zernio; продажи — по заказам, созданным из Instagram Direct.</CardContent></Card>
+          <Card><CardHeader><CardTitle>Правила автоматизации</CardTitle><CardDescription>Активных правил: {dashboardQuery.data?.automation.rules || 0}</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground">Показатели считаются по данным Instagram; продажи — по заказам, созданным из Instagram Direct.</CardContent></Card>
         </TabsContent>
 
         <TabsContent value="logs">
@@ -1027,14 +1027,14 @@ function AdminInstagramPage() {
                         <div className="font-bold uppercase">{account.platform || "instagram"}</div>
                       </div>
                       <div className="p-3 bg-muted rounded-lg">
-                        <div className="text-muted-foreground mb-1">Профиль Zernio</div>
+                        <div className="text-muted-foreground mb-1">Профиль интеграции</div>
                         <div className="font-bold truncate">{displayProfile(account.profileId)}</div>
                       </div>
                     </div>
                     {account._id === acc?._id && (
                       <div className="rounded-lg border p-3 text-xs space-y-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-muted-foreground">Готовность Zernio</span>
+                          <span className="text-muted-foreground">Готовность подключения</span>
                           <Badge variant="outline" className={accountHealthQuery.data?.health?.status === "healthy" ? "text-green-700 border-green-200 bg-green-50" : "text-amber-700 border-amber-200 bg-amber-50"}>
                             {accountHealthQuery.isLoading ? "Проверяем…" : accountHealthQuery.data?.health?.status || "нет данных"}
                           </Badge>

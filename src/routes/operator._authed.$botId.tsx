@@ -959,7 +959,7 @@ function EnvBlockSection({
           )}
           {hasInstagram && (
             <div className="space-y-1">
-              <Label htmlFor="env-zernio">Ключ Zernio</Label>
+              <Label htmlFor="env-zernio">Ключ сервиса Instagram</Label>
               <Input
                 id="env-zernio"
                 value={zernioApiKey}
