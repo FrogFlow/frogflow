@@ -30,6 +30,35 @@ export type ZernioAccount = {
   metadata?: Record<string, unknown>;
 };
 
+export type ZernioAccountHealth = {
+  accountId: string;
+  status: "healthy" | "warning" | "error";
+  tokenStatus?: { valid?: boolean; expiresAt?: string; expiresIn?: string; needsRefresh?: boolean };
+  permissions?: { canPost?: boolean; canFetchAnalytics?: boolean; missingRequired?: string[] };
+  issues?: string[];
+  recommendations?: string[];
+};
+
+export type ZernioConversation = {
+  id: string;
+  accountId: string;
+  participantName?: string;
+  participantUsername?: string;
+  participantPicture?: string | null;
+  lastMessage?: string;
+  updatedTime?: string;
+  unreadCount?: number | null;
+  status?: "active" | "archived";
+};
+
+export type ZernioInboxMessage = {
+  id: string;
+  message?: string;
+  direction?: "incoming" | "outgoing";
+  createdAt?: string;
+  attachments?: Array<{ id: string; type: string; url: string; filename?: string | null; previewUrl?: string | null }>;
+};
+
 export type ZernioDmButton = {
   type: "url" | "postback" | "phone";
   title: string;
@@ -209,7 +238,8 @@ export async function sendZernioInboxMessage(
   accountId: string,
   message: string,
   attachmentUrl?: string,
-  attachmentType?: "image" | "video" | "audio",
+  attachmentType?: "image" | "video" | "audio" | "file",
+  buttons?: ZernioDmButton[],
 ): Promise<{ ok: boolean }> {
   try {
     const body: Record<string, unknown> = {
@@ -222,6 +252,13 @@ export async function sendZernioInboxMessage(
     if (attachmentUrl) {
       body.attachmentUrl = attachmentUrl;
       body.attachmentType = attachmentType || "image";
+    }
+    if (buttons?.length) {
+      body.buttons = buttons.slice(0, 3);
+    } else if (message.toLowerCase().includes("корзин")) {
+      // The Direct store's cart response always exposes the next action;
+      // this prevents customers from having to guess a text command.
+      body.buttons = [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }];
     }
 
     await zernioRequest(`/inbox/conversations/${conversationId}/messages`, {
@@ -290,12 +327,26 @@ export async function sendInstagramPrivateReply(
  */
 export async function registerZernioWebhook(webhookUrl: string): Promise<{ ok: boolean }> {
   try {
+    const secret = process.env.ZERNIO_WEBHOOK_SECRET?.trim();
+    if (!secret) throw new Error("ZERNIO_WEBHOOK_SECRET environment variable is not configured");
     await zernioRequest("/webhooks/settings", {
       method: "POST",
       body: {
         name: "Instagram Store Webhook",
         url: webhookUrl,
-        events: ["message.received", "comment.received", "account.connected"],
+        secret,
+        events: [
+          "message.received",
+          "message.sent",
+          "message.delivered",
+          "message.read",
+          "message.failed",
+          "comment.received",
+          "account.connected",
+          "account.disconnected",
+          "post.published",
+          "post.failed",
+        ],
         isActive: true,
       },
     });
@@ -309,42 +360,128 @@ export async function registerZernioWebhook(webhookUrl: string): Promise<{ ok: b
 /**
  * Опубликовать Пост / Карточку в Instagram.
  */
-export async function publishZernioPost(
-  accountId: string,
-  content: string,
-  mediaUrls: string[] = [],
-): Promise<{ ok: boolean; postId?: string }> {
+export type CreateInstagramPostInput = {
+  accountId: string;
+  content: string;
+  mediaUrls: string[];
+  mediaType: "image" | "video";
+  /** Instagram turns a single video into a Reel automatically. */
+  contentType?: "story";
+  scheduledFor?: string;
+  firstComment?: string;
+  shareToFeed?: boolean;
+  collaborators?: string[];
+  isAiGenerated?: boolean;
+};
+
+/** Create a Feed post, Reel, Story or carousel now or at a scheduled time. */
+export async function createInstagramPost(
+  input: CreateInstagramPostInput,
+): Promise<{ ok: boolean; postId?: string; status?: string; scheduledFor?: string; error?: string }> {
   try {
+    const platformSpecificData: Record<string, unknown> = {};
+    if (input.contentType === "story") platformSpecificData.contentType = "story";
+    if (input.mediaType === "video") platformSpecificData.shareToFeed = input.shareToFeed ?? true;
+    if (input.collaborators?.length) platformSpecificData.collaborators = input.collaborators;
+    if (input.isAiGenerated) platformSpecificData.isAiGenerated = true;
+    if (input.firstComment?.trim()) platformSpecificData.firstComment = input.firstComment.trim();
+
     const body: Record<string, unknown> = {
-      content,
-      publishNow: true,
+      content: input.content,
+      mediaItems: input.mediaUrls.map((url) => ({ type: input.mediaType, url })),
       platforms: [
         {
           platform: "instagram",
-          accountId,
+          accountId: input.accountId,
+          ...(Object.keys(platformSpecificData).length ? { platformSpecificData } : {}),
         },
       ],
     };
-
-    if (mediaUrls.length > 0) {
-      body.media = mediaUrls.map((url) => ({ url }));
+    if (input.scheduledFor) {
+      body.scheduledFor = input.scheduledFor;
+    } else {
+      body.publishNow = true;
     }
 
-    const res = await zernioRequest<{ post: { _id: string } }>("/posts", {
+    const res = await zernioRequest<{ post: { _id: string; status?: string; scheduledFor?: string } }>("/posts", {
       method: "POST",
       body,
     });
 
-    return { ok: true, postId: res.post?._id };
+    return {
+      ok: true,
+      postId: res.post?._id,
+      status: res.post?.status,
+      scheduledFor: res.post?.scheduledFor,
+    };
   } catch (e) {
-    console.error("[zernio] publishZernioPost failed", e);
-    return { ok: false };
+    console.error("[zernio] createInstagramPost failed", e);
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** Check the token, permissions and publishing capability of one connected account. */
+export async function getZernioAccountHealth(accountId: string): Promise<ZernioAccountHealth | null> {
+  try {
+    return await zernioRequest<ZernioAccountHealth>(`/accounts/${encodeURIComponent(accountId)}/health`);
+  } catch (e) {
+    console.error("[zernio] getZernioAccountHealth error", e);
+    return null;
+  }
+}
+
+export async function listZernioConversations(accountId: string): Promise<ZernioConversation[]> {
+  try {
+    const result = await zernioRequest<{ data?: ZernioConversation[] }>("/inbox/conversations", {
+      query: { platform: "instagram", accountId, sortOrder: "desc", limit: "50" },
+    });
+    return result.data || [];
+  } catch (e) {
+    console.error("[zernio] listZernioConversations error", e);
+    return [];
+  }
+}
+
+export async function listZernioConversationMessages(accountId: string, conversationId: string): Promise<ZernioInboxMessage[]> {
+  try {
+    const result = await zernioRequest<{ messages?: ZernioInboxMessage[] }>(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
+      query: { accountId, limit: "100", sortOrder: "asc" },
+    });
+    return result.messages || [];
+  } catch (e) {
+    console.error("[zernio] listZernioConversationMessages error", e);
+    return [];
   }
 }
 
 /**
  * Отключить (удалить) аккаунт Instagram из Zernio.
  */
+/** Cancel a draft or scheduled post. Published posts are intentionally not deleted. */
+export async function deleteZernioPost(postId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await zernioRequest(`/posts/${encodeURIComponent(postId)}`, { method: "DELETE" });
+    return { ok: true };
+  } catch (e) {
+    console.error("[zernio] deleteZernioPost failed", e);
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+/** Retry a failed post immediately. Zernio keeps the original content and media. */
+export async function retryZernioPost(postId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await zernioRequest(`/posts/${encodeURIComponent(postId)}`, {
+      method: "PUT",
+      body: { publishNow: true, isDraft: false },
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error("[zernio] retryZernioPost failed", e);
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
 export async function disconnectZernioAccount(accountId: string): Promise<{ ok: boolean }> {
   try {
     await zernioRequest(`/accounts/${accountId}`, {

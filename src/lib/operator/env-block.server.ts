@@ -266,6 +266,9 @@ export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockRe
         "",
         "# ── Instagram (Zernio) ──",
         `ZERNIO_API_KEY=${input.zernioApiKey?.trim() || "<ключ sk_…>"}`,
+        // This value is sent to Zernio while registering the webhook and is
+        // used by our endpoint to verify the raw-body HMAC signature.
+        `ZERNIO_WEBHOOK_SECRET=${randomSecret(16)}`,
         ...(input.zernioProfileId?.trim()
           ? [`ZERNIO_PROFILE_ID=${input.zernioProfileId.trim()}`]
           : []),
@@ -288,7 +291,7 @@ export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockRe
       "SESSION_SECRET и CRON_SECRET",
       "ADMIN_USERNAME и ADMIN_PASSWORD",
       ...(modules.vip ? ["VIP_BOT_TOKEN, VIP_BOT_USERNAME, VIP_TELEGRAM_WEBHOOK_SECRET"] : []),
-      ...(modules.instagram ? ["ZERNIO_API_KEY, ZERNIO_PROFILE_ID"] : []),
+      ...(modules.instagram ? ["ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET, ZERNIO_PROFILE_ID"] : []),
     );
   }
 

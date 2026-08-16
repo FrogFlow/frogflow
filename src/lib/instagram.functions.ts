@@ -36,6 +36,76 @@ export const getInstagramAccountsFn = createServerFn({ method: "GET" }).handler(
   return { accounts };
 });
 
+export const getInstagramAccountHealthFn = createServerFn({ method: "GET" })
+  .validator((d: unknown) => z.object({ accountId: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { getZernioAccountHealth } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return { health: await getZernioAccountHealth(data.accountId) };
+  });
+
+export const getInstagramConversationsFn = createServerFn({ method: "GET" })
+  .validator((d: unknown) => z.object({ accountId: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { listZernioConversations } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return { conversations: await listZernioConversations(data.accountId) };
+  });
+
+export const getInstagramConversationMessagesFn = createServerFn({ method: "GET" })
+  .validator((d: unknown) => z.object({ accountId: z.string().min(1), conversationId: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { listZernioConversationMessages } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return { messages: await listZernioConversationMessages(data.accountId, data.conversationId) };
+  });
+
+export const sendInstagramConversationMessageFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ accountId: z.string().min(1), conversationId: z.string().min(1), message: z.string().trim().min(1).max(1000) }).parse(d))
+  .handler(async ({ data }) => {
+    const { sendZernioInboxMessage } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return await sendZernioInboxMessage(data.conversationId, data.accountId, data.message);
+  });
+
+export const getInstagramDashboardFn = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const { listCommentAutomations } = await import("./zernio.server");
+    await requireAdminWithModule();
+    const s = await db();
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const sinceIso = since.toISOString();
+    const [automations, logsResult, ordersResult] = await Promise.all([
+      listCommentAutomations(),
+      s.from("zernio_logs").select("event_type, status, created_at").gte("created_at", sinceIso),
+      s.from("orders").select("total, status, created_at").eq("platform", "instagram").gte("created_at", sinceIso),
+    ]);
+    const rules = automations.automations || [];
+    const totals = rules.reduce(
+      (summary: { triggered: number; dms: number; clicks: number }, rule: any) => ({
+        triggered: summary.triggered + Number(rule.stats?.triggered || 0),
+        dms: summary.dms + Number(rule.stats?.dmsSent || 0),
+        clicks: summary.clicks + Number(rule.stats?.linkClicks || 0),
+      }),
+      { triggered: 0, dms: 0, clicks: 0 },
+    );
+    const orders = ordersResult.data || [];
+    return {
+      periodDays: 30,
+      automation: { rules: rules.length, ...totals },
+      direct: {
+        incoming: (logsResult.data || []).filter((log: any) => log.event_type === "message.received").length,
+        errors: (logsResult.data || []).filter((log: any) => log.status === "error").length,
+      },
+      orders: {
+        total: orders.length,
+        paid: orders.filter((order: any) => ["paid", "delivered"].includes(order.status)).length,
+        revenue: orders.filter((order: any) => ["paid", "delivered"].includes(order.status)).reduce((sum: number, order: any) => sum + Number(order.total || 0), 0),
+      },
+    };
+  });
+
 export const registerInstagramWebhookFn = createServerFn({ method: "POST" }).handler(async () => {
   const { registerZernioWebhook } = await import("./zernio.server");
   await requireAdminWithModule();
@@ -45,6 +115,44 @@ export const registerInstagramWebhookFn = createServerFn({ method: "POST" }).han
   const webhookUrl = `${origin.replace(/\/$/, "")}/api/public/zernio/webhook`;
   return await registerZernioWebhook(webhookUrl);
 });
+
+const PublishInstagramPostInput = z
+  .object({
+    accountId: z.string().min(1),
+    content: z.string().max(2200).default(""),
+    mediaUrls: z.array(z.string().url()).min(1).max(10),
+    mediaType: z.enum(["image", "video"]),
+    contentType: z.enum(["feed", "story"]).default("feed"),
+    scheduledFor: z.string().datetime().optional(),
+    firstComment: z.string().max(2200).optional(),
+    shareToFeed: z.boolean().optional(),
+    collaborators: z.array(z.string().min(1).max(30)).max(3).optional(),
+    isAiGenerated: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.contentType === "story" && data.mediaUrls.length !== 1) {
+      ctx.addIssue({ code: "custom", path: ["mediaUrls"], message: "Story принимает ровно один файл." });
+    }
+    if (data.mediaType === "video" && data.mediaUrls.length !== 1) {
+      ctx.addIssue({ code: "custom", path: ["mediaUrls"], message: "Reel принимает ровно один видеоролик." });
+    }
+    if (data.scheduledFor && new Date(data.scheduledFor).getTime() <= Date.now()) {
+      ctx.addIssue({ code: "custom", path: ["scheduledFor"], message: "Время публикации должно быть в будущем." });
+    }
+  });
+
+/** Publishing is part of the Instagram Automation product, not a separate module. */
+export const createInstagramPostFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => PublishInstagramPostInput.parse(d))
+  .handler(async ({ data }) => {
+    const { createInstagramPost } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return createInstagramPost({
+      ...data,
+      contentType: data.contentType === "story" ? "story" : undefined,
+      collaborators: data.collaborators?.map((username) => username.replace(/^@/, "").trim()).filter(Boolean),
+    });
+  });
 
 // ─── Automations via Zernio API ───────────────────────────────────────────────
 
@@ -218,4 +326,20 @@ export const getZernioPostsFn = createServerFn({ method: "GET" })
     await requireAdminWithModule();
     const posts = await listZernioPosts(data.accountId);
     return { posts };
+  });
+
+export const cancelInstagramPostFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ postId: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { deleteZernioPost } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return await deleteZernioPost(data.postId);
+  });
+
+export const retryInstagramPostFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ postId: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { retryZernioPost } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return await retryZernioPost(data.postId);
   });

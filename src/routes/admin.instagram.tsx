@@ -9,6 +9,11 @@ import { Checkbox } from "@/components-ui/checkbox";
 import {
   getInstagramConnectUrlFn,
   getInstagramAccountsFn,
+  getInstagramAccountHealthFn,
+  getInstagramConversationsFn,
+  getInstagramConversationMessagesFn,
+  sendInstagramConversationMessageFn,
+  getInstagramDashboardFn,
   registerInstagramWebhookFn,
   getAutomationsFn,
   saveAutomationFn,
@@ -17,6 +22,9 @@ import {
   getInstagramLogsFn,
   getZernioPostsFn,
   disconnectInstagramAccountFn,
+  createInstagramPostFn,
+  cancelInstagramPostFn,
+  retryInstagramPostFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -39,7 +47,8 @@ import {
   ExternalLink,
   History,
   Eye,
-  Info
+  Info,
+  CalendarClock,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components-ui/card";
@@ -73,11 +82,71 @@ function AdminInstagramPage() {
     queryFn: () => getZernioPostsFn({ data: { accountId: acc?._id } }), 
     enabled: !!acc?._id 
   });
+  const accountHealthQuery = useQuery({
+    queryKey: ["ig_account_health", acc?._id],
+    queryFn: () => getInstagramAccountHealthFn({ data: { accountId: acc?._id } }),
+    enabled: !!acc?._id,
+  });
+  const conversationsQuery = useQuery({
+    queryKey: ["ig_conversations", acc?._id],
+    queryFn: () => getInstagramConversationsFn({ data: { accountId: acc?._id } }),
+    enabled: !!acc?._id,
+  });
+  const dashboardQuery = useQuery({ queryKey: ["ig_dashboard"], queryFn: () => getInstagramDashboardFn() });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishContent, setPublishContent] = useState("");
+  const [mediaUrlsText, setMediaUrlsText] = useState("");
+  const [mediaType, setMediaType] = useState<"image" | "video">("image");
+  const [publishType, setPublishType] = useState<"feed" | "story">("feed");
+  const [scheduledFor, setScheduledFor] = useState("");
+  const [firstComment, setFirstComment] = useState("");
+  const [collaboratorsText, setCollaboratorsText] = useState("");
+  const [shareToFeed, setShareToFeed] = useState(true);
+  const [isAiGenerated, setIsAiGenerated] = useState(false);
+  const [postActionId, setPostActionId] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [inboxReply, setInboxReply] = useState("");
+  const messagesQuery = useQuery({
+    queryKey: ["ig_conversation_messages", acc?._id, selectedConversationId],
+    queryFn: () => getInstagramConversationMessagesFn({ data: { accountId: acc?._id, conversationId: selectedConversationId! } }),
+    enabled: !!acc?._id && !!selectedConversationId,
+  });
+
+  const handleInboxReply = async () => {
+    if (!acc?._id || !selectedConversationId || !inboxReply.trim()) return;
+    try {
+      const result = await sendInstagramConversationMessageFn({ data: { accountId: acc._id, conversationId: selectedConversationId, message: inboxReply } });
+      if (!result.ok) throw new Error("Zernio не отправил сообщение.");
+      setInboxReply("");
+      qc.invalidateQueries({ queryKey: ["ig_conversation_messages", acc._id, selectedConversationId] });
+      qc.invalidateQueries({ queryKey: ["ig_conversations", acc._id] });
+    } catch (e: any) {
+      setStatusMsg(`Ошибка отправки: ${e.message}`);
+    }
+  };
+
+  const handlePostAction = async (postId: string, action: "cancel" | "retry") => {
+    if (action === "cancel" && !confirm("Отменить эту запланированную публикацию?")) return;
+    setPostActionId(postId);
+    setStatusMsg(null);
+    try {
+      const result = action === "cancel"
+        ? await cancelInstagramPostFn({ data: { postId } })
+        : await retryInstagramPostFn({ data: { postId } });
+      if (!result.ok) throw new Error(result.error || "Zernio не выполнил действие.");
+      setStatusMsg(action === "cancel" ? "✅ Публикация отменена." : "✅ Повторная публикация поставлена в очередь.");
+      qc.invalidateQueries({ queryKey: ["ig_posts"] });
+    } catch (e: any) {
+      setStatusMsg(`Ошибка: ${e.message}`);
+    } finally {
+      setPostActionId(null);
+    }
+  };
 
   const handleDisconnectAccount = async (accountId: string, accountName: string) => {
     if (!confirm(`Отключить аккаунт "${accountName}"? Все автоматизации для этого аккаунта перестанут работать.`)) return;
@@ -154,6 +223,51 @@ function AdminInstagramPage() {
       setStatusMsg(`Ошибка: ${e.message}`);
     } finally {
       setRegisteringWebhook(false);
+    }
+  };
+
+  const handleCreatePost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!acc?._id) {
+      setStatusMsg("Сначала подключите аккаунт Instagram.");
+      return;
+    }
+    const mediaUrls = mediaUrlsText.split("\n").map((url) => url.trim()).filter(Boolean);
+    if (!mediaUrls.length) {
+      setStatusMsg("Добавьте хотя бы одну прямую ссылку на изображение или видео.");
+      return;
+    }
+    setPublishing(true);
+    setStatusMsg(null);
+    try {
+      const result = await createInstagramPostFn({
+        data: {
+          accountId: acc._id,
+          content: publishContent,
+          mediaUrls,
+          mediaType,
+          contentType: publishType,
+          scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : undefined,
+          firstComment: firstComment || undefined,
+          collaborators: collaboratorsText.split(",").map((name) => name.trim()).filter(Boolean),
+          shareToFeed,
+          isAiGenerated,
+        },
+      });
+      if (!result?.ok) throw new Error(result?.error || "Zernio не принял публикацию.");
+      const timing = result.scheduledFor ? ` запланирована на ${new Date(result.scheduledFor).toLocaleString("ru-RU")}` : " отправлена на публикацию";
+      setStatusMsg(`✅ Публикация${timing}.`);
+      setPublishContent("");
+      setMediaUrlsText("");
+      setScheduledFor("");
+      setFirstComment("");
+      setCollaboratorsText("");
+      setIsAiGenerated(false);
+      qc.invalidateQueries({ queryKey: ["ig_posts"] });
+    } catch (e: any) {
+      setStatusMsg(`Ошибка публикации: ${e.message}`);
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -334,12 +448,21 @@ function AdminInstagramPage() {
       )}
 
       <Tabs defaultValue="automations" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <TabsList className="grid w-full grid-cols-6 max-w-4xl">
           <TabsTrigger value="automations" className="gap-2">
             <Settings2 className="w-4 h-4" /> Автоматизации
           </TabsTrigger>
+          <TabsTrigger value="publish" className="gap-2">
+            <CalendarClock className="w-4 h-4" /> Публикации
+          </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <History className="w-4 h-4" /> Журнал
+          </TabsTrigger>
+          <TabsTrigger value="inbox" className="gap-2">
+            <MessageSquare className="w-4 h-4" /> Direct
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-2">
+            <Zap className="w-4 h-4" /> Аналитика
           </TabsTrigger>
           <TabsTrigger value="accounts" className="gap-2">
             <MessageSquare className="w-4 h-4" /> Аккаунты
@@ -648,7 +771,174 @@ function AdminInstagramPage() {
           </div>
         </TabsContent>
 
+        {/* PUBLISH TAB */}
+        <TabsContent value="publish" className="space-y-6">
+          <Card className="max-w-3xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><CalendarClock className="w-5 h-5 text-primary" /> Публикация и планировщик</CardTitle>
+              <CardDescription>
+                Feed, Reels, Stories и карусели входят в Instagram-автоматизацию. Для публикации нужны прямые публичные ссылки на файлы.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-5" onSubmit={handleCreatePost}>
+                <div className="space-y-2">
+                  <Label>Аккаунт</Label>
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                    {acc ? (acc.name || acc.username || acc._id) : "Подключите Instagram-аккаунт во вкладке «Аккаунты»"}
+                  </div>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Формат</Label>
+                    <Select value={publishType} onValueChange={(value) => setPublishType(value as "feed" | "story")}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="feed">Feed / Reel / карусель</SelectItem>
+                        <SelectItem value="story">Story</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Медиа</Label>
+                    <Select value={mediaType} onValueChange={(value) => setMediaType(value as "image" | "video")}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="image">Изображение</SelectItem>
+                        <SelectItem value="video">Видео (публикуется как Reel)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="publish-media">Прямые ссылки на медиа</Label>
+                  <Textarea id="publish-media" value={mediaUrlsText} onChange={(e) => setMediaUrlsText(e.target.value)} rows={4} placeholder={mediaType === "video" ? "https://cdn.example.com/reel.mp4" : "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg"} required />
+                  <p className="text-xs text-muted-foreground">Одна ссылка на строку. Story и Reel: один файл; карусель: до 10 изображений.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="publish-caption">Подпись</Label>
+                  <Textarea id="publish-caption" value={publishContent} onChange={(e) => setPublishContent(e.target.value)} maxLength={2200} rows={5} placeholder="Текст публикации и хэштеги" />
+                  <p className="text-right text-xs text-muted-foreground">{publishContent.length}/2200</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="scheduled-for">Время публикации</Label>
+                    <Input id="scheduled-for" type="datetime-local" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} />
+                    <p className="text-xs text-muted-foreground">Оставьте пустым, чтобы опубликовать сейчас.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="collaborators">Соавторы</Label>
+                    <Input id="collaborators" value={collaboratorsText} onChange={(e) => setCollaboratorsText(e.target.value)} placeholder="brand_one, brand_two" />
+                    <p className="text-xs text-muted-foreground">До трёх публичных Business/Creator аккаунтов.</p>
+                  </div>
+                </div>
+                {publishType === "feed" && mediaType === "image" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="first-comment">Первый комментарий</Label>
+                    <Textarea id="first-comment" value={firstComment} onChange={(e) => setFirstComment(e.target.value)} rows={2} placeholder="Ссылка или дополнительная информация" />
+                  </div>
+                )}
+                <div className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
+                  {mediaType === "video" ? <div className="flex items-center gap-2"><Checkbox id="share-to-feed" checked={shareToFeed} onCheckedChange={(checked) => setShareToFeed(checked === true)} /><Label htmlFor="share-to-feed">Показывать Reel и в основной ленте</Label></div> : <span />}
+                  <div className="flex items-center gap-2"><Checkbox id="ai-generated" checked={isAiGenerated} onCheckedChange={(checked) => setIsAiGenerated(checked === true)} /><Label htmlFor="ai-generated">Контент создан ИИ</Label></div>
+                </div>
+                <Button type="submit" disabled={publishing || !acc} className="w-full">
+                  {publishing ? "Отправляем…" : scheduledFor ? "Запланировать публикацию" : "Опубликовать сейчас"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>Очередь публикаций</CardTitle>
+                <CardDescription>Запланированные, опубликованные и неудачные посты из Zernio.</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleRefreshPosts} disabled={postsQuery.isFetching}>
+                <RefreshCcw className="w-4 h-4 mr-2" /> Обновить
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {postsQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Загружаем публикации…</p>
+              ) : posts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Публикаций пока нет.</p>
+              ) : (
+                posts.filter((post: any) => post._zernioPostId).map((post: any) => {
+                  const postId = post._zernioPostId as string;
+                  const status = String(post.status || "published").toLowerCase();
+                  const canCancel = ["scheduled", "draft", "pending", "queued"].includes(status);
+                  const canRetry = ["failed", "partial", "cancelled"].includes(status);
+                  const when = post.scheduledFor || post.publishedAt || post._date;
+                  return (
+                    <div key={postId} className="flex gap-3 rounded-md border p-3">
+                      {post._thumbnail ? <img src={post._thumbnail} alt="" className="h-12 w-12 rounded object-cover bg-muted" /> : <div className="h-12 w-12 rounded bg-muted flex items-center justify-center"><ImageIcon className="w-5 h-5 text-muted-foreground" /></div>}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium">{post.caption || post.content || "Публикация без подписи"}</span>
+                          <Badge variant="outline">{status}</Badge>
+                        </div>
+                        {when && <p className="mt-1 text-xs text-muted-foreground">{new Date(when).toLocaleString("ru-RU")}</p>}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {canCancel && <Button size="sm" variant="outline" disabled={postActionId === postId} onClick={() => handlePostAction(postId, "cancel")}>Отменить</Button>}
+                        {canRetry && <Button size="sm" disabled={postActionId === postId} onClick={() => handlePostAction(postId, "retry")}>Повторить</Button>}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* LOGS TAB */}
+        <TabsContent value="inbox" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div><CardTitle>Instagram Direct</CardTitle><CardDescription>Диалоги подключённого аккаунта через Zernio.</CardDescription></div>
+              <Button size="sm" variant="outline" onClick={() => qc.invalidateQueries({ queryKey: ["ig_conversations"] })}><RefreshCcw className="w-4 h-4 mr-2" /> Обновить</Button>
+            </CardHeader>
+            <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+              <div className="max-h-[520px] space-y-2 overflow-y-auto border-r pr-3">
+                {(conversationsQuery.data?.conversations || []).map((conversation: any) => (
+                  <button key={conversation.id} type="button" onClick={() => setSelectedConversationId(conversation.id)} className={`w-full rounded-md border p-3 text-left ${selectedConversationId === conversation.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}>
+                    <div className="flex justify-between gap-2"><span className="font-medium truncate">{conversation.participantName || conversation.participantUsername || "Диалог"}</span>{conversation.unreadCount ? <Badge>{conversation.unreadCount}</Badge> : null}</div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{conversation.lastMessage || "Нет сообщений"}</p>
+                  </button>
+                ))}
+                {!conversationsQuery.isLoading && !(conversationsQuery.data?.conversations || []).length && <p className="text-sm text-muted-foreground">Диалогов пока нет.</p>}
+              </div>
+              <div className="flex min-h-[440px] flex-col gap-3">
+                {!selectedConversationId ? <p className="m-auto text-sm text-muted-foreground">Выберите диалог слева.</p> : <>
+                  <div className="flex-1 space-y-2 overflow-y-auto rounded-md bg-muted/30 p-3">
+                    {(messagesQuery.data?.messages || []).map((message: any) => <div key={message.id} className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${message.direction === "outgoing" ? "ml-auto bg-primary text-primary-foreground" : "bg-background border"}`}><p>{message.message || "Вложение"}</p><p className="mt-1 text-[10px] opacity-70">{message.createdAt ? new Date(message.createdAt).toLocaleString("ru-RU") : ""}</p></div>)}
+                    {messagesQuery.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+                  </div>
+                  <div className="flex gap-2"><Textarea value={inboxReply} onChange={(event) => setInboxReply(event.target.value)} placeholder="Напишите ответ…" rows={2} /><Button onClick={handleInboxReply} disabled={!inboxReply.trim()}>Отправить</Button></div>
+                </>}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="analytics" className="space-y-4">
+          <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold">Instagram за 30 дней</h2><p className="text-sm text-muted-foreground">Автоматизации, Direct и оплаченные заказы.</p></div><Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["ig_dashboard"] })}><RefreshCcw className="w-4 h-4 mr-2" /> Обновить</Button></div>
+          {dashboardQuery.isLoading ? <p className="text-sm text-muted-foreground">Считаем показатели…</p> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Срабатывания", dashboardQuery.data?.automation.triggered || 0],
+              ["Отправлено DM", dashboardQuery.data?.automation.dms || 0],
+              ["Клики по ссылкам", dashboardQuery.data?.automation.clicks || 0],
+              ["Входящие Direct", dashboardQuery.data?.direct.incoming || 0],
+              ["Instagram-заказы", dashboardQuery.data?.orders.total || 0],
+              ["Оплачено / выдано", dashboardQuery.data?.orders.paid || 0],
+              ["Выручка", `${dashboardQuery.data?.orders.revenue || 0} KZT`],
+              ["Ошибки обработки", dashboardQuery.data?.direct.errors || 0],
+            ].map(([label, value]) => <Card key={String(label)}><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold">{value}</p></CardContent></Card>)}
+          </div>}
+          <Card><CardHeader><CardTitle>Правила автоматизации</CardTitle><CardDescription>Активных правил: {dashboardQuery.data?.automation.rules || 0}</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground">Показатели считаются по данным Zernio; продажи — по заказам, созданным из Instagram Direct.</CardContent></Card>
+        </TabsContent>
+
         <TabsContent value="logs">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -724,7 +1014,9 @@ function AdminInstagramPage() {
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg">{account.name || account.username || "Instagram Account"}</CardTitle>
-                      <Badge className="bg-green-600 text-white border-none">Активен</Badge>
+                      <Badge className={account.isExpired ? "bg-amber-600 text-white border-none" : "bg-green-600 text-white border-none"}>
+                        {account.isExpired ? "Требуется переподключение" : "Активен"}
+                      </Badge>
                     </div>
                     <CardDescription>ID: {account._id || "N/A"}</CardDescription>
                   </CardHeader>
@@ -739,6 +1031,23 @@ function AdminInstagramPage() {
                         <div className="font-bold truncate">{displayProfile(account.profileId)}</div>
                       </div>
                     </div>
+                    {account._id === acc?._id && (
+                      <div className="rounded-lg border p-3 text-xs space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground">Готовность Zernio</span>
+                          <Badge variant="outline" className={accountHealthQuery.data?.health?.status === "healthy" ? "text-green-700 border-green-200 bg-green-50" : "text-amber-700 border-amber-200 bg-amber-50"}>
+                            {accountHealthQuery.isLoading ? "Проверяем…" : accountHealthQuery.data?.health?.status || "нет данных"}
+                          </Badge>
+                        </div>
+                        {accountHealthQuery.data?.health && (
+                          <>
+                            <p>Публикации: {accountHealthQuery.data.health.permissions?.canPost ? "доступны" : "недоступны"}; аналитика: {accountHealthQuery.data.health.permissions?.canFetchAnalytics ? "доступна" : "недоступна"}.</p>
+                            {accountHealthQuery.data.health.issues?.slice(0, 2).map((issue: string) => <p key={issue} className="text-amber-700">{issue}</p>)}
+                            {accountHealthQuery.data.health.recommendations?.slice(0, 1).map((recommendation: string) => <p key={recommendation} className="text-muted-foreground">{recommendation}</p>)}
+                          </>
+                        )}
+                      </div>
+                    )}
                   </CardContent>
                   <CardFooter className="border-t pt-4">
                     <Button 

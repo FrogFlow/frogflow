@@ -3,6 +3,7 @@ import {
   replyToInstagramComment,
   sendInstagramPrivateReply,
 } from "./zernio.server";
+import crypto from "node:crypto";
 import { convertAmount } from "./currency.server";
 import { requireAppOrigin } from "./app-origin.server";
 
@@ -13,6 +14,14 @@ async function db() {
 
 // Уходит в текст сообщения покупателю в директе — ссылка на свой каталог.
 const appUrl = requireAppOrigin;
+
+// The legacy cart/order schema uses bot_users.telegram_id as its customer key.
+// Reserve negative, deterministic IDs for Instagram so a Direct customer can
+// safely use the same cart and order tables without colliding with Telegram.
+function instagramCustomerId(userKey: string): number {
+  const hex = crypto.createHash("sha256").update(userKey).digest("hex").slice(0, 13);
+  return -parseInt(hex, 16);
+}
 
 /**
  * Создать или обновить пользователя Instagram в базе данных.
@@ -49,6 +58,7 @@ export async function upsertZernioUser(
   }
 
   const newUser = {
+    telegram_id: instagramCustomerId(userKey),
     user_key: userKey,
     platform: "instagram",
     zernio_conversation_id: conversationId,
@@ -117,6 +127,22 @@ export async function handleZernioMessage(payload: any) {
   const postbackPayload = buttonMetadata.interactiveId || "";
   if (isPostback) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
+    if (postbackPayload.startsWith("BUY:")) {
+      await addProductToCart(conversationId, accountId, user, postbackPayload.slice(4));
+      return;
+    }
+    if (postbackPayload === "CART") {
+      await sendCart(conversationId, accountId, user);
+      return;
+    }
+    if (postbackPayload === "CHECKOUT") {
+      await startInstagramCheckout(conversationId, accountId, user);
+      return;
+    }
+    if (postbackPayload === "CATALOG") {
+      await sendCatalogMenu(conversationId, accountId, user);
+      return;
+    }
     if (postbackPayload) return; // handled by the automation that sent the button
   }
 
@@ -128,19 +154,24 @@ export async function handleZernioMessage(payload: any) {
 
   // Команда "корзина"
   if (lower.includes("корзин")) {
-    await sendCart(conversationId, accountId, userKey);
+    await sendCart(conversationId, accountId, user);
+    return;
+  }
+
+  if (lower.includes("оформ") || lower.includes("оплат")) {
+    await startInstagramCheckout(conversationId, accountId, user);
     return;
   }
 
   // Команда "заказы"
   if (lower.includes("заказ")) {
-    await sendOrders(conversationId, accountId, userKey);
+    await sendOrders(conversationId, accountId, user);
     return;
   }
 
   // Если пользователь отправил текстовый запрос — ищем товары
   if (text.length > 1) {
-    await searchAndSendProducts(conversationId, accountId, text);
+    await sendInteractiveProductResults(conversationId, accountId, user, text);
     return;
   }
 
@@ -180,13 +211,15 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
 
   msg += `\nВы также можете открыть веб-версию: ${appUrl()}`;
 
-  await sendZernioInboxMessage(conversationId, accountId, msg);
+  await sendZernioInboxMessage(conversationId, accountId, msg, undefined, undefined, [
+    { type: "postback", title: "Корзина", payload: "CART" },
+  ]);
 }
 
 /**
  * Поиск и отправка товаров в DM
  */
-async function searchAndSendProducts(conversationId: string, accountId: string, query: string) {
+async function searchAndSendProducts(conversationId: string, accountId: string, _user: any, query: string) {
   const s = await db();
 
   const { data: products } = await s
@@ -224,12 +257,76 @@ async function searchAndSendProducts(conversationId: string, accountId: string, 
 /**
  * Показать корзину пользователя
  */
-async function sendCart(conversationId: string, accountId: string, userKey: string) {
+async function sendInteractiveProductResults(conversationId: string, accountId: string, _user: any, query: string) {
+  const s = await db();
+  const { data: products } = await s
+    .from("products")
+    .select("id, name, price, currency, description, is_active")
+    .eq("is_active", true)
+    .or(`name.ilike.%${query}%,description.ilike.%${query}%,keywords.ilike.%${query}%`)
+    .limit(5);
+
+  if (!products?.length) {
+    await sendZernioInboxMessage(
+      conversationId,
+      accountId,
+      `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог: ${appUrl()}`,
+      undefined,
+      undefined,
+      [{ type: "postback", title: "Каталог", payload: "CATALOG" }],
+    );
+    return;
+  }
+
+  await sendZernioInboxMessage(conversationId, accountId, `🔎 Нашли ${products.length} вариантов:`);
+  for (const product of products) {
+    const description = product.description ? `\n${String(product.description).slice(0, 180)}` : "";
+    await sendZernioInboxMessage(
+      conversationId,
+      accountId,
+      `📌 ${product.name}\n💰 ${product.price} ${product.currency}${description}`,
+      undefined,
+      undefined,
+      [
+        { type: "postback", title: "Добавить в корзину", payload: `BUY:${product.id}` },
+        { type: "postback", title: "Корзина", payload: "CART" },
+      ],
+    );
+  }
+}
+
+async function addProductToCart(conversationId: string, accountId: string, user: any, productId: string) {
+  const s = await db();
+  const { data: product } = await s
+    .from("products")
+    .select("id, name, is_active")
+    .eq("id", productId)
+    .maybeSingle();
+  if (!product?.is_active) {
+    await sendZernioInboxMessage(conversationId, accountId, "Этот товар больше недоступен.");
+    return;
+  }
+  const { data: existing } = await s
+    .from("cart_items")
+    .select("id, quantity")
+    .eq("telegram_id", user.telegram_id)
+    .eq("product_id", product.id)
+    .maybeSingle();
+  if (existing) {
+    await s.from("cart_items").update({ quantity: Number(existing.quantity) + 1 }).eq("id", existing.id);
+  } else {
+    await s.from("cart_items").insert({ telegram_id: user.telegram_id, product_id: product.id, quantity: 1 });
+  }
+  await sendZernioInboxMessage(conversationId, accountId, `✅ «${product.name}» добавлен в корзину.`);
+  await sendCart(conversationId, accountId, user);
+}
+
+async function sendCart(conversationId: string, accountId: string, user: any) {
   const s = await db();
   const { data: items } = await s
     .from("cart_items")
     .select("*, products(*)")
-    .eq("user_key", userKey);
+    .eq("telegram_id", user.telegram_id);
 
   if (!items || items.length === 0) {
     await sendZernioInboxMessage(
@@ -263,12 +360,12 @@ async function sendCart(conversationId: string, accountId: string, userKey: stri
 /**
  * Показать историю заказов
  */
-async function sendOrders(conversationId: string, accountId: string, userKey: string) {
+async function sendOrders(conversationId: string, accountId: string, user: any) {
   const s = await db();
   const { data: orders } = await s
     .from("orders")
     .select("*")
-    .eq("user_key", userKey)
+    .eq("telegram_id", user.telegram_id)
     .order("created_at", { ascending: false })
     .limit(5);
 
@@ -300,6 +397,114 @@ async function sendOrders(conversationId: string, accountId: string, userKey: st
  * Обработать входящий комментарий к публикации/Reels (Comment-to-DM).
  * Соответствует спецификации Zernio Webhooks: payload.comment, payload.post, payload.account
  */
+async function startInstagramCheckout(conversationId: string, accountId: string, user: any) {
+  const s = await db();
+  const { data: items } = await s
+    .from("cart_items")
+    .select("quantity, products(id, name, price, currency, file_path, file_name, file_url)")
+    .eq("telegram_id", user.telegram_id);
+  const validItems = (items || []).filter((item: any) => item.products);
+  if (!validItems.length) {
+    await sendZernioInboxMessage(conversationId, accountId, "Корзина пуста — сначала добавьте товар.");
+    return;
+  }
+  const currency = String(validItems[0].products.currency || "KZT");
+  if (validItems.some((item: any) => String(item.products.currency || "KZT") !== currency)) {
+    await sendZernioInboxMessage(conversationId, accountId, "В корзине несколько валют. Оформите товары по отдельности.");
+    return;
+  }
+  const total = validItems.reduce((sum: number, item: any) => sum + Number(item.products.price) * Number(item.quantity), 0);
+  const { data: order, error } = await s
+    .from("orders")
+    .insert({
+      telegram_id: user.telegram_id,
+      user_key: user.user_key,
+      platform: "instagram",
+      username: user.username || null,
+      display_name: user.first_name || user.username || "Instagram customer",
+      contact: user.username ? `@${user.username}` : null,
+      total,
+      currency,
+      status: "awaiting_payment",
+    })
+    .select("id, order_no")
+    .single();
+  if (error || !order) {
+    console.error("[zernio-bot] create Instagram order failed", error);
+    await sendZernioInboxMessage(conversationId, accountId, "Не удалось оформить заказ. Попробуйте ещё раз позже.");
+    return;
+  }
+  const { error: rowsError } = await s.from("order_items").insert(validItems.map((item: any) => ({
+    order_id: order.id,
+    product_id: item.products.id,
+    name_snapshot: item.products.name,
+    price_snapshot: item.products.price,
+    quantity: item.quantity,
+    file_path_snapshot: item.products.file_path || null,
+    file_name_snapshot: item.products.file_name || null,
+  })));
+  if (rowsError) {
+    await s.from("orders").delete().eq("id", order.id);
+    await sendZernioInboxMessage(conversationId, accountId, "Не удалось сохранить состав заказа. Попробуйте ещё раз позже.");
+    return;
+  }
+  await s.from("cart_items").delete().eq("telegram_id", user.telegram_id);
+
+  const { data: settings } = await s.from("app_settings").select("key, value");
+  const value = (key: string) => settings?.find((row: any) => row.key === key)?.value?.trim() || "";
+  const isTest = value("robokassa_test_mode") === "true";
+  const login = value("robokassa_login");
+  const pass1 = isTest ? value("robokassa_pass1_test") : value("robokassa_pass1");
+  if (value("robokassa_enabled") !== "true" || !login || !pass1) {
+    await sendZernioInboxMessage(conversationId, accountId, `Заказ #${order.order_no || order.id} создан. Менеджер пришлёт реквизиты для оплаты.`);
+    return;
+  }
+  const { buildRobokassaPaymentUrl } = await import("./robokassa.server");
+  const paymentUrl = buildRobokassaPaymentUrl({
+    login,
+    pass1,
+    outSum: Number(total).toFixed(2),
+    invId: Number(order.id),
+    description: `Заказ #${order.order_no || order.id}`,
+    isTest,
+  });
+  await sendZernioInboxMessage(
+    conversationId,
+    accountId,
+    `Заказ #${order.order_no || order.id} на сумму ${total} ${currency} создан. Оплатите его по кнопке ниже.`,
+    undefined,
+    undefined,
+    [{ type: "url", title: "Оплатить", url: paymentUrl }],
+  );
+}
+
+export async function deliverInstagramOrder(orderId: number) {
+  const s = await db();
+  const { data: order } = await s
+    .from("orders")
+    .select("telegram_id, order_items(name_snapshot, quantity, file_path_snapshot, file_name_snapshot)")
+    .eq("id", orderId)
+    .single();
+  if (!order) throw new Error(`Instagram order ${orderId} not found`);
+  const { data: user } = await s
+    .from("bot_users")
+    .select("zernio_conversation_id, zernio_account_id")
+    .eq("telegram_id", order.telegram_id)
+    .maybeSingle();
+  if (!user?.zernio_conversation_id || !user.zernio_account_id) throw new Error("Instagram conversation is unavailable");
+  await sendZernioInboxMessage(user.zernio_conversation_id, user.zernio_account_id, "✅ Оплата получена. Отправляем ваши материалы.");
+  for (const item of (order.order_items || []) as any[]) {
+    let attachmentUrl: string | undefined;
+    if (item.file_path_snapshot) {
+      const { data: signed } = await s.storage.from("product-files").createSignedUrl(item.file_path_snapshot, 60 * 60 * 24 * 7);
+      attachmentUrl = signed?.signedUrl;
+    }
+    const message = attachmentUrl ? `📎 ${item.name_snapshot}` : `Материал «${item.name_snapshot}» подготовлен менеджером.`;
+    await sendZernioInboxMessage(user.zernio_conversation_id, user.zernio_account_id, message, attachmentUrl, attachmentUrl ? "file" : undefined);
+  }
+  await s.from("orders").update({ status: "delivered" }).eq("id", orderId);
+}
+
 export async function handleZernioComment(payload: any) {
   const commentObj = payload.comment || {};
   const commentText = (commentObj.text || commentObj.content || "").trim();

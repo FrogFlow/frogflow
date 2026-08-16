@@ -1,4 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
+import crypto from "node:crypto";
+
+export function verifyZernioWebhookSignature(rawBody: string, signature: string | null, secret: string | undefined): boolean {
+  if (!signature || !secret) return false;
+  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+  const received = Buffer.from(signature, "utf8");
+  const computed = Buffer.from(expected, "utf8");
+  return received.length === computed.length && crypto.timingSafeEqual(received, computed);
+}
 
 async function runInBackground(task: () => Promise<void>) {
   try {
@@ -13,9 +22,16 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const rawBody = await request.text();
+        const secret = process.env.ZERNIO_WEBHOOK_SECRET?.trim();
+        const signature = request.headers.get("x-zernio-signature") || request.headers.get("x-late-signature");
+        if (!secret) return new Response("webhook secret is not configured", { status: 503 });
+        if (!verifyZernioWebhookSignature(rawBody, signature, secret)) {
+          return new Response("invalid signature", { status: 401 });
+        }
         let payload: any;
         try {
-          payload = await request.json();
+          payload = JSON.parse(rawBody);
         } catch {
           return new Response("bad json", { status: 400 });
         }
@@ -26,7 +42,7 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         const { hasModule } = await import("@/lib/modules/modules.server");
         if (!(await hasModule("instagram"))) return new Response("ok");
 
-        const eventId = payload.id || payload.comment?.id || payload.message?.id || null;
+        const eventId = payload.id || request.headers.get("x-zernio-event-id") || request.headers.get("x-late-event-id") || null;
         const eventType = payload.event || "unknown";
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");

@@ -70,7 +70,7 @@ async function handleRobokassaResult(request: Request) {
   }
 
   const orderId = Number(invId);
-  const { data: order } = await s.from("orders").select("status, total").eq("id", orderId).maybeSingle();
+  const { data: order } = await s.from("orders").select("status, total, platform").eq("id", orderId).maybeSingle();
 
   if (!order) {
     return new Response("order not found", { status: 404 });
@@ -85,7 +85,12 @@ async function handleRobokassaResult(request: Request) {
   // Выдавать только если заказ ожидает оплаты или подтверждения (защита от выдачи отклонённых)
   if (["awaiting_payment", "awaiting_confirmation"].includes(order.status)) {
     try {
-      await deliverOrder(orderId);
+      if (order.platform === "instagram") {
+        const { deliverInstagramOrder } = await import("@/lib/zernio-bot.server");
+        await deliverInstagramOrder(orderId);
+      } else {
+        await deliverOrder(orderId);
+      }
       await s
         .from("orders")
         .update({
