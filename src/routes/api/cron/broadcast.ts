@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { processBroadcastBatch } from "@/lib/broadcast.server";
 import { processPendingDeliveries } from "@/lib/orders.server";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
+import { pruneZernioLogs } from "@/lib/zernio-logs.server";
 
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -40,7 +41,19 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             deliveries = { error: e?.message || String(e) };
           }
 
-          return Response.json({ ok: true, webhook, processed: total, done, deliveries, ...last });
+          // Уборка логов Instagram — здесь, а не отдельным кроном: на Hobby
+          // расписание задаётся внешним вызовом, и второй такой вызов на
+          // каждом деплое ради одного DELETE не окупается. Своей ошибкой
+          // проход не роняет ответ: рассылка и выдача важнее уборки.
+          let logs: Awaited<ReturnType<typeof pruneZernioLogs>> | { error: string } | undefined;
+          try {
+            logs = await pruneZernioLogs();
+          } catch (e: any) {
+            console.error("[cron/broadcast] zernio logs prune", e);
+            logs = { error: e?.message || String(e) };
+          }
+
+          return Response.json({ ok: true, webhook, processed: total, done, deliveries, logs, ...last });
         } catch (e: any) {
           console.error("[cron/broadcast]", e);
           return Response.json({ ok: false, error: e.message }, { status: 500 });

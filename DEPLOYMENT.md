@@ -62,6 +62,7 @@
 | `APP_TIMEZONE` | `Asia/Almaty` | Часовой пояс дат в админке и боте. |
 | `DELIVERY_BATCH_SIZE` | `8` | Файлов в одной порции выдачи (1–20). |
 | `DELIVERY_MAX_FILE_MB` | `100` | Предел размера файла (1–200). |
+| `ZERNIO_LOG_RETENTION_DAYS` | `30` | Сколько дней держать отработанные события Instagram в `zernio_logs` (1–365). Уборка идёт внутри `/api/cron/broadcast`; `error` и `pending` не удаляются никогда. |
 | `TELEGRAM_API_BASE` | `https://api.telegram.org` | Свой Bot API server — снимает лимит в 50 МБ на отправку файла. |
 
 ---
