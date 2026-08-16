@@ -104,6 +104,7 @@ export async function handleZernioMessage(payload: any) {
   const { data: directBotSetting } = await s
     .from("app_settings")
     .select("value")
+    .eq("bot_id", process.env.BOT_ID?.trim() || "")
     .eq("key", "instagram_direct_bot_enabled")
     .maybeSingle();
   if (directBotSetting?.value === "false") {

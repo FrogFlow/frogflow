@@ -19,6 +19,12 @@ async function db() {
   return supabaseAdmin;
 }
 
+function requireBotId() {
+  const botId = process.env.BOT_ID?.trim();
+  if (!botId) throw new Error("BOT_ID is required for Instagram settings");
+  return botId;
+}
+
 export const getInstagramConnectUrlFn = createServerFn({ method: "GET" }).handler(async () => {
   const { getZernioConnectUrl } = await import("./zernio.server");
   await requireAdminWithModule();
@@ -48,7 +54,7 @@ export const getInstagramAccountHealthFn = createServerFn({ method: "GET" })
 export const getInstagramDirectBotSettingsFn = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdminWithModule();
   const s = await db();
-  const { data } = await s.from("app_settings").select("key, value").eq("key", "instagram_direct_bot_enabled").maybeSingle();
+  const { data } = await s.from("app_settings").select("key, value").eq("bot_id", requireBotId()).eq("key", "instagram_direct_bot_enabled").maybeSingle();
   return { enabled: data?.value !== "false" };
 });
 
@@ -59,7 +65,7 @@ export const saveInstagramDirectBotSettingsFn = createServerFn({ method: "POST" 
     const s = await db();
     const { error } = await s
       .from("app_settings")
-      .upsert({ key: "instagram_direct_bot_enabled", value: String(data.enabled), updated_at: new Date().toISOString() });
+      .upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_enabled", value: String(data.enabled), updated_at: new Date().toISOString() });
     if (error) throw new Error(error.message);
     return { ok: true, enabled: data.enabled };
   });

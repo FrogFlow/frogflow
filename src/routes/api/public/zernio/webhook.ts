@@ -42,6 +42,13 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         const { hasModule } = await import("@/lib/modules/modules.server");
         if (!(await hasModule("instagram"))) return new Response("ok");
 
+        const accountId = payload.account?.accountId || payload.account?.id || payload.message?.accountId || payload.data?.accountId;
+        const { isInstagramAccountInConfiguredProfile } = await import("@/lib/zernio.server");
+        if (!(await isInstagramAccountInConfiguredProfile(String(accountId || "")))) {
+          console.warn("[instagram-webhook] ignored event for an account outside this deployment profile");
+          return new Response("ignored", { status: 202 });
+        }
+
         const eventId = payload.id || request.headers.get("x-zernio-event-id") || request.headers.get("x-late-event-id") || null;
         const eventType = payload.event || "unknown";
 

@@ -193,6 +193,11 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
   }
   if (modules.instagram) {
     add(
+      "Профиль Instagram",
+      has(process.env.ZERNIO_PROFILE_ID) ? "ok" : "fail",
+      has(process.env.ZERNIO_PROFILE_ID) ? "задан" : "Instagram включён, но профиль интеграции не задан — webhook будет отключён для безопасности",
+    );
+    add(
       "Секрет Instagram webhook",
       has(process.env.ZERNIO_WEBHOOK_SECRET) ? "ok" : "fail",
       has(process.env.ZERNIO_WEBHOOK_SECRET)

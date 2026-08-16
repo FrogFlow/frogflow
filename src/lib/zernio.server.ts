@@ -276,6 +276,14 @@ export async function sendZernioInboxMessage(
   }
 }
 
+/** Fail closed: a deployment may process only accounts in its configured profile. */
+export async function isInstagramAccountInConfiguredProfile(accountId: string): Promise<boolean> {
+  const profileId = process.env.ZERNIO_PROFILE_ID?.trim();
+  if (!profileId || !accountId) return false;
+  const accounts = await listZernioAccounts(profileId);
+  return accounts.some((account) => account._id === accountId && account.platform === "instagram");
+}
+
 /**
  * Ответить на комментарий под постом/Reels в Instagram.
  */
