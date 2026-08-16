@@ -325,35 +325,32 @@ export async function sendInstagramPrivateReply(
 /**
  * Зарегистрировать Webhook в Zernio на наш публичный эндпоинт.
  */
-export async function registerZernioWebhook(webhookUrl: string): Promise<{ ok: boolean }> {
+export async function registerZernioWebhook(webhookUrl: string): Promise<{ ok: boolean; error?: string }> {
   try {
     const secret = process.env.ZERNIO_WEBHOOK_SECRET?.trim();
-    if (!secret) throw new Error("ZERNIO_WEBHOOK_SECRET environment variable is not configured");
-    await zernioRequest("/webhooks/settings", {
-      method: "POST",
+    if (!secret) return { ok: false, error: "Не задана переменная окружения ZERNIO_WEBHOOK_SECRET." };
+    const events = [
+      "message.received", "message.sent", "message.delivered", "message.read", "message.failed",
+      "comment.received", "account.connected", "account.disconnected", "post.published", "post.failed",
+    ];
+    const current = await zernioRequest<{ webhooks?: Array<{ _id?: string; id?: string; url?: string; name?: string }> }>("/webhooks/settings");
+    const existing = (current.webhooks || []).find((webhook) => webhook.url === webhookUrl || webhook.name === "Instagram Store Webhook");
+    const response = await zernioRequest<{ success?: boolean; error?: string }>("/webhooks/settings", {
+      method: existing ? "PUT" : "POST",
       body: {
+        ...(existing ? { _id: existing._id || existing.id } : {}),
         name: "Instagram Store Webhook",
         url: webhookUrl,
         secret,
-        events: [
-          "message.received",
-          "message.sent",
-          "message.delivered",
-          "message.read",
-          "message.failed",
-          "comment.received",
-          "account.connected",
-          "account.disconnected",
-          "post.published",
-          "post.failed",
-        ],
+        events,
         isActive: true,
       },
     });
+    if (response.success === false) return { ok: false, error: response.error || "Zernio не принял настройки webhook." };
     return { ok: true };
   } catch (e) {
     console.error("[zernio] registerZernioWebhook failed", e);
-    return { ok: false };
+    return { ok: false, error: (e as Error).message };
   }
 }
 

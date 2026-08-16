@@ -217,7 +217,7 @@ function AdminInstagramPage() {
       if (res?.ok) {
         setStatusMsg("✅ Соединение успешно обновлено!");
       } else {
-        setStatusMsg("❌ Ошибка при обновлении соединения.");
+        setStatusMsg(`❌ Ошибка при обновлении соединения: ${res?.error || "Zernio отклонил настройки webhook."}`);
       }
     } catch (e: any) {
       setStatusMsg(`Ошибка: ${e.message}`);
