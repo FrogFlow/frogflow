@@ -137,6 +137,22 @@ export async function handleZernioMessage(payload: any) {
 
   const lower = text.toLowerCase();
 
+  /**
+   * Пошаговая покупка. Стоит раньше всех прочих разборов: пока диалог на шаге
+   * сценария, реплика покупателя — это ответ на заданный вопрос, а не команда
+   * и не поисковый запрос. Раньше состояния не было вовсе, и «Казахстан» в
+   * ответ на «из какой вы страны» уходило искать товар с таким названием.
+   */
+  const attachments: Array<{ url?: string }> = payload.message?.attachments || [];
+  const handledByFlow = await handlePurchaseFlow({
+    conversationId,
+    accountId,
+    user,
+    text,
+    attachmentUrl: attachments.find((item) => item.url)?.url,
+  });
+  if (handledByFlow) return;
+
   // A DM button click (postback) carries no text — only its payload, set when
   // the automation's button was configured in the admin panel. Generic
   // routing only: a specific payload's reply is business content that
@@ -185,31 +201,50 @@ export async function handleZernioMessage(payload: any) {
     return;
   }
 
-  // Если пользователь отправил текстовый запрос — ищем товары
-  if (features.search && text.length > 1) {
-    await sendInteractiveProductResults(conversationId, accountId, user, text);
+  /**
+   * Поиск остаётся, но только по явной просьбе.
+   *
+   * Раньше в него проваливалась любая реплика, и это ломало разговор. Сам по
+   * себе поиск полезен — покупатель может не знать номера, — поэтому он никуда
+   * не делся, просто теперь его надо попросить: «поиск пазлы».
+   */
+  const searchMatch = lower.match(/^(?:поиск|найти|найди)\s+(.{2,})$/);
+  if (features.search && searchMatch) {
+    await sendInteractiveProductResults(conversationId, accountId, user, searchMatch[1].trim());
     return;
   }
 
-  // Дефолтный приветственный ответ
-  const { data: scriptSetting } = await s
+  /**
+   * Свободная реплика — это вопрос, а не поисковый запрос.
+   *
+   * Здесь была главная поломка Direct: в поиск товаров уходил любой текст
+   * длиннее одного символа. «Здравствуйте», «а скидка есть?» и ответ на
+   * авто-DM из воронки одинаково превращались в запрос к каталогу и получали
+   * «ничего не нашлось» — человек упирался в стену на первой же фразе.
+   *
+   * Теперь поиском занимается только то, что похоже на номер товара (это
+   * разбирает handlePurchaseFlow выше). Сюда доходит именно вопрос: отвечаем
+   * заготовленным текстом и зовём продавца — ответить живому человеку он
+   * может из админки.
+   */
+  const { data: scriptRow } = await s
     .from("app_settings")
     .select("value")
     .eq("bot_id", process.env.BOT_ID?.trim() || "")
     .eq("key", "instagram_direct_bot_script")
     .maybeSingle();
-  if (scriptSetting?.value?.trim()) {
-    await sendZernioInboxMessage(conversationId, accountId, scriptSetting.value.trim());
-    return;
-  }
 
-  const defaultReply =
-    `Здравствуйте, ${senderName}! 👋\n` +
-    `Добро пожаловать в наш магазин учебных материалов.\n\n` +
-    `Напишите название предмета или темы для поиска материалов, или отправьте "Каталог" для просмотра категорий.\n\n` +
-    `Ссылка на наш веб-каталог: ${appUrl()}`;
+  const { notifyAdminAboutQuestion } = await import("./direct-purchase.server");
+  await notifyAdminAboutQuestion({ question: text, senderName, senderUsername });
 
-  await sendZernioInboxMessage(conversationId, accountId, defaultReply);
+  await sendZernioInboxMessage(
+    conversationId,
+    accountId,
+    scriptRow?.value?.trim() ||
+      `Здравствуйте, ${senderName}! 👋\n\n` +
+        "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
+        "Если хотите что-то купить прямо сейчас, напишите номер товара из публикации — например «196».",
+  );
 }
 
 /**
@@ -540,3 +575,182 @@ export async function deliverInstagramOrder(orderId: number) {
  * событиям в registerZernioWebhook): она давала 69 % всего трафика вебхука без
  * единого полезного действия.
  */
+
+/**
+ * Шаги сценария покупки. Возвращает true, если реплика обработана и дальше её
+ * разбирать не надо.
+ *
+ * Порядок здесь и есть весь смысл: сначала смотрим, на каком шаге стоит
+ * диалог, и только если ни на каком — пытаемся понять свободную реплику. До
+ * появления состояния бот делал наоборот и потому отправлял в поиск товаров
+ * и «Здравствуйте», и «Казахстан», и односложный ответ на авто-DM воронки.
+ */
+async function handlePurchaseFlow(params: {
+  conversationId: string;
+  accountId: string;
+  user: any;
+  text: string;
+  attachmentUrl?: string;
+}): Promise<boolean> {
+  const { conversationId, accountId, user, text, attachmentUrl } = params;
+  const flow = await import("./direct-purchase.server");
+  const { classifyIncoming } = await import("./direct-flow");
+  const state = flow.readDirectState(user.state);
+  const say = (message: string) => sendZernioInboxMessage(conversationId, accountId, message);
+
+  // ── Ждём чек ────────────────────────────────────────────────────────────
+  if (state.mode === "awaiting_proof") {
+    if (!attachmentUrl) {
+      await say(
+        "Жду чек об оплате — пришлите его сюда картинкой или файлом.\n\n" +
+          "Если передумали, напишите «отмена».",
+      );
+      if (/отмен/i.test(text)) {
+        await flow.setDirectState(user.user_key, {});
+        await say("Хорошо, отменил. Напишите номер товара, когда будете готовы.");
+      }
+      return true;
+    }
+
+    const order = await flow.createDirectOrder({
+      user,
+      productId: state.product_id!,
+      countryCode: state.country_code!,
+    });
+    if (!order) {
+      await say("Не получилось оформить заказ. Напишите номер товара ещё раз, пожалуйста.");
+      await flow.setDirectState(user.user_key, {});
+      return true;
+    }
+
+    const proofPath = await flow.storeReceipt(attachmentUrl, order.id);
+    const s = await db();
+    await s
+      .from("orders")
+      .update({ payment_proof_path: proofPath })
+      .eq("id", order.id);
+
+    const displayNo = order.order_no || order.id;
+    await flow.notifyAdminAboutDirectOrder(order.id, displayNo);
+
+    // Почту спрашиваем после чека: пока человек не заплатил, адрес у него
+    // просить не за что, а после оплаты он уже заинтересован ответить.
+    if (user.email) {
+      await s.from("orders").update({ customer_email: user.email }).eq("id", order.id);
+      await flow.setDirectState(user.user_key, {});
+      await say(
+        `Чек получил, заказ №${displayNo} принят. Проверим оплату и пришлём материалы на ${user.email}.\n\n` +
+          "Если нужен другой адрес — напишите его сюда.",
+      );
+      return true;
+    }
+
+    await flow.setDirectState(user.user_key, { mode: "awaiting_email", pending_order_id: order.id });
+    await say(
+      `Чек получил, заказ №${displayNo} принят.\n\n` +
+        "На какую почту прислать материалы? Instagram не умеет пересылать документы, поэтому файлы уходят письмом.",
+    );
+    return true;
+  }
+
+  // ── Ждём страну ─────────────────────────────────────────────────────────
+  if (state.mode === "awaiting_country") {
+    const options = await flow.listCountries();
+    const chosen = flow.matchCountry(text, options);
+    if (!chosen) {
+      await say(
+        "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».",
+      );
+      return true;
+    }
+
+    const requisites = await flow.paymentInstructionsFor(chosen.code);
+    if (!requisites) {
+      await say(
+        "Для этой страны реквизиты пока не заведены. Продавец свяжется с вами и подскажет, как оплатить.",
+      );
+      await flow.setDirectState(user.user_key, {});
+      return true;
+    }
+
+    const s = await db();
+    const { data: product } = await s
+      .from("products")
+      .select("id, name, price, currency, country_prices")
+      .eq("id", state.product_id!)
+      .maybeSingle();
+    if (!product) {
+      await say("Товар больше недоступен. Напишите номер другого, пожалуйста.");
+      await flow.setDirectState(user.user_key, {});
+      return true;
+    }
+
+    const { amount, currency } = flow.priceForCountry(product, chosen.code);
+    await flow.setDirectState(user.user_key, {
+      mode: "awaiting_proof",
+      product_id: product.id,
+      country_code: chosen.code,
+    });
+    await say(
+      `«${product.name}» — ${amount} ${currency}\n\n` +
+        `${requisites.instructions}\n\n` +
+        "После оплаты пришлите чек сюда — картинкой или файлом.",
+    );
+    return true;
+  }
+
+  // ── Ждём почту ──────────────────────────────────────────────────────────
+  if (state.mode === "awaiting_email") {
+    const email = flow.extractEmail(text);
+    if (!email) {
+      await say("Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru");
+      return true;
+    }
+    const s = await db();
+    await s.from("bot_users").update({ email }).eq("user_key", user.user_key);
+    if (state.pending_order_id) {
+      await s.from("orders").update({ customer_email: email }).eq("id", state.pending_order_id);
+    }
+    await flow.setDirectState(user.user_key, {});
+    await say(
+      `Записал: ${email}\n\n` +
+        "Проверим оплату и пришлём материалы на этот адрес. Обычно это занимает несколько часов.",
+    );
+    return true;
+  }
+
+  // ── Сценарий не начат: разбираем свободную реплику ──────────────────────
+  if (!text.trim()) return false;
+
+  const incoming = classifyIncoming(text);
+
+  if (incoming.kind === "product_number") {
+    const product = await flow.findProductByNumber(incoming.number);
+    if (!product) {
+      await say(
+        `Товар с номером ${incoming.number} не нашёл. Проверьте номер в публикации — ` +
+          "или напишите, что ищете, и продавец подскажет.",
+      );
+      return true;
+    }
+    const options = await flow.listCountries();
+    if (options.length === 0) {
+      await say("Реквизиты для оплаты пока не заведены. Продавец свяжется с вами.");
+      return true;
+    }
+    await flow.setDirectState(user.user_key, { mode: "awaiting_country", product_id: product.id });
+    await say(flow.renderCountryPrompt(product.name, options));
+    return true;
+  }
+
+  if (incoming.kind === "affirmative") {
+    // Односложный ответ — почти всегда реакция на автоматический DM из
+    // воронки. Раньше он уходил в поиск товаров и получал «ничего не нашлось».
+    await say(
+      "Отлично! Напишите номер товара из публикации — например «196», — и я подскажу, как оплатить.",
+    );
+    return true;
+  }
+
+  return false;
+}

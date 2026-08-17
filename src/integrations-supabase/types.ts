@@ -719,6 +719,7 @@ export type Database = {
       }
       bot_users: {
         Row: {
+          email: string | null
           metadata: Json
           bot_id: string | null
           last_auto_dm_at: string | null
@@ -738,6 +739,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          email?: string | null
           metadata?: Json
           bot_id?: string | null
           last_auto_dm_at?: string | null
@@ -757,6 +759,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          email?: string | null
           metadata?: Json
           bot_id?: string | null
           last_auto_dm_at?: string | null
@@ -934,6 +937,7 @@ export type Database = {
       }
       orders: {
         Row: {
+          customer_email: string | null
           order_no: number
           bot_id: string | null
           zernio_conversation_id: string | null
@@ -956,6 +960,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          customer_email?: string | null
           order_no?: number
           bot_id?: string | null
           zernio_conversation_id?: string | null
@@ -978,6 +983,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          customer_email?: string | null
           order_no?: number
           bot_id?: string | null
           zernio_conversation_id?: string | null

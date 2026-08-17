@@ -42,8 +42,27 @@ const statusMap: Record<string, { label: string; cls: string }> = {
 function OrdersPage() {
   const qc = useQueryClient();
   const orders = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
-  const list = (orders.data ?? []) as any[];
+  const allOrders = (orders.data ?? []) as any[];
   const [busy, setBusy] = useState<number | null>(null);
+
+  /**
+   * Разделение по площадке. Заказы из Telegram и из Instagram обрабатываются
+   * по-разному — первые выдаются файлами в переписку, вторые письмом на почту,
+   * — и продавцу удобнее разбирать их отдельными пачками.
+   *
+   * Пустая площадка у старых заказов означает Telegram: колонка появилась
+   * позже, чем начались продажи.
+   */
+  const [platform, setPlatform] = useState<"all" | "telegram" | "instagram">("all");
+  const platformOf = (order: any) => (order.platform === "instagram" ? "instagram" : "telegram");
+  const list =
+    platform === "all" ? allOrders : allOrders.filter((o) => platformOf(o) === platform);
+
+  const counts = {
+    all: allOrders.length,
+    telegram: allOrders.filter((o) => platformOf(o) === "telegram").length,
+    instagram: allOrders.filter((o) => platformOf(o) === "instagram").length,
+  };
 
   async function onConfirm(id: number, displayNo: number) {
     if (!confirm(`Подтвердить оплату заказа #${displayNo} и выдать файлы?`)) return;
@@ -171,7 +190,36 @@ function OrdersPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Заказы</h1>
       <ExportBar />
-      {list.length === 0 && <p className="text-sm text-muted-foreground">Пока нет заказов.</p>}
+
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            ["all", "Все"],
+            ["telegram", "Telegram"],
+            ["instagram", "Instagram"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setPlatform(key)}
+            className={`rounded-md border px-3 py-1.5 text-sm ${
+              platform === key ? "border-primary bg-primary/10 font-medium" : "hover:bg-muted/50"
+            }`}
+          >
+            {label}
+            <span className="ml-1.5 text-xs text-muted-foreground">{counts[key]}</span>
+          </button>
+        ))}
+      </div>
+
+      {list.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          {allOrders.length === 0
+            ? "Пока нет заказов."
+            : "В этой площадке заказов пока нет."}
+        </p>
+      )}
       <div className="space-y-3">
         {list.map((o) => {
           const st = statusMap[o.status] || { label: o.status, cls: "bg-muted" };
@@ -181,6 +229,13 @@ function OrdersPage() {
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">#{o.order_no ?? o.id}</span>
                   <span className={`text-xs px-2 py-0.5 rounded ${st.cls}`}>{st.label}</span>
+                  {/* Площадку показываем только у Instagram: заказов из Telegram
+                      подавляющее большинство, и метка у каждого была бы шумом. */}
+                  {platformOf(o) === "instagram" && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-pink-100 text-pink-900">
+                      Instagram
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground">
                     {new Date(o.created_at).toLocaleString("ru")}
                   </span>
@@ -198,7 +253,13 @@ function OrdersPage() {
                       (
                       <a
                         className="text-primary"
-                        href={`https://t.me/${o.username}`}
+                        // Профиль открывается там, откуда пришёл заказ: у
+                        // покупателя из Instagram юзернейм в t.me ведёт в никуда.
+                        href={
+                          platformOf(o) === "instagram"
+                            ? `https://instagram.com/${o.username}`
+                            : `https://t.me/${o.username}`
+                        }
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -210,6 +271,14 @@ function OrdersPage() {
                 </div>
                 <div>📞 {o.contact || "—"}</div>
                 <div>🌍 {o.country_name || "—"}</div>
+                {/* Куда уйдут материалы после подтверждения. Для заказов из
+                    Instagram это единственный способ выдачи, поэтому пустая
+                    почта здесь — предупреждение, а не мелочь. */}
+                {platformOf(o) === "instagram" && (
+                  <div className={o.customer_email ? "" : "text-amber-700"}>
+                    ✉️ {o.customer_email || "почта не указана — материалы отправить некуда"}
+                  </div>
+                )}
               </div>
               <ul className="text-sm list-disc pl-5">
                 {(o.order_items ?? []).map((it: any) => (

@@ -111,6 +111,23 @@ export async function deliverOrder(
     return { ok: true as const, pending: false, sent: 0, total: 0 };
   }
 
+  /**
+   * Заказы из Instagram выдаются письмом, а не в переписку.
+   *
+   * Ниже весь код отправляет файлы в Telegram по `order.telegram_id`, а у
+   * покупателя из Instagram этот идентификатор синтетический (отрицательный
+   * хеш от user_key) — чата с таким номером не существует, и подтверждение
+   * такого заказа раньше просто падало бы. Заказов из Instagram до сих пор не
+   * было ни одного, поэтому этого никто не замечал.
+   *
+   * Почему именно почта: Instagram Direct не принимает вложениями документы,
+   * а продаются здесь PDF и ZIP. Плюс окно в 24 часа — подтверждение продавца
+   * почти всегда приходит позже, и сообщение бы уже не ушло.
+   */
+  if (order.platform === "instagram") {
+    return await deliverOrderByEmail(orderId, order, items);
+  }
+
   let sent = 0;
   let announcedContinue = false;
 
@@ -446,4 +463,103 @@ export async function sendFileToUser(
   }
 
   return false;
+}
+
+/** Сколько живут ссылки в письме. То же значение, что у выдачи в Telegram. */
+const EMAIL_LINK_DAYS = 7;
+
+/**
+ * Выдача заказа письмом — для покупателей из Instagram.
+ *
+ * Материалы уходят подписанными ссылками, а не вложениями: файлы бывают до
+ * 100 МБ, и почтовый сервер такое письмо просто отобьёт — причём уже после
+ * того, как продавец нажал «Подтвердить», и он об этом не узнает.
+ */
+async function deliverOrderByEmail(
+  orderId: number,
+  order: { customer_email?: string | null; order_no?: number | null },
+  items: OrderItem[],
+) {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { sendOrderMaterialsEmail, isMailConfigured } = await import("./mail.server");
+
+  const email = order.customer_email?.trim();
+  if (!email) {
+    throw new Error(
+      "У заказа не указана почта покупателя — отправлять материалы некуда. " +
+        "Спросите адрес в переписке и впишите его в заказ.",
+    );
+  }
+  if (!isMailConfigured()) {
+    throw new Error(
+      "Отправка почты не настроена: задайте SMTP_HOST, SMTP_USER и SMTP_PASSWORD в переменных окружения.",
+    );
+  }
+
+  const files: Array<{ name: string; url: string }> = [];
+  for (const item of items) {
+    // Материалы бывают из нескольких файлов (модуль multi_files), и у старых
+    // заказов заполнены только одиночные *_snapshot — разворачиваем оба вида
+    // тем же помощником, что и выдача в Telegram, иначе часть файлов пропала
+    // бы молча.
+    const materials = item.material_files_snapshot?.length
+      ? item.material_files_snapshot
+      : legacyAsMaterials(item.file_path_snapshot, item.file_name_snapshot, item.file_url_snapshot);
+
+    for (const material of materials) {
+      // Готовая внешняя ссылка — отдаём как есть, подписывать нечего.
+      if (material.url) {
+        files.push({ name: material.name || item.name_snapshot || "Материал", url: material.url });
+        continue;
+      }
+      if (!material.path) continue;
+      const { data: signed } = await supabaseAdmin.storage
+        .from("product-files")
+        .createSignedUrl(material.path, EMAIL_LINK_DAYS * 24 * 60 * 60);
+      if (signed?.signedUrl) {
+        files.push({
+          name: material.name || item.name_snapshot || "Материал",
+          url: signed.signedUrl,
+        });
+      }
+    }
+  }
+
+  if (files.length === 0) {
+    throw new Error("У товаров в заказе не приложены файлы — отправлять нечего.");
+  }
+
+  const { data: shopSetting } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", "shop_name")
+    .maybeSingle();
+
+  const result = await sendOrderMaterialsEmail({
+    to: email,
+    orderNo: order.order_no ?? orderId,
+    shopName: shopSetting?.value?.trim() || "Магазин",
+    files,
+    linkDays: EMAIL_LINK_DAYS,
+  });
+
+  if (!result.ok) {
+    throw new Error(`Письмо не отправилось: ${result.error}`);
+  }
+
+  await supabaseAdmin
+    .from("orders")
+    .update({ status: "delivered", delivery_index: items.length })
+    .eq("id", orderId);
+
+  // `alreadyDelivered` держим в форме ответа намеренно: его читают и админка,
+  // и бот, и без него ветка почты выпала бы из общего типа результата.
+  return {
+    ok: true as const,
+    alreadyDelivered: false,
+    pending: false,
+    sent: files.length,
+    total: items.length,
+    email,
+  };
 }
