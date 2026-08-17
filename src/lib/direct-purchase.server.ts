@@ -231,10 +231,9 @@ export function priceForCountry(
 }
 
 /** Список стран, пронумерованный — покупатель отвечает цифрой или названием. */
-export function renderCountryPrompt(productName: string, options: CountryOption[]): string {
+export function renderCountryPrompt(options: CountryOption[]): string {
   const lines = options.map((option, index) => `${index + 1}. ${option.name}`);
   return (
-    `Нашли: «${productName}».\n\n` +
     `Из какой вы страны? Реквизиты для оплаты у каждой свои.\n\n` +
     `${lines.join("\n")}\n\n` +
     `Ответьте номером или названием.`
@@ -268,7 +267,14 @@ export async function paymentInstructionsFor(
  */
 export async function storeReceipt(
   attachmentUrl: string,
-  orderId: number,
+  /**
+   * Папка в бакете. Раньше сюда передавался номер заказа, из-за чего чек можно
+   * было сохранить только после его создания — а значит, при сбое загрузки в
+   * базе оставался заказ без чека, о котором продавцу уже успели сообщить.
+   * Теперь ключ строится от покупателя, и порядок стал правильным: сперва чек,
+   * потом заказ.
+   */
+  folder: string,
 ): Promise<string | null> {
   try {
     const response = await fetch(attachmentUrl);
@@ -288,7 +294,7 @@ export async function storeReceipt(
           : "jpg";
 
     const s = await db();
-    const key = `order-${orderId}/${Date.now()}.${extension}`;
+    const key = `${folder}/${Date.now()}.${extension}`;
     const { error } = await s.storage
       .from("payment-proofs")
       .upload(key, new Blob([bytes as BlobPart], { type: contentType }), {
@@ -307,61 +313,6 @@ export async function storeReceipt(
 }
 
 /** Создаёт заказ из выбранного товара — по одному товару за раз, как в сценарии. */
-export async function createDirectOrder(params: {
-  user: { telegram_id: number; user_key: string; username: string | null; first_name: string | null };
-  productId: string;
-  countryCode: string;
-}): Promise<{ id: number; order_no: number | null } | null> {
-  const s = await db();
-  const { data: product } = await s
-    .from("products")
-    .select("id, name, price, currency, country_prices, file_path, file_name")
-    .eq("id", params.productId)
-    .maybeSingle();
-  if (!product) return null;
-
-  const { amount, currency } = priceForCountry(product, params.countryCode);
-
-  const { data: order, error } = await s
-    .from("orders")
-    .insert({
-      telegram_id: params.user.telegram_id,
-      user_key: params.user.user_key,
-      platform: "instagram",
-      username: params.user.username,
-      display_name: params.user.first_name || params.user.username || "Покупатель из Instagram",
-      contact: params.user.username ? `@${params.user.username}` : null,
-      total: amount,
-      currency,
-      status: "awaiting_confirmation",
-    })
-    .select("id, order_no")
-    .single();
-
-  if (error || !order) {
-    console.error("[direct] create order failed", error);
-    return null;
-  }
-
-  const { error: itemsError } = await s.from("order_items").insert({
-    order_id: order.id,
-    product_id: product.id,
-    name_snapshot: product.name,
-    price_snapshot: amount,
-    quantity: 1,
-    file_path_snapshot: product.file_path,
-    file_name_snapshot: product.file_name,
-  });
-
-  if (itemsError) {
-    console.error("[direct] create order items failed", itemsError);
-    await s.from("orders").delete().eq("id", order.id);
-    return null;
-  }
-
-  return order;
-}
-
 /** Сообщение продавцу о новом заказе — тем же путём, что и у Telegram-бота. */
 export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: number | string) {
   const s = await db();
@@ -429,3 +380,210 @@ export async function notifyAdminAboutQuestion(params: {
 }
 
 export { matchCountry, extractEmail, sendZernioInboxMessage };
+
+// ─── Корзина ────────────────────────────────────────────────────────────────
+//
+// Покупают часто не по одному материалу: у продавца это методички по 100–1000 ₸,
+// и брать их по одной, каждый раз заново присылая чек, — мучение и для
+// покупателя, и для продавца. Корзина (`cart_items`) в базе была и раньше, ею
+// пользовался старый путь с оплатой через Robokassa; теперь она стала общим
+// накопителем для сценария с чеком.
+
+export type CartLine = {
+  productId: string;
+  name: string;
+  quantity: number;
+  price: number;
+  currency: string;
+  countryPrices: Json | null;
+};
+
+/**
+ * Материал, у которого нет ни файла, ни ссылки, ни записей в
+ * product_material_files, выдать нечем.
+ *
+ * Таких в живом каталоге 8 из 378. Раньше их можно было заказать и оплатить, а
+ * упёрлось бы всё в подтверждение продавцом — уже после того, как человек
+ * заплатил. Проверяем на входе в корзину, а не на выдаче.
+ */
+export async function productHasFiles(productId: string): Promise<boolean> {
+  const s = await db();
+  const { data: product } = await s
+    .from("products")
+    .select("file_path, file_url, file_path_kz, file_url_kz")
+    .eq("id", productId)
+    .maybeSingle();
+
+  if (product?.file_path || product?.file_url || product?.file_path_kz || product?.file_url_kz) {
+    return true;
+  }
+
+  const { count } = await s
+    .from("product_material_files")
+    .select("id", { count: "exact", head: true })
+    .eq("product_id", productId);
+  return (count ?? 0) > 0;
+}
+
+/** Добавляет материал в корзину; повторное добавление количество не множит. */
+export async function addToCart(
+  user: { telegram_id: number; user_key: string },
+  productId: string,
+): Promise<void> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("cart_items")
+    .select("id")
+    .eq("telegram_id", user.telegram_id)
+    .eq("product_id", productId)
+    .maybeSingle();
+
+  // Цифровой материал покупают один раз — второй экземпляр того же файла
+  // человеку не нужен, и увеличивать количество было бы ошибкой.
+  if (existing) return;
+
+  await s.from("cart_items").insert({
+    telegram_id: user.telegram_id,
+    user_key: user.user_key,
+    product_id: productId,
+    quantity: 1,
+  });
+}
+
+export async function readCart(user: { telegram_id: number }): Promise<CartLine[]> {
+  const s = await db();
+  const { data } = await s
+    .from("cart_items")
+    .select("quantity, products(id, name, price, currency, country_prices)")
+    .eq("telegram_id", user.telegram_id);
+
+  const lines: CartLine[] = [];
+  for (const row of data ?? []) {
+    const product = (row as { products?: unknown }).products as CartLine | null;
+    if (!product) continue;
+    const p = product as unknown as {
+      id: string;
+      name: string;
+      price: number;
+      currency: string | null;
+      country_prices: Json | null;
+    };
+    lines.push({
+      productId: p.id,
+      name: p.name,
+      quantity: Number((row as { quantity?: number }).quantity) || 1,
+      price: Number(p.price),
+      currency: String(p.currency || "KZT"),
+      countryPrices: p.country_prices,
+    });
+  }
+  return lines;
+}
+
+export async function clearCart(user: { telegram_id: number }): Promise<void> {
+  const s = await db();
+  await s.from("cart_items").delete().eq("telegram_id", user.telegram_id);
+}
+
+/** Итог корзины в валюте выбранной страны. */
+export function cartTotal(
+  lines: CartLine[],
+  countryCode: string,
+): { amount: number; currency: string } {
+  let amount = 0;
+  let currency = "KZT";
+  for (const line of lines) {
+    const priced = priceForCountry(
+      { price: line.price, currency: line.currency, country_prices: line.countryPrices },
+      countryCode,
+    );
+    amount += priced.amount * line.quantity;
+    currency = priced.currency;
+  }
+  return { amount, currency };
+}
+
+/** Список корзины для сообщения покупателю. */
+export function renderCart(lines: CartLine[], countryCode: string | undefined): string {
+  const rows = lines.map((line, index) => `${index + 1}. ${line.name}`);
+  if (!countryCode) return rows.join("\n");
+  const { amount, currency } = cartTotal(lines, countryCode);
+  return `${rows.join("\n")}\n\nИтого: ${amount} ${currency}`;
+}
+
+/**
+ * Создаёт заказ из корзины — по всем её позициям сразу.
+ *
+ * Пришло на замену прежней версии, которая умела ровно один товар: тот
+ * сценарий не давал купить два материала за раз, хотя корзина в базе была.
+ */
+export async function createOrderFromCart(params: {
+  user: { telegram_id: number; user_key: string; username: string | null; first_name: string | null };
+  countryCode: string;
+}): Promise<{ id: number; order_no: number | null } | null> {
+  const s = await db();
+  const lines = await readCart(params.user);
+  if (lines.length === 0) return null;
+
+  const { amount, currency } = cartTotal(lines, params.countryCode);
+
+  const { data: order, error } = await s
+    .from("orders")
+    .insert({
+      telegram_id: params.user.telegram_id,
+      user_key: params.user.user_key,
+      platform: "instagram",
+      username: params.user.username,
+      display_name: params.user.first_name || params.user.username || "Покупатель из Instagram",
+      contact: params.user.username ? `@${params.user.username}` : null,
+      total: amount,
+      currency,
+      status: "awaiting_confirmation",
+    })
+    .select("id, order_no")
+    .single();
+
+  if (error || !order) {
+    console.error("[direct] create order from cart failed", error);
+    return null;
+  }
+
+  // Снимки файлов берём здесь же: заказ должен помнить, что именно продали,
+  // даже если товар потом отредактируют или снимут с продажи.
+  const { data: products } = await s
+    .from("products")
+    .select("id, name, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz")
+    .in("id", lines.map((line) => line.productId));
+
+  const byId = new Map((products ?? []).map((p) => [p.id, p]));
+  const { error: itemsError } = await s.from("order_items").insert(
+    lines.map((line) => {
+      const p = byId.get(line.productId);
+      const priced = priceForCountry(
+        { price: line.price, currency: line.currency, country_prices: line.countryPrices },
+        params.countryCode,
+      );
+      return {
+        order_id: order.id,
+        product_id: line.productId,
+        name_snapshot: line.name,
+        price_snapshot: priced.amount,
+        quantity: line.quantity,
+        file_path_snapshot: p?.file_path ?? null,
+        file_name_snapshot: p?.file_name ?? null,
+        file_url_snapshot: p?.file_url ?? null,
+        file_path_kz_snapshot: p?.file_path_kz ?? null,
+        file_name_kz_snapshot: p?.file_name_kz ?? null,
+        file_url_kz_snapshot: p?.file_url_kz ?? null,
+      };
+    }),
+  );
+
+  if (itemsError) {
+    console.error("[direct] create order items failed", itemsError);
+    await s.from("orders").delete().eq("id", order.id);
+    return null;
+  }
+
+  return order;
+}

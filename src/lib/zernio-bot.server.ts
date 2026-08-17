@@ -4,7 +4,6 @@ import {
   sendInstagramPrivateReply,
 } from "./zernio.server";
 import crypto from "node:crypto";
-import { convertAmount } from "./currency.server";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 
 async function db() {
@@ -377,44 +376,6 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
 /**
  * Поиск и отправка товаров в DM
  */
-async function searchAndSendProducts(conversationId: string, accountId: string, _user: any, query: string) {
-  const s = await db();
-
-  const { data: products } = await s
-    .from("products")
-    .select("*, categories(name)")
-    .eq("is_active", true)
-    .or(`name.ilike.%${query}%,description.ilike.%${query}%,keywords.ilike.%${query}%`)
-    .limit(5);
-
-  if (!products || products.length === 0) {
-    await sendZernioInboxMessage(
-      conversationId,
-      accountId,
-      `По запросу «${query}» ничего не найдено.\nПопробуйте другое слово или посмотрите весь каталог в нашем боте: ${(await telegramBotLink()) ?? ""}`,
-    );
-    return;
-  }
-
-  let msg = `🔍 Результаты поиска по запросу "${query}":\n\n`;
-
-  for (const p of products) {
-    msg += `📌 **${p.name}**\n`;
-    msg += `💰 Цена: ${p.price} ${p.currency}\n`;
-    if (p.description) {
-      msg += `📝 ${p.description.slice(0, 100)}...\n`;
-    }
-    msg += `🔗 Подробнее в нашем боте: ${(await telegramBotLink()) ?? ""}\n\n`;
-  }
-
-  msg += "Чтобы оформить заказ, напишите номер материала — например «018».";
-
-  await sendZernioInboxMessage(conversationId, accountId, msg);
-}
-
-/**
- * Показать корзину пользователя
- */
 async function sendInteractiveProductResults(conversationId: string, accountId: string, _user: any, query: string) {
   const s = await db();
   const { data: products } = await s
@@ -453,71 +414,72 @@ async function sendInteractiveProductResults(conversationId: string, accountId: 
   }
 }
 
-async function addProductToCart(conversationId: string, accountId: string, user: any, productId: string) {
+/**
+ * Добавление по кнопке «Купить» из автоматизации воронки.
+ *
+ * Ведёт в ту же корзину, что и номер материала: путей оформления должно быть
+ * ровно столько, сколько путей выдачи, то есть один. Прежняя версия
+ * увеличивала количество при повторном нажатии — для цифрового материала это
+ * бессмысленно, второй экземпляр того же файла человеку не нужен.
+ */
+async function addProductToCart(
+  conversationId: string,
+  accountId: string,
+  user: any,
+  productId: string,
+) {
+  const flow = await import("./direct-purchase.server");
   const s = await db();
   const { data: product } = await s
     .from("products")
     .select("id, name, is_active")
     .eq("id", productId)
     .maybeSingle();
+
   if (!product?.is_active) {
-    await sendZernioInboxMessage(conversationId, accountId, "Этот товар больше недоступен.");
+    await sendZernioInboxMessage(conversationId, accountId, "Этот материал больше недоступен.");
     return;
   }
-  const { data: existing } = await s
-    .from("cart_items")
-    .select("id, quantity")
-    .eq("telegram_id", user.telegram_id)
-    .eq("product_id", product.id)
-    .maybeSingle();
-  if (existing) {
-    await s.from("cart_items").update({ quantity: Number(existing.quantity) + 1 }).eq("id", existing.id);
-  } else {
-    await s.from("cart_items").insert({ telegram_id: user.telegram_id, product_id: product.id, quantity: 1 });
-  }
-  await sendZernioInboxMessage(conversationId, accountId, `✅ «${product.name}» добавлен в корзину.`);
-  await sendCart(conversationId, accountId, user);
-}
-
-async function sendCart(conversationId: string, accountId: string, user: any) {
-  const s = await db();
-  const { data: items } = await s
-    .from("cart_items")
-    .select("*, products(*)")
-    .eq("telegram_id", user.telegram_id);
-
-  if (!items || items.length === 0) {
+  if (!(await flow.productHasFiles(product.id))) {
     await sendZernioInboxMessage(
       conversationId,
       accountId,
-      `Ваша корзина пуста. 🛒\nНапишите номер материала из публикации — например «018».`,
+      `«${product.name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
     );
     return;
   }
 
-  let total = 0;
-  let currency = "KZT";
-  let msg = `🛒 Ваша корзина:\n\n`;
-
-  items.forEach((item: any, i: number) => {
-    const p = item.products;
-    if (p) {
-      const sum = Number(p.price) * item.quantity;
-      total += sum;
-      currency = p.currency;
-      msg += `${i + 1}. ${p.name} (${item.quantity} шт.) — ${sum} ${p.currency}\n`;
-    }
-  });
-
-  msg += `\n💵 **Итого: ${total} ${currency}**\n`;
-  msg += "\nЧтобы оформить, напишите «оформить».";
-
-  await sendZernioInboxMessage(conversationId, accountId, msg);
+  await flow.addToCart(user, product.id);
+  await sendCart(conversationId, accountId, user);
 }
 
-/**
- * Показать историю заказов
- */
+/** Показывает корзину и кнопку оформления. */
+async function sendCart(conversationId: string, accountId: string, user: any) {
+  const flow = await import("./direct-purchase.server");
+  const cart = await flow.readCart(user);
+
+  if (cart.length === 0) {
+    await sendZernioInboxMessage(
+      conversationId,
+      accountId,
+      "Корзина пуста. Напишите номер материала из публикации — например «018».",
+    );
+    return;
+  }
+
+  // Цену показываем только после выбора страны: у клиента заведены отдельные
+  // цены по странам, и назвать сумму заранее значило бы назвать неверную.
+  await sendZernioInboxMessage(
+    conversationId,
+    accountId,
+    `В заказе ${cart.length === 1 ? "материал" : `${cart.length} материала`}:\n\n` +
+      `${flow.renderCart(cart, undefined)}\n\n` +
+      "Можно добавить ещё — напишите следующий номер.",
+    undefined,
+    undefined,
+    [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }],
+  );
+}
 async function sendOrders(conversationId: string, accountId: string, user: any) {
   const s = await db();
   const { data: orders } = await s
@@ -555,112 +517,70 @@ async function sendOrders(conversationId: string, accountId: string, user: any) 
  * Обработать входящий комментарий к публикации/Reels (Comment-to-DM).
  * Соответствует спецификации Zernio Webhooks: payload.comment, payload.post, payload.account
  */
+/**
+ * Переход к оплате: спрашиваем страну, дальше сценарий с чеком.
+ *
+ * Здесь была ловушка. Прежняя версия оформляла заказ через корзину и Robokassa,
+ * ставила статус awaiting_payment и **не спрашивала почту** — а заказы из
+ * Instagram выдаются письмом. Дальше тупик был в любом случае: подтверждение
+ * продавцом падало с «не указана почта покупателя», а автовыдача после
+ * Robokassa пыталась отправить документ вложением в Instagram, чего Instagram
+ * не принимает. Попасть туда можно было прямо сейчас — кнопкой «Оформить
+ * заказ» из старых автоматизаций воронки.
+ *
+ * Теперь путь один: корзина → страна → реквизиты → чек → почта → подтверждение
+ * продавцом → материалы письмом.
+ */
 async function startInstagramCheckout(conversationId: string, accountId: string, user: any) {
-  const s = await db();
-  const { data: items } = await s
-    .from("cart_items")
-    .select("quantity, products(id, name, price, currency, file_path, file_name, file_url)")
-    .eq("telegram_id", user.telegram_id);
-  const validItems = (items || []).filter((item: any) => item.products);
-  if (!validItems.length) {
-    await sendZernioInboxMessage(conversationId, accountId, "Корзина пуста — сначала добавьте товар.");
-    return;
-  }
-  const currency = String(validItems[0].products.currency || "KZT");
-  if (validItems.some((item: any) => String(item.products.currency || "KZT") !== currency)) {
-    await sendZernioInboxMessage(conversationId, accountId, "В корзине несколько валют. Оформите товары по отдельности.");
-    return;
-  }
-  const total = validItems.reduce((sum: number, item: any) => sum + Number(item.products.price) * Number(item.quantity), 0);
-  const { data: order, error } = await s
-    .from("orders")
-    .insert({
-      telegram_id: user.telegram_id,
-      user_key: user.user_key,
-      platform: "instagram",
-      username: user.username || null,
-      display_name: user.first_name || user.username || "Instagram customer",
-      contact: user.username ? `@${user.username}` : null,
-      total,
-      currency,
-      status: "awaiting_payment",
-    })
-    .select("id, order_no")
-    .single();
-  if (error || !order) {
-    console.error("[zernio-bot] create Instagram order failed", error);
-    await sendZernioInboxMessage(conversationId, accountId, "Не удалось оформить заказ. Попробуйте ещё раз позже.");
-    return;
-  }
-  const { error: rowsError } = await s.from("order_items").insert(validItems.map((item: any) => ({
-    order_id: order.id,
-    product_id: item.products.id,
-    name_snapshot: item.products.name,
-    price_snapshot: item.products.price,
-    quantity: item.quantity,
-    file_path_snapshot: item.products.file_path || null,
-    file_name_snapshot: item.products.file_name || null,
-  })));
-  if (rowsError) {
-    await s.from("orders").delete().eq("id", order.id);
-    await sendZernioInboxMessage(conversationId, accountId, "Не удалось сохранить состав заказа. Попробуйте ещё раз позже.");
-    return;
-  }
-  await s.from("cart_items").delete().eq("telegram_id", user.telegram_id);
+  const flow = await import("./direct-purchase.server");
+  const cart = await flow.readCart(user);
 
-  const { data: settings } = await s.from("app_settings").select("key, value");
-  const value = (key: string) => settings?.find((row: any) => row.key === key)?.value?.trim() || "";
-  const isTest = value("robokassa_test_mode") === "true";
-  const login = value("robokassa_login");
-  const pass1 = isTest ? value("robokassa_pass1_test") : value("robokassa_pass1");
-  if (value("robokassa_enabled") !== "true" || !login || !pass1) {
-    await sendZernioInboxMessage(conversationId, accountId, `Заказ #${order.order_no || order.id} создан. Менеджер пришлёт реквизиты для оплаты.`);
+  if (cart.length === 0) {
+    await sendZernioInboxMessage(
+      conversationId,
+      accountId,
+      "Корзина пуста. Напишите номер материала из публикации — например «018».",
+    );
     return;
   }
-  const { buildRobokassaPaymentUrl } = await import("./robokassa.server");
-  const paymentUrl = buildRobokassaPaymentUrl({
-    login,
-    pass1,
-    outSum: Number(total).toFixed(2),
-    invId: Number(order.id),
-    description: `Заказ #${order.order_no || order.id}`,
-    isTest,
-  });
+
+  const options = await flow.listCountries();
+  if (options.length === 0) {
+    await sendZernioInboxMessage(
+      conversationId,
+      accountId,
+      "Реквизиты для оплаты пока не заведены. Продавец свяжется с вами.",
+    );
+    return;
+  }
+
+  await flow.setDirectState(user.user_key, { mode: "awaiting_country" });
   await sendZernioInboxMessage(
     conversationId,
     accountId,
-    `Заказ #${order.order_no || order.id} на сумму ${total} ${currency} создан. Оплатите его по кнопке ниже.`,
-    undefined,
-    undefined,
-    [{ type: "url", title: "Оплатить", url: paymentUrl }],
+    `В заказе:\n${flow.renderCart(cart, undefined)}\n\n` +
+      flow.renderCountryPrompt(options),
   );
 }
 
+
+/**
+ * Автовыдача после онлайн-оплаты — одним путём с ручной.
+ *
+ * Прежняя версия отправляла материалы вложениями прямо в переписку, с
+ * `attachmentType: "file"`. Instagram документов вложением не принимает вовсе —
+ * только картинки, видео и аудио, — так что эта выдача не могла работать ни при
+ * каких условиях. Заказов через неё не проходило ни одного, поэтому никто и не
+ * замечал.
+ *
+ * Теперь она передаёт заказ общей выдаче, а та для площадки instagram
+ * отправляет письмо со ссылками. Если почты у заказа нет (такое возможно только
+ * у старых заказов, оформленных до перехода на сценарий с чеком), выдача честно
+ * скажет об этом продавцу, а не сделает вид, что всё ушло.
+ */
 export async function deliverInstagramOrder(orderId: number) {
-  const s = await db();
-  const { data: order } = await s
-    .from("orders")
-    .select("telegram_id, order_items(name_snapshot, quantity, file_path_snapshot, file_name_snapshot)")
-    .eq("id", orderId)
-    .single();
-  if (!order) throw new Error(`Instagram order ${orderId} not found`);
-  const { data: user } = await s
-    .from("bot_users")
-    .select("zernio_conversation_id, zernio_account_id")
-    .eq("telegram_id", order.telegram_id)
-    .maybeSingle();
-  if (!user?.zernio_conversation_id || !user.zernio_account_id) throw new Error("Instagram conversation is unavailable");
-  await sendZernioInboxMessage(user.zernio_conversation_id, user.zernio_account_id, "✅ Оплата получена. Отправляем ваши материалы.");
-  for (const item of (order.order_items || []) as any[]) {
-    let attachmentUrl: string | undefined;
-    if (item.file_path_snapshot) {
-      const { data: signed } = await s.storage.from("product-files").createSignedUrl(item.file_path_snapshot, 60 * 60 * 24 * 7);
-      attachmentUrl = signed?.signedUrl;
-    }
-    const message = attachmentUrl ? `📎 ${item.name_snapshot}` : `Материал «${item.name_snapshot}» подготовлен менеджером.`;
-    await sendZernioInboxMessage(user.zernio_conversation_id, user.zernio_account_id, message, attachmentUrl, attachmentUrl ? "file" : undefined);
-  }
-  await s.from("orders").update({ status: "delivered" }).eq("id", orderId);
+  const { deliverOrder } = await import("./orders.server");
+  return await deliverOrder(orderId);
 }
 
 /*
@@ -725,52 +645,39 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    const order = await flow.createDirectOrder({
-      user,
-      productId: state.product_id!,
-      countryCode: state.country_code!,
-    });
+    /**
+     * Порядок важен: сначала чек, потом заказ.
+     *
+     * Раньше заказ создавался первым, продавцу тут же уходило уведомление, и
+     * только потом сохранялся чек — при сбое загрузки в базе оставался заказ
+     * без вложения, а продавец уже шёл его проверять.
+     */
+    const proofPath = await flow.storeReceipt(attachmentUrl, user.user_key);
+    if (!proofPath) {
+      await say(
+        "Чек не удалось сохранить. Пришлите его, пожалуйста, ещё раз — картинкой или файлом.",
+      );
+      return true;
+    }
+
+    const order = await flow.createOrderFromCart({ user, countryCode: state.country_code! });
     if (!order) {
-      await say("Не получилось оформить заказ. Напишите номер товара ещё раз, пожалуйста.");
+      await say("Не получилось оформить заказ. Напишите номер материала ещё раз, пожалуйста.");
       await flow.clearDirectFlow(user.user_key);
       return true;
     }
 
-    const proofPath = await flow.storeReceipt(attachmentUrl, order.id);
     const s = await db();
-    await s
-      .from("orders")
-      .update({ payment_proof_path: proofPath })
-      .eq("id", order.id);
+    await s.from("orders").update({ payment_proof_path: proofPath }).eq("id", order.id);
+    // Корзину освобождаем только после успешного заказа — иначе при сбое
+    // человек потерял бы всё, что набрал.
+    await flow.clearCart(user);
 
     const displayNo = order.order_no || order.id;
     await flow.notifyAdminAboutDirectOrder(order.id, displayNo);
 
-    // Чек не сохранился — продавцу нечего будет проверять, и сказать об этом
-    // надо сразу, а не оставлять его гадать над заказом без вложения.
-    if (!proofPath) {
-      await say("Чек не удалось сохранить. Пришлите его, пожалуйста, ещё раз — картинкой или файлом.");
-      await flow.setDirectState(user.user_key, {
-        mode: "awaiting_proof",
-        product_id: state.product_id,
-        country_code: state.country_code,
-      });
-      return true;
-    }
-
-    // Почту спрашиваем после чека: пока человек не заплатил, адрес у него
-    // просить не за что, а после оплаты он уже заинтересован ответить.
     if (user.email) {
       await s.from("orders").update({ customer_email: user.email }).eq("id", order.id);
-      /**
-       * Адрес уже знаем, но остаёмся на шаге почты — иначе обещание «напишите
-       * другой адрес» бот бы не выполнил: состояние было бы сброшено, и
-       * присланная почта никуда не попала бы.
-       *
-       * `email_optional` отличает этот шаг от обязательного: если человек
-       * напишет не адрес, а что-то другое, мы не будем требовать почту — просто
-       * выйдем из сценария и дадим сообщению обычный ход.
-       */
       await flow.setDirectState(user.user_key, {
         mode: "awaiting_email",
         pending_order_id: order.id,
@@ -811,27 +718,22 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    const s = await db();
-    const { data: product } = await s
-      .from("products")
-      .select("id, name, price, currency, country_prices")
-      .eq("id", state.product_id!)
-      .maybeSingle();
-    if (!product) {
-      await say("Товар больше недоступен. Напишите номер другого, пожалуйста.");
+    const cart = await flow.readCart(user);
+    if (cart.length === 0) {
+      await say("Корзина опустела. Напишите номер материала, и начнём заново.");
       await flow.clearDirectFlow(user.user_key);
       return true;
     }
 
-    const { amount, currency } = flow.priceForCountry(product, chosen.code);
+    const { amount, currency } = flow.cartTotal(cart, chosen.code);
     await flow.setDirectState(user.user_key, {
       mode: "awaiting_proof",
-      product_id: product.id,
       country_code: chosen.code,
     });
     await say(
-      `«${product.name}» — ${amount} ${currency}\n\n` +
+      `${flow.renderCart(cart, chosen.code)}\n\n` +
         `${requisites.instructions}\n\n` +
+        `К оплате: ${amount} ${currency}\n` +
         "После оплаты пришлите чек сюда — картинкой или файлом.",
     );
     return true;
@@ -903,13 +805,41 @@ async function handlePurchaseFlow(params: {
       );
       return true;
     }
-    const options = await flow.listCountries();
-    if (options.length === 0) {
-      await say("Реквизиты для оплаты пока не заведены. Продавец свяжется с вами.");
+    // Материал без файла продавать нельзя: заказ дошёл бы до подтверждения и
+    // упёрся бы там — уже после того, как человек заплатил. Таких в каталоге 8.
+    if (!(await flow.productHasFiles(product.id))) {
+      await say(
+        `«${product.name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
+      );
       return true;
     }
-    await flow.setDirectState(user.user_key, { mode: "awaiting_country", product_id: product.id });
-    await say(flow.renderCountryPrompt(product.name, options));
+
+    await flow.addToCart(user, product.id);
+    const cart = await flow.readCart(user);
+
+    /**
+     * Складываем в корзину, а не оформляем сразу.
+     *
+     * Методички берут по нескольку за раз, а прежний сценарий умел ровно один
+     * материал: за вторым надо было заново проходить весь путь и присылать
+     * второй чек. Корзина в базе была и раньше — ею пользовался старый путь с
+     * Robokassa, — теперь она общий накопитель.
+     *
+     * Кнопка «Оформить» здесь важнее текста: одиночному покупателю не хочется
+     * печатать лишнее слово, а тап работает и в папке «Запросы сообщений».
+     */
+    const added = cart.length === 1
+      ? `Добавил «${product.name}».`
+      : `Добавил «${product.name}». В заказе ${cart.length} материала:\n\n${flow.renderCart(cart, undefined)}`;
+
+    await sendZernioInboxMessage(
+      conversationId,
+      accountId,
+      `${added}\n\nМожно добавить ещё — просто напишите следующий номер. Или оформляйте заказ.`,
+      undefined,
+      undefined,
+      [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }],
+    );
     return true;
   }
 
