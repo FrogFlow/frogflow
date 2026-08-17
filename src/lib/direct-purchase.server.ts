@@ -167,6 +167,11 @@ export async function sendDirectReply(params: {
   userKey: string;
   text: string;
   buttons?: ZernioDmButton[];
+  /**
+   * Пользователь сам снова вызвал магазин. В этом случае одинаковое меню —
+   * ожидаемый ответ, а не повтор доставки одного и того же webhook-события.
+   */
+  force?: boolean;
 }): Promise<boolean> {
   const s = await db();
   const { data: existing } = await s
@@ -180,7 +185,7 @@ export async function sendDirectReply(params: {
   const fresh =
     Boolean(state.last_reply_at) && Date.now() - Date.parse(state.last_reply_at!) < REPEAT_WINDOW_MS;
 
-  if (state.last_reply === mark && fresh) {
+  if (!params.force && state.last_reply === mark && fresh) {
     console.log(`[direct] повтор подавлен для ${params.userKey}: «${params.text.slice(0, 60)}…»`);
     return false;
   }

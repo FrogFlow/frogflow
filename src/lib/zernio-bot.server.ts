@@ -35,6 +35,7 @@ async function reply(
   accountId: string,
   text: string,
   buttons?: ZernioDmButton[],
+  force = false,
 ) {
   const flow = await import("./direct-purchase.server");
   return flow.sendDirectReply({
@@ -43,6 +44,7 @@ async function reply(
     userKey: user.user_key,
     text,
     buttons,
+    force,
   });
 }
 
@@ -427,7 +429,10 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
     );
   }
 
-  await reply(user, conversationId, accountId, lines.join("\n"));
+  // «/start», «купить» и прочие слова-вызовы — явное повторное обращение
+  // человека. После «стоп» он должен получить меню даже если его текст
+  // полностью совпадает с последним ответом менее чем десять минут назад.
+  await reply(user, conversationId, accountId, lines.join("\n"), undefined, true);
 }
 
 /**
