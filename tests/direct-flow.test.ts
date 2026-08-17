@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  isCancel,
   extractProductNumber,
   productNumberFrom,
   matchCountry,
@@ -138,5 +139,33 @@ describe("classifyIncoming", () => {
   it("длинная фраза с «спасибо» внутри остаётся вопросом", () => {
     // «Спасибо, а когда будет новый набор?» — это вопрос, а не прощание.
     expect(classifyIncoming("Спасибо, а когда будет новый набор?").kind).toBe("question");
+  });
+});
+
+/**
+ * Выход из сценария. При живой проверке человек застрял на выборе страны:
+ * «/start» отвечало «Не понял страну», и выйти было нечем — любая реплика на
+ * этом шаге считалась попыткой назвать страну.
+ */
+describe("isCancel", () => {
+  it("понимает все обычные способы выйти", () => {
+    for (const input of [
+      "отмена",
+      "Отмена!",
+      "отменить",
+      "стоп",
+      "сброс",
+      "заново",
+      "/start",
+      "хватит",
+    ]) {
+      expect(isCancel(input), input).toBe(true);
+    }
+  });
+
+  it("не принимает за отмену обычную реплику", () => {
+    for (const input of ["Казахстан", "1", "018", "не понял", "отменяется ли заказ?"]) {
+      expect(isCancel(input), input).toBe(false);
+    }
   });
 });

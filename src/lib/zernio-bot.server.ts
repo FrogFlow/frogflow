@@ -5,16 +5,12 @@ import {
 } from "./zernio.server";
 import crypto from "node:crypto";
 import { convertAmount } from "./currency.server";
-import { requireAppOrigin } from "./app-origin.server";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
 }
-
-// Уходит в текст сообщения покупателю в директе — ссылка на свой каталог.
-const appUrl = requireAppOrigin;
 
 // The legacy cart/order schema uses bot_users.telegram_id as its customer key.
 // Reserve negative, deterministic IDs for Instagram so a Direct customer can
@@ -334,32 +330,42 @@ export async function handleZernioMessage(payload: any) {
 /**
  * Отправить главное меню и список категорий
  */
+/**
+ * Меню в ответ на команду.
+ *
+ * Было хуже, чем бесполезно, и это видно по живой переписке. Меню печатало
+ * нумерованный список разделов и просило «написать название категории или тему
+ * для поиска», но:
+ *
+ *  • названия категорий бот не понимал вовсе, а обычный текст перестал уходить
+ *    в поиск (для него теперь нужно «поиск …») — то есть инструкция врала;
+ *  • номера разделов сталкивались с номерами товаров. Человек отвечал «1»,
+ *    имея в виду первый раздел, а бот находил товар «001» и начинал оформление
+ *    заказа на него. Ровно это и произошло при проверке;
+ *  • кнопка «Корзина» вела в старый путь с оплатой через Robokassa, тогда как
+ *    заказы теперь оформляются по чеку с выдачей на почту.
+ *
+ * Теперь меню говорит ровно то, что бот действительно умеет: принять номер
+ * товара. Разбирать каталог удобнее в Telegram-боте — туда и ведём.
+ */
 async function sendCatalogMenu(conversationId: string, accountId: string, user: any) {
-  const s = await db();
-  const { data: categories } = await s
-    .from("categories")
-    .select("*")
-    .eq("is_visible", true)
-    .is("parent_id", null)
-    .order("sort_order", { ascending: true })
-    .limit(8);
+  void user;
+  const botLink = await telegramBotLink();
 
-  let msg = `📚 Каталог цифровых учебных материалов\n\n`;
-  if (categories && categories.length > 0) {
-    msg += `Разделы каталога:\n`;
-    categories.forEach((cat: any, i: number) => {
-      msg += `${i + 1}. 📁 ${cat.name}\n`;
-    });
-    msg += `\nНапишите название категории или тему для поиска материалов.\n`;
-  } else {
-    msg += `В данный момент каталог обновляется.\n`;
+  const lines = [
+    "Здесь можно оформить заказ по номеру материала.",
+    "",
+    "Напишите номер из публикации — например «018», — и я подскажу, как оплатить.",
+  ];
+
+  if (botLink) {
+    lines.push(
+      "",
+      `А чтобы посмотреть весь каталог, поискать по теме и получить файлы, заходите в наш бот: ${botLink}`,
+    );
   }
 
-  msg += `\nВы также можете открыть веб-версию: ${appUrl()}`;
-
-  await sendZernioInboxMessage(conversationId, accountId, msg, undefined, undefined, [
-    { type: "postback", title: "Корзина", payload: "CART" },
-  ]);
+  await sendZernioInboxMessage(conversationId, accountId, lines.join("\n"));
 }
 
 /**
@@ -379,7 +385,7 @@ async function searchAndSendProducts(conversationId: string, accountId: string, 
     await sendZernioInboxMessage(
       conversationId,
       accountId,
-      `К сожалению, по запросу "${query}" ничего не найдено.\nПопробуйте другое ключевое слово или перейдите в веб-каталог: ${appUrl()}`,
+      `По запросу «${query}» ничего не найдено.\nПопробуйте другое слово или посмотрите весь каталог в нашем боте: ${(await telegramBotLink()) ?? ""}`,
     );
     return;
   }
@@ -392,10 +398,10 @@ async function searchAndSendProducts(conversationId: string, accountId: string, 
     if (p.description) {
       msg += `📝 ${p.description.slice(0, 100)}...\n`;
     }
-    msg += `🔗 Подробнее: ${appUrl()}\n\n`;
+    msg += `🔗 Подробнее в нашем боте: ${(await telegramBotLink()) ?? ""}\n\n`;
   }
 
-  msg += `Для заказа перейдите в наш онлайн-магазин: ${appUrl()}`;
+  msg += "Чтобы оформить заказ, напишите номер материала — например «018».";
 
   await sendZernioInboxMessage(conversationId, accountId, msg);
 }
@@ -416,7 +422,7 @@ async function sendInteractiveProductResults(conversationId: string, accountId: 
     await sendZernioInboxMessage(
       conversationId,
       accountId,
-      `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог: ${appUrl()}`,
+      `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог в нашем боте: ${(await telegramBotLink()) ?? ""}`,
       undefined,
       undefined,
       [{ type: "postback", title: "Каталог", payload: "CATALOG" }],
@@ -478,7 +484,7 @@ async function sendCart(conversationId: string, accountId: string, user: any) {
     await sendZernioInboxMessage(
       conversationId,
       accountId,
-      `Ваша корзина пуста. 🛒\nВы можете выбрать товары на нашем сайте: ${appUrl()}`,
+      `Ваша корзина пуста. 🛒\nНапишите номер материала из публикации — например «018».`,
     );
     return;
   }
@@ -498,7 +504,7 @@ async function sendCart(conversationId: string, accountId: string, user: any) {
   });
 
   msg += `\n💵 **Итого: ${total} ${currency}**\n`;
-  msg += `\nДля оформления заказа перейдите по ссылке: ${appUrl()}`;
+  msg += "\nЧтобы оформить, напишите «оформить».";
 
   await sendZernioInboxMessage(conversationId, accountId, msg);
 }
@@ -684,6 +690,25 @@ async function handlePurchaseFlow(params: {
   const state = flow.readDirectState(user.state);
   const say = (message: string) => sendZernioInboxMessage(conversationId, accountId, message);
 
+  /**
+   * Выход из сценария — на любом шаге, а не только на ожидании чека.
+   *
+   * Раньше «отмена» понималась лишь при ожидании чека, а на выборе страны
+   * человек оказывался запертым: при проверке отправили «/start» и получили
+   * «Не понял страну» — и так по кругу, потому что любая реплика на этом шаге
+   * считалась попыткой назвать страну.
+   *
+   * Слова здесь заданы прямо, а не через настраиваемый список команд: выход
+   * должен работать всегда и одинаково, даже если продавец переопределил
+   * команды вызова.
+   */
+  const { isCancel } = await import("./direct-flow");
+  if (state.mode && isCancel(text)) {
+    await flow.setDirectState(user.user_key, {});
+    await say("Отменил. Напишите номер материала, когда будете готовы — например «018».");
+    return true;
+  }
+
   // ── Ждём чек ────────────────────────────────────────────────────────────
   if (state.mode === "awaiting_proof") {
     if (!attachmentUrl) {
@@ -691,10 +716,6 @@ async function handlePurchaseFlow(params: {
         "Жду чек об оплате — пришлите его сюда картинкой или файлом.\n\n" +
           "Если передумали, напишите «отмена».",
       );
-      if (/отмен/i.test(text)) {
-        await flow.setDirectState(user.user_key, {});
-        await say("Хорошо, отменил. Напишите номер товара, когда будете готовы.");
-      }
       return true;
     }
 
@@ -745,7 +766,7 @@ async function handlePurchaseFlow(params: {
     const chosen = flow.matchCountry(text, options);
     if (!chosen) {
       await say(
-        "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».",
+        "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\nЧтобы выйти, напишите «отмена».",
       );
       return true;
     }
@@ -789,7 +810,9 @@ async function handlePurchaseFlow(params: {
   if (state.mode === "awaiting_email") {
     const email = flow.extractEmail(text);
     if (!email) {
-      await say("Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru");
+      await say(
+        "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\nЧтобы выйти, напишите «отмена».",
+      );
       return true;
     }
     const s = await db();
@@ -891,4 +914,37 @@ async function loadTriggerWords(s: Awaited<ReturnType<typeof db>>): Promise<stri
     .filter(Boolean);
   // Пустая настройка не должна оставлять бота без единого способа его позвать.
   return words.length > 0 ? words : DEFAULT_TRIGGER_WORDS;
+}
+
+/**
+ * Ссылка на Telegram-бота этого клиента.
+ *
+ * Раньше в Direct уходила ссылка на веб-адрес деплоя — а это админка, и
+ * покупателю там делать нечего. Правильный адресат — Telegram-бот: в нём
+ * каталог, поиск и выдача файлов, ради которых из Instagram и приходят.
+ *
+ * Юзернейм спрашиваем у самого Telegram по токену, который у деплоя и так
+ * есть: так его не надо прописывать руками ни в панели, ни в переменных, и он
+ * не разъедется с действительностью, если бота переименуют. Ответ кешируем на
+ * процесс — он меняется раз в никогда, а дёргать getMe на каждое сообщение
+ * незачем. Переопределить можно переменной TELEGRAM_BOT_USERNAME.
+ */
+let cachedBotUsername: string | null = null;
+
+export async function telegramBotLink(): Promise<string | null> {
+  const override = process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, "");
+  if (override) return `https://t.me/${override}`;
+  if (cachedBotUsername) return `https://t.me/${cachedBotUsername}`;
+
+  try {
+    const { tg } = await import("./telegram.server");
+    const response = (await tg("getMe", {})) as { ok?: boolean; result?: { username?: string } };
+    const username = response?.result?.username?.trim();
+    if (!username) return null;
+    cachedBotUsername = username;
+    return `https://t.me/${username}`;
+  } catch (e) {
+    console.error("[zernio-bot] не удалось узнать юзернейм Telegram-бота", e);
+    return null;
+  }
 }

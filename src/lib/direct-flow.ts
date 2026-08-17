@@ -135,6 +135,23 @@ export function isDismissal(text: string): boolean {
   return DISMISSALS.has(normalized);
 }
 
+/**
+ * Слова выхода из сценария.
+ *
+ * Заданы прямо, а не через настраиваемый список команд: выход обязан работать
+ * всегда и одинаково, даже если продавец переопределил слова вызова. Раньше
+ * «отмена» понималась только на шаге ожидания чека, и на выборе страны человек
+ * оказывался заперт — «/start» там отвечало «Не понял страну», и так по кругу.
+ */
+const CANCEL_WORDS = new Set([
+  "отмена", "отменить", "отмени", "стоп", "сброс", "сбросить", "заново",
+  "начать заново", "/start", "/stop", "хватит",
+]);
+
+export function isCancel(text: string): boolean {
+  return CANCEL_WORDS.has(text.trim().toLowerCase().replace(/[.!]+$/, ""));
+}
+
 export type IncomingKind =
   | { kind: "product_number"; number: string }
   | { kind: "affirmative" }
