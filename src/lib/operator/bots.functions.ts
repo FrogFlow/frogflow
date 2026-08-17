@@ -198,6 +198,11 @@ export const buildEnvBlockFn = createServerFn({ method: "POST" })
         vipBotToken: z.string().trim().max(200).nullable().optional(),
         zernioApiKey: z.string().trim().max(200).nullable().optional(),
         zernioProfileId: z.string().trim().max(200).nullable().optional(),
+        // Почта продавца — при включённом Instagram: заказы оттуда выдаются
+        // письмом. Как и токены, панель их не хранит.
+        smtpHost: z.string().trim().max(200).nullable().optional(),
+        smtpUser: z.string().trim().max(200).nullable().optional(),
+        smtpPassword: z.string().trim().max(200).nullable().optional(),
         appUrlOverride: z.string().trim().max(300).nullable().optional(),
       })
       .parse(data),

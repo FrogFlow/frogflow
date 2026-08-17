@@ -143,6 +143,14 @@ export type EnvBlockInput = {
   /** Ключ Zernio — если включён модуль instagram. */
   zernioApiKey?: string | null;
   zernioProfileId?: string | null;
+  /**
+   * Почта продавца — тоже при включённом instagram: заказы оттуда выдаются
+   * письмом. Панель эти значения не хранит, как и токены ботов: они попадают
+   * в блок и никуда не сохраняются.
+   */
+  smtpHost?: string | null;
+  smtpUser?: string | null;
+  smtpPassword?: string | null;
   /** Перекрыть адрес деплоя, если в базе он ещё не записан. */
   appUrlOverride?: string | null;
 };
@@ -217,6 +225,13 @@ export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockRe
   if (modules.instagram && input.mode === "new" && !input.zernioApiKey?.trim()) {
     warnings.push("Включён Instagram, но ключ Zernio не указан — автоматизация не заработает.");
   }
+  if (modules.instagram && input.mode === "new" && !input.smtpHost?.trim()) {
+    warnings.push(
+      "Включён Instagram, но почта продавца не указана. Заказы оттуда выдаются письмом " +
+        "(Direct не принимает документы вложением), и без SMTP покупатель дойдёт до оплаты, " +
+        "а получить материалы не сможет.",
+    );
+  }
 
   const { key: tenantKey, expiresAt } = mintTenantKey(input.botId);
   const supabaseUrl = process.env.SUPABASE_URL ?? "";
@@ -272,6 +287,17 @@ export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockRe
         ...(input.zernioProfileId?.trim()
           ? [`ZERNIO_PROFILE_ID=${input.zernioProfileId.trim()}`]
           : []),
+        "",
+        // Почта здесь не «на всякий случай»: заказ из Instagram выдаётся
+        // письмом, потому что Direct не принимает вложениями документы, а окно
+        // на ответ там 24 часа. Без этих трёх переменных покупатель дойдёт до
+        // конца — оплатит, пришлёт чек, оставит адрес — и упрётся в
+        // подтверждение, на котором выдавать будет нечем.
+        "# ── Почта для выдачи заказов из Instagram ──",
+        "# Ящик продавца. Пароль — приложения, не основной от почты.",
+        `SMTP_HOST=${input.smtpHost?.trim() || "<smtp.yandex.ru>"}`,
+        `SMTP_USER=${input.smtpUser?.trim() || "<ящик продавца>"}`,
+        `SMTP_PASSWORD=${input.smtpPassword?.trim() || "<пароль приложения>"}`,
       );
     }
 
@@ -291,7 +317,12 @@ export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockRe
       "SESSION_SECRET и CRON_SECRET",
       "ADMIN_USERNAME и ADMIN_PASSWORD",
       ...(modules.vip ? ["VIP_BOT_TOKEN, VIP_BOT_USERNAME, VIP_TELEGRAM_WEBHOOK_SECRET"] : []),
-      ...(modules.instagram ? ["ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET, ZERNIO_PROFILE_ID"] : []),
+      ...(modules.instagram
+        ? [
+            "ZERNIO_API_KEY, ZERNIO_WEBHOOK_SECRET, ZERNIO_PROFILE_ID",
+            "SMTP_HOST, SMTP_USER, SMTP_PASSWORD (выдача заказов из Instagram письмом)",
+          ]
+        : []),
     );
   }
 

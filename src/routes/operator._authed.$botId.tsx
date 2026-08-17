@@ -824,6 +824,9 @@ function EnvBlockSection({
   const [botToken, setBotToken] = useState("");
   const [vipBotToken, setVipBotToken] = useState("");
   const [zernioApiKey, setZernioApiKey] = useState("");
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
   const [urlOverride, setUrlOverride] = useState("");
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -848,6 +851,9 @@ function EnvBlockSection({
             botToken: mode === "new" ? botToken || null : null,
             vipBotToken: mode === "new" && hasVip ? vipBotToken || null : null,
             zernioApiKey: mode === "new" && hasInstagram ? zernioApiKey || null : null,
+            smtpHost: hasInstagram ? smtpHost || null : null,
+            smtpUser: hasInstagram ? smtpUser || null : null,
+            smtpPassword: hasInstagram ? smtpPassword || null : null,
             appUrlOverride: urlOverride.trim() || null,
           },
         }),
@@ -967,6 +973,36 @@ function EnvBlockSection({
                 placeholder="sk_…"
                 autoComplete="off"
               />
+            </div>
+          )}
+          {hasInstagram && (
+            <div className="space-y-1 sm:col-span-2">
+              <Label htmlFor="env-smtp-host">Почта продавца для выдачи заказов</Label>
+              <p className="text-xs text-muted-foreground">
+                Заказы из Instagram выдаются письмом: Direct не принимает документы вложением.
+                Нужен обычный ящик клиента и <b>пароль приложения</b> — не основной пароль от почты.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Input
+                  id="env-smtp-host"
+                  value={smtpHost}
+                  onChange={(e) => setSmtpHost(e.target.value)}
+                  placeholder="smtp.yandex.ru"
+                  autoComplete="off"
+                />
+                <Input
+                  value={smtpUser}
+                  onChange={(e) => setSmtpUser(e.target.value)}
+                  placeholder="shop@example.kz"
+                  autoComplete="off"
+                />
+                <Input
+                  value={smtpPassword}
+                  onChange={(e) => setSmtpPassword(e.target.value)}
+                  placeholder="пароль приложения"
+                  autoComplete="off"
+                />
+              </div>
             </div>
           )}
         </div>

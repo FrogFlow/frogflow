@@ -192,6 +192,30 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
     );
   }
   if (modules.instagram) {
+    /**
+     * Почта — обязательная часть продаж в Instagram, а не удобство.
+     *
+     * Заказ оттуда выдаётся письмом, потому что Direct не принимает
+     * вложениями документы, а окно на ответ там 24 часа (см. mail.server.ts).
+     * Без SMTP путь покупателя доходит до самого конца — человек оплатил,
+     * прислал чек, оставил адрес — и обрывается на подтверждении продавцом.
+     * Поэтому здесь fail, а не warn: узнать об этом надо до первой продажи,
+     * а не после неё.
+     */
+    const smtpReady =
+      has(process.env.SMTP_HOST) && has(process.env.SMTP_USER) && has(process.env.SMTP_PASSWORD);
+    const smtpMissing = ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"].filter(
+      (name) => !has(process.env[name]),
+    );
+    add(
+      "Отправка почты покупателям",
+      smtpReady ? "ok" : "fail",
+      smtpReady
+        ? `настроена (${process.env.SMTP_HOST})`
+        : `не задано: ${smtpMissing.join(", ")} — заказы из Instagram выдать будет нечем, ` +
+          "материалы туда уходят письмом",
+    );
+
     add(
       "Профиль Instagram",
       has(process.env.ZERNIO_PROFILE_ID) ? "ok" : "fail",
