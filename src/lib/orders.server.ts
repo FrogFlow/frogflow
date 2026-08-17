@@ -17,6 +17,8 @@ const DELIVERABLE_STATUSES = ["awaiting_confirmation", "awaiting_payment"] as co
 
 type OrderItem = {
   id?: string;
+  /** Нужен, чтобы достать файлы товара, когда снимок заказа оказался пустым. */
+  product_id?: string | null;
   name_snapshot: string;
   file_path_snapshot: string | null;
   file_name_snapshot: string | null;
@@ -125,7 +127,34 @@ export async function deliverOrder(
    * почти всегда приходит позже, и сообщение бы уже не ушло.
    */
   if (order.platform === "instagram") {
-    return await deliverOrderByEmail(orderId, order, items);
+    /**
+     * Сорвалась выдача — заказ обязан вернуться в исходное состояние.
+     *
+     * Без этого он оставался в статусе «выдаётся», а такой заказ повторно взять
+     * в работу нельзя: claimOrderForDelivery видит «delivering» и честно
+     * отвечает «уже выдаётся». Кнопка «Подтвердить и выдать» после этого не
+     * делает ничего, и заказ заперт навсегда.
+     *
+     * Так и вышло с заказом №484: оплата получена, чек и почта на месте, выдача
+     * упала на пустом снимке файлов — и продавец больше ничего не мог сделать,
+     * а покупательница осталась без материалов. Причина падения ложится в
+     * заметку заказа, чтобы её было видно в панели, а не только в логах Vercel.
+     */
+    try {
+      return await deliverOrderByEmail(orderId, order, items);
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          status: "awaiting_confirmation",
+          admin_note: `Выдача не удалась: ${reason}`.slice(0, 500),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId)
+        .eq("status", "delivering");
+      throw e;
+    }
   }
 
   let sent = 0;
@@ -522,9 +551,36 @@ async function deliverOrderByEmail(
     // заказов заполнены только одиночные *_snapshot — разворачиваем оба вида
     // тем же помощником, что и выдача в Telegram, иначе часть файлов пропала
     // бы молча.
-    const materials = item.material_files_snapshot?.length
+    let materials: MaterialFile[] = item.material_files_snapshot?.length
       ? item.material_files_snapshot
       : legacyAsMaterials(item.file_path_snapshot, item.file_name_snapshot, item.file_url_snapshot);
+
+    /**
+     * Снимок пуст — берём файлы товара как они есть сейчас.
+     *
+     * Пустой снимок ничего не хранит, поэтому «сохранить проданное» тут нечего
+     * терять: отправить актуальный файл строго лучше, чем отказать человеку,
+     * который заплатил. Так спасаются заказы, оформленные до того, как снимок
+     * научился копировать product_material_files (см. product-materials.ts) —
+     * заказ №484 в том числе: продавцу достаточно нажать «Выдать повторно».
+     */
+    if (materials.length === 0 && item.product_id) {
+      const { materialsForProduct } = await import("./product-materials");
+      const { data: product } = await supabaseAdmin
+        .from("products")
+        .select(
+          "file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)",
+        )
+        .eq("id", item.product_id)
+        .maybeSingle();
+      materials = materialsForProduct(product, "ru");
+      if (materials.length === 0) materials = materialsForProduct(product, "kz");
+      if (materials.length > 0) {
+        console.warn(
+          `[orders] заказ ${orderId}: снимок файлов пуст, отправляю текущие файлы товара ${item.product_id}`,
+        );
+      }
+    }
 
     for (const material of materials) {
       // Готовая внешняя ссылка — отдаём как есть, подписывать нечего.

@@ -786,19 +786,11 @@ async function askCountry(chat_id: number, telegram_id: number, forCheckout = fa
 // A product's deliverable material: either rows in product_material_files
 // (the current multi-file/photo uploader) or, for products saved before it
 // existed, the single legacy file_path/file_url column for that language.
-function materialsForProduct(product: any, lang: "ru" | "kz"): Array<{ file_path?: string; file_name?: string | null; url?: string }> {
-  const rows = ((product?.product_material_files as any[]) || [])
-    .filter((f) => f.language === lang)
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((f) => ({ file_path: f.file_path as string, file_name: (f.file_name as string) ?? null }));
-  if (rows.length) return rows;
-  const legacyUrl = lang === "ru" ? product?.file_url : product?.file_url_kz;
-  const legacyPath = lang === "ru" ? product?.file_path : product?.file_path_kz;
-  const legacyName = lang === "ru" ? product?.file_name : product?.file_name_kz;
-  if (legacyUrl) return [{ url: legacyUrl }];
-  if (legacyPath) return [{ file_path: legacyPath, file_name: legacyName ?? null }];
-  return [];
-}
+//
+// Логика переехала в product-materials.ts и стала общей с заказами из
+// Instagram: две копии этого разбора уже разошлись один раз и стоили клиенту
+// оплаченного, но не выданного заказа (см. комментарий в том файле).
+import { materialsForProduct } from "./product-materials";
 
 async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
   const telegram_id = user.telegram_id;
@@ -885,8 +877,10 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
         file_name_kz_snapshot: it.products?.file_name_kz ?? null,
         file_url_snapshot: it.products?.file_url ?? null,
         file_url_kz_snapshot: it.products?.file_url_kz ?? null,
-        material_files_snapshot: materialsRu.map((m) => ({ path: m.file_path ?? null, name: m.file_name ?? null, url: m.url ?? null })),
-        material_files_kz_snapshot: materialsKz.map((m) => ({ path: m.file_path ?? null, name: m.file_name ?? null, url: m.url ?? null })),
+        // Общий помощник уже отдаёт нужный вид {path, name, url} — раскладывать
+        // повторно нечего.
+        material_files_snapshot: materialsRu,
+        material_files_kz_snapshot: materialsKz,
       };
     }),
   );

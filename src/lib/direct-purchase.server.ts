@@ -700,21 +700,25 @@ export type CartLine = {
  */
 export async function productHasFiles(productId: string): Promise<boolean> {
   const s = await db();
+  const { hasAnyMaterial } = await import("./product-materials");
   const { data: product } = await s
     .from("products")
-    .select("file_path, file_url, file_path_kz, file_url_kz")
+    .select(
+      "file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)",
+    )
     .eq("id", productId)
     .maybeSingle();
 
-  if (product?.file_path || product?.file_url || product?.file_path_kz || product?.file_url_kz) {
-    return true;
-  }
-
-  const { count } = await s
-    .from("product_material_files")
-    .select("id", { count: "exact", head: true })
-    .eq("product_id", productId);
-  return (count ?? 0) > 0;
+  /**
+   * Та же функция, что снимает файлы в заказ, — и это принципиально.
+   *
+   * Раньше проверка и снимок считали по-разному: проверка учитывала
+   * product_material_files, а снимок нет. Товар проходил на продажу, а заказ
+   * получался пустым — ровно так и потерялся заказ №484 (см.
+   * product-materials.ts). Один источник правды делает такое расхождение
+   * невозможным.
+   */
+  return hasAnyMaterial(product);
 }
 
 /** Добавляет материал в корзину; повторное добавление количество не множит. */
@@ -886,11 +890,23 @@ export async function createOrderFromCart(params: {
     return null;
   }
 
-  // Снимки файлов берём здесь же: заказ должен помнить, что именно продали,
-  // даже если товар потом отредактируют или снимут с продажи.
+  /**
+   * Снимки файлов берём здесь же: заказ должен помнить, что именно продали,
+   * даже если товар потом отредактируют или снимут с продажи.
+   *
+   * Тянуть надо и product_material_files. Раньше копировались только старые
+   * одиночные поля — и заказ №484 из Instagram (оплачен, чек прислан, почта
+   * указана) при подтверждении упал с «у товаров в заказе не приложены файлы»,
+   * потому что единственный файл товара лежал в этой таблице. Заказ при этом
+   * застрял в статусе «выдаётся», а покупательница осталась без материалов.
+   * Таких товаров в каталоге 21 из 493.
+   */
+  const { materialsForProduct } = await import("./product-materials");
   const { data: products } = await s
     .from("products")
-    .select("id, name, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz")
+    .select(
+      "id, name, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)",
+    )
     .in("id", lines.map((line) => line.productId));
 
   const byId = new Map((products ?? []).map((p) => [p.id, p]));
@@ -907,12 +923,16 @@ export async function createOrderFromCart(params: {
         name_snapshot: line.name,
         price_snapshot: priced.amount,
         quantity: line.quantity,
+        // Старые одиночные поля оставляем для совместимости, но выдача читает
+        // именно массивы ниже — как и у заказов из Telegram.
         file_path_snapshot: p?.file_path ?? null,
         file_name_snapshot: p?.file_name ?? null,
         file_url_snapshot: p?.file_url ?? null,
         file_path_kz_snapshot: p?.file_path_kz ?? null,
         file_name_kz_snapshot: p?.file_name_kz ?? null,
         file_url_kz_snapshot: p?.file_url_kz ?? null,
+        material_files_snapshot: materialsForProduct(p, "ru"),
+        material_files_kz_snapshot: materialsForProduct(p, "kz"),
       };
     }),
   );
