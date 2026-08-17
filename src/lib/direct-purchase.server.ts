@@ -499,7 +499,7 @@ export async function notifyAdminAboutDirectOrder(
 
   const { data: order } = await s
     .from("orders")
-    .select("total, currency, username, display_name, order_items(name_snapshot, price_snapshot)")
+    .select("total, currency, username, display_name, payment_proof_path, order_items(name_snapshot, price_snapshot)")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -553,6 +553,41 @@ export async function notifyAdminAboutDirectOrder(
       });
     } catch (e) {
       console.error("[direct] notify admin failed", e);
+    }
+
+    /**
+     * Чек из Instagram нельзя переслать Telegram по file_id: это два разных
+     * API. Он уже сохранён в приватном Storage, поэтому скачиваем его оттуда
+     * и загружаем владельцу как обычное вложение Telegram.
+     */
+    if (order?.payment_proof_path) {
+      try {
+        const { data: receipt, error } = await s.storage
+          .from("payment-proofs")
+          .download(order.payment_proof_path);
+        if (error || !receipt) throw error ?? new Error("receipt is empty");
+
+        const bytes = new Uint8Array(await receipt.arrayBuffer());
+        const mime = receipt.type || "application/octet-stream";
+        const filename = order.payment_proof_path.split("/").pop() || `receipt-${displayNo}`;
+        const caption = `🧾 <b>Чек оплаты — заказ №${displayNo}</b>`;
+        const { tgSendMultipart } = await import("./telegram.server");
+
+        const sent = await tgSendMultipart(
+          mime.startsWith("image/") ? "sendPhoto" : "sendDocument",
+          { chat_id: chatId, caption, parse_mode: "HTML" },
+          {
+            field: mime.startsWith("image/") ? "photo" : "document",
+            filename,
+            bytes,
+            contentType: mime,
+          },
+        );
+        if (!sent.ok) throw new Error(sent.description || "Telegram rejected receipt attachment");
+      } catch (e) {
+        // Уведомление о заказе уже доставлено; сбой файла не должен прятать его.
+        console.error(`[direct] failed to attach receipt for order ${orderId}`, e);
+      }
     }
   }
 }
