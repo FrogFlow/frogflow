@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   isCancel,
   extractProductNumber,
-  productNumberFrom,
+  productNumberFromName,
+  productNumberFromKeywords,
   matchCountry,
   extractEmail,
   isAffirmative,
@@ -39,15 +40,40 @@ describe("extractProductNumber", () => {
   });
 });
 
-describe("productNumberFrom", () => {
-  it("достаёт номер из ключевых слов и из названия", () => {
-    expect(productNumberFrom("018, пазлы, карточки, буквы")).toBe("18");
-    expect(productNumberFrom("196. Рабочие листы по естествознанию")).toBe("196");
+describe("productNumberFromName", () => {
+  it("берёт номер из названия — это главный источник", () => {
+    expect(productNumberFromName("018. Набор «Пазлы БУКВЫ»")).toBe("18");
+    expect(productNumberFromName("236) Пазлы к празднику Наурыз")).toBe("236");
+    expect(productNumberFromName("001. Наглядные карточки")).toBe("1");
   });
 
-  it("возвращает null, когда номера нет", () => {
-    expect(productNumberFrom("Алфавит- вырежи, склей №0014")).toBeNull();
-    expect(productNumberFrom(null)).toBeNull();
+  it("не выдумывает номер, когда его в названии нет", () => {
+    expect(productNumberFromName("Буклет «Коррупции — НЕТ!»")).toBeNull();
+    expect(productNumberFromName("Алфавит- вырежи, склей №0014")).toBeNull();
+    expect(productNumberFromName(null)).toBeNull();
+  });
+});
+
+describe("productNumberFromKeywords", () => {
+  it("берёт номер, только если он целое первое слово", () => {
+    expect(productNumberFromKeywords("018, пазлы, карточки, буквы")).toBe("18");
+    expect(productNumberFromKeywords("36, пазлы Наурыз, Наурыз")).toBe("36");
+  });
+
+  /**
+   * Тот самый случай, на котором поиск ошибался. У товара «358. Тетрадь для
+   * диагностики техники чтения» ключевые слова начинаются с «1 класс русский
+   * язык» — прежнее правило («цифры в начале») делало его товаром №1, и на «1»
+   * бот выдавал то Тетрадь, то «001. Наглядные карточки», как повезёт.
+   */
+  it("не принимает класс за номер товара", () => {
+    expect(productNumberFromKeywords("1 класс русский язык, 2 класс русский язык")).toBeNull();
+    expect(productNumberFromKeywords("3 класс математика, счёт")).toBeNull();
+  });
+
+  it("пустые ключевые слова номера не дают", () => {
+    expect(productNumberFromKeywords(null)).toBeNull();
+    expect(productNumberFromKeywords("пазлы, буквы")).toBeNull();
   });
 });
 

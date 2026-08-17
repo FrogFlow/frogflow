@@ -104,19 +104,38 @@ export async function handleZernioMessage(payload: any) {
   }
 
   const s = await db();
-  const { data: directBotSetting } = await s
+
+  /**
+   * Все настройки автоответчика — одним запросом.
+   *
+   * Их было три подряд, каждая за своим ключом, и на каждое входящее сообщение
+   * приходилось три обращения к базе вместо одного. Ключи лежат в одной
+   * таблице у одного арендатора, так что выбрать их сразу ничего не стоит.
+   */
+  const { data: settingRows } = await s
     .from("app_settings")
-    .select("value")
+    .select("key, value")
     .eq("bot_id", process.env.BOT_ID?.trim() || "")
-    .eq("key", "instagram_direct_bot_enabled")
-    .maybeSingle();
-  if (directBotSetting?.value === "false") {
+    .in("key", [
+      "instagram_direct_bot_enabled",
+      "instagram_direct_bot_features",
+      "instagram_direct_bot_scope",
+      "instagram_direct_bot_script",
+      "instagram_direct_bot_triggers",
+    ]);
+
+  const setting = (key: string) =>
+    (settingRows ?? []).find((row) => row.key === key)?.value?.trim() || "";
+
+  if (setting("instagram_direct_bot_enabled") === "false") {
     console.log("[zernio-bot] Direct assistant is disabled; event recorded without a reply");
     return;
   }
-  const { data: featureSetting } = await s.from("app_settings").select("value").eq("bot_id", process.env.BOT_ID?.trim() || "").eq("key", "instagram_direct_bot_features").maybeSingle();
+
   let features = { catalog: true, search: true, cart: true, checkout: true };
-  try { features = { ...features, ...JSON.parse(featureSetting?.value || "{}") }; } catch { /* defaults */ }
+  try {
+    features = { ...features, ...JSON.parse(setting("instagram_direct_bot_features") || "{}") };
+  } catch { /* defaults */ }
 
   /**
    * Область ответов. По умолчанию — только покупки.
@@ -127,13 +146,7 @@ export async function handleZernioMessage(payload: any) {
    * ник в админке и вручную искать человека в Instagram. Поэтому по обычной
    * переписке бот теперь молчит: непрочитанное остаётся непрочитанным.
    */
-  const { data: scopeSetting } = await s
-    .from("app_settings")
-    .select("value")
-    .eq("bot_id", process.env.BOT_ID?.trim() || "")
-    .eq("key", "instagram_direct_bot_scope")
-    .maybeSingle();
-  const answersEverything = scopeSetting?.value === "all";
+  const answersEverything = setting("instagram_direct_bot_scope") === "all";
 
   // Логируем сообщение
   console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
@@ -206,7 +219,7 @@ export async function handleZernioMessage(payload: any) {
    * разговоре. Сравнение по целому сообщению, а не по вхождению: «а магазин
    * у вас где?» боту не адресовано, а «Магазин» — адресовано.
    */
-  const triggerWords = await loadTriggerWords(s);
+  const triggerWords = parseTriggerWords(setting("instagram_direct_bot_triggers"));
   const isTrigger = triggerWords.includes(lower.trim().replace(/[.!?]+$/, ""));
   if (isTrigger) {
     await sendCatalogMenu(conversationId, accountId, user);
@@ -273,13 +286,6 @@ export async function handleZernioMessage(payload: any) {
    * заготовленным текстом и зовём продавца — ответить живому человеку он
    * может из админки.
    */
-  const { data: scriptRow } = await s
-    .from("app_settings")
-    .select("value")
-    .eq("bot_id", process.env.BOT_ID?.trim() || "")
-    .eq("key", "instagram_direct_bot_script")
-    .maybeSingle();
-
   const flow = await import("./direct-purchase.server");
   const questionState = flow.readDirectState(user.state);
   const now = Date.now();
@@ -320,7 +326,7 @@ export async function handleZernioMessage(payload: any) {
     accountId,
     greetedRecently
       ? "Передал ваш вопрос продавцу — он ответит здесь же."
-      : scriptRow?.value?.trim() ||
+      : setting("instagram_direct_bot_script") ||
           `Здравствуйте, ${senderName}! 👋\n\n` +
             "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
             "Если хотите что-то купить прямо сейчас, напишите номер товара из публикации — например «196».",
@@ -704,7 +710,7 @@ async function handlePurchaseFlow(params: {
    */
   const { isCancel } = await import("./direct-flow");
   if (state.mode && isCancel(text)) {
-    await flow.setDirectState(user.user_key, {});
+    await flow.clearDirectFlow(user.user_key);
     await say("Отменил. Напишите номер материала, когда будете готовы — например «018».");
     return true;
   }
@@ -726,7 +732,7 @@ async function handlePurchaseFlow(params: {
     });
     if (!order) {
       await say("Не получилось оформить заказ. Напишите номер товара ещё раз, пожалуйста.");
-      await flow.setDirectState(user.user_key, {});
+      await flow.clearDirectFlow(user.user_key);
       return true;
     }
 
@@ -740,11 +746,36 @@ async function handlePurchaseFlow(params: {
     const displayNo = order.order_no || order.id;
     await flow.notifyAdminAboutDirectOrder(order.id, displayNo);
 
+    // Чек не сохранился — продавцу нечего будет проверять, и сказать об этом
+    // надо сразу, а не оставлять его гадать над заказом без вложения.
+    if (!proofPath) {
+      await say("Чек не удалось сохранить. Пришлите его, пожалуйста, ещё раз — картинкой или файлом.");
+      await flow.setDirectState(user.user_key, {
+        mode: "awaiting_proof",
+        product_id: state.product_id,
+        country_code: state.country_code,
+      });
+      return true;
+    }
+
     // Почту спрашиваем после чека: пока человек не заплатил, адрес у него
     // просить не за что, а после оплаты он уже заинтересован ответить.
     if (user.email) {
       await s.from("orders").update({ customer_email: user.email }).eq("id", order.id);
-      await flow.setDirectState(user.user_key, {});
+      /**
+       * Адрес уже знаем, но остаёмся на шаге почты — иначе обещание «напишите
+       * другой адрес» бот бы не выполнил: состояние было бы сброшено, и
+       * присланная почта никуда не попала бы.
+       *
+       * `email_optional` отличает этот шаг от обязательного: если человек
+       * напишет не адрес, а что-то другое, мы не будем требовать почту — просто
+       * выйдем из сценария и дадим сообщению обычный ход.
+       */
+      await flow.setDirectState(user.user_key, {
+        mode: "awaiting_email",
+        pending_order_id: order.id,
+        email_optional: true,
+      });
       await say(
         `Чек получил, заказ №${displayNo} принят. Проверим оплату и пришлём материалы на ${user.email}.\n\n` +
           "Если нужен другой адрес — напишите его сюда.",
@@ -776,7 +807,7 @@ async function handlePurchaseFlow(params: {
       await say(
         "Для этой страны реквизиты пока не заведены. Продавец свяжется с вами и подскажет, как оплатить.",
       );
-      await flow.setDirectState(user.user_key, {});
+      await flow.clearDirectFlow(user.user_key);
       return true;
     }
 
@@ -788,7 +819,7 @@ async function handlePurchaseFlow(params: {
       .maybeSingle();
     if (!product) {
       await say("Товар больше недоступен. Напишите номер другого, пожалуйста.");
-      await flow.setDirectState(user.user_key, {});
+      await flow.clearDirectFlow(user.user_key);
       return true;
     }
 
@@ -810,6 +841,15 @@ async function handlePurchaseFlow(params: {
   if (state.mode === "awaiting_email") {
     const email = flow.extractEmail(text);
     if (!email) {
+      /**
+       * Шаг был необязательным — адрес мы уже знали и лишь предложили его
+       * заменить. Значит, человек написал о чём-то другом: выходим из сценария
+       * и отдаём сообщение обычному разбору, а не требуем почту.
+       */
+      if (state.email_optional) {
+        await flow.clearDirectFlow(user.user_key);
+        return false;
+      }
       await say(
         "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\nЧтобы выйти, напишите «отмена».",
       );
@@ -820,7 +860,7 @@ async function handlePurchaseFlow(params: {
     if (state.pending_order_id) {
       await s.from("orders").update({ customer_email: email }).eq("id", state.pending_order_id);
     }
-    await flow.setDirectState(user.user_key, {});
+    await flow.clearDirectFlow(user.user_key);
     await say(
       `Записал: ${email}\n\n` +
         "Проверим оплату и пришлём материалы на этот адрес. Обычно это занимает несколько часов.",
@@ -834,7 +874,20 @@ async function handlePurchaseFlow(params: {
   const incoming = classifyIncoming(text);
 
   if (incoming.kind === "product_number") {
-    const product = await flow.findProductByNumber(incoming.number);
+    const lookup = await flow.findProductByNumber(incoming.number);
+
+    if (lookup.kind === "ambiguous") {
+      // Под одним номером несколько товаров. Не угадываем: продать не тот
+      // материал хуже, чем задать лишний вопрос.
+      const names = lookup.products.map((p, i) => `${i + 1}. ${p.name}`).join("\n");
+      await say(
+        `Под номером ${incoming.number} у нас несколько материалов:\n\n${names}\n\n` +
+          "Напишите точное название нужного или уточните номер у продавца.",
+      );
+      return true;
+    }
+
+    const product = lookup.kind === "found" ? lookup.product : null;
     if (!product) {
       /**
        * Номер есть, а товара по нему нет.
@@ -893,26 +946,14 @@ async function handlePurchaseFlow(params: {
 export const DEFAULT_TRIGGER_WORDS = ["заказать", "купить", "магазин", "каталог", "/start"];
 
 /**
- * Список слов-вызовов этого клиента.
- *
- * Хранится строкой через запятую в app_settings — так же, как остальные
- * настройки автоответчика, чтобы не заводить таблицу под пять слов.
+ * Список слов-вызовов из настройки. Пустая настройка не должна оставлять бота
+ * без единого способа его позвать, поэтому падаем на значения по умолчанию.
  */
-async function loadTriggerWords(s: Awaited<ReturnType<typeof db>>): Promise<string[]> {
-  const { data } = await s
-    .from("app_settings")
-    .select("value")
-    .eq("bot_id", process.env.BOT_ID?.trim() || "")
-    .eq("key", "instagram_direct_bot_triggers")
-    .maybeSingle();
-
-  const raw = data?.value?.trim();
-  if (!raw) return DEFAULT_TRIGGER_WORDS;
+function parseTriggerWords(raw: string): string[] {
   const words = raw
     .split(",")
     .map((word) => word.trim().toLowerCase())
     .filter(Boolean);
-  // Пустая настройка не должна оставлять бота без единого способа его позвать.
   return words.length > 0 ? words : DEFAULT_TRIGGER_WORDS;
 }
 

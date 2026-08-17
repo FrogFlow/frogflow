@@ -27,13 +27,45 @@ export function extractProductNumber(text: string): string | null {
   return normalized === "" ? "0" : normalized;
 }
 
-/** Тот же номер, но извлечённый из строки ключевых слов или названия товара. */
-export function productNumberFrom(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const match = value.trim().match(/^(\d{1,5})\b/);
-  if (!match) return null;
-  const normalized = match[1].replace(/^0+/, "");
+const normalizeNumber = (raw: string) => {
+  const normalized = raw.replace(/^0+/, "");
   return normalized === "" ? "0" : normalized;
+};
+
+/**
+ * Номер товара из его названия: «018. Набор …», «236) Пазлы …».
+ *
+ * Это главный и единственный надёжный источник. Проверено на живом каталоге:
+ * номер в названии есть у 285 товаров из 490, и ни один номер не достаётся
+ * двум товарам сразу.
+ */
+export function productNumberFromName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const match = name.trim().match(/^(\d{1,5})\s*[.)]/);
+  return match ? normalizeNumber(match[1]) : null;
+}
+
+/**
+ * Номер из ключевых слов — только когда номер стоит там **целым первым
+ * словом**: «018, пазлы, карточки…».
+ *
+ * Требование про запятую не придирка, а следствие живых данных. Раньше здесь
+ * стояло просто «цифры в начале», и у товара «358. Тетрадь для диагностики» с
+ * ключевыми словами «1 класс русский язык, …» номером становилась **единица**:
+ * бот считал, что товар №1 — это Тетрадь, и на «1» выдавал то её, то
+ * «001. Наглядные карточки», как повезёт с порядком строк. Ровно это и
+ * случилось при живой проверке.
+ *
+ * С запятой «1 класс …» больше не проходит (после единицы идёт текст, а не
+ * запятая), а «36, пазлы Наурыз» проходит — там номер действительно первый.
+ * Такой запас нужен: у части товаров номер есть только в ключевых словах,
+ * вместе с названием покрытие вырастает с 285 товаров до 377, и коллизий
+ * по-прежнему ноль.
+ */
+export function productNumberFromKeywords(keywords: string | null | undefined): string | null {
+  if (!keywords) return null;
+  const match = keywords.trim().match(/^(\d{1,5})\s*,/);
+  return match ? normalizeNumber(match[1]) : null;
 }
 
 export type CountryOption = { code: string; name: string };

@@ -2,7 +2,6 @@ import { sendZernioInboxMessage } from "./zernio.server";
 import {
   matchCountry,
   extractEmail,
-  productNumberFrom,
   type CountryOption,
   type DirectMode,
 } from "./direct-flow";
@@ -43,14 +42,68 @@ export type DirectState = {
   greeted_at?: string;
   /** Когда в последний раз дёргали продавца — чтобы не звать его на каждое слово. */
   notified_at?: string;
+  /**
+   * Шаг почты необязательный: адрес мы уже знаем и лишь предложили заменить.
+   * Если пришло не письмо — выходим из сценария, а не требуем адрес.
+   */
+  email_optional?: boolean;
 };
 
-/** Пишет состояние диалога, сохраняя остальные поля карточки нетронутыми. */
-export async function setDirectState(userKey: string, state: DirectState): Promise<void> {
+/** Поля шага покупки. Всё остальное в состоянии — память о разговоре. */
+const FLOW_KEYS = [
+  "mode",
+  "product_id",
+  "country_code",
+  "pending_order_id",
+  "email_optional",
+] as const;
+
+/**
+ * Дописывает поля в состояние, не затирая остальные.
+ *
+ * Раньше эта функция писала объект целиком, а шаги сценария передавали только
+ * свои поля — и каждый шаг стирал `greeted_at` с `notified_at`. Получалось, что
+ * покупатель, начавший заказ, потом снова получал полное приветствие, а
+ * продавец — повторное уведомление: тот же дефект, что чинился, только через
+ * другой путь. Память о разговоре и шаг сценария живут в одном jsonb, но это
+ * разные вещи, и трогать их надо раздельно.
+ */
+export async function setDirectState(userKey: string, patch: DirectState): Promise<void> {
   const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("user_key", userKey)
+    .maybeSingle();
+
+  const merged = { ...readDirectState(existing?.state), ...patch };
   await s
     .from("bot_users")
-    .update({ state: state as unknown as Json, updated_at: new Date().toISOString() })
+    .update({ state: merged as unknown as Json, updated_at: new Date().toISOString() })
+    .eq("user_key", userKey);
+}
+
+/**
+ * Завершает сценарий покупки, сохраняя память о разговоре.
+ *
+ * Именно этим и отличается от «записать пустое состояние»: приветствие и время
+ * последнего уведомления продавца к заказу не относятся и переживать отмену
+ * обязаны — иначе после каждой отмены бот здоровается заново.
+ */
+export async function clearDirectFlow(userKey: string): Promise<void> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("user_key", userKey)
+    .maybeSingle();
+
+  const kept = { ...readDirectState(existing?.state) };
+  for (const key of FLOW_KEYS) delete kept[key];
+
+  await s
+    .from("bot_users")
+    .update({ state: kept as unknown as Json, updated_at: new Date().toISOString() })
     .eq("user_key", userKey);
 }
 
@@ -82,25 +135,76 @@ export async function listCountries(): Promise<CountryOption[]> {
 /**
  * Найти товар по номеру, который написал покупатель.
  *
- * Клиенты нумеруют товары сами и кладут номер первым ключевым словом:
- * у «018. Набор „Пазлы БУКВЫ“» в keywords стоит «018, пазлы, карточки…».
- * Отдельного поля под код не заводили намеренно — это был бы второй источник
- * правды и просьба заново заполнить почти пять сотен товаров.
+ * Клиенты нумеруют товары сами: «018. Набор „Пазлы БУКВЫ“». Отдельного поля
+ * под код не заводили намеренно — это был бы второй источник правды и просьба
+ * заново заполнить почти пять сотен товаров.
  *
- * Сначала ищем по ключевым словам, затем по названию: у части товаров
- * ключевые слова не заполнены (29 из 486), но номер есть в названии.
+ * Порядок важен, и он обратный тому, что был здесь сначала. Главный источник —
+ * **название**: на живом каталоге номер в названии есть у 285 товаров из 490, и
+ * ни один номер не достаётся двум товарам сразу. Ключевые слова — только
+ * запас, и с жёстким условием (номер целым первым словом): там встречается
+ * «1 класс русский язык», из-за чего товар «358. Тетрадь» получал номер 1 и на
+ * «1» бот выдавал то его, то «001. Наглядные карточки». Вместе покрытие 377 из
+ * 490 при нуле коллизий.
+ *
+ * Неоднозначность не разрешается угадыванием: сегодня её нет, но каталог
+ * пополняется, а молча продать не тот товар — худшее из возможного.
  */
-export async function findProductByNumber(number: string) {
-  const s = await db();
-  const { data } = await s
-    .from("products")
-    .select("id, name, price, currency, keywords, country_prices")
-    .eq("is_active", true);
+export type ProductLookup =
+  | { kind: "found"; product: ProductRow }
+  | { kind: "none" }
+  | { kind: "ambiguous"; products: ProductRow[] };
 
-  const candidates = data ?? [];
-  const byKeywords = candidates.find((p) => productNumberFrom(p.keywords) === number);
-  if (byKeywords) return byKeywords;
-  return candidates.find((p) => productNumberFrom(p.name) === number) ?? null;
+type ProductRow = {
+  id: string;
+  name: string;
+  price: number;
+  currency: string | null;
+  keywords: string | null;
+  country_prices: Json | null;
+};
+
+const PRODUCT_COLUMNS = "id, name, price, currency, keywords, country_prices";
+
+export async function findProductByNumber(number: string): Promise<ProductLookup> {
+  const s = await db();
+
+  /**
+   * Фильтруем в базе, а не в приложении.
+   *
+   * Раньше выгружались все активные товары (у одного клиента их 490) на каждое
+   * сообщение с номером, и разбор шёл в памяти. При росте каталога это только
+   * дорожает, а сама выборка ничем не помогает: нужен один товар.
+   *
+   * `0*` в начале — потому что покупатель пишет и «18», и «018»; хвост
+   * `[^0-9]` не даёт номеру 18 поймать товар 180. Подстановка безопасна:
+   * `number` приходит из extractProductNumber и состоит только из цифр.
+   */
+  const byName = await s
+    .from("products")
+    .select(PRODUCT_COLUMNS)
+    .eq("is_active", true)
+    .filter("name", "imatch", `^0*${number}[.)]`)
+    .limit(5);
+
+  const nameMatches = (byName.data ?? []) as ProductRow[];
+  if (nameMatches.length === 1) return { kind: "found", product: nameMatches[0] };
+  if (nameMatches.length > 1) return { kind: "ambiguous", products: nameMatches };
+
+  // Запас для товаров, у которых номер только в ключевых словах: там он должен
+  // быть целым первым словом, иначе «1 класс …» снова станет товаром №1.
+  const byKeywords = await s
+    .from("products")
+    .select(PRODUCT_COLUMNS)
+    .eq("is_active", true)
+    .filter("keywords", "imatch", `^0*${number}\\s*,`)
+    .limit(5);
+
+  const keywordMatches = (byKeywords.data ?? []) as ProductRow[];
+  if (keywordMatches.length === 1) return { kind: "found", product: keywordMatches[0] };
+  if (keywordMatches.length > 1) return { kind: "ambiguous", products: keywordMatches };
+
+  return { kind: "none" };
 }
 
 /** Цена в валюте выбранной страны, если для неё задана отдельная. */
