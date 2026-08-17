@@ -286,7 +286,7 @@ export async function storeReceipt(
    * потом заказ.
    */
   folder: string,
-): Promise<string | null> {
+): Promise<{ path: string; bytes: Uint8Array; mime: string } | null> {
   try {
     const response = await fetch(attachmentUrl);
     if (!response.ok) {
@@ -316,11 +316,51 @@ export async function storeReceipt(
       console.error("[direct] receipt upload failed", error);
       return null;
     }
-    return key;
+    // Байты возвращаем вместе с путём: их сразу же проверяет распознавание чека,
+    // и качать файл обратно из хранилища ради этого было бы лишней работой.
+    return { path: key, bytes, mime: contentType };
   } catch (e) {
     console.error("[direct] storeReceipt failed", e);
     return null;
   }
+}
+
+/**
+ * Проверка чека распознаванием — то же, что делает Telegram-бот.
+ *
+ * Смысл именно в этом шаге: без него продавцу приходится глазами сверять каждый
+ * чек с суммой заказа, и вся экономия времени от бота теряется. Сходится сумма
+ * — материалы уходят сами, и человек получает их через минуту, а не через
+ * несколько часов.
+ *
+ * Молча ничего не выдаём: не сошлось, не распознали, модуль выключен или нет
+ * ключа Vision — заказ уходит продавцу на ручную проверку с причиной. Ошибка в
+ * сторону «пусть посмотрит человек» здесь единственно верная: выдать материалы
+ * по чужому или поддельному чеку хуже, чем задержать выдачу на пару часов.
+ */
+export async function verifyDirectReceipt(params: {
+  bytes: Uint8Array;
+  mime: string;
+  expectedAmount: number;
+  currency: string;
+}): Promise<{ autoDeliver: boolean; note: string }> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("receipt_ocr"))) {
+    return { autoDeliver: false, note: "распознавание чека не подключено" };
+  }
+
+  const { verifyPaymentReceipt } = await import("./receipt-verify.server");
+  const result = await verifyPaymentReceipt({
+    bytes: params.bytes,
+    mime: params.mime,
+    expectedAmount: params.expectedAmount,
+    currency: params.currency,
+  });
+
+  if (result.ok) {
+    return { autoDeliver: true, note: `чек распознан, сумма ${result.matchedAmount} сходится` };
+  }
+  return { autoDeliver: false, note: result.detail };
 }
 
 /** Создаёт заказ из выбранного товара — по одному товару за раз, как в сценарии. */
@@ -332,7 +372,19 @@ export async function storeReceipt(
  * и за каждой проверкой приходилось идти в админку — даже чтобы понять, сколько
  * человек должен был заплатить.
  */
-export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: number | string) {
+export async function notifyAdminAboutDirectOrder(
+  orderId: number,
+  displayNo: number | string,
+  options?: {
+    /** Что сказало распознавание чека — попадает в сообщение как есть. */
+    verdict?: string;
+    /**
+     * Нужно ли действие продавца. Кнопки показываем только тогда: на заказ,
+     * который бот уже выдал сам, они бы только сбивали с толку.
+     */
+    needsAction?: boolean;
+  },
+) {
   const s = await db();
   const { data: setting } = await s
     .from("app_settings")
@@ -358,6 +410,7 @@ export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: nu
   const { tg } = await import("./telegram.server");
   for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
     try {
+      const needsAction = options?.needsAction !== false;
       await tg("sendMessage", {
         chat_id: chatId,
         text:
@@ -365,7 +418,10 @@ export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: nu
           `От: ${who}\n` +
           `Сумма: <b>${order?.total ?? "?"} ${order?.currency ?? ""}</b>\n\n` +
           `${items || "(состав недоступен)"}\n\n` +
-          `Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю на почту.`,
+          (options?.verdict ? `Чек: ${options.verdict}\n\n` : "") +
+          (needsAction
+            ? "Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю на почту."
+            : "Материалы уже отправлены покупателю на почту — делать ничего не нужно."),
         parse_mode: "HTML",
         /**
          * Кнопки прямо здесь, а не «зайдите в админку».
@@ -377,15 +433,22 @@ export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: nu
          * заказов из Telegram (см. handleUpdate: confirm:/reject:), и он не
          * зависит от площадки — выдача сама выбирает письмо для Instagram.
          * Не хватало ровно этих двух кнопок.
+         *
+         * На выданный заказ кнопок нет: нажатие всё равно ответило бы «уже
+         * выдан», а сомнение у продавца осталось бы.
          */
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "✅ Подтвердить и выдать", callback_data: `confirm:${orderId}` },
-              { text: "❌ Отклонить", callback_data: `reject:${orderId}` },
-            ],
-          ],
-        },
+        ...(needsAction
+          ? {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    { text: "✅ Подтвердить и выдать", callback_data: `confirm:${orderId}` },
+                    { text: "❌ Отклонить", callback_data: `reject:${orderId}` },
+                  ],
+                ],
+              },
+            }
+          : {}),
       });
     } catch (e) {
       console.error("[direct] notify admin failed", e);

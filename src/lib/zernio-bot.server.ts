@@ -704,29 +704,84 @@ async function handlePurchaseFlow(params: {
     }
 
     const s = await db();
-    await s.from("orders").update({ payment_proof_path: proofPath }).eq("id", order.id);
+    const { data: created } = await s
+      .from("orders")
+      .update({ payment_proof_path: proofPath.path })
+      .eq("id", order.id)
+      .select("total, currency")
+      .single();
+
     // Корзину освобождаем только после успешного заказа — иначе при сбое
     // человек потерял бы всё, что набрал.
     await flow.clearCart(user);
-
     const displayNo = order.order_no || order.id;
-    await flow.notifyAdminAboutDirectOrder(order.id, displayNo);
 
-    if (user.email) {
-      await s.from("orders").update({ customer_email: user.email }).eq("id", order.id);
+    /**
+     * Распознаём чек сразу, пока байты под рукой.
+     *
+     * Это то, ради чего вообще стоит городить бота: если сумма в чеке сходится,
+     * материалы уходят сами и покупатель получает их через минуту, а не когда
+     * продавец доберётся до разбора. Не сошлось или не распознали — заказ
+     * уходит на ручную проверку с причиной, и продавец решает сам. Ошибка в эту
+     * сторону единственно верная: выдать по чужому чеку хуже, чем задержать
+     * выдачу на пару часов.
+     */
+    const verdict = await flow.verifyDirectReceipt({
+      bytes: proofPath.bytes,
+      mime: proofPath.mime,
+      expectedAmount: Number(created?.total ?? 0),
+      currency: String(created?.currency ?? "KZT"),
+    });
+    await s
+      .from("orders")
+      .update({ admin_note: `Instagram, чек: ${verdict.note}`.slice(0, 500) })
+      .eq("id", order.id);
+
+    const email = user.email as string | null;
+
+    // Почта известна и чек сошёлся — отдаём материалы сразу, ничего не спрашивая.
+    if (email && verdict.autoDeliver) {
+      await s.from("orders").update({ customer_email: email }).eq("id", order.id);
+      await flow.clearDirectFlow(user.user_key);
+      try {
+        const { deliverOrder } = await import("./orders.server");
+        await deliverOrder(order.id);
+        // Продавец должен знать о продаже, даже когда делать ничего не нужно.
+        await flow.notifyAdminAboutDirectOrder(order.id, displayNo, {
+          verdict: verdict.note,
+          needsAction: false,
+        });
+        return true; // о письме покупателю сообщает сама выдача
+      } catch (e) {
+        console.error("[zernio-bot] автовыдача не удалась, отдаём продавцу", e);
+        await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
+        await say(
+          `Чек получил, заказ №${displayNo} принят. Отправим материалы на ${email} после проверки.`,
+        );
+        return true;
+      }
+    }
+
+    await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
+
+    if (email) {
+      await s.from("orders").update({ customer_email: email }).eq("id", order.id);
       await flow.setDirectState(user.user_key, {
         mode: "awaiting_email",
         pending_order_id: order.id,
         email_optional: true,
       });
       await say(
-        `Чек получил, заказ №${displayNo} принят. Проверим оплату и пришлём материалы на ${user.email}.\n\n` +
+        `Чек получил, заказ №${displayNo} принят. Проверим оплату и пришлём материалы на ${email}.\n\n` +
           "Если нужен другой адрес — напишите его сюда. По остальным вопросам ответит продавец.",
       );
       return true;
     }
 
-    await flow.setDirectState(user.user_key, { mode: "awaiting_email", pending_order_id: order.id });
+    await flow.setDirectState(user.user_key, {
+      mode: "awaiting_email",
+      pending_order_id: order.id,
+    });
     await say(
       `Чек получил, заказ №${displayNo} принят.\n\n` +
         "На какую почту прислать материалы? Instagram не умеет пересылать документы, поэтому файлы уходят письмом.",
@@ -811,6 +866,42 @@ async function handlePurchaseFlow(params: {
       await s.from("orders").update({ customer_email: email }).eq("id", state.pending_order_id);
     }
     await flow.clearDirectFlow(user.user_key);
+
+    /**
+     * Чек уже проверен при получении, и вердикт лежит в заметке заказа. Если он
+     * сошёлся, ждать продавца незачем — адрес теперь известен, отдаём материалы
+     * сразу. Именно это и превращает бота из посредника в настоящую автовыдачу:
+     * человек получает файлы через минуту после оплаты, ночью и в выходной.
+     */
+    if (state.pending_order_id) {
+      const { data: order } = await s
+        .from("orders")
+        .select("admin_note, status")
+        .eq("id", state.pending_order_id)
+        .maybeSingle();
+
+      const verified = (order?.admin_note ?? "").includes("чек распознан");
+      if (verified && order?.status === "awaiting_confirmation") {
+        try {
+          const { deliverOrder } = await import("./orders.server");
+          await deliverOrder(state.pending_order_id);
+          const { data: shown } = await s
+            .from("orders")
+            .select("order_no")
+            .eq("id", state.pending_order_id)
+            .maybeSingle();
+          await flow.notifyAdminAboutDirectOrder(
+            state.pending_order_id,
+            shown?.order_no ?? state.pending_order_id,
+            { verdict: "распознан, выдано автоматически", needsAction: false },
+          );
+          return true; // о письме покупателю сообщает сама выдача
+        } catch (e) {
+          console.error("[zernio-bot] автовыдача после ввода почты не удалась", e);
+        }
+      }
+    }
+
     /**
      * Дальше разговор ведёт продавец, и это сказано прямо.
      *
