@@ -160,6 +160,12 @@ export async function listCountries(): Promise<CountryOption[]> {
  *
  * Неоднозначность не разрешается угадыванием: сегодня её нет, но каталог
  * пополняется, а молча продать не тот товар — худшее из возможного.
+ *
+ * Считать покрытие и коллизии надо в границах одного арендатора. Номера у
+ * клиентов пересекаются между собой — «0018 Состав числа» у одного и
+ * «018. Набор» у другого дают один и тот же 18, — но деплой ходит ключом
+ * арендатора, и RLS отдаёт ему только свои товары. Проверка через service_role
+ * покажет ложные двойники: она видит все каталоги сразу.
  */
 export type ProductLookup =
   | { kind: "found"; product: ProductRow }
@@ -195,7 +201,7 @@ export async function findProductByNumber(number: string): Promise<ProductLookup
     .from("products")
     .select(PRODUCT_COLUMNS)
     .eq("is_active", true)
-    .filter("name", "imatch", `^0*${number}[.)]`)
+    .filter("name", "imatch", `^0*${number}([.)|]|\\s)`)
     .limit(5);
 
   const nameMatches = (byName.data ?? []) as ProductRow[];
@@ -602,18 +608,32 @@ export async function clearCart(user: { telegram_id: number }): Promise<void> {
 export function cartTotal(
   lines: CartLine[],
   countryCode: string,
-): { amount: number; currency: string } {
+): { amount: number; currency: string; mixedCurrency: boolean } {
   let amount = 0;
-  let currency = "KZT";
+  const currencies = new Set<string>();
   for (const line of lines) {
     const priced = priceForCountry(
       { price: line.price, currency: line.currency, country_prices: line.countryPrices },
       countryCode,
     );
     amount += priced.amount * line.quantity;
-    currency = priced.currency;
+    currencies.add(priced.currency);
   }
-  return { amount, currency };
+  /**
+   * Валюты в корзине могут разойтись, и складывать их нельзя.
+   *
+   * Прежняя версия молча брала валюту последней позиции и выдавала сумму,
+   * которая не значит ничего: 700 KZT плюс 500 RUB превратились бы в «1200 RUB».
+   * Старый путь оформления это как раз проверял и отказывался — при переходе на
+   * корзину проверка потерялась. Сегодня у всех клиентов товары в одной валюте,
+   * так что это не всплывало, но модуль мультивалютности включён, и ошибка в
+   * деньгах — последнее, что стоит оставлять на «авось».
+   */
+  return {
+    amount,
+    currency: currencies.values().next().value ?? "KZT",
+    mixedCurrency: currencies.size > 1,
+  };
 }
 
 /** Список корзины для сообщения покупателю. */

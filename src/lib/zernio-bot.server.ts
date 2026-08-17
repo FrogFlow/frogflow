@@ -822,7 +822,15 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    const { amount, currency } = flow.cartTotal(cart, chosen.code);
+    const { amount, currency, mixedCurrency } = flow.cartTotal(cart, chosen.code);
+    if (mixedCurrency) {
+      // Складывать разные валюты нельзя: сумма получилась бы бессмысленной.
+      await say(
+        "В заказе материалы в разных валютах — оформите их по отдельности.\n\n" +
+          "Напишите «отмена», а потом номер одного материала.",
+      );
+      return true;
+    }
     await flow.setDirectState(user.user_key, {
       mode: "awaiting_proof",
       country_code: chosen.code,

@@ -47,6 +47,25 @@ describe("productNumberFromName", () => {
     expect(productNumberFromName("001. Наглядные карточки")).toBe("1");
   });
 
+  /**
+   * Разделитель у клиента разный, и это не прихоть: «081 | Дни недели»,
+   * «092  Наглядность», «165 Календари». Пока принималась только точка или
+   * скобка, 120 таких товаров по номеру было не найти вовсе.
+   */
+  it("понимает номер через пробел и через вертикальную черту", () => {
+    expect(productNumberFromName("165 Календари и открытки")).toBe("165");
+    expect(productNumberFromName("081 | Дни недели «Тигрята»")).toBe("81");
+    expect(productNumberFromName("092  Наглядность «Таблица умножения»")).toBe("92");
+    expect(productNumberFromName("0018 Состав числа")).toBe("18");
+  });
+
+  it("не принимает класс за номер товара", () => {
+    // Названий вида «1 класс …» в каталоге нет, но правило не должно их ловить,
+    // если появятся: у номера обязателен разделитель, а не просто цифра в начале.
+    expect(productNumberFromName("1")).toBeNull();
+    expect(productNumberFromName("2026")).toBeNull();
+  });
+
   it("не выдумывает номер, когда его в названии нет", () => {
     expect(productNumberFromName("Буклет «Коррупции — НЕТ!»")).toBeNull();
     expect(productNumberFromName("Алфавит- вырежи, склей №0014")).toBeNull();
