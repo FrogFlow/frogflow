@@ -122,6 +122,23 @@ export async function handleZernioMessage(payload: any) {
   let features = { catalog: true, search: true, cart: true, checkout: true };
   try { features = { ...features, ...JSON.parse(featureSetting?.value || "{}") }; } catch { /* defaults */ }
 
+  /**
+   * Область ответов. По умолчанию — только покупки.
+   *
+   * Отвечая, бот неизбежно помечает переписку прочитанной: управлять этим у
+   * Instagram нельзя, в API такого нет. Для продавца это значило, что он
+   * перестал видеть в приложении, кому нужно ответить, — приходилось смотреть
+   * ник в админке и вручную искать человека в Instagram. Поэтому по обычной
+   * переписке бот теперь молчит: непрочитанное остаётся непрочитанным.
+   */
+  const { data: scopeSetting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("key", "instagram_direct_bot_scope")
+    .maybeSingle();
+  const answersEverything = scopeSetting?.value === "all";
+
   // Логируем сообщение
   console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
 
@@ -150,8 +167,20 @@ export async function handleZernioMessage(payload: any) {
     user,
     text,
     attachmentUrl: attachments.find((item) => item.url)?.url,
+    answersEverything,
   });
   if (handledByFlow) return;
+
+  /**
+   * Дальше идут ответы на всё подряд — команды, поиск, свободные вопросы.
+   * В режиме «только покупки» мы сюда не заходим: сценарий выше уже отработал
+   * то, что относится к заказу, а остальное — обычная переписка продавца с
+   * людьми, и лезть в неё боту незачем.
+   */
+  if (!answersEverything) {
+    console.log(`[zernio-bot] режим «только покупки»: сообщение от ${userKey} оставлено продавцу`);
+    return;
+  }
 
   // A DM button click (postback) carries no text — only its payload, set when
   // the automation's button was configured in the admin panel. Generic
@@ -625,8 +654,10 @@ async function handlePurchaseFlow(params: {
   user: any;
   text: string;
   attachmentUrl?: string;
+  /** false — режим «только покупки»: на всё, кроме заказа, бот молчит. */
+  answersEverything: boolean;
 }): Promise<boolean> {
-  const { conversationId, accountId, user, text, attachmentUrl } = params;
+  const { conversationId, accountId, user, text, attachmentUrl, answersEverything } = params;
   const flow = await import("./direct-purchase.server");
   const { classifyIncoming } = await import("./direct-flow");
   const state = flow.readDirectState(user.state);
@@ -761,6 +792,14 @@ async function handlePurchaseFlow(params: {
   if (incoming.kind === "product_number") {
     const product = await flow.findProductByNumber(incoming.number);
     if (!product) {
+      /**
+       * Номер есть, а товара по нему нет.
+       *
+       * В тихом режиме молчим: человек мог написать «5» в обычном разговоре
+       * («штук 5 хватит»), и «товар №5 не нашёл» в ответ выглядит дико. Пусть
+       * продавец разберётся сам — переписка останется непрочитанной.
+       */
+      if (!answersEverything) return false;
       await say(
         `Товар с номером ${incoming.number} не нашёл. Проверьте номер в публикации — ` +
           "или напишите, что ищете, и продавец подскажет.",
@@ -779,7 +818,9 @@ async function handlePurchaseFlow(params: {
 
   if (incoming.kind === "affirmative") {
     // Односложный ответ — почти всегда реакция на автоматический DM из
-    // воронки. Раньше он уходил в поиск товаров и получал «ничего не нашлось».
+    // воронки. Но такое же «да» звучит и в обычном разговоре с продавцом,
+    // поэтому в тихом режиме не вмешиваемся.
+    if (!answersEverything) return false;
     await say(
       "Отлично! Напишите номер товара из публикации — например «196», — и я подскажу, как оплатить.",
     );
@@ -796,6 +837,7 @@ async function handlePurchaseFlow(params: {
      * как тот вежливо отказался. Продавца тут не зовём: звать его на «спасибо»
      * незачем.
      */
+    if (!answersEverything) return false;
     await say("Хорошо! Если что-то понадобится — просто напишите сюда. 🙂");
     return true;
   }

@@ -80,6 +80,51 @@ export const saveInstagramDirectBotScriptFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ text: z.string().trim().max(1500) }).parse(d))
   .handler(async ({ data }) => { await requireAdminWithModule(); const s = await db(); const { error } = await s.from("app_settings").upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_script", value: data.text, updated_at: new Date().toISOString() }); if (error) throw new Error(error.message); return { ok: true }; });
 
+/**
+ * На что бот вообще отвечает.
+ *
+ * `purchases` — только покупки: узнанный номер товара и шаги начатого заказа
+ * (страна, чек, почта). Всё остальное бот пропускает молча.
+ *
+ * `all` — плюс свободные вопросы: бот отвечает заготовленным текстом и зовёт
+ * продавца в Telegram.
+ *
+ * По умолчанию `purchases`, и это ответ на живую жалобу продавца. Отвечая,
+ * бот неизбежно помечает переписку прочитанной — управления этим у Instagram
+ * в API нет, — и продавец перестаёт видеть в приложении, кому нужно ответить.
+ * Ему приходилось смотреть ник в админке и вручную искать человека в
+ * Instagram. Пока бот молчит, непрочитанное остаётся непрочитанным, и обычная
+ * переписка идёт мимо него — как и должна.
+ */
+const directScopeSchema = z.object({ scope: z.enum(["purchases", "all"]) });
+
+export const getInstagramDirectBotScopeFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdminWithModule();
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", requireBotId())
+    .eq("key", "instagram_direct_bot_scope")
+    .maybeSingle();
+  return { scope: data?.value === "all" ? ("all" as const) : ("purchases" as const) };
+});
+
+export const saveInstagramDirectBotScopeFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => directScopeSchema.parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { error } = await s.from("app_settings").upsert({
+      bot_id: requireBotId(),
+      key: "instagram_direct_bot_scope",
+      value: data.scope,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 const directFeaturesSchema = z.object({ catalog: z.boolean(), search: z.boolean(), cart: z.boolean(), checkout: z.boolean() });
 export const getInstagramDirectBotFeaturesFn = createServerFn({ method: "GET" }).handler(async () => { await requireAdminWithModule(); const s = await db(); const { data } = await s.from("app_settings").select("value").eq("bot_id", requireBotId()).eq("key", "instagram_direct_bot_features").maybeSingle(); try { return directFeaturesSchema.parse(JSON.parse(data?.value || "{}")); } catch { return { catalog: true, search: true, cart: true, checkout: true }; } });
 export const saveInstagramDirectBotFeaturesFn = createServerFn({ method: "POST" }).validator((d: unknown) => directFeaturesSchema.parse(d)).handler(async ({ data }) => { await requireAdminWithModule(); const s = await db(); const { error } = await s.from("app_settings").upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_features", value: JSON.stringify(data), updated_at: new Date().toISOString() }); if (error) throw new Error(error.message); return { ok: true }; });

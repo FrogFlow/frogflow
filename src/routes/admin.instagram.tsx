@@ -32,6 +32,8 @@ import {
   cancelInstagramPostFn,
   retryInstagramPostFn,
   getInstagramContactProfilesFn,
+  getInstagramDirectBotScopeFn,
+  saveInstagramDirectBotScopeFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -107,6 +109,7 @@ function AdminInstagramPage() {
   const directBotSettingsQuery = useQuery({ queryKey: ["ig_direct_bot_settings"], queryFn: () => getInstagramDirectBotSettingsFn() });
   const directBotScriptQuery = useQuery({ queryKey: ["ig_direct_bot_script"], queryFn: () => getInstagramDirectBotScriptFn() });
   const directBotFeaturesQuery = useQuery({ queryKey: ["ig_direct_bot_features"], queryFn: () => getInstagramDirectBotFeaturesFn() });
+  const directBotScopeQuery = useQuery({ queryKey: ["ig_direct_bot_scope"], queryFn: () => getInstagramDirectBotScopeFn() });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
@@ -175,6 +178,20 @@ function AdminInstagramPage() {
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_script"] });
       setStatusMsg("✅ Текст автоответчика сохранён.");
     } catch (e: any) { setStatusMsg(`Ошибка сохранения: ${e.message}`); }
+  };
+
+  const handleScopeChange = async (scope: "purchases" | "all") => {
+    try {
+      await saveInstagramDirectBotScopeFn({ data: { scope } });
+      qc.invalidateQueries({ queryKey: ["ig_direct_bot_scope"] });
+      setStatusMsg(
+        scope === "purchases"
+          ? "✅ Бот теперь отвечает только по заказам. Обычную переписку он не трогает — непрочитанные остаются непрочитанными в Instagram."
+          : "✅ Бот отвечает и на обычные вопросы. Учтите: отвечая, он помечает переписку прочитанной в Instagram.",
+      );
+    } catch (e: any) {
+      setStatusMsg(`Ошибка настройки: ${e.message}`);
+    }
   };
 
   const handleFeatureToggle = async (key: "catalog" | "search" | "cart" | "checkout", value: boolean) => {
@@ -561,6 +578,43 @@ function AdminInstagramPage() {
                   onCheckedChange={(value) => handleDirectBotToggle(value === true)}
                 />
                 <Label htmlFor="instagram-direct-bot-enabled">Включить</Label>
+              </div>
+            </CardContent>
+            <CardContent className="space-y-3 pt-0">
+              <Label>На что отвечать</Label>
+              <div className="space-y-2">
+                {(
+                  [
+                    [
+                      "purchases",
+                      "Только по заказам",
+                      "Бот вступает, когда человек написал номер товара, и ведёт его до оплаты. Обычную переписку не трогает — вы отвечаете сами в Instagram, и непрочитанные остаются непрочитанными.",
+                    ],
+                    [
+                      "all",
+                      "На все сообщения",
+                      "Бот отвечает и на обычные вопросы, а вам присылает уведомление. Учтите: отвечая, он помечает переписку прочитанной — в Instagram вы больше не увидите, что вам написали.",
+                    ],
+                  ] as const
+                ).map(([value, title, description]) => {
+                  const active = (directBotScopeQuery.data?.scope ?? "purchases") === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => handleScopeChange(value)}
+                      className={`w-full rounded-md border p-3 text-left ${
+                        active ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                      }`}
+                    >
+                      <p className="text-sm font-medium">
+                        {title}
+                        {active && <span className="ml-2 text-xs text-primary">выбрано</span>}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+                    </button>
+                  );
+                })}
               </div>
             </CardContent>
             <CardContent className="space-y-2 pt-0">
