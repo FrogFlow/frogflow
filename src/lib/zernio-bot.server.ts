@@ -2,6 +2,7 @@ import {
   sendZernioInboxMessage,
   replyToInstagramComment,
   sendInstagramPrivateReply,
+  type ZernioDmButton,
 } from "./zernio.server";
 import crypto from "node:crypto";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
@@ -17,6 +18,32 @@ async function db() {
 function instagramCustomerId(userKey: string): number {
   const hex = crypto.createHash("sha256").update(userKey).digest("hex").slice(0, 13);
   return -parseInt(hex, 16);
+}
+
+/**
+ * Ответ покупателю в Direct.
+ *
+ * Все ответы бота идут через эту точку, а не напрямую в sendZernioInboxMessage,
+ * ровно по одной причине: два одинаковых сообщения подряд отправляться не
+ * должны (см. sendDirectReply). В живой переписке человек получил «Корзина
+ * пуста» дважды и «Передал ваш вопрос продавцу» дважды — четыре сообщения, из
+ * которых половина была дословным повтором.
+ */
+async function reply(
+  user: { user_key: string },
+  conversationId: string,
+  accountId: string,
+  text: string,
+  buttons?: ZernioDmButton[],
+) {
+  const flow = await import("./direct-purchase.server");
+  return flow.sendDirectReply({
+    conversationId,
+    accountId,
+    userKey: user.user_key,
+    text,
+    buttons,
+  });
 }
 
 /**
@@ -168,13 +195,33 @@ export async function handleZernioMessage(payload: any) {
    * и не поисковый запрос. Раньше состояния не было вовсе, и «Казахстан» в
    * ответ на «из какой вы страны» уходило искать товар с таким названием.
    */
-  const attachments: Array<{ url?: string }> = payload.message?.attachments || [];
+  // Чеком считаем только картинку или файл — см. pickReceiptAttachment: там же
+  // и разбор того, почему голосовое сообщение чеком быть не должно.
+  const { pickReceiptAttachment } = await import("./direct-flow");
+  const attachmentUrl =
+    pickReceiptAttachment(payload.message?.attachments as Array<{ url?: string; type?: string }>) ??
+    undefined;
+
+  /**
+   * Пустое событие — не сообщение, и отвечать на него нечем.
+   *
+   * Instagram присылает эхо шаблонов: direction incoming, текста нет, вложение
+   * типа template без ссылки и с пустыми elements. Таких событий в логах 513 из
+   * 8265, и каждое доходило до разбора свободной реплики — то есть в режиме
+   * «отвечать на всё» человек мог получить приветствие и «передал ваш вопрос
+   * продавцу» с пустым вопросом, ни о чём никого не спросив.
+   */
+  if (!text.trim() && postbackPayload === null && !attachmentUrl) {
+    console.log(`[zernio-bot] пустое событие от ${userKey} — отвечать нечем`);
+    return;
+  }
+
   const handledByFlow = await handlePurchaseFlow({
     conversationId,
     accountId,
     user,
     text,
-    attachmentUrl: attachments.find((item) => item.url)?.url,
+    attachmentUrl,
     answersEverything,
   });
   if (handledByFlow) return;
@@ -218,28 +265,37 @@ export async function handleZernioMessage(payload: any) {
    * разговоре. Сравнение по целому сообщению, а не по вхождению: «а магазин
    * у вас где?» боту не адресовано, а «Магазин» — адресовано.
    */
-  const command = lower.trim().replace(/[.!?]+$/, "");
+  const plain = lower.trim().replace(/[.!?]+$/, "");
+  const { matchDirectCommand } = await import("./direct-flow");
+  const command = matchDirectCommand(text);
 
   /**
-   * Корзина и «мои заказы» отвечают в любом режиме.
+   * Корзина, оформление и «мои заказы» отвечают в любом режиме.
    *
    * Это не болтовня, а обслуживание собственной покупки: человек хочет
-   * посмотреть, что набрал, или узнать, где его материалы. Оставлять такие
-   * вопросы продавцу — значит грузить его тем, на что бот отвечает точнее и
-   * мгновенно. Сравнение по целому сообщению, поэтому «а где мой заказ, я
-   * оплатила вчера» боту не адресовано и уйдёт продавцу, как и должно.
+   * посмотреть, что набрал, оплатить или узнать, где его материалы. Оставлять
+   * такие вопросы продавцу — значит грузить его тем, на что бот отвечает
+   * точнее и мгновенно.
+   *
+   * Команда опознаётся по целому сообщению (см. matchDirectCommand), поэтому
+   * «а где мой заказ, я оплатила вчера» командой не считается и уйдёт
+   * продавцу, как и должно.
    */
-  if (features.cart && ["корзина", "моя корзина", "что в корзине"].includes(command)) {
+  if (features.cart && command === "cart") {
     await sendCart(conversationId, accountId, user);
     return;
   }
-  if (["мои заказы", "заказы", "мой заказ", "где мой заказ"].includes(command)) {
+  if (features.checkout && command === "checkout") {
+    await startInstagramCheckout(conversationId, accountId, user);
+    return;
+  }
+  if (command === "orders") {
     await sendOrders(conversationId, accountId, user);
     return;
   }
 
   const triggerWords = parseTriggerWords(setting("instagram_direct_bot_triggers"));
-  if (triggerWords.includes(command)) {
+  if (triggerWords.includes(plain)) {
     await sendCatalogMenu(conversationId, accountId, user);
     return;
   }
@@ -255,26 +311,8 @@ export async function handleZernioMessage(payload: any) {
     return;
   }
 
-  // Команда /start или каталог / меню
-  if (lower === "/start" || lower.includes("старт") || lower.includes("меню") || lower.includes("каталог")) {
+  if (features.catalog && command === "catalog") {
     await sendCatalogMenu(conversationId, accountId, user);
-    return;
-  }
-
-  // Команда "корзина"
-  if (lower.includes("корзин")) {
-    await sendCart(conversationId, accountId, user);
-    return;
-  }
-
-  if (lower.includes("оформ") || lower.includes("оплат")) {
-    await startInstagramCheckout(conversationId, accountId, user);
-    return;
-  }
-
-  // Команда "заказы"
-  if (lower.includes("заказ")) {
-    await sendOrders(conversationId, accountId, user);
     return;
   }
 
@@ -339,7 +377,8 @@ export async function handleZernioMessage(payload: any) {
     notified_at: notifiedRecently ? questionState.notified_at : stamp,
   });
 
-  await sendZernioInboxMessage(
+  await reply(
+    user,
     conversationId,
     accountId,
     greetedRecently
@@ -373,7 +412,6 @@ export async function handleZernioMessage(payload: any) {
  * товара. Разбирать каталог удобнее в Telegram-боте — туда и ведём.
  */
 async function sendCatalogMenu(conversationId: string, accountId: string, user: any) {
-  void user;
   const botLink = await telegramBotLink();
 
   const lines = [
@@ -389,13 +427,13 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
     );
   }
 
-  await sendZernioInboxMessage(conversationId, accountId, lines.join("\n"));
+  await reply(user, conversationId, accountId, lines.join("\n"));
 }
 
 /**
  * Поиск и отправка товаров в DM
  */
-async function sendInteractiveProductResults(conversationId: string, accountId: string, _user: any, query: string) {
+async function sendInteractiveProductResults(conversationId: string, accountId: string, user: any, query: string) {
   const s = await db();
   const { data: products } = await s
     .from("products")
@@ -405,17 +443,18 @@ async function sendInteractiveProductResults(conversationId: string, accountId: 
     .limit(5);
 
   if (!products?.length) {
-    await sendZernioInboxMessage(
+    await reply(
+      user,
       conversationId,
       accountId,
       `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог в нашем боте: ${(await telegramBotLink()) ?? ""}`,
-      undefined,
-      undefined,
       [{ type: "postback", title: "Каталог", payload: "CATALOG" }],
     );
     return;
   }
 
+  // Список идёт отдельными сообщениями с кнопками у каждого товара — через
+  // защиту от повторов их не гоняем: тексты и так все разные.
   await sendZernioInboxMessage(conversationId, accountId, `🔎 Нашли ${products.length} вариантов:`);
   for (const product of products) {
     const description = product.description ? `\n${String(product.description).slice(0, 180)}` : "";
@@ -456,11 +495,12 @@ async function addProductToCart(
     .maybeSingle();
 
   if (!product?.is_active) {
-    await sendZernioInboxMessage(conversationId, accountId, "Этот материал больше недоступен.");
+    await reply(user, conversationId, accountId, "Этот материал больше недоступен.");
     return;
   }
   if (!(await flow.productHasFiles(product.id))) {
-    await sendZernioInboxMessage(
+    await reply(
+      user,
       conversationId,
       accountId,
       `«${product.name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
@@ -469,6 +509,9 @@ async function addProductToCart(
   }
 
   await flow.addToCart(user, product.id);
+  // Товар в корзине — счётчик непонятых реплик обнуляем: человек явно понял,
+  // что от него нужно, и прежние промахи к делу больше не относятся.
+  await flow.setDirectState(user.user_key, { misses: 0 });
   await sendCart(conversationId, accountId, user);
 }
 
@@ -478,25 +521,27 @@ async function sendCart(conversationId: string, accountId: string, user: any) {
   const cart = await flow.readCart(user);
 
   if (cart.length === 0) {
-    await sendZernioInboxMessage(
+    await reply(
+      user,
       conversationId,
       accountId,
-      "Корзина пуста. Напишите номер материала из публикации — например «018».",
+      "В заказе пока ничего нет. Напишите номер материала из публикации — например «018».",
     );
     return;
   }
 
   const state = flow.readDirectState(user.state);
   const total = flow.cartTotal(cart, state.country_code ?? "");
-  await sendZernioInboxMessage(
+  await reply(
+    user,
     conversationId,
     accountId,
     `В заказе ${cart.length === 1 ? "материал" : `${cart.length} материала`}:\n\n` +
       `${flow.renderCart(cart, state.country_code)}\n\n` +
       (cart.length > 1 && !total.mixedCurrency ? `Итого: ${total.amount} ${total.currency}\n\n` : "") +
-      "Можно добавить ещё — напишите следующий номер.",
-    undefined,
-    undefined,
+      (cart.length > 1
+        ? "Можно добавить ещё номер или убрать лишнее — напишите «убрать 018».\n"
+        : "Можно добавить ещё — напишите следующий номер.\n"),
     [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }],
   );
 }
@@ -510,11 +555,7 @@ async function sendOrders(conversationId: string, accountId: string, user: any) 
     .limit(5);
 
   if (!orders || orders.length === 0) {
-    await sendZernioInboxMessage(
-      conversationId,
-      accountId,
-      `У вас пока нет заказов. 📋`,
-    );
+    await reply(user, conversationId, accountId, `У вас пока нет заказов. 📋`);
     return;
   }
 
@@ -539,7 +580,7 @@ async function sendOrders(conversationId: string, accountId: string, user: any) 
     msg += `Заказ #${o.order_no ?? o.id} — ${o.total} ${o.currency} [${statusMap[o.status] || o.status}]\n`;
   });
 
-  await sendZernioInboxMessage(conversationId, accountId, msg);
+  await reply(user, conversationId, accountId, msg);
 }
 
 /**
@@ -564,18 +605,61 @@ async function startInstagramCheckout(conversationId: string, accountId: string,
   const flow = await import("./direct-purchase.server");
   const cart = await flow.readCart(user);
 
+  /**
+   * Оформлять нечего — и это не повод отвечать одно и то же.
+   *
+   * В живой переписке покупательница получила «Корзина пуста» на жалобу о
+   * неполученном материале, нажала «Оформить заказ» — и получила тот же текст
+   * второй раз. Разбор команд уже исправлен, но сама тупиковая ветка осталась:
+   * кнопка живёт в старых автоматизациях воронки, и по ней приходят люди с
+   * пустой корзиной.
+   *
+   * Поэтому здесь одна подсказка, а на второй раз — продавец. Если человек
+   * дважды не понял, чего от него хотят, третья попытка бота не поможет.
+   */
   if (cart.length === 0) {
-    await sendZernioInboxMessage(
+    const state = flow.readDirectState(user.state);
+
+    // Разговор уже у продавца — кнопку человек мог нажать от растерянности, и
+    // очередная подсказка от бота ему сейчас не нужна.
+    if (flow.handedToHuman(state)) {
+      console.log(`[zernio-bot] «Оформить» при пустой корзине от ${user.user_key} — молчим`);
+      return;
+    }
+
+    const attempts = (state.misses ?? 0) + 1;
+
+    if (attempts >= flow.MAX_STEP_MISSES) {
+      await flow.clearDirectFlow(user.user_key);
+      await reply(
+        user,
+        conversationId,
+        accountId,
+        "Похоже, я не помогаю — не буду мешать. Продавец увидит переписку и ответит сам.",
+      );
+      await flow.notifyAdminAboutQuestion({
+        question: "Нажимает «Оформить заказ», но в корзине ничего нет — не может выбрать материал.",
+        senderName: user.first_name || "покупатель",
+        senderUsername: user.username || "",
+      });
+      return;
+    }
+
+    await flow.setDirectState(user.user_key, { misses: attempts });
+    await reply(
+      user,
       conversationId,
       accountId,
-      "Корзина пуста. Напишите номер материала из публикации — например «018».",
+      "Чтобы оформить заказ, сначала напишите номер материала из публикации — например «018».\n\n" +
+        "Я посчитаю сумму и пришлю реквизиты.",
     );
     return;
   }
 
   const options = await flow.listCountries();
   if (options.length === 0) {
-    await sendZernioInboxMessage(
+    await reply(
+      user,
       conversationId,
       accountId,
       "Реквизиты для оплаты пока не заведены. Продавец свяжется с вами.",
@@ -608,11 +692,11 @@ async function startInstagramCheckout(conversationId: string, accountId: string,
   }
 
   await flow.setDirectState(user.user_key, { mode: "awaiting_country" });
-  await sendZernioInboxMessage(
+  await reply(
+    user,
     conversationId,
     accountId,
-    `В заказе:\n${flow.renderCart(cart, undefined)}\n\n` +
-      flow.renderCountryPrompt(options),
+    `В заказе:\n${flow.renderCart(cart, undefined)}\n\n` + flow.renderCountryPrompt(options),
   );
 }
 
@@ -629,7 +713,7 @@ async function sendDirectPaymentDetails(params: {
 }) {
   const { conversationId, accountId, user, country, remembered } = params;
   const flow = await import("./direct-purchase.server");
-  const say = (message: string) => sendZernioInboxMessage(conversationId, accountId, message);
+  const say = (message: string) => reply(user, conversationId, accountId, message);
 
   const requisites = await flow.paymentInstructionsFor(country.code);
   if (!requisites) {
@@ -720,9 +804,11 @@ async function handlePurchaseFlow(params: {
 }): Promise<boolean> {
   const { conversationId, accountId, user, text, attachmentUrl, answersEverything } = params;
   const flow = await import("./direct-purchase.server");
-  const { classifyIncoming } = await import("./direct-flow");
+  const { classifyIncoming, isCancel, isPaymentComplaint, matchDirectCommand } = await import(
+    "./direct-flow"
+  );
   const state = flow.readDirectState(user.state);
-  const say = (message: string) => sendZernioInboxMessage(conversationId, accountId, message);
+  const say = (message: string) => reply(user, conversationId, accountId, message);
 
   /**
    * Выход из сценария — на любом шаге, а не только на ожидании чека.
@@ -736,13 +822,121 @@ async function handlePurchaseFlow(params: {
    * должен работать всегда и одинаково, даже если продавец переопределил
    * команды вызова.
    */
-  const { isCancel } = await import("./direct-flow");
   if (state.mode && isCancel(text)) {
     // Корзину чистим вместе с шагом. Иначе набранное оставалось лежать: человек
     // добавлял не тот номер, отменял, добавлял верный — и в заказ попадали оба.
     await flow.clearDirectFlow(user.user_key);
     await flow.clearCart(user);
     await say("Отменил, корзина пуста. Напишите номер материала, когда будете готовы — например «018».");
+    return true;
+  }
+
+  /**
+   * Вопрос по оплате — сразу человеку, без единой заготовленной фразы.
+   *
+   * Это исправление настоящей переписки. Покупательница написала: «Я оплатила
+   * 400тг вам, вы материал мне не отправили». Бот увидел в этом «оплат»,
+   * принял за команду «оформить заказ» и ответил «Корзина пуста — напишите
+   * номер материала». Дважды. На «верните мои деньги» — «Передал ваш вопрос
+   * продавцу», тоже дважды. Разбор команд по вхождению уже исправлен, но одного
+   * этого мало: такая реплика вообще не должна попадать в сценарий продажи.
+   *
+   * Что здесь важно:
+   *  • шаг сценария не сбрасываем. Человек мог жаловаться на прошлый заказ, а
+   *    сам стоять на ожидании чека — сбросив шаг, мы потеряли бы и корзину, и
+   *    присланный следом чек;
+   *  • продавца зовём один раз в шесть часов, зато с фактами: его заказы,
+   *    статусы, есть ли чек и почта (см. notifyAdminAboutComplaint);
+   *  • в тихом режиме покупателю не отвечаем вовсе — переписка останется
+   *    непрочитанной, и продавец увидит её в Instagram сам.
+   */
+  if (!attachmentUrl && matchDirectCommand(text) === null && isPaymentComplaint(text)) {
+    const complainedRecently = flow.handedToHuman(state);
+
+    if (!complainedRecently) {
+      await flow.notifyAdminAboutComplaint({
+        text,
+        senderName: user.first_name || "покупатель",
+        senderUsername: user.username || "",
+        telegramId: user.telegram_id,
+      });
+      await flow.setDirectState(user.user_key, { complained_at: new Date().toISOString() });
+    }
+
+    // Отвечаем только если бот в этом разговоре уже говорил: молчать после
+    // собственных сообщений — значит бросить человека на полуслове.
+    if (answersEverything || state.mode) {
+      await say(
+        "Вижу, что вопрос по оплате. Это решает продавец — я его уже позвал, " +
+          "он ответит вам здесь же.\n\nБольше отвечать не буду, чтобы не мешать.",
+      );
+    } else {
+      console.log(`[zernio-bot] жалоба по оплате от ${user.user_key} передана продавцу молча`);
+    }
+    return true;
+  }
+
+  /**
+   * «Убрать 018» — передумать по одной позиции, не разбирая заказ целиком.
+   *
+   * Работает в любом режиме: это обслуживание собственной корзины, а не
+   * болтовня. На шаге ожидания чека сумма после удаления меняется, поэтому
+   * реквизиты с новым итогом уходят заново — иначе человек заплатил бы по
+   * старому счёту.
+   */
+  const removeNumber = flow.parseRemoveCommand(text);
+  if (removeNumber && state.mode !== "awaiting_email") {
+    const cart = await flow.readCart(user);
+    if (cart.length === 0) {
+      await say("Убирать пока нечего — в заказе ничего нет.");
+      return true;
+    }
+
+    const index = flow.pickCartLineToRemove(
+      removeNumber,
+      cart.map((line) => line.name),
+    );
+    if (index === null) {
+      await say(
+        `Материала с номером ${removeNumber} в заказе нет. Сейчас в нём:\n\n` +
+          `${flow.renderCart(cart, state.country_code)}\n\n` +
+          "Чтобы убрать всё, напишите «отмена».",
+      );
+      return true;
+    }
+
+    const removed = cart[index];
+    await flow.removeFromCart(user, removed.productId);
+    const rest = await flow.readCart(user);
+
+    if (rest.length === 0) {
+      await flow.clearDirectFlow(user.user_key);
+      await say(
+        `Убрал «${removed.name}». В заказе больше ничего нет — напишите номер материала, когда будете готовы.`,
+      );
+      return true;
+    }
+
+    await say(`Убрал «${removed.name}».`);
+
+    // Реквизиты уже отправлены — значит, названная сумма устарела, и её надо
+    // назвать заново, вместе с обновлённым составом заказа.
+    if (state.mode === "awaiting_proof" && state.country_code) {
+      const options = await flow.listCountries();
+      const country = options.find((option) => option.code === state.country_code);
+      if (country) {
+        await sendDirectPaymentDetails({
+          conversationId,
+          accountId,
+          user,
+          country,
+          remembered: false,
+        });
+        return true;
+      }
+    }
+
+    await sendCart(conversationId, accountId, user);
     return true;
   }
 
@@ -900,6 +1094,53 @@ async function handlePurchaseFlow(params: {
   // ── Ждём почту ──────────────────────────────────────────────────────────
   if (state.mode === "awaiting_email") {
     const email = flow.extractEmail(text);
+
+    /**
+     * Пришла ещё одна картинка вместо адреса — это второй чек, а не ошибка.
+     *
+     * Так и было при живой проверке: человек, уже отправив чек, прислал его
+     * ещё раз (или скриншот перевода вдогонку) — и получил «это не похоже на
+     * адрес почты». Ответ формально верный и совершенно бесполезный: человек
+     * прислал доказательство оплаты, а ему сказали, что он неправильно написал
+     * почту.
+     *
+     * Сохраняем вложение к тому же заказу, говорим продавцу и остаёмся на шаге
+     * почты — она всё ещё нужна, чтобы отправить материалы.
+     */
+    if (!email && attachmentUrl) {
+      const extra = await flow.storeReceipt(attachmentUrl, user.user_key);
+      const s = await db();
+      if (extra && state.pending_order_id) {
+        const { data: order } = await s
+          .from("orders")
+          .select("payment_proof_path, order_no, admin_note")
+          .eq("id", state.pending_order_id)
+          .maybeSingle();
+
+        await s
+          .from("orders")
+          .update(
+            order?.payment_proof_path
+              ? {
+                  admin_note: `${order.admin_note ?? ""}; ещё один чек: ${extra.path}`.slice(0, 500),
+                }
+              : { payment_proof_path: extra.path },
+          )
+          .eq("id", state.pending_order_id);
+
+        await flow.notifyAdminAboutQuestion({
+          question: `Прислал ещё один чек к заказу №${order?.order_no ?? state.pending_order_id}. Посмотрите вложения заказа.`,
+          senderName: user.first_name || "покупатель",
+          senderUsername: user.username || "",
+        });
+      }
+      await say(
+        "Чек получил, он уже у продавца. Осталось одно: напишите почту, " +
+          "на которую отправить материалы — например anna@mail.ru",
+      );
+      return true;
+    }
+
     if (!email) {
       /**
        * Шаг был необязательным — адрес мы уже знали и лишь предложили его
@@ -980,10 +1221,60 @@ async function handlePurchaseFlow(params: {
     return true;
   }
 
+  /**
+   * Вложение пришло вне сценария — почти всегда это чек «на опережение».
+   *
+   * Так и появляются истории вида «я оплатила, а материал не отправили»:
+   * человек увидел реквизиты в публикации, заплатил и прислал чек в Direct,
+   * ничего у бота не заказывая. Заказа под такой чек нет, шага сценария нет —
+   * прежде это вложение просто пропадало из виду бота целиком.
+   *
+   * Сохраняем чек в хранилище и зовём продавца: даже если это не чек, а
+   * случайная картинка, потеря невелика, а цена обратной ошибки — потерянная
+   * оплата и разбирательство.
+   */
+  if (attachmentUrl) {
+    const notifiedRecently =
+      Boolean(state.notified_at) && Date.now() - Date.parse(state.notified_at!) < 60 * 60 * 1000;
+
+    if (!notifiedRecently) {
+      const stored = await flow.storeReceipt(attachmentUrl, `${user.user_key}/unmatched`);
+      await flow.notifyAdminAboutQuestion({
+        question:
+          "Прислал вложение (похоже на чек), но заказа у него нет — оплатил, минуя бота." +
+          (stored ? `\nФайл: payment-proofs/${stored.path}` : "\nФайл сохранить не удалось."),
+        senderName: user.first_name || "покупатель",
+        senderUsername: user.username || "",
+      });
+      await flow.setDirectState(user.user_key, { notified_at: new Date().toISOString() });
+    }
+
+    if (answersEverything) {
+      await say(
+        "Вижу вложение. Если это чек об оплате — передал продавцу, он проверит и ответит здесь же.\n\n" +
+          "Если хотите заказать материал через меня, напишите его номер из публикации.",
+      );
+    }
+    return true;
+  }
+
   // ── Сценарий не начат: разбираем свободную реплику ──────────────────────
   if (!text.trim()) return false;
 
   const incoming = classifyIncoming(text);
+
+  /**
+   * Разговор уже передан продавцу — молчим, как и обещали.
+   *
+   * Исключение одно: номер материала. Если после разбирательства человек всё же
+   * решил купить, помочь ему надо — это действие, а не разговор. Всё остальное
+   * (вопросы, «спасибо», односложные ответы) ждёт продавца, и переписка
+   * остаётся у него непрочитанной.
+   */
+  if (flow.handedToHuman(state) && incoming.kind !== "product_number") {
+    console.log(`[zernio-bot] разговор с ${user.user_key} у продавца — бот молчит`);
+    return true;
+  }
 
   if (incoming.kind === "product_number") {
     const lookup = await flow.findProductByNumber(incoming.number);
@@ -1055,12 +1346,11 @@ async function handlePurchaseFlow(params: {
         ? `Добавил «${product.name}» — ${priceLine}.`
         : `Добавил «${product.name}» — ${priceLine}.\n\nВ заказе ${cart.length}:\n${flow.renderCart(cart, state.country_code)}`;
 
-    await sendZernioInboxMessage(
+    await reply(
+      user,
       conversationId,
       accountId,
       `${added}\n\nМожно добавить ещё — просто напишите следующий номер. Или оформляйте заказ.`,
-      undefined,
-      undefined,
       [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }],
     );
     return true;

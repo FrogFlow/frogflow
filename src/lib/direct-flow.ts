@@ -79,6 +79,35 @@ export function productNumberFromKeywords(keywords: string | null | undefined): 
   return match ? normalizeNumber(match[1]) : null;
 }
 
+/**
+ * «Убрать 018» — единственный способ передумать по одной позиции.
+ *
+ * До этого из корзины можно было только выкинуть всё сразу словом «отмена».
+ * Человек, набравший три материала и ошибшийся в одном номере, вынужден был
+ * начинать заново — а чаще просто спрашивал продавца, то есть ровно та работа,
+ * которую бот должен снимать.
+ */
+export function parseRemoveCommand(text: string): string | null {
+  const match = text
+    .trim()
+    .toLowerCase()
+    .match(/^(?:убрать|убери|удали|удалить|минус|-)\s*[№#]?\s*(\d{1,5})\s*[.)]?$/);
+  return match ? normalizeNumber(match[1]) : null;
+}
+
+/**
+ * Какую позицию корзины убрать. Сначала по номеру материала, потом по месту в
+ * списке: покупатель видит «1. 018. Набор…» и может назвать любое из двух.
+ */
+export function pickCartLineToRemove(number: string, names: string[]): number | null {
+  const byNumber = names.findIndex((name) => productNumberFromName(name) === number);
+  if (byNumber >= 0) return byNumber;
+
+  const position = Number(number);
+  if (Number.isInteger(position) && position >= 1 && position <= names.length) return position - 1;
+  return null;
+}
+
 export type CountryOption = { code: string; name: string };
 
 /**
@@ -122,6 +151,28 @@ export function matchCountry(text: string, options: CountryOption[]): CountryOpt
     if (name === needle) return option;
     // «казах» → «казахстан»: покупатели дописывают не всегда.
     if (needle.length >= 4 && name.startsWith(needle)) return option;
+  }
+  return null;
+}
+
+/**
+ * Какое вложение можно считать чеком.
+ *
+ * Типы взяты из живых событий вебхука, а не придуманы: image (1005 событий),
+ * template (350), audio (90), video (73), share (44), ephemeral (5), file (2).
+ * Чек — только картинка или файл. Раньше бралось первое вложение со ссылкой,
+ * и голосовое сообщение или пересланный пост на шаге ожидания чека становились
+ * «чеком»: по нему создавался заказ, а продавец получал на проверку аудио.
+ *
+ * Отсутствующий тип считаем картинкой: так вело себя прежнее правило, и события
+ * без типа — это старые записи, где вложение всегда было фотографией чека.
+ */
+export function pickReceiptAttachment(
+  attachments: Array<{ url?: string; type?: string }> | null | undefined,
+): string | null {
+  for (const item of attachments ?? []) {
+    if (!item.url) continue;
+    if (!item.type || item.type === "image" || item.type === "file") return item.url;
   }
   return null;
 }
@@ -193,6 +244,101 @@ const CANCEL_WORDS = new Set([
 
 export function isCancel(text: string): boolean {
   return CANCEL_WORDS.has(text.trim().toLowerCase().replace(/[.!]+$/, ""));
+}
+
+/**
+ * Команды бота — те, что человек пишет словами.
+ *
+ * Сравнение по **целому сообщению**, и это не придирка к стилю. Раньше команды
+ * искались вхождением: `lower.includes("оплат")`. В живой переписке покупательница
+ * написала «Я оплатила 400тг вам, вы материал мне не отправили» — бот увидел в
+ * этом «оплат», принял за команду «оформить заказ» и ответил ей «Корзина пуста».
+ * На жалобу о неполученном материале. То же вхождение ловило «заказ» в «а где
+ * мой заказ, я оплатила вчера» и «каталог» в любом упоминании каталога.
+ *
+ * Целое сообщение такой ошибки сделать не может: «оплатить» — это команда,
+ * «я оплатила 400тг» — это фраза человека, и путать их нельзя.
+ */
+export type DirectCommand = "catalog" | "cart" | "checkout" | "orders";
+
+const COMMANDS: Array<[DirectCommand, string[]]> = [
+  [
+    "catalog",
+    ["/start", "start", "старт", "меню", "каталог", "магазин", "товары", "материалы", "начать"],
+  ],
+  ["cart", ["корзина", "корзину", "моя корзина", "что в корзине", "что у меня в корзине"]],
+  [
+    "checkout",
+    [
+      "оформить",
+      "оформить заказ",
+      "оформляем",
+      "оплатить",
+      "оплата",
+      "хочу оплатить",
+      "как оплатить",
+      "к оплате",
+      "реквизиты",
+    ],
+  ],
+  ["orders", ["мои заказы", "заказы", "мой заказ", "где мой заказ", "статус заказа"]],
+];
+
+export function matchDirectCommand(text: string): DirectCommand | null {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?,;:]+$/g, "")
+    .replace(/^[«"]+|[»"]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return null;
+  for (const [command, words] of COMMANDS) {
+    if (words.includes(normalized)) return command;
+  }
+  return null;
+}
+
+/**
+ * Человек пишет о проблеме с оплатой или требует деньги назад.
+ *
+ * Появилось из настоящей переписки, и она стоит того, чтобы её пересказать.
+ * Покупательница оплатила 400 ₸, материал не получила и написала об этом. Бот
+ * ответил «Корзина пуста — напишите номер материала», потом ровно то же во
+ * второй раз, а на «верните мои деньги» — дважды «Передал ваш вопрос
+ * продавцу». Четыре сообщения, ни одного по делу.
+ *
+ * Такая реплика — единственный случай, когда бот обязан не отвечать по
+ * сценарию, а немедленно позвать живого человека: деньги уже уплачены, и любой
+ * заготовленный текст здесь читается как отговорка. Продавцу уходит отдельное
+ * срочное уведомление, а бот замолкает.
+ */
+const PAID_MARKERS =
+  /(оплат|заплат|перевел|перевёл|перевод|перечисл|скинул[аи]?\s*(деньги|оплат|чек)?|отправил[аи]?\s*(деньги|оплату|чек))/i;
+
+/**
+ * Корни здесь нарочно короткие: «не пришло» и «не пришел» — одна и та же
+ * жалоба, а по корню «пришл» второе не находится вовсе. На таких деталях
+ * проверка и обманывает: выглядит работающей, а половину живых фраз пропускает.
+ */
+const MISSING_MARKERS =
+  /(не\s*(приш|дош|получ|отправ|присыл|скач|откры|работ|прош|отвеча)|ничего\s*(не|нет)|нет\s*(файл|материал|письм|ссылк)|где\s*(мой|моя|мои|файл|материал|заказ|ссылк|письм))/i;
+
+const SUBJECT_MARKERS = /(материал|файл|заказ|письм|ссылк|доступ|товар)/i;
+
+const REFUND_MARKERS =
+  /(верн(и|ите|уть|ёте|ете)[^.!?]{0,24}(деньги|оплату|средства|деньгами)|возврат|обман|мошенн|развод|жалоб|полици|в\s*суд)/i;
+
+export function isPaymentComplaint(text: string): boolean {
+  const value = text.trim();
+  if (!value) return false;
+  if (REFUND_MARKERS.test(value)) return true;
+  const missing = MISSING_MARKERS.test(value);
+  if (!missing) return false;
+  // «Оплатила, а материал не пришёл» и «файл не открывается» — обе жалобы,
+  // но «не могу найти реквизиты» жалобой не является: там нет ни оплаты, ни
+  // пропавшего материала, и на такой вопрос бот отвечает сам.
+  return PAID_MARKERS.test(value) || SUBJECT_MARKERS.test(value);
 }
 
 export type IncomingKind =

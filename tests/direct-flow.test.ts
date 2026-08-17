@@ -8,6 +8,11 @@ import {
   extractEmail,
   isAffirmative,
   classifyIncoming,
+  matchDirectCommand,
+  isPaymentComplaint,
+  parseRemoveCommand,
+  pickCartLineToRemove,
+  pickReceiptAttachment,
 } from "../src/lib/direct-flow";
 
 /** Список стран взят из настоящих payment_methods клиента. */
@@ -212,5 +217,139 @@ describe("isCancel", () => {
     for (const input of ["Казахстан", "1", "018", "не понял", "отменяется ли заказ?"]) {
       expect(isCancel(input), input).toBe(false);
     }
+  });
+});
+
+/**
+ * Команды сравниваются с целым сообщением. Ровно из-за вхождения бот и ответил
+ * «Корзина пуста» на «Я оплатила 400тг вам, вы материал мне не отправили»:
+ * в этой фразе есть «оплат», и она считалась командой «оформить заказ».
+ */
+describe("matchDirectCommand", () => {
+  it("понимает команды, написанные словом", () => {
+    expect(matchDirectCommand("Корзина")).toBe("cart");
+    expect(matchDirectCommand("корзину")).toBe("cart");
+    expect(matchDirectCommand("оплатить")).toBe("checkout");
+    expect(matchDirectCommand("Оформить заказ")).toBe("checkout");
+    expect(matchDirectCommand("реквизиты")).toBe("checkout");
+    expect(matchDirectCommand("мои заказы")).toBe("orders");
+    expect(matchDirectCommand("/start")).toBe("catalog");
+    expect(matchDirectCommand("Каталог!")).toBe("catalog");
+  });
+
+  it("не принимает за команду живую фразу, в которой команда лишь внутри", () => {
+    for (const input of [
+      "Я оплатила 400тг вам, вы материал мне не отправили",
+      "верните мои деньги, я оплатила",
+      "а где мой заказ, я оплатила вчера",
+      "а магазин у вас где?",
+      "как оплатить я поняла, спасибо",
+      "в корзине что-то не так",
+    ]) {
+      expect(matchDirectCommand(input), input).toBeNull();
+    }
+  });
+});
+
+/**
+ * Жалоба на оплату. Из настоящей переписки: человек заплатил 400 ₸, материал не
+ * получил, а бот четырьмя сообщениями предлагал ему набрать номер товара.
+ */
+describe("isPaymentComplaint", () => {
+  it("узнаёт жалобу на неполученный материал", () => {
+    for (const input of [
+      "Я оплатила 400тг вам, вы материал мне не отправили",
+      "оплатила, а материал не пришел",
+      "Верните мои деньги",
+      "верните деньги пожалуйста",
+      "оплата не прошла",
+      "ссылка не работает",
+      "файл не открывается",
+      "где мой материал?",
+      "это обман какой-то",
+    ]) {
+      expect(isPaymentComplaint(input), input).toBe(true);
+    }
+  });
+
+  it("не считает жалобой обычный вопрос", () => {
+    for (const input of [
+      "здравствуйте",
+      "как оплатить?",
+      "а скидка есть?",
+      "не могу найти реквизиты",
+      "196",
+      "я ещё не оплатила",
+      "ничего не понятно, объясните",
+      "",
+    ]) {
+      expect(isPaymentComplaint(input), input).toBe(false);
+    }
+  });
+});
+
+/**
+ * Типы вложений здесь настоящие — из живых событий вебхука клиента.
+ */
+describe("pickReceiptAttachment", () => {
+  it("берёт картинку или файл", () => {
+    expect(pickReceiptAttachment([{ url: "https://cdn/1.jpg", type: "image" }])).toBe(
+      "https://cdn/1.jpg",
+    );
+    expect(pickReceiptAttachment([{ url: "https://cdn/1.pdf", type: "file" }])).toBe(
+      "https://cdn/1.pdf",
+    );
+    // Старые события приходили без типа, и это всегда была фотография чека.
+    expect(pickReceiptAttachment([{ url: "https://cdn/1.jpg" }])).toBe("https://cdn/1.jpg");
+  });
+
+  it("не принимает за чек голосовое, видео, пересланный пост и эхо шаблона", () => {
+    for (const type of ["audio", "video", "share", "ephemeral", "template"]) {
+      expect(pickReceiptAttachment([{ url: "https://cdn/x", type }]), type).toBeNull();
+    }
+    expect(pickReceiptAttachment([{ type: "template" }])).toBeNull();
+    expect(pickReceiptAttachment([])).toBeNull();
+    expect(pickReceiptAttachment(null)).toBeNull();
+  });
+
+  it("находит чек, даже если он пришёл вместе с голосовым", () => {
+    expect(
+      pickReceiptAttachment([
+        { url: "https://cdn/voice", type: "audio" },
+        { url: "https://cdn/receipt.jpg", type: "image" },
+      ]),
+    ).toBe("https://cdn/receipt.jpg");
+  });
+});
+
+describe("parseRemoveCommand", () => {
+  it("понимает просьбу убрать позицию", () => {
+    expect(parseRemoveCommand("убрать 018")).toBe("18");
+    expect(parseRemoveCommand("Убери №196")).toBe("196");
+    expect(parseRemoveCommand("удалить 2")).toBe("2");
+  });
+
+  it("не принимает за удаление обычную реплику", () => {
+    for (const input of ["018", "уберите пожалуйста всё", "убрать", "не убирайте 18"]) {
+      expect(parseRemoveCommand(input), input).toBeNull();
+    }
+  });
+});
+
+describe("pickCartLineToRemove", () => {
+  const names = ["018. Набор «Пазлы БУКВЫ»", "236) Пазлы к празднику Наурыз", "Буклет без номера"];
+
+  it("находит позицию по номеру материала", () => {
+    expect(pickCartLineToRemove("18", names)).toBe(0);
+    expect(pickCartLineToRemove("236", names)).toBe(1);
+  });
+
+  it("понимает и место в списке — покупатель видит нумерацию", () => {
+    // «3» — это третья строка: материала с номером 3 в заказе нет.
+    expect(pickCartLineToRemove("3", names)).toBe(2);
+  });
+
+  it("не угадывает, когда такого в заказе нет", () => {
+    expect(pickCartLineToRemove("999", names)).toBeNull();
   });
 });

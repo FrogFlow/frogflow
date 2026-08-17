@@ -1,7 +1,10 @@
-import { sendZernioInboxMessage } from "./zernio.server";
+import { createHash } from "node:crypto";
+import { sendZernioInboxMessage, type ZernioDmButton } from "./zernio.server";
 import {
   matchCountry,
   extractEmail,
+  parseRemoveCommand,
+  pickCartLineToRemove,
   type CountryOption,
   type DirectMode,
 } from "./direct-flow";
@@ -47,6 +50,12 @@ export type DirectState = {
    * Если пришло не письмо — выходим из сценария, а не требуем адрес.
    */
   email_optional?: boolean;
+  /** Отпечаток последнего отправленного сообщения — чтобы не повторяться. */
+  last_reply?: string;
+  /** Когда оно ушло: повтор гасим только пока разговор тот же. */
+  last_reply_at?: string;
+  /** Когда человек пожаловался на оплату — продавца зовём один раз, не на каждое слово. */
+  complained_at?: string;
   /**
    * Сколько раз подряд человек ответил не то, что бот ждал на этом шаге.
    *
@@ -127,6 +136,85 @@ export async function clearDirectFlow(userKey: string): Promise<void> {
 export function readDirectState(raw: unknown): DirectState {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return raw as DirectState;
+}
+
+/**
+ * Отправка в Direct с одним правилом: два раза подряд одно и то же не уходит.
+ *
+ * Взято из живой переписки. Покупательница написала о неполученном материале —
+ * бот ответил «Корзина пуста. Напишите номер материала»; она нажала кнопку
+ * «Оформить заказ» — и получила ровно тот же текст второй раз. Дальше дважды
+ * подряд «Передал ваш вопрос продавцу». Повтор — это худшее, что бот может
+ * сделать в такой момент: человек и так уже понял, что его не слышат, а
+ * дословное повторение доказывает ему, что на другом конце автомат.
+ *
+ * Гасим только дословный повтор и только в пределах десяти минут: если человек
+ * вернулся через час и снова спросил корзину, ответить надо.
+ *
+ * Отпечаток храним в том же `bot_users.state`, что и шаг сценария, и читаем его
+ * из базы заново — за одно событие бот успевает записать состояние несколько
+ * раз, и объект `user`, пришедший в обработчик, к этому моменту уже устарел.
+ */
+const REPEAT_WINDOW_MS = 10 * 60 * 1000;
+
+function fingerprint(text: string): string {
+  return createHash("sha256").update(text.trim()).digest("hex").slice(0, 16);
+}
+
+export async function sendDirectReply(params: {
+  conversationId: string;
+  accountId: string;
+  userKey: string;
+  text: string;
+  buttons?: ZernioDmButton[];
+}): Promise<boolean> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("user_key", params.userKey)
+    .maybeSingle();
+
+  const state = readDirectState(existing?.state);
+  const mark = fingerprint(params.text);
+  const fresh =
+    Boolean(state.last_reply_at) && Date.now() - Date.parse(state.last_reply_at!) < REPEAT_WINDOW_MS;
+
+  if (state.last_reply === mark && fresh) {
+    console.log(`[direct] повтор подавлен для ${params.userKey}: «${params.text.slice(0, 60)}…»`);
+    return false;
+  }
+
+  await sendZernioInboxMessage(
+    params.conversationId,
+    params.accountId,
+    params.text,
+    undefined,
+    undefined,
+    params.buttons,
+  );
+  await setDirectState(params.userKey, {
+    last_reply: mark,
+    last_reply_at: new Date().toISOString(),
+  });
+  return true;
+}
+
+/**
+ * Разговор передан живому человеку — бот в него больше не лезет.
+ *
+ * Сказав «больше отвечать не буду, чтобы не мешать», бот обязан это выполнить.
+ * Иначе получается хуже, чем до починки: он и обещание не сдержал, и продолжил
+ * отвечать заготовками там, где человек ждёт продавца.
+ *
+ * Шесть часов — с запасом на то, чтобы продавец успел прочитать уведомление и
+ * ответить сам, но не настолько долго, чтобы бот замолчал навсегда.
+ */
+export function handedToHuman(state: DirectState): boolean {
+  return (
+    Boolean(state.complained_at) &&
+    Date.now() - Date.parse(state.complained_at!) < 6 * 60 * 60 * 1000
+  );
 }
 
 /** Страны, по которым у этого клиента заведены реквизиты. */
@@ -504,7 +592,86 @@ export async function notifyAdminAboutQuestion(params: {
   }
 }
 
-export { matchCountry, extractEmail, sendZernioInboxMessage };
+/**
+ * Жалоба на оплату — отдельным срочным сообщением и сразу с фактами.
+ *
+ * Обычное «вопрос в Direct» здесь не годится. Человек уже заплатил, и первое,
+ * что нужно продавцу, — понять, есть ли его заказ в базе и в каком он
+ * состоянии: подтверждения ждёт, отклонён или вовсе не создавался. Раньше за
+ * этим приходилось идти в админку и искать покупателя по нику — а покупатель в
+ * это время ждал и писал снова.
+ *
+ * Поэтому в сообщение сразу попадают последние заказы этого человека со
+ * статусом, суммой и пометкой, приложен ли чек. Ответить он всё равно должен
+ * сам — бот в такой разговор больше не лезет.
+ */
+export async function notifyAdminAboutComplaint(params: {
+  text: string;
+  senderName: string;
+  senderUsername: string;
+  telegramId: number;
+}) {
+  const s = await db();
+  const { data: setting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", botId())
+    .eq("key", "admin_chat_id")
+    .maybeSingle();
+
+  const raw = setting?.value?.trim();
+  if (!raw) return;
+
+  const { data: orders } = await s
+    .from("orders")
+    .select("id, order_no, total, currency, status, payment_proof_path, customer_email, created_at")
+    .eq("telegram_id", params.telegramId)
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  const history = (orders ?? []).length
+    ? (orders ?? [])
+        .map((order) => {
+          const when = order.created_at
+            ? new Date(order.created_at).toLocaleDateString("ru-RU")
+            : "";
+          return (
+            `• №${order.order_no ?? order.id} — ${order.total} ${order.currency} — ` +
+            `${order.status}${order.payment_proof_path ? ", чек есть" : ", чека нет"}` +
+            `${order.customer_email ? `, почта ${order.customer_email}` : ", почты нет"}` +
+            `${when ? ` (${when})` : ""}`
+          );
+        })
+        .join("\n")
+    : "заказов в базе нет — оплата прошла мимо бота";
+
+  const who = params.senderUsername ? `@${params.senderUsername}` : params.senderName;
+  const { tg } = await import("./telegram.server");
+  for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
+    try {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text:
+          `‼️ <b>Вопрос по оплате в Instagram</b>\n\n` +
+          `От: ${who}\n\n` +
+          `«${params.text.slice(0, 500)}»\n\n` +
+          `<b>Заказы покупателя:</b>\n${history}\n\n` +
+          `Бот на это отвечать не будет — ответьте, пожалуйста, сами в Instagram.`,
+        parse_mode: "HTML",
+      });
+    } catch (e) {
+      console.error("[direct] notify admin about complaint failed", e);
+    }
+  }
+}
+
+export {
+  matchCountry,
+  extractEmail,
+  parseRemoveCommand,
+  pickCartLineToRemove,
+  sendZernioInboxMessage,
+};
 
 // ─── Корзина ────────────────────────────────────────────────────────────────
 //
@@ -603,6 +770,19 @@ export async function readCart(user: { telegram_id: number }): Promise<CartLine[
     });
   }
   return lines;
+}
+
+/** Убирает одну позицию — «убрать 018», когда номер набрали не тот. */
+export async function removeFromCart(
+  user: { telegram_id: number },
+  productId: string,
+): Promise<void> {
+  const s = await db();
+  await s
+    .from("cart_items")
+    .delete()
+    .eq("telegram_id", user.telegram_id)
+    .eq("product_id", productId);
 }
 
 export async function clearCart(user: { telegram_id: number }): Promise<void> {
