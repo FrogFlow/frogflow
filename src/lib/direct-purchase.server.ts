@@ -313,7 +313,14 @@ export async function storeReceipt(
 }
 
 /** Создаёт заказ из выбранного товара — по одному товару за раз, как в сценарии. */
-/** Сообщение продавцу о новом заказе — тем же путём, что и у Telegram-бота. */
+/**
+ * Сообщение продавцу о новом заказе.
+ *
+ * С составом и суммой, а не одним номером: продавец читает это с телефона и
+ * первым делом сверяет чек с суммой заказа. Раньше в сообщении был только номер,
+ * и за каждой проверкой приходилось идти в админку — даже чтобы понять, сколько
+ * человек должен был заплатить.
+ */
 export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: number | string) {
   const s = await db();
   const { data: setting } = await s
@@ -326,15 +333,29 @@ export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: nu
   const raw = setting?.value?.trim();
   if (!raw) return;
 
+  const { data: order } = await s
+    .from("orders")
+    .select("total, currency, username, display_name, order_items(name_snapshot, price_snapshot)")
+    .eq("id", orderId)
+    .maybeSingle();
+
+  const items = ((order?.order_items ?? []) as Array<{ name_snapshot: string }>)
+    .map((item) => `• ${item.name_snapshot}`)
+    .join("\n");
+  const who = order?.username ? `@${order.username}` : order?.display_name || "покупатель";
+
   const { tg } = await import("./telegram.server");
   for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
     try {
       await tg("sendMessage", {
         chat_id: chatId,
         text:
-          `📸 <b>Заказ #${displayNo} из Instagram</b>\n\n` +
-          `Покупатель прислал чек. Проверьте оплату и подтвердите заказ в админке — ` +
-          `после подтверждения материалы уйдут ему на почту.`,
+          `📸 <b>Заказ №${displayNo} из Instagram</b>\n\n` +
+          `От: ${who}\n` +
+          `Сумма: <b>${order?.total ?? "?"} ${order?.currency ?? ""}</b>\n\n` +
+          `${items || "(состав недоступен)"}\n\n` +
+          `Чек приложен. Сверьте сумму и подтвердите заказ в админке — ` +
+          `материалы уйдут покупателю на почту.`,
         parse_mode: "HTML",
       });
     } catch (e) {

@@ -96,21 +96,35 @@ export const rejectOrder = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.number().int(), note: z.string().max(500).optional() }).parse(d))
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
-    const { tg } = await import("./telegram.server");
+    const { notifyOrderCustomer } = await import("./orders.server");
     await requireAdmin();
     const s = await db();
     const { data: order, error } = await s
       .from("orders")
       .update({ status: "rejected", admin_note: data.note ?? null })
       .eq("id", data.id)
-      .select("telegram_id, order_no")
+      .select("order_no")
       .single();
     if (error) throw new Error(error.message);
-    await tg("sendMessage", {
-      chat_id: order!.telegram_id,
-      text: `❌ Ваш заказ #${(order as any)?.order_no ?? data.id} отклонён.\n${data.note ? `\nПричина: ${data.note}\n` : ""}\nЕсли это ошибка — напишите продавцу.`,
-    });
-    return { ok: true as const };
+
+    /**
+     * Пишем туда, откуда пришёл заказ.
+     *
+     * Раньше здесь была прямая отправка в Telegram по `order.telegram_id`. У
+     * покупателя из Instagram этот идентификатор синтетический, чата с таким
+     * номером нет — и об отклонении он не узнавал вовсе: просто ждал материалы,
+     * которых не будет. А отклонения тут обычное дело: чек нечитаемый, сумма не
+     * та.
+     */
+    const notified = await notifyOrderCustomer(
+      data.id,
+      `❌ Ваш заказ №${order?.order_no ?? data.id} отклонён.\n${data.note ? `\nПричина: ${data.note}\n` : ""}\nЕсли это ошибка — напишите продавцу.`,
+    );
+
+    // Instagram запрещает писать позже 24 часов с последнего сообщения
+    // покупателя, поэтому сообщить удаётся не всегда. Отклонение при этом
+    // состоялось, и продавец должен знать, что человека придётся окликнуть сам.
+    return { ok: true as const, customerNotified: notified };
   });
 
 /** Nudge buyer: re-send current payment options for an awaiting_payment order. */

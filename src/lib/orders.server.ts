@@ -627,3 +627,57 @@ async function deliverOrderByEmail(
     email,
   };
 }
+
+/**
+ * Написать покупателю туда, откуда пришёл заказ.
+ *
+ * Понадобилось, потому что уведомления писались прямо в Telegram по
+ * `order.telegram_id`. У покупателя из Instagram этот идентификатор
+ * синтетический — отрицательный хеш от его ключа, — чата с таким номером не
+ * существует, и сообщение уходило в пустоту. То есть отклонение заказа
+ * инста-покупатель не узнавал вовсе: он просто ждал материалы, которых не
+ * будет.
+ *
+ * Возвращает false, если написать не удалось. У Instagram это ожидаемо:
+ * платформа запрещает писать позже 24 часов с последнего сообщения покупателя,
+ * а продавец разбирает чеки не сразу. Вызывающий код должен учитывать, что
+ * доставка сообщения не гарантирована, — но само действие (отклонение, выдача)
+ * от этого срываться не должно.
+ */
+export async function notifyOrderCustomer(orderId: number, text: string): Promise<boolean> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("platform, telegram_id, user_key")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (!order) return false;
+
+  if (order.platform === "instagram") {
+    const { data: buyer } = await supabaseAdmin
+      .from("bot_users")
+      .select("zernio_conversation_id, zernio_account_id")
+      .eq("user_key", order.user_key || "")
+      .maybeSingle();
+
+    if (!buyer?.zernio_conversation_id || !buyer.zernio_account_id) return false;
+    const { sendZernioInboxMessage } = await import("./zernio.server");
+    const result = await sendZernioInboxMessage(
+      buyer.zernio_conversation_id,
+      buyer.zernio_account_id,
+      text,
+    );
+    return result.ok;
+  }
+
+  try {
+    const response = (await tg("sendMessage", { chat_id: order.telegram_id, text })) as {
+      ok?: boolean;
+    };
+    return response?.ok === true;
+  } catch (e) {
+    console.error("[orders] не удалось написать покупателю в Telegram", e);
+    return false;
+  }
+}

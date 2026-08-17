@@ -218,9 +218,28 @@ export async function handleZernioMessage(payload: any) {
    * разговоре. Сравнение по целому сообщению, а не по вхождению: «а магазин
    * у вас где?» боту не адресовано, а «Магазин» — адресовано.
    */
+  const command = lower.trim().replace(/[.!?]+$/, "");
+
+  /**
+   * Корзина и «мои заказы» отвечают в любом режиме.
+   *
+   * Это не болтовня, а обслуживание собственной покупки: человек хочет
+   * посмотреть, что набрал, или узнать, где его материалы. Оставлять такие
+   * вопросы продавцу — значит грузить его тем, на что бот отвечает точнее и
+   * мгновенно. Сравнение по целому сообщению, поэтому «а где мой заказ, я
+   * оплатила вчера» боту не адресовано и уйдёт продавцу, как и должно.
+   */
+  if (features.cart && ["корзина", "моя корзина", "что в корзине"].includes(command)) {
+    await sendCart(conversationId, accountId, user);
+    return;
+  }
+  if (["мои заказы", "заказы", "мой заказ", "где мой заказ"].includes(command)) {
+    await sendOrders(conversationId, accountId, user);
+    return;
+  }
+
   const triggerWords = parseTriggerWords(setting("instagram_direct_bot_triggers"));
-  const isTrigger = triggerWords.includes(lower.trim().replace(/[.!?]+$/, ""));
-  if (isTrigger) {
+  if (triggerWords.includes(command)) {
     await sendCatalogMenu(conversationId, accountId, user);
     return;
   }
@@ -498,11 +517,20 @@ async function sendOrders(conversationId: string, accountId: string, user: any) 
     return;
   }
 
+  /**
+   * Названия статусов для покупателя.
+   *
+   * Прежний набор был из другой жизни: «paid» и «cancelled» в базе не
+   * встречаются вовсе, зато не было awaiting_confirmation — а именно в нём
+   * заказ и проводит время, пока продавец сверяет чек. Покупатель видел просто
+   * технический код и не понимал, ждать ему или писать.
+   */
   const statusMap: Record<string, string> = {
+    awaiting_confirmation: "⏳ Проверяем оплату",
     awaiting_payment: "⏳ Ожидает оплаты",
-    paid: "✅ Оплачен",
-    delivered: "📦 Выдан",
-    cancelled: "❌ Отменен",
+    delivering: "📤 Отправляем материалы",
+    delivered: "✅ Материалы отправлены на почту",
+    rejected: "❌ Отклонён",
   };
 
   let msg = `📋 Ваши заказы:\n\n`;
@@ -630,8 +658,11 @@ async function handlePurchaseFlow(params: {
    */
   const { isCancel } = await import("./direct-flow");
   if (state.mode && isCancel(text)) {
+    // Корзину чистим вместе с шагом. Иначе набранное оставалось лежать: человек
+    // добавлял не тот номер, отменял, добавлял верный — и в заказ попадали оба.
     await flow.clearDirectFlow(user.user_key);
-    await say("Отменил. Напишите номер материала, когда будете готовы — например «018».");
+    await flow.clearCart(user);
+    await say("Отменил, корзина пуста. Напишите номер материала, когда будете готовы — например «018».");
     return true;
   }
 

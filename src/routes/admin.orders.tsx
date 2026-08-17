@@ -114,8 +114,17 @@ function OrdersPage() {
     const note = prompt("Причина отказа (необязательно):") || undefined;
     setBusy(id);
     try {
-      await rejectOrder({ data: { id, note } });
+      const result = await rejectOrder({ data: { id, note } });
       qc.invalidateQueries({ queryKey: ["orders"] });
+      // Покупателю из Instagram написать удаётся не всегда: платформа запрещает
+      // писать позже суток с его последнего сообщения. Отказ при этом
+      // состоялся, и продавец должен знать, что окликнуть человека придётся сам.
+      if (!result.customerNotified) {
+        alert(
+          "Заказ отклонён, но сообщить покупателю не удалось — напишите ему сами.\n\n" +
+            "Instagram не даёт писать позже 24 часов с последнего сообщения человека.",
+        );
+      }
     } finally {
       setBusy(null);
     }
