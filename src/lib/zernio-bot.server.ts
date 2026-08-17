@@ -234,16 +234,50 @@ export async function handleZernioMessage(payload: any) {
     .eq("key", "instagram_direct_bot_script")
     .maybeSingle();
 
-  const { notifyAdminAboutQuestion } = await import("./direct-purchase.server");
-  await notifyAdminAboutQuestion({ question: text, senderName, senderUsername });
+  const flow = await import("./direct-purchase.server");
+  const questionState = flow.readDirectState(user.state);
+  const now = Date.now();
+
+  /**
+   * Здороваемся один раз за разговор.
+   *
+   * Раньше полное приветствие уходило на каждую реплику: человек писал «не
+   * нужно», а в ответ снова получал «Здравствуйте! …напишите номер товара», и
+   * так по кругу. Теперь первое сообщение — приветствие, дальше короткое
+   * подтверждение, что вопрос передан.
+   */
+  const greetedRecently =
+    Boolean(questionState.greeted_at) &&
+    now - Date.parse(questionState.greeted_at!) < 12 * 60 * 60 * 1000;
+
+  /**
+   * Продавца зовём не чаще раза в час на собеседника: переписка из пяти реплик
+   * не должна превращаться в пять одинаковых уведомлений в Telegram.
+   */
+  const notifiedRecently =
+    Boolean(questionState.notified_at) &&
+    now - Date.parse(questionState.notified_at!) < 60 * 60 * 1000;
+
+  if (!notifiedRecently) {
+    await flow.notifyAdminAboutQuestion({ question: text, senderName, senderUsername });
+  }
+
+  const stamp = new Date().toISOString();
+  await flow.setDirectState(user.user_key, {
+    ...questionState,
+    greeted_at: greetedRecently ? questionState.greeted_at : stamp,
+    notified_at: notifiedRecently ? questionState.notified_at : stamp,
+  });
 
   await sendZernioInboxMessage(
     conversationId,
     accountId,
-    scriptRow?.value?.trim() ||
-      `Здравствуйте, ${senderName}! 👋\n\n` +
-        "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
-        "Если хотите что-то купить прямо сейчас, напишите номер товара из публикации — например «196».",
+    greetedRecently
+      ? "Передал ваш вопрос продавцу — он ответит здесь же."
+      : scriptRow?.value?.trim() ||
+          `Здравствуйте, ${senderName}! 👋\n\n` +
+            "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
+            "Если хотите что-то купить прямо сейчас, напишите номер товара из публикации — например «196».",
   );
 }
 
@@ -749,6 +783,20 @@ async function handlePurchaseFlow(params: {
     await say(
       "Отлично! Напишите номер товара из публикации — например «196», — и я подскажу, как оплатить.",
     );
+    return true;
+  }
+
+  if (incoming.kind === "dismissal") {
+    /**
+     * Разговор закрывают: «не нужно», «спасибо», «понятно».
+     *
+     * Отвечаем коротко и на этом замолкаем. Раньше такая реплика попадала в
+     * разбор вопросов и человек получал полное приветствие с предложением
+     * назвать номер товара — то есть бот здоровался с ним заново после того,
+     * как тот вежливо отказался. Продавца тут не зовём: звать его на «спасибо»
+     * незачем.
+     */
+    await say("Хорошо! Если что-то понадобится — просто напишите сюда. 🙂");
     return true;
   }
 

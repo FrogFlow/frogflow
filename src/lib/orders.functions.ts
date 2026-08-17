@@ -10,16 +10,18 @@ export const listOrders = createServerFn({ method: "GET" }).handler(async () => 
   const { requireAdmin } = await import("./admin-session.server");
   await requireAdmin();
   const s = await db();
+  // Без потолка: он резал историю до 200 заказов, и всё, что старше, просто
+  // пропадало из админки — а заказы тут живут годами и нужны для разбора
+  // обращений. Выборка идёт под ключом арендатора, то есть только свои строки.
   const { data, error } = await s
     .from("orders")
     .select("*, order_items(id, name_snapshot, price_snapshot, quantity)")
-    .order("created_at", { ascending: false })
-    .limit(200);
+    .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return data ?? [];
 });
 
-/** Exact counts for admin dashboard (listOrders is capped at 200). */
+/** Точные счётчики для дашборда: считаются в базе, а не по загруженному списку. */
 export const getDashboardStats = createServerFn({ method: "GET" }).handler(async () => {
   const { requireAdmin } = await import("./admin-session.server");
   await requireAdmin();

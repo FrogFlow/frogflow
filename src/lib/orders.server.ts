@@ -469,6 +469,26 @@ export async function sendFileToUser(
 const EMAIL_LINK_DAYS = 7;
 
 /**
+ * Имя, под которым файл сохранится у покупателя.
+ *
+ * Название товара расширения не содержит, а в хранилище лежит обезличенное
+ * `1782643012614-ni1xub.pdf` — берём человеческое имя и дописываем к нему
+ * расширение из настоящего пути. Символы, запрещённые в именах файлов,
+ * заменяем, иначе часть систем сохранит файл под случайным именем.
+ */
+function downloadFileName(displayName: string, storagePath: string): string {
+  const extension = storagePath.includes(".") ? storagePath.split(".").pop()!.toLowerCase() : "";
+  const base = displayName
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  const safeBase = base || "Материал";
+  if (!extension) return safeBase;
+  return safeBase.toLowerCase().endsWith(`.${extension}`) ? safeBase : `${safeBase}.${extension}`;
+}
+
+/**
  * Выдача заказа письмом — для покупателей из Instagram.
  *
  * Материалы уходят подписанными ссылками, а не вложениями: файлы бывают до
@@ -513,14 +533,25 @@ async function deliverOrderByEmail(
         continue;
       }
       if (!material.path) continue;
+      /**
+       * `download` в подписи — не украшение.
+       *
+       * Без него ссылка отдаётся с `Content-Disposition: inline`, и покупатель
+       * попадает на страницу хранилища: PDF открывается прямо в браузере, а
+       * ZIP и вовсе показывается непонятной технической страницей. Человек
+       * ждал файл, а получил «ссылку на какую-то базу данных».
+       *
+       * С этим параметром сервер отдаёт вложение и подставляет то имя, что мы
+       * передали: покупатель видит «Пазлы БУКВЫ.pdf», а не `1782643012614-ni1xub.pdf`.
+       */
+      const displayName = material.name || item.name_snapshot || "Материал";
       const { data: signed } = await supabaseAdmin.storage
         .from("product-files")
-        .createSignedUrl(material.path, EMAIL_LINK_DAYS * 24 * 60 * 60);
-      if (signed?.signedUrl) {
-        files.push({
-          name: material.name || item.name_snapshot || "Материал",
-          url: signed.signedUrl,
+        .createSignedUrl(material.path, EMAIL_LINK_DAYS * 24 * 60 * 60, {
+          download: downloadFileName(displayName, material.path),
         });
+      if (signed?.signedUrl) {
+        files.push({ name: displayName, url: signed.signedUrl });
       }
     }
   }
@@ -545,6 +576,39 @@ async function deliverOrderByEmail(
 
   if (!result.ok) {
     throw new Error(`Письмо не отправилось: ${result.error}`);
+  }
+
+  /**
+   * Сказать покупателю в переписке, что письмо ушло.
+   *
+   * Без этого он остаётся в тишине: заказ подтвердили, письмо отправили, а в
+   * Direct — ничего. Человек не знает, случилось ли что-нибудь вообще, и идёт
+   * спрашивать.
+   *
+   * Отправка может не пройти: Instagram запрещает писать позже 24 часов с
+   * последнего сообщения покупателя, а подтверждение продавца часто приходит
+   * на следующий день. Это ожидаемо и не должно ронять выдачу — письмо уже
+   * ушло, а оно здесь главное. Поэтому ошибку только пишем в журнал.
+   */
+  try {
+    const { data: buyer } = await supabaseAdmin
+      .from("bot_users")
+      .select("zernio_conversation_id, zernio_account_id")
+      .eq("user_key", (order as { user_key?: string | null }).user_key || "")
+      .maybeSingle();
+
+    if (buyer?.zernio_conversation_id && buyer?.zernio_account_id) {
+      const { sendZernioInboxMessage } = await import("./zernio.server");
+      await sendZernioInboxMessage(
+        buyer.zernio_conversation_id,
+        buyer.zernio_account_id,
+        `Оплата подтверждена — материалы по заказу №${order.order_no ?? orderId} отправлены на ${email}.\n\n` +
+          `Ссылки в письме действуют ${EMAIL_LINK_DAYS} дней, лучше скачать файлы сразу.\n\n` +
+          "Если письма нет — проверьте папку «Спам» и напишите сюда, поможем.",
+      );
+    }
+  } catch (e) {
+    console.error("[orders] не удалось сообщить покупателю в Direct об отправке письма", e);
   }
 
   await supabaseAdmin

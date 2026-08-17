@@ -112,9 +112,33 @@ export function isAffirmative(text: string): boolean {
   return AFFIRMATIVES.has(normalized) || AFFIRMATIVES.has(`${normalized}!`);
 }
 
+/**
+ * Реплики, которыми разговор закрывают: «не нужно», «спасибо», «понятно».
+ *
+ * Без них бот попадал в петлю. На вопрос он отвечал «передам продавцу, а если
+ * хотите — можно заказать через меня», человек писал «не нужно» — и получал в
+ * ответ полное приветствие с предложением написать номер товара. Дальше по
+ * кругу: любая вежливая реплика снова считалась вопросом.
+ */
+const DISMISSALS = new Set([
+  "нет", "не", "не нужно", "ненужно", "не надо", "ненадо", "не хочу", "неинтересно",
+  "не интересно", "спасибо", "спс", "благодарю", "понятно", "понял", "поняла",
+  "хорошо", "ясно", "всё", "все", "пока", "до свидания", "-",
+]);
+
+export function isDismissal(text: string): boolean {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!)»"]+$/g, "")
+    .replace(/\s+/g, " ");
+  return DISMISSALS.has(normalized);
+}
+
 export type IncomingKind =
   | { kind: "product_number"; number: string }
   | { kind: "affirmative" }
+  | { kind: "dismissal" }
   | { kind: "question"; text: string };
 
 /**
@@ -129,6 +153,9 @@ export type IncomingKind =
 export function classifyIncoming(text: string): IncomingKind {
   const number = extractProductNumber(text);
   if (number !== null) return { kind: "product_number", number };
+  // Отказ проверяется раньше согласия: «нет» и «не надо» иначе рискуют попасть
+  // в согласие по частичному совпадению, и разговор пойдёт не туда.
+  if (isDismissal(text)) return { kind: "dismissal" };
   if (isAffirmative(text)) return { kind: "affirmative" };
   return { kind: "question", text: text.trim() };
 }
