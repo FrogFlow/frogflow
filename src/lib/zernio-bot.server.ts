@@ -437,7 +437,9 @@ async function sendInteractiveProductResults(conversationId: string, accountId: 
   const s = await db();
   const { data: products } = await s
     .from("products")
-    .select("id, name, price, currency, description, is_active")
+    // country_prices нужен для расчёта цены: в выдаче поиска показывалась
+    // базовая цена товара, а она у клиента намеренно завышена.
+    .select("id, name, price, currency, country_prices, description, is_active")
     .eq("is_active", true)
     .or(`name.ilike.%${query}%,description.ilike.%${query}%,keywords.ilike.%${query}%`)
     .limit(5);
@@ -456,12 +458,15 @@ async function sendInteractiveProductResults(conversationId: string, accountId: 
   // Список идёт отдельными сообщениями с кнопками у каждого товара — через
   // защиту от повторов их не гоняем: тексты и так все разные.
   await sendZernioInboxMessage(conversationId, accountId, `🔎 Нашли ${products.length} вариантов:`);
+  const flow = await import("./direct-purchase.server");
+  const country = flow.readDirectState(user.state).country_code ?? null;
   for (const product of products) {
     const description = product.description ? `\n${String(product.description).slice(0, 180)}` : "";
+    const money = await flow.resolveProductPrice(product, country);
     await sendZernioInboxMessage(
       conversationId,
       accountId,
-      `📌 ${product.name}\n💰 ${product.price} ${product.currency}${description}`,
+      `📌 ${product.name}\n💰 ${money.amount} ${money.currency}${description}`,
       undefined,
       undefined,
       [
@@ -531,14 +536,14 @@ async function sendCart(conversationId: string, accountId: string, user: any) {
   }
 
   const state = flow.readDirectState(user.state);
-  const total = flow.cartTotal(cart, state.country_code ?? "");
+  const total = await flow.priceCart(cart, state.country_code ?? null);
   await reply(
     user,
     conversationId,
     accountId,
     `В заказе ${cart.length === 1 ? "материал" : `${cart.length} материала`}:\n\n` +
-      `${flow.renderCart(cart, state.country_code)}\n\n` +
-      (cart.length > 1 && !total.mixedCurrency ? `Итого: ${total.amount} ${total.currency}\n\n` : "") +
+      `${flow.renderCart(total.lines)}\n\n` +
+      (cart.length > 1 && !total.mixedCurrency ? `Итого: ${total.total} ${total.currency}\n\n` : "") +
       (cart.length > 1
         ? "Можно добавить ещё номер или убрать лишнее — напишите «убрать 018».\n"
         : "Можно добавить ещё — напишите следующий номер.\n"),
@@ -691,12 +696,18 @@ async function startInstagramCheckout(conversationId: string, accountId: string,
     return;
   }
 
+  /**
+   * Пока страна неизвестна, цены считаются по домашней стране продавца — так
+   * покупатель видит настоящую цену, а не завышенную базовую. Если он назовёт
+   * другую страну, сумма пересчитается в её валюте на следующем шаге.
+   */
   await flow.setDirectState(user.user_key, { mode: "awaiting_country" });
+  const shown = await flow.priceCart(cart, null);
   await reply(
     user,
     conversationId,
     accountId,
-    `В заказе:\n${flow.renderCart(cart, undefined)}\n\n` + flow.renderCountryPrompt(options),
+    `В заказе:\n${flow.renderCart(shown.lines)}\n\n` + flow.renderCountryPrompt(options),
   );
 }
 
@@ -731,7 +742,12 @@ async function sendDirectPaymentDetails(params: {
     return;
   }
 
-  const { amount, currency, mixedCurrency } = flow.cartTotal(cart, country.code);
+  // Цены — в валюте выбранной страны: покупателю из России сумма и реквизиты
+  // должны совпадать по валюте, иначе он платит непонятно сколько.
+  const { lines: pricedLines, total: amount, currency, mixedCurrency } = await flow.priceCart(
+    cart,
+    country.code,
+  );
   if (mixedCurrency) {
     // Складывать разные валюты нельзя: сумма получилась бы бессмысленной.
     await say(
@@ -747,7 +763,7 @@ async function sendDirectPaymentDetails(params: {
   });
 
   await say(
-    `${flow.renderCart(cart, country.code)}\n\n` +
+    `${flow.renderCart(pricedLines)}\n\n` +
       (remembered ? `Реквизиты для ${country.name} — если страна другая, напишите «отмена».\n\n` : "") +
       `${requisites.instructions}\n\n` +
       `К оплате: ${amount} ${currency}\n` +
@@ -897,9 +913,10 @@ async function handlePurchaseFlow(params: {
       cart.map((line) => line.name),
     );
     if (index === null) {
+      const shown = await flow.priceCart(cart, state.country_code ?? null);
       await say(
         `Материала с номером ${removeNumber} в заказе нет. Сейчас в нём:\n\n` +
-          `${flow.renderCart(cart, state.country_code)}\n\n` +
+          `${flow.renderCart(shown.lines)}\n\n` +
           "Чтобы убрать всё, напишите «отмена».",
       );
       return true;
@@ -1334,17 +1351,22 @@ async function handlePurchaseFlow(params: {
      *
      * «Сколько стоит?» — самый частый вопрос в переписках, и молчать о цене,
      * когда человек уже назвал номер, значит гарантированно получить этот
-     * вопрос следующим сообщением. Если страна известна с прошлого заказа,
-     * считаем по ней; иначе берём цену товара как есть.
+     * вопрос следующим сообщением.
+     *
+     * Если страна известна с прошлого заказа — считаем по ней, в её валюте.
+     * Если нет — по домашней стране продавца, а не по базовой цене товара:
+     * базовая у клиента намеренно завышена (500 ₸ настоящих против 700 в
+     * основном поле), и именно её покупатели видели раньше.
      */
     const state = flow.readDirectState(user.state);
-    const priced = flow.priceForCountry(product, state.country_code || "");
-    const priceLine = `${priced.amount} ${priced.currency}`;
+    const shown = await flow.priceCart(cart, state.country_code ?? null);
+    const line = shown.lines.find((item) => item.productId === product.id);
+    const priceLine = line ? `${line.sum} ${line.currency}` : "";
 
     const added =
       cart.length === 1
         ? `Добавил «${product.name}» — ${priceLine}.`
-        : `Добавил «${product.name}» — ${priceLine}.\n\nВ заказе ${cart.length}:\n${flow.renderCart(cart, state.country_code)}`;
+        : `Добавил «${product.name}» — ${priceLine}.\n\nВ заказе ${cart.length}:\n${flow.renderCart(shown.lines)}`;
 
     await reply(
       user,

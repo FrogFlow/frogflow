@@ -318,27 +318,23 @@ export async function findProductByNumber(number: string): Promise<ProductLookup
   return { kind: "none" };
 }
 
-/** Цена в валюте выбранной страны, если для неё задана отдельная. */
-export function priceForCountry(
+/**
+ * Цена товара для покупателя. Тонкая обёртка над общим расчётом.
+ *
+ * Прежняя версия жила здесь целиком и делала две ошибки. Она не умела
+ * переводить валюту: покупателю из России цена показывалась в тенге, потому что
+ * ручной цены для RU нет, а падала она на базовую цену вместе с её валютой. И
+ * при неизвестной стране она отдавала базовую цену — а базовая у продавца
+ * намеренно завышена (500 ₸ реальных против 700 в основном поле), так что почти
+ * каждый покупатель видел не свою цену. Оба правила теперь в pricing.server.ts,
+ * общие с Telegram-ботом.
+ */
+export async function resolveProductPrice(
   product: { price: number; currency: string | null; country_prices: Json | null },
-  countryCode: string,
-): { amount: number; currency: string } {
-  const table = product.country_prices;
-  if (table && typeof table === "object" && !Array.isArray(table)) {
-    const entry = (table as Record<string, Json>)[countryCode];
-    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-      const row = entry as Record<string, Json>;
-      const amount = Number(row.price);
-      if (Number.isFinite(amount) && amount > 0) {
-        return { amount, currency: String(row.currency || product.currency || "KZT") };
-      }
-    }
-    const plain = Number((table as Record<string, Json>)[countryCode]);
-    if (Number.isFinite(plain) && plain > 0) {
-      return { amount: plain, currency: String(product.currency || "KZT") };
-    }
-  }
-  return { amount: Number(product.price), currency: String(product.currency || "KZT") };
+  countryCode: string | null | undefined,
+): Promise<{ amount: number; currency: string }> {
+  const { resolvePrice } = await import("./pricing.server");
+  return await resolvePrice(product, countryCode);
 }
 
 /** Список стран, пронумерованный — покупатель отвечает цифрой или названием. */
@@ -794,62 +790,84 @@ export async function clearCart(user: { telegram_id: number }): Promise<void> {
   await s.from("cart_items").delete().eq("telegram_id", user.telegram_id);
 }
 
-/** Итог корзины в валюте выбранной страны. */
-export function cartTotal(
+export type PricedLine = CartLine & {
+  /** Цена одной штуки в валюте покупателя. */
+  unit: number;
+  currency: string;
+  sum: number;
+};
+
+export type PricedCart = {
+  lines: PricedLine[];
+  total: number;
+  currency: string;
+  mixedCurrency: boolean;
+};
+
+/**
+ * Посчитать корзину в валюте покупателя — один раз за сообщение.
+ *
+ * Расчёт стал асинхронным (курс валют живёт в сети, пусть и с кэшем), поэтому
+ * считаем всё разом здесь, а печатают уже готовые числа. Раньше цена
+ * пересчитывалась внутри отрисовки, и добавить туда конвертацию было нельзя —
+ * из-за этого покупатель из России и видел тенге.
+ *
+ * `countryCode` может быть `null`: страну спрашивают позже. Тогда цена считается
+ * по домашней стране продавца (см. pricing.server.ts), а не по завышенной
+ * базовой цене.
+ */
+export async function priceCart(
   lines: CartLine[],
-  countryCode: string,
-): { amount: number; currency: string; mixedCurrency: boolean } {
-  let amount = 0;
+  countryCode: string | null | undefined,
+): Promise<PricedCart> {
+  const { resolvePrice } = await import("./pricing.server");
+
+  const priced: PricedLine[] = [];
   const currencies = new Set<string>();
+  let total = 0;
+
   for (const line of lines) {
-    const priced = priceForCountry(
+    const money = await resolvePrice(
       { price: line.price, currency: line.currency, country_prices: line.countryPrices },
       countryCode,
     );
-    amount += priced.amount * line.quantity;
-    currencies.add(priced.currency);
+    const sum = money.amount * line.quantity;
+    priced.push({ ...line, unit: money.amount, currency: money.currency, sum });
+    currencies.add(money.currency);
+    total += sum;
   }
+
   /**
    * Валюты в корзине могут разойтись, и складывать их нельзя.
    *
    * Прежняя версия молча брала валюту последней позиции и выдавала сумму,
    * которая не значит ничего: 700 KZT плюс 500 RUB превратились бы в «1200 RUB».
-   * Старый путь оформления это как раз проверял и отказывался — при переходе на
-   * корзину проверка потерялась. Сегодня у всех клиентов товары в одной валюте,
-   * так что это не всплывало, но модуль мультивалютности включён, и ошибка в
-   * деньгах — последнее, что стоит оставлять на «авось».
+   * Теперь все позиции считаются в валюте одной страны, так что разойтись они
+   * могут только если для страны нет реквизитов и часть товаров заведена в
+   * другой валюте. Проверку оставляем: ошибка в деньгах — последнее, что стоит
+   * оставлять на «авось».
    */
   return {
-    amount,
+    lines: priced,
+    total,
     currency: currencies.values().next().value ?? "KZT",
     mixedCurrency: currencies.size > 1,
   };
 }
 
-/** Список корзины для сообщения покупателю. */
-export function renderCart(lines: CartLine[], countryCode: string | undefined): string {
-  /**
-   * С ценой у каждой позиции, но без итога.
-   *
-   * Покупатель должен видеть, из чего складывается сумма: иначе итог выглядит
-   * взятым с потолка, и человек идёт спрашивать — то есть ровно та работа,
-   * которую бот должен был снять с продавца. Сам итог печатает вызывающий: в
-   * реквизитах это «К оплате», в просмотре корзины — «Итого», и дублировать
-   * его здесь значило бы показать сумму дважды подряд.
-   *
-   * Страны может ещё не быть (её спрашивают позже) — тогда считаем по цене
-   * товара как есть: у этого каталога цены по странам заданы только для
-   * Казахстана, и базовая цена для почти всех и есть настоящая.
-   */
-  return lines
-    .map((line, index) => {
-      const priced = priceForCountry(
-        { price: line.price, currency: line.currency, country_prices: line.countryPrices },
-        countryCode ?? "",
-      );
-      const sum = priced.amount * line.quantity;
-      return `${index + 1}. ${line.name} — ${sum} ${priced.currency}`;
-    })
+/**
+ * Список корзины для сообщения покупателю.
+ *
+ * С ценой у каждой позиции, но без итога. Покупатель должен видеть, из чего
+ * складывается сумма: иначе итог выглядит взятым с потолка, и человек идёт
+ * спрашивать — то есть ровно та работа, которую бот должен был снять с
+ * продавца. Сам итог печатает вызывающий: в реквизитах это «К оплате», в
+ * просмотре корзины — «Итого», и дублировать его здесь значило бы показать
+ * сумму дважды подряд.
+ */
+export function renderCart(priced: PricedLine[]): string {
+  return priced
+    .map((line, index) => `${index + 1}. ${line.name} — ${line.sum} ${line.currency}`)
     .join("\n");
 }
 
@@ -867,7 +885,10 @@ export async function createOrderFromCart(params: {
   const lines = await readCart(params.user);
   if (lines.length === 0) return null;
 
-  const { amount, currency } = cartTotal(lines, params.countryCode);
+  // Считаем в валюте покупателя: по этой сумме он платит, её же сверяет
+  // распознавание чека, и она же попадает в письмо и в панель продавца.
+  const priced = await priceCart(lines, params.countryCode);
+  const { total: amount, currency } = priced;
 
   const { data: order, error } = await s
     .from("orders")
@@ -911,17 +932,14 @@ export async function createOrderFromCart(params: {
 
   const byId = new Map((products ?? []).map((p) => [p.id, p]));
   const { error: itemsError } = await s.from("order_items").insert(
-    lines.map((line) => {
+    priced.lines.map((line) => {
       const p = byId.get(line.productId);
-      const priced = priceForCountry(
-        { price: line.price, currency: line.currency, country_prices: line.countryPrices },
-        params.countryCode,
-      );
       return {
         order_id: order.id,
         product_id: line.productId,
         name_snapshot: line.name,
-        price_snapshot: priced.amount,
+        // Цена за штуку в валюте покупателя — та же, что он видел в переписке.
+        price_snapshot: line.unit,
         quantity: line.quantity,
         // Старые одиночные поля оставляем для совместимости, но выдача читает
         // именно массивы ниже — как и у заказов из Telegram.

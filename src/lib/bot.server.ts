@@ -1,6 +1,5 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
 import { requireAppOrigin } from "./app-origin.server";
-import { convertAmount } from "./currency.server";
 import { replyIfBlocked } from "./blocked-users.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
 
@@ -404,12 +403,6 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
     ? await productsQuery.contains("category_ids", JSON.stringify([parentId]))
     : await productsQuery.eq("category_ids", "[]");
 
-  let targetCurrency = "KZT";
-  if (userCountryCode) {
-    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
-    if (m) targetCurrency = m.currency;
-  }
-
   if (offset === 0 && cats && cats.length > 0) {
     const catButtons: Array<Array<{ text: string; callback_data: string }>> = [];
     for (const c of cats) {
@@ -444,7 +437,7 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
   }
 
   for (const p of page) {
-    await sendProductCard(chat_id, p, userCountryCode, s, targetCurrency);
+    await sendProductCard(chat_id, p, userCountryCode, s);
   }
 
   const navButtons = [];
@@ -464,23 +457,28 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
   }
 }
 
-async function sendProductCard(chat_id: number, p: any, userCountryCode: string | undefined, s: any, targetCurrency: string) {
+async function sendProductCard(chat_id: number, p: any, userCountryCode: string | undefined, s: any) {
   const imgs = (p.product_images || [])
     .slice()
     .sort((a: any, b: any) => a.sort_order - b.sort_order);
 
-  let displayPrice = p.price;
-  let displayCurrency = p.currency;
-  
-  if (userCountryCode) {
-    displayCurrency = targetCurrency;
-    const cp = p.country_prices ? (p.country_prices as Record<string, number>)[userCountryCode] : null;
-    if (cp) {
-      displayPrice = cp;
-    } else {
-      displayPrice = await convertAmount(p.price, p.currency, targetCurrency);
-    }
-  }
+  /**
+   * Цена считается общим расчётом — тем же, что и в Instagram.
+   *
+   * Раньше при неизвестной стране показывалась базовая цена товара, а она у
+   * клиента намеренно завышена: у материала за 500 ₸ в основном поле стоит 700,
+   * а «500» задано в цене для Казахстана. Покупатель, который не ответил на
+   * вопрос о стране (или пришёл в бота до того, как этот вопрос появился), видел
+   * 700 вместо 500. Теперь при неизвестной стране считаем по домашней стране
+   * продавца.
+   *
+   * Валюту возвращает сам расчёт — из реквизитов продавца, так что отдельный
+   * запрос за ней (и параметр targetCurrency) больше не нужен.
+   */
+  const { resolvePrice } = await import("./pricing.server");
+  const money = await resolvePrice(p, userCountryCode ?? null);
+  const displayPrice = money.amount;
+  const displayCurrency = money.currency;
 
   const desc = p.description
     ? `\n\n${escapeHtml(p.description as string)}`
@@ -518,12 +516,7 @@ async function showProduct(chat_id: number, product_id: string, userCountryCode?
     await tg("sendMessage", { chat_id, text: "Товар не найден." });
     return;
   }
-  let targetCurrency = "KZT";
-  if (userCountryCode) {
-    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", userCountryCode).maybeSingle();
-    if (m) targetCurrency = m.currency;
-  }
-  await sendProductCard(chat_id, p, userCountryCode, s, targetCurrency);
+  await sendProductCard(chat_id, p, userCountryCode, s);
 }
 function escapeHtml(t: string): string {
   if (!t) return "";
@@ -672,30 +665,20 @@ async function showCart(chat_id: number, user: BotUser) {
     return;
   }
   let total = 0;
+  // Валюту задаёт общий расчёт: она берётся из реквизитов страны покупателя, а
+  // при неизвестной стране — из домашней страны продавца.
   let currency = "KZT";
-  
-  // get user country currency
-  if (user.state?.country_code) {
-    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", user.state.country_code).maybeSingle();
-    if (m) currency = m.currency;
-  }
+  const { resolvePrice } = await import("./pricing.server");
 
   let text = "🛒 <b>Ваша корзина:</b>\n\n";
   const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
   for (const it of items as any[]) {
     const p = it.products;
     if (!p) continue;
-    
-    let displayPrice = p.price;
-    if (user.state?.country_code && p.country_prices) {
-      const cp = (p.country_prices as Record<string, number>)[user.state.country_code];
-      if (cp) displayPrice = cp;
-      else displayPrice = await convertAmount(p.price, p.currency, currency); // fallback conversion if manual price missing
-    } else {
-      displayPrice = await convertAmount(p.price, p.currency, currency);
-    }
-    
-    const line = Number(displayPrice) * Number(it.quantity);
+
+    const money = await resolvePrice(p, user.state?.country_code ?? null);
+    currency = money.currency;
+    const line = Number(money.amount) * Number(it.quantity);
     total += line;
     text += `• ${escapeHtml(p.name)} × ${it.quantity} — ${formatMoney(line, currency)}\n`;
     buttons.push([
@@ -809,22 +792,23 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     return;
   }
 
+  /**
+   * Считаем общим расчётом — тем же, что показывал цены в каталоге и в корзине.
+   *
+   * Раньше здесь была третья копия тех же правил, и заказ мог разойтись с той
+   * ценой, которую покупатель видел. Заодно цена за штуку считается один раз и
+   * попадает и в итог, и в снимок позиции ниже.
+   */
+  const { resolvePrice } = await import("./pricing.server");
+  const priced = new Map<string, number>();
   let total = 0;
-  const currency = (method?.currency as string) || "KZT";
+  let currency = (method?.currency as string) || "KZT";
   for (const it of items as any[]) {
     if (!it.products) continue;
-    
-    let displayPrice = it.products.price;
-    if (it.products.country_prices) {
-      const cp = (it.products.country_prices as Record<string, number>)[country_code];
-      if (cp) displayPrice = cp;
-      else displayPrice = await convertAmount(it.products.price, it.products.currency, currency);
-    } else {
-      displayPrice = await convertAmount(it.products.price, it.products.currency, currency);
-    }
-    
-    const line = Number(displayPrice) * Number(it.quantity);
-    total += line;
+    const money = await resolvePrice(it.products, country_code);
+    currency = money.currency;
+    priced.set(String(it.products.id), money.amount);
+    total += money.amount * Number(it.quantity);
   }
 
   const display = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() || (user?.username ? `@${user.username}` : `id${telegram_id}`);
@@ -851,15 +835,10 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   const rows = await Promise.all(
     (items as any[]).map(async (it) => {
-      let displayPrice = it.products?.price ?? 0;
-      if (it.products?.country_prices) {
-        const cp = (it.products.country_prices as Record<string, number>)[country_code];
-        if (cp) displayPrice = cp;
-        else displayPrice = await convertAmount(it.products?.price ?? 0, it.products?.currency || "KZT", currency);
-      } else {
-        displayPrice = await convertAmount(it.products?.price ?? 0, it.products?.currency || "KZT", currency);
-      }
-      
+      // Ту же цену, что вошла в итог заказа: считать её второй раз незачем, а
+      // разойтись они не должны.
+      const displayPrice = priced.get(String(it.products?.id)) ?? Number(it.products?.price ?? 0);
+
       const materialsRu = materialsForProduct(it.products, "ru");
       const materialsKz = materialsForProduct(it.products, "kz");
 
@@ -1350,11 +1329,6 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     return;
   }
 
-  let targetCurrency = "KZT";
-  if (user.state?.country_code) {
-    const { data: m } = await s.from("payment_methods").select("currency").eq("country_code", user.state.country_code).maybeSingle();
-    if (m) targetCurrency = m.currency;
-  }
 
   const all = data;
   const page = all.slice(offset, offset + 5);
@@ -1364,7 +1338,7 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   }
 
   for (const p of page) {
-    await sendProductCard(chat_id, p, user.state?.country_code, s, targetCurrency);
+    await sendProductCard(chat_id, p, user.state?.country_code, s);
   }
 
   // Кнопка «Показать ещё», если остались результаты
