@@ -59,11 +59,17 @@ export type DirectState = {
   misses?: number;
 };
 
-/** Поля шага покупки. Всё остальное в состоянии — память о разговоре. */
+/**
+ * Поля шага покупки. Всё остальное в состоянии — память о разговоре.
+ *
+ * `country_code` сюда намеренно не входит: страна покупателя не меняется от
+ * заказа к заказу, и спрашивать её каждый раз — лишний шаг на пути к оплате.
+ * Запомненную страну бот называет вслух, чтобы человек мог возразить, а сменить
+ * её можно словом «отмена».
+ */
 const FLOW_KEYS = [
   "mode",
   "product_id",
-  "country_code",
   "pending_order_id",
   "email_optional",
   "misses",
@@ -638,10 +644,29 @@ export function cartTotal(
 
 /** Список корзины для сообщения покупателю. */
 export function renderCart(lines: CartLine[], countryCode: string | undefined): string {
-  const rows = lines.map((line, index) => `${index + 1}. ${line.name}`);
-  if (!countryCode) return rows.join("\n");
-  const { amount, currency } = cartTotal(lines, countryCode);
-  return `${rows.join("\n")}\n\nИтого: ${amount} ${currency}`;
+  /**
+   * С ценой у каждой позиции, но без итога.
+   *
+   * Покупатель должен видеть, из чего складывается сумма: иначе итог выглядит
+   * взятым с потолка, и человек идёт спрашивать — то есть ровно та работа,
+   * которую бот должен был снять с продавца. Сам итог печатает вызывающий: в
+   * реквизитах это «К оплате», в просмотре корзины — «Итого», и дублировать
+   * его здесь значило бы показать сумму дважды подряд.
+   *
+   * Страны может ещё не быть (её спрашивают позже) — тогда считаем по цене
+   * товара как есть: у этого каталога цены по странам заданы только для
+   * Казахстана, и базовая цена для почти всех и есть настоящая.
+   */
+  return lines
+    .map((line, index) => {
+      const priced = priceForCountry(
+        { price: line.price, currency: line.currency, country_prices: line.countryPrices },
+        countryCode ?? "",
+      );
+      const sum = priced.amount * line.quantity;
+      return `${index + 1}. ${line.name} — ${sum} ${priced.currency}`;
+    })
+    .join("\n");
 }
 
 /**

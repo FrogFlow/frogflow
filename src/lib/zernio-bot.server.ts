@@ -486,13 +486,14 @@ async function sendCart(conversationId: string, accountId: string, user: any) {
     return;
   }
 
-  // Цену показываем только после выбора страны: у клиента заведены отдельные
-  // цены по странам, и назвать сумму заранее значило бы назвать неверную.
+  const state = flow.readDirectState(user.state);
+  const total = flow.cartTotal(cart, state.country_code ?? "");
   await sendZernioInboxMessage(
     conversationId,
     accountId,
     `В заказе ${cart.length === 1 ? "материал" : `${cart.length} материала`}:\n\n` +
-      `${flow.renderCart(cart, undefined)}\n\n` +
+      `${flow.renderCart(cart, state.country_code)}\n\n` +
+      (cart.length > 1 && !total.mixedCurrency ? `Итого: ${total.amount} ${total.currency}\n\n` : "") +
       "Можно добавить ещё — напишите следующий номер.",
     undefined,
     undefined,
@@ -582,12 +583,91 @@ async function startInstagramCheckout(conversationId: string, accountId: string,
     return;
   }
 
+  /**
+   * Страну помним между заказами и второй раз не спрашиваем.
+   *
+   * Она не меняется, а каждый лишний вопрос на пути к оплате — это место, где
+   * человек передумает. Постоянный покупатель теперь идёт короче: номер →
+   * «Оформить» → реквизиты. Название страны бот проговаривает, чтобы можно было
+   * возразить, и напоминает про «отмена», если она всё-таки другая.
+   */
+  const state = flow.readDirectState(user.state);
+  const remembered = state.country_code
+    ? options.find((option) => option.code === state.country_code)
+    : undefined;
+
+  if (remembered) {
+    await sendDirectPaymentDetails({
+      conversationId,
+      accountId,
+      user,
+      country: remembered,
+      remembered: true,
+    });
+    return;
+  }
+
   await flow.setDirectState(user.user_key, { mode: "awaiting_country" });
   await sendZernioInboxMessage(
     conversationId,
     accountId,
     `В заказе:\n${flow.renderCart(cart, undefined)}\n\n` +
       flow.renderCountryPrompt(options),
+  );
+}
+
+/**
+ * Реквизиты и итог по корзине. Общий шаг для обоих путей: когда страну только
+ * что назвали и когда взяли из памяти.
+ */
+async function sendDirectPaymentDetails(params: {
+  conversationId: string;
+  accountId: string;
+  user: any;
+  country: { code: string; name: string };
+  remembered: boolean;
+}) {
+  const { conversationId, accountId, user, country, remembered } = params;
+  const flow = await import("./direct-purchase.server");
+  const say = (message: string) => sendZernioInboxMessage(conversationId, accountId, message);
+
+  const requisites = await flow.paymentInstructionsFor(country.code);
+  if (!requisites) {
+    await say(
+      "Для этой страны реквизиты пока не заведены. Продавец свяжется с вами и подскажет, как оплатить.",
+    );
+    await flow.clearDirectFlow(user.user_key);
+    return;
+  }
+
+  const cart = await flow.readCart(user);
+  if (cart.length === 0) {
+    await say("Корзина опустела. Напишите номер материала, и начнём заново.");
+    await flow.clearDirectFlow(user.user_key);
+    return;
+  }
+
+  const { amount, currency, mixedCurrency } = flow.cartTotal(cart, country.code);
+  if (mixedCurrency) {
+    // Складывать разные валюты нельзя: сумма получилась бы бессмысленной.
+    await say(
+      "В заказе материалы в разных валютах — оформите их по отдельности.\n\n" +
+        "Напишите «отмена», а потом номер одного материала.",
+    );
+    return;
+  }
+
+  await flow.setDirectState(user.user_key, {
+    mode: "awaiting_proof",
+    country_code: country.code,
+  });
+
+  await say(
+    `${flow.renderCart(cart, country.code)}\n\n` +
+      (remembered ? `Реквизиты для ${country.name} — если страна другая, напишите «отмена».\n\n` : "") +
+      `${requisites.instructions}\n\n` +
+      `К оплате: ${amount} ${currency}\n` +
+      "После оплаты пришлите чек сюда — картинкой или файлом.",
   );
 }
 
@@ -806,41 +886,14 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    const requisites = await flow.paymentInstructionsFor(chosen.code);
-    if (!requisites) {
-      await say(
-        "Для этой страны реквизиты пока не заведены. Продавец свяжется с вами и подскажет, как оплатить.",
-      );
-      await flow.clearDirectFlow(user.user_key);
-      return true;
-    }
-
-    const cart = await flow.readCart(user);
-    if (cart.length === 0) {
-      await say("Корзина опустела. Напишите номер материала, и начнём заново.");
-      await flow.clearDirectFlow(user.user_key);
-      return true;
-    }
-
-    const { amount, currency, mixedCurrency } = flow.cartTotal(cart, chosen.code);
-    if (mixedCurrency) {
-      // Складывать разные валюты нельзя: сумма получилась бы бессмысленной.
-      await say(
-        "В заказе материалы в разных валютах — оформите их по отдельности.\n\n" +
-          "Напишите «отмена», а потом номер одного материала.",
-      );
-      return true;
-    }
-    await flow.setDirectState(user.user_key, {
-      mode: "awaiting_proof",
-      country_code: chosen.code,
+    // Дальше — общий шаг с тем случаем, когда страну взяли из памяти.
+    await sendDirectPaymentDetails({
+      conversationId,
+      accountId,
+      user,
+      country: chosen,
+      remembered: false,
     });
-    await say(
-      `${flow.renderCart(cart, chosen.code)}\n\n` +
-        `${requisites.instructions}\n\n` +
-        `К оплате: ${amount} ${currency}\n` +
-        "После оплаты пришлите чек сюда — картинкой или файлом.",
-    );
     return true;
   }
 
@@ -985,9 +1038,22 @@ async function handlePurchaseFlow(params: {
      * Кнопка «Оформить» здесь важнее текста: одиночному покупателю не хочется
      * печатать лишнее слово, а тап работает и в папке «Запросы сообщений».
      */
-    const added = cart.length === 1
-      ? `Добавил «${product.name}».`
-      : `Добавил «${product.name}». В заказе ${cart.length} материала:\n\n${flow.renderCart(cart, undefined)}`;
+    /**
+     * Цену называем сразу.
+     *
+     * «Сколько стоит?» — самый частый вопрос в переписках, и молчать о цене,
+     * когда человек уже назвал номер, значит гарантированно получить этот
+     * вопрос следующим сообщением. Если страна известна с прошлого заказа,
+     * считаем по ней; иначе берём цену товара как есть.
+     */
+    const state = flow.readDirectState(user.state);
+    const priced = flow.priceForCountry(product, state.country_code || "");
+    const priceLine = `${priced.amount} ${priced.currency}`;
+
+    const added =
+      cart.length === 1
+        ? `Добавил «${product.name}» — ${priceLine}.`
+        : `Добавил «${product.name}» — ${priceLine}.\n\nВ заказе ${cart.length}:\n${flow.renderCart(cart, state.country_code)}`;
 
     await sendZernioInboxMessage(
       conversationId,
