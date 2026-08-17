@@ -125,6 +125,57 @@ export const saveInstagramDirectBotScopeFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * Слова, которыми покупатель зовёт бота.
+ *
+ * В тихом режиме бот молчит по обычной переписке, и нужен явный способ его
+ * позвать — это и есть команда. Сравнение идёт по сообщению целиком, поэтому
+ * «а магазин у вас работает?» бота не будит, а «Магазин» будит. Такое слово
+ * продавец пишет в публикации: «напишите КАТАЛОГ в директ».
+ */
+export const getInstagramDirectBotTriggersFn = createServerFn({ method: "GET" }).handler(
+  async () => {
+    await requireAdminWithModule();
+    const { DEFAULT_TRIGGER_WORDS } = await import("./zernio-bot.server");
+    const s = await db();
+    const { data } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("bot_id", requireBotId())
+      .eq("key", "instagram_direct_bot_triggers")
+      .maybeSingle();
+    const words = (data?.value || "")
+      .split(",")
+      .map((word) => word.trim())
+      .filter(Boolean);
+    return { words: words.length > 0 ? words : DEFAULT_TRIGGER_WORDS, isDefault: words.length === 0 };
+  },
+);
+
+export const saveInstagramDirectBotTriggersFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ words: z.string().trim().max(300) }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const cleaned = data.words
+      .split(",")
+      .map((word) => word.trim().toLowerCase())
+      .filter(Boolean);
+    if (cleaned.length === 0) {
+      throw new Error(
+        "Нужно хотя бы одно слово — иначе бота будет нечем позвать, когда он молчит по обычной переписке.",
+      );
+    }
+    const s = await db();
+    const { error } = await s.from("app_settings").upsert({
+      bot_id: requireBotId(),
+      key: "instagram_direct_bot_triggers",
+      value: cleaned.join(", "),
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true, words: cleaned };
+  });
+
 const directFeaturesSchema = z.object({ catalog: z.boolean(), search: z.boolean(), cart: z.boolean(), checkout: z.boolean() });
 export const getInstagramDirectBotFeaturesFn = createServerFn({ method: "GET" }).handler(async () => { await requireAdminWithModule(); const s = await db(); const { data } = await s.from("app_settings").select("value").eq("bot_id", requireBotId()).eq("key", "instagram_direct_bot_features").maybeSingle(); try { return directFeaturesSchema.parse(JSON.parse(data?.value || "{}")); } catch { return { catalog: true, search: true, cart: true, checkout: true }; } });
 export const saveInstagramDirectBotFeaturesFn = createServerFn({ method: "POST" }).validator((d: unknown) => directFeaturesSchema.parse(d)).handler(async ({ data }) => { await requireAdminWithModule(); const s = await db(); const { error } = await s.from("app_settings").upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_features", value: JSON.stringify(data), updated_at: new Date().toISOString() }); if (error) throw new Error(error.message); return { ok: true }; });

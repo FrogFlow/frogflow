@@ -34,6 +34,8 @@ import {
   getInstagramContactProfilesFn,
   getInstagramDirectBotScopeFn,
   saveInstagramDirectBotScopeFn,
+  getInstagramDirectBotTriggersFn,
+  saveInstagramDirectBotTriggersFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -110,6 +112,7 @@ function AdminInstagramPage() {
   const directBotScriptQuery = useQuery({ queryKey: ["ig_direct_bot_script"], queryFn: () => getInstagramDirectBotScriptFn() });
   const directBotFeaturesQuery = useQuery({ queryKey: ["ig_direct_bot_features"], queryFn: () => getInstagramDirectBotFeaturesFn() });
   const directBotScopeQuery = useQuery({ queryKey: ["ig_direct_bot_scope"], queryFn: () => getInstagramDirectBotScopeFn() });
+  const directBotTriggersQuery = useQuery({ queryKey: ["ig_direct_bot_triggers"], queryFn: () => getInstagramDirectBotTriggersFn() });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
@@ -191,6 +194,21 @@ function AdminInstagramPage() {
       );
     } catch (e: any) {
       setStatusMsg(`Ошибка настройки: ${e.message}`);
+    }
+  };
+
+  const [triggerWords, setTriggerWords] = useState("");
+  useEffect(() => {
+    if (directBotTriggersQuery.data) setTriggerWords(directBotTriggersQuery.data.words.join(", "));
+  }, [directBotTriggersQuery.data]);
+
+  const handleSaveTriggers = async () => {
+    try {
+      const result = await saveInstagramDirectBotTriggersFn({ data: { words: triggerWords } });
+      qc.invalidateQueries({ queryKey: ["ig_direct_bot_triggers"] });
+      setStatusMsg(`✅ Команды сохранены: ${result.words.join(", ")}`);
+    } catch (e: any) {
+      setStatusMsg(`Ошибка сохранения команд: ${e.message}`);
     }
   };
 
@@ -616,6 +634,29 @@ function AdminInstagramPage() {
                   );
                 })}
               </div>
+            </CardContent>
+            <CardContent className="space-y-2 pt-0">
+              <Label htmlFor="direct-bot-triggers">Команды, которыми покупатель зовёт бота</Label>
+              <p className="text-xs text-muted-foreground">
+                Через запятую. Сравнение идёт с сообщением целиком: «Каталог» бота позовёт, а «а
+                каталог у вас есть?» — нет, это вопрос к вам. Такое слово удобно писать в
+                публикации: «напишите КАТАЛОГ в директ». Номер товара работает всегда, отдельной
+                команды для него не нужно.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  id="direct-bot-triggers"
+                  value={triggerWords}
+                  onChange={(e) => setTriggerWords(e.target.value)}
+                  placeholder="заказать, купить, магазин, каталог"
+                />
+                <Button size="sm" onClick={handleSaveTriggers}>
+                  Сохранить
+                </Button>
+              </div>
+              {directBotTriggersQuery.data?.isDefault && (
+                <p className="text-xs text-muted-foreground">Сейчас используются значения по умолчанию.</p>
+              )}
             </CardContent>
             <CardContent className="space-y-2 pt-0">
               <Label htmlFor="direct-bot-script">Ответ на короткое или непонятное сообщение</Label>

@@ -172,20 +172,14 @@ export async function handleZernioMessage(payload: any) {
   if (handledByFlow) return;
 
   /**
-   * Дальше идут ответы на всё подряд — команды, поиск, свободные вопросы.
-   * В режиме «только покупки» мы сюда не заходим: сценарий выше уже отработал
-   * то, что относится к заказу, а остальное — обычная переписка продавца с
-   * людьми, и лезть в неё боту незачем.
+   * Нажатие кнопки обрабатывается всегда, в любом режиме.
+   *
+   * Кнопка в DM появляется только потому, что её отправили мы — в
+   * автоматизации воронки или в ответе бота. Человек по ней осознанно
+   * постучался: это самый однозначный сигнал «хочу к боту», какой вообще
+   * бывает, и путать его с обычной перепиской невозможно. Раньше проверка
+   * режима стояла выше этого блока, и в тихом режиме кнопки молчали.
    */
-  if (!answersEverything) {
-    console.log(`[zernio-bot] режим «только покупки»: сообщение от ${userKey} оставлено продавцу`);
-    return;
-  }
-
-  // A DM button click (postback) carries no text — only its payload, set when
-  // the automation's button was configured in the admin panel. Generic
-  // routing only: a specific payload's reply is business content that
-  // belongs in the automation's own DM message, not hardcoded here.
   if (postbackPayload !== null) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
     if (postbackPayload.startsWith("BUY:")) {
@@ -205,6 +199,33 @@ export async function handleZernioMessage(payload: any) {
       return;
     }
     if (postbackPayload) return; // handled by the automation that sent the button
+  }
+
+  /**
+   * Слово-вызов: им человек сам звонит боту.
+   *
+   * В тихом режиме бот молчит по обычной переписке, и нужен способ его
+   * позвать. Список задаёт продавец — он лучше знает, что пишут в его
+   * переписках, а значит и какие слова у него не встречаются в обычном
+   * разговоре. Сравнение по целому сообщению, а не по вхождению: «а магазин
+   * у вас где?» боту не адресовано, а «Магазин» — адресовано.
+   */
+  const triggerWords = await loadTriggerWords(s);
+  const isTrigger = triggerWords.includes(lower.trim().replace(/[.!?]+$/, ""));
+  if (isTrigger) {
+    await sendCatalogMenu(conversationId, accountId, user);
+    return;
+  }
+
+  /**
+   * Дальше идут ответы на всё подряд — команды, поиск, свободные вопросы.
+   * В режиме «только покупки» мы сюда не заходим: выше уже отработало всё, что
+   * относится к заказу и к осознанному обращению к боту, а остальное — обычная
+   * переписка продавца с людьми, и лезть в неё незачем.
+   */
+  if (!answersEverything) {
+    console.log(`[zernio-bot] режим «только покупки»: сообщение от ${userKey} оставлено продавцу`);
+    return;
   }
 
   // Команда /start или каталог / меню
@@ -843,4 +864,31 @@ async function handlePurchaseFlow(params: {
   }
 
   return false;
+}
+
+/** Слова по умолчанию, которыми человек зовёт бота. Продавец может задать свои. */
+export const DEFAULT_TRIGGER_WORDS = ["заказать", "купить", "магазин", "каталог", "/start"];
+
+/**
+ * Список слов-вызовов этого клиента.
+ *
+ * Хранится строкой через запятую в app_settings — так же, как остальные
+ * настройки автоответчика, чтобы не заводить таблицу под пять слов.
+ */
+async function loadTriggerWords(s: Awaited<ReturnType<typeof db>>): Promise<string[]> {
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("key", "instagram_direct_bot_triggers")
+    .maybeSingle();
+
+  const raw = data?.value?.trim();
+  if (!raw) return DEFAULT_TRIGGER_WORDS;
+  const words = raw
+    .split(",")
+    .map((word) => word.trim().toLowerCase())
+    .filter(Boolean);
+  // Пустая настройка не должна оставлять бота без единого способа его позвать.
+  return words.length > 0 ? words : DEFAULT_TRIGGER_WORDS;
 }
