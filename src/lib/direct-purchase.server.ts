@@ -47,6 +47,16 @@ export type DirectState = {
    * Если пришло не письмо — выходим из сценария, а не требуем адрес.
    */
   email_optional?: boolean;
+  /**
+   * Сколько раз подряд человек ответил не то, что бот ждал на этом шаге.
+   *
+   * Нужно, чтобы бот вовремя замолчал. На живом заказе покупательница,
+   * получив «ждите подтверждения», продолжала нажимать кнопки и писать, а бот
+   * отвечал на каждое сообщение — и вместо помощи вышла куча сообщений,
+   * которая только запутала и её, и продавца. Два промаха — предел: дальше
+   * зовём продавца и уходим с дороги.
+   */
+  misses?: number;
 };
 
 /** Поля шага покупки. Всё остальное в состоянии — память о разговоре. */
@@ -56,6 +66,7 @@ const FLOW_KEYS = [
   "country_code",
   "pending_order_id",
   "email_optional",
+  "misses",
 ] as const;
 
 /**
@@ -354,9 +365,27 @@ export async function notifyAdminAboutDirectOrder(orderId: number, displayNo: nu
           `От: ${who}\n` +
           `Сумма: <b>${order?.total ?? "?"} ${order?.currency ?? ""}</b>\n\n` +
           `${items || "(состав недоступен)"}\n\n` +
-          `Чек приложен. Сверьте сумму и подтвердите заказ в админке — ` +
-          `материалы уйдут покупателю на почту.`,
+          `Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю на почту.`,
         parse_mode: "HTML",
+        /**
+         * Кнопки прямо здесь, а не «зайдите в админку».
+         *
+         * Это главное возражение продавца: чтобы подтвердить заказ из Direct,
+         * ей приходилось открывать панель, искать там человека по нику и
+         * подтверждать — тогда как ответить в Instagram она может с телефона за
+         * пару секунд. Механизм подтверждения кнопкой в Telegram уже был для
+         * заказов из Telegram (см. handleUpdate: confirm:/reject:), и он не
+         * зависит от площадки — выдача сама выбирает письмо для Instagram.
+         * Не хватало ровно этих двух кнопок.
+         */
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ Подтвердить и выдать", callback_data: `confirm:${orderId}` },
+              { text: "❌ Отклонить", callback_data: `reject:${orderId}` },
+            ],
+          ],
+        },
       });
     } catch (e) {
       console.error("[direct] notify admin failed", e);
@@ -607,4 +636,45 @@ export async function createOrderFromCart(params: {
   }
 
   return order;
+}
+
+/** Предел непонятых ответов на одном шаге, после которого зовём продавца. */
+export const MAX_STEP_MISSES = 2;
+
+/**
+ * Человек отвечает не то, что бот ждёт. Решает, подсказать ещё раз или уйти.
+ *
+ * Появилось после разбора живого заказа: покупательнице сказали «ждите
+ * подтверждения», а она продолжала нажимать кнопки и писать — бот отвечал на
+ * каждое сообщение, и вышла та самая «куча сообщений», которая запутала всех.
+ *
+ * Логика простая и намеренно короткая: один раз подсказываем, второй раз
+ * извиняемся, зовём продавца и замолкаем. Живой человек разберётся быстрее, чем
+ * бот на третьей попытке, а непрочитанное в Instagram снова станет видно
+ * продавцу — бот перестанет отвечать и помечать переписку прочитанной.
+ */
+export async function handleStepMiss(params: {
+  user: { user_key: string; first_name: string | null; username: string | null };
+  state: DirectState;
+  text: string;
+  hint: string;
+  say: (message: string) => Promise<unknown>;
+}): Promise<void> {
+  const misses = (params.state.misses ?? 0) + 1;
+
+  if (misses < MAX_STEP_MISSES) {
+    await setDirectState(params.user.user_key, { ...params.state, misses });
+    await params.say(params.hint);
+    return;
+  }
+
+  await clearDirectFlow(params.user.user_key);
+  await params.say(
+    "Похоже, я не понимаю — не буду мешать. Продавец увидит вашу переписку и ответит сам.",
+  );
+  await notifyAdminAboutQuestion({
+    question: `Не смог довести до конца оформление. Последнее сообщение: «${params.text}»`,
+    senderName: params.user.first_name || "покупатель",
+    senderUsername: params.user.username || "",
+  });
 }

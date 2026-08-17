@@ -669,10 +669,15 @@ async function handlePurchaseFlow(params: {
   // ── Ждём чек ────────────────────────────────────────────────────────────
   if (state.mode === "awaiting_proof") {
     if (!attachmentUrl) {
-      await say(
-        "Жду чек об оплате — пришлите его сюда картинкой или файлом.\n\n" +
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint:
+          "Жду чек об оплате — пришлите его сюда картинкой или файлом.\n\n" +
           "Если передумали, напишите «отмена».",
-      );
+        say,
+      });
       return true;
     }
 
@@ -716,7 +721,7 @@ async function handlePurchaseFlow(params: {
       });
       await say(
         `Чек получил, заказ №${displayNo} принят. Проверим оплату и пришлём материалы на ${user.email}.\n\n` +
-          "Если нужен другой адрес — напишите его сюда.",
+          "Если нужен другой адрес — напишите его сюда. По остальным вопросам ответит продавец.",
       );
       return true;
     }
@@ -734,9 +739,15 @@ async function handlePurchaseFlow(params: {
     const options = await flow.listCountries();
     const chosen = flow.matchCountry(text, options);
     if (!chosen) {
-      await say(
-        "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\nЧтобы выйти, напишите «отмена».",
-      );
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint:
+          "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\n" +
+          "Чтобы выйти, напишите «отмена».",
+        say,
+      });
       return true;
     }
 
@@ -783,9 +794,15 @@ async function handlePurchaseFlow(params: {
         await flow.clearDirectFlow(user.user_key);
         return false;
       }
-      await say(
-        "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\nЧтобы выйти, напишите «отмена».",
-      );
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint:
+          "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\n" +
+          "Чтобы выйти, напишите «отмена».",
+        say,
+      });
       return true;
     }
     const s = await db();
@@ -794,9 +811,19 @@ async function handlePurchaseFlow(params: {
       await s.from("orders").update({ customer_email: email }).eq("id", state.pending_order_id);
     }
     await flow.clearDirectFlow(user.user_key);
+    /**
+     * Дальше разговор ведёт продавец, и это сказано прямо.
+     *
+     * Продавец боялась именно этого: человек оформил заказ, у него возник
+     * вопрос, а сообщение «прошло через бота» и до неё не дошло. Теперь после
+     * оформления бот выходит из сценария и по обычной переписке молчит —
+     * непрочитанное в Instagram снова видно, а покупатель предупреждён, что
+     * ответит живой человек, и не ждёт от бота невозможного.
+     */
     await say(
       `Записал: ${email}\n\n` +
-        "Проверим оплату и пришлём материалы на этот адрес. Обычно это занимает несколько часов.",
+        "Проверим оплату и пришлём материалы на этот адрес.\n\n" +
+        "Если появятся вопросы — просто напишите здесь, дальше отвечает продавец.",
     );
     return true;
   }

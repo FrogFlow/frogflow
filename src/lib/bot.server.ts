@@ -1660,15 +1660,25 @@ export async function handleUpdate(update: any) {
           .from("orders")
           .update({ status: "rejected" })
           .eq("id", orderId)
-          .select("telegram_id")
+          .select("order_no")
           .single();
-        if (order) {
-          await tg("sendMessage", {
-            chat_id: order.telegram_id,
-            text: `❌ Ваш заказ #${orderId} отклонён. Если это ошибка — напишите продавцу.`,
-          });
-        }
-        await tg("sendMessage", { chat_id, text: `Заказ #${orderId} отклонён.` });
+
+        // Пишем туда, откуда пришёл заказ: у покупателя из Instagram
+        // telegram_id синтетический, и прямая отправка улетала в пустоту —
+        // человек не узнавал об отказе и продолжал ждать материалы.
+        const { notifyOrderCustomer } = await import("./orders.server");
+        const shownNo = order?.order_no ?? orderId;
+        const notified = await notifyOrderCustomer(
+          orderId,
+          `❌ Ваш заказ №${shownNo} отклонён. Если это ошибка — напишите продавцу.`,
+        );
+
+        await tg("sendMessage", {
+          chat_id,
+          text: notified
+            ? `Заказ №${shownNo} отклонён, покупатель предупреждён.`
+            : `Заказ №${shownNo} отклонён. Сообщить покупателю не удалось — напишите ему сами.`,
+        });
         return;
       }
       return;
