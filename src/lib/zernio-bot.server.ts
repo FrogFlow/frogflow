@@ -1,9 +1,4 @@
-import {
-  sendZernioInboxMessage,
-  replyToInstagramComment,
-  sendInstagramPrivateReply,
-  type ZernioDmButton,
-} from "./zernio.server";
+import { sendZernioInboxMessage, type ZernioDmButton } from "./zernio.server";
 import crypto from "node:crypto";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 
@@ -796,6 +791,80 @@ export async function deliverInstagramOrder(orderId: number) {
   return await deliverOrder(orderId);
 }
 
+/**
+ * Аккаунт Instagram отключился от Zernio.
+ *
+ * Без этого истёкший или отозванный токен означает, что бот в Direct молча
+ * перестаёт отвечать — ни ошибки, ни следа в логах, продавец узнаёт об этом
+ * только от расстроенного покупателя. Единственное лекарство — сделать
+ * смерть бота видимой, тем же каналом, что и остальные уведомления Direct.
+ *
+ * Не чаще раза в шесть часов на аккаунт: та же логика, что у
+ * `notifyAdminAboutComplaint` — если переподключение не помогло с первого
+ * раза, продавцу не нужно по письму на каждую повторную попытку.
+ */
+export async function handleZernioAccountDisconnected(payload: any) {
+  const account = payload?.account ?? {};
+  const accountId = String(account.accountId || account.id || account._id || "неизвестен");
+  const label = account.username ? `@${account.username}` : account.name || accountId;
+
+  const s = await db();
+  const key = "zernio_disconnect_notified";
+  const { data: setting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("key", key)
+    .maybeSingle();
+
+  let last: { accountId?: string; at?: string } = {};
+  try {
+    last = setting?.value ? JSON.parse(setting.value) : {};
+  } catch {
+    /* ignore malformed value, notify as usual */
+  }
+  const cooledDown =
+    last.accountId === accountId &&
+    last.at &&
+    Date.now() - Date.parse(last.at) < 6 * 60 * 60 * 1000;
+  if (cooledDown) {
+    console.log(`[zernio-bot] account.disconnected для ${accountId} — уже уведомляли недавно`);
+    return;
+  }
+
+  await s.from("app_settings").upsert({
+    bot_id: process.env.BOT_ID?.trim() || "",
+    key,
+    value: JSON.stringify({ accountId, at: new Date().toISOString() }),
+    updated_at: new Date().toISOString(),
+  });
+
+  const { data: adminSetting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("key", "admin_chat_id")
+    .maybeSingle();
+  const raw = adminSetting?.value?.trim();
+  if (!raw) return;
+
+  const { tg } = await import("./telegram.server");
+  for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
+    try {
+      await tg("sendMessage", {
+        chat_id: chatId,
+        text:
+          `🔌 <b>Instagram-аккаунт отключился</b>\n\n` +
+          `${label} отвязался от Zernio — бот в Direct перестал видеть сообщения и отвечать.\n\n` +
+          "Переподключите аккаунт в кабинете Zernio, чтобы бот снова заработал.",
+        parse_mode: "HTML",
+      });
+    } catch (e) {
+      console.error("[zernio-bot] notify admin about account.disconnected failed", e);
+    }
+  }
+}
+
 /*
  * Обработчика комментариев здесь намеренно нет. Ответы на комментарии и DM по
  * ключевым словам делают родные Comment-to-DM автоматизации Zernio — им наше
@@ -978,6 +1047,33 @@ async function handlePurchaseFlow(params: {
     }
 
     /**
+     * Забираем шаг в обработку атомарно — до похода в сеть за вложением.
+     *
+     * Скачивание чека и загрузка в Storage — это реальное время, и если за
+     * него придёт второе вложение (человек прислал чек дважды, живой случай),
+     * второй вызов увидит тот же state.mode === "awaiting_proof" и ту же, ещё
+     * не очищенную корзину. Без захвата оба создали бы по заказу на одну и ту
+     * же покупку. См. claimAwaitingProof в direct-purchase.server.ts.
+     */
+    const claim = await flow.claimAwaitingProof(user.user_key);
+    if (!claim) {
+      // Забрать не вышло — значит, кто-то (скорее всего, это же событием
+      // раньше) уже обрабатывает предыдущее вложение. Чек всё равно сохраняем,
+      // чтобы он не потерялся, и зовём продавца — пусть решит на месте, если
+      // это правда два разных чека, а не дубль одного и того же.
+      const extra = await flow.storeReceipt(attachmentUrl, `${user.user_key}/concurrent`);
+      await flow.notifyAdminAboutQuestion({
+        question:
+          "Прислал ещё одно вложение, пока обрабатывалось предыдущее — возможно, второй чек." +
+          (extra ? `\nФайл: payment-proofs/${extra.path}` : "\nФайл сохранить не удалось."),
+        senderName: user.first_name || "покупатель",
+        senderUsername: user.username || "",
+      });
+      await say("Уже обрабатываю ваш чек — секунду.");
+      return true;
+    }
+
+    /**
      * Порядок важен: сначала чек, потом заказ.
      *
      * Раньше заказ создавался первым, продавцу тут же уходило уведомление, и
@@ -986,13 +1082,16 @@ async function handlePurchaseFlow(params: {
      */
     const proofPath = await flow.storeReceipt(attachmentUrl, user.user_key);
     if (!proofPath) {
+      // Возвращаем шаг как был — иначе повторная попытка ткнётся в
+      // «processing_proof» и решит, что чек уже кто-то обрабатывает.
+      await flow.releaseAwaitingProof(user.user_key);
       await say(
         "Чек не удалось сохранить. Пришлите его, пожалуйста, ещё раз — картинкой или файлом.",
       );
       return true;
     }
 
-    const order = await flow.createOrderFromCart({ user, countryCode: state.country_code! });
+    const order = await flow.createOrderFromCart({ user, countryCode: claim.country_code! });
     if (!order) {
       await say("Не получилось оформить заказ. Напишите номер материала ещё раз, пожалуйста.");
       await flow.clearDirectFlow(user.user_key);

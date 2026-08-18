@@ -3,6 +3,7 @@ import { processBroadcastBatch } from "@/lib/broadcast.server";
 import { processPendingDeliveries } from "@/lib/orders.server";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
 import { pruneZernioLogs } from "@/lib/zernio-logs.server";
+import { retryStuckZernioEvents } from "@/lib/zernio-retry.server";
 
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -53,7 +54,27 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             logs = { error: e?.message || String(e) };
           }
 
-          return Response.json({ ok: true, webhook, processed: total, done, deliveries, logs, ...last });
+          // Добор зависших событий Instagram — тоже здесь и тоже без права
+          // ронять остальной крон: застрявший pending не должен мешать
+          // рассылке и выдаче заказов.
+          let stuckEvents: Awaited<ReturnType<typeof retryStuckZernioEvents>> | { error: string } | undefined;
+          try {
+            stuckEvents = await retryStuckZernioEvents();
+          } catch (e: any) {
+            console.error("[cron/broadcast] zernio stuck events", e);
+            stuckEvents = { error: e?.message || String(e) };
+          }
+
+          return Response.json({
+            ok: true,
+            webhook,
+            processed: total,
+            done,
+            deliveries,
+            logs,
+            stuckEvents,
+            ...last,
+          });
         } catch (e: any) {
           console.error("[cron/broadcast]", e);
           return Response.json({ ok: false, error: e.message }, { status: 500 });

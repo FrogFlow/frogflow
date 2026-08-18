@@ -380,55 +380,19 @@ export async function isInstagramAccountInConfiguredProfile(accountId: string): 
   return accounts.some((account) => account._id === accountId && account.platform === "instagram");
 }
 
-/**
- * Ответить на комментарий под постом/Reels в Instagram.
+/*
+ * Ответы на комментарии (replyToInstagramComment, sendInstagramPrivateReply
+ * из ответа Comment-to-DM) здесь намеренно не заведены. Родные автоматизации
+ * Zernio закрывают комментарии сами — участие нашего кода не требуется (см.
+ * комментарий к событиям в registerZernioWebhook и разбор в
+ * zernio-bot.server.ts). Раньше обе функции существовали, но ни разу не
+ * вызывались — собственный обработчик комментариев убрали, а функции
+ * остались. Если Comment-to-DM когда-нибудь понадобится вести отсюда,
+ * `POST /inbox/comments/{postId}` и `POST /inbox/comments/{postId}/{commentId}/private-reply`
+ * — те самые эндпоинты Zernio; для холодного охвата (Message Requests)
+ * private-reply нужно звать с `buttons`, а не текстом — quickReplies там не
+ * отображаются.
  */
-export async function replyToInstagramComment(
-  postId: string,
-  commentId: string,
-  accountId: string,
-  message: string,
-): Promise<{ ok: boolean }> {
-  try {
-    await zernioRequest(`/inbox/comments/${postId}`, {
-      method: "POST",
-      body: {
-        accountId,
-        commentId,
-        message,
-      },
-    });
-    return { ok: true };
-  } catch (e) {
-    console.error(`[zernio] replyToInstagramComment failed for post ${postId}`, e);
-    return { ok: false };
-  }
-}
-
-/**
- * Отправить личное сообщение в DM по комментарию (Comment-to-DM Private Reply).
- * Endpoint: POST /v1/inbox/comments/{postId}/{commentId}/private-reply
- */
-export async function sendInstagramPrivateReply(
-  postId: string,
-  commentId: string,
-  accountId: string,
-  message: string,
-): Promise<{ ok: boolean }> {
-  try {
-    await zernioRequest(`/inbox/comments/${postId}/${commentId}/private-reply`, {
-      method: "POST",
-      body: {
-        accountId,
-        message,
-      },
-    });
-    return { ok: true };
-  } catch (e) {
-    console.error(`[zernio] sendInstagramPrivateReply failed for comment ${commentId} on post ${postId}`, e);
-    return { ok: false };
-  }
-}
 
 /**
  * Зарегистрировать Webhook в Zernio на наш публичный эндпоинт.
@@ -452,12 +416,13 @@ export async function registerZernioWebhook(webhookUrl: string): Promise<{ ok: b
      * из `rule.stats` в ответе Zernio (см. getInstagramDashboardFn), а не из
      * наших логов.
      *
-     * `account.disconnected` не подписан намеренно — обработчика у него нет, а
-     * заводить ещё один игнорируемый поток незачем. Событие полезное (истёкший
-     * токен = бот молча перестаёт отвечать), и подписаться на него стоит
-     * одновременно с обработчиком, а не заранее.
+     * `account.disconnected` подписан отдельно от общего правила «только то,
+     * что обрабатывается»: обработчик у него теперь есть
+     * (handleZernioAccountDisconnected в zernio-bot.server.ts) — истёкший
+     * или отозванный токен иначе означает, что бот молча перестаёт отвечать,
+     * и продавец узнаёт об этом только от расстроенного покупателя.
      */
-    const events = ["message.received"];
+    const events = ["message.received", "account.disconnected"];
     const current = await zernioRequest<{ webhooks?: Array<{ _id?: string; id?: string; url?: string; name?: string }> }>("/webhooks/settings");
     const existing = (current.webhooks || []).find((webhook) => webhook.url === webhookUrl || webhook.name === "Instagram Store Webhook");
     const response = await zernioRequest<{ success?: boolean; error?: string }>("/webhooks/settings", {

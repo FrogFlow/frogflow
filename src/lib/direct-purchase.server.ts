@@ -133,6 +133,62 @@ export async function clearDirectFlow(userKey: string): Promise<void> {
     .eq("user_key", userKey);
 }
 
+/**
+ * Атомарно забирает шаг «ждём чек» в обработку — чтобы два вложения от
+ * одного покупателя, пришедшие почти одновременно, не создали два заказа из
+ * одной корзины.
+ *
+ * Обработка чека — это сеть (скачать вложение, загрузить в Storage) и
+ * несколько запросов к базе, то есть реальное время, за которое второе
+ * сообщение успевает прийти отдельным вызовом Vercel. Оба видят один и тот
+ * же `state.mode === "awaiting_proof"` и одну и ту же, ещё не очищенную
+ * корзину — без блокировки оба создали бы по заказу.
+ *
+ * Приём тот же, что claimOrderForDelivery в orders.server.ts: пишем новое
+ * значение с условием на прочитанное `updated_at`, а не «прочитал, потом
+ * записал». `updated_at` годится как метка версии, потому что его
+ * выставляет любая запись в эту строку — setDirectState, sendDirectReply, —
+ * так что совпадение с прочитанным значением и означает «никто не трогал
+ * строку с тех пор, как я её увидел». Если UPDATE не задел ни одной строки —
+ * шаг уже забрал кто-то другой, и это не ошибка, а сигнал «второе вложение».
+ *
+ * Возвращает состояние на момент захвата (для дальнейших шагов сценария)
+ * или `null`, если забрать не удалось.
+ */
+export async function claimAwaitingProof(userKey: string): Promise<DirectState | null> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state, updated_at")
+    .eq("user_key", userKey)
+    .maybeSingle();
+
+  const state = readDirectState(existing?.state);
+  if (state.mode !== "awaiting_proof" || !existing?.updated_at) return null;
+
+  const claimed: DirectState = { ...state, mode: "processing_proof" };
+  const { data: updated } = await s
+    .from("bot_users")
+    .update({ state: claimed as unknown as Json, updated_at: new Date().toISOString() })
+    .eq("user_key", userKey)
+    .eq("updated_at", existing.updated_at)
+    .select("state")
+    .maybeSingle();
+
+  return updated ? state : null;
+}
+
+/**
+ * Возвращает шаг «ждём чек» после сорвавшейся попытки его забрать —
+ * например, вложение не удалось сохранить.
+ *
+ * Отдельной функцией, а не setDirectState напрямую, чтобы место отката было
+ * видно рядом с claimAwaitingProof и не разъехалось с ним при правках.
+ */
+export async function releaseAwaitingProof(userKey: string): Promise<void> {
+  await setDirectState(userKey, { mode: "awaiting_proof" });
+}
+
 export function readDirectState(raw: unknown): DirectState {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return raw as DirectState;

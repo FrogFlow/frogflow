@@ -43,14 +43,30 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         if (!(await hasModule("instagram"))) return new Response("ok");
 
         const accountId = payload.account?.accountId || payload.account?.id || payload.message?.accountId || payload.data?.accountId;
-        const { isInstagramAccountInConfiguredProfile } = await import("@/lib/zernio.server");
-        if (!(await isInstagramAccountInConfiguredProfile(String(accountId || "")))) {
-          console.warn("[instagram-webhook] ignored event for an account outside this deployment profile");
-          return new Response("ignored", { status: 202 });
+        const eventType = payload.event || "unknown";
+
+        /**
+         * account.disconnected — единственное событие, где эта проверка не
+         * применима. Она сверяет accountId со списком аккаунтов, которые
+         * Zernio сейчас считает подключёнными к нашему профилю, а к моменту
+         * доставки такого события отключившийся аккаунт из этого списка уже
+         * мог пропасть — ровно то, о чём событие и сообщает. Отбрасывать его
+         * за это значило бы отбрасывать единственное сообщение, ради которого
+         * оно и заведено. Деплой и так получает только события своей рабочей
+         * области Zernio (webhook регистрируется под собственным ключом
+         * клиента), так что для событий уровня аккаунта этого достаточно.
+         */
+        if (eventType !== "account.disconnected") {
+          const { isInstagramAccountInConfiguredProfile } = await import("@/lib/zernio.server");
+          if (!(await isInstagramAccountInConfiguredProfile(String(accountId || "")))) {
+            console.warn(
+              "[instagram-webhook] ignored event for an account outside this deployment profile",
+            );
+            return new Response("ignored", { status: 202 });
+          }
         }
 
         const eventId = payload.id || request.headers.get("x-zernio-event-id") || request.headers.get("x-late-event-id") || null;
-        const eventType = payload.event || "unknown";
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
 
@@ -93,7 +109,8 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         // Обрабатывается ровно то, на что мы подписаны (см. registerZernioWebhook).
         runInBackground(async () => {
           try {
-            const { handleZernioMessage } = await import("@/lib/zernio-bot.server");
+            const { handleZernioMessage, handleZernioAccountDisconnected } =
+              await import("@/lib/zernio-bot.server");
             const { runWithZernioEvent } = await import("@/lib/zernio-event-context.server");
 
             // Идентификатор события выставляется на всю обработку: отправки
@@ -102,6 +119,8 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
             await runWithZernioEvent(eventId ? String(eventId) : null, async () => {
               if (eventType === "message.received") {
                 await handleZernioMessage(payload);
+              } else if (eventType === "account.disconnected") {
+                await handleZernioAccountDisconnected(payload);
               }
             });
 

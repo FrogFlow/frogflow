@@ -8,8 +8,17 @@
  * поэтому логика вынесена сюда целиком.
  */
 
-/** Шаг, на котором сейчас находится диалог. */
-export type DirectMode = "awaiting_country" | "awaiting_proof" | "awaiting_email" | null;
+/**
+ * Шаг, на котором сейчас находится диалог.
+ *
+ * `processing_proof` — техническое состояние, а не шаг разговора: чек уже
+ * забрали в обработку (см. claimAwaitingProof в direct-purchase.server.ts),
+ * и оно существует ровно на время одного вызова, чтобы второе вложение,
+ * пришедшее раньше, чем первое обработалось, не создало второй заказ из той
+ * же корзины.
+ */
+export type DirectMode =
+  "awaiting_country" | "awaiting_proof" | "processing_proof" | "awaiting_email" | null;
 
 /**
  * Клиенты нумеруют товары сами: у товара «018. Набор „Пазлы БУКВЫ“» первым
@@ -197,12 +206,30 @@ export function extractEmail(text: string): string | null {
  * поисковый запрос — верный способ показать ему «ничего не найдено».
  */
 const AFFIRMATIVES = new Set([
-  "да", "да!", "ага", "угу", "хочу", "хочу!", "интересно", "интересует",
-  "давайте", "давай", "+", "ок", "окей", "ok", "yes", "нужно", "надо",
+  "да",
+  "да!",
+  "ага",
+  "угу",
+  "хочу",
+  "хочу!",
+  "интересно",
+  "интересует",
+  "давайте",
+  "давай",
+  "+",
+  "ок",
+  "окей",
+  "ok",
+  "yes",
+  "нужно",
+  "надо",
 ]);
 
 export function isAffirmative(text: string): boolean {
-  const normalized = text.trim().toLowerCase().replace(/[.!]+$/, "");
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!]+$/, "");
   return AFFIRMATIVES.has(normalized) || AFFIRMATIVES.has(`${normalized}!`);
 }
 
@@ -215,9 +242,28 @@ export function isAffirmative(text: string): boolean {
  * кругу: любая вежливая реплика снова считалась вопросом.
  */
 const DISMISSALS = new Set([
-  "нет", "не", "не нужно", "ненужно", "не надо", "ненадо", "не хочу", "неинтересно",
-  "не интересно", "спасибо", "спс", "благодарю", "понятно", "понял", "поняла",
-  "хорошо", "ясно", "всё", "все", "пока", "до свидания", "-",
+  "нет",
+  "не",
+  "не нужно",
+  "ненужно",
+  "не надо",
+  "ненадо",
+  "не хочу",
+  "неинтересно",
+  "не интересно",
+  "спасибо",
+  "спс",
+  "благодарю",
+  "понятно",
+  "понял",
+  "поняла",
+  "хорошо",
+  "ясно",
+  "всё",
+  "все",
+  "пока",
+  "до свидания",
+  "-",
 ]);
 
 export function isDismissal(text: string): boolean {
@@ -238,12 +284,26 @@ export function isDismissal(text: string): boolean {
  * оказывался заперт — «/start» там отвечало «Не понял страну», и так по кругу.
  */
 const CANCEL_WORDS = new Set([
-  "отмена", "отменить", "отмени", "стоп", "сброс", "сбросить", "заново",
-  "начать заново", "/start", "/stop", "хватит",
+  "отмена",
+  "отменить",
+  "отмени",
+  "стоп",
+  "сброс",
+  "сбросить",
+  "заново",
+  "начать заново",
+  "/start",
+  "/stop",
+  "хватит",
 ]);
 
 export function isCancel(text: string): boolean {
-  return CANCEL_WORDS.has(text.trim().toLowerCase().replace(/[.!]+$/, ""));
+  return CANCEL_WORDS.has(
+    text
+      .trim()
+      .toLowerCase()
+      .replace(/[.!]+$/, ""),
+  );
 }
 
 /**
