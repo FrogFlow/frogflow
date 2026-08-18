@@ -270,6 +270,15 @@ describe("matchDirectCommand", () => {
     expect(matchDirectCommand("Каталог!")).toBe("catalog");
   });
 
+  it("понимает подписи кнопок оформления на всех языках магазина", () => {
+    expect(matchDirectCommand("Тапсырысты рәсімдеу")).toBe("checkout");
+    expect(matchDirectCommand("Place order")).toBe("checkout");
+    expect(matchDirectCommand("Buyurtma berish")).toBe("checkout");
+    expect(matchDirectCommand("Себет")).toBe("cart");
+    expect(matchDirectCommand("Cart")).toBe("cart");
+    expect(matchDirectCommand("Savat")).toBe("cart");
+  });
+
   it("понимает запрос смены языка на любом из поддерживаемых языков", () => {
     expect(matchDirectCommand("язык")).toBe("language");
     expect(matchDirectCommand("Язык!")).toBe("language");

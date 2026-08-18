@@ -372,9 +372,22 @@ export type DirectCommand = "catalog" | "cart" | "checkout" | "orders" | "langua
 const COMMANDS: Array<[DirectCommand, string[]]> = [
   [
     "catalog",
-    ["/start", "start", "старт", "меню", "каталог", "магазин", "товары", "материалы", "начать"],
+    [
+      "/start", "start", "старт", "меню", "каталог", "магазин", "товары", "материалы", "начать",
+      "бастау", "мәзір", "дүкен", "тауарлар", "материалдар",
+      "menu", "catalog", "store", "products", "materials",
+      "boshlash", "menyu", "do'kon", "do‘kon", "tovarlar", "materiallar",
+    ],
   ],
-  ["cart", ["корзина", "корзину", "моя корзина", "что в корзине", "что у меня в корзине"]],
+  [
+    "cart",
+    [
+      "корзина", "корзину", "моя корзина", "что в корзине", "что у меня в корзине",
+      "себет", "себетке", "менің себетім", "себетімде не бар",
+      "cart", "my cart", "what is in my cart",
+      "savat", "savatga", "mening savatim", "savatimda nima bor",
+    ],
+  ],
   [
     "checkout",
     [
@@ -387,9 +400,40 @@ const COMMANDS: Array<[DirectCommand, string[]]> = [
       "как оплатить",
       "к оплате",
       "реквизиты",
+      "тапсырысты рәсімдеу",
+      "тапсырыс рәсімдеу",
+      "төлеу",
+      "төлем",
+      "қалай төлеуге болады",
+      "төлем деректемелері",
+      "place order",
+      "checkout",
+      "pay",
+      "payment",
+      "how to pay",
+      "payment details",
+      "buyurtma berish",
+      "buyurtmani rasmiylashtirish",
+      "rasmiylashtirish",
+      "to'lash",
+      "to‘lash",
+      "to'lov",
+      "to‘lov",
+      "qanday to'lash",
+      "qanday to‘lash",
+      "to'lov rekvizitlari",
+      "to‘lov rekvizitlari",
     ],
   ],
-  ["orders", ["мои заказы", "заказы", "мой заказ", "где мой заказ", "статус заказа"]],
+  [
+    "orders",
+    [
+      "мои заказы", "заказы", "мой заказ", "где мой заказ", "статус заказа",
+      "менің тапсырыстарым", "тапсырыстар", "менің тапсырысым", "тапсырыс күйі",
+      "my orders", "my order", "order status",
+      "buyurtmalarim", "buyurtmalar", "buyurtmam", "buyurtma holati",
+    ],
+  ],
   /**
    * Повторный вызов выбора языка — на случай, если выбрали не тот язык на
    * первом шаге или разговор хочет продолжить кто-то другой. Слова заданы на
