@@ -74,7 +74,7 @@ async function getLatestActiveExpiry(
 
 function addTariffDuration(
   base: Date,
-  tariff: { duration_minutes?: number; duration_days?: number } | null,
+  tariff: { duration_minutes?: number | null; duration_days?: number | null } | null,
   isTest: boolean,
 ): Date {
   const expiresAt = new Date(base);
@@ -280,7 +280,7 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
     throw new Error("Не настроен ID VIP группы в настройках");
   }
 
-  const tariff = sub.vip_tariffs as any;
+  const tariff = sub.vip_tariffs;
   const isTest = settings.vip_test_mode === "true";
 
   const now = new Date();
@@ -310,7 +310,7 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
       throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
     }
 
-    link = (inviteLinkData.result as any).invite_link as string;
+    link = (inviteLinkData.result as { invite_link?: string } | undefined)?.invite_link ?? null;
   }
 
   const { data: updated, error: updateError } = await s
@@ -721,7 +721,7 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
             "Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.",
           );
         }
-        inviteLink = (invite.result as any).invite_link;
+        inviteLink = (invite.result as { invite_link?: string } | undefined)?.invite_link ?? null;
 
         await tgVip("sendMessage", {
           chat_id: sub.telegram_id,

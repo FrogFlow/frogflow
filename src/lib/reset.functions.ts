@@ -57,17 +57,15 @@ export const resetAllData = createServerFn({ method: "POST" }).handler(async () 
   ]);
 
   const productFiles = [
-    ...(products ?? []).flatMap((p: any) => [p.file_path, p.file_path_kz]),
-    ...(materials ?? []).map((m: any) => m.file_path),
+    ...(products ?? []).flatMap((p) => [p.file_path, p.file_path_kz]),
+    ...(materials ?? []).map((m) => m.file_path),
   ].filter(Boolean) as string[];
 
-  const imageFiles = (images ?? []).map((i: any) => i.image_path).filter(Boolean) as string[];
-  const proofFiles = (orders ?? [])
-    .map((o: any) => o.payment_proof_path)
-    .filter(Boolean) as string[];
+  const imageFiles = (images ?? []).map((i) => i.image_path).filter(Boolean) as string[];
+  const proofFiles = (orders ?? []).map((o) => o.payment_proof_path).filter(Boolean) as string[];
 
   const settingValue = (key: string) =>
-    (settings ?? []).find((r: any) => r.key === key)?.value?.trim() || null;
+    (settings ?? []).find((r) => r.key === key)?.value?.trim() || null;
   const legalFiles = [settingValue("legal_offer_file"), settingValue("legal_privacy_file")].filter(
     Boolean,
   ) as string[];

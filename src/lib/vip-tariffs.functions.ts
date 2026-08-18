@@ -151,7 +151,7 @@ export const deleteVipTariff = createServerFn({ method: "POST" })
     await requireAdminWithModule();
     const s = await db();
     const { data: row } = await s.from("vip_tariffs").select("*").eq("id", data.id).maybeSingle();
-    if (row && (row as any).is_entry === true) {
+    if (row && row.is_entry === true) {
       throw new Error("Тариф «Первый вход» нельзя удалить — выключите его галкой «Активен».");
     }
     const { error } = await s.from("vip_tariffs").delete().eq("id", data.id);

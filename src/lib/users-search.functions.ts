@@ -66,8 +66,8 @@ export async function searchTelegramUsers(query: string, limit = 30): Promise<Te
         .order("created_at", { ascending: false })
         .limit(1),
     ]);
-    if (shop) mergeHits(map, shop as any, "shop");
-    for (const row of vip ?? []) mergeHits(map, row as any, "vip");
+    if (shop) mergeHits(map, shop, "shop");
+    for (const row of vip ?? []) mergeHits(map, row, "vip");
 
     if (map.size === 0) {
       const { lookupGroupMemberForSearch } = await import("./vip-group-members.functions");
@@ -97,8 +97,8 @@ export async function searchTelegramUsers(query: string, limit = 30): Promise<Te
       .limit(limit * 3),
   ]);
 
-  for (const row of shopRows ?? []) mergeHits(map, row as any, "shop");
-  for (const row of vipRows ?? []) mergeHits(map, row as any, "vip");
+  for (const row of shopRows ?? []) mergeHits(map, row, "shop");
+  for (const row of vipRows ?? []) mergeHits(map, row, "vip");
 
   return [...map.values()].slice(0, limit);
 }
