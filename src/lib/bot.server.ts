@@ -1,4 +1,4 @@
-import { tg, downloadTelegramFile } from "./telegram.server";
+import { tg, downloadTelegramFile, invalidateTelegramLocale } from "./telegram.server";
 import { errorMessage } from "@/lib/error-message";
 import { requireAppOrigin } from "./app-origin.server";
 import { replyIfBlocked } from "./blocked-users.server";
@@ -1578,6 +1578,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (!isLocale(locale)) return;
         const nextState = { ...user.state, locale, mode: "idle" as const };
         await setState(from_id, nextState);
+        invalidateTelegramLocale(from_id);
         await tg("sendMessage", { chat_id, text: botCopy[locale].languageSaved });
         const base = originFromState();
         const needCountry = !nextState.country_code;

@@ -20,6 +20,11 @@ function sleep(ms: number) {
 type TelegramLocale = "ru" | "kk" | "en" | "uz";
 const localeCache = new Map<number, { value: TelegramLocale; expires: number }>();
 
+/** Call immediately after a customer changes their selected bot language. */
+export function invalidateTelegramLocale(chatId: number) {
+  localeCache.delete(chatId);
+}
+
 async function localeForChat(chatId: unknown): Promise<TelegramLocale> {
   const id = Number(chatId);
   if (!Number.isFinite(id)) return "ru";
