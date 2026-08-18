@@ -604,14 +604,27 @@ export async function listOwnerCandidates(botId: string): Promise<OwnerCandidate
  */
 export type FeedEvent = BotEvent & { bot_name: string };
 
-export async function listFeed(limit = 100): Promise<FeedEvent[]> {
+export type FeedFilter = {
+  limit?: number;
+  /** Строго раньше этой отметки времени — для подгрузки следующей страницы. */
+  before?: string;
+  botId?: string;
+  kind?: string;
+};
+
+export async function listFeed(filter: FeedFilter = {}): Promise<FeedEvent[]> {
   await requireOperator();
   const s = await db();
-  const { data, error } = await s
+  let query = s
     .from("bot_events")
     .select("id, bot_id, at, actor, kind, payload")
     .order("at", { ascending: false })
-    .limit(limit);
+    .limit(filter.limit ?? 50);
+  if (filter.before) query = query.lt("at", filter.before);
+  if (filter.botId) query = query.eq("bot_id", filter.botId);
+  if (filter.kind) query = query.eq("kind", filter.kind);
+
+  const { data, error } = await query;
   if (error) throw new Error(`Не удалось получить журнал: ${error.message}`);
 
   const { data: bots } = await s.from("bots").select("id, bot_name");

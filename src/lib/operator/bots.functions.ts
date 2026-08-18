@@ -135,10 +135,21 @@ export const checkReadinessFn = createServerFn({ method: "POST" })
   });
 
 /** Журнал по всем клиентам сразу — «что вообще происходило», а не «что с этим клиентом». */
-export const listFeedFn = createServerFn({ method: "GET" }).handler(async () => {
-  await requireOperator();
-  return listFeed();
-});
+export const listFeedFn = createServerFn({ method: "GET" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        before: z.string().optional(),
+        botId: z.string().uuid().optional(),
+        kind: z.string().optional(),
+      })
+      .catch({})
+      .parse(data ?? {}),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return listFeed(data);
+  });
 
 /** Проверка готовности по всем действующим клиентам разом. */
 export const checkReadinessAllFn = createServerFn({ method: "POST" }).handler(async () => {

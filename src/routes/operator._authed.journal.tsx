@@ -1,7 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery } from "@tanstack/react-query";
-import { listFeedFn } from "@/lib/operator/bots.functions";
+import { useEffect, useState } from "react";
+import { listFeedFn, listBotsFn } from "@/lib/operator/bots.functions";
 import { Badge } from "@/components-ui/badge";
+import { Button } from "@/components-ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components-ui/select";
 
 export const Route = createFileRoute("/operator/_authed/journal")({
   head: () => ({ meta: [{ title: "Журнал — панель оператора" }] }),
@@ -33,9 +43,53 @@ const KIND_LABEL: Record<string, string> = {
 /** Виды, у которых стоит выделяться в ленте: выдача ключей и остановка бота. */
 const NOTABLE = new Set(["env_block", "suspend", "onboard"]);
 
+/** Совпадает с limit по умолчанию в listFeed() — так «загружено меньше страницы» и значит «дальше пусто». */
+const PAGE_SIZE = 50;
+
+type FeedRow = Awaited<ReturnType<typeof listFeedFn>>[number];
+
 function JournalPage() {
-  const feed = useQuery({ queryKey: ["operator_feed"], queryFn: () => listFeedFn() });
-  const rows = feed.data ?? [];
+  const bots = useQuery({ queryKey: ["operator_bots"], queryFn: () => listBotsFn() });
+
+  const [botId, setBotId] = useState("all");
+  const [kind, setKind] = useState("all");
+  const [rows, setRows] = useState<FeedRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+
+  async function load(reset: boolean, before?: string) {
+    if (reset) {
+      setLoading(true);
+      setError(null);
+    } else {
+      setLoadingMore(true);
+    }
+    try {
+      const page = await listFeedFn({
+        data: {
+          botId: botId === "all" ? undefined : botId,
+          kind: kind === "all" ? undefined : kind,
+          before,
+        },
+      });
+      setRows((prev) => (reset ? page : [...prev, ...page]));
+      setHasMore(page.length === PAGE_SIZE);
+    } catch (e: unknown) {
+      setError(errorMessage(e));
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }
+
+  // Смена фильтра начинает ленту заново — иначе «подгрузить ещё» продолжало
+  // бы прежнюю выборку вперемешку с новой.
+  useEffect(() => {
+    load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botId, kind]);
 
   return (
     <div className="space-y-4">
@@ -46,13 +100,38 @@ function JournalPage() {
         </p>
       </div>
 
-      {feed.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-      {feed.isError && (
-        <p className="text-sm text-destructive">
-          {(feed.error as Error)?.message || "Не удалось загрузить журнал"}
-        </p>
-      )}
-      {!feed.isLoading && rows.length === 0 && (
+      <div className="flex flex-wrap gap-2">
+        <Select value={botId} onValueChange={setBotId}>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Все клиенты" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все клиенты</SelectItem>
+            {(bots.data ?? []).map((b) => (
+              <SelectItem key={b.id} value={b.id}>
+                {b.bot_name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={kind} onValueChange={setKind}>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Все действия" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все действия</SelectItem>
+            {Object.entries(KIND_LABEL).map(([k, label]) => (
+              <SelectItem key={k} value={k}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {loading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {!loading && !error && rows.length === 0 && (
         <p className="text-sm text-muted-foreground">Пока пусто.</p>
       )}
 
@@ -74,6 +153,17 @@ function JournalPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {hasMore && rows.length > 0 && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={loadingMore}
+          onClick={() => load(false, rows[rows.length - 1]?.at)}
+        >
+          {loadingMore ? "Загружаю…" : "Показать ещё"}
+        </Button>
       )}
     </div>
   );
