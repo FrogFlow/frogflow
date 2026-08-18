@@ -29,7 +29,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook-vip")({
         if (!(await hasModule("vip"))) return new Response("ok");
 
         const { handleVipUpdate } = await import("@/lib/vip-bot.server");
-        await handleVipUpdate(update);
+        // Граница доверия: тело запроса проверено секретом заголовка выше,
+        // дальше типизированная форма — то, что handleVipUpdate реально читает.
+        await handleVipUpdate(update as Parameters<typeof handleVipUpdate>[0]);
         return new Response("ok");
       },
     },

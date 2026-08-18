@@ -40,11 +40,7 @@ export async function getMemberAssignedTariff(s: SupabaseAdmin, telegram_id: num
     .eq("telegram_id", telegram_id)
     .maybeSingle();
 
-  const tariff = data?.vip_tariffs as {
-    id: string;
-    is_active: boolean;
-    is_public?: boolean;
-  } | null;
+  const tariff = data?.vip_tariffs ?? null;
   if (!data?.assigned_tariff_id || !tariff?.is_active) return null;
   return tariff;
 }

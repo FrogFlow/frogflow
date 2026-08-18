@@ -5,6 +5,7 @@ import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server"
 import { assignMemberTariff, getMemberAssignedTariff } from "./vip-member.server";
 import { resolveTelegramFileMeta } from "./file-mime";
 import { replyIfBlocked } from "./blocked-users.server";
+import type { TelegramUser, TelegramUpdate } from "./bot.server";
 
 const TG_API = "https://api.telegram.org";
 
@@ -228,7 +229,7 @@ async function showHelp(chat_id: number) {
   );
 }
 
-async function showMyId(chat_id: number, from: any) {
+async function showMyId(chat_id: number, from: TelegramUser) {
   const from_id = from?.id;
   const un = from?.username ? `\nUsername: @${escapeHtml(String(from.username))}` : "";
   await sendWithMenu(
@@ -268,7 +269,7 @@ async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: 
     return;
   }
 
-  const tariffs = (all ?? []).filter((t: any) => !t.is_entry);
+  const tariffs = (all ?? []).filter((t) => !t.is_entry);
 
   if (tariffs.length === 0) {
     await tgVip("sendMessage", {
@@ -348,7 +349,7 @@ async function sendPaymentInstructions(
   }
 }
 
-async function showEntryOffer(chat_id: number, from: any) {
+async function showEntryOffer(chat_id: number, from: TelegramUser) {
   const s = await db();
   const { data: entry } = await s
     .from("vip_tariffs")
@@ -386,7 +387,7 @@ async function showEntryOffer(chat_id: number, from: any) {
 }
 
 /** Deep-link to a (possibly hidden) tariff: /start t_<uuid> */
-async function handleTariffDeepLink(chat_id: number, from: any, tariffId: string) {
+async function handleTariffDeepLink(chat_id: number, from: TelegramUser, tariffId: string) {
   const s = await db();
   const { data: tariff } = await s
     .from("vip_tariffs")
@@ -412,7 +413,7 @@ async function handleTariffDeepLink(chat_id: number, from: any, tariffId: string
 }
 
 /** /start or /start renew (кнопка «Продлить») */
-async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
+async function showStartFlow(chat_id: number, from: TelegramUser, renew?: boolean) {
   const s = await db();
 
   // Уже ждёт подтверждения оплаты — не предлагаем новый тариф / «первый вход»
@@ -461,8 +462,8 @@ async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
   const assigned = await getMemberAssignedTariff(s, from.id);
 
   // Personal (legacy/cheap) renew — skip entry fee, but allow switching to public list
-  if (assigned && !(assigned as any).is_entry && (wantRenew || hadAccess)) {
-    const t = assigned as any;
+  if (assigned && !assigned.is_entry && (wantRenew || hadAccess)) {
+    const t = assigned;
     const intro = inGroup
       ? `Продление VIP — ваш персональный тариф:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`
       : `Ваш персональный тариф VIP:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}\n\nПосле оплаты — одноразовая ссылка в группу.`;
@@ -490,7 +491,12 @@ async function showStartFlow(chat_id: number, from: any, renew?: boolean) {
   await showEntryOffer(chat_id, from);
 }
 
-async function handleBuyTariff(chat_id: number, telegram_id: number, user: any, tariff_id: string) {
+async function handleBuyTariff(
+  chat_id: number,
+  telegram_id: number,
+  user: TelegramUser,
+  tariff_id: string,
+) {
   const s = await db();
   const { data: tariff } = await s.from("vip_tariffs").select("*").eq("id", tariff_id).single();
   if (!tariff) {
@@ -688,7 +694,7 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
       : "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
   });
 
-  const tariff = pendingSub.vip_tariffs as any;
+  const tariff = pendingSub.vip_tariffs;
   const adminText =
     `🆕 <b>Оплата VIP-подписки${isResubmit ? " (повторный чек)" : ""}</b>\n\n` +
     `Пользователь: <a href="tg://user?id=${from_id}">ID ${from_id}</a>\n` +
@@ -772,17 +778,18 @@ async function requireVipAdmin(from_id: number, chat_id: number): Promise<boolea
   return true;
 }
 
-export async function handleVipUpdate(update: any) {
+export async function handleVipUpdate(update: TelegramUpdate) {
   try {
     if (update.message) {
       const msg = update.message;
-      const chat_id = msg.chat?.id;
-      const from_id = msg.from?.id;
+      const chat_id = msg.chat.id;
+      if (!msg.from) return;
+      const from_id = msg.from.id;
       const text = msg.text || "";
 
       // VIP-бот только для лички (тарифы / чеки). В группе он админ и видит все посты —
       // отвечать там нельзя, иначе спам «нет ожидающих оплаты» на каждый файл.
-      const chatType = msg.chat?.type as string | undefined;
+      const chatType = msg.chat.type;
       if (chatType && chatType !== "private") {
         return;
       }
@@ -847,7 +854,8 @@ export async function handleVipUpdate(update: any) {
     if (update.callback_query) {
       const cq = update.callback_query;
       const chat_id = cq.message?.chat?.id;
-      const from_id = cq.from?.id;
+      if (!chat_id || !cq.from) return;
+      const from_id = cq.from.id;
       const data: string = cq.data || "";
       await tgVip("answerCallbackQuery", { callback_query_id: cq.id });
 

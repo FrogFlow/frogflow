@@ -22,7 +22,7 @@ type ProductCard = {
  * читает handleUpdate. Не полный тип апдейта — Telegram присылает и другие
  * виды (inline_query, poll и т.д.), которых этот бот не обрабатывает вовсе.
  */
-type TelegramUser = {
+export type TelegramUser = {
   id: number;
   username?: string;
   first_name?: string;
@@ -30,8 +30,8 @@ type TelegramUser = {
   language_code?: string;
 };
 
-type TelegramMessage = {
-  chat: { id: number };
+export type TelegramMessage = {
+  chat: { id: number; type?: string };
   from?: TelegramUser;
   text?: string;
   contact?: { phone_number: string };
@@ -39,14 +39,14 @@ type TelegramMessage = {
   photo?: Array<{ file_id: string }>;
 };
 
-type TelegramCallbackQuery = {
+export type TelegramCallbackQuery = {
   id: string;
   data?: string;
   from?: TelegramUser;
   message?: { chat?: { id: number }; message_id?: number };
 };
 
-type TelegramUpdate = {
+export type TelegramUpdate = {
   message?: TelegramMessage;
   callback_query?: TelegramCallbackQuery;
 };
