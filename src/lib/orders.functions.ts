@@ -27,20 +27,25 @@ export const getDashboardStats = createServerFn({ method: "GET" }).handler(async
   await requireAdmin();
   const s = await db();
 
-  const countExact = async (table: "orders" | "products", filter?: (q: any) => any) => {
-    let q = s.from(table).select("*", { count: "exact", head: true });
-    if (filter) q = filter(q);
+  const countOrders = async (statusIn?: string[]) => {
+    let q = s.from("orders").select("*", { count: "exact", head: true });
+    if (statusIn) q = q.in("status", statusIn);
     const { count, error } = await q;
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
+  const countProducts = async () => {
+    const { count, error } = await s.from("products").select("*", { count: "exact", head: true });
     if (error) throw new Error(error.message);
     return count ?? 0;
   };
 
   const [products, total, awaiting, delivered, delivering] = await Promise.all([
-    countExact("products"),
-    countExact("orders"),
-    countExact("orders", (q) => q.in("status", ["awaiting_payment", "awaiting_confirmation"])),
-    countExact("orders", (q) => q.eq("status", "delivered")),
-    countExact("orders", (q) => q.eq("status", "delivering")),
+    countProducts(),
+    countOrders(),
+    countOrders(["awaiting_payment", "awaiting_confirmation"]),
+    countOrders(["delivered"]),
+    countOrders(["delivering"]),
   ]);
 
   return { products, total, awaiting, delivered, delivering };

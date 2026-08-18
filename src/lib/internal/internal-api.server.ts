@@ -257,8 +257,20 @@ export async function botHealth(): Promise<
         signal: AbortSignal.timeout(10_000),
       }),
     ]);
-    const me = (await meRes.json().catch(() => null)) as any;
-    const hook = (await hookRes.json().catch(() => null)) as any;
+    const me = (await meRes.json().catch(() => null)) as {
+      ok?: boolean;
+      description?: string;
+      result?: { username?: string };
+    } | null;
+    const hook = (await hookRes.json().catch(() => null)) as {
+      ok?: boolean;
+      result?: {
+        url?: string;
+        pending_update_count?: number;
+        last_error_message?: string;
+        last_error_date?: number;
+      };
+    } | null;
 
     if (!me?.ok) {
       return {

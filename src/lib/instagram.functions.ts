@@ -296,7 +296,7 @@ export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler
   ]);
   const rules = automations.automations || [];
   const totals = rules.reduce(
-    (summary: { triggered: number; dms: number; clicks: number }, rule: any) => ({
+    (summary: { triggered: number; dms: number; clicks: number }, rule) => ({
       triggered: summary.triggered + Number(rule.stats?.triggered || 0),
       dms: summary.dms + Number(rule.stats?.dmsSent || 0),
       clicks: summary.clicks + Number(rule.stats?.linkClicks || 0),
@@ -308,16 +308,16 @@ export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler
     periodDays: 30,
     automation: { rules: rules.length, ...totals },
     direct: {
-      incoming: (logsResult.data || []).filter((log: any) => log.event_type === "message.received")
+      incoming: (logsResult.data || []).filter((log) => log.event_type === "message.received")
         .length,
-      errors: (logsResult.data || []).filter((log: any) => log.status === "error").length,
+      errors: (logsResult.data || []).filter((log) => log.status === "error").length,
     },
     orders: {
       total: orders.length,
-      paid: orders.filter((order: any) => ["paid", "delivered"].includes(order.status)).length,
+      paid: orders.filter((order) => ["paid", "delivered"].includes(order.status)).length,
       revenue: orders
-        .filter((order: any) => ["paid", "delivered"].includes(order.status))
-        .reduce((sum: number, order: any) => sum + Number(order.total || 0), 0),
+        .filter((order) => ["paid", "delivered"].includes(order.status))
+        .reduce((sum, order) => sum + Number(order.total || 0), 0),
     },
   };
 });
@@ -416,7 +416,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         originalPlatformPostId: z.string().optional().nullable(),
         originalTrigger: z.enum(["comment", "story_reply"]).optional(),
         accountId: z.string().min(1, "Укажите accountId"),
-        profileId: z.any().optional(),
+        profileId: z.unknown().optional(),
         name: z.string().min(1, "Укажите название"),
         keywords: z.array(z.string()).default([]),
         replyToAll: z.boolean().optional().default(false),

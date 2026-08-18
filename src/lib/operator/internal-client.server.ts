@@ -53,7 +53,7 @@ export async function callInternal<T = unknown>(
     if (!res.ok) {
       const detail = await res
         .json()
-        .then((j: any) => j?.error)
+        .then((j: { error?: string }) => j?.error)
         .catch(() => null);
       return {
         ok: false,
