@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import crypto from "node:crypto";
 
 /**
  * Денежный путь Direct-покупки — против настоящей базы, и иначе никак.
@@ -14,15 +15,47 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
  * Тест создаёт свои строки (товар, реквизиты, покупатель, корзина) под
  * уникальным тегом и убирает их за собой. Чужого не трогает.
  *
+ * createOrderFromCart зовётся под ключом арендатора (SUPABASE_TENANT_KEY), а
+ * не под service_role: триггер assign_order_no (MIGRATION-03) берёт bot_id
+ * из claim'а JWT через current_bot_id(), и без него заказу неоткуда взять
+ * order_no — под голым service_role INSERT просто падает на NOT NULL.
+ * Ровно то же самое в проде: деплой всегда подключается ключом арендатора.
+ *
  * Без переменных окружения пропускается, а не падает.
  *
  * Запуск:
- *   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npx vitest run tests/direct-purchase.test.ts
+ *   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… SUPABASE_JWT_SECRET=… \
+ *   npx vitest run tests/direct-purchase.test.ts
  */
 
 const URL_ = process.env.SUPABASE_URL;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ready = Boolean(URL_ && SERVICE);
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+const ready = Boolean(URL_ && SERVICE && JWT_SECRET);
+
+const b64url = (buf: Buffer | string) =>
+  Buffer.from(buf as never)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+/** Тот же алгоритм, что в панели, tests/tenant-isolation.test.ts и scripts/mint-tenant-key.mjs. */
+function mintTenantKey(botId: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const body = b64url(
+    JSON.stringify({
+      role: "tenant_bot",
+      bot_id: botId,
+      iss: "supabase",
+      iat: now,
+      exp: now + 3600,
+    }),
+  );
+  const sig = b64url(crypto.createHmac("sha256", JWT_SECRET!).update(`${head}.${body}`).digest());
+  return `${head}.${body}.${sig}`;
+}
 
 const TAG = `dp-test-${Date.now().toString(36)}`;
 // Код страны заведомо не пересекается с настоящими реквизитами клиентов —
@@ -45,6 +78,7 @@ async function client() {
 }
 
 describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна настоящая база)", () => {
+  let botId: string;
   let productId: string;
   const orderIds: number[] = [];
 
@@ -54,9 +88,27 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
 
     const s = await client();
 
+    // Свой тестовый арендатор — bot_users.bot_id NOT NULL в бою (MIGRATION-02),
+    // products/payment_methods/cart_items/orders держат внешний ключ на
+    // bots(id), а assign_order_no() без claim'а JWT не выдаст order_no.
+    // Строку арендатора заводим под service_role (bots закрыт для tenant_bot
+    // на INSERT), дальше сам код под проверкой работает уже ключом
+    // арендатора — как в проде.
+    const { data: bot, error: botErr } = await s
+      .from("bots")
+      .insert({ bot_name: `${TAG} bot`, owner_id: crypto.randomUUID(), status: "active" })
+      .select("id")
+      .single();
+    if (botErr || !bot)
+      throw new Error(`не удалось создать тестового арендатора: ${botErr?.message}`);
+    botId = bot.id;
+    process.env.BOT_ID = botId;
+    process.env.SUPABASE_TENANT_KEY = mintTenantKey(botId);
+
     const { data: product, error: productErr } = await s
       .from("products")
       .insert({
+        bot_id: botId,
         name: `${TAG} материал`,
         description: "тестовый товар для проверки денежного пути",
         keywords: "",
@@ -74,6 +126,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     productId = product.id;
 
     const { error: methodErr } = await s.from("payment_methods").insert({
+      bot_id: botId,
       country_code: FAKE_COUNTRY,
       country_name: `${TAG} страна`,
       currency: CURRENCY,
@@ -84,6 +137,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     if (methodErr) throw new Error(`не удалось создать реквизиты: ${methodErr.message}`);
 
     const { error: userErr } = await s.from("bot_users").insert({
+      bot_id: botId,
       telegram_id: TELEGRAM_ID,
       user_key: USER_KEY,
       platform: "instagram",
@@ -93,6 +147,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     if (userErr) throw new Error(`не удалось создать покупателя: ${userErr.message}`);
 
     const { error: cartErr } = await s.from("cart_items").insert({
+      bot_id: botId,
       telegram_id: TELEGRAM_ID,
       user_key: USER_KEY,
       product_id: productId,
@@ -111,6 +166,9 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     await s.from("bot_users").delete().eq("user_key", USER_KEY);
     await s.from("payment_methods").delete().eq("country_code", FAKE_COUNTRY);
     if (productId) await s.from("products").delete().eq("id", productId);
+    if (botId) await s.from("bots").delete().eq("id", botId);
+    delete process.env.BOT_ID;
+    delete process.env.SUPABASE_TENANT_KEY;
   });
 
   /** Каждый тест сам приводит state в нужное ему исходное положение — чтобы
