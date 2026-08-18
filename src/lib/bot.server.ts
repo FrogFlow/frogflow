@@ -1886,12 +1886,10 @@ export async function handleUpdate(update: TelegramUpdate) {
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start") {
       await setState(from.id, { ...user.state, mode: "idle" });
-      // Do not infer the UI language from Telegram: the customer explicitly selects it.
-      // This keeps the choice stable when the Telegram app language changes.
-      if (!user.state?.locale) {
-        await askLanguage(chat_id);
-        return;
-      }
+      // /start is also the language-change entry point. Never infer this from
+      // Telegram's device setting: the customer explicitly selects every time.
+      await askLanguage(chat_id);
+      return;
       const s = await db();
       const { data: setting } = await s
         .from("app_settings")
