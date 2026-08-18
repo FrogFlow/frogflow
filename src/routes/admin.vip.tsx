@@ -1,4 +1,36 @@
 import { createFileRoute, Outlet, Link, redirect } from "@tanstack/react-router";
+import { useAdminLocale } from "@/lib/admin-locale";
+import type { Locale } from "@/lib/i18n";
+
+const copy: Record<
+  Locale,
+  { dashboard: string; tariffs: string; subscribers: string; settings: string }
+> = {
+  ru: {
+    dashboard: "Дашборд VIP",
+    tariffs: "Тарифы",
+    subscribers: "Подписчики",
+    settings: "Настройки VIP",
+  },
+  kk: {
+    dashboard: "VIP тақтасы",
+    tariffs: "Тарифтер",
+    subscribers: "Жазылушылар",
+    settings: "VIP баптаулары",
+  },
+  en: {
+    dashboard: "VIP dashboard",
+    tariffs: "Plans",
+    subscribers: "Subscribers",
+    settings: "VIP settings",
+  },
+  uz: {
+    dashboard: "VIP boshqaruv paneli",
+    tariffs: "Tariflar",
+    subscribers: "Obunachilar",
+    settings: "VIP sozlamalari",
+  },
+};
 
 export const Route = createFileRoute("/admin/vip")({
   beforeLoad: ({ context }) => {
@@ -29,15 +61,17 @@ function NavLink({
 }
 
 function AdminVipLayout() {
+  const { locale } = useAdminLocale();
+  const c = copy[locale];
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-1 border-b pb-2 overflow-x-auto">
         <NavLink to="/admin/vip" exact>
-          Дашборд VIP
+          {c.dashboard}
         </NavLink>
-        <NavLink to="/admin/vip/tariffs">Тарифы</NavLink>
-        <NavLink to="/admin/vip/subscribers">Подписчики</NavLink>
-        <NavLink to="/admin/vip/settings">Настройки VIP</NavLink>
+        <NavLink to="/admin/vip/tariffs">{c.tariffs}</NavLink>
+        <NavLink to="/admin/vip/subscribers">{c.subscribers}</NavLink>
+        <NavLink to="/admin/vip/settings">{c.settings}</NavLink>
       </div>
       <div>
         <Outlet />

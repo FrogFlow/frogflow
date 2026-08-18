@@ -78,6 +78,8 @@ import {
 import { Badge } from "@/components-ui/badge";
 import type { ZernioDmButton, ZernioCommentAutomation } from "@/lib/zernio.server";
 import type { Json } from "@/integrations-supabase/types";
+import { useAdminLocale } from "@/lib/admin-locale";
+import type { Locale } from "@/lib/i18n";
 
 /** Безопасно достать строковое поле из Json-объекта (payload лога — Json, а не типизированная форма). */
 function jsonString(payload: Json, key: string): string | undefined {
@@ -88,12 +90,1167 @@ function jsonString(payload: Json, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-const FEATURE_TOGGLES: Array<[key: "catalog" | "search" | "cart" | "checkout", label: string]> = [
-  ["catalog", "Каталог"],
-  ["search", "Поиск товаров"],
-  ["cart", "Корзина"],
-  ["checkout", "Оформление заказа"],
+const dateLocales: Record<Locale, string> = {
+  ru: "ru-RU",
+  kk: "kk-KZ",
+  en: "en-US",
+  uz: "uz-UZ",
+};
+
+const FEATURE_KEYS: Array<"catalog" | "search" | "cart" | "checkout"> = [
+  "catalog",
+  "search",
+  "cart",
+  "checkout",
 ];
+
+const copy: Record<
+  Locale,
+  {
+    featureLabels: Record<"catalog" | "search" | "cart" | "checkout", string>;
+    heading: string;
+    headingSubtitle: string;
+    updateWebhookBtn: string;
+    connectAccountBtn: string;
+    tabDirectBot: string;
+    tabAutomations: string;
+    tabPublish: string;
+    tabLogs: string;
+    tabInbox: string;
+    tabAnalytics: string;
+    tabAccounts: string;
+    directBotTitle: string;
+    directBotDesc: string;
+    statusStopped: string;
+    statusEnabled: string;
+    enableToggleHint: string;
+    enableLabel: string;
+    scopeLabel: string;
+    scopePurchasesTitle: string;
+    scopePurchasesDesc: string;
+    scopeAllTitle: string;
+    scopeAllDesc: string;
+    scopeSelected: string;
+    triggersLabel: string;
+    triggersHint: string;
+    triggersPlaceholder: string;
+    save: string;
+    triggersDefaultHint: string;
+    scriptLabel: string;
+    scriptPlaceholder: string;
+    scriptHint: string;
+    saveTextBtn: string;
+    scenariosLabel: string;
+    scenariosHint: string;
+    ruleEditTitle: string;
+    ruleNewTitle: string;
+    ruleSubtitle: string;
+    autoTitleLabel: string;
+    autoTitlePlaceholder: string;
+    triggerLabel: string;
+    triggerComment: string;
+    triggerStory: string;
+    keywordsLabel: string;
+    keywordsAllPlaceholder: string;
+    keywordsPlaceholder: string;
+    replyToAllLabel: string;
+    replyToAllHint: string;
+    targetStoryLabel: string;
+    targetPostLabel: string;
+    occupiedBy: (name: string) => string;
+    refreshListBtn: string;
+    selectObjectPlaceholder: string;
+    anyStory: string;
+    anyPost: string;
+    noDate: string;
+    storyNoText: string;
+    noText: string;
+    publicReplyLabel: string;
+    publicReplyPlaceholder: string;
+    variationsLabel: string;
+    variationsPlaceholder: string;
+    dmLabel: string;
+    dmPlaceholder: string;
+    dmButtonsLabel: (n: number) => string;
+    addBtn: string;
+    buttonTextPlaceholder: string;
+    buttonUrlType: string;
+    buttonCmdType: string;
+    buttonUrlPlaceholder: string;
+    buttonCmdPlaceholder: string;
+    linkTrackingLabel: string;
+    activeLabel: string;
+    saving: string;
+    saveChangesBtn: string;
+    createRuleBtn: string;
+    cancelBtn: string;
+    activeRulesTitle: (n: number) => string;
+    noActiveRules: string;
+    noActiveRulesHint: string;
+    pausedBadge: string;
+    storyBadge: string;
+    clicksSuffix: string;
+    replyAllBadge: string;
+    keysLabel: string;
+    keysAny: string;
+    targetLabel: string;
+    publishTitle: string;
+    publishDesc: string;
+    accountLabel: string;
+    connectAccountHint: string;
+    formatLabel: string;
+    formatFeed: string;
+    formatStory: string;
+    mediaLabel: string;
+    mediaImage: string;
+    mediaVideo: string;
+    mediaLinksLabel: string;
+    mediaLinksHintVideo: string;
+    mediaLinksHint: string;
+    captionLabel: string;
+    captionPlaceholder: string;
+    scheduledForLabel: string;
+    scheduledForHint: string;
+    collaboratorsLabel: string;
+    collaboratorsHint: string;
+    firstCommentLabel: string;
+    firstCommentPlaceholder: string;
+    shareToFeedLabel: string;
+    aiGeneratedLabel: string;
+    publishingBtn: string;
+    scheduleBtn: string;
+    publishNowBtn: string;
+    queueTitle: string;
+    queueDesc: string;
+    refreshBtn: string;
+    loadingPosts: string;
+    noPostsYet: string;
+    noCaption: string;
+    cancelPostBtn: string;
+    retryPostBtn: string;
+    directTitle: string;
+    directDesc: string;
+    noMessages: string;
+    follower: string;
+    notFollower: string;
+    verified: string;
+    followersSuffix: string;
+    noConversationsYet: string;
+    selectConversationHint: string;
+    attachment: string;
+    loadingShort: string;
+    replyPlaceholder: string;
+    sendBtn: string;
+    analyticsTitle: string;
+    analyticsSubtitle: string;
+    calculating: string;
+    statTriggered: string;
+    statDmsSent: string;
+    statLinkClicks: string;
+    statIncomingDirect: string;
+    statInstagramOrders: string;
+    statPaidDelivered: string;
+    statRevenue: string;
+    statErrors: string;
+    rulesTitle: string;
+    activeRulesCount: (n: number) => string;
+    analyticsHint: string;
+    logsTitle: string;
+    logsSubtitle: string;
+    colTime: string;
+    colEvent: string;
+    colStatus: string;
+    colAction: string;
+    noLogsYet: string;
+    accountRequiresReconnect: string;
+    accountActive: string;
+    accountIdLabel: string;
+    platformLabel: string;
+    integrationProfileLabel: string;
+    readinessLabel: string;
+    checking: string;
+    noData: string;
+    postsAvailable: string;
+    postsUnavailable: string;
+    analyticsAvailable: string;
+    analyticsUnavailable: string;
+    publicationsColon: string;
+    analyticsColon: string;
+    disconnecting: string;
+    disconnectBtn: string;
+    noAccountsConnected: string;
+    dialogFallback: string;
+    sendErrorFallback: string;
+    directBotEnabledMsg: string;
+    directBotDisabledMsg: string;
+    directBotSettingsError: (msg: string) => string;
+    directBotScriptSaved: string;
+    directBotScriptSaveError: (msg: string) => string;
+    scopePurchasesMsg: string;
+    scopeAllMsg: string;
+    scopeSaveError: (msg: string) => string;
+    triggersSaved: (words: string) => string;
+    triggersSaveError: (msg: string) => string;
+    postCancelConfirm: string;
+    postActionError: string;
+    postCancelledMsg: string;
+    postRetriedMsg: string;
+    postActionErrorMsg: (msg: string) => string;
+    disconnectConfirm: (name: string) => string;
+    accountDisconnected: string;
+    accountDisconnectFailed: string;
+    accountDisconnectError: (msg: string) => string;
+    connectAuthUrlOpened: string;
+    connectAuthUrlError: string;
+    connectError: (msg: string) => string;
+    webhookUpdated: string;
+    webhookError: (err: string) => string;
+    webhookErrorFallback: string;
+    webhookGenericError: (msg: string) => string;
+    noAccountsFirst: string;
+    addMediaLink: string;
+    saveAutomationError: (msg: string) => string;
+    duplicateAutomationError: string;
+    genericAutomationError: string;
+    deleteAutomationConfirm: string;
+    deleteAutomationError: (msg: string) => string;
+    toggleAutomationError: (msg: string) => string;
+    buyBtnDefault: string;
+    scheduledForMsg: (when: string) => string;
+    sentForPublishingMsg: string;
+    publicationMsg: (timing: string) => string;
+    publishErrorMsg: (msg: string) => string;
+  }
+> = {
+  ru: {
+    featureLabels: {
+      catalog: "Каталог",
+      search: "Поиск товаров",
+      cart: "Корзина",
+      checkout: "Оформление заказа",
+    },
+    heading: "Instagram",
+    headingSubtitle: "Автоответы на комментарии, продажи в Direct и публикации",
+    updateWebhookBtn: "Обновить Webhook",
+    connectAccountBtn: "Подключить аккаунт",
+    tabDirectBot: "Автоответчик",
+    tabAutomations: "Автоматизации",
+    tabPublish: "Публикации",
+    tabLogs: "Журнал",
+    tabInbox: "Direct",
+    tabAnalytics: "Аналитика",
+    tabAccounts: "Аккаунты",
+    directBotTitle: "Автоответчик в Direct",
+    directBotDesc:
+      "Отвечает на входящие сообщения: показывает каталог, ищет товары, ведёт корзину и оформление заказа. От правил «Комментарий → Direct» не зависит.",
+    statusStopped: "Остановлен",
+    statusEnabled: "Включён",
+    enableToggleHint:
+      "Выключение прекращает новые автоматические ответы, но не отключает ручную переписку и правила комментариев.",
+    enableLabel: "Включить",
+    scopeLabel: "На что отвечать",
+    scopePurchasesTitle: "Только по заказам",
+    scopePurchasesDesc:
+      "Бот вступает, когда человек написал номер товара, и ведёт его до оплаты. Обычную переписку не трогает — вы отвечаете сами в Instagram, и непрочитанные остаются непрочитанными.",
+    scopeAllTitle: "На все сообщения",
+    scopeAllDesc:
+      "Бот отвечает и на обычные вопросы, а вам присылает уведомление. Учтите: отвечая, он помечает переписку прочитанной — в Instagram вы больше не увидите, что вам написали.",
+    scopeSelected: "выбрано",
+    triggersLabel: "Команды, которыми покупатель зовёт бота",
+    triggersHint:
+      "Через запятую. Сравнение идёт с сообщением целиком: «Каталог» бота позовёт, а «а каталог у вас есть?» — нет, это вопрос к вам. Такое слово удобно писать в публикации: «напишите КАТАЛОГ в директ». Номер товара работает всегда, отдельной команды для него не нужно.",
+    triggersPlaceholder: "заказать, купить, магазин, каталог",
+    save: "Сохранить",
+    triggersDefaultHint: "Сейчас используются значения по умолчанию.",
+    scriptLabel: "Ответ на короткое или непонятное сообщение",
+    scriptPlaceholder: "Оставьте пустым, чтобы использовать стандартное приветствие и каталог.",
+    scriptHint: "Этот текст не заменяет поиск товаров, корзину и оформление заказа.",
+    saveTextBtn: "Сохранить текст",
+    scenariosLabel: "Сценарии",
+    scenariosHint:
+      "Товары берутся из активного каталога этого клиента: название, описание и ключевые слова.",
+    ruleEditTitle: "Редактировать правило",
+    ruleNewTitle: "Новая автоматизация",
+    ruleSubtitle: "Что должно сработать и что ответить в Direct",
+    autoTitleLabel: "Название",
+    autoTitlePlaceholder: "Например: рассылка чек-листа",
+    triggerLabel: "Триггер",
+    triggerComment: "💬 Комментарий",
+    triggerStory: "📱 Ответ на Story",
+    keywordsLabel: "Ключевые слова",
+    keywordsAllPlaceholder: "Отвечает на все",
+    keywordsPlaceholder: "хочу, инфо, +",
+    replyToAllLabel: "Отвечать на все комментарии (без ключевых слов)",
+    replyToAllHint: "Доступно только при выборе конкретного поста",
+    targetStoryLabel: "Целевая Story",
+    targetPostLabel: "Целевой пост",
+    occupiedBy: (name) => `⚠️ Занят: "${name}"`,
+    refreshListBtn: "Обновить список",
+    selectObjectPlaceholder: "Выберите объект",
+    anyStory: "✨ Любая Story",
+    anyPost: "✨ Любой пост",
+    noDate: "Нет даты",
+    storyNoText: "Story без текста",
+    noText: "Без текста",
+    publicReplyLabel: "Публичный ответ",
+    publicReplyPlaceholder: "Ответили вам в Директ! 📩",
+    variationsLabel: "Вариации против однотипных ответов:",
+    variationsPlaceholder: "Одна вариация на строку",
+    dmLabel: "Личное сообщение (DM)",
+    dmPlaceholder: "Привет! Вот ссылка на материал...",
+    dmButtonsLabel: (n) => `Кнопки в DM (${n}/3)`,
+    addBtn: "+ Добавить",
+    buttonTextPlaceholder: "Текст",
+    buttonUrlType: "🔗 URL",
+    buttonCmdType: "🤖 CMD",
+    buttonUrlPlaceholder: "https://...",
+    buttonCmdPlaceholder: "Команда, например BUY_NOW",
+    linkTrackingLabel: "Трекинг ссылок",
+    activeLabel: "Активно",
+    saving: "Сохранение...",
+    saveChangesBtn: "Сохранить изменения",
+    createRuleBtn: "Создать автоматизацию",
+    cancelBtn: "Отмена",
+    activeRulesTitle: (n) => `Активные правила (${n})`,
+    noActiveRules: "Нет активных автоматизаций",
+    noActiveRulesHint: "Создайте свое первое правило в панели слева",
+    pausedBadge: "Пауза",
+    storyBadge: "Story",
+    clicksSuffix: "кликов",
+    replyAllBadge: "Отвечать всем",
+    keysLabel: "Ключи:",
+    keysAny: "Любые",
+    targetLabel: "Target:",
+    publishTitle: "Публикация и планировщик",
+    publishDesc:
+      "Feed, Reels, Stories и карусели входят в Instagram-автоматизацию. Для публикации нужны прямые публичные ссылки на файлы.",
+    accountLabel: "Аккаунт",
+    connectAccountHint: "Подключите Instagram-аккаунт во вкладке «Аккаунты»",
+    formatLabel: "Формат",
+    formatFeed: "Feed / Reel / карусель",
+    formatStory: "Story",
+    mediaLabel: "Медиа",
+    mediaImage: "Изображение",
+    mediaVideo: "Видео (публикуется как Reel)",
+    mediaLinksLabel: "Прямые ссылки на медиа",
+    mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
+    mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    captionLabel: "Подпись",
+    captionPlaceholder: "Текст публикации и хэштеги",
+    scheduledForLabel: "Время публикации",
+    scheduledForHint: "Оставьте пустым, чтобы опубликовать сейчас.",
+    collaboratorsLabel: "Соавторы",
+    collaboratorsHint: "До трёх публичных Business/Creator аккаунтов.",
+    firstCommentLabel: "Первый комментарий",
+    firstCommentPlaceholder: "Ссылка или дополнительная информация",
+    shareToFeedLabel: "Показывать Reel и в основной ленте",
+    aiGeneratedLabel: "Контент создан ИИ",
+    publishingBtn: "Отправляем…",
+    scheduleBtn: "Запланировать публикацию",
+    publishNowBtn: "Опубликовать сейчас",
+    queueTitle: "Очередь публикаций",
+    queueDesc: "Запланированные, опубликованные и неудачные посты.",
+    refreshBtn: "Обновить",
+    loadingPosts: "Загружаем публикации…",
+    noPostsYet: "Публикаций пока нет.",
+    noCaption: "Публикация без подписи",
+    cancelPostBtn: "Отменить",
+    retryPostBtn: "Повторить",
+    directTitle: "Instagram Direct",
+    directDesc: "Диалоги подключённого аккаунта.",
+    noMessages: "Нет сообщений",
+    follower: "Подписчик",
+    notFollower: "Не подписан",
+    verified: "Верифицирован",
+    followersSuffix: "подписчиков",
+    noConversationsYet: "Диалогов пока нет.",
+    selectConversationHint: "Выберите диалог слева.",
+    attachment: "Вложение",
+    loadingShort: "Загрузка…",
+    replyPlaceholder: "Напишите ответ…",
+    sendBtn: "Отправить",
+    analyticsTitle: "Instagram за 30 дней",
+    analyticsSubtitle: "Автоматизации, Direct и оплаченные заказы.",
+    calculating: "Считаем показатели…",
+    statTriggered: "Срабатывания",
+    statDmsSent: "Отправлено DM",
+    statLinkClicks: "Клики по ссылкам",
+    statIncomingDirect: "Входящие Direct",
+    statInstagramOrders: "Instagram-заказы",
+    statPaidDelivered: "Оплачено / выдано",
+    statRevenue: "Выручка",
+    statErrors: "Ошибки обработки",
+    rulesTitle: "Правила автоматизации",
+    activeRulesCount: (n) => `Активных правил: ${n}`,
+    analyticsHint:
+      "Показатели считаются по данным Instagram; продажи — по заказам, созданным из Instagram Direct.",
+    logsTitle: "Журнал событий",
+    logsSubtitle: "Последние действия автоматизации",
+    colTime: "Время",
+    colEvent: "Событие",
+    colStatus: "Статус",
+    colAction: "Действие",
+    noLogsYet: "Логов пока нет",
+    accountRequiresReconnect: "Требуется переподключение",
+    accountActive: "Активен",
+    accountIdLabel: "ID:",
+    platformLabel: "Платформа",
+    integrationProfileLabel: "Профиль интеграции",
+    readinessLabel: "Готовность подключения",
+    checking: "Проверяем…",
+    noData: "нет данных",
+    postsAvailable: "доступны",
+    postsUnavailable: "недоступны",
+    analyticsAvailable: "доступна",
+    analyticsUnavailable: "недоступна",
+    publicationsColon: "Публикации:",
+    analyticsColon: "аналитика:",
+    disconnecting: "Отключение...",
+    disconnectBtn: "🔓 Отключить аккаунт",
+    noAccountsConnected: "Нет подключенных аккаунтов",
+    dialogFallback: "Диалог",
+    sendErrorFallback: "Не удалось отправить сообщение. Повторите попытку.",
+    directBotEnabledMsg: "✅ Автоответчик Direct включён.",
+    directBotDisabledMsg: "✅ Автоответчик Direct остановлен.",
+    directBotSettingsError: (msg) => `Ошибка настройки автоответчика: ${msg}`,
+    directBotScriptSaved: "✅ Текст автоответчика сохранён.",
+    directBotScriptSaveError: (msg) => `Ошибка сохранения: ${msg}`,
+    scopePurchasesMsg:
+      "✅ Бот теперь отвечает только по заказам. Обычную переписку он не трогает — непрочитанные остаются непрочитанными в Instagram.",
+    scopeAllMsg:
+      "✅ Бот отвечает и на обычные вопросы. Учтите: отвечая, он помечает переписку прочитанной в Instagram.",
+    scopeSaveError: (msg) => `Ошибка настройки: ${msg}`,
+    triggersSaved: (words) => `✅ Команды сохранены: ${words}`,
+    triggersSaveError: (msg) => `Ошибка сохранения команд: ${msg}`,
+    postCancelConfirm: "Отменить эту запланированную публикацию?",
+    postActionError: "Сервис публикаций не выполнил действие.",
+    postCancelledMsg: "✅ Публикация отменена.",
+    postRetriedMsg: "✅ Повторная публикация поставлена в очередь.",
+    postActionErrorMsg: (msg) => `Ошибка: ${msg}`,
+    disconnectConfirm: (name) =>
+      `Отключить аккаунт "${name}"? Все автоматизации для этого аккаунта перестанут работать.`,
+    accountDisconnected: "✅ Аккаунт успешно отключён.",
+    accountDisconnectFailed: "❌ Не удалось отключить аккаунт.",
+    accountDisconnectError: (msg) => `Ошибка отключения: ${msg}`,
+    connectAuthUrlOpened: "Ссылка авторизации открыта в новой вкладке.",
+    connectAuthUrlError: "Ошибка: не удалось получить ссылку авторизации.",
+    connectError: (msg) => `Ошибка подключения: ${msg}`,
+    webhookUpdated: "✅ Соединение успешно обновлено!",
+    webhookError: (err) => `❌ Ошибка при обновлении соединения: ${err}`,
+    webhookErrorFallback: "Не удалось сохранить настройки webhook.",
+    webhookGenericError: (msg) => `Ошибка: ${msg}`,
+    noAccountsFirst: "Сначала подключите аккаунт Instagram.",
+    addMediaLink: "Добавьте хотя бы одну прямую ссылку на изображение или видео.",
+    saveAutomationError: (msg) => `Ошибка сохранения: ${msg}`,
+    duplicateAutomationError:
+      "Для этого поста уже есть активная автоматизация. Отредактируйте существующую или удалите её перед созданием новой.",
+    genericAutomationError: "Сервис автоматизации отклонил создание правила.",
+    deleteAutomationConfirm: "Удалить эту автоматизацию?",
+    deleteAutomationError: (msg) => `Ошибка удаления: ${msg}`,
+    toggleAutomationError: (msg) => `Ошибка переключения: ${msg}`,
+    buyBtnDefault: "Купить",
+    scheduledForMsg: (when) => ` запланирована на ${when}`,
+    sentForPublishingMsg: " отправлена на публикацию",
+    publicationMsg: (timing) => `✅ Публикация${timing}.`,
+    publishErrorMsg: (msg) => `Ошибка публикации: ${msg}`,
+  },
+  kk: {
+    featureLabels: {
+      catalog: "Каталог",
+      search: "Тауарларды іздеу",
+      cart: "Себет",
+      checkout: "Тапсырысты рәсімдеу",
+    },
+    heading: "Instagram",
+    headingSubtitle: "Пікірлерге автожауап, Direct-те сату және жариялау",
+    updateWebhookBtn: "Webhook жаңарту",
+    connectAccountBtn: "Аккаунт қосу",
+    tabDirectBot: "Автожауап беруші",
+    tabAutomations: "Автоматизациялар",
+    tabPublish: "Жарияланымдар",
+    tabLogs: "Журнал",
+    tabInbox: "Direct",
+    tabAnalytics: "Аналитика",
+    tabAccounts: "Аккаунттар",
+    directBotTitle: "Direct-тегі автожауап беруші",
+    directBotDesc:
+      "Кіріс хабарламаларға жауап береді: каталогты көрсетеді, тауарларды іздейді, себет пен тапсырысты рәсімдеуді жүргізеді. «Пікір → Direct» ережелеріне тәуелді емес.",
+    statusStopped: "Тоқтатылды",
+    statusEnabled: "Қосулы",
+    enableToggleHint:
+      "Өшіру жаңа автоматты жауаптарды тоқтатады, бірақ қолмен хат алмасу мен пікір ережелерін өшірмейді.",
+    enableLabel: "Қосу",
+    scopeLabel: "Неге жауап беру керек",
+    scopePurchasesTitle: "Тек тапсырыстар бойынша",
+    scopePurchasesDesc:
+      "Адам тауар нөмірін жазғанда бот араласады және оны төлемге дейін жеткізеді. Әдеттегі хат алмасуды бот тимейді — сіз Instagram-да өзіңіз жауап бересіз, оқылмағандар оқылмаған күйінде қалады.",
+    scopeAllTitle: "Барлық хабарламаларға",
+    scopeAllDesc:
+      "Бот әдеттегі сұрақтарға да жауап береді, ал сізге хабарлама жібереді. Ескеріңіз: жауап бере отырып, ол хат алмасуды оқылған деп белгілейді — Instagram-да сізге не жазылғанын енді көрмейсіз.",
+    scopeSelected: "таңдалды",
+    triggersLabel: "Сатып алушы ботты шақыратын командалар",
+    triggersHint:
+      "Үтірмен бөлінеді. Салыстыру хабарламаның бүтінімен жүреді: «Каталог» ботты шақырады, ал «каталогыңыз бар ма?» — жоқ, бұл сізге қойылған сұрақ. Мұндай сөзді жарияланымда жазу ыңғайлы: «директке КАТАЛОГ деп жазыңыз». Тауар нөмірі әрқашан жұмыс істейді, оған бөлек команда керек емес.",
+    triggersPlaceholder: "тапсырыс беру, сатып алу, дүкен, каталог",
+    save: "Сақтау",
+    triggersDefaultHint: "Қазір әдепкі мәндер қолданылуда.",
+    scriptLabel: "Қысқа немесе түсініксіз хабарламаға жауап",
+    scriptPlaceholder: "Стандартты сәлемдесу мен каталогты пайдалану үшін бос қалдырыңыз.",
+    scriptHint: "Бұл мәтін тауарларды іздеуді, себетті және тапсырысты рәсімдеуді алмастырмайды.",
+    saveTextBtn: "Мәтінді сақтау",
+    scenariosLabel: "Сценарийлер",
+    scenariosHint:
+      "Тауарлар осы клиенттің белсенді каталогынан алынады: атауы, сипаттамасы және кілт сөздер.",
+    ruleEditTitle: "Ережені өңдеу",
+    ruleNewTitle: "Жаңа автоматизация",
+    ruleSubtitle: "Не іске қосылу керек және Direct-те не жауап беру керек",
+    autoTitleLabel: "Атауы",
+    autoTitlePlaceholder: "Мысалы: чек-лист таратылымы",
+    triggerLabel: "Триггер",
+    triggerComment: "💬 Пікір",
+    triggerStory: "📱 Story-ге жауап",
+    keywordsLabel: "Кілт сөздер",
+    keywordsAllPlaceholder: "Барлығына жауап береді",
+    keywordsPlaceholder: "керек, ақпарат, +",
+    replyToAllLabel: "Барлық пікірлерге жауап беру (кілт сөздерсіз)",
+    replyToAllHint: "Тек нақты постты таңдаған кезде қолжетімді",
+    targetStoryLabel: "Мақсатты Story",
+    targetPostLabel: "Мақсатты пост",
+    occupiedBy: (name) => `⚠️ Бос емес: "${name}"`,
+    refreshListBtn: "Тізімді жаңарту",
+    selectObjectPlaceholder: "Объектіні таңдаңыз",
+    anyStory: "✨ Кез келген Story",
+    anyPost: "✨ Кез келген пост",
+    noDate: "Күні жоқ",
+    storyNoText: "Мәтінсіз Story",
+    noText: "Мәтінсіз",
+    publicReplyLabel: "Жария жауап",
+    publicReplyPlaceholder: "Сізге Директте жауап берілді! 📩",
+    variationsLabel: "Бір тектес жауаптарға қарсы вариациялар:",
+    variationsPlaceholder: "Жолға бір вариация",
+    dmLabel: "Жеке хабарлама (DM)",
+    dmPlaceholder: "Сәлем! Материалға сілтеме мына жерде...",
+    dmButtonsLabel: (n) => `DM-дегі түймелер (${n}/3)`,
+    addBtn: "+ Қосу",
+    buttonTextPlaceholder: "Мәтін",
+    buttonUrlType: "🔗 URL",
+    buttonCmdType: "🤖 CMD",
+    buttonUrlPlaceholder: "https://...",
+    buttonCmdPlaceholder: "Команда, мысалы BUY_NOW",
+    linkTrackingLabel: "Сілтемелерді бақылау",
+    activeLabel: "Белсенді",
+    saving: "Сақталуда...",
+    saveChangesBtn: "Өзгерістерді сақтау",
+    createRuleBtn: "Автоматизация құру",
+    cancelBtn: "Бас тарту",
+    activeRulesTitle: (n) => `Белсенді ережелер (${n})`,
+    noActiveRules: "Белсенді автоматизациялар жоқ",
+    noActiveRulesHint: "Сол жақтағы панельде алғашқы ережеңізді жасаңыз",
+    pausedBadge: "Кідірту",
+    storyBadge: "Story",
+    clicksSuffix: "клик",
+    replyAllBadge: "Барлығына жауап беру",
+    keysLabel: "Кілттер:",
+    keysAny: "Кез келген",
+    targetLabel: "Мақсат:",
+    publishTitle: "Жариялау және жоспарлаушы",
+    publishDesc:
+      "Feed, Reels, Stories және каруселдер Instagram автоматизациясына кіреді. Жариялау үшін файлдарға тікелей жария сілтемелер қажет.",
+    accountLabel: "Аккаунт",
+    connectAccountHint: "«Аккаунттар» бөлімінде Instagram аккаунтын қосыңыз",
+    formatLabel: "Формат",
+    formatFeed: "Feed / Reel / карусель",
+    formatStory: "Story",
+    mediaLabel: "Медиа",
+    mediaImage: "Сурет",
+    mediaVideo: "Видео (Reel ретінде жарияланады)",
+    mediaLinksLabel: "Медиаға тікелей сілтемелер",
+    mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
+    mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    captionLabel: "Қолтаңба",
+    captionPlaceholder: "Жарияланым мәтіні мен хэштегтер",
+    scheduledForLabel: "Жариялау уақыты",
+    scheduledForHint: "Қазір жариялау үшін бос қалдырыңыз.",
+    collaboratorsLabel: "Тең авторлар",
+    collaboratorsHint: "Үш жария Business/Creator аккаунтқа дейін.",
+    firstCommentLabel: "Бірінші пікір",
+    firstCommentPlaceholder: "Сілтеме немесе қосымша ақпарат",
+    shareToFeedLabel: "Reel-ді негізгі лентада да көрсету",
+    aiGeneratedLabel: "Контент ЖИ-мен жасалған",
+    publishingBtn: "Жіберілуде…",
+    scheduleBtn: "Жариялауды жоспарлау",
+    publishNowBtn: "Қазір жариялау",
+    queueTitle: "Жариялау кезегі",
+    queueDesc: "Жоспарланған, жарияланған және сәтсіз посттар.",
+    refreshBtn: "Жаңарту",
+    loadingPosts: "Жарияланымдар жүктелуде…",
+    noPostsYet: "Жарияланымдар әзірге жоқ.",
+    noCaption: "Қолтаңбасыз жарияланым",
+    cancelPostBtn: "Болдырмау",
+    retryPostBtn: "Қайталау",
+    directTitle: "Instagram Direct",
+    directDesc: "Қосылған аккаунттың диалогтары.",
+    noMessages: "Хабарламалар жоқ",
+    follower: "Жазылушы",
+    notFollower: "Жазылмаған",
+    verified: "Верификацияланған",
+    followersSuffix: "жазылушы",
+    noConversationsYet: "Диалогтар әзірге жоқ.",
+    selectConversationHint: "Сол жақтан диалог таңдаңыз.",
+    attachment: "Тіркеме",
+    loadingShort: "Жүктелуде…",
+    replyPlaceholder: "Жауап жазыңыз…",
+    sendBtn: "Жіберу",
+    analyticsTitle: "30 күндегі Instagram",
+    analyticsSubtitle: "Автоматизациялар, Direct және төленген тапсырыстар.",
+    calculating: "Көрсеткіштер есептелуде…",
+    statTriggered: "Іске қосылулар",
+    statDmsSent: "DM жіберілді",
+    statLinkClicks: "Сілтемелер бойынша кликтер",
+    statIncomingDirect: "Кіріс Direct",
+    statInstagramOrders: "Instagram тапсырыстары",
+    statPaidDelivered: "Төленді / берілді",
+    statRevenue: "Табыс",
+    statErrors: "Өңдеу қателері",
+    rulesTitle: "Автоматизация ережелері",
+    activeRulesCount: (n) => `Белсенді ережелер: ${n}`,
+    analyticsHint:
+      "Көрсеткіштер Instagram деректері бойынша есептеледі; сатылымдар — Instagram Direct-тен жасалған тапсырыстар бойынша.",
+    logsTitle: "Оқиғалар журналы",
+    logsSubtitle: "Автоматизацияның соңғы әрекеттері",
+    colTime: "Уақыты",
+    colEvent: "Оқиға",
+    colStatus: "Мәртебесі",
+    colAction: "Әрекет",
+    noLogsYet: "Логтар әзірге жоқ",
+    accountRequiresReconnect: "Қайта қосу қажет",
+    accountActive: "Белсенді",
+    accountIdLabel: "ID:",
+    platformLabel: "Платформа",
+    integrationProfileLabel: "Интеграция профилі",
+    readinessLabel: "Қосылу дайындығы",
+    checking: "Тексерілуде…",
+    noData: "деректер жоқ",
+    postsAvailable: "қолжетімді",
+    postsUnavailable: "қолжетімсіз",
+    analyticsAvailable: "қолжетімді",
+    analyticsUnavailable: "қолжетімсіз",
+    publicationsColon: "Жарияланымдар:",
+    analyticsColon: "аналитика:",
+    disconnecting: "Ажыратылуда...",
+    disconnectBtn: "🔓 Аккаунтты ажырату",
+    noAccountsConnected: "Қосылған аккаунттар жоқ",
+    dialogFallback: "Диалог",
+    sendErrorFallback: "Хабарлама жіберілмеді. Қайта көріңіз.",
+    directBotEnabledMsg: "✅ Direct автожауап беруші қосылды.",
+    directBotDisabledMsg: "✅ Direct автожауап беруші тоқтатылды.",
+    directBotSettingsError: (msg) => `Автожауап берушіні баптау қатесі: ${msg}`,
+    directBotScriptSaved: "✅ Автожауап беруші мәтіні сақталды.",
+    directBotScriptSaveError: (msg) => `Сақтау қатесі: ${msg}`,
+    scopePurchasesMsg:
+      "✅ Бот енді тек тапсырыстар бойынша жауап береді. Әдеттегі хат алмасуды тимейді — Instagram-да оқылмағандар оқылмаған күйінде қалады.",
+    scopeAllMsg:
+      "✅ Бот әдеттегі сұрақтарға да жауап береді. Ескеріңіз: жауап бере отырып, ол Instagram-да хат алмасуды оқылған деп белгілейді.",
+    scopeSaveError: (msg) => `Баптау қатесі: ${msg}`,
+    triggersSaved: (words) => `✅ Командалар сақталды: ${words}`,
+    triggersSaveError: (msg) => `Командаларды сақтау қатесі: ${msg}`,
+    postCancelConfirm: "Бұл жоспарланған жарияланымды болдырмау керек пе?",
+    postActionError: "Жариялау қызметі әрекетті орындамады.",
+    postCancelledMsg: "✅ Жарияланым болдырылмады.",
+    postRetriedMsg: "✅ Қайта жариялау кезекке қойылды.",
+    postActionErrorMsg: (msg) => `Қате: ${msg}`,
+    disconnectConfirm: (name) =>
+      `"${name}" аккаунтын ажырату керек пе? Осы аккаунттың барлық автоматизациялары жұмыс істемей қалады.`,
+    accountDisconnected: "✅ Аккаунт сәтті ажыратылды.",
+    accountDisconnectFailed: "❌ Аккаунтты ажырату мүмкін болмады.",
+    accountDisconnectError: (msg) => `Ажырату қатесі: ${msg}`,
+    connectAuthUrlOpened: "Авторизация сілтемесі жаңа қойындыда ашылды.",
+    connectAuthUrlError: "Қате: авторизация сілтемесін алу мүмкін болмады.",
+    connectError: (msg) => `Қосылу қатесі: ${msg}`,
+    webhookUpdated: "✅ Байланыс сәтті жаңартылды!",
+    webhookError: (err) => `❌ Байланысты жаңарту кезінде қате: ${err}`,
+    webhookErrorFallback: "Webhook баптауларын сақтау мүмкін болмады.",
+    webhookGenericError: (msg) => `Қате: ${msg}`,
+    noAccountsFirst: "Алдымен Instagram аккаунтын қосыңыз.",
+    addMediaLink: "Кемінде бір сурет немесе видеоға тікелей сілтеме қосыңыз.",
+    saveAutomationError: (msg) => `Сақтау қатесі: ${msg}`,
+    duplicateAutomationError:
+      "Бұл пост үшін белсенді автоматизация бұрыннан бар. Жаңасын жасамас бұрын барды өңдеңіз немесе жойыңыз.",
+    genericAutomationError: "Автоматизация қызметі ереже құруды қабылдамады.",
+    deleteAutomationConfirm: "Бұл автоматизацияны жою керек пе?",
+    deleteAutomationError: (msg) => `Жою қатесі: ${msg}`,
+    toggleAutomationError: (msg) => `Ауыстыру қатесі: ${msg}`,
+    buyBtnDefault: "Сатып алу",
+    scheduledForMsg: (when) => ` ${when} жоспарланды`,
+    sentForPublishingMsg: " жариялауға жіберілді",
+    publicationMsg: (timing) => `✅ Жарияланым${timing}.`,
+    publishErrorMsg: (msg) => `Жариялау қатесі: ${msg}`,
+  },
+  en: {
+    featureLabels: {
+      catalog: "Catalog",
+      search: "Product search",
+      cart: "Cart",
+      checkout: "Checkout",
+    },
+    heading: "Instagram",
+    headingSubtitle: "Auto-replies to comments, Direct sales, and publishing",
+    updateWebhookBtn: "Update webhook",
+    connectAccountBtn: "Connect account",
+    tabDirectBot: "Auto-reply",
+    tabAutomations: "Automations",
+    tabPublish: "Publishing",
+    tabLogs: "Log",
+    tabInbox: "Direct",
+    tabAnalytics: "Analytics",
+    tabAccounts: "Accounts",
+    directBotTitle: "Direct auto-reply",
+    directBotDesc:
+      'Replies to incoming messages: shows the catalog, searches products, drives the cart and checkout. Independent of the "Comment → Direct" rules.',
+    statusStopped: "Stopped",
+    statusEnabled: "Enabled",
+    enableToggleHint:
+      "Turning it off stops new automatic replies, but doesn't disable manual conversations or comment rules.",
+    enableLabel: "Enable",
+    scopeLabel: "What it replies to",
+    scopePurchasesTitle: "Orders only",
+    scopePurchasesDesc:
+      "The bot steps in once a person writes a product number and carries them through to payment. It leaves regular conversations alone — you reply yourself in Instagram, and unread stays unread.",
+    scopeAllTitle: "All messages",
+    scopeAllDesc:
+      "The bot also replies to regular questions and notifies you. Note: by replying it marks the conversation read — you'll no longer see in Instagram that you were messaged.",
+    scopeSelected: "selected",
+    triggersLabel: "Commands buyers use to call the bot",
+    triggersHint:
+      'Comma-separated. Matched against the whole message: "Catalog" calls the bot, but "do you have a catalog?" doesn\'t — that\'s a question for you. Handy to mention in posts: "send CATALOG to Direct". A product number always works, no separate command needed.',
+    triggersPlaceholder: "order, buy, shop, catalog",
+    save: "Save",
+    triggersDefaultHint: "The default values are currently in use.",
+    scriptLabel: "Reply to a short or unclear message",
+    scriptPlaceholder: "Leave empty to use the standard greeting and catalog.",
+    scriptHint: "This text doesn't replace product search, the cart, or checkout.",
+    saveTextBtn: "Save text",
+    scenariosLabel: "Scenarios",
+    scenariosHint:
+      "Products are pulled from this client's active catalog: name, description, and keywords.",
+    ruleEditTitle: "Edit rule",
+    ruleNewTitle: "New automation",
+    ruleSubtitle: "What triggers it and what to reply in Direct",
+    autoTitleLabel: "Name",
+    autoTitlePlaceholder: "e.g. checklist giveaway",
+    triggerLabel: "Trigger",
+    triggerComment: "💬 Comment",
+    triggerStory: "📱 Story reply",
+    keywordsLabel: "Keywords",
+    keywordsAllPlaceholder: "Replies to all",
+    keywordsPlaceholder: "want, info, +",
+    replyToAllLabel: "Reply to all comments (no keywords)",
+    replyToAllHint: "Only available when a specific post is selected",
+    targetStoryLabel: "Target story",
+    targetPostLabel: "Target post",
+    occupiedBy: (name) => `⚠️ Taken: "${name}"`,
+    refreshListBtn: "Refresh list",
+    selectObjectPlaceholder: "Choose an item",
+    anyStory: "✨ Any story",
+    anyPost: "✨ Any post",
+    noDate: "No date",
+    storyNoText: "Story with no text",
+    noText: "No text",
+    publicReplyLabel: "Public reply",
+    publicReplyPlaceholder: "We replied to you in Direct! 📩",
+    variationsLabel: "Variations to avoid repetitive replies:",
+    variationsPlaceholder: "One variation per line",
+    dmLabel: "Direct message (DM)",
+    dmPlaceholder: "Hi! Here's the link to the material...",
+    dmButtonsLabel: (n) => `Buttons in DM (${n}/3)`,
+    addBtn: "+ Add",
+    buttonTextPlaceholder: "Text",
+    buttonUrlType: "🔗 URL",
+    buttonCmdType: "🤖 CMD",
+    buttonUrlPlaceholder: "https://...",
+    buttonCmdPlaceholder: "Command, e.g. BUY_NOW",
+    linkTrackingLabel: "Link tracking",
+    activeLabel: "Active",
+    saving: "Saving...",
+    saveChangesBtn: "Save changes",
+    createRuleBtn: "Create automation",
+    cancelBtn: "Cancel",
+    activeRulesTitle: (n) => `Active rules (${n})`,
+    noActiveRules: "No active automations",
+    noActiveRulesHint: "Create your first rule on the panel to the left",
+    pausedBadge: "Paused",
+    storyBadge: "Story",
+    clicksSuffix: "clicks",
+    replyAllBadge: "Reply to everyone",
+    keysLabel: "Keys:",
+    keysAny: "Any",
+    targetLabel: "Target:",
+    publishTitle: "Publishing and scheduler",
+    publishDesc:
+      "Feed, Reels, Stories, and carousels are part of Instagram automation. Publishing needs direct public links to the files.",
+    accountLabel: "Account",
+    connectAccountHint: 'Connect an Instagram account in the "Accounts" tab',
+    formatLabel: "Format",
+    formatFeed: "Feed / Reel / carousel",
+    formatStory: "Story",
+    mediaLabel: "Media",
+    mediaImage: "Image",
+    mediaVideo: "Video (published as a Reel)",
+    mediaLinksLabel: "Direct media links",
+    mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
+    mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    captionLabel: "Caption",
+    captionPlaceholder: "Post text and hashtags",
+    scheduledForLabel: "Publish time",
+    scheduledForHint: "Leave empty to publish now.",
+    collaboratorsLabel: "Collaborators",
+    collaboratorsHint: "Up to three public Business/Creator accounts.",
+    firstCommentLabel: "First comment",
+    firstCommentPlaceholder: "A link or extra information",
+    shareToFeedLabel: "Also show the Reel in the main feed",
+    aiGeneratedLabel: "AI-generated content",
+    publishingBtn: "Sending…",
+    scheduleBtn: "Schedule publication",
+    publishNowBtn: "Publish now",
+    queueTitle: "Publishing queue",
+    queueDesc: "Scheduled, published, and failed posts.",
+    refreshBtn: "Refresh",
+    loadingPosts: "Loading posts…",
+    noPostsYet: "No posts yet.",
+    noCaption: "Post with no caption",
+    cancelPostBtn: "Cancel",
+    retryPostBtn: "Retry",
+    directTitle: "Instagram Direct",
+    directDesc: "Conversations for the connected account.",
+    noMessages: "No messages",
+    follower: "Follower",
+    notFollower: "Not a follower",
+    verified: "Verified",
+    followersSuffix: "followers",
+    noConversationsYet: "No conversations yet.",
+    selectConversationHint: "Select a conversation on the left.",
+    attachment: "Attachment",
+    loadingShort: "Loading…",
+    replyPlaceholder: "Write a reply…",
+    sendBtn: "Send",
+    analyticsTitle: "Instagram over 30 days",
+    analyticsSubtitle: "Automations, Direct, and paid orders.",
+    calculating: "Crunching the numbers…",
+    statTriggered: "Triggered",
+    statDmsSent: "DMs sent",
+    statLinkClicks: "Link clicks",
+    statIncomingDirect: "Incoming Direct",
+    statInstagramOrders: "Instagram orders",
+    statPaidDelivered: "Paid / delivered",
+    statRevenue: "Revenue",
+    statErrors: "Processing errors",
+    rulesTitle: "Automation rules",
+    activeRulesCount: (n) => `Active rules: ${n}`,
+    analyticsHint:
+      "Metrics are computed from Instagram data; sales are based on orders created via Instagram Direct.",
+    logsTitle: "Event log",
+    logsSubtitle: "Recent automation activity",
+    colTime: "Time",
+    colEvent: "Event",
+    colStatus: "Status",
+    colAction: "Action",
+    noLogsYet: "No log entries yet",
+    accountRequiresReconnect: "Reconnection required",
+    accountActive: "Active",
+    accountIdLabel: "ID:",
+    platformLabel: "Platform",
+    integrationProfileLabel: "Integration profile",
+    readinessLabel: "Connection readiness",
+    checking: "Checking…",
+    noData: "no data",
+    postsAvailable: "available",
+    postsUnavailable: "unavailable",
+    analyticsAvailable: "available",
+    analyticsUnavailable: "unavailable",
+    publicationsColon: "Posting:",
+    analyticsColon: "analytics:",
+    disconnecting: "Disconnecting...",
+    disconnectBtn: "🔓 Disconnect account",
+    noAccountsConnected: "No accounts connected",
+    dialogFallback: "Conversation",
+    sendErrorFallback: "Failed to send the message. Try again.",
+    directBotEnabledMsg: "✅ Direct auto-reply enabled.",
+    directBotDisabledMsg: "✅ Direct auto-reply stopped.",
+    directBotSettingsError: (msg) => `Auto-reply settings error: ${msg}`,
+    directBotScriptSaved: "✅ Auto-reply text saved.",
+    directBotScriptSaveError: (msg) => `Save error: ${msg}`,
+    scopePurchasesMsg:
+      "✅ The bot now replies to orders only. It leaves regular conversations alone — unread stays unread in Instagram.",
+    scopeAllMsg:
+      "✅ The bot also replies to regular questions. Note: by replying it marks the conversation read in Instagram.",
+    scopeSaveError: (msg) => `Settings error: ${msg}`,
+    triggersSaved: (words) => `✅ Commands saved: ${words}`,
+    triggersSaveError: (msg) => `Failed to save commands: ${msg}`,
+    postCancelConfirm: "Cancel this scheduled post?",
+    postActionError: "The publishing service didn't perform the action.",
+    postCancelledMsg: "✅ Post cancelled.",
+    postRetriedMsg: "✅ Retry queued.",
+    postActionErrorMsg: (msg) => `Error: ${msg}`,
+    disconnectConfirm: (name) =>
+      `Disconnect account "${name}"? All automations for this account will stop working.`,
+    accountDisconnected: "✅ Account disconnected successfully.",
+    accountDisconnectFailed: "❌ Failed to disconnect the account.",
+    accountDisconnectError: (msg) => `Disconnect error: ${msg}`,
+    connectAuthUrlOpened: "The authorization link opened in a new tab.",
+    connectAuthUrlError: "Error: failed to get the authorization link.",
+    connectError: (msg) => `Connection error: ${msg}`,
+    webhookUpdated: "✅ Connection updated successfully!",
+    webhookError: (err) => `❌ Error updating the connection: ${err}`,
+    webhookErrorFallback: "Failed to save the webhook settings.",
+    webhookGenericError: (msg) => `Error: ${msg}`,
+    noAccountsFirst: "Connect an Instagram account first.",
+    addMediaLink: "Add at least one direct link to an image or video.",
+    saveAutomationError: (msg) => `Save error: ${msg}`,
+    duplicateAutomationError:
+      "This post already has an active automation. Edit the existing one or delete it before creating a new one.",
+    genericAutomationError: "The automation service rejected creating the rule.",
+    deleteAutomationConfirm: "Delete this automation?",
+    deleteAutomationError: (msg) => `Delete error: ${msg}`,
+    toggleAutomationError: (msg) => `Toggle error: ${msg}`,
+    buyBtnDefault: "Buy",
+    scheduledForMsg: (when) => ` scheduled for ${when}`,
+    sentForPublishingMsg: " sent for publishing",
+    publicationMsg: (timing) => `✅ Post${timing}.`,
+    publishErrorMsg: (msg) => `Publishing error: ${msg}`,
+  },
+  uz: {
+    featureLabels: {
+      catalog: "Katalog",
+      search: "Mahsulot qidiruvi",
+      cart: "Savat",
+      checkout: "Buyurtmani rasmiylashtirish",
+    },
+    heading: "Instagram",
+    headingSubtitle: "Izohlarga avtojavob, Direct’da sotuv va nashr qilish",
+    updateWebhookBtn: "Webhook’ni yangilash",
+    connectAccountBtn: "Akkaunt ulash",
+    tabDirectBot: "Avtojavob beruvchi",
+    tabAutomations: "Avtomatlashtirishlar",
+    tabPublish: "Nashrlar",
+    tabLogs: "Jurnal",
+    tabInbox: "Direct",
+    tabAnalytics: "Analitika",
+    tabAccounts: "Akkauntlar",
+    directBotTitle: "Direct’dagi avtojavob beruvchi",
+    directBotDesc:
+      "Kiruvchi xabarlarga javob beradi: katalogni ko‘rsatadi, mahsulot qidiradi, savat va buyurtmani rasmiylashtirishni yuritadi. «Izoh → Direct» qoidalariga bog‘liq emas.",
+    statusStopped: "To‘xtatilgan",
+    statusEnabled: "Yoqilgan",
+    enableToggleHint:
+      "O‘chirish yangi avtomatik javoblarni to‘xtatadi, lekin qo‘lda yozishmalar va izoh qoidalarini o‘chirmaydi.",
+    enableLabel: "Yoqish",
+    scopeLabel: "Nimaga javob berish kerak",
+    scopePurchasesTitle: "Faqat buyurtmalar bo‘yicha",
+    scopePurchasesDesc:
+      "Odam mahsulot raqamini yozganda bot ishga tushadi va uni to‘lovgacha olib boradi. Oddiy yozishmani tegmaydi — siz Instagram’da o‘zingiz javob berasiz, o‘qilmaganlar o‘qilmagan holicha qoladi.",
+    scopeAllTitle: "Barcha xabarlarga",
+    scopeAllDesc:
+      "Bot oddiy savollarga ham javob beradi va sizga xabarnoma yuboradi. E’tibor bering: javob berayotganda u yozishmani o‘qilgan deb belgilaydi — Instagram’da sizga yozilganini endi ko‘rmaysiz.",
+    scopeSelected: "tanlandi",
+    triggersLabel: "Xaridor botni chaqiradigan buyruqlar",
+    triggersHint:
+      "Vergul bilan. Solishtirish butun xabar bilan boradi: «Katalog» botni chaqiradi, lekin «katalogingiz bormi?» — yo‘q, bu sizga savol. Bunday so‘zni postda yozish qulay: «direktga KATALOG deb yozing». Mahsulot raqami har doim ishlaydi, u uchun alohida buyruq kerak emas.",
+    triggersPlaceholder: "buyurtma berish, sotib olish, do‘kon, katalog",
+    save: "Saqlash",
+    triggersDefaultHint: "Hozir standart qiymatlar ishlatilmoqda.",
+    scriptLabel: "Qisqa yoki tushunarsiz xabarga javob",
+    scriptPlaceholder: "Standart salomlashuv va katalogdan foydalanish uchun bo‘sh qoldiring.",
+    scriptHint: "Bu matn mahsulot qidiruvi, savat va buyurtmani rasmiylashtirishni almashtirmaydi.",
+    saveTextBtn: "Matnni saqlash",
+    scenariosLabel: "Ssenariylar",
+    scenariosHint:
+      "Mahsulotlar shu mijozning faol katalogidan olinadi: nomi, tavsifi va kalit so‘zlar.",
+    ruleEditTitle: "Qoidani tahrirlash",
+    ruleNewTitle: "Yangi avtomatlashtirish",
+    ruleSubtitle: "Nima ishga tushishi va Direct’da nima javob berish kerak",
+    autoTitleLabel: "Nomi",
+    autoTitlePlaceholder: "Masalan: chek-list tarqatish",
+    triggerLabel: "Trigger",
+    triggerComment: "💬 Izoh",
+    triggerStory: "📱 Story’ga javob",
+    keywordsLabel: "Kalit so‘zlar",
+    keywordsAllPlaceholder: "Barchasiga javob beradi",
+    keywordsPlaceholder: "xohlayman, ma’lumot, +",
+    replyToAllLabel: "Barcha izohlarga javob berish (kalit so‘zlarsiz)",
+    replyToAllHint: "Faqat aniq post tanlangandagina mavjud",
+    targetStoryLabel: "Maqsadli Story",
+    targetPostLabel: "Maqsadli post",
+    occupiedBy: (name) => `⚠️ Band: "${name}"`,
+    refreshListBtn: "Ro‘yxatni yangilash",
+    selectObjectPlaceholder: "Ob’ektni tanlang",
+    anyStory: "✨ Har qanday Story",
+    anyPost: "✨ Har qanday post",
+    noDate: "Sana yo‘q",
+    storyNoText: "Matnsiz Story",
+    noText: "Matnsiz",
+    publicReplyLabel: "Ochiq javob",
+    publicReplyPlaceholder: "Sizga Direct’da javob berdik! 📩",
+    variationsLabel: "Bir xil javoblarga qarshi variantlar:",
+    variationsPlaceholder: "Har qatorga bitta variant",
+    dmLabel: "Shaxsiy xabar (DM)",
+    dmPlaceholder: "Salom! Material havolasi mana...",
+    dmButtonsLabel: (n) => `DM’dagi tugmalar (${n}/3)`,
+    addBtn: "+ Qo‘shish",
+    buttonTextPlaceholder: "Matn",
+    buttonUrlType: "🔗 URL",
+    buttonCmdType: "🤖 CMD",
+    buttonUrlPlaceholder: "https://...",
+    buttonCmdPlaceholder: "Buyruq, masalan BUY_NOW",
+    linkTrackingLabel: "Havolalarni kuzatish",
+    activeLabel: "Faol",
+    saving: "Saqlanmoqda...",
+    saveChangesBtn: "O‘zgarishlarni saqlash",
+    createRuleBtn: "Avtomatlashtirish yaratish",
+    cancelBtn: "Bekor qilish",
+    activeRulesTitle: (n) => `Faol qoidalar (${n})`,
+    noActiveRules: "Faol avtomatlashtirishlar yo‘q",
+    noActiveRulesHint: "Chapdagi panelda birinchi qoidangizni yarating",
+    pausedBadge: "Pauza",
+    storyBadge: "Story",
+    clicksSuffix: "klik",
+    replyAllBadge: "Hammaga javob berish",
+    keysLabel: "Kalitlar:",
+    keysAny: "Har qanday",
+    targetLabel: "Maqsad:",
+    publishTitle: "Nashr va rejalashtiruvchi",
+    publishDesc:
+      "Feed, Reels, Stories va karusellar Instagram avtomatlashtirishiga kiradi. Nashr qilish uchun fayllarga to‘g‘ridan-to‘g‘ri ochiq havolalar kerak.",
+    accountLabel: "Akkaunt",
+    connectAccountHint: "«Akkauntlar» bo‘limida Instagram akkauntini ulang",
+    formatLabel: "Format",
+    formatFeed: "Feed / Reel / karusel",
+    formatStory: "Story",
+    mediaLabel: "Media",
+    mediaImage: "Rasm",
+    mediaVideo: "Video (Reel sifatida nashr qilinadi)",
+    mediaLinksLabel: "Mediaga to‘g‘ridan-to‘g‘ri havolalar",
+    mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
+    mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    captionLabel: "Sarlavha",
+    captionPlaceholder: "Post matni va xeshteglar",
+    scheduledForLabel: "Nashr vaqti",
+    scheduledForHint: "Hozir nashr qilish uchun bo‘sh qoldiring.",
+    collaboratorsLabel: "Hammualliflar",
+    collaboratorsHint: "Uchtagacha ochiq Business/Creator akkaunt.",
+    firstCommentLabel: "Birinchi izoh",
+    firstCommentPlaceholder: "Havola yoki qo‘shimcha ma’lumot",
+    shareToFeedLabel: "Reel’ni asosiy lentada ham ko‘rsatish",
+    aiGeneratedLabel: "Kontent AI tomonidan yaratilgan",
+    publishingBtn: "Yuborilmoqda…",
+    scheduleBtn: "Nashrni rejalashtirish",
+    publishNowBtn: "Hozir nashr qilish",
+    queueTitle: "Nashr navbati",
+    queueDesc: "Rejalashtirilgan, nashr qilingan va muvaffaqiyatsiz postlar.",
+    refreshBtn: "Yangilash",
+    loadingPosts: "Postlar yuklanmoqda…",
+    noPostsYet: "Hozircha postlar yo‘q.",
+    noCaption: "Sarlavhasiz post",
+    cancelPostBtn: "Bekor qilish",
+    retryPostBtn: "Qayta urinish",
+    directTitle: "Instagram Direct",
+    directDesc: "Ulangan akkaunt suhbatlari.",
+    noMessages: "Xabarlar yo‘q",
+    follower: "Obunachi",
+    notFollower: "Obuna bo‘lmagan",
+    verified: "Tasdiqlangan",
+    followersSuffix: "obunachi",
+    noConversationsYet: "Hozircha suhbatlar yo‘q.",
+    selectConversationHint: "Chapdan suhbatni tanlang.",
+    attachment: "Biriktirma",
+    loadingShort: "Yuklanmoqda…",
+    replyPlaceholder: "Javob yozing…",
+    sendBtn: "Yuborish",
+    analyticsTitle: "30 kunlik Instagram",
+    analyticsSubtitle: "Avtomatlashtirishlar, Direct va to‘langan buyurtmalar.",
+    calculating: "Ko‘rsatkichlar hisoblanmoqda…",
+    statTriggered: "Ishga tushishlar",
+    statDmsSent: "DM yuborildi",
+    statLinkClicks: "Havola bosishlari",
+    statIncomingDirect: "Kiruvchi Direct",
+    statInstagramOrders: "Instagram buyurtmalari",
+    statPaidDelivered: "To‘landi / berildi",
+    statRevenue: "Daromad",
+    statErrors: "Qayta ishlash xatolari",
+    rulesTitle: "Avtomatlashtirish qoidalari",
+    activeRulesCount: (n) => `Faol qoidalar: ${n}`,
+    analyticsHint:
+      "Ko‘rsatkichlar Instagram ma’lumotlari bo‘yicha hisoblanadi; sotuvlar — Instagram Direct’dan yaratilgan buyurtmalar bo‘yicha.",
+    logsTitle: "Voqealar jurnali",
+    logsSubtitle: "Avtomatlashtirishning so‘nggi harakatlari",
+    colTime: "Vaqt",
+    colEvent: "Voqea",
+    colStatus: "Holat",
+    colAction: "Amal",
+    noLogsYet: "Hozircha loglar yo‘q",
+    accountRequiresReconnect: "Qayta ulash talab qilinadi",
+    accountActive: "Faol",
+    accountIdLabel: "ID:",
+    platformLabel: "Platforma",
+    integrationProfileLabel: "Integratsiya profili",
+    readinessLabel: "Ulanish tayyorligi",
+    checking: "Tekshirilmoqda…",
+    noData: "ma’lumot yo‘q",
+    postsAvailable: "mavjud",
+    postsUnavailable: "mavjud emas",
+    analyticsAvailable: "mavjud",
+    analyticsUnavailable: "mavjud emas",
+    publicationsColon: "Nashrlar:",
+    analyticsColon: "analitika:",
+    disconnecting: "Uzilmoqda...",
+    disconnectBtn: "🔓 Akkauntni uzish",
+    noAccountsConnected: "Ulangan akkauntlar yo‘q",
+    dialogFallback: "Suhbat",
+    sendErrorFallback: "Xabarni yuborib bo‘lmadi. Qayta urinib ko‘ring.",
+    directBotEnabledMsg: "✅ Direct avtojavob beruvchi yoqildi.",
+    directBotDisabledMsg: "✅ Direct avtojavob beruvchi to‘xtatildi.",
+    directBotSettingsError: (msg) => `Avtojavob sozlash xatosi: ${msg}`,
+    directBotScriptSaved: "✅ Avtojavob matni saqlandi.",
+    directBotScriptSaveError: (msg) => `Saqlash xatosi: ${msg}`,
+    scopePurchasesMsg:
+      "✅ Bot endi faqat buyurtmalar bo‘yicha javob beradi. Oddiy yozishmani tegmaydi — Instagram’da o‘qilmaganlar o‘qilmagan holicha qoladi.",
+    scopeAllMsg:
+      "✅ Bot oddiy savollarga ham javob beradi. E’tibor bering: javob berayotganda u Instagram’da yozishmani o‘qilgan deb belgilaydi.",
+    scopeSaveError: (msg) => `Sozlash xatosi: ${msg}`,
+    triggersSaved: (words) => `✅ Buyruqlar saqlandi: ${words}`,
+    triggersSaveError: (msg) => `Buyruqlarni saqlashda xato: ${msg}`,
+    postCancelConfirm: "Ushbu rejalashtirilgan postni bekor qilasizmi?",
+    postActionError: "Nashr xizmati amalni bajarmadi.",
+    postCancelledMsg: "✅ Post bekor qilindi.",
+    postRetriedMsg: "✅ Qayta nashr navbatga qo‘yildi.",
+    postActionErrorMsg: (msg) => `Xato: ${msg}`,
+    disconnectConfirm: (name) =>
+      `"${name}" akkauntini uzasizmi? Ushbu akkaunt uchun barcha avtomatlashtirishlar ishlamay qoladi.`,
+    accountDisconnected: "✅ Akkaunt muvaffaqiyatli uzildi.",
+    accountDisconnectFailed: "❌ Akkauntni uzib bo‘lmadi.",
+    accountDisconnectError: (msg) => `Uzish xatosi: ${msg}`,
+    connectAuthUrlOpened: "Avtorizatsiya havolasi yangi bo‘limda ochildi.",
+    connectAuthUrlError: "Xato: avtorizatsiya havolasini olib bo‘lmadi.",
+    connectError: (msg) => `Ulanish xatosi: ${msg}`,
+    webhookUpdated: "✅ Ulanish muvaffaqiyatli yangilandi!",
+    webhookError: (err) => `❌ Ulanishni yangilashda xato: ${err}`,
+    webhookErrorFallback: "Webhook sozlamalarini saqlab bo‘lmadi.",
+    webhookGenericError: (msg) => `Xato: ${msg}`,
+    noAccountsFirst: "Avval Instagram akkauntini ulang.",
+    addMediaLink: "Kamida bitta rasm yoki videoga to‘g‘ridan-to‘g‘ri havola qo‘shing.",
+    saveAutomationError: (msg) => `Saqlash xatosi: ${msg}`,
+    duplicateAutomationError:
+      "Bu post uchun allaqachon faol avtomatlashtirish bor. Yangisini yaratishdan oldin mavjudini tahrirlang yoki o‘chiring.",
+    genericAutomationError: "Avtomatlashtirish xizmati qoida yaratishni rad etdi.",
+    deleteAutomationConfirm: "Ushbu avtomatlashtirishni o‘chirasizmi?",
+    deleteAutomationError: (msg) => `O‘chirish xatosi: ${msg}`,
+    toggleAutomationError: (msg) => `Almashtirish xatosi: ${msg}`,
+    buyBtnDefault: "Sotib olish",
+    scheduledForMsg: (when) => ` ${when} ga rejalashtirildi`,
+    sentForPublishingMsg: " nashrga yuborildi",
+    publicationMsg: (timing) => `✅ Post${timing}.`,
+    publishErrorMsg: (msg) => `Nashr xatosi: ${msg}`,
+  },
+};
 
 export const Route = createFileRoute("/admin/instagram")({
   beforeLoad: ({ context }) => {
@@ -104,6 +1261,8 @@ export const Route = createFileRoute("/admin/instagram")({
 });
 
 function AdminInstagramPage() {
+  const { locale } = useAdminLocale();
+  const tr = copy[locale];
   const qc = useQueryClient();
 
   const accountsQuery = useQuery({
@@ -214,15 +1373,14 @@ function AdminInstagramPage() {
       const result = await sendInstagramConversationMessageFn({
         data: { accountId: acc._id, conversationId: selectedConversationId, message: inboxReply },
       });
-      if (!result.ok)
-        throw new Error(result.error || "Не удалось отправить сообщение. Повторите попытку.");
+      if (!result.ok) throw new Error(result.error || tr.sendErrorFallback);
       setInboxReply("");
       qc.invalidateQueries({
         queryKey: ["ig_conversation_messages", acc._id, selectedConversationId],
       });
       qc.invalidateQueries({ queryKey: ["ig_conversations", acc._id] });
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка отправки: ${errorMessage(e)}`);
+      setStatusMsg(tr.postActionErrorMsg(errorMessage(e)));
     }
   };
 
@@ -230,11 +1388,9 @@ function AdminInstagramPage() {
     try {
       await saveInstagramDirectBotSettingsFn({ data: { enabled } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_settings"] });
-      setStatusMsg(
-        enabled ? "✅ Автоответчик Direct включён." : "✅ Автоответчик Direct остановлен.",
-      );
+      setStatusMsg(enabled ? tr.directBotEnabledMsg : tr.directBotDisabledMsg);
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка настройки автоответчика: ${errorMessage(e)}`);
+      setStatusMsg(tr.directBotSettingsError(errorMessage(e)));
     }
   };
 
@@ -242,9 +1398,9 @@ function AdminInstagramPage() {
     try {
       await saveInstagramDirectBotScriptFn({ data: { text: directBotScript } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_script"] });
-      setStatusMsg("✅ Текст автоответчика сохранён.");
+      setStatusMsg(tr.directBotScriptSaved);
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка сохранения: ${errorMessage(e)}`);
+      setStatusMsg(tr.directBotScriptSaveError(errorMessage(e)));
     }
   };
 
@@ -252,13 +1408,9 @@ function AdminInstagramPage() {
     try {
       await saveInstagramDirectBotScopeFn({ data: { scope } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_scope"] });
-      setStatusMsg(
-        scope === "purchases"
-          ? "✅ Бот теперь отвечает только по заказам. Обычную переписку он не трогает — непрочитанные остаются непрочитанными в Instagram."
-          : "✅ Бот отвечает и на обычные вопросы. Учтите: отвечая, он помечает переписку прочитанной в Instagram.",
-      );
+      setStatusMsg(scope === "purchases" ? tr.scopePurchasesMsg : tr.scopeAllMsg);
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка настройки: ${errorMessage(e)}`);
+      setStatusMsg(tr.scopeSaveError(errorMessage(e)));
     }
   };
 
@@ -271,9 +1423,9 @@ function AdminInstagramPage() {
     try {
       const result = await saveInstagramDirectBotTriggersFn({ data: { words: triggerWords } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_triggers"] });
-      setStatusMsg(`✅ Команды сохранены: ${result.words.join(", ")}`);
+      setStatusMsg(tr.triggersSaved(result.words.join(", ")));
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка сохранения команд: ${errorMessage(e)}`);
+      setStatusMsg(tr.triggersSaveError(errorMessage(e)));
     }
   };
 
@@ -292,7 +1444,7 @@ function AdminInstagramPage() {
   };
 
   const handlePostAction = async (postId: string, action: "cancel" | "retry") => {
-    if (action === "cancel" && !confirm("Отменить эту запланированную публикацию?")) return;
+    if (action === "cancel" && !confirm(tr.postCancelConfirm)) return;
     setPostActionId(postId);
     setStatusMsg(null);
     try {
@@ -300,40 +1452,31 @@ function AdminInstagramPage() {
         action === "cancel"
           ? await cancelInstagramPostFn({ data: { postId } })
           : await retryInstagramPostFn({ data: { postId } });
-      if (!result.ok) throw new Error(result.error || "Сервис публикаций не выполнил действие.");
-      setStatusMsg(
-        action === "cancel"
-          ? "✅ Публикация отменена."
-          : "✅ Повторная публикация поставлена в очередь.",
-      );
+      if (!result.ok) throw new Error(result.error || tr.postActionError);
+      setStatusMsg(action === "cancel" ? tr.postCancelledMsg : tr.postRetriedMsg);
       qc.invalidateQueries({ queryKey: ["ig_posts"] });
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка: ${errorMessage(e)}`);
+      setStatusMsg(tr.postActionErrorMsg(errorMessage(e)));
     } finally {
       setPostActionId(null);
     }
   };
 
   const handleDisconnectAccount = async (accountId: string, accountName: string) => {
-    if (
-      !confirm(
-        `Отключить аккаунт "${accountName}"? Все автоматизации для этого аккаунта перестанут работать.`,
-      )
-    )
-      return;
+    if (!confirm(tr.disconnectConfirm(accountName))) return;
     setDisconnecting(accountId);
     setStatusMsg(null);
     try {
       const res = await disconnectInstagramAccountFn({ data: { accountId } });
       if (res?.ok) {
-        setStatusMsg("✅ Аккаунт успешно отключён.");
+        setStatusMsg(tr.accountDisconnected);
         qc.invalidateQueries({ queryKey: ["ig_accounts"] });
         qc.invalidateQueries({ queryKey: ["ig_posts"] });
       } else {
-        setStatusMsg("❌ Не удалось отключить аккаунт.");
+        setStatusMsg(tr.accountDisconnectFailed);
       }
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка отключения: ${errorMessage(e)}`);
+      setStatusMsg(tr.accountDisconnectError(errorMessage(e)));
     } finally {
       setDisconnecting(null);
     }
@@ -369,12 +1512,12 @@ function AdminInstagramPage() {
       const res = await getInstagramConnectUrlFn();
       if (res?.authUrl) {
         window.open(res.authUrl, "_blank");
-        setStatusMsg("Ссылка авторизации открыта в новой вкладке.");
+        setStatusMsg(tr.connectAuthUrlOpened);
       } else {
-        setStatusMsg("Ошибка: не удалось получить ссылку авторизации.");
+        setStatusMsg(tr.connectAuthUrlError);
       }
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка подключения: ${errorMessage(e)}`);
+      setStatusMsg(tr.connectError(errorMessage(e)));
     } finally {
       setConnecting(false);
     }
@@ -386,14 +1529,12 @@ function AdminInstagramPage() {
     try {
       const res = await registerInstagramWebhookFn();
       if (res?.ok) {
-        setStatusMsg("✅ Соединение успешно обновлено!");
+        setStatusMsg(tr.webhookUpdated);
       } else {
-        setStatusMsg(
-          `❌ Ошибка при обновлении соединения: ${res?.error || "Не удалось сохранить настройки webhook."}`,
-        );
+        setStatusMsg(tr.webhookError(res?.error || tr.webhookErrorFallback));
       }
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка: ${errorMessage(e)}`);
+      setStatusMsg(tr.webhookGenericError(errorMessage(e)));
     } finally {
       setRegisteringWebhook(false);
     }
@@ -402,7 +1543,7 @@ function AdminInstagramPage() {
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!acc?._id) {
-      setStatusMsg("Сначала подключите аккаунт Instagram.");
+      setStatusMsg(tr.noAccountsFirst);
       return;
     }
     const mediaUrls = mediaUrlsText
@@ -410,7 +1551,7 @@ function AdminInstagramPage() {
       .map((url) => url.trim())
       .filter(Boolean);
     if (!mediaUrls.length) {
-      setStatusMsg("Добавьте хотя бы одну прямую ссылку на изображение или видео.");
+      setStatusMsg(tr.addMediaLink);
       return;
     }
     setPublishing(true);
@@ -433,11 +1574,11 @@ function AdminInstagramPage() {
           isAiGenerated,
         },
       });
-      if (!result?.ok) throw new Error(result?.error || "Сервис публикаций не принял публикацию.");
+      if (!result?.ok) throw new Error(result?.error || tr.postActionError);
       const timing = result.scheduledFor
-        ? ` запланирована на ${new Date(result.scheduledFor).toLocaleString("ru-RU")}`
-        : " отправлена на публикацию";
-      setStatusMsg(`✅ Публикация${timing}.`);
+        ? tr.scheduledForMsg(new Date(result.scheduledFor).toLocaleString(dateLocales[locale]))
+        : tr.sentForPublishingMsg;
+      setStatusMsg(tr.publicationMsg(timing));
       setPublishContent("");
       setMediaUrlsText("");
       setScheduledFor("");
@@ -446,7 +1587,7 @@ function AdminInstagramPage() {
       setIsAiGenerated(false);
       qc.invalidateQueries({ queryKey: ["ig_posts"] });
     } catch (e: unknown) {
-      setStatusMsg(`Ошибка публикации: ${errorMessage(e)}`);
+      setStatusMsg(tr.publishErrorMsg(errorMessage(e)));
     } finally {
       setPublishing(false);
     }
@@ -457,7 +1598,7 @@ function AdminInstagramPage() {
     if (!title.trim()) return;
 
     if (!accountsQuery.data?.accounts || accountsQuery.data.accounts.length === 0) {
-      alert("Нет подключенных аккаунтов Instagram!");
+      alert(tr.noAccountsConnected);
       return;
     }
     const acc = accountsQuery.data.accounts[0];
@@ -517,10 +1658,9 @@ function AdminInstagramPage() {
 
       const result = await saveAutomationFn({ data: automationData });
       if (!result?.ok) {
-        let errMsg = result?.error || "Сервис автоматизации отклонил создание правила.";
+        let errMsg = result?.error || tr.genericAutomationError;
         if (errMsg.includes("409")) {
-          errMsg =
-            "Для этого поста уже есть активная автоматизация. Отредактируйте существующую или удалите её перед созданием новой.";
+          errMsg = tr.duplicateAutomationError;
         }
         throw new Error(errMsg);
       }
@@ -528,7 +1668,7 @@ function AdminInstagramPage() {
       handleResetForm();
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
     } catch (e: unknown) {
-      alert(`Ошибка сохранения: ${errorMessage(e)}`);
+      alert(tr.saveAutomationError(errorMessage(e)));
     } finally {
       setSavingAuto(false);
     }
@@ -576,7 +1716,7 @@ function AdminInstagramPage() {
 
   const handleAddButton = () => {
     if (buttons.length >= 3) return;
-    setButtons([...buttons, { type: "url", title: "Купить", url: "" }]);
+    setButtons([...buttons, { type: "url", title: tr.buyBtnDefault, url: "" }]);
   };
 
   const handleRemoveButton = (index: number) => {
@@ -594,17 +1734,17 @@ function AdminInstagramPage() {
       await toggleAutomationFn({ data: { id, isActive: !currentIsActive } });
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
     } catch (e: unknown) {
-      alert(`Ошибка переключения: ${errorMessage(e)}`);
+      alert(tr.toggleAutomationError(errorMessage(e)));
     }
   };
 
   const handleDeleteAutomation = async (id: string) => {
-    if (!confirm("Удалить эту автоматизацию?")) return;
+    if (!confirm(tr.deleteAutomationConfirm)) return;
     try {
       await deleteAutomationFn({ data: { id } });
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
     } catch (e: unknown) {
-      alert(`Ошибка удаления: ${errorMessage(e)}`);
+      alert(tr.deleteAutomationError(errorMessage(e)));
     }
   };
 
@@ -624,10 +1764,8 @@ function AdminInstagramPage() {
           {/* Заголовок по-русски, как на остальных экранах админки. Бейдж с
               названием сервиса-посредника убран: клиенту он ничего не
               объясняет, а нам незачем показывать, чьими руками это сделано. */}
-          <h1 className="text-3xl font-extrabold tracking-tight">Instagram</h1>
-          <p className="text-muted-foreground">
-            Автоответы на комментарии, продажи в Direct и публикации
-          </p>
+          <h1 className="text-3xl font-extrabold tracking-tight">{tr.heading}</h1>
+          <p className="text-muted-foreground">{tr.headingSubtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -641,11 +1779,11 @@ function AdminInstagramPage() {
             ) : (
               <Zap className="w-4 h-4 mr-2" />
             )}
-            Обновить Webhook
+            {tr.updateWebhookBtn}
           </Button>
           <Button onClick={handleConnect} disabled={connecting} size="sm">
             <Plus className="w-4 h-4 mr-2" />
-            Подключить аккаунт
+            {tr.connectAccountBtn}
           </Button>
         </div>
       </header>
@@ -667,27 +1805,29 @@ function AdminInstagramPage() {
         */}
         <TabsList className="flex h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="direct-bot" className="gap-2">
-            <Bot className="w-4 h-4" /> <span className="hidden sm:inline">Автоответчик</span>
+            <Bot className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabDirectBot}</span>
           </TabsTrigger>
           <TabsTrigger value="automations" className="gap-2">
             <Settings2 className="w-4 h-4" />{" "}
-            <span className="hidden sm:inline">Автоматизации</span>
+            <span className="hidden sm:inline">{tr.tabAutomations}</span>
           </TabsTrigger>
           <TabsTrigger value="publish" className="gap-2">
             <CalendarClock className="w-4 h-4" />{" "}
-            <span className="hidden sm:inline">Публикации</span>
+            <span className="hidden sm:inline">{tr.tabPublish}</span>
           </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
-            <History className="w-4 h-4" /> <span className="hidden sm:inline">Журнал</span>
+            <History className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabLogs}</span>
           </TabsTrigger>
           <TabsTrigger value="inbox" className="gap-2">
-            <Inbox className="w-4 h-4" /> <span className="hidden sm:inline">Direct</span>
+            <Inbox className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabInbox}</span>
           </TabsTrigger>
           <TabsTrigger value="analytics" className="gap-2">
-            <BarChart3 className="w-4 h-4" /> <span className="hidden sm:inline">Аналитика</span>
+            <BarChart3 className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">{tr.tabAnalytics}</span>
           </TabsTrigger>
           <TabsTrigger value="accounts" className="gap-2">
-            <UserCircle2 className="w-4 h-4" /> <span className="hidden sm:inline">Аккаунты</span>
+            <UserCircle2 className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">{tr.tabAccounts}</span>
           </TabsTrigger>
         </TabsList>
 
@@ -700,21 +1840,17 @@ function AdminInstagramPage() {
         <TabsContent value="direct-bot" className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Автоответчик в Direct</CardTitle>
-              <CardDescription>
-                Отвечает на входящие сообщения: показывает каталог, ищет товары, ведёт корзину и
-                оформление заказа. От правил «Комментарий → Direct» не зависит.
-              </CardDescription>
+              <CardTitle>{tr.directBotTitle}</CardTitle>
+              <CardDescription>{tr.directBotDesc}</CardDescription>
             </CardHeader>
             <CardContent className="flex items-center justify-between gap-4">
               <div>
                 <p className="font-medium">
-                  {directBotSettingsQuery.data?.enabled === false ? "Остановлен" : "Включён"}
+                  {directBotSettingsQuery.data?.enabled === false
+                    ? tr.statusStopped
+                    : tr.statusEnabled}
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  Выключение прекращает новые автоматические ответы, но не отключает ручную
-                  переписку и правила комментариев.
-                </p>
+                <p className="text-sm text-muted-foreground">{tr.enableToggleHint}</p>
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -723,24 +1859,16 @@ function AdminInstagramPage() {
                   disabled={directBotSettingsQuery.isLoading}
                   onCheckedChange={(value) => handleDirectBotToggle(value === true)}
                 />
-                <Label htmlFor="instagram-direct-bot-enabled">Включить</Label>
+                <Label htmlFor="instagram-direct-bot-enabled">{tr.enableLabel}</Label>
               </div>
             </CardContent>
             <CardContent className="space-y-3 pt-0">
-              <Label>На что отвечать</Label>
+              <Label>{tr.scopeLabel}</Label>
               <div className="space-y-2">
                 {(
                   [
-                    [
-                      "purchases",
-                      "Только по заказам",
-                      "Бот вступает, когда человек написал номер товара, и ведёт его до оплаты. Обычную переписку не трогает — вы отвечаете сами в Instagram, и непрочитанные остаются непрочитанными.",
-                    ],
-                    [
-                      "all",
-                      "На все сообщения",
-                      "Бот отвечает и на обычные вопросы, а вам присылает уведомление. Учтите: отвечая, он помечает переписку прочитанной — в Instagram вы больше не увидите, что вам написали.",
-                    ],
+                    ["purchases", tr.scopePurchasesTitle, tr.scopePurchasesDesc],
+                    ["all", tr.scopeAllTitle, tr.scopeAllDesc],
                   ] as const
                 ).map(([value, title, description]) => {
                   const active = (directBotScopeQuery.data?.scope ?? "purchases") === value;
@@ -755,7 +1883,9 @@ function AdminInstagramPage() {
                     >
                       <p className="text-sm font-medium">
                         {title}
-                        {active && <span className="ml-2 text-xs text-primary">выбрано</span>}
+                        {active && (
+                          <span className="ml-2 text-xs text-primary">{tr.scopeSelected}</span>
+                        )}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">{description}</p>
                     </button>
@@ -814,13 +1944,13 @@ function AdminInstagramPage() {
                 слова.
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
-                {FEATURE_TOGGLES.map(([key, label]) => (
+                {FEATURE_KEYS.map((key) => (
                   <label key={key} className="flex items-center gap-2 text-sm">
                     <Checkbox
                       checked={directBotFeaturesQuery.data?.[key] !== false}
                       onCheckedChange={(value) => handleFeatureToggle(key, value === true)}
                     />
-                    {label}
+                    {tr.featureLabels[key]}
                   </label>
                 ))}
               </div>

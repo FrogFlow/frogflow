@@ -15,6 +15,8 @@ import {
 } from "@/lib/products.functions";
 import { listPaymentMethods } from "@/lib/payment-methods.functions";
 import { filterCategoriesByQuery, getCategoryPath, sortCategoriesTree } from "@/lib/category-tree";
+import { useAdminLocale } from "@/lib/admin-locale";
+import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/products")({
   component: ProductsPage,
@@ -149,12 +151,291 @@ async function uploadManyWithProgress(
   return results;
 }
 
-function UploadProgressBar({ status }: { status: UploadStatus | null }) {
+const copy: Record<
+  Locale,
+  {
+    uploadingOf: (index: number, total: number, label: string, percent: number) => string;
+    removeBtn: string;
+    title: string;
+    newProductBtn: string;
+    editTitle: string;
+    newTitle: string;
+    name: string;
+    categoriesLabel: string;
+    categorySearchPlaceholder: string;
+    hiddenInBot: string;
+    noCategoriesAvailable: string;
+    nothingFound: string;
+    descriptionLabel: string;
+    descriptionPlaceholder: string;
+    descriptionHint: string;
+    keywordsLabel: string;
+    price: string;
+    currency: string;
+    sortOrder: string;
+    photosLabel: string;
+    countryPricesTitle: string;
+    countryPricesHint: string;
+    autoPlaceholder: string;
+    materialRuLabel: string;
+    materialKzLabel: string;
+    externalLinkRu: string;
+    externalLinkKz: string;
+    externalLinkHint: string;
+    externalLinkPlaceholder: string;
+    onlyRuHint: string;
+    showInBot: string;
+    save: string;
+    saving: string;
+    cancel: string;
+    searchLabel: string;
+    searchPlaceholder: string;
+    foundCount: (found: number, total: number) => string;
+    noProductsYet: string;
+    hidden: string;
+    noCategory: string;
+    noFile: string;
+    editShort: string;
+    deleteShort: string;
+    uploadPhotoError: (msg: string) => string;
+    uploadFileError: (kzSuffix: string, msg: string) => string;
+    kzSuffix: string;
+    saveError: (msg: string) => string;
+    deleteError: (msg: string) => string;
+    unknownError: string;
+    confirmDelete: string;
+  }
+> = {
+  ru: {
+    uploadingOf: (index, total, label, percent) =>
+      `Загружаю ${index} из ${total}: ${label} — ${percent}%`,
+    removeBtn: "Убрать",
+    title: "Товары",
+    newProductBtn: "+ Новый товар",
+    editTitle: "Редактирование товара",
+    newTitle: "Новый товар",
+    name: "Название",
+    categoriesLabel: "Категории (можно выбрать несколько)",
+    categorySearchPlaceholder: "Поиск категории…",
+    hiddenInBot: " (скрыта в боте)",
+    noCategoriesAvailable: "Нет доступных категорий",
+    nothingFound: "Ничего не найдено",
+    descriptionLabel: "Описание (обязательно для модерации Robokassa)",
+    descriptionPlaceholder: "Подробное описание материала для покупателя",
+    descriptionHint: "Рекомендуется заполнить подробное описание товара/услуги.",
+    keywordsLabel: "Ключевые слова (для поиска, через пробел или запятую)",
+    price: "Цена",
+    currency: "Валюта",
+    sortOrder: "Порядок",
+    photosLabel: "Фото (можно несколько)",
+    countryPricesTitle: "Цены для разных стран (вручную)",
+    countryPricesHint:
+      "Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.",
+    autoPlaceholder: "Авто (по курсу)",
+    materialRuLabel: "📄 Материал (Русский) — можно несколько файлов/фото",
+    materialKzLabel: "📄 Материал (Қазақша) — можно несколько файлов/фото",
+    externalLinkRu: "Или внешняя ссылка на файл (Русский)",
+    externalLinkKz: "Или внешняя ссылка на файл (Қазақша)",
+    externalLinkHint: "Ссылка используется, только если выше не загружено ни одного файла.",
+    externalLinkPlaceholder: "https://drive.google.com/...",
+    onlyRuHint:
+      "Если загрузить материал только на русском, бот не будет спрашивать язык при выдаче заказа.",
+    showInBot: "Показывать в боте",
+    save: "Сохранить",
+    saving: "Сохранение...",
+    cancel: "Отмена",
+    searchLabel: "🔍 Поиск по материалам",
+    searchPlaceholder: "Название, ключевое слово или описание…",
+    foundCount: (found, total) => `Найдено: ${found} из ${total}`,
+    noProductsYet: "Пока нет товаров.",
+    hidden: "(скрыт)",
+    noCategory: "без категории",
+    noFile: " · нет файла",
+    editShort: "Изм.",
+    deleteShort: "Удал.",
+    uploadPhotoError: (msg) => `Ошибка загрузки фото: ${msg}`,
+    uploadFileError: (kzSuffix, msg) => `Ошибка загрузки файла${kzSuffix}: ${msg}`,
+    kzSuffix: " (KZ)",
+    saveError: (msg) => `Ошибка сохранения: ${msg}`,
+    deleteError: (msg) => `Ошибка удаления: ${msg}`,
+    unknownError: "Неизвестная ошибка",
+    confirmDelete: "Удалить товар?",
+  },
+  kk: {
+    uploadingOf: (index, total, label, percent) =>
+      `Жүктелуде ${index} / ${total}: ${label} — ${percent}%`,
+    removeBtn: "Алып тастау",
+    title: "Тауарлар",
+    newProductBtn: "+ Жаңа тауар",
+    editTitle: "Тауарды өңдеу",
+    newTitle: "Жаңа тауар",
+    name: "Атауы",
+    categoriesLabel: "Санаттар (бірнешеуін таңдауға болады)",
+    categorySearchPlaceholder: "Санатты іздеу…",
+    hiddenInBot: " (ботта жасырын)",
+    noCategoriesAvailable: "Қолжетімді санаттар жоқ",
+    nothingFound: "Ештеңе табылмады",
+    descriptionLabel: "Сипаттама (Robokassa модерациясы үшін міндетті)",
+    descriptionPlaceholder: "Сатып алушыға арналған материалдың толық сипаттамасы",
+    descriptionHint: "Тауар/қызметтің толық сипаттамасын толтыру ұсынылады.",
+    keywordsLabel: "Кілт сөздер (іздеу үшін, бос орын немесе үтірмен)",
+    price: "Баға",
+    currency: "Валюта",
+    sortOrder: "Реті",
+    photosLabel: "Фото (бірнешеуін таңдауға болады)",
+    countryPricesTitle: "Түрлі елдерге бағалар (қолмен)",
+    countryPricesHint: "Өрісті бос қалдырсаңыз — негізгі бағаның автоматты айырбасы жұмыс істейді.",
+    autoPlaceholder: "Авто (курс бойынша)",
+    materialRuLabel: "📄 Материал (Орысша) — бірнеше файл/фото болуы мүмкін",
+    materialKzLabel: "📄 Материал (Қазақша) — бірнеше файл/фото болуы мүмкін",
+    externalLinkRu: "Немесе файлға сыртқы сілтеме (Орысша)",
+    externalLinkKz: "Немесе файлға сыртқы сілтеме (Қазақша)",
+    externalLinkHint: "Сілтеме тек жоғарыда бірде-бір файл жүктелмеген жағдайда қолданылады.",
+    externalLinkPlaceholder: "https://drive.google.com/...",
+    onlyRuHint: "Материал тек орыс тілінде жүктелсе, бот тапсырысты берген кезде тіл сұрамайды.",
+    showInBot: "Ботта көрсету",
+    save: "Сақтау",
+    saving: "Сақталуда...",
+    cancel: "Бас тарту",
+    searchLabel: "🔍 Материалдар бойынша іздеу",
+    searchPlaceholder: "Атауы, кілт сөз немесе сипаттама…",
+    foundCount: (found, total) => `Табылды: ${found} / ${total}`,
+    noProductsYet: "Әзірге тауарлар жоқ.",
+    hidden: "(жасырын)",
+    noCategory: "санатсыз",
+    noFile: " · файл жоқ",
+    editShort: "Өзг.",
+    deleteShort: "Жою",
+    uploadPhotoError: (msg) => `Фото жүктеу қатесі: ${msg}`,
+    uploadFileError: (kzSuffix, msg) => `Файл жүктеу қатесі${kzSuffix}: ${msg}`,
+    kzSuffix: " (KZ)",
+    saveError: (msg) => `Сақтау қатесі: ${msg}`,
+    deleteError: (msg) => `Жою қатесі: ${msg}`,
+    unknownError: "Белгісіз қате",
+    confirmDelete: "Тауарды жою керек пе?",
+  },
+  en: {
+    uploadingOf: (index, total, label, percent) =>
+      `Uploading ${index} of ${total}: ${label} — ${percent}%`,
+    removeBtn: "Remove",
+    title: "Products",
+    newProductBtn: "+ New product",
+    editTitle: "Editing product",
+    newTitle: "New product",
+    name: "Name",
+    categoriesLabel: "Categories (multiple allowed)",
+    categorySearchPlaceholder: "Search category…",
+    hiddenInBot: " (hidden in the bot)",
+    noCategoriesAvailable: "No categories available",
+    nothingFound: "Nothing found",
+    descriptionLabel: "Description (required for Robokassa moderation)",
+    descriptionPlaceholder: "A detailed description of the material for the buyer",
+    descriptionHint: "It's recommended to fill in a detailed product/service description.",
+    keywordsLabel: "Keywords (for search, space- or comma-separated)",
+    price: "Price",
+    currency: "Currency",
+    sortOrder: "Order",
+    photosLabel: "Photos (multiple allowed)",
+    countryPricesTitle: "Prices by country (manual)",
+    countryPricesHint: "Leave a field empty to use automatic conversion from the base price.",
+    autoPlaceholder: "Auto (by rate)",
+    materialRuLabel: "📄 Material (Russian) — multiple files/photos allowed",
+    materialKzLabel: "📄 Material (Kazakh) — multiple files/photos allowed",
+    externalLinkRu: "Or an external file link (Russian)",
+    externalLinkKz: "Or an external file link (Kazakh)",
+    externalLinkHint: "The link is used only if no file has been uploaded above.",
+    externalLinkPlaceholder: "https://drive.google.com/...",
+    onlyRuHint:
+      "If the material is only uploaded in Russian, the bot won't ask which language to deliver.",
+    showInBot: "Show in the bot",
+    save: "Save",
+    saving: "Saving...",
+    cancel: "Cancel",
+    searchLabel: "🔍 Search materials",
+    searchPlaceholder: "Name, keyword, or description…",
+    foundCount: (found, total) => `Found: ${found} of ${total}`,
+    noProductsYet: "No products yet.",
+    hidden: "(hidden)",
+    noCategory: "no category",
+    noFile: " · no file",
+    editShort: "Edit",
+    deleteShort: "Delete",
+    uploadPhotoError: (msg) => `Failed to upload photo: ${msg}`,
+    uploadFileError: (kzSuffix, msg) => `Failed to upload file${kzSuffix}: ${msg}`,
+    kzSuffix: " (KZ)",
+    saveError: (msg) => `Save error: ${msg}`,
+    deleteError: (msg) => `Delete error: ${msg}`,
+    unknownError: "Unknown error",
+    confirmDelete: "Delete this product?",
+  },
+  uz: {
+    uploadingOf: (index, total, label, percent) =>
+      `Yuklanmoqda ${index} / ${total}: ${label} — ${percent}%`,
+    removeBtn: "Olib tashlash",
+    title: "Mahsulotlar",
+    newProductBtn: "+ Yangi mahsulot",
+    editTitle: "Mahsulotni tahrirlash",
+    newTitle: "Yangi mahsulot",
+    name: "Nomi",
+    categoriesLabel: "Kategoriyalar (bir nechtasini tanlash mumkin)",
+    categorySearchPlaceholder: "Kategoriyani qidirish…",
+    hiddenInBot: " (botda yashirin)",
+    noCategoriesAvailable: "Mavjud kategoriyalar yo‘q",
+    nothingFound: "Hech narsa topilmadi",
+    descriptionLabel: "Tavsif (Robokassa moderatsiyasi uchun majburiy)",
+    descriptionPlaceholder: "Xaridor uchun material haqida batafsil tavsif",
+    descriptionHint: "Mahsulot/xizmatning batafsil tavsifini to‘ldirish tavsiya etiladi.",
+    keywordsLabel: "Kalit so‘zlar (qidiruv uchun, probel yoki vergul bilan)",
+    price: "Narx",
+    currency: "Valyuta",
+    sortOrder: "Tartib",
+    photosLabel: "Fotolar (bir nechtasi mumkin)",
+    countryPricesTitle: "Mamlakatlar bo‘yicha narxlar (qo‘lda)",
+    countryPricesHint:
+      "Maydonni bo‘sh qoldirsangiz — asosiy narxning avtomatik konvertatsiyasi ishlaydi.",
+    autoPlaceholder: "Avto (kurs bo‘yicha)",
+    materialRuLabel: "📄 Material (Ruscha) — bir nechta fayl/foto mumkin",
+    materialKzLabel: "📄 Material (Qozoqcha) — bir nechta fayl/foto mumkin",
+    externalLinkRu: "Yoki faylga tashqi havola (Ruscha)",
+    externalLinkKz: "Yoki faylga tashqi havola (Qozoqcha)",
+    externalLinkHint: "Havola faqat yuqorida birorta fayl yuklanmagan bo‘lsa ishlatiladi.",
+    externalLinkPlaceholder: "https://drive.google.com/...",
+    onlyRuHint: "Material faqat ruscha yuklansa, bot buyurtmani berishda tilni so‘ramaydi.",
+    showInBot: "Botda ko‘rsatish",
+    save: "Saqlash",
+    saving: "Saqlanmoqda...",
+    cancel: "Bekor qilish",
+    searchLabel: "🔍 Materiallar bo‘yicha qidiruv",
+    searchPlaceholder: "Nomi, kalit so‘z yoki tavsif…",
+    foundCount: (found, total) => `Topildi: ${found} / ${total}`,
+    noProductsYet: "Hozircha mahsulotlar yo‘q.",
+    hidden: "(yashirin)",
+    noCategory: "kategoriyasiz",
+    noFile: " · fayl yo‘q",
+    editShort: "Tahr.",
+    deleteShort: "O‘chir.",
+    uploadPhotoError: (msg) => `Fotoni yuklashda xato: ${msg}`,
+    uploadFileError: (kzSuffix, msg) => `Faylni yuklashda xato${kzSuffix}: ${msg}`,
+    kzSuffix: " (KZ)",
+    saveError: (msg) => `Saqlash xatosi: ${msg}`,
+    deleteError: (msg) => `O‘chirish xatosi: ${msg}`,
+    unknownError: "Noma’lum xato",
+    confirmDelete: "Mahsulotni o‘chirasizmi?",
+  },
+};
+
+function UploadProgressBar({
+  status,
+  tr,
+}: {
+  status: UploadStatus | null;
+  tr: (typeof copy)[Locale];
+}) {
   if (!status) return null;
   return (
     <div className="space-y-1 mt-1">
       <div className="text-xs text-muted-foreground">
-        Загружаю {status.index} из {status.total}: {status.label} — {status.percent}%
+        {tr.uploadingOf(status.index, status.total, status.label, status.percent)}
       </div>
       <div className="h-1.5 w-full bg-muted rounded overflow-hidden">
         <div
@@ -169,9 +450,11 @@ function UploadProgressBar({ status }: { status: UploadStatus | null }) {
 function MaterialFilesList({
   files,
   onRemove,
+  removeLabel,
 }: {
   files: MaterialFile[];
   onRemove: (idx: number) => void;
+  removeLabel: string;
 }) {
   if (files.length === 0) return null;
   return (
@@ -187,7 +470,7 @@ function MaterialFilesList({
             onClick={() => onRemove(idx)}
             className="shrink-0 text-destructive hover:underline"
           >
-            Убрать
+            {removeLabel}
           </button>
         </li>
       ))}
@@ -196,6 +479,8 @@ function MaterialFilesList({
 }
 
 function ProductsPage() {
+  const { locale } = useAdminLocale();
+  const tr = copy[locale];
   const qc = useQueryClient();
   const products = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
   const cats = useQuery({ queryKey: ["cats-flat"], queryFn: () => listCategoriesForProducts() });
@@ -305,7 +590,7 @@ function ProductsPage() {
         ...uploaded.map((r, i) => ({ image_path: r.path, sort_order: images.length + i })),
       ]);
     } catch (e: unknown) {
-      alert("Ошибка загрузки фото: " + errorMessage(e));
+      alert(tr.uploadPhotoError(errorMessage(e)));
     }
   }
 
@@ -325,7 +610,7 @@ function ProductsPage() {
         })),
       ]);
     } catch (e: unknown) {
-      alert(`Ошибка загрузки файла${lang === "kz" ? " (KZ)" : ""}: ${errorMessage(e)}`);
+      alert(tr.uploadFileError(lang === "kz" ? tr.kzSuffix : "", errorMessage(e)));
     }
   }
 
@@ -371,47 +656,47 @@ function ProductsPage() {
       setMaterialFilesKz([]);
       qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: unknown) {
-      alert("Ошибка сохранения: " + (errorMessage(e) || "Неизвестная ошибка"));
+      alert(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setSaving(false);
     }
   }
 
   async function onDelete(id: string) {
-    if (!confirm("Удалить товар?")) return;
+    if (!confirm(tr.confirmDelete)) return;
     try {
       await deleteProduct({ data: { id } });
       qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: unknown) {
-      alert("Ошибка удаления: " + (errorMessage(e) || "Неизвестная ошибка"));
+      alert(tr.deleteError(errorMessage(e) || tr.unknownError));
     }
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Товары</h1>
-        {!editing && <Button onClick={startNew}>+ Новый товар</Button>}
+        <h1 className="text-2xl font-semibold">{tr.title}</h1>
+        {!editing && <Button onClick={startNew}>{tr.newProductBtn}</Button>}
       </div>
 
       {editing ? (
         <div className="bg-card border rounded-lg p-4 space-y-4">
-          <h2 className="font-medium">{editing.id ? "Редактирование товара" : "Новый товар"}</h2>
+          <h2 className="font-medium">{editing.id ? tr.editTitle : tr.newTitle}</h2>
 
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Название</Label>
+              <Label>{tr.name}</Label>
               <Input
                 value={editing.name}
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label>Категории (можно выбрать несколько)</Label>
+              <Label>{tr.categoriesLabel}</Label>
               <Input
                 value={catQuery}
                 onChange={(e) => setCatQuery(e.target.value)}
-                placeholder="Поиск категории…"
+                placeholder={tr.categorySearchPlaceholder}
               />
               <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1 bg-background text-sm">
                 {catsFiltered.map((c) => (
@@ -433,14 +718,14 @@ function ProductsPage() {
                     <span>
                       {getCategoryPath(c.id, catsTree)}
                       {c.is_visible === false ? (
-                        <span className="text-xs text-amber-700"> (скрыта в боте)</span>
+                        <span className="text-xs text-amber-700">{tr.hiddenInBot}</span>
                       ) : null}
                     </span>
                   </label>
                 ))}
                 {catsFiltered.length === 0 && (
                   <div className="text-muted-foreground text-xs">
-                    {catsTree.length === 0 ? "Нет доступных категорий" : "Ничего не найдено"}
+                    {catsTree.length === 0 ? tr.noCategoriesAvailable : tr.nothingFound}
                   </div>
                 )}
               </div>
@@ -448,22 +733,20 @@ function ProductsPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>Описание (обязательно для модерации Robokassa)</Label>
+            <Label>{tr.descriptionLabel}</Label>
             <Textarea
               rows={4}
               value={editing.description}
               onChange={(e) => setEditing({ ...editing, description: e.target.value })}
-              placeholder="Подробное описание материала для покупателя"
+              placeholder={tr.descriptionPlaceholder}
             />
             {!editing.description.trim() && (
-              <p className="text-xs text-amber-600">
-                Рекомендуется заполнить подробное описание товара/услуги.
-              </p>
+              <p className="text-xs text-amber-600">{tr.descriptionHint}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label>Ключевые слова (для поиска, через пробел или запятую)</Label>
+            <Label>{tr.keywordsLabel}</Label>
             <Input
               value={editing.keywords}
               onChange={(e) => setEditing({ ...editing, keywords: e.target.value })}
@@ -472,7 +755,7 @@ function ProductsPage() {
 
           <div className="grid md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Цена</Label>
+              <Label>{tr.price}</Label>
               <Input
                 type="number"
                 value={editing.price}
@@ -480,14 +763,14 @@ function ProductsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Валюта</Label>
+              <Label>{tr.currency}</Label>
               <Input
                 value={editing.currency}
                 onChange={(e) => setEditing({ ...editing, currency: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label>Порядок</Label>
+              <Label>{tr.sortOrder}</Label>
               <Input
                 type="number"
                 value={editing.sort_order}
@@ -497,14 +780,14 @@ function ProductsPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>Фото (можно несколько)</Label>
+            <Label>{tr.photosLabel}</Label>
             <Input
               type="file"
               accept="image/*"
               multiple
               onChange={(e) => onImagesChange(e.target.files)}
             />
-            <UploadProgressBar status={imagesUpload} />
+            <UploadProgressBar status={imagesUpload} tr={tr} />
             <div className="flex flex-wrap gap-2 mt-2">
               {images.map((im, idx) => (
                 <div key={im.image_path} className="relative">
@@ -527,10 +810,8 @@ function ProductsPage() {
 
           {pMethods.data && pMethods.data.length > 0 && (
             <div className="space-y-4 pt-4 border-t">
-              <h3 className="font-medium">Цены для разных стран (вручную)</h3>
-              <p className="text-xs text-muted-foreground">
-                Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.
-              </p>
+              <h3 className="font-medium">{tr.countryPricesTitle}</h3>
+              <p className="text-xs text-muted-foreground">{tr.countryPricesHint}</p>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {pMethods.data.map((m) => (
                   <div key={m.country_code} className="space-y-2">
@@ -539,7 +820,7 @@ function ProductsPage() {
                     </Label>
                     <Input
                       type="number"
-                      placeholder="Авто (по курсу)"
+                      placeholder={tr.autoPlaceholder}
                       value={editing.country_prices?.[m.country_code] ?? ""}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -559,7 +840,7 @@ function ProductsPage() {
           )}
 
           <div className="space-y-2 pt-4 border-t">
-            <Label htmlFor="file-ru">📄 Материал (Русский) — можно несколько файлов/фото</Label>
+            <Label htmlFor="file-ru">{tr.materialRuLabel}</Label>
             <Input
               id="file-ru"
               type="file"
@@ -567,26 +848,25 @@ function ProductsPage() {
               disabled={!!materialsRuUpload}
               onChange={(e) => onMaterialFilesChange(e.target.files, "ru")}
             />
-            <UploadProgressBar status={materialsRuUpload} />
+            <UploadProgressBar status={materialsRuUpload} tr={tr} />
             <MaterialFilesList
               files={materialFilesRu}
               onRemove={(idx) => setMaterialFilesRu(materialFilesRu.filter((_, i) => i !== idx))}
+              removeLabel={tr.removeBtn}
             />
             <div className="pt-2">
-              <Label>Или внешняя ссылка на файл (Русский)</Label>
+              <Label>{tr.externalLinkRu}</Label>
               <Input
                 value={editing.file_url || ""}
                 onChange={(e) => setEditing({ ...editing, file_url: e.target.value || null })}
-                placeholder="https://drive.google.com/..."
+                placeholder={tr.externalLinkPlaceholder}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                Ссылка используется, только если выше не загружено ни одного файла.
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">{tr.externalLinkHint}</p>
             </div>
           </div>
 
           <div className="space-y-2 pt-4 border-t">
-            <Label htmlFor="file-kz">📄 Материал (Қазақша) — можно несколько файлов/фото</Label>
+            <Label htmlFor="file-kz">{tr.materialKzLabel}</Label>
             <Input
               id="file-kz"
               type="file"
@@ -594,23 +874,21 @@ function ProductsPage() {
               disabled={!!materialsKzUpload}
               onChange={(e) => onMaterialFilesChange(e.target.files, "kz")}
             />
-            <UploadProgressBar status={materialsKzUpload} />
+            <UploadProgressBar status={materialsKzUpload} tr={tr} />
             <MaterialFilesList
               files={materialFilesKz}
               onRemove={(idx) => setMaterialFilesKz(materialFilesKz.filter((_, i) => i !== idx))}
+              removeLabel={tr.removeBtn}
             />
             <div className="pt-2">
-              <Label>Или внешняя ссылка на файл (Қазақша)</Label>
+              <Label>{tr.externalLinkKz}</Label>
               <Input
                 value={editing.file_url_kz || ""}
                 onChange={(e) => setEditing({ ...editing, file_url_kz: e.target.value || null })}
-                placeholder="https://drive.google.com/..."
+                placeholder={tr.externalLinkPlaceholder}
               />
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Если загрузить материал только на русском, бот не будет спрашивать язык при выдаче
-              заказа.
-            </p>
+            <p className="text-xs text-muted-foreground mt-2">{tr.onlyRuHint}</p>
           </div>
 
           <label className="flex items-center gap-2 text-sm">
@@ -619,35 +897,35 @@ function ProductsPage() {
               checked={editing.is_active}
               onChange={(e) => setEditing({ ...editing, is_active: e.target.checked })}
             />
-            Показывать в боте
+            {tr.showInBot}
           </label>
 
           <div className="flex gap-2">
             <Button onClick={onSave} disabled={saving}>
-              {saving ? "Сохранение..." : "Сохранить"}
+              {saving ? tr.saving : tr.save}
             </Button>
             <Button variant="outline" onClick={() => setEditing(null)}>
-              Отмена
+              {tr.cancel}
             </Button>
           </div>
         </div>
       ) : (
         <>
           <div className="bg-card border rounded-lg p-4 space-y-3">
-            <Label>🔍 Поиск по материалам</Label>
+            <Label>{tr.searchLabel}</Label>
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Название, ключевое слово или описание…"
+              placeholder={tr.searchPlaceholder}
             />
             <p className="text-xs text-muted-foreground">
-              Найдено: {filtered.length} из {list.length}
+              {tr.foundCount(filtered.length, list.length)}
             </p>
           </div>
           <div className="bg-card border rounded-lg divide-y">
             {filtered.length === 0 && (
               <div className="p-4 text-sm text-muted-foreground">
-                {list.length === 0 ? "Пока нет товаров." : "Ничего не найдено."}
+                {list.length === 0 ? tr.noProductsYet : tr.nothingFound}
               </div>
             )}
             {filtered.map((p) => (
@@ -664,15 +942,17 @@ function ProductsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">
                     {p.name}{" "}
-                    {!p.is_active && <span className="text-xs text-muted-foreground">(скрыт)</span>}
+                    {!p.is_active && (
+                      <span className="text-xs text-muted-foreground">{tr.hidden}</span>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {p.category_ids && (p.category_ids as string[]).length > 0
                       ? (p.category_ids as string[])
                           .map((id) => getCategoryPath(id, catsTree))
                           .filter(Boolean)
-                          .join(", ") || "без категории"
-                      : p.categories?.name || "без категории"}{" "}
+                          .join(", ") || tr.noCategory
+                      : p.categories?.name || tr.noCategory}{" "}
                     · {p.price} {p.currency}
                     {(() => {
                       const materials = (p.product_material_files ?? []) as {
@@ -685,7 +965,7 @@ function ProductsPage() {
                         !!p.file_path_kz ||
                         !!p.file_url_kz;
                       if (!hasRu && !hasKz)
-                        return <span className="text-destructive"> · нет файла</span>;
+                        return <span className="text-destructive">{tr.noFile}</span>;
                       if (hasRu && hasKz) return <span className="text-green-500"> · 🇷🇺🇰🇿</span>;
                       if (hasRu) return <span className="text-muted-foreground"> · 🇷🇺</span>;
                       return <span className="text-muted-foreground"> · 🇰🇿</span>;
@@ -694,10 +974,10 @@ function ProductsPage() {
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
-                    Изм.
+                    {tr.editShort}
                   </Button>
                   <Button size="sm" variant="destructive" onClick={() => onDelete(p.id)}>
-                    Удал.
+                    {tr.deleteShort}
                   </Button>
                 </div>
               </div>
