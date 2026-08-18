@@ -27,22 +27,24 @@ export function AdminAutoTranslator({ locale }: { locale: Locale }) {
 
     async function translate(nodes: Text[]) {
       if (locale === "ru") return;
-      // Small batches keep URLs and API responses comfortably below browser limits.
+      // Small batches prevent a page with many hints from monopolising the network.
       for (let i = 0; i < nodes.length; i += 20) {
         const batch = nodes.slice(i, i + 20);
-        const query = new URLSearchParams({ client: "gtx", sl: "ru", tl: locale === "kk" ? "kk" : locale, dt: "t" });
-        for (const node of batch) query.append("q", originals.get(node) ?? node.data);
-        try {
-          const response = await fetch(`https://translate.googleapis.com/translate_a/single?${query}`);
-          const payload = (await response.json()) as Array<Array<[string]>>;
-          if (cancelled) return;
-          payload[0]?.forEach((part, index) => {
-            const node = batch[index];
-            if (node && part?.[0]) node.data = part[0];
+        await Promise.all(batch.map(async (node) => {
+          const query = new URLSearchParams({
+            client: "gtx", sl: "ru", tl: locale === "kk" ? "kk" : locale, dt: "t",
+            q: originals.get(node) ?? node.data,
           });
-        } catch {
-          // Keep the original Russian text if translation is temporarily unavailable.
-        }
+          try {
+            const response = await fetch(`https://translate.googleapis.com/translate_a/single?${query}`);
+            const payload = (await response.json()) as Array<Array<[string]>>;
+            const value = payload[0]?.map((part) => part[0]).join("");
+            if (!cancelled && value) node.data = value;
+          } catch {
+            // Keep the original Russian text if translation is temporarily unavailable.
+          }
+        }));
+        if (cancelled) return;
       }
     }
 
