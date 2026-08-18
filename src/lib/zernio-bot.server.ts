@@ -779,6 +779,11 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     metadata,
   );
 
+  const plainText = text.trim().toLowerCase();
+  const isStartCommand = plainText === "/start";
+  const startFlow = await import("./direct-purchase.server");
+  const directState = startFlow.readDirectState(user.state);
+
   /**
    * Первое сообщение от нового отправителя — раньше чего бы то ни было ещё.
    *
@@ -790,7 +795,8 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * постбэк: даже если самое первое событие от человека — вложение или нажатая
    * кнопка автоматизации воронки, язык важнее и должен быть выбран раньше.
    */
-  if (user.isNewUser) {
+  if (!directState.locale && !directState.mode) {
+    if (!isStartCommand) return;
     await sendLanguagePicker(conversationId, accountId, user);
     return;
   }

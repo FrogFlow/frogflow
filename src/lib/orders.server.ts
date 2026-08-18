@@ -547,13 +547,38 @@ function downloadFileName(displayName: string, storagePath: string): string {
  */
 async function deliverOrderByEmail(
   orderId: number,
-  order: { customer_email?: string | null; order_no?: number | null },
+  order: { customer_email?: string | null; order_no?: number | null; user_key?: string | null },
   items: OrderItem[],
 ) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { sendOrderMaterialsEmail, isMailConfigured } = await import("./mail.server");
 
-  const email = order.customer_email?.trim();
+  let email = order.customer_email?.trim();
+
+  /*
+   * Some early Direct orders retained the buyer's address only in bot_users.
+   * Do not reject a paid order merely because its order snapshot is missing it:
+   * restore the address from the same buyer profile and persist it so every
+   * subsequent delivery attempt uses the immutable order record.
+   */
+  if (!email && order.user_key) {
+    const { data: buyer, error } = await supabaseAdmin
+      .from("bot_users")
+      .select("email")
+      .eq("user_key", order.user_key)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+
+    email = buyer?.email?.trim();
+    if (email) {
+      const { error: updateError } = await supabaseAdmin
+        .from("orders")
+        .update({ customer_email: email })
+        .eq("id", orderId);
+      if (updateError) throw new Error(updateError.message);
+    }
+  }
+
   if (!email) {
     throw new Error(
       "У заказа не указана почта покупателя — отправлять материалы некуда. " +
@@ -671,7 +696,7 @@ async function deliverOrderByEmail(
     const { data: buyer } = await supabaseAdmin
       .from("bot_users")
       .select("zernio_conversation_id, zernio_account_id")
-      .eq("user_key", (order as { user_key?: string | null }).user_key || "")
+      .eq("user_key", order.user_key || "")
       .maybeSingle();
 
     if (buyer?.zernio_conversation_id && buyer?.zernio_account_id) {
