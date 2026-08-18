@@ -83,7 +83,10 @@ export async function retryStuckZernioEvents(): Promise<{
         const { handleZernioMessage } = await import("./zernio-bot.server");
         const { runWithZernioEvent } = await import("./zernio-event-context.server");
         await runWithZernioEvent(row.event_id, async () => {
-          await handleZernioMessage(row.payload);
+          // Граница доверия: row.payload — то же тело, что вебхук сам записал в
+          // zernio_logs при первой попытке (см. webhook.ts), просто перечитанное
+          // из jsonb, где формально это Json, а не типизированная форма.
+          await handleZernioMessage(row.payload as Parameters<typeof handleZernioMessage>[0]);
         });
       }
       await supabaseAdmin.from("zernio_logs").update({ status: "processed" }).eq("id", row.id);

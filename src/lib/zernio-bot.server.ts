@@ -1,4 +1,8 @@
-import { sendZernioInboxMessage, type ZernioDmButton } from "./zernio.server";
+import {
+  sendZernioInboxMessage,
+  type ZernioDmButton,
+  type ZernioWebhookMessagePayload,
+} from "./zernio.server";
 import crypto from "node:crypto";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 
@@ -52,7 +56,7 @@ export async function upsertZernioUser(
   accountId?: string,
   username?: string,
   firstName?: string,
-  metadata?: Record<string, any>,
+  metadata?: Record<string, Json>,
 ) {
   const s = await db();
   const { data: existing } = await s
@@ -92,6 +96,7 @@ export async function upsertZernioUser(
     zernio_account_id: accountId,
     username: username || null,
     first_name: firstName || "Инста-гость",
+    email: null,
     state: {},
     metadata: metadata || {},
   };
@@ -104,11 +109,14 @@ export async function upsertZernioUser(
   return inserted;
 }
 
+/** Строка bot_users, как её возвращает upsertZernioUser — покупатель Instagram Direct. */
+type ZernioBotUser = Awaited<ReturnType<typeof upsertZernioUser>>;
+
 /**
  * Обработать входящее личное сообщение (DM) из Instagram Direct.
  * Соответствует спецификации Zernio Webhooks: payload.message, payload.conversation, payload.account
  */
-export async function handleZernioMessage(payload: any) {
+export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) {
   const { parseZernioMessage } = await import("./zernio-message");
   const {
     conversationId,
@@ -197,9 +205,7 @@ export async function handleZernioMessage(payload: any) {
   // Чеком считаем только картинку или файл — см. pickReceiptAttachment: там же
   // и разбор того, почему голосовое сообщение чеком быть не должно.
   const { pickReceiptAttachment } = await import("./direct-flow");
-  const attachmentUrl =
-    pickReceiptAttachment(payload.message?.attachments as Array<{ url?: string; type?: string }>) ??
-    undefined;
+  const attachmentUrl = pickReceiptAttachment(payload.message?.attachments) ?? undefined;
 
   /**
    * Пустое событие — не сообщение, и отвечать на него нечем.
@@ -410,7 +416,7 @@ export async function handleZernioMessage(payload: any) {
  * Теперь меню говорит ровно то, что бот действительно умеет: принять номер
  * товара. Разбирать каталог удобнее в Telegram-боте — туда и ведём.
  */
-async function sendCatalogMenu(conversationId: string, accountId: string, user: any) {
+async function sendCatalogMenu(conversationId: string, accountId: string, user: ZernioBotUser) {
   const botLink = await telegramBotLink();
 
   const lines = [
@@ -438,7 +444,7 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
 async function sendInteractiveProductResults(
   conversationId: string,
   accountId: string,
-  user: any,
+  user: ZernioBotUser,
   query: string,
 ) {
   const s = await db();
@@ -495,7 +501,7 @@ async function sendInteractiveProductResults(
 async function addProductToCart(
   conversationId: string,
   accountId: string,
-  user: any,
+  user: ZernioBotUser,
   productId: string,
 ) {
   const flow = await import("./direct-purchase.server");
@@ -528,7 +534,7 @@ async function addProductToCart(
 }
 
 /** Показывает корзину и кнопку оформления. */
-async function sendCart(conversationId: string, accountId: string, user: any) {
+async function sendCart(conversationId: string, accountId: string, user: ZernioBotUser) {
   const flow = await import("./direct-purchase.server");
   const cart = await flow.readCart(user);
 
@@ -559,7 +565,7 @@ async function sendCart(conversationId: string, accountId: string, user: any) {
     [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }],
   );
 }
-async function sendOrders(conversationId: string, accountId: string, user: any) {
+async function sendOrders(conversationId: string, accountId: string, user: ZernioBotUser) {
   const s = await db();
   const { data: orders } = await s
     .from("orders")
@@ -590,7 +596,7 @@ async function sendOrders(conversationId: string, accountId: string, user: any) 
   };
 
   let msg = `📋 Ваши заказы:\n\n`;
-  orders.forEach((o: any) => {
+  orders.forEach((o) => {
     msg += `Заказ #${o.order_no ?? o.id} — ${o.total} ${o.currency} [${statusMap[o.status] || o.status}]\n`;
   });
 
@@ -615,7 +621,11 @@ async function sendOrders(conversationId: string, accountId: string, user: any) 
  * Теперь путь один: корзина → страна → реквизиты → чек → почта → подтверждение
  * продавцом → материалы письмом.
  */
-async function startInstagramCheckout(conversationId: string, accountId: string, user: any) {
+async function startInstagramCheckout(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+) {
   const flow = await import("./direct-purchase.server");
   const cart = await flow.readCart(user);
 
@@ -727,7 +737,7 @@ async function startInstagramCheckout(conversationId: string, accountId: string,
 async function sendDirectPaymentDetails(params: {
   conversationId: string;
   accountId: string;
-  user: any;
+  user: ZernioBotUser;
   country: { code: string; name: string };
   remembered: boolean;
 }) {
@@ -815,7 +825,9 @@ export async function deliverInstagramOrder(orderId: number) {
  * `notifyAdminAboutComplaint` — если переподключение не помогло с первого
  * раза, продавцу не нужно по письму на каждую повторную попытку.
  */
-export async function handleZernioAccountDisconnected(payload: any) {
+export async function handleZernioAccountDisconnected(payload: {
+  account?: { accountId?: string; id?: string; _id?: string; username?: string; name?: string };
+}) {
   const account = payload?.account ?? {};
   const accountId = String(account.accountId || account.id || account._id || "неизвестен");
   const label = account.username ? `@${account.username}` : account.name || accountId;
@@ -901,7 +913,7 @@ export async function handleZernioAccountDisconnected(payload: any) {
 async function handlePurchaseFlow(params: {
   conversationId: string;
   accountId: string;
-  user: any;
+  user: ZernioBotUser;
   text: string;
   attachmentUrl?: string;
   /** false — режим «только покупки»: на всё, кроме заказа, бот молчит. */
@@ -1148,7 +1160,7 @@ async function handlePurchaseFlow(params: {
       .update({ admin_note: `Instagram, чек: ${verdict.note}`.slice(0, 500) })
       .eq("id", order.id);
 
-    const email = user.email as string | null;
+    const email = user.email;
 
     // Почта известна и чек сошёлся — отдаём материалы сразу, ничего не спрашивая.
     if (email && verdict.autoDeliver) {
