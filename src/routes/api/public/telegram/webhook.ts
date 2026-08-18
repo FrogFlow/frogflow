@@ -27,6 +27,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
         const callbackData = (update as { callback_query?: { data?: string } })?.callback_query
           ?.data;
+        const msg = (update as { message?: { photo?: unknown; document?: unknown } })?.message;
         const runUpdate = async () => {
           const { handleUpdate } = await import("@/lib/bot.server");
           // Граница доверия: тело запроса проверено секретом заголовка выше,
@@ -34,12 +35,18 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           await handleUpdate(update as Parameters<typeof handleUpdate>[0]);
         };
 
-        // confirm/reject can take minutes on large orders — answer Telegram immediately
-        // so it does not retry the same callback and deliver files multiple times
-        if (
-          typeof callbackData === "string" &&
-          (callbackData.startsWith("confirm:") || callbackData.startsWith("reject:"))
-        ) {
+        // confirm/reject и присланный чек (фото/файл) могут занять минуты на
+        // крупных заказах — при автопроверке чека сообщение с фото/PDF
+        // синхронно доходит до deliverOrder() и рассылки всех файлов заказа.
+        // Отвечаем Telegram сразу, чтобы: 1) он не повторил то же обновление,
+        // пока мы ещё выдаём файлы (иначе второй такой же заказ), и 2) пока
+        // выдача идёт, getWebhookInfo не показывал pending_update_count > 0 —
+        // это обновление уже честно доставлено, просто обрабатывается дольше.
+        const isSlow =
+          (typeof callbackData === "string" &&
+            (callbackData.startsWith("confirm:") || callbackData.startsWith("reject:"))) ||
+          Boolean(msg?.photo || msg?.document);
+        if (isSlow) {
           await runInBackground(runUpdate);
           return new Response("ok");
         }

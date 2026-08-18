@@ -167,7 +167,7 @@ function OperatorClientsPage() {
         </div>
       )}
 
-      <ReadinessAll />
+      <ReadinessAll bots={list} />
 
       {bots.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
       {bots.isError && (
@@ -412,10 +412,18 @@ function ModulesCell({ modules }: { modules: ModuleKey[] }) {
  * Проверка готовности по всем сразу. Та же, что на карточке, но после общего
  * обновления кода обойти пятерых по одному — пять заходов вместо одного.
  */
-function ReadinessAll() {
+/**
+ * Раньше при находке проблем говорила только «не готовы: 2 из 5» — какие
+ * именно клиенты и что у них не так, приходилось искать открытием каждой
+ * карточки по очереди. Теперь неполадки видны сразу под кнопкой: имя
+ * клиента (ссылкой на карточку) и все пункты, что не в порядке, тем же
+ * текстом, что и в разделе «Готовность» самой карточки.
+ */
+function ReadinessAll({ bots }: { bots: { id: string; bot_name: string }[] }) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<Awaited<ReturnType<typeof checkReadinessAllFn>> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const names = new Map(bots.map((b) => [b.id, b.bot_name]));
 
   async function run() {
     setBusy(true);
@@ -434,23 +442,59 @@ function ReadinessAll() {
   const bad = entries.filter(([, r]) => !r.ok);
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Button size="sm" variant="outline" onClick={run} disabled={busy}>
-        {busy ? "Проверяю всех…" : "Проверить готовность всех"}
-      </Button>
-      {error && <span className="text-sm text-destructive">{error}</span>}
-      {res && (
-        <span className="text-sm">
-          {bad.length === 0 ? (
-            <span className="text-green-600 dark:text-green-500">
-              Все {entries.length} в порядке
-            </span>
-          ) : (
-            <span className="text-destructive">
-              Не готовы: {bad.length} из {entries.length} — откройте карточку, там разбор по пунктам
-            </span>
-          )}
-        </span>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="sm" variant="outline" onClick={run} disabled={busy}>
+          {busy ? "Проверяю всех…" : "Проверить готовность всех"}
+        </Button>
+        {error && <span className="text-sm text-destructive">{error}</span>}
+        {res && (
+          <span className="text-sm">
+            {bad.length === 0 ? (
+              <span className="text-green-600 dark:text-green-500">
+                Все {entries.length} в порядке
+              </span>
+            ) : (
+              <span className="text-destructive">
+                Не готовы: {bad.length} из {entries.length}
+              </span>
+            )}
+          </span>
+        )}
+      </div>
+
+      {bad.length > 0 && (
+        <div className="border rounded-lg p-3 bg-destructive/5 border-destructive/30 space-y-3">
+          {bad.map(([botId, r]) => (
+            <div key={botId} className="text-sm">
+              <Link
+                to="/operator/$botId"
+                params={{ botId }}
+                className="font-medium hover:underline"
+              >
+                {names.get(botId) ?? botId}
+              </Link>
+              <ul className="mt-1 ml-4 list-disc space-y-0.5">
+                {r.checks
+                  .filter((c) => c.level !== "ok")
+                  .map((c, i) => (
+                    <li key={i}>
+                      <span
+                        className={
+                          c.level === "fail"
+                            ? "text-destructive font-medium"
+                            : "text-amber-700 dark:text-amber-500 font-medium"
+                        }
+                      >
+                        {c.name}
+                      </span>
+                      <span className="text-muted-foreground"> — {c.detail}</span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
