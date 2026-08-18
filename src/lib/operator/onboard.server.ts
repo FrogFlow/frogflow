@@ -46,6 +46,22 @@ export type OnboardResult = {
 export async function onboardClient(input: OnboardInput, actor: string): Promise<OnboardResult> {
   await requireOperator();
 
+  const ownerSlug = input.owner_slug.trim();
+  const s = await db();
+  // Проверка до вставки, а не только надежда на ограничение в базе: без неё
+  // второй клиент с тем же идентификатором либо тихо приживётся (если
+  // ограничения нет), либо упадёт сырой ошибкой Postgres вместо понятного
+  // «уже занят» — а owner_slug используется как человекочитаемое имя в
+  // служебных местах, дубль там сбивает с толку куда сильнее, чем в UUID.
+  const { data: existing } = await s
+    .from("bots")
+    .select("id")
+    .eq("owner_id", ownerSlug)
+    .maybeSingle();
+  if (existing) {
+    throw new Error(`Идентификатор «${ownerSlug}» уже занят другим клиентом. Выберите другой.`);
+  }
+
   const warnings: string[] = [];
   const identity = await verifyBotToken(input.bot_token);
 
@@ -63,7 +79,6 @@ export async function onboardClient(input: OnboardInput, actor: string): Promise
   const modules: Record<string, boolean> = {};
   for (const key of MODULE_KEYS) modules[key] = input.modules.includes(key);
 
-  const s = await db();
   const internalSecret = randomSecret();
   const appUrl = input.app_url?.trim().replace(/\/$/, "") || null;
 
