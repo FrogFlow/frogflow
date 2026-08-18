@@ -15,7 +15,7 @@ const MAX_FILE_BYTES =
 
 const DELIVERABLE_STATUSES = ["awaiting_confirmation", "awaiting_payment"] as const;
 
-type OrderItem = {
+export type OrderItem = {
   id?: string;
   /** Нужен, чтобы достать файлы товара, когда снимок заказа оказался пустым. */
   product_id?: string | null;
@@ -28,6 +28,8 @@ type OrderItem = {
   file_url_kz_snapshot?: string | null;
   material_files_snapshot?: MaterialFile[] | null;
   material_files_kz_snapshot?: MaterialFile[] | null;
+  /** Какой язык уже отправлен покупателю — только для материалов, где заведены оба (RU и KZ). */
+  delivered_language?: string | null;
   quantity: number;
 };
 
@@ -84,7 +86,7 @@ export async function deliverOrder(
 ) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
 
-  let order: any;
+  let order: NonNullable<Awaited<ReturnType<typeof claimOrderForDelivery>>>;
   const isFullRedeliver = Boolean(options?.force && !options?.resume);
 
   if (options?.force) {
@@ -100,8 +102,9 @@ export async function deliverOrder(
     if (error || !data) throw new Error(error?.message || "Order not found");
     order = data;
   } else {
-    order = await claimOrderForDelivery(orderId);
-    if (!order) return { ok: true as const, alreadyDelivered: true };
+    const claimed = await claimOrderForDelivery(orderId);
+    if (!claimed) return { ok: true as const, alreadyDelivered: true };
+    order = claimed;
   }
 
   const items = ((order.order_items as OrderItem[]) || []).slice().sort((a, b) => {
@@ -186,13 +189,13 @@ export async function deliverOrder(
       if (idx === 0) {
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
-          text: `✅ Оплата подтверждена! Заказ #${(fresh as any).order_no ?? orderId}.\nОтправляю ваши материалы файлами (${items.length} шт.)…`,
+          text: `✅ Оплата подтверждена! Заказ #${fresh.order_no ?? orderId}.\nОтправляю ваши материалы файлами (${items.length} шт.)…`,
         });
       } else if (!announcedContinue) {
         announcedContinue = true;
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
-          text: `📤 Продолжаю выдачу заказа #${(fresh as any).order_no ?? orderId}: с позиции ${idx + 1} из ${items.length}…`,
+          text: `📤 Продолжаю выдачу заказа #${fresh.order_no ?? orderId}: с позиции ${idx + 1} из ${items.length}…`,
         });
       }
 
@@ -338,8 +341,8 @@ export async function processPendingDeliveries(limit = 3) {
   for (const row of rows) {
     try {
       const res = await deliverOrder(row.id as number, { force: true, resume: true });
-      if ((res as any).pending) continued++;
-      else if (!(res as any).alreadyDelivered) finished++;
+      if ("pending" in res && res.pending) continued++;
+      else if (!("alreadyDelivered" in res && res.alreadyDelivered)) finished++;
     } catch (e) {
       console.error("[orders] pending delivery failed", row.id, e);
     }

@@ -3,6 +3,53 @@ import { errorMessage } from "@/lib/error-message";
 import { requireAppOrigin } from "./app-origin.server";
 import { replyIfBlocked } from "./blocked-users.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
+import type { Json } from "@/integrations-supabase/types";
+import type { OrderItem } from "./orders.server";
+
+/** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
+type ProductCard = {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  currency: string | null;
+  country_prices: Json | null;
+  product_images: Array<{ image_path: string; sort_order: number }> | null;
+};
+
+/**
+ * Ровно то подмножество полей Update из Telegram Bot API, которое реально
+ * читает handleUpdate. Не полный тип апдейта — Telegram присылает и другие
+ * виды (inline_query, poll и т.д.), которых этот бот не обрабатывает вовсе.
+ */
+type TelegramUser = {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  language_code?: string;
+};
+
+type TelegramMessage = {
+  chat: { id: number };
+  from?: TelegramUser;
+  text?: string;
+  contact?: { phone_number: string };
+  document?: { file_id: string; file_name?: string; mime_type?: string };
+  photo?: Array<{ file_id: string }>;
+};
+
+type TelegramCallbackQuery = {
+  id: string;
+  data?: string;
+  from?: TelegramUser;
+  message?: { chat?: { id: number }; message_id?: number };
+};
+
+type TelegramUpdate = {
+  message?: TelegramMessage;
+  callback_query?: TelegramCallbackQuery;
+};
 
 type BotUser = {
   telegram_id: number;
@@ -482,7 +529,7 @@ async function showCategories(
   }
 
   for (const p of page) {
-    await sendProductCard(chat_id, p, userCountryCode, s);
+    await sendProductCard(chat_id, p, userCountryCode);
   }
 
   const navButtons = [];
@@ -517,13 +564,10 @@ async function showCategories(
 
 async function sendProductCard(
   chat_id: number,
-  p: any,
+  p: ProductCard,
   userCountryCode: string | undefined,
-  s: any,
 ) {
-  const imgs = (p.product_images || [])
-    .slice()
-    .sort((a: any, b: any) => a.sort_order - b.sort_order);
+  const imgs = (p.product_images || []).slice().sort((a, b) => a.sort_order - b.sort_order);
 
   /**
    * Цена считается общим расчётом — тем же, что и в Instagram.
@@ -544,9 +588,9 @@ async function sendProductCard(
   const displayCurrency = money.currency;
 
   const desc = p.description
-    ? `\n\n${escapeHtml(p.description as string)}`
+    ? `\n\n${escapeHtml(p.description)}`
     : `\n\n<i>Подробное описание уточняется у продавца.</i>`;
-  const caption = `📦 <b>${escapeHtml(p.name as string)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>`;
+  const caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>`;
   const reply_markup = {
     inline_keyboard: [[{ text: "➕ В корзину", callback_data: `add:${p.id}` }]],
   };
@@ -577,7 +621,7 @@ async function showProduct(chat_id: number, product_id: string, userCountryCode?
     await tg("sendMessage", { chat_id, text: "Товар не найден." });
     return;
   }
-  await sendProductCard(chat_id, p, userCountryCode, s);
+  await sendProductCard(chat_id, p, userCountryCode);
 }
 function escapeHtml(t: string): string {
   if (!t) return "";
@@ -663,7 +707,7 @@ async function sendLongHtmlMessage(chat_id: number | string, text: string) {
 async function displayNoFor(orderId: number): Promise<number> {
   const s = await db();
   const { data } = await s.from("orders").select("order_no").eq("id", orderId).maybeSingle();
-  return ((data as any)?.order_no as number) ?? orderId;
+  return data?.order_no ?? orderId;
 }
 
 async function sendCoverPreviews(adminChatId: string, displayNo: number, coverUrls: string[]) {
@@ -733,7 +777,7 @@ async function showCart(chat_id: number, user: BotUser) {
 
   let text = "🛒 <b>Ваша корзина:</b>\n\n";
   const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
-  for (const it of items as any[]) {
+  for (const it of items) {
     const p = it.products;
     if (!p) continue;
 
@@ -862,8 +906,8 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   const { resolvePrice } = await import("./pricing.server");
   const priced = new Map<string, number>();
   let total = 0;
-  let currency = (method?.currency as string) || "KZT";
-  for (const it of items as any[]) {
+  let currency = method?.currency || "KZT";
+  for (const it of items) {
     if (!it.products) continue;
     const money = await resolvePrice(it.products, country_code);
     currency = money.currency;
@@ -896,7 +940,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   }
 
   const rows = await Promise.all(
-    (items as any[]).map(async (it) => {
+    items.map(async (it) => {
       // Ту же цену, что вошла в итог заказа: считать её второй раз незачем, а
       // разойтись они не должны.
       const displayPrice = priced.get(String(it.products?.id)) ?? Number(it.products?.price ?? 0);
@@ -940,7 +984,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
-      displayNo: ((order as any).order_no ?? order.id) as number,
+      displayNo: order.order_no ?? order.id,
       total,
       currency,
       instructions,
@@ -956,7 +1000,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
-      displayNo: ((order as any).order_no ?? order.id) as number,
+      displayNo: order.order_no ?? order.id,
       total,
       currency,
       instructions,
@@ -972,7 +1016,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
-      displayNo: ((order as any).order_no ?? order.id) as number,
+      displayNo: order.order_no ?? order.id,
       total,
       currency,
     });
@@ -985,7 +1029,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     telegram_id,
     userState: user.state,
     orderId: order.id as number,
-    displayNo: ((order as any).order_no ?? order.id) as number,
+    displayNo: order.order_no ?? order.id,
     total,
     currency,
     rk,
@@ -1029,7 +1073,7 @@ export async function remindOrderPayment(orderId: number) {
   await tg("sendMessage", {
     chat_id,
     text:
-      `🔔 <b>Напоминание по заказу #${(order as any).order_no ?? orderId}</b>\n\n` +
+      `🔔 <b>Напоминание по заказу #${order.order_no ?? orderId}</b>\n\n` +
       `Заказ ещё ожидает оплаты (${formatMoney(total, currency)}).\n` +
       `Ниже — актуальный способ оплаты. Если уже платили — пришлите чек в этот чат.`,
     parse_mode: "HTML",
@@ -1044,7 +1088,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
-      displayNo: (order as any).order_no ?? orderId,
+      displayNo: order.order_no ?? orderId,
       total,
       currency,
       instructions,
@@ -1060,7 +1104,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
-      displayNo: (order as any).order_no ?? orderId,
+      displayNo: order.order_no ?? orderId,
       total,
       currency,
       instructions,
@@ -1076,7 +1120,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
-      displayNo: (order as any).order_no ?? orderId,
+      displayNo: order.order_no ?? orderId,
       total,
       currency,
       reminder: true,
@@ -1087,7 +1131,7 @@ export async function remindOrderPayment(orderId: number) {
   await sendRobokassaPayLink({
     chat_id,
     telegram_id,
-    displayNo: (order as any).order_no ?? orderId,
+    displayNo: order.order_no ?? orderId,
     userState,
     orderId,
     total,
@@ -1265,14 +1309,8 @@ async function notifyAdminNewOrder(
   if (!order) return;
   // Покупателю и админу показывается сквозной номер этого бота, а не глобальный
   // id (id остаётся во внутренних ссылках, callback_data и InvId Robokassa).
-  const displayNo = (order as any).order_no ?? order.id;
-  const items =
-    ((order as any).order_items as Array<{
-      product_id: string | null;
-      name_snapshot: string;
-      price_snapshot: number;
-      quantity: number;
-    }>) || [];
+  const displayNo = order.order_no ?? order.id;
+  const items = order.order_items || [];
 
   // --- Задача 4: обложки товаров отдельным сообщением (чтобы админ сразу видел, что продаётся) ---
   const productIds = items.map((i) => i.product_id).filter(Boolean) as string[];
@@ -1417,7 +1455,7 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   }
 
   for (const p of page) {
-    await sendProductCard(chat_id, p, user.state?.country_code, s);
+    await sendProductCard(chat_id, p, user.state?.country_code);
   }
 
   // Кнопка «Показать ещё», если остались результаты
@@ -1461,19 +1499,23 @@ async function showMyOrders(chat_id: number, telegram_id: number) {
   await tg("sendMessage", { chat_id, text: `📋 Ваши заказы:\n\n${text}` });
 }
 
-export async function handleUpdate(update: any) {
+export async function handleUpdate(update: TelegramUpdate) {
   try {
     // Callback queries
     if (update.callback_query) {
       const cq = update.callback_query;
       const chat_id = cq.message?.chat?.id;
-      const from_id = cq.from?.id;
       const data: string = cq.data || "";
       await tg("answerCallbackQuery", { callback_query_id: cq.id });
+      // Отсутствует только у inline-режима (inline_message_id вместо message),
+      // которым этот бот не пользуется — но раз callback без message пришёл,
+      // отвечать в чат всё равно некуда.
+      if (!chat_id || !cq.from) return;
+      const from_id = cq.from.id;
       if (await replyIfBlocked(chat_id, from_id)) return;
       if (await replyIfPaused(chat_id)) return;
 
-      const user = await upsertUser(cq.from as any);
+      const user = await upsertUser(cq.from);
       if (!user) return;
 
       // Before allowing navigation, require country code
@@ -1504,7 +1546,7 @@ export async function handleUpdate(update: any) {
         const s = await db();
         const { data: order } = await s
           .from("orders")
-          .select("id, telegram_id, status, total, currency, country_code")
+          .select("id, order_no, telegram_id, status, total, currency, country_code")
           .eq("id", orderId)
           .maybeSingle();
         if (!order || Number(order.telegram_id) !== Number(from_id)) {
@@ -1541,7 +1583,7 @@ export async function handleUpdate(update: any) {
             telegram_id: from_id,
             userState: user.state,
             orderId,
-            displayNo: (order as any).order_no ?? orderId,
+            displayNo: order.order_no ?? orderId,
             total: Number(order.total),
             currency: (order.currency as string) || "KZT",
             rk,
@@ -1559,7 +1601,7 @@ export async function handleUpdate(update: any) {
           telegram_id: from_id,
           userState: user.state,
           orderId,
-          displayNo: (order as any).order_no ?? orderId,
+          displayNo: order.order_no ?? orderId,
           total: Number(order.total),
           currency: (order.currency as string) || "KZT",
           instructions:
@@ -1652,14 +1694,14 @@ export async function handleUpdate(update: any) {
         }
 
         // Sort items to match server delivery index logic
-        const items = ((order.order_items as any[]) || []).slice().sort((a, b) => {
+        const items = ((order.order_items as OrderItem[]) || []).slice().sort((a, b) => {
           const ai = String(a.id || "");
           const bi = String(b.id || "");
           return ai < bi ? -1 : ai > bi ? 1 : 0;
         });
 
         const item = items[idx];
-        if (!item) return;
+        if (!item?.id) return;
 
         // Check if this language was already delivered
         if (item.delivered_language === lang || item.delivered_language === "both") {
@@ -1736,7 +1778,7 @@ export async function handleUpdate(update: any) {
           .select("order_no")
           .eq("id", orderId)
           .maybeSingle();
-        const shownNo = (ordRow as any)?.order_no ?? orderId;
+        const shownNo = ordRow?.order_no ?? orderId;
         await tg("sendMessage", { chat_id, text: `⏳ Выдаю заказ #${shownNo}...` });
         const { deliverOrder } = await import("./orders.server");
         try {

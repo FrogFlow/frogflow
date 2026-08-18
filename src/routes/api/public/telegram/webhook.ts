@@ -29,7 +29,9 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           ?.data;
         const runUpdate = async () => {
           const { handleUpdate } = await import("@/lib/bot.server");
-          await handleUpdate(update);
+          // Граница доверия: тело запроса проверено секретом заголовка выше,
+          // дальше типизированная форма — то, что handleUpdate реально читает.
+          await handleUpdate(update as Parameters<typeof handleUpdate>[0]);
         };
 
         // confirm/reject can take minutes on large orders — answer Telegram immediately
