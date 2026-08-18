@@ -1,4 +1,5 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
+import { errorMessage } from "@/lib/error-message";
 import { requireAppOrigin } from "./app-origin.server";
 import { replyIfBlocked } from "./blocked-users.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
@@ -1748,8 +1749,8 @@ export async function handleUpdate(update: any) {
           } else {
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} выдан.` });
           }
-        } catch (e: any) {
-          await tg("sendMessage", { chat_id, text: `Ошибка: ${e.message}` });
+        } catch (e: unknown) {
+          await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
         }
         return;
       }
@@ -2124,7 +2125,7 @@ export async function handleUpdate(update: any) {
           const { deliverOrder } = await import("./orders.server");
           await deliverOrder(orderId);
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, { autoDelivered: true });
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("[bot] auto-deliver after proof failed", orderId, e);
           await supabaseAdmin
             .from("orders")
@@ -2255,7 +2256,7 @@ export async function handleUpdate(update: any) {
 
     // Fallback
     await sendMain(chat_id);
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("[bot] handleUpdate error", e);
   }
 }

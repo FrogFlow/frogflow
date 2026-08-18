@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { isAdminAuthed } from "@/lib/admin-session.server";
 
 export const Route = createFileRoute("/api/admin/file/$")({
@@ -25,9 +26,9 @@ export const Route = createFileRoute("/api/admin/file/$")({
           return new Response(buf, {
             headers: { "Content-Type": data.type || "application/octet-stream" },
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("API error:", e);
-          return new Response(`Server error: ${e.message}`, { status: 500 });
+          return new Response(`Server error: ${errorMessage(e)}`, { status: 500 });
         }
       },
     },

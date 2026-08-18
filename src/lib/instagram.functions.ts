@@ -396,7 +396,7 @@ export const getAutomationsFn = createServerFn({ method: "GET" }).handler(async 
 
   // Добавляем флаг replyToAll для удобства фронтенда
   if (res.automations) {
-    res.automations = res.automations.map((a: any) => ({
+    res.automations = res.automations.map((a) => ({
       ...a,
       replyToAll: !a.keywords || a.keywords.length === 0,
     }));

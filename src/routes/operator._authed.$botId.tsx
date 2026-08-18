@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -109,8 +110,8 @@ function OperatorClientCard() {
       await setModuleFn({ data: { botId, key, enabled } });
       await refetchBot();
       await qc.invalidateQueries({ queryKey: ["operator_bot_events", botId] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusyModule(null);
     }
@@ -130,8 +131,8 @@ function OperatorClientCard() {
       await setBotStatusFn({ data: { botId, status } });
       await refetchBot();
       await qc.invalidateQueries({ queryKey: ["operator_bot_events", botId] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusyStatus(false);
     }
@@ -156,8 +157,8 @@ function OperatorClientCard() {
         },
       });
       await refetchBot();
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setSavingMeta(false);
     }

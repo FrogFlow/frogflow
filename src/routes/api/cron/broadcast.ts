@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { processBroadcastBatch } from "@/lib/broadcast.server";
 import { processPendingDeliveries } from "@/lib/orders.server";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
@@ -38,9 +39,9 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             Awaited<ReturnType<typeof processPendingDeliveries>> | { error: string } | undefined;
           try {
             deliveries = await processPendingDeliveries(5);
-          } catch (e: any) {
+          } catch (e: unknown) {
             console.error("[cron/broadcast] deliveries", e);
-            deliveries = { error: e?.message || String(e) };
+            deliveries = { error: errorMessage(e) || String(e) };
           }
 
           // Уборка логов Instagram — здесь, а не отдельным кроном: на Hobby
@@ -50,9 +51,9 @@ export const Route = createFileRoute("/api/cron/broadcast")({
           let logs: Awaited<ReturnType<typeof pruneZernioLogs>> | { error: string } | undefined;
           try {
             logs = await pruneZernioLogs();
-          } catch (e: any) {
+          } catch (e: unknown) {
             console.error("[cron/broadcast] zernio logs prune", e);
-            logs = { error: e?.message || String(e) };
+            logs = { error: errorMessage(e) || String(e) };
           }
 
           // Добор зависших событий Instagram — тоже здесь и тоже без права
@@ -62,9 +63,9 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             Awaited<ReturnType<typeof retryStuckZernioEvents>> | { error: string } | undefined;
           try {
             stuckEvents = await retryStuckZernioEvents();
-          } catch (e: any) {
+          } catch (e: unknown) {
             console.error("[cron/broadcast] zernio stuck events", e);
-            stuckEvents = { error: e?.message || String(e) };
+            stuckEvents = { error: errorMessage(e) || String(e) };
           }
 
           return Response.json({
@@ -77,9 +78,9 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             stuckEvents,
             ...last,
           });
-        } catch (e: any) {
+        } catch (e: unknown) {
           console.error("[cron/broadcast]", e);
-          return Response.json({ ok: false, error: e.message }, { status: 500 });
+          return Response.json({ ok: false, error: errorMessage(e) }, { status: 500 });
         }
       },
     },

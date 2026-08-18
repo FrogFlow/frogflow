@@ -1,4 +1,5 @@
 import { requireAppOrigin } from "./app-origin.server";
+import { errorMessage } from "@/lib/error-message";
 import { formatDateTimeRu } from "./datetime";
 import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
 import { assignMemberTariff, getMemberAssignedTariff } from "./vip-member.server";
@@ -903,8 +904,8 @@ export async function handleVipUpdate(update: any) {
               reply_markup: { inline_keyboard: [] },
             });
           }
-        } catch (e: any) {
-          await tgVip("sendMessage", { chat_id, text: `Ошибка: ${e.message}` });
+        } catch (e: unknown) {
+          await tgVip("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
         }
         return;
       }
@@ -928,8 +929,8 @@ export async function handleVipUpdate(update: any) {
               reply_markup: { inline_keyboard: [] },
             });
           }
-        } catch (e: any) {
-          await tgVip("sendMessage", { chat_id, text: `Ошибка отклонения: ${e.message}` });
+        } catch (e: unknown) {
+          await tgVip("sendMessage", { chat_id, text: `Ошибка отклонения: ${errorMessage(e)}` });
         }
         return;
       }

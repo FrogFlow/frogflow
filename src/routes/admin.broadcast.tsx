@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -143,8 +144,8 @@ function BroadcastPage() {
         next.push(path);
       }
       setPhotoPaths(next);
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setUploading(false);
     }
@@ -156,8 +157,8 @@ function BroadcastPage() {
     try {
       await sendTestBroadcastFn({ data: { ...payload, audience_type: "test" } });
       alert("Тестовое сообщение отправлено на admin Telegram ID.");
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -175,8 +176,8 @@ function BroadcastPage() {
       const row = await startBroadcastFn({ data: payload });
       setActiveId(row.id as string);
       await qc.invalidateQueries({ queryKey: ["broadcasts"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -368,8 +369,8 @@ function BroadcastPage() {
                     await cancelBroadcastFn({ data: { id: activeId! } });
                     setActiveId(null);
                     await qc.invalidateQueries({ queryKey: ["broadcasts"] });
-                  } catch (e: any) {
-                    alert(e.message);
+                  } catch (e: unknown) {
+                    alert(errorMessage(e));
                   } finally {
                     setBusy(false);
                   }

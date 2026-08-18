@@ -8,6 +8,7 @@
  * полный контроль над ботом.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
+import { errorMessage } from "@/lib/error-message";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -88,10 +89,10 @@ export async function notifyOwner(text: string): Promise<NotifyOwnerResult> {
   let res: { ok: boolean; description?: string };
   try {
     res = await tg("sendMessage", { chat_id: Number(data.owner_telegram_id), text });
-  } catch (e: any) {
+  } catch (e: unknown) {
     // Сюда попадает только незаданный TELEGRAM_BOT_TOKEN: сетевые сбои tg()
     // переживает сам и возвращает ok: false.
-    return { ok: false, status: 500, message: `Отправка не удалась: ${e?.message || e}` };
+    return { ok: false, status: 500, message: `Отправка не удалась: ${errorMessage(e) || e}` };
   }
   // tg() не бросает при отказе Telegram, а возвращает ok: false. Проглотить
   // это значило бы отрапортовать панели об успешной доставке несуществующего

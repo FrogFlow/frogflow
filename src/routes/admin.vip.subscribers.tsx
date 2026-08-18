@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -124,8 +125,8 @@ function AdminVipSubscribers() {
       setManualLookupHint(
         `Найден в группе: ${name}${row.username ? ` @${row.username}` : ""} · статус: ${row.member_status}`,
       );
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка: " + errorMessage(e));
     } finally {
       setManualLookupLoading(false);
     }
@@ -151,8 +152,8 @@ function AdminVipSubscribers() {
         (res.warning ? `\n\n⚠ ${res.warning}` : "") +
         (res.inviteSent ? "\n\nПользователю отправлена ссылка для вступления." : "");
       alert(msg);
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка: " + errorMessage(e));
     }
   };
 
@@ -161,8 +162,8 @@ function AdminVipSubscribers() {
     try {
       await confirmVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка: " + errorMessage(e));
     }
   };
 
@@ -171,8 +172,8 @@ function AdminVipSubscribers() {
     try {
       await rejectVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка: " + errorMessage(e));
     }
   };
 
@@ -195,8 +196,8 @@ function AdminVipSubscribers() {
     try {
       await extendVipSubscription({ data: { id, days: n } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка: " + errorMessage(e));
     }
   };
 
@@ -210,8 +211,8 @@ function AdminVipSubscribers() {
     try {
       await excludeVipFromCommunity({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка: " + errorMessage(e));
     }
   };
 
@@ -236,8 +237,8 @@ function AdminVipSubscribers() {
         },
       });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
-    } catch (e: any) {
-      alert("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка: " + errorMessage(e));
     }
   };
 

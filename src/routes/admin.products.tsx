@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -303,8 +304,8 @@ function ProductsPage() {
         ...images,
         ...uploaded.map((r, i) => ({ image_path: r.path, sort_order: images.length + i })),
       ]);
-    } catch (e: any) {
-      alert("Ошибка загрузки фото: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка загрузки фото: " + errorMessage(e));
     }
   }
 
@@ -323,8 +324,8 @@ function ProductsPage() {
           sort_order: current.length + i,
         })),
       ]);
-    } catch (e: any) {
-      alert(`Ошибка загрузки файла${lang === "kz" ? " (KZ)" : ""}: ${e.message}`);
+    } catch (e: unknown) {
+      alert(`Ошибка загрузки файла${lang === "kz" ? " (KZ)" : ""}: ${errorMessage(e)}`);
     }
   }
 
@@ -369,8 +370,8 @@ function ProductsPage() {
       setMaterialFilesRu([]);
       setMaterialFilesKz([]);
       qc.invalidateQueries({ queryKey: ["products"] });
-    } catch (e: any) {
-      alert("Ошибка сохранения: " + (e?.message || "Неизвестная ошибка"));
+    } catch (e: unknown) {
+      alert("Ошибка сохранения: " + (errorMessage(e) || "Неизвестная ошибка"));
     } finally {
       setSaving(false);
     }
@@ -381,8 +382,8 @@ function ProductsPage() {
     try {
       await deleteProduct({ data: { id } });
       qc.invalidateQueries({ queryKey: ["products"] });
-    } catch (e: any) {
-      alert("Ошибка удаления: " + (e?.message || "Неизвестная ошибка"));
+    } catch (e: unknown) {
+      alert("Ошибка удаления: " + (errorMessage(e) || "Неизвестная ошибка"));
     }
   }
 

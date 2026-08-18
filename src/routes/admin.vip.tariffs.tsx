@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -95,8 +96,8 @@ function AdminVipTariffs() {
     try {
       await deleteVipTariff({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     }
   };
 

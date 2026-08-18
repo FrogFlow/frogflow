@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -62,8 +63,8 @@ function PaymentMethodsPage() {
     try {
       const r = await uploadFile(file);
       setEditing((prev) => (prev ? { ...prev, qr_code_path: r.path } : prev));
-    } catch (e: any) {
-      alert("Ошибка загрузки QR-кода: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка загрузки QR-кода: " + errorMessage(e));
     }
   }
 
@@ -73,8 +74,8 @@ function PaymentMethodsPage() {
       await savePaymentMethod({ data: editing });
       setEditing(null);
       qc.invalidateQueries({ queryKey: ["payment-methods"] });
-    } catch (e: any) {
-      alert("Ошибка при сохранении: " + e.message);
+    } catch (e: unknown) {
+      alert("Ошибка при сохранении: " + errorMessage(e));
     }
   }
   async function onDelete(id: string) {

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -88,8 +89,8 @@ function SettingsPage() {
       qc.invalidateQueries({ queryKey: ["settings"] });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e: any) {
-      alert("Ошибка сохранения: " + (e?.message || "Неизвестная ошибка"));
+    } catch (e: unknown) {
+      alert("Ошибка сохранения: " + (errorMessage(e) || "Неизвестная ошибка"));
     }
   }
 
@@ -108,8 +109,8 @@ function SettingsPage() {
       qc.invalidateQueries({ queryKey: ["settings"] });
       setRkSaved(true);
       setTimeout(() => setRkSaved(false), 2000);
-    } catch (e: any) {
-      alert("Ошибка сохранения Robokassa: " + (e?.message || "Неизвестная ошибка"));
+    } catch (e: unknown) {
+      alert("Ошибка сохранения Robokassa: " + (errorMessage(e) || "Неизвестная ошибка"));
     }
   }
 
@@ -122,8 +123,8 @@ function SettingsPage() {
       qc.invalidateQueries({ queryKey: ["settings"] });
       setLegalSaved(true);
       setTimeout(() => setLegalSaved(false), 2000);
-    } catch (e: any) {
-      alert("Ошибка сохранения документов: " + (e?.message || "Неизвестная ошибка"));
+    } catch (e: unknown) {
+      alert("Ошибка сохранения документов: " + (errorMessage(e) || "Неизвестная ошибка"));
     }
   }
 
@@ -149,8 +150,8 @@ function SettingsPage() {
         setPrivacyFileName(filename);
       }
       await qc.invalidateQueries({ queryKey: ["settings"] });
-    } catch (e: any) {
-      alert(e.message || "Ошибка загрузки");
+    } catch (e: unknown) {
+      alert(errorMessage(e) || "Ошибка загрузки");
     } finally {
       setUploadingKind(null);
     }
@@ -168,8 +169,8 @@ function SettingsPage() {
         setPrivacyFileName("");
       }
       await qc.invalidateQueries({ queryKey: ["settings"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     }
   }
 
@@ -200,8 +201,8 @@ function SettingsPage() {
       await commitInstructionVideoFn({ data: { path } });
       setInstructionVideoPath(path);
       await qc.invalidateQueries({ queryKey: ["settings"] });
-    } catch (e: any) {
-      alert(e.message || "Ошибка загрузки");
+    } catch (e: unknown) {
+      alert(errorMessage(e) || "Ошибка загрузки");
     } finally {
       setInstructionUploading(false);
     }
@@ -213,8 +214,8 @@ function SettingsPage() {
       await clearInstructionVideoFn();
       setInstructionVideoPath("");
       await qc.invalidateQueries({ queryKey: ["settings"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     }
   }
 

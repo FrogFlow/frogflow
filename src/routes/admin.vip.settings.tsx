@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { getSettings, saveSetting } from "@/lib/settings.functions";
@@ -60,8 +61,8 @@ function AdminVipSettings() {
         `Готово: 1-е предупр. ${r.warned}, 2-е предупр. ${r.warned2 ?? 0}, истекло/кик ${r.expired}, ошибок кика ${r.kickFailed}` +
           (r.errors.length ? `\n${r.errors.join("\n")}` : ""),
       );
-    } catch (e: any) {
-      setCronResult("Ошибка: " + e.message);
+    } catch (e: unknown) {
+      setCronResult("Ошибка: " + errorMessage(e));
     } finally {
       setCronBusy(false);
     }

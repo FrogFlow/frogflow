@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { listBotsFn } from "@/lib/operator/bots.functions";
@@ -80,8 +81,8 @@ function OperatorBroadcastPage() {
       // Текст намеренно остаётся в поле: часть получателей могла не получить
       // сообщение, и его надо иметь возможность отправить повторно.
       await qc.invalidateQueries({ queryKey: ["operator_broadcasts"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setSending(false);
     }

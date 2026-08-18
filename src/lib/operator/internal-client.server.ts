@@ -3,6 +3,7 @@
  * Панель зовёт {app_url}/api/internal/*, предъявляя bots.internal_secret;
  * токен Telegram остаётся на стороне деплоя и в панель не попадает.
  */
+import { errorMessage } from "@/lib/error-message";
 
 /** Дольше держать смысла нет: панель ждёт синхронно, а деплой либо отвечает быстро, либо лежит. */
 export const INTERNAL_TIMEOUT_MS = 10_000;
@@ -62,11 +63,11 @@ export async function callInternal<T = unknown>(
     }
     const parsed = (await res.json().catch(() => null)) as T;
     return { ok: true, body: parsed };
-  } catch (e: any) {
+  } catch (e: unknown) {
     const reason =
-      e?.name === "AbortError"
+      e instanceof Error && e.name === "AbortError"
         ? `деплой не ответил за ${INTERNAL_TIMEOUT_MS / 1000} с`
-        : e?.message || String(e);
+        : errorMessage(e);
     return { ok: false, kind: "unreachable", error: `Деплой недоступен: ${reason}` };
   } finally {
     clearTimeout(timer);

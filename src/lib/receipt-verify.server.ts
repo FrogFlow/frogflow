@@ -1,3 +1,5 @@
+import { errorMessage } from "@/lib/error-message";
+
 /** Tolerance for matching receipt amount to order total (10%). */
 export const RECEIPT_AMOUNT_TOLERANCE = 0.1;
 
@@ -161,12 +163,12 @@ export async function verifyPaymentReceipt(params: {
   let text: string;
   try {
     text = await ocrWithGoogleVision(params.bytes, params.mime || "image/jpeg");
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("[receipt-verify] OCR failed", e);
     return {
       ok: false,
       reason: "ocr_unavailable",
-      detail: e?.message || "OCR failed",
+      detail: errorMessage(e) || "OCR failed",
     };
   }
 

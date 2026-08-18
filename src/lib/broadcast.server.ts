@@ -1,4 +1,5 @@
 import { tg, tgSendMultipart, tgSendMultipartMany } from "./telegram.server";
+import { errorMessage } from "@/lib/error-message";
 
 const BATCH_SIZE = 25;
 const SEND_DELAY_MS = 80;
@@ -330,13 +331,13 @@ export async function processBroadcastBatch() {
         .update({ status: "sent", sent_at: new Date().toISOString(), error_message: null })
         .eq("id", recipient.id);
       sent++;
-    } catch (e: any) {
-      const kind = classifyTelegramError(e?.message);
+    } catch (e: unknown) {
+      const kind = classifyTelegramError(errorMessage(e));
       await s
         .from("broadcast_recipients")
         .update({
           status: kind,
-          error_message: e?.message || "Unknown error",
+          error_message: errorMessage(e) || "Unknown error",
         })
         .eq("id", recipient.id);
       if (kind === "blocked") blocked++;

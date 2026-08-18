@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -202,8 +203,8 @@ function AdminInstagramPage() {
         queryKey: ["ig_conversation_messages", acc._id, selectedConversationId],
       });
       qc.invalidateQueries({ queryKey: ["ig_conversations", acc._id] });
-    } catch (e: any) {
-      setStatusMsg(`Ошибка отправки: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка отправки: ${errorMessage(e)}`);
     }
   };
 
@@ -214,8 +215,8 @@ function AdminInstagramPage() {
       setStatusMsg(
         enabled ? "✅ Автоответчик Direct включён." : "✅ Автоответчик Direct остановлен.",
       );
-    } catch (e: any) {
-      setStatusMsg(`Ошибка настройки автоответчика: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка настройки автоответчика: ${errorMessage(e)}`);
     }
   };
 
@@ -224,8 +225,8 @@ function AdminInstagramPage() {
       await saveInstagramDirectBotScriptFn({ data: { text: directBotScript } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_script"] });
       setStatusMsg("✅ Текст автоответчика сохранён.");
-    } catch (e: any) {
-      setStatusMsg(`Ошибка сохранения: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка сохранения: ${errorMessage(e)}`);
     }
   };
 
@@ -238,8 +239,8 @@ function AdminInstagramPage() {
           ? "✅ Бот теперь отвечает только по заказам. Обычную переписку он не трогает — непрочитанные остаются непрочитанными в Instagram."
           : "✅ Бот отвечает и на обычные вопросы. Учтите: отвечая, он помечает переписку прочитанной в Instagram.",
       );
-    } catch (e: any) {
-      setStatusMsg(`Ошибка настройки: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка настройки: ${errorMessage(e)}`);
     }
   };
 
@@ -253,8 +254,8 @@ function AdminInstagramPage() {
       const result = await saveInstagramDirectBotTriggersFn({ data: { words: triggerWords } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_triggers"] });
       setStatusMsg(`✅ Команды сохранены: ${result.words.join(", ")}`);
-    } catch (e: any) {
-      setStatusMsg(`Ошибка сохранения команд: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка сохранения команд: ${errorMessage(e)}`);
     }
   };
 
@@ -288,8 +289,8 @@ function AdminInstagramPage() {
           : "✅ Повторная публикация поставлена в очередь.",
       );
       qc.invalidateQueries({ queryKey: ["ig_posts"] });
-    } catch (e: any) {
-      setStatusMsg(`Ошибка: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка: ${errorMessage(e)}`);
     } finally {
       setPostActionId(null);
     }
@@ -313,8 +314,8 @@ function AdminInstagramPage() {
       } else {
         setStatusMsg("❌ Не удалось отключить аккаунт.");
       }
-    } catch (e: any) {
-      setStatusMsg(`Ошибка отключения: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка отключения: ${errorMessage(e)}`);
     } finally {
       setDisconnecting(null);
     }
@@ -354,8 +355,8 @@ function AdminInstagramPage() {
       } else {
         setStatusMsg("Ошибка: не удалось получить ссылку авторизации.");
       }
-    } catch (e: any) {
-      setStatusMsg(`Ошибка подключения: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка подключения: ${errorMessage(e)}`);
     } finally {
       setConnecting(false);
     }
@@ -373,8 +374,8 @@ function AdminInstagramPage() {
           `❌ Ошибка при обновлении соединения: ${res?.error || "Не удалось сохранить настройки webhook."}`,
         );
       }
-    } catch (e: any) {
-      setStatusMsg(`Ошибка: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка: ${errorMessage(e)}`);
     } finally {
       setRegisteringWebhook(false);
     }
@@ -426,8 +427,8 @@ function AdminInstagramPage() {
       setCollaboratorsText("");
       setIsAiGenerated(false);
       qc.invalidateQueries({ queryKey: ["ig_posts"] });
-    } catch (e: any) {
-      setStatusMsg(`Ошибка публикации: ${e.message}`);
+    } catch (e: unknown) {
+      setStatusMsg(`Ошибка публикации: ${errorMessage(e)}`);
     } finally {
       setPublishing(false);
     }
@@ -508,8 +509,8 @@ function AdminInstagramPage() {
 
       handleResetForm();
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
-    } catch (e: any) {
-      alert(`Ошибка сохранения: ${e.message}`);
+    } catch (e: unknown) {
+      alert(`Ошибка сохранения: ${errorMessage(e)}`);
     } finally {
       setSavingAuto(false);
     }
@@ -574,8 +575,8 @@ function AdminInstagramPage() {
     try {
       await toggleAutomationFn({ data: { id, isActive: !currentIsActive } });
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
-    } catch (e: any) {
-      alert(`Ошибка переключения: ${e.message}`);
+    } catch (e: unknown) {
+      alert(`Ошибка переключения: ${errorMessage(e)}`);
     }
   };
 
@@ -584,8 +585,8 @@ function AdminInstagramPage() {
     try {
       await deleteAutomationFn({ data: { id } });
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
-    } catch (e: any) {
-      alert(`Ошибка удаления: ${e.message}`);
+    } catch (e: unknown) {
+      alert(`Ошибка удаления: ${errorMessage(e)}`);
     }
   };
 

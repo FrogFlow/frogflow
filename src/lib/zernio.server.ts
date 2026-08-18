@@ -2,6 +2,7 @@
  * Zernio API Client for Instagram & Multi-channel Integration
  */
 import type { Json } from "@/integrations-supabase/types";
+import { errorMessage } from "@/lib/error-message";
 
 function getZernioKey(): string {
   const key = process.env.ZERNIO_API_KEY?.trim();
@@ -339,7 +340,7 @@ export async function sendZernioInboxMessage(
     return { ok: true };
   } catch (e) {
     console.error(`[zernio] sendZernioInboxMessage failed for conversation ${conversationId}`, e);
-    const details = e instanceof Error ? e.message : "";
+    const details = e instanceof Error ? errorMessage(e) : "";
     const error = /inbox add-on required/i.test(details)
       ? "Для этого аккаунта недоступна отправка в Direct. Проверьте права подключения и тариф сервиса."
       : "Не удалось отправить сообщение. Проверьте подключение Instagram и повторите попытку.";
@@ -627,12 +628,17 @@ export async function disconnectZernioAccount(accountId: string): Promise<{ ok: 
 /**
  * Получить список Comment-to-DM автоматизаций
  */
-export async function listCommentAutomations(profileId?: string): Promise<{ automations: any[] }> {
+export async function listCommentAutomations(
+  profileId?: string,
+): Promise<{ automations: ZernioCommentAutomation[] }> {
   try {
     const query: Record<string, string> = {};
     const targetProfileId = profileId || process.env.ZERNIO_PROFILE_ID?.trim();
     if (targetProfileId) query.profileId = targetProfileId;
-    const res = await zernioRequest<{ automations: any[] }>("/comment-automations", { query });
+    const res = await zernioRequest<{ automations: ZernioCommentAutomation[] }>(
+      "/comment-automations",
+      { query },
+    );
     return res;
   } catch (e) {
     console.error("[zernio] listCommentAutomations error", e);
@@ -732,9 +738,9 @@ export async function createCommentAutomation(
       body,
     });
     return { ok: res.success, automation: res.automation, error: res.error };
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("[zernio] createCommentAutomation error", e);
-    return { ok: false, error: e.message };
+    return { ok: false, error: errorMessage(e) };
   }
 }
 
@@ -757,9 +763,9 @@ export async function updateCommentAutomation(
       body,
     });
     return { ok: res.success, automation: res.automation, error: res.error };
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error("[zernio] updateCommentAutomation error", e);
-    return { ok: false, error: e.message };
+    return { ok: false, error: errorMessage(e) };
   }
 }
 

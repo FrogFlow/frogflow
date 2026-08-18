@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -85,8 +86,8 @@ function BlockedUsersPage() {
       setReason("");
       setSearch("");
       await qc.invalidateQueries({ queryKey: ["blocked_users"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -98,8 +99,8 @@ function BlockedUsersPage() {
     try {
       await unblockTelegramUserFn({ data: { telegram_id: id } });
       await qc.invalidateQueries({ queryKey: ["blocked_users"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(false);
     }

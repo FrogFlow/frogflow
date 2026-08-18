@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components-ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components-ui/dialog";
@@ -72,8 +73,8 @@ function OrdersPage() {
       if (result.alreadyDelivered) {
         alert(`Заказ #${displayNo} уже выдаётся или выдан.`);
       }
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -84,8 +85,8 @@ function OrdersPage() {
     try {
       await redeliverOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -103,8 +104,8 @@ function OrdersPage() {
       } else {
         alert(`Заказ #${displayNo} выдан полностью.`);
       }
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -139,8 +140,8 @@ function OrdersPage() {
     try {
       await remindPaymentOrder({ data: { id } });
       alert(`Напоминание по заказу #${displayNo} отправлено в Telegram.`);
-    } catch (e: any) {
-      alert(e.message || "Не удалось отправить напоминание");
+    } catch (e: unknown) {
+      alert(errorMessage(e) || "Не удалось отправить напоминание");
     } finally {
       setBusy(null);
     }
@@ -152,8 +153,8 @@ function OrdersPage() {
     try {
       await deleteOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -181,8 +182,8 @@ function OrdersPage() {
         },
       });
       qc.invalidateQueries({ queryKey: ["orders"] });
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e: unknown) {
+      alert(errorMessage(e));
     } finally {
       setBusy(null);
     }
