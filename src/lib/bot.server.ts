@@ -446,6 +446,548 @@ const botCopy: Record<
   },
 };
 
+type Msg = {
+  back: string;
+  subcategories: string;
+  catalogHeader: string;
+  emptyHere: string;
+  showMore: string;
+  backToCategories: string;
+  navigation: string;
+  addToCartBtn: string;
+  descPending: string;
+  productNotFound: string;
+  contactSaved: string;
+  cartEmpty: string;
+  cartHeader: string;
+  removeItem: (name: string) => string;
+  total: (amount: string) => string;
+  checkoutBtn: string;
+  clearBtn: string;
+  phonePromptHtml: string;
+  shareContactBtn: string;
+  paymentNotConfigured: string;
+  chooseCountry: string;
+  orderCreateFailed: string;
+  defaultInstructions: string;
+  kzTitleNew: (displayNo: number | string) => string;
+  kzTitleReminder: (displayNo: number | string) => string;
+  amountToPay: (amount: string) => string;
+  choosePayMethod: string;
+  robokassaDesc: string;
+  manualDesc: string;
+  payViaRobokassaBtn: string;
+  payManualBtn: string;
+  rkTitleNew: (displayNo: number | string) => string;
+  rkTitleReminder: (displayNo: number | string) => string;
+  robokassaHint: string;
+  manualTitleNew: (displayNo: number | string) => string;
+  manualTitleReminder: (displayNo: number | string) => string;
+  afterProofAuto: string;
+  afterProofManual: string;
+  alreadyProcessed: (orderId: number | string) => string;
+  robokassaUnavailable: string;
+  searchNothingFound: string;
+  foundCount: (n: number) => string;
+  shownOf: (shown: number, total: number) => string;
+  searchSessionExpired: string;
+  addedToCart: string;
+  cartCleared: string;
+  countrySaved: (countryName: string) => string;
+  noOrdersYet: string;
+  orderNotFound: string;
+  myOrdersHeader: (list: string) => string;
+  statusAwaitingPayment: string;
+  statusAwaitingConfirmation: string;
+  statusDelivering: string;
+  statusDelivered: string;
+  statusRejected: string;
+  shareContactHint: string;
+  phoneParseFail: string;
+  sendReceiptPrompt: string;
+  fileDownloadFail: string;
+  notReceiptLike: (orderId: number | string) => string;
+  receiptManualReview: (orderId: number | string) => string;
+  receiptVerifiedDelivering: (orderId: number | string) => string;
+  deliveryFailedAfterOcr: (orderId: number | string) => string;
+  receiptForwardedAwaitingConfirm: (orderId: number | string) => string;
+  receiptForwardedNoStorage: (orderId: number | string) => string;
+  receiptSaveFailed: (orderId: number | string) => string;
+  searchTypePrompt: string;
+  infoHeader: string;
+  infoRequiredDocs: string;
+  offerBtn: string;
+  offerBtnShort: string;
+  privacyBtn: string;
+  requisitesBtn: string;
+  aboutBtn: string;
+  contactsNotSet: string;
+  contactUsePrefix: (link: string) => string;
+  instructionComingSoon: string;
+  instructionDefaultCaption: string;
+  instructionVideoFail: string;
+  idLabel: (id: number | string) => string;
+  rejectedNotice: (orderId: number | string) => string;
+  contactAuthorBtn: string;
+  accessDenied: string;
+  fileAlreadySent: string;
+  loadingMaterials: (lang: string) => string;
+  materialNotConfigured: (lang: string) => string;
+  paymentReminder: (orderNo: number | string, amount: string) => string;
+};
+
+const copy: Record<Locale, Msg> = {
+  ru: {
+    back: "« Назад",
+    subcategories: "📁 Подкатегории:",
+    catalogHeader: "📚 Каталог:",
+    emptyHere: "📂 Здесь пока пусто.",
+    showMore: "⬇️ Показать ещё",
+    backToCategories: "« Назад в категории",
+    navigation: "Навигация:",
+    addToCartBtn: "➕ В корзину",
+    descPending: "Подробное описание уточняется у продавца.",
+    productNotFound: "Товар не найден.",
+    contactSaved: "✅ Номер сохранён.",
+    cartEmpty: "🛒 Корзина пуста.",
+    cartHeader: "🛒 <b>Ваша корзина:</b>\n\n",
+    removeItem: (name) => `❌ Убрать «${name}»`,
+    total: (amount) => `\n<b>Итого: ${amount}</b>`,
+    checkoutBtn: "💳 Оформить заказ",
+    clearBtn: "🗑 Очистить",
+    phonePromptHtml:
+      "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
+    shareContactBtn: "📱 Поделиться контактом",
+    paymentNotConfigured: "Способы оплаты ещё не настроены. Свяжитесь с продавцом.",
+    chooseCountry: "Пожалуйста, выберите вашу страну (для отображения цен и реквизитов):",
+    orderCreateFailed: "Не удалось создать заказ. Попробуйте позже.",
+    defaultInstructions: "Свяжитесь с продавцом для уточнения реквизитов.",
+    kzTitleNew: (n) => `🧾 <b>Заказ #${n}</b> создан.`,
+    kzTitleReminder: (n) => `🔔 <b>Заказ #${n}</b> — выберите способ оплаты`,
+    amountToPay: (a) => `Сумма к оплате: <b>${a}</b>`,
+    choosePayMethod: "Выберите способ оплаты:",
+    robokassaDesc: "• <b>Robokassa</b> — оплата картой, файлы придут сразу после оплаты",
+    manualDesc: "• <b>По реквизитам</b> — перевод вручную, пришлите чек — файлы придут сразу",
+    payViaRobokassaBtn: "💳 Оплатить через Robokassa",
+    payManualBtn: "🧾 Оплатить по реквизитам",
+    rkTitleNew: (n) => `🧾 <b>Заказ #${n}</b>`,
+    rkTitleReminder: (n) => `🔔 <b>Заказ #${n}</b> — оплата`,
+    robokassaHint:
+      "Нажмите кнопку ниже для оплаты через Robokassa — после оплаты файлы придут автоматически.",
+    manualTitleNew: (n) => `🧾 <b>Заказ #${n}</b> создан.`,
+    manualTitleReminder: (n) => `🔔 <b>Заказ #${n}</b> — оплата по реквизитам`,
+    afterProofAuto:
+      "После оплаты <b>пришлите чек</b> (фото или PDF) в этот чат — бот сразу отправит файлы.",
+    afterProofManual:
+      "После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.",
+    alreadyProcessed: (id) => `Заказ #${id} уже обрабатывается или закрыт.`,
+    robokassaUnavailable: "Robokassa временно недоступна. Выберите оплату по реквизитам.",
+    searchNothingFound: "Ничего не нашлось. Попробуйте другое слово.",
+    foundCount: (n) => `🔍 Найдено материалов: ${n}`,
+    shownOf: (s, t) => `Показано ${s} из ${t}`,
+    searchSessionExpired: "Сессия поиска устарела. Повторите поиск.",
+    addedToCart: "✅ Добавлено в корзину.",
+    cartCleared: "🗑 Корзина очищена.",
+    countrySaved: (c) => `✅ Ваша страна сохранена: ${c}\nТеперь вы видите корректные цены!`,
+    noOrdersYet: "У вас пока нет заказов.",
+    orderNotFound: "Заказ не найден.",
+    myOrdersHeader: (l) => `📋 Ваши заказы:\n\n${l}`,
+    statusAwaitingPayment: "⏳ ожидает оплаты",
+    statusAwaitingConfirmation: "🔎 проверяется",
+    statusDelivering: "📤 выдаётся",
+    statusDelivered: "✅ выдан",
+    statusRejected: "❌ отклонён",
+    shareContactHint:
+      "Нажмите кнопку «📱 Поделиться контактом» внизу экрана или просто напишите номер телефона в чат.",
+    phoneParseFail:
+      "Не удалось распознать номер. Напишите телефон цифрами, например: <code>+79001234567</code> или <code>89001234567</code>",
+    sendReceiptPrompt: "📨 Пришлите, пожалуйста, чек об оплате — фото или файл (например, PDF).",
+    fileDownloadFail: "⚠️ Не удалось загрузить файл. Пришлите чек ещё раз — фото или PDF.",
+    notReceiptLike: (id) =>
+      `⚠️ Это не похоже на чек оплаты.\n\nПришлите, пожалуйста, скриншот перевода / чека с суммой заказа #${id}.`,
+    receiptManualReview: (id) =>
+      `📨 Чек получен по заказу #${id}, но автоматическая проверка не прошла.\nЗаказ отправлен продавцу на ручную проверку — файлы придут после подтверждения.`,
+    receiptVerifiedDelivering: (id) => `📨 Спасибо! Чек проверен. Заказ #${id} — отправляю файлы…`,
+    deliveryFailedAfterOcr: (id) =>
+      `⚠️ Чек принят, но автоматическая выдача заказа #${id} не завершилась. Продавец проверит и отправит файлы.`,
+    receiptForwardedAwaitingConfirm: (id) =>
+      `📨 Спасибо! Чек получен. Заказ #${id} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`,
+    receiptForwardedNoStorage: (id) =>
+      `📨 Чек получен и переслан продавцу. Заказ #${id} на проверке. Если нужно — можно отправить чек ещё раз.`,
+    receiptSaveFailed: (id) =>
+      `⚠️ Не удалось сохранить чек заказа #${id}. Продавец проверит заказ вручную. Если хотите — попробуйте отправить чек ещё раз.`,
+    searchTypePrompt: "Напишите название или ключевое слово:",
+    infoHeader: "ℹ️ <b>Информация о магазине</b>\n\n",
+    infoRequiredDocs: "Обязательные документы и реквизиты (требование платёжных систем):\n\n",
+    offerBtn: "📄 Условия использования (оферта)",
+    offerBtnShort: "📄 Условия использования",
+    privacyBtn: "🔒 Политика конфиденциальности",
+    requisitesBtn: "🏦 Реквизиты",
+    aboutBtn: "👤 О продавце",
+    contactsNotSet: "Контакты автора пока не указаны.",
+    contactUsePrefix: (l) => `Для связи с автором используйте следующие контакты:\n${l}`,
+    instructionComingSoon:
+      "📖 Инструкция скоро появится.\nПока: «Каталог» или «Поиск» → корзина → оплата → чек или Robokassa. Файлы придут после оплаты.",
+    instructionDefaultCaption:
+      "📖 Как пользоваться ботом: каталог → корзина → оплата → чек. Файлы придут после оплаты (картой или по чеку).",
+    instructionVideoFail: "⚠️ Не удалось загрузить видео инструкции. Напишите продавцу.",
+    idLabel: (id) => `Ваш Telegram ID: ${id}`,
+    rejectedNotice: (id) => `❌ Ваш заказ №${id} отклонён. Если это ошибка — напишите продавцу.`,
+    contactAuthorBtn: "💬 Связаться с автором",
+    accessDenied: "⛔ Доступ запрещён.",
+    fileAlreadySent: "⚠️ Этот файл уже был отправлен.",
+    loadingMaterials: (lang) => `⏳ Загружаю материалы (${lang})...`,
+    materialNotConfigured: (lang) => `⚠️ Файл (${lang}) не настроен. Продавец вышлет вручную.`,
+    paymentReminder: (orderNo, amount) =>
+      `🔔 <b>Напоминание по заказу #${orderNo}</b>\n\n` +
+      `Заказ ещё ожидает оплаты (${amount}).\n` +
+      `Ниже — актуальный способ оплаты. Если уже платили — пришлите чек в этот чат.`,
+  },
+  kk: {
+    back: "« Артқа",
+    subcategories: "📁 Ішкі санаттар:",
+    catalogHeader: "📚 Каталог:",
+    emptyHere: "📂 Бұл жерде әзірге бос.",
+    showMore: "⬇️ Тағы көрсету",
+    backToCategories: "« Санаттарға оралу",
+    navigation: "Навигация:",
+    addToCartBtn: "➕ Себетке",
+    descPending: "Толық сипаттаманы сатушыдан нақтылаңыз.",
+    productNotFound: "Тауар табылмады.",
+    contactSaved: "✅ Нөмір сақталды.",
+    cartEmpty: "🛒 Себет бос.",
+    cartHeader: "🛒 <b>Сіздің себетіңіз:</b>\n\n",
+    removeItem: (name) => `❌ Алып тастау «${name}»`,
+    total: (amount) => `\n<b>Барлығы: ${amount}</b>`,
+    checkoutBtn: "💳 Тапсырыс беру",
+    clearBtn: "🗑 Тазарту",
+    phonePromptHtml:
+      "Тапсырысты рәсімдеу үшін телефон нөміріңізді көрсетіңіз — <b>оны осы чатқа жазыңыз</b>, мысалы:\n<code>+7 900 123-45-67</code>\n\nНемесе контактіні автоматты түрде бөлісу үшін төмендегі батырманы басыңыз.",
+    shareContactBtn: "📱 Контактімен бөлісу",
+    paymentNotConfigured: "Төлем әдістері әлі теңшелмеген. Сатушымен байланысыңыз.",
+    chooseCountry: "Еліңізді таңдаңыз (бағалар мен деректемелерді көрсету үшін):",
+    orderCreateFailed: "Тапсырысты жасау мүмкін болмады. Кейінірек қайталап көріңіз.",
+    defaultInstructions: "Деректемелерді нақтылау үшін сатушымен байланысыңыз.",
+    kzTitleNew: (n) => `🧾 <b>Тапсырыс #${n}</b> жасалды.`,
+    kzTitleReminder: (n) => `🔔 <b>Тапсырыс #${n}</b> — төлем әдісін таңдаңыз`,
+    amountToPay: (a) => `Төлеуге тиіс сома: <b>${a}</b>`,
+    choosePayMethod: "Төлем әдісін таңдаңыз:",
+    robokassaDesc: "• <b>Robokassa</b> — картамен төлеу, файлдар төлемнен кейін бірден келеді",
+    manualDesc:
+      "• <b>Деректемелер бойынша</b> — қолмен аудару, чекті жіберіңіз — файлдар бірден келеді",
+    payViaRobokassaBtn: "💳 Robokassa арқылы төлеу",
+    payManualBtn: "🧾 Деректемелер бойынша төлеу",
+    rkTitleNew: (n) => `🧾 <b>Тапсырыс #${n}</b>`,
+    rkTitleReminder: (n) => `🔔 <b>Тапсырыс #${n}</b> — төлем`,
+    robokassaHint:
+      "Robokassa арқылы төлеу үшін төмендегі батырманы басыңыз — төлемнен кейін файлдар автоматты түрде келеді.",
+    manualTitleNew: (n) => `🧾 <b>Тапсырыс #${n}</b> жасалды.`,
+    manualTitleReminder: (n) => `🔔 <b>Тапсырыс #${n}</b> — деректемелер бойынша төлем`,
+    afterProofAuto:
+      "Төлемнен кейін <b>чекті осы чатқа жіберіңіз</b> (фото немесе PDF) — бот файлдарды бірден жібереді.",
+    afterProofManual:
+      "Төлемнен кейін <b>скриншотты осы чатқа жіберіңіз</b> (фото) — сатушы тексеріп, файлдарды жібереді.",
+    alreadyProcessed: (id) => `Тапсырыс #${id} өңделуде немесе жабылған.`,
+    robokassaUnavailable: "Robokassa уақытша қолжетімсіз. Деректемелер бойынша төлемді таңдаңыз.",
+    searchNothingFound: "Ештеңе табылмады. Басқа сөзбен көріңіз.",
+    foundCount: (n) => `🔍 Табылған материалдар: ${n}`,
+    shownOf: (s, t) => `Көрсетілді ${s} / ${t}`,
+    searchSessionExpired: "Іздеу сессиясы ескірді. Іздеуді қайталаңыз.",
+    addedToCart: "✅ Себетке қосылды.",
+    cartCleared: "🗑 Себет тазартылды.",
+    countrySaved: (c) => `✅ Еліңіз сақталды: ${c}\nЕнді сіз дұрыс бағаларды көресіз!`,
+    noOrdersYet: "Сізде әзірге тапсырыс жоқ.",
+    orderNotFound: "Тапсырыс табылмады.",
+    myOrdersHeader: (l) => `📋 Сіздің тапсырыстарыңыз:\n\n${l}`,
+    statusAwaitingPayment: "⏳ төлем күтілуде",
+    statusAwaitingConfirmation: "🔎 тексерілуде",
+    statusDelivering: "📤 жіберілуде",
+    statusDelivered: "✅ жіберілді",
+    statusRejected: "❌ қабылданбады",
+    shareContactHint:
+      "Экранның төменгі жағындағы «📱 Контактімен бөлісу» батырмасын басыңыз немесе телефон нөмірін чатқа жазыңыз.",
+    phoneParseFail:
+      "Нөмірді тану мүмкін болмады. Телефонды сандармен жазыңыз, мысалы: <code>+79001234567</code> немесе <code>89001234567</code>",
+    sendReceiptPrompt: "📨 Төлем чегін жіберіңіз — фото немесе файл (мысалы, PDF).",
+    fileDownloadFail: "⚠️ Файлды жүктеу мүмкін болмады. Чекті қайта жіберіңіз — фото немесе PDF.",
+    notReceiptLike: (id) =>
+      `⚠️ Бұл төлем чегіне ұқсамайды.\n\n#${id} тапсырысының сомасы көрсетілген аударым/чек скриншотын жіберіңіз.`,
+    receiptManualReview: (id) =>
+      `📨 #${id} тапсырысы бойынша чек алынды, бірақ автоматты тексеру өтпеді.\nТапсырыс сатушыға қолмен тексеруге жіберілді — файлдар растаудан кейін келеді.`,
+    receiptVerifiedDelivering: (id) =>
+      `📨 Рақмет! Чек тексерілді. Тапсырыс #${id} — файлдарды жіберудемін…`,
+    deliveryFailedAfterOcr: (id) =>
+      `⚠️ Чек қабылданды, бірақ #${id} тапсырысын автоматты жіберу аяқталмады. Сатушы тексеріп, файлдарды жібереді.`,
+    receiptForwardedAwaitingConfirm: (id) =>
+      `📨 Рақмет! Чек алынды. Тапсырыс #${id} тексеруге жіберілді. Сатушы төлемді растаған бойда — бот файлдарды жібереді.`,
+    receiptForwardedNoStorage: (id) =>
+      `📨 Чек алынды және сатушыға жіберілді. Тапсырыс #${id} тексерілуде. Қажет болса — чекті қайта жіберуге болады.`,
+    receiptSaveFailed: (id) =>
+      `⚠️ #${id} тапсырысының чегін сақтау мүмкін болмады. Сатушы тапсырысты қолмен тексереді. Қаласаңыз — чекті қайта жіберіп көріңіз.`,
+    searchTypePrompt: "Атауын немесе кілт сөзді жазыңыз:",
+    infoHeader: "ℹ️ <b>Дүкен туралы ақпарат</b>\n\n",
+    infoRequiredDocs: "Міндетті құжаттар мен деректемелер (төлем жүйелерінің талабы):\n\n",
+    offerBtn: "📄 Пайдалану шарттары (оферта)",
+    offerBtnShort: "📄 Пайдалану шарттары",
+    privacyBtn: "🔒 Құпиялылық саясаты",
+    requisitesBtn: "🏦 Деректемелер",
+    aboutBtn: "👤 Сатушы туралы",
+    contactsNotSet: "Автордың байланыс деректері әлі көрсетілмеген.",
+    contactUsePrefix: (l) => `Автормен байланысу үшін мына деректерді пайдаланыңыз:\n${l}`,
+    instructionComingSoon:
+      "📖 Нұсқаулық жақында қосылады.\nӘзірге: «Каталог» немесе «Іздеу» → себет → төлем → чек немесе Robokassa. Файлдар төлемнен кейін келеді.",
+    instructionDefaultCaption:
+      "📖 Ботты қалай пайдалану керек: каталог → себет → төлем → чек. Файлдар төлемнен кейін келеді (картамен немесе чекпен).",
+    instructionVideoFail: "⚠️ Нұсқаулық видеосын жүктеу мүмкін болмады. Сатушыға жазыңыз.",
+    idLabel: (id) => `Сіздің Telegram ID: ${id}`,
+    rejectedNotice: (id) =>
+      `❌ Сіздің №${id} тапсырысыңыз қабылданбады. Бұл қате болса — сатушыға жазыңыз.`,
+    contactAuthorBtn: "💬 Автормен байланысу",
+    accessDenied: "⛔ Қол жеткізу тыйым салынған.",
+    fileAlreadySent: "⚠️ Бұл файл бұрын жіберілген.",
+    loadingMaterials: (lang) => `⏳ Материалдар жүктелуде (${lang})...`,
+    materialNotConfigured: (lang) => `⚠️ Файл (${lang}) теңшелмеген. Сатушы қолмен жібереді.`,
+    paymentReminder: (orderNo, amount) =>
+      `🔔 <b>Тапсырыс #${orderNo} бойынша ескерту</b>\n\n` +
+      `Тапсырыс әлі төлемді күтуде (${amount}).\n` +
+      `Төменде — өзекті төлем әдісі. Егер төлеп қойған болсаңыз — чекті осы чатқа жіберіңіз.`,
+  },
+  en: {
+    back: "« Back",
+    subcategories: "📁 Subcategories:",
+    catalogHeader: "📚 Catalog:",
+    emptyHere: "📂 Nothing here yet.",
+    showMore: "⬇️ Show more",
+    backToCategories: "« Back to categories",
+    navigation: "Navigation:",
+    addToCartBtn: "➕ Add to cart",
+    descPending: "Full description available on request from the seller.",
+    productNotFound: "Product not found.",
+    contactSaved: "✅ Number saved.",
+    cartEmpty: "🛒 Your cart is empty.",
+    cartHeader: "🛒 <b>Your cart:</b>\n\n",
+    removeItem: (name) => `❌ Remove “${name}”`,
+    total: (amount) => `\n<b>Total: ${amount}</b>`,
+    checkoutBtn: "💳 Checkout",
+    clearBtn: "🗑 Clear",
+    phonePromptHtml:
+      "To place your order, share your phone number — <b>just type it in this chat</b>, for example:\n<code>+7 900 123-45-67</code>\n\nOr tap the button below to share your contact automatically.",
+    shareContactBtn: "📱 Share contact",
+    paymentNotConfigured: "Payment methods are not configured yet. Please contact the seller.",
+    chooseCountry: "Please choose your country (to show correct prices and payment details):",
+    orderCreateFailed: "Couldn’t create the order. Please try again later.",
+    defaultInstructions: "Contact the seller for payment details.",
+    kzTitleNew: (n) => `🧾 <b>Order #${n}</b> created.`,
+    kzTitleReminder: (n) => `🔔 <b>Order #${n}</b> — choose a payment method`,
+    amountToPay: (a) => `Amount due: <b>${a}</b>`,
+    choosePayMethod: "Choose a payment method:",
+    robokassaDesc: "• <b>Robokassa</b> — card payment, files arrive right after payment",
+    manualDesc:
+      "• <b>By bank details</b> — manual transfer, send the receipt — files arrive right away",
+    payViaRobokassaBtn: "💳 Pay via Robokassa",
+    payManualBtn: "🧾 Pay by bank details",
+    rkTitleNew: (n) => `🧾 <b>Order #${n}</b>`,
+    rkTitleReminder: (n) => `🔔 <b>Order #${n}</b> — payment`,
+    robokassaHint:
+      "Tap the button below to pay via Robokassa — files will arrive automatically after payment.",
+    manualTitleNew: (n) => `🧾 <b>Order #${n}</b> created.`,
+    manualTitleReminder: (n) => `🔔 <b>Order #${n}</b> — payment by bank details`,
+    afterProofAuto:
+      "After payment, <b>send the receipt</b> (photo or PDF) in this chat — the bot will send the files right away.",
+    afterProofManual:
+      "After payment, <b>send a screenshot</b> (photo) in this chat — the seller will verify it and send the files.",
+    alreadyProcessed: (id) => `Order #${id} is already being processed or closed.`,
+    robokassaUnavailable:
+      "Robokassa is temporarily unavailable. Please choose payment by bank details.",
+    searchNothingFound: "Nothing found. Try a different word.",
+    foundCount: (n) => `🔍 Materials found: ${n}`,
+    shownOf: (s, t) => `Showing ${s} of ${t}`,
+    searchSessionExpired: "Your search session has expired. Please search again.",
+    addedToCart: "✅ Added to cart.",
+    cartCleared: "🗑 Cart cleared.",
+    countrySaved: (c) => `✅ Your country is saved: ${c}\nNow you’ll see the correct prices!`,
+    noOrdersYet: "You don’t have any orders yet.",
+    orderNotFound: "Order not found.",
+    myOrdersHeader: (l) => `📋 Your orders:\n\n${l}`,
+    statusAwaitingPayment: "⏳ awaiting payment",
+    statusAwaitingConfirmation: "🔎 under review",
+    statusDelivering: "📤 delivering",
+    statusDelivered: "✅ delivered",
+    statusRejected: "❌ rejected",
+    shareContactHint:
+      "Tap the “📱 Share contact” button at the bottom of the screen, or just type your phone number in the chat.",
+    phoneParseFail:
+      "Couldn’t recognize that number. Please type it as digits, e.g.: <code>+79001234567</code> or <code>89001234567</code>",
+    sendReceiptPrompt: "📨 Please send the payment receipt — a photo or a file (e.g. PDF).",
+    fileDownloadFail:
+      "⚠️ Couldn’t download the file. Please send the receipt again — photo or PDF.",
+    notReceiptLike: (id) =>
+      `⚠️ This doesn’t look like a payment receipt.\n\nPlease send a screenshot of the transfer/receipt showing the amount for order #${id}.`,
+    receiptManualReview: (id) =>
+      `📨 Receipt received for order #${id}, but automatic verification failed.\nThe order was sent to the seller for manual review — files will arrive after confirmation.`,
+    receiptVerifiedDelivering: (id) =>
+      `📨 Thank you! Receipt verified. Order #${id} — sending files…`,
+    deliveryFailedAfterOcr: (id) =>
+      `⚠️ Receipt accepted, but automatic delivery of order #${id} didn’t complete. The seller will check and send the files.`,
+    receiptForwardedAwaitingConfirm: (id) =>
+      `📨 Thank you! Receipt received. Order #${id} sent for review. As soon as the seller confirms payment, the bot will send the files.`,
+    receiptForwardedNoStorage: (id) =>
+      `📨 Receipt received and forwarded to the seller. Order #${id} is under review. If needed, you can send the receipt again.`,
+    receiptSaveFailed: (id) =>
+      `⚠️ Couldn’t save the receipt for order #${id}. The seller will review the order manually. If you’d like, try sending the receipt again.`,
+    searchTypePrompt: "Type a name or keyword:",
+    infoHeader: "ℹ️ <b>Store information</b>\n\n",
+    infoRequiredDocs: "Required documents and payment details (payment system requirement):\n\n",
+    offerBtn: "📄 Terms of Use (offer)",
+    offerBtnShort: "📄 Terms of Use",
+    privacyBtn: "🔒 Privacy Policy",
+    requisitesBtn: "🏦 Payment details",
+    aboutBtn: "👤 About the seller",
+    contactsNotSet: "The author’s contact details haven’t been set yet.",
+    contactUsePrefix: (l) => `To contact the author, use the following details:\n${l}`,
+    instructionComingSoon:
+      "📖 The guide is coming soon.\nFor now: “Catalog” or “Search” → cart → payment → receipt or Robokassa. Files arrive after payment.",
+    instructionDefaultCaption:
+      "📖 How to use the bot: catalog → cart → payment → receipt. Files arrive after payment (by card or receipt).",
+    instructionVideoFail: "⚠️ Couldn’t load the instructional video. Please contact the seller.",
+    idLabel: (id) => `Your Telegram ID: ${id}`,
+    rejectedNotice: (id) =>
+      `❌ Your order №${id} has been rejected. If this is a mistake, please contact the seller.`,
+    contactAuthorBtn: "💬 Contact the author",
+    accessDenied: "⛔ Access denied.",
+    fileAlreadySent: "⚠️ This file was already sent.",
+    loadingMaterials: (lang) => `⏳ Loading materials (${lang})...`,
+    materialNotConfigured: (lang) =>
+      `⚠️ The file (${lang}) isn’t set up. The seller will send it manually.`,
+    paymentReminder: (orderNo, amount) =>
+      `🔔 <b>Reminder for order #${orderNo}</b>\n\n` +
+      `The order is still awaiting payment (${amount}).\n` +
+      `Below is the current payment method. If you already paid, please send the receipt in this chat.`,
+  },
+  uz: {
+    back: "« Orqaga",
+    subcategories: "📁 Ichki kategoriyalar:",
+    catalogHeader: "📚 Katalog:",
+    emptyHere: "📂 Bu yerda hozircha hech narsa yo‘q.",
+    showMore: "⬇️ Yana ko‘rsatish",
+    backToCategories: "« Kategoriyalarga qaytish",
+    navigation: "Navigatsiya:",
+    addToCartBtn: "➕ Savatga qo‘shish",
+    descPending: "Batafsil tavsif sotuvchidan aniqlanadi.",
+    productNotFound: "Mahsulot topilmadi.",
+    contactSaved: "✅ Raqam saqlandi.",
+    cartEmpty: "🛒 Savat bo‘sh.",
+    cartHeader: "🛒 <b>Sizning savatingiz:</b>\n\n",
+    removeItem: (name) => `❌ Olib tashlash «${name}»`,
+    total: (amount) => `\n<b>Jami: ${amount}</b>`,
+    checkoutBtn: "💳 Buyurtma berish",
+    clearBtn: "🗑 Tozalash",
+    phonePromptHtml:
+      "Buyurtma berish uchun telefon raqamingizni kiriting — <b>uni shu chatga yozing</b>, masalan:\n<code>+7 900 123-45-67</code>\n\nYoki kontaktni avtomatik ulashish uchun quyidagi tugmani bosing.",
+    shareContactBtn: "📱 Kontaktni ulashish",
+    paymentNotConfigured: "To‘lov usullari hali sozlanmagan. Sotuvchi bilan bog‘laning.",
+    chooseCountry:
+      "Iltimos, mamlakatingizni tanlang (narxlar va to‘lov ma’lumotlarini ko‘rsatish uchun):",
+    orderCreateFailed: "Buyurtmani yaratib bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
+    defaultInstructions: "To‘lov ma’lumotlarini aniqlash uchun sotuvchi bilan bog‘laning.",
+    kzTitleNew: (n) => `🧾 <b>Buyurtma #${n}</b> yaratildi.`,
+    kzTitleReminder: (n) => `🔔 <b>Buyurtma #${n}</b> — to‘lov usulini tanlang`,
+    amountToPay: (a) => `To‘lash summasi: <b>${a}</b>`,
+    choosePayMethod: "To‘lov usulini tanlang:",
+    robokassaDesc:
+      "• <b>Robokassa</b> — karta orqali to‘lov, fayllar to‘lovdan so‘ng darhol keladi",
+    manualDesc:
+      "• <b>Rekvizitlar bo‘yicha</b> — qo‘lda o‘tkazma, chekni yuboring — fayllar darhol keladi",
+    payViaRobokassaBtn: "💳 Robokassa orqali to‘lash",
+    payManualBtn: "🧾 Rekvizitlar bo‘yicha to‘lash",
+    rkTitleNew: (n) => `🧾 <b>Buyurtma #${n}</b>`,
+    rkTitleReminder: (n) => `🔔 <b>Buyurtma #${n}</b> — to‘lov`,
+    robokassaHint:
+      "Robokassa orqali to‘lash uchun quyidagi tugmani bosing — to‘lovdan so‘ng fayllar avtomatik keladi.",
+    manualTitleNew: (n) => `🧾 <b>Buyurtma #${n}</b> yaratildi.`,
+    manualTitleReminder: (n) => `🔔 <b>Buyurtma #${n}</b> — rekvizitlar bo‘yicha to‘lov`,
+    afterProofAuto:
+      "To‘lovdan so‘ng <b>chekni shu chatga yuboring</b> (foto yoki PDF) — bot fayllarni darhol yuboradi.",
+    afterProofManual:
+      "To‘lovdan so‘ng <b>skrinshotni shu chatga yuboring</b> (foto) — sotuvchi tekshirib, fayllarni yuboradi.",
+    alreadyProcessed: (id) => `Buyurtma #${id} allaqachon qayta ishlanmoqda yoki yopilgan.`,
+    robokassaUnavailable:
+      "Robokassa vaqtincha ishlamayapti. Rekvizitlar bo‘yicha to‘lovni tanlang.",
+    searchNothingFound: "Hech narsa topilmadi. Boshqa so‘z bilan urinib ko‘ring.",
+    foundCount: (n) => `🔍 Topilgan materiallar: ${n}`,
+    shownOf: (s, t) => `Ko‘rsatildi ${s} / ${t}`,
+    searchSessionExpired: "Qidiruv sessiyasi eskirdi. Qayta qidiring.",
+    addedToCart: "✅ Savatga qo‘shildi.",
+    cartCleared: "🗑 Savat tozalandi.",
+    countrySaved: (c) => `✅ Mamlakatingiz saqlandi: ${c}\nEndi to‘g‘ri narxlarni ko‘rasiz!`,
+    noOrdersYet: "Sizda hali buyurtmalar yo‘q.",
+    orderNotFound: "Buyurtma topilmadi.",
+    myOrdersHeader: (l) => `📋 Sizning buyurtmalaringiz:\n\n${l}`,
+    statusAwaitingPayment: "⏳ to‘lov kutilmoqda",
+    statusAwaitingConfirmation: "🔎 tekshirilmoqda",
+    statusDelivering: "📤 yetkazilmoqda",
+    statusDelivered: "✅ yetkazildi",
+    statusRejected: "❌ rad etildi",
+    shareContactHint:
+      "Ekranning pastidagi «📱 Kontaktni ulashish» tugmasini bosing yoki telefon raqamini chatga yozing.",
+    phoneParseFail:
+      "Raqamni aniqlab bo‘lmadi. Telefon raqamini raqamlar bilan yozing, masalan: <code>+79001234567</code> yoki <code>89001234567</code>",
+    sendReceiptPrompt: "📨 Iltimos, to‘lov chekini yuboring — foto yoki fayl (masalan, PDF).",
+    fileDownloadFail: "⚠️ Faylni yuklab bo‘lmadi. Chekni qayta yuboring — foto yoki PDF.",
+    notReceiptLike: (id) =>
+      `⚠️ Bu to‘lov chekiga o‘xshamayapti.\n\n#${id} buyurtma summasi ko‘rsatilgan o‘tkazma/chek skrinshotini yuboring.`,
+    receiptManualReview: (id) =>
+      `📨 #${id} buyurtmasi uchun chek qabul qilindi, lekin avtomatik tekshiruv o‘tmadi.\nBuyurtma sotuvchiga qo‘lda tekshirish uchun yuborildi — fayllar tasdiqlangandan so‘ng keladi.`,
+    receiptVerifiedDelivering: (id) =>
+      `📨 Rahmat! Chek tekshirildi. Buyurtma #${id} — fayllar yuborilmoqda…`,
+    deliveryFailedAfterOcr: (id) =>
+      `⚠️ Chek qabul qilindi, lekin #${id} buyurtmasini avtomatik yetkazish yakunlanmadi. Sotuvchi tekshirib, fayllarni yuboradi.`,
+    receiptForwardedAwaitingConfirm: (id) =>
+      `📨 Rahmat! Chek qabul qilindi. Buyurtma #${id} tekshirishga yuborildi. Sotuvchi to‘lovni tasdiqlashi bilanoq bot fayllarni yuboradi.`,
+    receiptForwardedNoStorage: (id) =>
+      `📨 Chek qabul qilindi va sotuvchiga yuborildi. Buyurtma #${id} tekshirilmoqda. Kerak bo‘lsa, chekni qayta yuborishingiz mumkin.`,
+    receiptSaveFailed: (id) =>
+      `⚠️ #${id} buyurtmasi cheki saqlanmadi. Sotuvchi buyurtmani qo‘lda tekshiradi. Xohlasangiz, chekni qayta yuborib ko‘ring.`,
+    searchTypePrompt: "Nomi yoki kalit so‘zni yozing:",
+    infoHeader: "ℹ️ <b>Do‘kon haqida ma’lumot</b>\n\n",
+    infoRequiredDocs: "Majburiy hujjatlar va to‘lov ma’lumotlari (to‘lov tizimlari talabi):\n\n",
+    offerBtn: "📄 Foydalanish shartlari (oferta)",
+    offerBtnShort: "📄 Foydalanish shartlari",
+    privacyBtn: "🔒 Maxfiylik siyosati",
+    requisitesBtn: "🏦 To‘lov ma’lumotlari",
+    aboutBtn: "👤 Sotuvchi haqida",
+    contactsNotSet: "Muallifning aloqa ma’lumotlari hali ko‘rsatilmagan.",
+    contactUsePrefix: (l) =>
+      `Muallif bilan bog‘lanish uchun quyidagi ma’lumotlardan foydalaning:\n${l}`,
+    instructionComingSoon:
+      "📖 Yo‘riqnoma tez orada qo‘shiladi.\nHozircha: «Katalog» yoki «Qidirish» → savat → to‘lov → chek yoki Robokassa. Fayllar to‘lovdan so‘ng keladi.",
+    instructionDefaultCaption:
+      "📖 Botdan qanday foydalanish kerak: katalog → savat → to‘lov → chek. Fayllar to‘lovdan so‘ng keladi (karta yoki chek orqali).",
+    instructionVideoFail: "⚠️ Yo‘riqnoma videosini yuklab bo‘lmadi. Sotuvchiga yozing.",
+    idLabel: (id) => `Sizning Telegram ID: ${id}`,
+    rejectedNotice: (id) =>
+      `❌ Sizning №${id} buyurtmangiz rad etildi. Agar bu xato bo‘lsa, sotuvchiga yozing.`,
+    contactAuthorBtn: "💬 Muallif bilan bog‘lanish",
+    accessDenied: "⛔ Kirish taqiqlangan.",
+    fileAlreadySent: "⚠️ Bu fayl allaqachon yuborilgan.",
+    loadingMaterials: (lang) => `⏳ Materiallar yuklanmoqda (${lang})...`,
+    materialNotConfigured: (lang) => `⚠️ Fayl (${lang}) sozlanmagan. Sotuvchi qo‘lda yuboradi.`,
+    paymentReminder: (orderNo, amount) =>
+      `🔔 <b>#${orderNo} buyurtma bo‘yicha eslatma</b>\n\n` +
+      `Buyurtma hali to‘lovni kutmoqda (${amount}).\n` +
+      `Quyida — joriy to‘lov usuli. Agar allaqachon to‘lagan bo‘lsangiz, chekni shu chatga yuboring.`,
+  },
+};
+
+const MENU_ACTIONS = new Set([
+  "📚 Каталог",
+  "🔍 Поиск",
+  "🛒 Корзина",
+  "📋 Мои заказы",
+  "📖 Инструкция",
+  "ℹ️ Информация",
+]);
+
 function mainMenu(locale: Locale = "ru") {
   const c = botCopy[locale];
   return {
@@ -453,7 +995,7 @@ function mainMenu(locale: Locale = "ru") {
       [{ text: c.catalog }, { text: c.search }],
       [{ text: c.cart }, { text: c.myOrders }],
       [{ text: c.instruction }, { text: c.information }],
-      [{ text: "💬 Связаться с автором" }],
+      [{ text: copy[locale].contactAuthorBtn }],
     ],
     resize_keyboard: true,
   };
@@ -484,6 +1026,7 @@ function canonicalMenuAction(text: string | undefined): string | undefined {
     if (text === c.myOrders) return "📋 Мои заказы";
     if (text === c.instruction) return "📖 Инструкция";
     if (text === c.information) return "ℹ️ Информация";
+    if (text === copy[locale].contactAuthorBtn) return "💬 Связаться с автором";
   }
   return text;
 }
@@ -504,16 +1047,18 @@ async function askLanguage(chat_id: number) {
   });
 }
 
-function legalInlineKeyboard(base: string) {
+function legalInlineKeyboard(base: string, locale: Locale = "ru") {
+  const m = copy[locale];
   return {
     inline_keyboard: [
-      [{ text: "📄 Условия использования", url: `${base}/legal/offer` }],
-      [{ text: "🔒 Политика конфиденциальности", url: `${base}/legal/privacy` }],
+      [{ text: m.offerBtnShort, url: `${base}/legal/offer` }],
+      [{ text: m.privacyBtn, url: `${base}/legal/privacy` }],
     ],
   };
 }
 
-async function sendInstruction(chat_id: number) {
+async function sendInstruction(chat_id: number, locale: Locale = "ru") {
+  const m = copy[locale];
   const s = await db();
   const { data: rows } = await s
     .from("app_settings")
@@ -522,9 +1067,7 @@ async function sendInstruction(chat_id: number) {
   const get = (key: string) =>
     (rows?.find((r) => r.key === key)?.value as string | undefined)?.trim() || "";
 
-  const caption =
-    get("instruction_caption") ||
-    "📖 Как пользоваться ботом: каталог → корзина → оплата → чек. Файлы придут после оплаты (картой или по чеку).";
+  const caption = get("instruction_caption") || m.instructionDefaultCaption;
   const fileId = get("instruction_video_file_id");
   const path = get("instruction_video_path");
 
@@ -552,8 +1095,8 @@ async function sendInstruction(chat_id: number) {
   if (!path) {
     await tg("sendMessage", {
       chat_id,
-      text: "📖 Инструкция скоро появится.\nПока: «Каталог» или «Поиск» → корзина → оплата → чек или Robokassa. Файлы придут после оплаты.",
-      reply_markup: mainMenu(),
+      text: m.instructionComingSoon,
+      reply_markup: mainMenu(locale),
     });
     return;
   }
@@ -573,8 +1116,8 @@ async function sendInstruction(chat_id: number) {
   if (error || !blob) {
     await tg("sendMessage", {
       chat_id,
-      text: "⚠️ Не удалось загрузить видео инструкции. Напишите продавцу.",
-      reply_markup: mainMenu(),
+      text: m.instructionVideoFail,
+      reply_markup: mainMenu(locale),
     });
     return;
   }
@@ -618,7 +1161,7 @@ async function sendInstruction(chat_id: number) {
   await tg("sendMessage", {
     chat_id,
     text: caption,
-    reply_markup: mainMenu(),
+    reply_markup: mainMenu(locale),
   });
 }
 
@@ -627,7 +1170,9 @@ async function showCategories(
   parentId: string | null,
   userCountryCode?: string,
   offset = 0,
+  locale: Locale = "ru",
 ) {
+  const m = copy[locale];
   const s = await db();
   const q = s
     .from("categories")
@@ -662,11 +1207,11 @@ async function showCategories(
         .eq("id", parentId)
         .single();
       const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
-      catButtons.push([{ text: "« Назад", callback_data: back }]);
+      catButtons.push([{ text: m.back, callback_data: back }]);
     }
     await tg("sendMessage", {
       chat_id,
-      text: parentId ? "📁 Подкатегории:" : "📚 Каталог:",
+      text: parentId ? m.subcategories : m.catalogHeader,
       reply_markup: { inline_keyboard: catButtons },
     });
   }
@@ -684,11 +1229,11 @@ async function showCategories(
           .eq("id", parentId)
           .single();
         const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
-        navButtons.push([{ text: "« Назад", callback_data: back }]);
+        navButtons.push([{ text: m.back, callback_data: back }]);
       }
       await tg("sendMessage", {
         chat_id,
-        text: "📂 Здесь пока пусто.",
+        text: m.emptyHere,
         reply_markup: navButtons.length ? { inline_keyboard: navButtons } : undefined,
       });
     }
@@ -696,14 +1241,14 @@ async function showCategories(
   }
 
   for (const p of page) {
-    await sendProductCard(chat_id, p, userCountryCode);
+    await sendProductCard(chat_id, p, userCountryCode, locale);
   }
 
   const navButtons = [];
   if (offset + 5 < allProds.length) {
     navButtons.push([
       {
-        text: "⬇️ Показать ещё",
+        text: m.showMore,
         callback_data: parentId ? `cat:${parentId}:${offset + 5}` : `cat:root:${offset + 5}`,
       },
     ]);
@@ -717,13 +1262,13 @@ async function showCategories(
       .eq("id", parentId)
       .single();
     const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
-    navButtons.push([{ text: "« Назад в категории", callback_data: back }]);
+    navButtons.push([{ text: m.backToCategories, callback_data: back }]);
   }
 
   if (navButtons.length > 0) {
     await tg("sendMessage", {
       chat_id,
-      text: "Навигация:",
+      text: m.navigation,
       reply_markup: { inline_keyboard: navButtons },
     });
   }
@@ -733,7 +1278,9 @@ async function sendProductCard(
   chat_id: number,
   p: ProductCard,
   userCountryCode: string | undefined,
+  locale: Locale = "ru",
 ) {
+  const m = copy[locale];
   const imgs = (p.product_images || []).slice().sort((a, b) => a.sort_order - b.sort_order);
 
   /**
@@ -754,12 +1301,10 @@ async function sendProductCard(
   const displayPrice = money.amount;
   const displayCurrency = money.currency;
 
-  const desc = p.description
-    ? `\n\n${escapeHtml(p.description)}`
-    : `\n\n<i>Подробное описание уточняется у продавца.</i>`;
+  const desc = p.description ? `\n\n${escapeHtml(p.description)}` : `\n\n<i>${m.descPending}</i>`;
   const caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>`;
   const reply_markup = {
-    inline_keyboard: [[{ text: "➕ В корзину", callback_data: `add:${p.id}` }]],
+    inline_keyboard: [[{ text: m.addToCartBtn, callback_data: `add:${p.id}` }]],
   };
 
   if (imgs.length === 0) {
@@ -776,7 +1321,12 @@ async function sendProductCard(
   }
 }
 
-async function showProduct(chat_id: number, product_id: string, userCountryCode?: string) {
+async function showProduct(
+  chat_id: number,
+  product_id: string,
+  userCountryCode?: string,
+  locale: Locale = "ru",
+) {
   const s = await db();
   const { data: p } = await s
     .from("products")
@@ -785,10 +1335,10 @@ async function showProduct(chat_id: number, product_id: string, userCountryCode?
     .eq("is_active", true)
     .single();
   if (!p) {
-    await tg("sendMessage", { chat_id, text: "Товар не найден." });
+    await tg("sendMessage", { chat_id, text: copy[locale].productNotFound });
     return;
   }
-  await sendProductCard(chat_id, p, userCountryCode);
+  await sendProductCard(chat_id, p, userCountryCode, locale);
 }
 function escapeHtml(t: string): string {
   if (!t) return "";
@@ -818,6 +1368,7 @@ function normalizePhone(raw: string): string | null {
 }
 
 async function saveContactAndContinueCheckout(chat_id: number, user: BotUser, phone: string) {
+  const locale: Locale = user.state?.locale ?? "ru";
   await setContact(user.telegram_id, phone);
   const updatedUser = { ...user, contact_phone: phone };
   const nextState = { ...user.state, mode: "idle" as const };
@@ -825,12 +1376,12 @@ async function saveContactAndContinueCheckout(chat_id: number, user: BotUser, ph
 
   await tg("sendMessage", {
     chat_id,
-    text: "✅ Номер сохранён.",
-    reply_markup: mainMenu(),
+    text: copy[locale].contactSaved,
+    reply_markup: mainMenu(locale),
   });
 
   if (!user.state?.country_code) {
-    await askCountry(chat_id, user.telegram_id, true);
+    await askCountry(chat_id, user.telegram_id, true, locale);
     return;
   }
 
@@ -926,6 +1477,8 @@ async function addToCart(telegram_id: number, product_id: string) {
 }
 
 async function showCart(chat_id: number, user: BotUser) {
+  const locale: Locale = user.state?.locale ?? "ru";
+  const m = copy[locale];
   const telegram_id = user.telegram_id;
   const s = await db();
   const { data: items } = await s
@@ -933,7 +1486,7 @@ async function showCart(chat_id: number, user: BotUser) {
     .select("id, quantity, products(id, name, price, currency, country_prices)")
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
-    await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
+    await tg("sendMessage", { chat_id, text: m.cartEmpty });
     return;
   }
   let total = 0;
@@ -942,7 +1495,7 @@ async function showCart(chat_id: number, user: BotUser) {
   let currency = "KZT";
   const { resolvePrice } = await import("./pricing.server");
 
-  let text = "🛒 <b>Ваша корзина:</b>\n\n";
+  let text = m.cartHeader;
   const buttons: Array<Array<{ text: string; callback_data: string }>> = [];
   for (const it of items) {
     const p = it.products;
@@ -953,12 +1506,12 @@ async function showCart(chat_id: number, user: BotUser) {
     const line = Number(money.amount) * Number(it.quantity);
     total += line;
     text += `• ${escapeHtml(p.name)} × ${it.quantity} — ${formatMoney(line, currency)}\n`;
-    buttons.push([{ text: `❌ Убрать «${p.name}»`, callback_data: `rem:${it.id}` }]);
+    buttons.push([{ text: m.removeItem(p.name), callback_data: `rem:${it.id}` }]);
   }
-  text += `\n<b>Итого: ${formatMoney(total, currency)}</b>`;
+  text += m.total(formatMoney(total, currency));
   buttons.push([
-    { text: "💳 Оформить заказ", callback_data: "checkout" },
-    { text: "🗑 Очистить", callback_data: "clear" },
+    { text: m.checkoutBtn, callback_data: "checkout" },
+    { text: m.clearBtn, callback_data: "clear" },
   ]);
   await tg("sendMessage", {
     chat_id,
@@ -969,6 +1522,8 @@ async function showCart(chat_id: number, user: BotUser) {
 }
 
 async function startCheckout(chat_id: number, user: BotUser) {
+  const locale: Locale = user.state?.locale ?? "ru";
+  const m = copy[locale];
   const telegram_id = user.telegram_id;
   const s = await db();
   const { count } = await s
@@ -976,17 +1531,17 @@ async function startCheckout(chat_id: number, user: BotUser) {
     .select("id", { count: "exact", head: true })
     .eq("telegram_id", telegram_id);
   if (!count) {
-    await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
+    await tg("sendMessage", { chat_id, text: m.cartEmpty });
     return;
   }
   if (!user.contact_phone) {
     await setState(telegram_id, { ...user.state, mode: "awaiting_contact" });
     await tg("sendMessage", {
       chat_id,
-      text: "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
+      text: m.phonePromptHtml,
       parse_mode: "HTML",
       reply_markup: {
-        keyboard: [[{ text: "📱 Поделиться контактом", request_contact: true }]],
+        keyboard: [[{ text: m.shareContactBtn, request_contact: true }]],
         resize_keyboard: true,
         one_time_keyboard: true,
       },
@@ -995,7 +1550,7 @@ async function startCheckout(chat_id: number, user: BotUser) {
   }
 
   if (!user.state?.country_code) {
-    await askCountry(chat_id, telegram_id, true);
+    await askCountry(chat_id, telegram_id, true, locale);
     return;
   }
 
@@ -1007,7 +1562,13 @@ async function startCheckout(chat_id: number, user: BotUser) {
   await placeOrder(chat_id, user, user.state.country_code);
 }
 
-async function askCountry(chat_id: number, telegram_id: number, forCheckout = false) {
+async function askCountry(
+  chat_id: number,
+  telegram_id: number,
+  forCheckout = false,
+  locale: Locale = "ru",
+) {
+  const m = copy[locale];
   const s = await db();
   const { data: methods } = await s
     .from("payment_methods")
@@ -1017,7 +1578,7 @@ async function askCountry(chat_id: number, telegram_id: number, forCheckout = fa
   if (!methods?.length) {
     await tg("sendMessage", {
       chat_id,
-      text: "Способы оплаты ещё не настроены. Свяжитесь с продавцом.",
+      text: m.paymentNotConfigured,
     });
     return;
   }
@@ -1026,10 +1587,10 @@ async function askCountry(chat_id: number, telegram_id: number, forCheckout = fa
 
   await tg("sendMessage", {
     chat_id,
-    text: "Пожалуйста, выберите вашу страну (для отображения цен и реквизитов):",
+    text: m.chooseCountry,
     reply_markup: {
-      inline_keyboard: methods.map((m) => [
-        { text: m.country_name as string, callback_data: `${prefix}${m.country_code}` },
+      inline_keyboard: methods.map((method) => [
+        { text: method.country_name as string, callback_data: `${prefix}${method.country_code}` },
       ]),
     },
   });
@@ -1045,6 +1606,8 @@ async function askCountry(chat_id: number, telegram_id: number, forCheckout = fa
 import { materialsForProduct } from "./product-materials";
 
 async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
+  const locale: Locale = user.state?.locale ?? "ru";
+  const m = copy[locale];
   const telegram_id = user.telegram_id;
   const s = await db();
   const { data: method } = await s
@@ -1059,7 +1622,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     )
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
-    await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
+    await tg("sendMessage", { chat_id, text: m.cartEmpty });
     return;
   }
 
@@ -1102,7 +1665,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .select("*")
     .single();
   if (error || !order) {
-    await tg("sendMessage", { chat_id, text: "Не удалось создать заказ. Попробуйте позже." });
+    await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
     return;
   }
 
@@ -1141,8 +1704,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   const rk = await loadRobokassaSettings();
   const cc = String(method?.country_code ?? country_code ?? "").toUpperCase();
-  const instructions =
-    (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.";
+  const instructions = (method?.instructions as string) || m.defaultInstructions;
 
   // Robokassa off (or misconfigured) → all countries: receipt + manual admin confirm
   if (!rk.ready) {
@@ -1156,6 +1718,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       currency,
       instructions,
       autoDeliver: false,
+      locale,
     });
     return;
   }
@@ -1172,6 +1735,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       currency,
       instructions,
       autoDeliver: true,
+      locale,
     });
     return;
   }
@@ -1186,6 +1750,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
       displayNo: order.order_no ?? order.id,
       total,
       currency,
+      locale,
     });
     return;
   }
@@ -1200,6 +1765,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     total,
     currency,
     rk,
+    locale,
   });
 }
 
@@ -1225,6 +1791,8 @@ export async function remindOrderPayment(orderId: number) {
     .eq("telegram_id", telegram_id)
     .maybeSingle();
   const userState = (botUser?.state as BotUser["state"]) ?? {};
+  const locale: Locale = userState?.locale ?? "ru";
+  const m = copy[locale];
 
   const cc = String(order.country_code ?? "").toUpperCase();
   const { data: method } = await s
@@ -1232,19 +1800,15 @@ export async function remindOrderPayment(orderId: number) {
     .select("*")
     .eq("country_code", cc || "OTHER")
     .maybeSingle();
-  const instructions =
-    (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.";
+  const instructions = (method?.instructions as string) || m.defaultInstructions;
   const total = Number(order.total);
   const currency = (order.currency as string) || (method?.currency as string) || "USD";
 
   await tg("sendMessage", {
     chat_id,
-    text:
-      `🔔 <b>Напоминание по заказу #${order.order_no ?? orderId}</b>\n\n` +
-      `Заказ ещё ожидает оплаты (${formatMoney(total, currency)}).\n` +
-      `Ниже — актуальный способ оплаты. Если уже платили — пришлите чек в этот чат.`,
+    text: m.paymentReminder(order.order_no ?? orderId, formatMoney(total, currency)),
     parse_mode: "HTML",
-    reply_markup: mainMenu(),
+    reply_markup: mainMenu(locale),
   });
 
   const rk = await loadRobokassaSettings();
@@ -1261,6 +1825,7 @@ export async function remindOrderPayment(orderId: number) {
       instructions,
       autoDeliver: false,
       reminder: true,
+      locale,
     });
     return { ok: true as const };
   }
@@ -1277,6 +1842,7 @@ export async function remindOrderPayment(orderId: number) {
       instructions,
       autoDeliver: true,
       reminder: true,
+      locale,
     });
     return { ok: true as const };
   }
@@ -1291,6 +1857,7 @@ export async function remindOrderPayment(orderId: number) {
       total,
       currency,
       reminder: true,
+      locale,
     });
     return { ok: true as const };
   }
@@ -1305,6 +1872,7 @@ export async function remindOrderPayment(orderId: number) {
     currency,
     rk,
     reminder: true,
+    locale,
   });
   return { ok: true as const };
 }
@@ -1318,7 +1886,9 @@ async function sendKzPaymentChoice(params: {
   total: number;
   currency: string;
   reminder?: boolean;
+  locale?: Locale;
 }) {
+  const m = copy[params.locale ?? "ru"];
   await setState(params.telegram_id, {
     ...params.userState,
     mode: "choose_pay",
@@ -1326,21 +1896,21 @@ async function sendKzPaymentChoice(params: {
     proof_auto: false,
   });
   const title = params.reminder
-    ? `🔔 <b>Заказ #${params.displayNo}</b> — выберите способ оплаты`
-    : `🧾 <b>Заказ #${params.displayNo}</b> создан.`;
+    ? m.kzTitleReminder(params.displayNo)
+    : m.kzTitleNew(params.displayNo);
   await tg("sendMessage", {
     chat_id: params.chat_id,
     text:
       `${title}\n\n` +
-      `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
-      `Выберите способ оплаты:\n` +
-      `• <b>Robokassa</b> — оплата картой, файлы придут сразу после оплаты\n` +
-      `• <b>По реквизитам</b> — перевод вручную, пришлите чек — файлы придут сразу`,
+      `${m.amountToPay(formatMoney(params.total, params.currency))}\n\n` +
+      `${m.choosePayMethod}\n` +
+      `${m.robokassaDesc}\n` +
+      `${m.manualDesc}`,
     parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "💳 Оплатить через Robokassa", callback_data: `pay:rk:${params.orderId}` }],
-        [{ text: "🧾 Оплатить по реквизитам", callback_data: `pay:manual:${params.orderId}` }],
+        [{ text: m.payViaRobokassaBtn, callback_data: `pay:rk:${params.orderId}` }],
+        [{ text: m.payManualBtn, callback_data: `pay:manual:${params.orderId}` }],
       ],
     },
   });
@@ -1368,7 +1938,9 @@ async function sendRobokassaPayLink(params: {
   currency: string;
   rk: Awaited<ReturnType<typeof loadRobokassaSettings>>;
   reminder?: boolean;
+  locale?: Locale;
 }) {
+  const m = copy[params.locale ?? "ru"];
   const { buildRobokassaPaymentUrl } = await import("./robokassa.server");
   const outSum = Number(params.total).toFixed(2);
   const paymentUrl = buildRobokassaPaymentUrl({
@@ -1387,17 +1959,17 @@ async function sendRobokassaPayLink(params: {
     proof_auto: false,
   });
   const title = params.reminder
-    ? `🔔 <b>Заказ #${params.displayNo}</b> — оплата`
-    : `🧾 <b>Заказ #${params.displayNo}</b>`;
+    ? m.rkTitleReminder(params.displayNo)
+    : m.rkTitleNew(params.displayNo);
   await tg("sendMessage", {
     chat_id: params.chat_id,
     text:
       `${title}\n\n` +
-      `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
-      `Нажмите кнопку ниже для оплаты через Robokassa — после оплаты файлы придут автоматически.`,
+      `${m.amountToPay(formatMoney(params.total, params.currency))}\n\n` +
+      m.robokassaHint,
     parse_mode: "HTML",
     reply_markup: {
-      inline_keyboard: [[{ text: "💳 Оплатить через Robokassa", url: paymentUrl }]],
+      inline_keyboard: [[{ text: m.payViaRobokassaBtn, url: paymentUrl }]],
     },
   });
 }
@@ -1413,7 +1985,9 @@ async function startManualProofPath(params: {
   instructions: string;
   autoDeliver: boolean;
   reminder?: boolean;
+  locale?: Locale;
 }) {
+  const m = copy[params.locale ?? "ru"];
   const s = await db();
   if (params.autoDeliver) {
     await s.from("orders").update({ admin_note: "proof_auto" }).eq("id", params.orderId);
@@ -1426,19 +2000,17 @@ async function startManualProofPath(params: {
     proof_auto: params.autoDeliver,
   });
 
-  const afterProof = params.autoDeliver
-    ? `После оплаты <b>пришлите чек</b> (фото или PDF) в этот чат — бот сразу отправит файлы.`
-    : `После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.`;
+  const afterProof = params.autoDeliver ? m.afterProofAuto : m.afterProofManual;
 
   const title = params.reminder
-    ? `🔔 <b>Заказ #${params.displayNo}</b> — оплата по реквизитам`
-    : `🧾 <b>Заказ #${params.displayNo}</b> создан.`;
+    ? m.manualTitleReminder(params.displayNo)
+    : m.manualTitleNew(params.displayNo);
 
   await tg("sendMessage", {
     chat_id: params.chat_id,
     text:
       `${title}\n\n` +
-      `Сумма к оплате: <b>${formatMoney(params.total, params.currency)}</b>\n\n` +
+      `${m.amountToPay(formatMoney(params.total, params.currency))}\n\n` +
       `${params.instructions}\n\n` +
       afterProof,
     parse_mode: "HTML",
@@ -1594,6 +2166,8 @@ async function notifyAdminNewOrder(
 }
 
 async function showSearch(chat_id: number, user: BotUser, query: string, offset = 0) {
+  const locale: Locale = user.state?.locale ?? "ru";
+  const m = copy[locale];
   const telegram_id = user.telegram_id;
   const s = await db();
   const term = `%${query.replace(/[%_]/g, "")}%`;
@@ -1610,7 +2184,7 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   await setState(telegram_id, { ...user.state, mode: "idle", last_search: query });
 
   if (!data?.length) {
-    await tg("sendMessage", { chat_id, text: "Ничего не нашлось. Попробуйте другое слово." });
+    await tg("sendMessage", { chat_id, text: m.searchNothingFound });
     return;
   }
 
@@ -1618,11 +2192,11 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   const page = all.slice(offset, offset + 5);
 
   if (offset === 0) {
-    await tg("sendMessage", { chat_id, text: `🔍 Найдено материалов: ${all.length}` });
+    await tg("sendMessage", { chat_id, text: m.foundCount(all.length) });
   }
 
   for (const p of page) {
-    await sendProductCard(chat_id, p, user.state?.country_code);
+    await sendProductCard(chat_id, p, user.state?.country_code, locale);
   }
 
   // Кнопка «Показать ещё», если остались результаты
@@ -1630,15 +2204,16 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   if (nextOffset < all.length) {
     await tg("sendMessage", {
       chat_id,
-      text: `Показано ${nextOffset} из ${all.length}`,
+      text: m.shownOf(nextOffset, all.length),
       reply_markup: {
-        inline_keyboard: [[{ text: "⬇️ Показать ещё", callback_data: `searchmore:${nextOffset}` }]],
+        inline_keyboard: [[{ text: m.showMore, callback_data: `searchmore:${nextOffset}` }]],
       },
     });
   }
 }
 
-async function showMyOrders(chat_id: number, telegram_id: number) {
+async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale = "ru") {
+  const m = copy[locale];
   const s = await db();
   const { data } = await s
     .from("orders")
@@ -1647,15 +2222,15 @@ async function showMyOrders(chat_id: number, telegram_id: number) {
     .order("created_at", { ascending: false })
     .limit(20);
   if (!data?.length) {
-    await tg("sendMessage", { chat_id, text: "У вас пока нет заказов." });
+    await tg("sendMessage", { chat_id, text: m.noOrdersYet });
     return;
   }
   const statusMap: Record<string, string> = {
-    awaiting_payment: "⏳ ожидает оплаты",
-    awaiting_confirmation: "🔎 проверяется",
-    delivering: "📤 выдаётся",
-    delivered: "✅ выдан",
-    rejected: "❌ отклонён",
+    awaiting_payment: m.statusAwaitingPayment,
+    awaiting_confirmation: m.statusAwaitingConfirmation,
+    delivering: m.statusDelivering,
+    delivered: m.statusDelivered,
+    rejected: m.statusRejected,
   };
   const text = data
     .map(
@@ -1663,7 +2238,7 @@ async function showMyOrders(chat_id: number, telegram_id: number) {
         `#${o.order_no ?? o.id} — ${o.total} ${o.currency} — ${statusMap[o.status as string] || o.status}`,
     )
     .join("\n");
-  await tg("sendMessage", { chat_id, text: `📋 Ваши заказы:\n\n${text}` });
+  await tg("sendMessage", { chat_id, text: m.myOrdersHeader(text) });
 }
 
 export async function handleUpdate(update: TelegramUpdate) {
@@ -1684,6 +2259,8 @@ export async function handleUpdate(update: TelegramUpdate) {
 
       const user = await upsertUser(cq.from);
       if (!user) return;
+      const locale: Locale = user.state?.locale ?? "ru";
+      const m = copy[locale];
 
       // Before allowing navigation, require country code
       if (
@@ -1701,7 +2278,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         !data.startsWith("prod:")
       ) {
         if (!user.state?.country_code) {
-          await askCountry(chat_id, from_id);
+          await askCountry(chat_id, from_id, false, locale);
           return;
         }
       }
@@ -1718,11 +2295,11 @@ export async function handleUpdate(update: TelegramUpdate) {
           chat_id,
           text: welcomeStartHtml(user.first_name, needCountry, locale),
           parse_mode: "HTML",
-          reply_markup: legalInlineKeyboard(base),
+          reply_markup: legalInlineKeyboard(base, locale),
           disable_web_page_preview: true,
         });
         await sendMain(chat_id, undefined, undefined, locale);
-        if (!nextState.country_code) await askCountry(chat_id, from_id);
+        if (!nextState.country_code) await askCountry(chat_id, from_id, false, locale);
         void syncBotPublicDescription();
         return;
       }
@@ -1739,13 +2316,13 @@ export async function handleUpdate(update: TelegramUpdate) {
           .eq("id", orderId)
           .maybeSingle();
         if (!order || Number(order.telegram_id) !== Number(from_id)) {
-          await tg("sendMessage", { chat_id, text: "Заказ не найден." });
+          await tg("sendMessage", { chat_id, text: m.orderNotFound });
           return;
         }
         if (order.status !== "awaiting_payment") {
           await tg("sendMessage", {
             chat_id,
-            text: `Заказ #${orderId} уже обрабатывается или закрыт.`,
+            text: m.alreadyProcessed(orderId),
           });
           return;
         }
@@ -1763,7 +2340,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           if (!rk.ready) {
             await tg("sendMessage", {
               chat_id,
-              text: "Robokassa временно недоступна. Выберите оплату по реквизитам.",
+              text: m.robokassaUnavailable,
             });
             return;
           }
@@ -1776,6 +2353,7 @@ export async function handleUpdate(update: TelegramUpdate) {
             total: Number(order.total),
             currency: (order.currency as string) || "KZT",
             rk,
+            locale,
           });
           return;
         }
@@ -1793,36 +2371,48 @@ export async function handleUpdate(update: TelegramUpdate) {
           displayNo: order.order_no ?? orderId,
           total: Number(order.total),
           currency: (order.currency as string) || "KZT",
-          instructions:
-            (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.",
+          instructions: (method?.instructions as string) || m.defaultInstructions,
           autoDeliver: true,
+          locale,
         });
         return;
       }
 
       if (data.startsWith("cat:root")) {
         const parts = data.split(":");
-        return showCategories(chat_id, null, user.state?.country_code, Number(parts[2] || 0));
+        return showCategories(
+          chat_id,
+          null,
+          user.state?.country_code,
+          Number(parts[2] || 0),
+          locale,
+        );
       }
       if (data.startsWith("cat:")) {
         const parts = data.split(":");
-        return showCategories(chat_id, parts[1], user.state?.country_code, Number(parts[2] || 0));
+        return showCategories(
+          chat_id,
+          parts[1],
+          user.state?.country_code,
+          Number(parts[2] || 0),
+          locale,
+        );
       }
       if (data.startsWith("prod:"))
-        return showProduct(chat_id, data.slice(5), user.state?.country_code);
+        return showProduct(chat_id, data.slice(5), user.state?.country_code, locale);
       if (data.startsWith("searchmore:")) {
         // Пагинация поиска: запрос берём из state.last_search
         const offset = Number(data.slice(11)) || 0;
         const query = user.state?.last_search;
         if (!query) {
-          await tg("sendMessage", { chat_id, text: "Сессия поиска устарела. Повторите поиск." });
+          await tg("sendMessage", { chat_id, text: m.searchSessionExpired });
           return;
         }
         return showSearch(chat_id, user, query, offset);
       }
       if (data.startsWith("add:")) {
         await addToCart(from_id, data.slice(4));
-        await tg("sendMessage", { chat_id, text: "✅ Добавлено в корзину." });
+        await tg("sendMessage", { chat_id, text: m.addedToCart });
         return;
       }
       if (data.startsWith("rem:")) {
@@ -1833,7 +2423,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (data === "clear") {
         const s = await db();
         await s.from("cart_items").delete().eq("telegram_id", from_id);
-        await tg("sendMessage", { chat_id, text: "🗑 Корзина очищена." });
+        await tg("sendMessage", { chat_id, text: m.cartCleared });
         return;
       }
       if (data === "checkout") return startCheckout(chat_id, user);
@@ -1842,7 +2432,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (data.startsWith("setcountry:")) {
         const code = data.slice(11);
         const s = await db();
-        const { data: m } = await s
+        const { data: countryMethod } = await s
           .from("payment_methods")
           .select("country_name")
           .eq("country_code", code)
@@ -1850,13 +2440,13 @@ export async function handleUpdate(update: TelegramUpdate) {
         await setState(from_id, {
           ...user.state,
           country_code: code,
-          country_name: m?.country_name,
+          country_name: countryMethod?.country_name,
         });
         await tg("sendMessage", {
           chat_id,
-          text: `✅ Ваша страна сохранена: ${m?.country_name}\nТеперь вы видите корректные цены!`,
+          text: m.countrySaved(countryMethod?.country_name as string),
         });
-        await sendMain(chat_id);
+        await sendMain(chat_id, undefined, undefined, locale);
         return;
       }
 
@@ -1877,7 +2467,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (order.telegram_id !== from_id) {
           await tg("answerCallbackQuery", {
             callback_query_id: cq.id,
-            text: "⛔ Доступ запрещён.",
+            text: m.accessDenied,
           });
           return;
         }
@@ -1894,7 +2484,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         // Check if this language was already delivered
         if (item.delivered_language === lang || item.delivered_language === "both") {
-          await tg("sendMessage", { chat_id, text: "⚠️ Этот файл уже был отправлен." });
+          await tg("sendMessage", { chat_id, text: m.fileAlreadySent });
           return;
         }
 
@@ -1919,14 +2509,14 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (materials.length) {
           await tg("sendMessage", {
             chat_id,
-            text: `⏳ Загружаю материалы (${lang === "ru" ? "Русский" : "Қазақша"})...`,
+            text: m.loadingMaterials(lang === "ru" ? "Русский" : "Қазақша"),
           });
           // Always 1 copy — quantity is cart price, not file copies
           await sendMaterials(order.telegram_id, materials, item.name_snapshot, 1);
         } else {
           await tg("sendMessage", {
             chat_id,
-            text: `⚠️ Файл (${lang === "ru" ? "Русский" : "Қазақша"}) не настроен. Продавец вышлет вручную.`,
+            text: m.materialNotConfigured(lang === "ru" ? "Русский" : "Қазақша"),
           });
         }
 
@@ -1992,7 +2582,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           .from("orders")
           .update({ status: "rejected" })
           .eq("id", orderId)
-          .select("order_no")
+          .select("order_no, telegram_id")
           .single();
 
         // Пишем туда, откуда пришёл заказ: у покупателя из Instagram
@@ -2000,9 +2590,17 @@ export async function handleUpdate(update: TelegramUpdate) {
         // человек не узнавал об отказе и продолжал ждать материалы.
         const { notifyOrderCustomer } = await import("./orders.server");
         const shownNo = order?.order_no ?? orderId;
+        const { data: buyer } = order?.telegram_id
+          ? await s
+              .from("bot_users")
+              .select("state")
+              .eq("telegram_id", order.telegram_id)
+              .maybeSingle()
+          : { data: null };
+        const buyerLocale: Locale = (buyer?.state as BotUser["state"])?.locale ?? "ru";
         const notified = await notifyOrderCustomer(
           orderId,
-          `❌ Ваш заказ №${shownNo} отклонён. Если это ошибка — напишите продавцу.`,
+          copy[buyerLocale].rejectedNotice(shownNo),
         );
 
         await tg("sendMessage", {
@@ -2025,6 +2623,8 @@ export async function handleUpdate(update: TelegramUpdate) {
     if (await replyIfPaused(chat_id)) return;
     const user = await upsertUser(from);
     if (!user) return;
+    const locale: Locale = user.state?.locale ?? "ru";
+    const m = copy[locale];
 
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start") {
@@ -2055,7 +2655,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       return;
     }
     if (msg.text === "/id") {
-      await tg("sendMessage", { chat_id, text: `Ваш Telegram ID: ${from.id}` });
+      await tg("sendMessage", { chat_id, text: m.idLabel(from.id) });
       return;
     }
 
@@ -2067,23 +2667,14 @@ export async function handleUpdate(update: TelegramUpdate) {
 
     // Phone number typed as text during checkout
     if (user.state?.mode === "awaiting_contact" && msg.text) {
-      if (
-        [
-          "📚 Каталог",
-          "🔍 Поиск",
-          "🛒 Корзина",
-          "📋 Мои заказы",
-          "📖 Инструкция",
-          "ℹ️ Информация",
-        ].includes(msg.text)
-      ) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
         await setState(from.id, { ...user.state, mode: "idle" });
         // Fallthrough to the main menu switch below
       } else {
-        if (msg.text === "📱 Поделиться контактом") {
+        if (msg.text === m.shareContactBtn) {
           await tg("sendMessage", {
             chat_id,
-            text: "Нажмите кнопку «📱 Поделиться контактом» внизу экрана или просто напишите номер телефона в чат.",
+            text: m.shareContactHint,
           });
           return;
         }
@@ -2092,7 +2683,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (!phone) {
           await tg("sendMessage", {
             chat_id,
-            text: "Не удалось распознать номер. Напишите телефон цифрами, например: <code>+79001234567</code> или <code>89001234567</code>",
+            text: m.phoneParseFail,
             parse_mode: "HTML",
           });
           return;
@@ -2130,23 +2721,13 @@ export async function handleUpdate(update: TelegramUpdate) {
       !msg.photo &&
       !msg.document
     ) {
-      if (
-        msg.text &&
-        [
-          "📚 Каталог",
-          "🔍 Поиск",
-          "🛒 Корзина",
-          "📋 Мои заказы",
-          "📖 Инструкция",
-          "ℹ️ Информация",
-        ].includes(msg.text)
-      ) {
+      if (msg.text && MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
         await setState(from.id, { ...user.state, mode: "idle" });
         // Fallthrough to the main menu switch below
       } else {
         await tg("sendMessage", {
           chat_id,
-          text: "📨 Пришлите, пожалуйста, чек об оплате — фото или файл (например, PDF).",
+          text: m.sendReceiptPrompt,
         });
         return;
       }
@@ -2163,7 +2744,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         .maybeSingle();
 
       if (!orderRow || Number(orderRow.telegram_id) !== Number(from.id)) {
-        await tg("sendMessage", { chat_id, text: "Заказ не найден." });
+        await tg("sendMessage", { chat_id, text: m.orderNotFound });
         return;
       }
       if (
@@ -2173,8 +2754,8 @@ export async function handleUpdate(update: TelegramUpdate) {
       ) {
         await tg("sendMessage", {
           chat_id,
-          text: `Заказ #${orderId} уже обрабатывается или закрыт.`,
-          reply_markup: mainMenu(),
+          text: m.alreadyProcessed(orderId),
+          reply_markup: mainMenu(locale),
         });
         return;
       }
@@ -2253,7 +2834,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           });
           await tg("sendMessage", {
             chat_id,
-            text: "⚠️ Не удалось загрузить файл. Пришлите чек ещё раз — фото или PDF.",
+            text: m.fileDownloadFail,
           });
           return;
         }
@@ -2286,9 +2867,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           }
           await tg("sendMessage", {
             chat_id,
-            text:
-              `⚠️ Это не похоже на чек оплаты.\n\n` +
-              `Пришлите, пожалуйста, скриншот перевода / чека с суммой заказа #${orderId}.`,
+            text: m.notReceiptLike(orderId),
           });
           return;
         }
@@ -2312,10 +2891,8 @@ export async function handleUpdate(update: TelegramUpdate) {
 
           await tg("sendMessage", {
             chat_id,
-            text:
-              `📨 Чек получен по заказу #${orderId}, но автоматическая проверка не прошла.\n` +
-              `Заказ отправлен продавцу на ручную проверку — файлы придут после подтверждения.`,
-            reply_markup: mainMenu(),
+            text: m.receiptManualReview(orderId),
+            reply_markup: mainMenu(locale),
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
             reviewReason: verify.detail,
@@ -2341,8 +2918,8 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         await tg("sendMessage", {
           chat_id,
-          text: `📨 Спасибо! Чек проверен. Заказ #${orderId} — отправляю файлы…`,
-          reply_markup: mainMenu(),
+          text: m.receiptVerifiedDelivering(orderId),
+          reply_markup: mainMenu(locale),
         });
 
         try {
@@ -2357,7 +2934,7 @@ export async function handleUpdate(update: TelegramUpdate) {
             .eq("id", orderId);
           await tg("sendMessage", {
             chat_id,
-            text: `⚠️ Чек принят, но автоматическая выдача заказа #${orderId} не завершилась. Продавец проверит и отправит файлы.`,
+            text: m.deliveryFailedAfterOcr(orderId),
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
             reviewReason: "Ошибка выдачи после успешного OCR",
@@ -2390,16 +2967,16 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", {
           chat_id,
           text: proofSaved
-            ? `📨 Спасибо! Чек получен. Заказ #${orderId} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`
-            : `📨 Чек получен и переслан продавцу. Заказ #${orderId} на проверке. Если нужно — можно отправить чек ещё раз.`,
-          reply_markup: mainMenu(),
+            ? m.receiptForwardedAwaitingConfirm(orderId)
+            : m.receiptForwardedNoStorage(orderId),
+          reply_markup: mainMenu(locale),
         });
         await notifyAdminNewOrder(orderId, proofFileId, proofKind);
       } else {
         await tg("sendMessage", {
           chat_id,
-          text: `⚠️ Не удалось сохранить чек заказа #${orderId}. Продавец проверит заказ вручную. Если хотите — попробуйте отправить чек ещё раз.`,
-          reply_markup: mainMenu(),
+          text: m.receiptSaveFailed(orderId),
+          reply_markup: mainMenu(locale),
         });
         await notifyAdminNewOrder(orderId, null, null);
       }
@@ -2417,42 +2994,39 @@ export async function handleUpdate(update: TelegramUpdate) {
       menuAction &&
       ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(menuAction)
     ) {
-      await askCountry(chat_id, from.id);
+      await askCountry(chat_id, from.id, false, locale);
       return;
     }
 
     // Main menu buttons
     switch (menuAction) {
       case "📚 Каталог":
-        return showCategories(chat_id, null, user.state?.country_code);
+        return showCategories(chat_id, null, user.state?.country_code, 0, locale);
       case "🔍 Поиск":
         await setState(from.id, { ...user.state, mode: "search" });
         await tg("sendMessage", {
           chat_id,
-          text: "Напишите название или ключевое слово:",
+          text: m.searchTypePrompt,
         });
         return;
       case "🛒 Корзина":
         return showCart(chat_id, user);
       case "📋 Мои заказы":
-        return showMyOrders(chat_id, from.id);
+        return showMyOrders(chat_id, from.id, locale);
       case "📖 Инструкция":
-        return sendInstruction(chat_id);
+        return sendInstruction(chat_id, locale);
       case "ℹ️ Информация": {
         const base = originFromState();
         await tg("sendMessage", {
           chat_id,
-          text:
-            `ℹ️ <b>Информация о магазине</b>\n\n` +
-            `Обязательные документы и реквизиты (требование платёжных систем):\n\n` +
-            legalConsentHtml(base),
+          text: m.infoHeader + m.infoRequiredDocs + legalConsentHtml(base, locale),
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "📄 Условия использования (оферта)", url: `${base}/legal/offer` }],
-              [{ text: "🔒 Политика конфиденциальности", url: `${base}/legal/privacy` }],
-              [{ text: "🏦 Реквизиты", url: `${base}/legal/requisites` }],
-              [{ text: "👤 О продавце", url: `${base}/legal/about` }],
+              [{ text: m.offerBtn, url: `${base}/legal/offer` }],
+              [{ text: m.privacyBtn, url: `${base}/legal/privacy` }],
+              [{ text: m.requisitesBtn, url: `${base}/legal/requisites` }],
+              [{ text: m.aboutBtn, url: `${base}/legal/about` }],
             ],
           },
           disable_web_page_preview: true,
@@ -2469,18 +3043,18 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (setting?.value) {
           await tg("sendMessage", {
             chat_id,
-            text: `Для связи с автором используйте следующие контакты:\n${setting.value}`,
+            text: m.contactUsePrefix(setting.value),
             disable_web_page_preview: true,
           });
         } else {
-          await tg("sendMessage", { chat_id, text: "Контакты автора пока не указаны." });
+          await tg("sendMessage", { chat_id, text: m.contactsNotSet });
         }
         return;
       }
     }
 
     // Fallback
-    await sendMain(chat_id);
+    await sendMain(chat_id, undefined, undefined, locale);
   } catch (e: unknown) {
     console.error("[bot] handleUpdate error", e);
   }
