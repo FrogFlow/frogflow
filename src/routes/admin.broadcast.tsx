@@ -83,7 +83,7 @@ function BroadcastPage() {
     queryFn: () => getBroadcastFn({ data: { id: activeId! } }),
     enabled: !!activeId,
     refetchInterval: (q) => {
-      const st = (q.state.data as any)?.status;
+      const st = q.state.data?.status;
       return st === "queued" || st === "sending" ? 2000 : false;
     },
   });
@@ -121,9 +121,7 @@ function BroadcastPage() {
   }, [audienceType, countryCode]);
 
   useEffect(() => {
-    const running = (broadcasts.data as any[])?.find(
-      (b) => b.status === "queued" || b.status === "sending",
-    );
+    const running = broadcasts.data?.find((b) => b.status === "queued" || b.status === "sending");
     if (running) setActiveId(running.id);
   }, [broadcasts.data]);
 
@@ -194,8 +192,8 @@ function BroadcastPage() {
     }
   }
 
-  const productList = (products.data ?? []) as any[];
-  const countryOptions = ((paymentMethods.data ?? []) as any[]).filter((m) => m.is_active);
+  const productList = products.data ?? [];
+  const countryOptions = (paymentMethods.data ?? []).filter((m) => m.is_active);
 
   function broadcastPhotoUrl(path: string) {
     return `/api/public/img/broadcast-images/${encodeURIComponent(path)}`;
@@ -341,18 +339,18 @@ function BroadcastPage() {
         <div className="bg-card border rounded-lg p-4 space-y-2">
           <h2 className="font-medium">Текущая рассылка</h2>
           <p className="text-sm">
-            Статус: <b>{(activeBroadcast.data as any).status}</b> · отправлено{" "}
-            {(activeBroadcast.data as any).sent_count} / {(activeBroadcast.data as any).total_count}
-            {(activeBroadcast.data as any).failed_count > 0 &&
-              ` · ошибки: ${(activeBroadcast.data as any).failed_count}`}
-            {(activeBroadcast.data as any).blocked_count > 0 &&
-              ` · заблокировали: ${(activeBroadcast.data as any).blocked_count}`}
+            Статус: <b>{activeBroadcast.data.status}</b> · отправлено{" "}
+            {activeBroadcast.data.sent_count} / {activeBroadcast.data.total_count}
+            {activeBroadcast.data.failed_count > 0 &&
+              ` · ошибки: ${activeBroadcast.data.failed_count}`}
+            {activeBroadcast.data.blocked_count > 0 &&
+              ` · заблокировали: ${activeBroadcast.data.blocked_count}`}
           </p>
           <p className="text-xs text-muted-foreground">
             Очередь обрабатывается автоматически через cron (каждую минуту).
           </p>
-          {((activeBroadcast.data as any).status === "queued" ||
-            (activeBroadcast.data as any).status === "sending") && (
+          {(activeBroadcast.data.status === "queued" ||
+            activeBroadcast.data.status === "sending") && (
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={onProcessNow} disabled={busy}>
                 Обработать порцию сейчас
@@ -397,7 +395,7 @@ function BroadcastPage() {
         {(broadcasts.data ?? []).length === 0 && (
           <p className="text-sm text-muted-foreground">Рассылок пока не было.</p>
         )}
-        {(broadcasts.data as any[])?.map((b) => {
+        {broadcasts.data?.map((b) => {
           const statusLabel: Record<string, string> = {
             queued: "⏳ В очереди",
             sending: "📤 Отправляется",
