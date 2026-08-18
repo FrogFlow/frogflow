@@ -5,6 +5,7 @@ import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server"
 import { assignMemberTariff, getMemberAssignedTariff } from "./vip-member.server";
 import { resolveTelegramFileMeta } from "./file-mime";
 import { replyIfBlocked } from "./blocked-users.server";
+import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import type { TelegramUser, TelegramUpdate } from "./bot.server";
 
 const TG_API = "https://api.telegram.org";
@@ -128,32 +129,477 @@ async function getVipSettings() {
   return map;
 }
 
-const BTN_RENEW = "🔄 Продлить";
-const BTN_STATUS = "📋 Мой статус";
-const BTN_ID = "🆔 Мой ID";
-const BTN_HELP = "ℹ️ Помощь";
+/**
+ * Explicit UI language for a VIP customer, stored on vip_member_profiles
+ * (already the per-(bot_id, telegram_id) VIP customer profile row — see
+ * vip-member.server.ts). Never inferred from Telegram's device language.
+ * Returns null when the customer hasn't chosen one yet (first contact).
+ */
+async function getVipLocaleRaw(telegram_id: number): Promise<Locale | null> {
+  const s = await db();
+  const { data } = await s
+    .from("vip_member_profiles")
+    .select("locale")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  return isLocale(data?.locale) ? (data!.locale as Locale) : null;
+}
 
-function mainMenuKeyboard() {
+async function setVipLocale(telegram_id: number, user: TelegramUser, locale: Locale) {
+  const s = await db();
+  const { error } = await s.from("vip_member_profiles").upsert(
+    {
+      telegram_id,
+      username: user.username ?? null,
+      first_name: user.first_name ?? null,
+      last_name: user.last_name ?? null,
+      locale,
+    },
+    { onConflict: "bot_id,telegram_id" },
+  );
+  if (error) console.error("[vip-bot] setVipLocale failed", error);
+}
+
+/** Fill `{token}` placeholders in a translated string, e.g. `{btn}`, `{price}`. */
+function fmt(template: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce((acc, [k, v]) => acc.replaceAll(`{${k}}`, v), template);
+}
+
+type VipCopyKey =
+  | "btnRenew"
+  | "btnStatus"
+  | "btnId"
+  | "btnHelp"
+  | "btnLang"
+  | "chooseLanguage"
+  | "languageSaved"
+  | "statusTitle"
+  | "statusActive"
+  | "statusTariff"
+  | "statusValidUntil"
+  | "statusRenewHint"
+  | "statusPending"
+  | "statusPendingHint"
+  | "statusNone"
+  | "statusNoneHint"
+  | "helpTitle"
+  | "helpRenewLine"
+  | "helpStatusLine"
+  | "helpIdLine"
+  | "helpPhotoLine"
+  | "helpCommandsLine"
+  | "myIdLabel"
+  | "myIdUsername"
+  | "myIdHint"
+  | "tariffsLoadError"
+  | "tariffsEmptyRenew"
+  | "tariffsEmptyDefault"
+  | "tariffsIntroInGroup"
+  | "tariffsIntroRenew"
+  | "tariffsIntroDefault"
+  | "entryTitle"
+  | "entryDesc"
+  | "entryPriceLabel"
+  | "entryAfterPay"
+  | "entryFurtherRenew"
+  | "entryPayButton"
+  | "tariffLinkNotFound"
+  | "vipMenuPinned"
+  | "startPendingTitle"
+  | "startPendingNoNewNeeded"
+  | "startPendingSendProof"
+  | "startPendingStatusHint"
+  | "startRenewInGroup"
+  | "startRenewNotInGroup"
+  | "startWelcome"
+  | "assignedRenewInGroup"
+  | "assignedRenewNotInGroup"
+  | "assignedAfterPay"
+  | "payButton"
+  | "otherPublicTariffs"
+  | "tariffNotFoundShort"
+  | "tariffInactive"
+  | "entryOnlyForNew"
+  | "defaultPaymentInstructions"
+  | "createRequestFailed"
+  | "paymentChosenLabel"
+  | "paymentDueLabel"
+  | "paymentAfterPay"
+  | "noPendingTariff"
+  | "proofResubmitNotified"
+  | "proofResubmitQuiet"
+  | "proofReceived"
+  | "sendScreenshotAsPhoto"
+  | "alreadyPendingPublic"
+  | "sendProofIfNotYet";
+
+/** All customer-facing VIP bot copy. Admin-only replies stay hardcoded Russian below. */
+const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
+  ru: {
+    btnRenew: "🔄 Продлить",
+    btnStatus: "📋 Мой статус",
+    btnId: "🆔 Мой ID",
+    btnHelp: "ℹ️ Помощь",
+    btnLang: "🌐 Язык",
+    chooseLanguage: "Выберите язык",
+    languageSaved: "✅ Язык сохранён.",
+    statusTitle: "📋 <b>Ваш VIP статус</b>",
+    statusActive: "Статус: <b>активен</b>",
+    statusTariff: "Тариф:",
+    statusValidUntil: "Действует до:",
+    statusRenewHint: "Чтобы продлить заранее — нажмите «{btn}».",
+    statusPending: "Статус: <b>ожидает подтверждения оплаты</b>",
+    statusPendingHint: "Если ещё не отправили чек — пришлите скриншот оплаты в этот чат.",
+    statusNone: "Сейчас нет активной подписки.",
+    statusNoneHint: "Нажмите «{btn}» или /start, чтобы оформить доступ.",
+    helpTitle: "ℹ️ <b>Помощь VIP</b>",
+    helpRenewLine: "• <b>{btn}</b> — выбрать тариф / продлить доступ",
+    helpStatusLine: "• <b>{btn}</b> — срок подписки и статус оплаты",
+    helpIdLine: "• <b>{btn}</b> — ваш Telegram ID (для ручного добавления)",
+    helpPhotoLine: "• После оплаты пришлите <b>фото чека</b> в этот чат",
+    helpCommandsLine: "Команды: /start — меню, /id — ваш ID",
+    myIdLabel: "Ваш Telegram ID:",
+    myIdUsername: "Username:",
+    myIdHint: "Этот ID нужен для ручного добавления в VIP-админке.",
+    tariffsLoadError: "Не удалось загрузить тарифы. Попробуйте позже.",
+    tariffsEmptyRenew:
+      "Нет публичных тарифов для продления. Используйте вашу персональную ссылку на тариф или напишите администратору.",
+    tariffsEmptyDefault: "В данный момент нет доступных тарифов.",
+    tariffsIntroInGroup:
+      "Продление VIP: выберите тариф. После оплаты срок продлится — вы останетесь в группе, новая ссылка не нужна.",
+    tariffsIntroRenew:
+      "Выберите тариф. После подтверждения оплаты пришлём одноразовую ссылку для вступления в группу.",
+    tariffsIntroDefault: "Выберите тариф для VIP-подписки:",
+    entryTitle: "👋 <b>Первый вход в VIP</b>",
+    entryDesc: "Разовый вход + доступ на {days} дн.",
+    entryPriceLabel: "Стоимость:",
+    entryAfterPay: "После оплаты и подтверждения вы получите ссылку в группу.",
+    entryFurtherRenew: "Дальнейшее продление — по отдельным тарифам.",
+    entryPayButton: "Оплатить вход — {price} {currency}",
+    tariffLinkNotFound:
+      "Тариф по этой ссылке не найден или выключен. Нажмите /start для общего списка.",
+    vipMenuPinned: "Меню VIP закреплено внизу.",
+    startPendingTitle: "⏳ У вас уже есть заявка <b>в ожидании подтверждения оплаты</b>.",
+    startPendingNoNewNeeded: "Новый тариф оформлять не нужно.",
+    startPendingSendProof: "Если чек ещё не отправили — пришлите скриншот оплаты в этот чат.",
+    startPendingStatusHint: "Статус можно посмотреть кнопкой «{btn}».",
+    startRenewInGroup: "Продление VIP — кнопки меню внизу. Выберите тариф ниже.",
+    startRenewNotInGroup:
+      "Возврат в VIP — выберите тариф ниже. После оплаты придёт одноразовая ссылка в группу.",
+    startWelcome: "Добро пожаловать в VIP-бот. Меню внизу экрана — тарифы ниже.",
+    assignedRenewInGroup: "Продление VIP — ваш персональный тариф:",
+    assignedRenewNotInGroup: "Ваш персональный тариф VIP:",
+    assignedAfterPay: "После оплаты — одноразовая ссылка в группу.",
+    payButton: "Оплатить — {price} {currency}",
+    otherPublicTariffs: "Другие публичные тарифы",
+    tariffNotFoundShort: "Тариф не найден.",
+    tariffInactive: "Этот тариф больше не активен. Нажмите /start чтобы выбрать другой.",
+    entryOnlyForNew:
+      "Тариф «Первый вход» доступен только новым участникам. Выберите тариф продления:",
+    defaultPaymentInstructions: "Оплатите по реквизитам и пришлите скриншот.",
+    createRequestFailed: "Не удалось создать заявку. Попробуйте позже.",
+    paymentChosenLabel: "Вы выбрали тариф:",
+    paymentDueLabel: "К оплате:",
+    paymentAfterPay: "После оплаты отправьте фото (скриншот чека) прямо в этот чат.",
+    noPendingTariff: "У вас нет ожидающих оплаты тарифов. Нажмите /start чтобы выбрать тариф.",
+    proofResubmitNotified:
+      "✅ Новый чек получен! Предыдущий заменён. Ожидайте подтверждения администратором.",
+    proofResubmitQuiet: "✅ Чек обновлён. Не присылайте чаще раза в минуту — админ уже уведомлён.",
+    proofReceived:
+      "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
+    sendScreenshotAsPhoto: "Пожалуйста, отправьте скриншот как изображение (фото), а не файлом.",
+    alreadyPendingPublic: "⏳ Заявка уже ждёт подтверждения оплаты",
+    sendProofIfNotYet: "Пришлите чек, если ещё не отправили.",
+  },
+  kk: {
+    btnRenew: "🔄 Ұзарту",
+    btnStatus: "📋 Менің мәртебем",
+    btnId: "🆔 Менің ID-м",
+    btnHelp: "ℹ️ Көмек",
+    btnLang: "🌐 Тіл",
+    chooseLanguage: "Тілді таңдаңыз",
+    languageSaved: "✅ Тіл сақталды.",
+    statusTitle: "📋 <b>Сіздің VIP мәртебеңіз</b>",
+    statusActive: "Мәртебе: <b>белсенді</b>",
+    statusTariff: "Тариф:",
+    statusValidUntil: "Мерзімі дейін:",
+    statusRenewHint: "Мерзімінен бұрын ұзарту үшін «{btn}» батырмасын басыңыз.",
+    statusPending: "Мәртебе: <b>төлем растауын күтуде</b>",
+    statusPendingHint: "Егер чекті әлі жібермеген болсаңыз — төлем скриншотын осы чатқа жіберіңіз.",
+    statusNone: "Қазір белсенді жазылым жоқ.",
+    statusNoneHint: "Қолжетімділік алу үшін «{btn}» батырмасын немесе /start пәрменін басыңыз.",
+    helpTitle: "ℹ️ <b>VIP көмегі</b>",
+    helpRenewLine: "• <b>{btn}</b> — тарифті таңдау / қолжетімділікті ұзарту",
+    helpStatusLine: "• <b>{btn}</b> — жазылым мерзімі және төлем мәртебесі",
+    helpIdLine: "• <b>{btn}</b> — сіздің Telegram ID-іңіз (қолмен қосу үшін)",
+    helpPhotoLine: "• Төлегеннен кейін <b>чек фотосын</b> осы чатқа жіберіңіз",
+    helpCommandsLine: "Пәрмендер: /start — мәзір, /id — сіздің ID",
+    myIdLabel: "Сіздің Telegram ID-іңіз:",
+    myIdUsername: "Username:",
+    myIdHint: "Бұл ID VIP-әкімшілікте қолмен қосу үшін керек.",
+    tariffsLoadError: "Тарифтерді жүктеу мүмкін болмады. Кейінірек қайталап көріңіз.",
+    tariffsEmptyRenew:
+      "Ұзарту үшін жария тарифтер жоқ. Жеке тариф сілтемеңізді пайдаланыңыз немесе әкімшіге жазыңыз.",
+    tariffsEmptyDefault: "Қазіргі уақытта қолжетімді тарифтер жоқ.",
+    tariffsIntroInGroup:
+      "VIP ұзарту: тарифті таңдаңыз. Төлегеннен кейін мерзім ұзарады — сіз топта қаласыз, жаңа сілтеме керек емес.",
+    tariffsIntroRenew:
+      "Тарифті таңдаңыз. Төлем расталғаннан кейін топқа кіру үшін бір реттік сілтеме жібереміз.",
+    tariffsIntroDefault: "VIP жазылымы үшін тарифті таңдаңыз:",
+    entryTitle: "👋 <b>VIP-ке алғашқы кіру</b>",
+    entryDesc: "Бір реттік кіру + {days} күнге қолжетімділік.",
+    entryPriceLabel: "Құны:",
+    entryAfterPay: "Төлем расталғаннан кейін топқа сілтеме аласыз.",
+    entryFurtherRenew: "Келесі ұзартулар — жеке тарифтер бойынша.",
+    entryPayButton: "Кіру үшін төлеу — {price} {currency}",
+    tariffLinkNotFound:
+      "Бұл сілтеме бойынша тариф табылмады немесе өшірілген. Жалпы тізім үшін /start басыңыз.",
+    vipMenuPinned: "VIP мәзірі төменде бекітілген.",
+    startPendingTitle: "⏳ Сізде <b>төлем растауын күтетін</b> өтінім бұрыннан бар.",
+    startPendingNoNewNeeded: "Жаңа тариф рәсімдеудің қажеті жоқ.",
+    startPendingSendProof:
+      "Егер чекті әлі жібермеген болсаңыз — төлем скриншотын осы чатқа жіберіңіз.",
+    startPendingStatusHint: "Мәртебені «{btn}» батырмасынан көруге болады.",
+    startRenewInGroup: "VIP ұзарту — мәзір батырмалары төменде. Тарифті төменнен таңдаңыз.",
+    startRenewNotInGroup:
+      "VIP-ке қайта оралу — тарифті төменнен таңдаңыз. Төлегеннен кейін топқа бір реттік сілтеме келеді.",
+    startWelcome: "VIP-ботқа қош келдіңіз. Мәзір экранның төменінде — тарифтер төменде.",
+    assignedRenewInGroup: "VIP ұзарту — сіздің жеке тарифіңіз:",
+    assignedRenewNotInGroup: "Сіздің жеке VIP тарифіңіз:",
+    assignedAfterPay: "Төлегеннен кейін — топқа бір реттік сілтеме.",
+    payButton: "Төлеу — {price} {currency}",
+    otherPublicTariffs: "Басқа жария тарифтер",
+    tariffNotFoundShort: "Тариф табылмады.",
+    tariffInactive: "Бұл тариф енді белсенді емес. Басқасын таңдау үшін /start басыңыз.",
+    entryOnlyForNew:
+      "«Алғашқы кіру» тарифі тек жаңа қатысушыларға қолжетімді. Ұзарту тарифін таңдаңыз:",
+    defaultPaymentInstructions: "Реквизиттер бойынша төлеп, скриншот жіберіңіз.",
+    createRequestFailed: "Өтінім жасау мүмкін болмады. Кейінірек қайталап көріңіз.",
+    paymentChosenLabel: "Сіз таңдаған тариф:",
+    paymentDueLabel: "Төлеуге тиіс:",
+    paymentAfterPay: "Төлегеннен кейін фотоны (чек скриншотын) осы чатқа тікелей жіберіңіз.",
+    noPendingTariff: "Сізде төлемді күтетін тарифтер жоқ. Тариф таңдау үшін /start басыңыз.",
+    proofResubmitNotified: "✅ Жаңа чек алынды! Алдыңғысы ауыстырылды. Әкімші растауын күтіңіз.",
+    proofResubmitQuiet:
+      "✅ Чек жаңартылды. Минутына бір реттен жиі жібермеңіз — әкімшіге хабарланды.",
+    proofReceived:
+      "✅ Чек алынды! Әкімші растауын күтіңіз. Тексеруден кейін VIP-топқа қолжетімділік аласыз.",
+    sendScreenshotAsPhoto: "Скриншотты файл ретінде емес, сурет (фото) ретінде жіберіңіз.",
+    alreadyPendingPublic: "⏳ Өтінім төлем растауын күтуде",
+    sendProofIfNotYet: "Егер әлі жібермеген болсаңыз — чекті жіберіңіз.",
+  },
+  en: {
+    btnRenew: "🔄 Renew",
+    btnStatus: "📋 My status",
+    btnId: "🆔 My ID",
+    btnHelp: "ℹ️ Help",
+    btnLang: "🌐 Language",
+    chooseLanguage: "Choose your language",
+    languageSaved: "✅ Language saved.",
+    statusTitle: "📋 <b>Your VIP status</b>",
+    statusActive: "Status: <b>active</b>",
+    statusTariff: "Plan:",
+    statusValidUntil: "Valid until:",
+    statusRenewHint: "To renew early — tap «{btn}».",
+    statusPending: "Status: <b>awaiting payment confirmation</b>",
+    statusPendingHint:
+      "If you haven't sent a receipt yet — send a payment screenshot to this chat.",
+    statusNone: "You have no active subscription right now.",
+    statusNoneHint: "Tap «{btn}» or /start to get access.",
+    helpTitle: "ℹ️ <b>VIP help</b>",
+    helpRenewLine: "• <b>{btn}</b> — choose a plan / renew access",
+    helpStatusLine: "• <b>{btn}</b> — subscription term and payment status",
+    helpIdLine: "• <b>{btn}</b> — your Telegram ID (for manual add)",
+    helpPhotoLine: "• After paying, send a <b>photo of the receipt</b> to this chat",
+    helpCommandsLine: "Commands: /start — menu, /id — your ID",
+    myIdLabel: "Your Telegram ID:",
+    myIdUsername: "Username:",
+    myIdHint: "This ID is needed to add you manually in the VIP admin panel.",
+    tariffsLoadError: "Couldn't load plans. Please try again later.",
+    tariffsEmptyRenew: "No public renewal plans. Use your personal plan link or contact the admin.",
+    tariffsEmptyDefault: "No plans are available right now.",
+    tariffsIntroInGroup:
+      "VIP renewal: choose a plan. After payment your term extends — you stay in the group, no new link needed.",
+    tariffsIntroRenew:
+      "Choose a plan. After payment is confirmed we'll send a one-time link to join the group.",
+    tariffsIntroDefault: "Choose a VIP subscription plan:",
+    entryTitle: "👋 <b>First VIP entry</b>",
+    entryDesc: "One-time entry + access for {days} days.",
+    entryPriceLabel: "Price:",
+    entryAfterPay: "After payment is confirmed, you'll get a link to the group.",
+    entryFurtherRenew: "Further renewals use separate plans.",
+    entryPayButton: "Pay for entry — {price} {currency}",
+    tariffLinkNotFound:
+      "The plan behind this link was not found or is disabled. Tap /start for the general list.",
+    vipMenuPinned: "The VIP menu is pinned below.",
+    startPendingTitle: "⏳ You already have a request <b>awaiting payment confirmation</b>.",
+    startPendingNoNewNeeded: "No need to place a new plan.",
+    startPendingSendProof:
+      "If you haven't sent a receipt yet — send a payment screenshot to this chat.",
+    startPendingStatusHint: "You can check the status with the «{btn}» button.",
+    startRenewInGroup: "VIP renewal — the menu buttons are below. Choose a plan below.",
+    startRenewNotInGroup:
+      "Returning to VIP — choose a plan below. After payment a one-time link to the group will arrive.",
+    startWelcome:
+      "Welcome to the VIP bot. The menu is at the bottom of the screen — plans are below.",
+    assignedRenewInGroup: "VIP renewal — your personal plan:",
+    assignedRenewNotInGroup: "Your personal VIP plan:",
+    assignedAfterPay: "After payment — a one-time link to the group.",
+    payButton: "Pay — {price} {currency}",
+    otherPublicTariffs: "Other public plans",
+    tariffNotFoundShort: "Plan not found.",
+    tariffInactive: "This plan is no longer active. Tap /start to choose another one.",
+    entryOnlyForNew: "The «First entry» plan is only for new members. Choose a renewal plan:",
+    defaultPaymentInstructions: "Pay using the details provided and send a screenshot.",
+    createRequestFailed: "Couldn't create the request. Please try again later.",
+    paymentChosenLabel: "You chose the plan:",
+    paymentDueLabel: "Amount due:",
+    paymentAfterPay: "After paying, send a photo (receipt screenshot) directly to this chat.",
+    noPendingTariff: "You have no plans awaiting payment. Tap /start to choose a plan.",
+    proofResubmitNotified:
+      "✅ New receipt received! The previous one was replaced. Awaiting admin confirmation.",
+    proofResubmitQuiet:
+      "✅ Receipt updated. Please don't send more than once a minute — the admin has already been notified.",
+    proofReceived:
+      "✅ Receipt received! Awaiting admin confirmation. You'll get access to the VIP group once it's checked.",
+    sendScreenshotAsPhoto: "Please send the screenshot as an image (photo), not as a file.",
+    alreadyPendingPublic: "⏳ Your request is already awaiting payment confirmation",
+    sendProofIfNotYet: "Send the receipt if you haven't yet.",
+  },
+  uz: {
+    btnRenew: "🔄 Uzaytirish",
+    btnStatus: "📋 Mening holatim",
+    btnId: "🆔 Mening ID’im",
+    btnHelp: "ℹ️ Yordam",
+    btnLang: "🌐 Til",
+    chooseLanguage: "Tilni tanlang",
+    languageSaved: "✅ Til saqlandi.",
+    statusTitle: "📋 <b>Sizning VIP holatingiz</b>",
+    statusActive: "Holat: <b>faol</b>",
+    statusTariff: "Tarif:",
+    statusValidUntil: "Amal qilish muddati:",
+    statusRenewHint: "Muddatidan oldin uzaytirish uchun «{btn}» tugmasini bosing.",
+    statusPending: "Holat: <b>to‘lov tasdiqlanishini kutmoqda</b>",
+    statusPendingHint:
+      "Agar chekni hali yubormagan bo‘lsangiz — to‘lov skrinshotini shu chatga yuboring.",
+    statusNone: "Hozircha faol obuna yo‘q.",
+    statusNoneHint: "Kirish olish uchun «{btn}» tugmasini yoki /start buyrug‘ini bosing.",
+    helpTitle: "ℹ️ <b>VIP yordami</b>",
+    helpRenewLine: "• <b>{btn}</b> — tarif tanlash / kirishni uzaytirish",
+    helpStatusLine: "• <b>{btn}</b> — obuna muddati va to‘lov holati",
+    helpIdLine: "• <b>{btn}</b> — Telegram ID’ingiz (qo‘lda qo‘shish uchun)",
+    helpPhotoLine: "• To‘lovdan so‘ng <b>chek fotosini</b> shu chatga yuboring",
+    helpCommandsLine: "Buyruqlar: /start — menyu, /id — ID’ingiz",
+    myIdLabel: "Sizning Telegram ID’ingiz:",
+    myIdUsername: "Username:",
+    myIdHint: "Bu ID VIP-adminpanelda qo‘lda qo‘shish uchun kerak.",
+    tariffsLoadError: "Tariflarni yuklab bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
+    tariffsEmptyRenew:
+      "Uzaytirish uchun ommaviy tariflar yo‘q. Shaxsiy tarif havolangizdan foydalaning yoki administratorga yozing.",
+    tariffsEmptyDefault: "Hozirda mavjud tariflar yo‘q.",
+    tariffsIntroInGroup:
+      "VIP’ni uzaytirish: tarifni tanlang. To‘lovdan so‘ng muddat uzayadi — siz guruhda qolasiz, yangi havola kerak emas.",
+    tariffsIntroRenew:
+      "Tarifni tanlang. To‘lov tasdiqlangach, guruhga kirish uchun bir martalik havola yuboramiz.",
+    tariffsIntroDefault: "VIP obunasi uchun tarifni tanlang:",
+    entryTitle: "👋 <b>VIP’ga birinchi kirish</b>",
+    entryDesc: "Bir martalik kirish + {days} kunlik kirish huquqi.",
+    entryPriceLabel: "Narxi:",
+    entryAfterPay: "To‘lov tasdiqlangach guruhga havola olasiz.",
+    entryFurtherRenew: "Keyingi uzaytirishlar alohida tariflar bo‘yicha amalga oshiriladi.",
+    entryPayButton: "Kirish uchun to‘lash — {price} {currency}",
+    tariffLinkNotFound:
+      "Ushbu havoladagi tarif topilmadi yoki o‘chirilgan. Umumiy ro‘yxat uchun /start ni bosing.",
+    vipMenuPinned: "VIP menyusi pastda mahkamlangan.",
+    startPendingTitle: "⏳ Sizda allaqachon <b>to‘lov tasdiqlanishini kutayotgan</b> so‘rov bor.",
+    startPendingNoNewNeeded: "Yangi tarif rasmiylashtirish shart emas.",
+    startPendingSendProof:
+      "Agar chekni hali yubormagan bo‘lsangiz — to‘lov skrinshotini shu chatga yuboring.",
+    startPendingStatusHint: "Holatni «{btn}» tugmasi orqali ko‘rishingiz mumkin.",
+    startRenewInGroup: "VIP’ni uzaytirish — menyu tugmalari pastda. Tarifni pastdan tanlang.",
+    startRenewNotInGroup:
+      "VIP’ga qaytish — tarifni pastdan tanlang. To‘lovdan so‘ng guruhga bir martalik havola keladi.",
+    startWelcome: "VIP-botga xush kelibsiz. Menyu ekran pastida — tariflar pastda.",
+    assignedRenewInGroup: "VIP’ni uzaytirish — sizning shaxsiy tarifingiz:",
+    assignedRenewNotInGroup: "Sizning shaxsiy VIP tarifingiz:",
+    assignedAfterPay: "To‘lovdan so‘ng — guruhga bir martalik havola.",
+    payButton: "To‘lash — {price} {currency}",
+    otherPublicTariffs: "Boshqa ommaviy tariflar",
+    tariffNotFoundShort: "Tarif topilmadi.",
+    tariffInactive: "Bu tarif endi faol emas. Boshqasini tanlash uchun /start ni bosing.",
+    entryOnlyForNew:
+      "«Birinchi kirish» tarifi faqat yangi a’zolar uchun. Uzaytirish tarifini tanlang:",
+    defaultPaymentInstructions: "Rekvizitlar bo‘yicha to‘lang va skrinshot yuboring.",
+    createRequestFailed: "So‘rov yaratib bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
+    paymentChosenLabel: "Siz tanlagan tarif:",
+    paymentDueLabel: "To‘lash summasi:",
+    paymentAfterPay:
+      "To‘lovdan so‘ng fotoni (chek skrinshotini) to‘g‘ridan-to‘g‘ri shu chatga yuboring.",
+    noPendingTariff:
+      "Sizda to‘lovni kutayotgan tariflar yo‘q. Tarif tanlash uchun /start ni bosing.",
+    proofResubmitNotified:
+      "✅ Yangi chek qabul qilindi! Avvalgisi almashtirildi. Administrator tasdig‘ini kuting.",
+    proofResubmitQuiet:
+      "✅ Chek yangilandi. Daqiqasiga bir martadan ko‘p yubormang — administratorga allaqachon xabar berildi.",
+    proofReceived:
+      "✅ Chek qabul qilindi! Administrator tasdig‘ini kuting. Tekshiruvdan so‘ng VIP guruhiga kirish huquqini olasiz.",
+    sendScreenshotAsPhoto:
+      "Iltimos, skrinshotni fayl sifatida emas, rasm (foto) sifatida yuboring.",
+    alreadyPendingPublic: "⏳ So‘rov allaqachon to‘lov tasdiqlanishini kutmoqda",
+    sendProofIfNotYet: "Agar hali yubormagan bo‘lsangiz — chekni yuboring.",
+  },
+};
+
+/** True if `text` is the translated label of `field` in any supported locale. */
+function isVipButton(text: string, field: VipCopyKey): boolean {
+  return SUPPORTED_LOCALES.some((l) => vipCopy[l][field] === text);
+}
+
+function vipLanguageKeyboard() {
+  return {
+    inline_keyboard: SUPPORTED_LOCALES.map((locale) => [
+      { text: localeNames[locale], callback_data: `vip_locale:${locale}` },
+    ]),
+  };
+}
+
+async function askVipLanguage(chat_id: number) {
+  await tgVip("sendMessage", {
+    chat_id,
+    text: vipCopy.ru.chooseLanguage,
+    reply_markup: vipLanguageKeyboard(),
+  });
+}
+
+function mainMenuKeyboard(locale: Locale = "ru") {
+  const c = vipCopy[locale];
   return {
     keyboard: [
-      [{ text: BTN_RENEW }, { text: BTN_STATUS }],
-      [{ text: BTN_ID }, { text: BTN_HELP }],
+      [{ text: c.btnRenew }, { text: c.btnStatus }],
+      [{ text: c.btnId }, { text: c.btnHelp }],
+      [{ text: c.btnLang }],
     ],
     resize_keyboard: true,
     is_persistent: true,
   };
 }
 
-async function sendWithMenu(chat_id: number, text: string, extra?: Record<string, unknown>) {
+async function sendWithMenu(
+  chat_id: number,
+  text: string,
+  locale: Locale = "ru",
+  extra?: Record<string, unknown>,
+) {
   await tgVip("sendMessage", {
     chat_id,
     text,
-    reply_markup: mainMenuKeyboard(),
+    reply_markup: mainMenuKeyboard(locale),
     ...extra,
   });
 }
 
-async function showStatus(chat_id: number, telegram_id: number) {
+async function showStatus(chat_id: number, telegram_id: number, locale: Locale = "ru") {
+  const c = vipCopy[locale];
   const s = await db();
   const now = new Date();
   const { data: active } = await s
@@ -175,11 +621,12 @@ async function showStatus(chat_id: number, telegram_id: number) {
     const until = formatDateTimeRu(active.expires_at as string);
     await sendWithMenu(
       chat_id,
-      `📋 <b>Ваш VIP статус</b>\n\n` +
-        `Статус: <b>активен</b>\n` +
-        `Тариф: ${escapeHtml(String(tariff?.name ?? "—"))}\n` +
-        `Действует до: <b>${escapeHtml(until)}</b>\n\n` +
-        `Чтобы продлить заранее — нажмите «${BTN_RENEW}».`,
+      `${c.statusTitle}\n\n` +
+        `${c.statusActive}\n` +
+        `${c.statusTariff} ${escapeHtml(String(tariff?.name ?? "—"))}\n` +
+        `${c.statusValidUntil} <b>${escapeHtml(until)}</b>\n\n` +
+        fmt(c.statusRenewHint, { btn: c.btnRenew }),
+      locale,
       { parse_mode: "HTML" },
     );
     return;
@@ -200,10 +647,11 @@ async function showStatus(chat_id: number, telegram_id: number) {
     } | null;
     await sendWithMenu(
       chat_id,
-      `📋 <b>Ваш VIP статус</b>\n\n` +
-        `Статус: <b>ожидает подтверждения оплаты</b>\n` +
-        `Тариф: ${escapeHtml(String(tariff?.name ?? "—"))}\n\n` +
-        `Если ещё не отправили чек — пришлите скриншот оплаты в этот чат.`,
+      `${c.statusTitle}\n\n` +
+        `${c.statusPending}\n` +
+        `${c.statusTariff} ${escapeHtml(String(tariff?.name ?? "—"))}\n\n` +
+        c.statusPendingHint,
+      locale,
       { parse_mode: "HTML" },
     );
     return;
@@ -211,30 +659,35 @@ async function showStatus(chat_id: number, telegram_id: number) {
 
   await sendWithMenu(
     chat_id,
-    `📋 <b>Ваш VIP статус</b>\n\nСейчас нет активной подписки.\nНажмите «${BTN_RENEW}» или /start, чтобы оформить доступ.`,
+    `${c.statusTitle}\n\n${c.statusNone}\n${fmt(c.statusNoneHint, { btn: c.btnRenew })}`,
+    locale,
     { parse_mode: "HTML" },
   );
 }
 
-async function showHelp(chat_id: number) {
+async function showHelp(chat_id: number, locale: Locale = "ru") {
+  const c = vipCopy[locale];
   await sendWithMenu(
     chat_id,
-    `ℹ️ <b>Помощь VIP</b>\n\n` +
-      `• <b>${BTN_RENEW}</b> — выбрать тариф / продлить доступ\n` +
-      `• <b>${BTN_STATUS}</b> — срок подписки и статус оплаты\n` +
-      `• <b>${BTN_ID}</b> — ваш Telegram ID (для ручного добавления)\n` +
-      `• После оплаты пришлите <b>фото чека</b> в этот чат\n\n` +
-      `Команды: /start — меню, /id — ваш ID`,
+    `${c.helpTitle}\n\n` +
+      `${fmt(c.helpRenewLine, { btn: c.btnRenew })}\n` +
+      `${fmt(c.helpStatusLine, { btn: c.btnStatus })}\n` +
+      `${fmt(c.helpIdLine, { btn: c.btnId })}\n` +
+      `${c.helpPhotoLine}\n\n` +
+      c.helpCommandsLine,
+    locale,
     { parse_mode: "HTML" },
   );
 }
 
-async function showMyId(chat_id: number, from: TelegramUser) {
+async function showMyId(chat_id: number, from: TelegramUser, locale: Locale = "ru") {
+  const c = vipCopy[locale];
   const from_id = from?.id;
-  const un = from?.username ? `\nUsername: @${escapeHtml(String(from.username))}` : "";
+  const un = from?.username ? `\n${c.myIdUsername} @${escapeHtml(String(from.username))}` : "";
   await sendWithMenu(
     chat_id,
-    `Ваш Telegram ID: <code>${from_id}</code>${un}\n\nЭтот ID нужен для ручного добавления в VIP-админке.`,
+    `${c.myIdLabel} <code>${from_id}</code>${un}\n\n${c.myIdHint}`,
+    locale,
     { parse_mode: "HTML" },
   );
 }
@@ -252,7 +705,12 @@ export function isAlreadyNotInChat(description?: string): boolean {
   );
 }
 
-async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: boolean }) {
+async function showTariffs(
+  chat_id: number,
+  locale: Locale = "ru",
+  opts?: { renew?: boolean; inGroup?: boolean },
+) {
+  const c = vipCopy[locale];
   const s = await db();
   // Renewal list: public active tariffs, but never the first-entry package
   const q = s
@@ -265,7 +723,7 @@ async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: 
   const { data: all, error } = await q;
   if (error) {
     console.error("[vip-bot] showTariffs", error);
-    await tgVip("sendMessage", { chat_id, text: "Не удалось загрузить тарифы. Попробуйте позже." });
+    await tgVip("sendMessage", { chat_id, text: c.tariffsLoadError });
     return;
   }
 
@@ -274,9 +732,7 @@ async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: 
   if (tariffs.length === 0) {
     await tgVip("sendMessage", {
       chat_id,
-      text: opts?.renew
-        ? "Нет публичных тарифов для продления. Используйте вашу персональную ссылку на тариф или напишите администратору."
-        : "В данный момент нет доступных тарифов.",
+      text: opts?.renew ? c.tariffsEmptyRenew : c.tariffsEmptyDefault,
     });
     return;
   }
@@ -287,10 +743,10 @@ async function showTariffs(chat_id: number, opts?: { renew?: boolean; inGroup?: 
 
   // Copy must match reality: don't promise "stay in group" if user is not a member
   const intro = opts?.inGroup
-    ? "Продление VIP: выберите тариф. После оплаты срок продлится — вы останетесь в группе, новая ссылка не нужна."
+    ? c.tariffsIntroInGroup
     : opts?.renew
-      ? "Выберите тариф. После подтверждения оплаты пришлём одноразовую ссылку для вступления в группу."
-      : "Выберите тариф для VIP-подписки:";
+      ? c.tariffsIntroRenew
+      : c.tariffsIntroDefault;
 
   await tgVip("sendMessage", {
     chat_id,
@@ -349,7 +805,8 @@ async function sendPaymentInstructions(
   }
 }
 
-async function showEntryOffer(chat_id: number, from: TelegramUser) {
+async function showEntryOffer(chat_id: number, from: TelegramUser, locale: Locale = "ru") {
+  const c = vipCopy[locale];
   const s = await db();
   const { data: entry } = await s
     .from("vip_tariffs")
@@ -360,24 +817,27 @@ async function showEntryOffer(chat_id: number, from: TelegramUser) {
 
   if (!entry) {
     // Entry disabled / missing — fall back to renewal list
-    await showTariffs(chat_id);
+    await showTariffs(chat_id, locale);
     return;
   }
 
   await tgVip("sendMessage", {
     chat_id,
     text:
-      `👋 <b>Первый вход в VIP</b>\n\n` +
-      `Разовый вход + доступ на ${entry.duration_days} дн.\n` +
-      `Стоимость: <b>${escapeHtml(String(entry.price))} ${escapeHtml(String(entry.currency))}</b>\n\n` +
-      `После оплаты и подтверждения вы получите ссылку в группу.\n` +
-      `Дальнейшее продление — по отдельным тарифам.`,
+      `${c.entryTitle}\n\n` +
+      `${fmt(c.entryDesc, { days: String(entry.duration_days) })}\n` +
+      `${c.entryPriceLabel} <b>${escapeHtml(String(entry.price))} ${escapeHtml(String(entry.currency))}</b>\n\n` +
+      `${c.entryAfterPay}\n` +
+      c.entryFurtherRenew,
     parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: [
         [
           {
-            text: `Оплатить вход — ${entry.price} ${entry.currency}`,
+            text: fmt(c.entryPayButton, {
+              price: String(entry.price),
+              currency: String(entry.currency),
+            }),
             callback_data: `buy_tariff:${entry.id}`,
           },
         ],
@@ -387,7 +847,13 @@ async function showEntryOffer(chat_id: number, from: TelegramUser) {
 }
 
 /** Deep-link to a (possibly hidden) tariff: /start t_<uuid> */
-async function handleTariffDeepLink(chat_id: number, from: TelegramUser, tariffId: string) {
+async function handleTariffDeepLink(
+  chat_id: number,
+  from: TelegramUser,
+  tariffId: string,
+  locale: Locale = "ru",
+) {
+  const c = vipCopy[locale];
   const s = await db();
   const { data: tariff } = await s
     .from("vip_tariffs")
@@ -397,10 +863,7 @@ async function handleTariffDeepLink(chat_id: number, from: TelegramUser, tariffI
     .maybeSingle();
 
   if (!tariff) {
-    await tgVip("sendMessage", {
-      chat_id,
-      text: "Тариф по этой ссылке не найден или выключен. Нажмите /start для общего списка.",
-    });
+    await tgVip("sendMessage", { chat_id, text: c.tariffLinkNotFound });
     return;
   }
 
@@ -409,11 +872,17 @@ async function handleTariffDeepLink(chat_id: number, from: TelegramUser, tariffI
     await assignMemberTariff(s, from.id, from, tariff.id, "deep_link");
   }
 
-  await handleBuyTariff(chat_id, from.id, from, tariff.id);
+  await handleBuyTariff(chat_id, from.id, from, tariff.id, locale);
 }
 
 /** /start or /start renew (кнопка «Продлить») */
-async function showStartFlow(chat_id: number, from: TelegramUser, renew?: boolean) {
+async function showStartFlow(
+  chat_id: number,
+  from: TelegramUser,
+  renew?: boolean,
+  locale: Locale = "ru",
+) {
+  const c = vipCopy[locale];
   const s = await db();
 
   // Уже ждёт подтверждения оплаты — не предлагаем новый тариф / «первый вход»
@@ -432,11 +901,12 @@ async function showStartFlow(chat_id: number, from: TelegramUser, renew?: boolea
     } | null;
     await sendWithMenu(
       chat_id,
-      `⏳ У вас уже есть заявка <b>в ожидании подтверждения оплаты</b>.\n` +
-        `Тариф: ${escapeHtml(String(tariff?.name ?? "—"))}\n\n` +
-        `Новый тариф оформлять не нужно.\n` +
-        `Если чек ещё не отправили — пришлите скриншот оплаты в этот чат.\n` +
-        `Статус можно посмотреть кнопкой «${BTN_STATUS}».`,
+      `${c.startPendingTitle}\n` +
+        `${c.statusTariff} ${escapeHtml(String(tariff?.name ?? "—"))}\n\n` +
+        `${c.startPendingNoNewNeeded}\n` +
+        `${c.startPendingSendProof}\n` +
+        fmt(c.startPendingStatusHint, { btn: c.btnStatus }),
+      locale,
       { parse_mode: "HTML" },
     );
     return;
@@ -452,11 +922,8 @@ async function showStartFlow(chat_id: number, from: TelegramUser, renew?: boolea
 
   await sendWithMenu(
     chat_id,
-    wantRenew
-      ? inGroup
-        ? "Продление VIP — кнопки меню внизу. Выберите тариф ниже."
-        : "Возврат в VIP — выберите тариф ниже. После оплаты придёт одноразовая ссылка в группу."
-      : "Добро пожаловать в VIP-бот. Меню внизу экрана — тарифы ниже.",
+    wantRenew ? (inGroup ? c.startRenewInGroup : c.startRenewNotInGroup) : c.startWelcome,
+    locale,
   );
 
   const assigned = await getMemberAssignedTariff(s, from.id);
@@ -465,16 +932,21 @@ async function showStartFlow(chat_id: number, from: TelegramUser, renew?: boolea
   if (assigned && !assigned.is_entry && (wantRenew || hadAccess)) {
     const t = assigned;
     const intro = inGroup
-      ? `Продление VIP — ваш персональный тариф:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`
-      : `Ваш персональный тариф VIP:\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}\n\nПосле оплаты — одноразовая ссылка в группу.`;
+      ? `${c.assignedRenewInGroup}\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}`
+      : `${c.assignedRenewNotInGroup}\n<b>${escapeHtml(String(t.name))}</b> — ${escapeHtml(String(t.price))} ${escapeHtml(String(t.currency))}\n\n${c.assignedAfterPay}`;
     await tgVip("sendMessage", {
       chat_id,
       text: intro,
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          [{ text: `Оплатить — ${t.price} ${t.currency}`, callback_data: `buy_tariff:${t.id}` }],
-          [{ text: "Другие публичные тарифы", callback_data: "buy_renew_public" }],
+          [
+            {
+              text: fmt(c.payButton, { price: String(t.price), currency: String(t.currency) }),
+              callback_data: `buy_tariff:${t.id}`,
+            },
+          ],
+          [{ text: c.otherPublicTariffs, callback_data: "buy_renew_public" }],
         ],
       },
     });
@@ -483,12 +955,12 @@ async function showStartFlow(chat_id: number, from: TelegramUser, renew?: boolea
 
   // Returning member (or renew with history) → renew tariffs
   if (wantRenew || hadAccess) {
-    await showTariffs(chat_id, { renew: true, inGroup });
+    await showTariffs(chat_id, locale, { renew: true, inGroup });
     return;
   }
 
   // Brand-new user → first entry package
-  await showEntryOffer(chat_id, from);
+  await showEntryOffer(chat_id, from, locale);
 }
 
 async function handleBuyTariff(
@@ -496,18 +968,17 @@ async function handleBuyTariff(
   telegram_id: number,
   user: TelegramUser,
   tariff_id: string,
+  locale: Locale = "ru",
 ) {
+  const c = vipCopy[locale];
   const s = await db();
   const { data: tariff } = await s.from("vip_tariffs").select("*").eq("id", tariff_id).single();
   if (!tariff) {
-    await tgVip("sendMessage", { chat_id, text: "Тариф не найден." });
+    await tgVip("sendMessage", { chat_id, text: c.tariffNotFoundShort });
     return;
   }
   if (!tariff.is_active) {
-    await tgVip("sendMessage", {
-      chat_id,
-      text: "Этот тариф больше не активен. Нажмите /start чтобы выбрать другой.",
-    });
+    await tgVip("sendMessage", { chat_id, text: c.tariffInactive });
     return;
   }
 
@@ -518,11 +989,8 @@ async function handleBuyTariff(
       const settings = await getVipSettings();
       const groupId = (settings.vip_group_id || "").trim();
       const inGroup = groupId ? await isVipGroupMember(groupId, telegram_id) : false;
-      await tgVip("sendMessage", {
-        chat_id,
-        text: "Тариф «Первый вход» доступен только новым участникам. Выберите тариф продления:",
-      });
-      await showTariffs(chat_id, { renew: true, inGroup });
+      await tgVip("sendMessage", { chat_id, text: c.entryOnlyForNew });
+      await showTariffs(chat_id, locale, { renew: true, inGroup });
       return;
     }
   }
@@ -532,8 +1000,7 @@ async function handleBuyTariff(
   }
 
   const settings = await getVipSettings();
-  const instructions =
-    settings.vip_payment_instructions || "Оплатите по реквизитам и пришлите скриншот.";
+  const instructions = settings.vip_payment_instructions || c.defaultPaymentInstructions;
 
   const { data: existingPendings } = await s
     .from("vip_subscriptions")
@@ -593,10 +1060,7 @@ async function handleBuyTariff(
         .eq("id", reuseId)
         .eq("status", "cancelled");
       if (error) {
-        await tgVip("sendMessage", {
-          chat_id,
-          text: "Не удалось создать заявку. Попробуйте позже.",
-        });
+        await tgVip("sendMessage", { chat_id, text: c.createRequestFailed });
         console.error("[vip-bot] reuse cancelled failed", error);
         return;
       }
@@ -615,10 +1079,7 @@ async function handleBuyTariff(
         expires_at: new Date().toISOString(),
       });
       if (error) {
-        await tgVip("sendMessage", {
-          chat_id,
-          text: "Не удалось создать заявку. Попробуйте позже.",
-        });
+        await tgVip("sendMessage", { chat_id, text: c.createRequestFailed });
         console.error("[vip-bot] insert pending failed", error);
         return;
       }
@@ -654,15 +1115,21 @@ async function handleBuyTariff(
   }
 
   const paymentText =
-    `Вы выбрали тариф: <b>${escapeHtml(String(tariff.name))}</b>\n` +
-    `К оплате: <b>${escapeHtml(String(tariff.price))} ${escapeHtml(String(tariff.currency))}</b>\n\n` +
+    `${c.paymentChosenLabel} <b>${escapeHtml(String(tariff.name))}</b>\n` +
+    `${c.paymentDueLabel} <b>${escapeHtml(String(tariff.price))} ${escapeHtml(String(tariff.currency))}</b>\n\n` +
     `${escapeHtml(instructions)}\n\n` +
-    `После оплаты отправьте фото (скриншот чека) прямо в этот чат.`;
+    c.paymentAfterPay;
 
   await sendPaymentInstructions(chat_id, paymentText, settings.vip_payment_qr_path || undefined);
 }
 
-async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
+async function handlePhoto(
+  chat_id: number,
+  from_id: number,
+  photoId: string,
+  locale: Locale = "ru",
+) {
+  const c = vipCopy[locale];
   const s = await db();
   const { data: pendingSub } = await s
     .from("vip_subscriptions")
@@ -672,10 +1139,7 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
     .maybeSingle();
 
   if (!pendingSub) {
-    await tgVip("sendMessage", {
-      chat_id,
-      text: "У вас нет ожидающих оплаты тарифов. Нажмите /start чтобы выбрать тариф.",
-    });
+    await tgVip("sendMessage", { chat_id, text: c.noPendingTariff });
     return;
   }
 
@@ -689,11 +1153,12 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
     chat_id,
     text: isResubmit
       ? notifyAdmins
-        ? "✅ Новый чек получен! Предыдущий заменён. Ожидайте подтверждения администратором."
-        : "✅ Чек обновлён. Не присылайте чаще раза в минуту — админ уже уведомлён."
-      : "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
+        ? c.proofResubmitNotified
+        : c.proofResubmitQuiet
+      : c.proofReceived,
   });
 
+  // Admin-facing notification stays Russian — the admin panel/notify chat is Russian-only.
   const tariff = pendingSub.vip_tariffs;
   const adminText =
     `🆕 <b>Оплата VIP-подписки${isResubmit ? " (повторный чек)" : ""}</b>\n\n` +
@@ -758,6 +1223,7 @@ async function handlePhoto(chat_id: number, from_id: number, photoId: string) {
   }
 }
 
+/** Admin-only replies (confirm/reject payment) stay Russian — the operator side is personal-use-only. */
 async function requireVipAdmin(from_id: number, chat_id: number): Promise<boolean> {
   const settings = await getVipSettings();
   const adminIds = parseNotifyAdminIds(settings);
@@ -796,55 +1262,69 @@ export async function handleVipUpdate(update: TelegramUpdate) {
 
       if (await replyIfBlocked(chat_id, from_id, tgVip)) return;
 
+      // Explicit UI language, chosen once via the /start language picker and
+      // read back on every message — never inferred from Telegram's device
+      // language. `storedLocale === null` means first contact.
+      const storedLocale = await getVipLocaleRaw(from_id);
+      const locale = storedLocale ?? "ru";
+      const c = vipCopy[locale];
+
       if (text.startsWith("/start")) {
         const payload = parseStartPayload(text);
         // Hidden / special tariff deep-link: /start t_<uuid>
         if (payload.startsWith("t_")) {
           const tariffId = payload.slice(2);
           if (/^[0-9a-f-]{36}$/i.test(tariffId)) {
-            await sendWithMenu(chat_id, "Меню VIP закреплено внизу.");
-            await handleTariffDeepLink(chat_id, msg.from, tariffId);
+            await sendWithMenu(chat_id, c.vipMenuPinned, locale);
+            await handleTariffDeepLink(chat_id, msg.from, tariffId, locale);
+            if (!storedLocale) await askVipLanguage(chat_id);
             return;
           }
         }
-        await showStartFlow(chat_id, msg.from, payload === "renew");
+        await showStartFlow(chat_id, msg.from, payload === "renew", locale);
+        if (!storedLocale) await askVipLanguage(chat_id);
         return;
       }
 
-      if (text === "/id" || text.startsWith("/id@") || text === BTN_ID) {
-        await showMyId(chat_id, msg.from);
+      if (isVipButton(text, "btnLang") || text === "/language") {
+        await askVipLanguage(chat_id);
         return;
       }
 
-      if (text === BTN_RENEW || text === "/renew") {
-        await showStartFlow(chat_id, msg.from, true);
+      if (text === "/id" || text.startsWith("/id@") || isVipButton(text, "btnId")) {
+        await showMyId(chat_id, msg.from, locale);
         return;
       }
 
-      if (text === BTN_STATUS || text === "/status") {
-        await showStatus(chat_id, from_id);
+      if (isVipButton(text, "btnRenew") || text === "/renew") {
+        await showStartFlow(chat_id, msg.from, true, locale);
         return;
       }
 
-      if (text === BTN_HELP || text === "/help") {
-        await showHelp(chat_id);
+      if (isVipButton(text, "btnStatus") || text === "/status") {
+        await showStatus(chat_id, from_id, locale);
+        return;
+      }
+
+      if (isVipButton(text, "btnHelp") || text === "/help") {
+        await showHelp(chat_id, locale);
         return;
       }
 
       if (msg.photo && msg.photo.length > 0) {
         const bestPhoto = msg.photo[msg.photo.length - 1];
-        await handlePhoto(chat_id, from_id, bestPhoto.file_id);
+        await handlePhoto(chat_id, from_id, bestPhoto.file_id, locale);
         return;
       }
 
       if (msg.document) {
         const mime = msg.document.mime_type || "";
         if (mime.startsWith("image/")) {
-          await handlePhoto(chat_id, from_id, msg.document.file_id);
+          await handlePhoto(chat_id, from_id, msg.document.file_id, locale);
         } else {
           await tgVip("sendMessage", {
             chat_id,
-            text: "Пожалуйста, отправьте скриншот как изображение (фото), а не файлом.",
+            text: c.sendScreenshotAsPhoto,
           });
         }
         return;
@@ -862,17 +1342,30 @@ export async function handleVipUpdate(update: TelegramUpdate) {
       const isAdminAction = data.startsWith("vip_confirm:") || data.startsWith("vip_reject:");
       if (!isAdminAction && (await replyIfBlocked(chat_id, from_id, tgVip))) return;
 
+      if (data.startsWith("vip_locale:")) {
+        const loc = data.slice("vip_locale:".length);
+        if (!isLocale(loc)) return;
+        await setVipLocale(from_id, cq.from, loc);
+        await sendWithMenu(chat_id, vipCopy[loc].languageSaved, loc);
+        return;
+      }
+
+      // Admin actions (vip_confirm/vip_reject) reply to the admin's own chat
+      // in Russian regardless of the customer's locale — skip the lookup.
+      const locale = isAdminAction ? "ru" : ((await getVipLocaleRaw(from_id)) ?? "ru");
+
       if (data.startsWith("buy_tariff:")) {
-        await handleBuyTariff(chat_id, from_id, cq.from, data.slice(11));
+        await handleBuyTariff(chat_id, from_id, cq.from, data.slice(11), locale);
         return;
       }
 
       if (data === "buy_renew") {
-        await showStartFlow(chat_id, cq.from, true);
+        await showStartFlow(chat_id, cq.from, true, locale);
         return;
       }
 
       if (data === "buy_renew_public") {
+        const c = vipCopy[locale];
         const s = await db();
         const { data: pending } = await s
           .from("vip_subscriptions")
@@ -884,9 +1377,10 @@ export async function handleVipUpdate(update: TelegramUpdate) {
           const tariff = pending.vip_tariffs as { name?: string } | null;
           await sendWithMenu(
             chat_id,
-            `⏳ Заявка уже ждёт подтверждения оплаты` +
+            `${c.alreadyPendingPublic}` +
               (tariff?.name ? ` (${escapeHtml(String(tariff.name))})` : "") +
-              `.\nПришлите чек, если ещё не отправили.`,
+              `.\n${c.sendProofIfNotYet}`,
+            locale,
             { parse_mode: "HTML" },
           );
           return;
@@ -894,7 +1388,7 @@ export async function handleVipUpdate(update: TelegramUpdate) {
         const settings = await getVipSettings();
         const groupId = (settings.vip_group_id || "").trim();
         const inGroup = groupId ? await isVipGroupMember(groupId, from_id) : false;
-        await showTariffs(chat_id, { renew: true, inGroup });
+        await showTariffs(chat_id, locale, { renew: true, inGroup });
         return;
       }
 

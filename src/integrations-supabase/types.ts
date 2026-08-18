@@ -325,6 +325,7 @@ export type Database = {
           assigned_tariff_id: string | null;
           assigned_at: string;
           assigned_source: string;
+          locale: string | null;
         };
         Insert: {
           legacy_locked?: boolean;
@@ -337,6 +338,7 @@ export type Database = {
           assigned_tariff_id?: string | null;
           assigned_at?: string;
           assigned_source?: string;
+          locale?: string | null;
         };
         Update: {
           legacy_locked?: boolean;
@@ -349,6 +351,7 @@ export type Database = {
           assigned_tariff_id?: string | null;
           assigned_at?: string;
           assigned_source?: string;
+          locale?: string | null;
         };
         Relationships: [
           {
