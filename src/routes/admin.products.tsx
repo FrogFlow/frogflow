@@ -182,7 +182,10 @@ function ProductsPage() {
     queryFn: () => listPaymentMethods(),
   });
 
-  const list = (products.data ?? []) as any[];
+  // useMemo, а не голое приведение: без него (products.data ?? []) — новый
+  // массив на каждый рендер, пока данные ещё грузятся, и useMemo на filtered
+  // ниже пересчитывался бы всякий раз вхолостую.
+  const list = useMemo(() => (products.data ?? []) as any[], [products.data]);
   const [search, setSearch] = useState("");
   const [catQuery, setCatQuery] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);

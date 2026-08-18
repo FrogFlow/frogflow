@@ -56,5 +56,19 @@ export default tseslint.config(
     files: ["**/*.server.ts"],
     rules: { "react-hooks/rules-of-hooks": "off" },
   },
+  {
+    /**
+     * shadcn/ui-примитивы экспортируют компонент вместе с вспомогательной
+     * функцией из того же файла — `buttonVariants` (cva), `useFormField`,
+     * `useSidebar` и подобные. `allowConstantExport` разрешает это для
+     * простых констант, но не для функций, и предупреждение неизбежно на
+     * каждом файле такого рода — их так поставляет сам shadcn/ui, и разносить
+     * компонент с его вариантами по двум файлам значило бы разойтись с
+     * апстримом ради устранения предупреждения о Fast Refresh в файлах,
+     * которые правятся раз в год.
+     */
+    files: ["src/components-ui/**/*.{ts,tsx}"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
   eslintPluginPrettier,
 );
