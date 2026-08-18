@@ -65,6 +65,14 @@ export type ZernioAccountHealth = {
 export type ZernioConversation = {
   id: string;
   accountId: string;
+  // ВНИМАНИЕ: это поле не проверено против настоящего ответа
+  // /inbox/conversations — добавлено только потому, что admin.instagram.tsx
+  // (getInstagramContactProfilesFn) уже читало conversation.participantId
+  // под `any`, а под честным типом это оказалось полем, которого в типе не
+  // было вовсе. Не исключено, что реальное имя поля другое (или его нет), и
+  // подтягивание профиля собеседника («подписчик / не подписан») тогда не
+  // работает и под этой правкой — стоит свериться с живым ответом Zernio.
+  participantId?: string;
   participantName?: string;
   participantUsername?: string;
   participantPicture?: string | null;

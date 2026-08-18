@@ -76,6 +76,24 @@ import {
   CardFooter,
 } from "@/components-ui/card";
 import { Badge } from "@/components-ui/badge";
+import type { ZernioDmButton, ZernioCommentAutomation } from "@/lib/zernio.server";
+import type { Json } from "@/integrations-supabase/types";
+
+/** Безопасно достать строковое поле из Json-объекта (payload лога — Json, а не типизированная форма). */
+function jsonString(payload: Json, key: string): string | undefined {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const data = payload.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const value = data[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+const FEATURE_TOGGLES: Array<[key: "catalog" | "search" | "cart" | "checkout", label: string]> = [
+  ["catalog", "Каталог"],
+  ["search", "Поиск товаров"],
+  ["cart", "Корзина"],
+  ["checkout", "Оформление заказа"],
+];
 
 export const Route = createFileRoute("/admin/instagram")({
   beforeLoad: ({ context }) => {
@@ -100,7 +118,7 @@ function AdminInstagramPage() {
 
   const accounts = accountsQuery.data?.accounts || [];
   const acc = accounts[0];
-  const displayProfile = (profile: any) => {
+  const displayProfile = (profile: string | { _id: string; name?: string } | undefined) => {
     if (!profile) return "default";
     if (typeof profile === "string") return profile;
     return profile.name || profile._id || "default";
@@ -180,7 +198,7 @@ function AdminInstagramPage() {
   // Диалоги приходят из Instagram, а профиль лежит у нас в bot_users, поэтому
   // это отдельный запрос, привязанный к составу списка диалогов.
   const conversationParticipantIds = (conversationsQuery.data?.conversations || [])
-    .map((conversation: any) => conversation.participantId)
+    .map((conversation) => conversation.participantId)
     .filter(Boolean)
     .slice(0, 100);
   const contactProfilesQuery = useQuery({
@@ -330,7 +348,7 @@ function AdminInstagramPage() {
   const [postId, setPostId] = useState("ALL_POSTS");
   const [isActive, setIsActive] = useState(true);
   const [trigger, setTrigger] = useState<"comment" | "story_reply">("comment");
-  const [buttons, setButtons] = useState<any[]>([]);
+  const [buttons, setButtons] = useState<ZernioDmButton[]>([]);
   const [dmVariations, setDmVariations] = useState<string[]>([]);
   const [replyVariations, setReplyVariations] = useState<string[]>([]);
   const [linkTracking, setLinkTracking] = useState(true);
@@ -452,7 +470,7 @@ function AdminInstagramPage() {
         .filter(Boolean);
 
       const posts = postsQuery.data?.posts || [];
-      const selectedPost = posts.find((p: any) => (p.platformPostId || p._id || p.id) === postId);
+      const selectedPost = posts.find((p) => (p.platformPostId || p._id || p.id) === postId);
 
       const automationData = {
         id: editingId || undefined,
@@ -499,7 +517,7 @@ function AdminInstagramPage() {
 
       const result = await saveAutomationFn({ data: automationData });
       if (!result?.ok) {
-        let errMsg = (result as any)?.error || "Сервис автоматизации отклонил создание правила.";
+        let errMsg = result?.error || "Сервис автоматизации отклонил создание правила.";
         if (errMsg.includes("409")) {
           errMsg =
             "Для этого поста уже есть активная автоматизация. Отредактируйте существующую или удалите её перед созданием новой.";
@@ -535,8 +553,8 @@ function AdminInstagramPage() {
     setOriginalTrigger("comment");
   };
 
-  const handleEditAutomation = (auto: any) => {
-    setEditingId(auto.id);
+  const handleEditAutomation = (auto: ZernioCommentAutomation) => {
+    setEditingId(auto.id || null);
     setOriginalPlatformPostId(auto.platformPostId || null);
     setOriginalTrigger(auto.trigger || "comment");
     setTitle(auto.name || "");
@@ -545,7 +563,7 @@ function AdminInstagramPage() {
     setReplyText(auto.commentReply || "");
     setDmText(auto.dmMessage || "");
     setPostId(auto.platformPostId || auto.postId || "ALL_POSTS");
-    setIsActive(auto.isActive);
+    setIsActive(auto.isActive ?? true);
     setTrigger(auto.trigger || "comment");
     setButtons(auto.buttons || []);
     setDmVariations(auto.dmMessageVariations || []);
@@ -596,7 +614,7 @@ function AdminInstagramPage() {
 
   const existingAutoForPost =
     postId !== "ALL_POSTS"
-      ? automations.find((a: any) => a.platformPostId === postId && a.id !== editingId)
+      ? automations.find((a) => a.platformPostId === postId && a.id !== editingId)
       : null;
 
   return (
@@ -796,16 +814,11 @@ function AdminInstagramPage() {
                 слова.
               </p>
               <div className="grid gap-2 sm:grid-cols-2">
-                {[
-                  ["catalog", "Каталог"],
-                  ["search", "Поиск товаров"],
-                  ["cart", "Корзина"],
-                  ["checkout", "Оформление заказа"],
-                ].map(([key, label]) => (
+                {FEATURE_TOGGLES.map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2 text-sm">
                     <Checkbox
-                      checked={(directBotFeaturesQuery.data as any)?.[key] !== false}
-                      onCheckedChange={(value) => handleFeatureToggle(key as any, value === true)}
+                      checked={directBotFeaturesQuery.data?.[key] !== false}
+                      onCheckedChange={(value) => handleFeatureToggle(key, value === true)}
                     />
                     {label}
                   </label>
@@ -850,8 +863,8 @@ function AdminInstagramPage() {
                         <Label>Триггер</Label>
                         <Select
                           value={trigger}
-                          onValueChange={(v: any) => {
-                            setTrigger(v);
+                          onValueChange={(v: string) => {
+                            setTrigger(v as "comment" | "story_reply");
                             setPostId("ALL_POSTS");
                           }}
                         >
@@ -927,18 +940,16 @@ function AdminInstagramPage() {
                             {trigger === "story_reply" ? "✨ Любая Story" : "✨ Любой пост"}
                           </SelectItem>
                           {posts
-                            .filter((p: any) =>
-                              trigger === "story_reply" ? p._isStory : !p._isStory,
-                            )
-                            .map((p: any) => (
+                            .filter((p) => (trigger === "story_reply" ? p._isStory : !p._isStory))
+                            .map((p) => (
                               <SelectItem
-                                key={p.platformPostId || p._id || p.id}
-                                value={p.platformPostId || p._id || p.id}
+                                key={String(p.platformPostId || p._id || p.id)}
+                                value={String(p.platformPostId || p._id || p.id)}
                               >
                                 <div className="flex items-center gap-3 py-1 max-w-[300px]">
                                   {p._thumbnail ? (
                                     <img
-                                      src={p._thumbnail}
+                                      src={String(p._thumbnail)}
                                       className="w-8 h-8 object-cover rounded shrink-0 bg-muted"
                                       alt=""
                                     />
@@ -950,13 +961,15 @@ function AdminInstagramPage() {
                                   <div className="flex flex-col min-w-0 text-left">
                                     <span className="text-[9px] text-muted-foreground font-bold uppercase">
                                       {p._date
-                                        ? new Date(p._date).toLocaleDateString("ru-RU")
+                                        ? new Date(Number(p._date)).toLocaleDateString("ru-RU")
                                         : "Нет даты"}
                                     </span>
                                     <span className="text-xs truncate font-medium">
-                                      {p.caption ||
-                                        p.content ||
-                                        (p._isStory ? "Story без текста" : "Без текста")}
+                                      {String(
+                                        p.caption ||
+                                          p.content ||
+                                          (p._isStory ? "Story без текста" : "Без текста"),
+                                      )}
                                     </span>
                                   </div>
                                 </div>
@@ -1138,7 +1151,7 @@ function AdminInstagramPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {automations.map((auto: any) => (
+                  {automations.map((auto: ZernioCommentAutomation) => (
                     <Card
                       key={auto.id}
                       className={`transition-all ${auto.isActive ? "border-l-4 border-l-primary" : "opacity-70"}`}
@@ -1166,9 +1179,9 @@ function AdminInstagramPage() {
                               <span className="flex items-center gap-1">
                                 <Zap className="w-3 h-3" /> {auto.stats?.triggered || 0}
                               </span>
-                              {auto.stats?.linkClicks > 0 && (
+                              {(auto.stats?.linkClicks || 0) > 0 && (
                                 <span className="flex items-center gap-1 text-blue-600 font-medium">
-                                  <ExternalLink className="w-3 h-3" /> {auto.stats.linkClicks}{" "}
+                                  <ExternalLink className="w-3 h-3" /> {auto.stats?.linkClicks}{" "}
                                   кликов
                                 </span>
                               )}
@@ -1208,7 +1221,9 @@ function AdminInstagramPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
-                              onClick={() => handleToggleAutomation(auto.id, auto.isActive)}
+                              onClick={() =>
+                                auto.id && handleToggleAutomation(auto.id, !!auto.isActive)
+                              }
                             >
                               {auto.isActive ? (
                                 <Pause className="w-4 h-4" />
@@ -1220,7 +1235,7 @@ function AdminInstagramPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
-                              onClick={() => handleDeleteAutomation(auto.id)}
+                              onClick={() => auto.id && handleDeleteAutomation(auto.id)}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -1415,9 +1430,9 @@ function AdminInstagramPage() {
                 <p className="text-sm text-muted-foreground">Публикаций пока нет.</p>
               ) : (
                 posts
-                  .filter((post: any) => post._zernioPostId)
-                  .map((post: any) => {
-                    const postId = post._zernioPostId as string;
+                  .filter((post) => post._zernioPostId)
+                  .map((post) => {
+                    const postId = String(post._zernioPostId);
                     const status = String(post.status || "published").toLowerCase();
                     const canCancel = ["scheduled", "draft", "pending", "queued"].includes(status);
                     const canRetry = ["failed", "partial", "cancelled"].includes(status);
@@ -1426,7 +1441,7 @@ function AdminInstagramPage() {
                       <div key={postId} className="flex gap-3 rounded-md border p-3">
                         {post._thumbnail ? (
                           <img
-                            src={post._thumbnail}
+                            src={String(post._thumbnail)}
                             alt=""
                             className="h-12 w-12 rounded object-cover bg-muted"
                           />
@@ -1438,13 +1453,13 @@ function AdminInstagramPage() {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-medium">
-                              {post.caption || post.content || "Публикация без подписи"}
+                              {String(post.caption || post.content || "Публикация без подписи")}
                             </span>
                             <Badge variant="outline">{status}</Badge>
                           </div>
                           {when && (
                             <p className="mt-1 text-xs text-muted-foreground">
-                              {new Date(when).toLocaleString("ru-RU")}
+                              {new Date(String(when)).toLocaleString("ru-RU")}
                             </p>
                           )}
                         </div>
@@ -1495,11 +1510,13 @@ function AdminInstagramPage() {
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
               <div className="max-h-[520px] space-y-2 overflow-y-auto border-r pr-3">
-                {(conversationsQuery.data?.conversations || []).map((conversation: any) => {
+                {(conversationsQuery.data?.conversations || []).map((conversation) => {
                   // Профиль есть только у тех, кто писал после того, как его
                   // начали собирать. Для остальных не показываем ничего —
                   // «неизвестно» и «не подписан» это разные вещи.
-                  const profile = contactProfilesQuery.data?.profiles?.[conversation.participantId];
+                  const profile = conversation.participantId
+                    ? contactProfilesQuery.data?.profiles?.[conversation.participantId]
+                    : undefined;
                   return (
                     <button
                       key={conversation.id}
@@ -1556,7 +1573,7 @@ function AdminInstagramPage() {
                 ) : (
                   <>
                     <div className="flex-1 space-y-2 overflow-y-auto rounded-md bg-muted/30 p-3">
-                      {(messagesQuery.data?.messages || []).map((message: any) => (
+                      {(messagesQuery.data?.messages || []).map((message) => (
                         <div
                           key={message.id}
                           className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${message.direction === "outgoing" ? "ml-auto bg-primary text-primary-foreground" : "bg-background border"}`}
@@ -1678,7 +1695,7 @@ function AdminInstagramPage() {
                         </td>
                       </tr>
                     ) : (
-                      logs.map((log: any) => (
+                      logs.map((log) => (
                         <tr key={log.id} className="hover:bg-muted/20 transition-colors">
                           <td className="p-3 text-xs whitespace-nowrap">
                             {new Date(log.created_at).toLocaleString("ru-RU", {
@@ -1693,14 +1710,14 @@ function AdminInstagramPage() {
                               <span className="font-mono text-[11px] uppercase">
                                 {log.event_type}
                               </span>
-                              {log.payload?.data?.senderUsername && (
+                              {jsonString(log.payload, "senderUsername") && (
                                 <span className="text-[10px] text-primary">
-                                  @{log.payload.data.senderUsername}
+                                  @{jsonString(log.payload, "senderUsername")}
                                 </span>
                               )}
-                              {log.payload?.data?.commentText && (
+                              {jsonString(log.payload, "commentText") && (
                                 <span className="text-[10px] italic text-muted-foreground truncate max-w-[200px]">
-                                  "{log.payload.data.commentText}"
+                                  "{jsonString(log.payload, "commentText")}"
                                 </span>
                               )}
                             </div>
@@ -1737,7 +1754,7 @@ function AdminInstagramPage() {
         <TabsContent value="accounts">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {Array.isArray(accounts) && accounts.length > 0 ? (
-              accounts.map((account: any) => (
+              accounts.map((account) => (
                 <Card key={account._id || Math.random().toString()}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
