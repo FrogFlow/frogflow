@@ -4,6 +4,21 @@
 import type { Json } from "@/integrations-supabase/types";
 import { errorMessage } from "@/lib/error-message";
 
+/**
+ * Пост/сторис из ответа Zernio — намеренно не полный тип.
+ *
+ * listZernioPosts сводит 4 разных эндпоинта (analytics, posts,
+ * posts/sync-external, stories), у каждого своя, местами непересекающаяся
+ * форма полей, и функция сама достраивает вычисляемые поля (`_thumbnail`,
+ * `_date`, `_zernioPostId`…). Индексная сигнатура вместо перечисления всех
+ * настоящих полей Zernio — они нигде не документированы исчерпывающе, а
+ * гадать рискованнее, чем сужать на месте, как уже делает сам код через
+ * `Array.isArray`. Значение — `Json`, а не `unknown`: тип уходит на клиент
+ * через createServerFn (getZernioPostsFn), а проверка сериализуемости там
+ * `unknown` в индексной сигнатуре не пропускает.
+ */
+type ZernioPost = { [key: string]: Json | undefined };
+
 function getZernioKey(): string {
   const key = process.env.ZERNIO_API_KEY?.trim();
   if (!key) {
@@ -787,9 +802,13 @@ export async function deleteCommentAutomation(automationId: string): Promise<{ o
 /**
  * Получить логи автоматизации
  */
-export async function getCommentAutomationLogs(automationId: string): Promise<{ logs: any[] }> {
+export async function getCommentAutomationLogs(
+  automationId: string,
+): Promise<{ logs: Record<string, Json>[] }> {
   try {
-    const res = await zernioRequest<{ logs: any[] }>(`/comment-automations/${automationId}/logs`);
+    const res = await zernioRequest<{ logs: Record<string, Json>[] }>(
+      `/comment-automations/${automationId}/logs`,
+    );
     return { logs: res.logs || [] };
   } catch (e) {
     console.error("[zernio] getCommentAutomationLogs error", e);
@@ -800,13 +819,13 @@ export async function getCommentAutomationLogs(automationId: string): Promise<{ 
 /**
  * Получить список постов (для выбора Post ID в автоответах)
  */
-export async function listZernioPosts(accountId: string): Promise<any[]> {
+export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> {
   try {
     const [analyticsResult, externalResult, zernioResult, storiesResult] = await Promise.allSettled(
       [
         // This endpoint is the authoritative source for the native Instagram media
         // ID: platformAnalytics[].platformPostId. /posts may expose only a Zernio ID.
-        zernioRequest<{ posts?: any[] }>(`/analytics`, {
+        zernioRequest<{ posts?: ZernioPost[] }>(`/analytics`, {
           query: { accountId, platform: "instagram", source: "all", limit: "50" },
         }),
         // GET /posts?source=external only reflects Zernio's background sync, which
@@ -814,15 +833,15 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         // "just published, refresh now" flow. sync-external forces an on-demand
         // live fetch from the platform instead (debounced ~15s per account server
         // side, so calling it on every refresh click is safe).
-        zernioRequest<{ posts?: any[] }>(`/posts/sync-external`, {
+        zernioRequest<{ posts?: ZernioPost[] }>(`/posts/sync-external`, {
           method: "POST",
           body: { accountId },
         }),
-        zernioRequest<{ posts: any[] }>(`/posts`, {
+        zernioRequest<{ posts: ZernioPost[] }>(`/posts`, {
           query: { accountId, source: "zernio", limit: "50" },
         }),
         // Active stories are intentionally not returned by GET /posts.
-        zernioRequest<{ stories?: any[] }>(
+        zernioRequest<{ stories?: ZernioPost[] }>(
           `/accounts/${encodeURIComponent(accountId)}/instagram/stories`,
         ),
       ],
@@ -835,12 +854,22 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
     const storiesRes = storiesResult.status === "fulfilled" ? storiesResult.value : { stories: [] };
     if (storiesResult.status === "rejected")
       console.warn("[zernio] unable to load active Instagram stories", storiesResult.reason);
-    const analyticsPosts = (analyticsRes.posts || []).map((post: any) => {
-      const platformData = Array.isArray(post.platformAnalytics)
-        ? post.platformAnalytics.find(
-            (item: any) => item.accountId === accountId && item.platform === "instagram",
-          )
-        : null;
+    // Zernio-объекты вложены на один уровень (metadata, platformAnalytics[],
+    // mediaItems[]…), а дальше это уже произвольный JSON. Эти два помощника —
+    // единственное место, где мы говорим типам «доверься»: дальше код читает
+    // вложенные поля тем же `?.`, что и раньше, без ANY на каждом шаге.
+    const asPost = (v: Json | undefined): ZernioPost =>
+      v && typeof v === "object" && !Array.isArray(v) ? (v as ZernioPost) : {};
+    const asPosts = (v: Json | undefined): ZernioPost[] =>
+      Array.isArray(v) ? (v as ZernioPost[]) : [];
+    const asText = (v: Json | undefined): string | undefined =>
+      typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined;
+
+    const findPlatform = (items: ZernioPost[]) =>
+      items.find((item) => asText(item.accountId) === accountId && item.platform === "instagram");
+
+    const analyticsPosts = (analyticsRes.posts || []).map((post) => {
+      const platformData = findPlatform(asPosts(post.platformAnalytics));
       return {
         ...post,
         _zernioPostId: post.latePostId || post.postId || post._id || post.id || null,
@@ -854,16 +883,16 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
     // is appended rather than dropped — that's exactly the post that was just
     // published and is why the refresh was clicked.
     const analyticsPlatformIds = new Set(
-      analyticsPosts.map((p: any) => p.platformPostId).filter(Boolean),
+      analyticsPosts.map((p) => p.platformPostId).filter(Boolean),
     );
     const newlySyncedExternalPosts = (externalRes.posts || []).filter(
-      (p: any) => p.platformPostId && !analyticsPlatformIds.has(p.platformPostId),
+      (p) => p.platformPostId && !analyticsPlatformIds.has(p.platformPostId),
     );
-    const regularPosts =
+    const regularPosts: ZernioPost[] =
       analyticsPosts.length > 0
         ? [...analyticsPosts, ...newlySyncedExternalPosts]
         : [...(externalRes.posts || []), ...(zernioRes.posts || [])];
-    const allPosts = [
+    const allPosts: ZernioPost[] = [
       ...regularPosts,
       ...(storiesRes.stories || []).map((story) => ({
         ...story,
@@ -874,7 +903,7 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
       })),
     ];
 
-    const uniquePosts: any[] = [];
+    const uniquePosts: ZernioPost[] = [];
     const seen = new Set();
     const seenPostFingerprints = new Set();
 
@@ -882,35 +911,28 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
       // A Zernio-created post has two IDs. The root ID identifies the Zernio
       // record, while platformAnalytics.platformPostId is the native Instagram
       // media ID required by Comment-to-DM targeting.
-      const platformAnalytics = Array.isArray(p.platformAnalytics)
-        ? p.platformAnalytics.find(
-            (item: any) => item.accountId === accountId && item.platform === "instagram",
-          )
-        : null;
-      const platformTarget = Array.isArray(p.platforms)
-        ? p.platforms.find(
-            (item: any) => item.accountId === accountId && item.platform === "instagram",
-          )
-        : null;
+      const platformAnalytics = findPlatform(asPosts(p.platformAnalytics));
+      const platformTarget = findPlatform(asPosts(p.platforms));
+      const metadata = asPost(p.metadata);
       p._zernioPostId = p._zernioPostId || p.latePostId || p._id || p.id || p.postId || null;
       p.platformPostId =
         platformAnalytics?.platformPostId ||
         platformTarget?.platformPostId ||
         p.platformPostId ||
-        p.metadata?.platformPostId ||
+        metadata.platformPostId ||
         null;
       const id = p.platformPostId || p._zernioPostId;
       if (id && !seen.has(id)) {
         seen.add(id);
 
         // Normalize text/caption
-        if (!p.caption && (p.text || p.content || p.metadata?.caption)) {
-          p.caption = p.text || p.content || p.metadata?.caption;
+        if (!p.caption && (p.text || p.content || metadata.caption)) {
+          p.caption = p.text || p.content || metadata.caption;
         }
 
         // Normalize thumbnail for UI display
         // Zernio API returns: thumbnailUrl (top-level), mediaItems[].thumbnail, mediaItems[].url
-        const mediaItem = Array.isArray(p.mediaItems) ? p.mediaItems[0] : null;
+        const mediaItem = asPosts(p.mediaItems)[0];
         p._thumbnail = p.thumbnailUrl || mediaItem?.thumbnail || mediaItem?.url || null;
 
         // Normalize date for UI display
@@ -918,16 +940,16 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         // was published to Instagram, so it must never be shown as a post date.
         const rawDate =
           p.publishedAt ||
-          p.metadata?.publishedAt ||
-          p.metadata?.timestamp ||
+          metadata.publishedAt ||
+          metadata.timestamp ||
           p.timestamp ||
           platformTarget?.publishedAt ||
           platformTarget?.published_at ||
           p.scheduledFor ||
           null;
         // Some Meta payloads use Unix seconds; Date expects milliseconds.
-        const timestamp =
-          typeof rawDate === "string" && /^\d+$/.test(rawDate) ? Number(rawDate) : rawDate;
+        const rawDateText = asText(rawDate);
+        const timestamp = rawDateText && /^\d+$/.test(rawDateText) ? Number(rawDateText) : rawDate;
         p._date =
           typeof timestamp === "number" && timestamp < 10_000_000_000
             ? timestamp * 1000
@@ -935,7 +957,8 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
 
         // Zernio can return the same Instagram media from separate analytics
         // records. Their internal IDs differ, so also deduplicate by content.
-        const parsedDate = p._date ? new Date(p._date) : null;
+        const dateNum = Number(p._date) || 0;
+        const parsedDate = dateNum ? new Date(dateNum) : null;
         const dateKey =
           parsedDate && !Number.isNaN(parsedDate.getTime())
             ? parsedDate.toISOString().slice(0, 10)
@@ -950,17 +973,13 @@ export async function listZernioPosts(accountId: string): Promise<any[]> {
         seenPostFingerprints.add(fingerprint);
 
         // Mark if it's a story
-        p._isStory = p.type === "story" || p.metadata?.type === "story" || !!p.metadata?.story_id;
+        p._isStory = p.type === "story" || metadata.type === "story" || !!metadata.story_id;
 
         uniquePosts.push(p);
       }
     }
 
-    return uniquePosts.sort((a, b) => {
-      const d1 = new Date(a._date || 0).getTime();
-      const d2 = new Date(b._date || 0).getTime();
-      return d2 - d1;
-    });
+    return uniquePosts.sort((a, b) => (Number(b._date) || 0) - (Number(a._date) || 0));
   } catch (e) {
     console.error("[zernio] listZernioPosts error", e);
     return [];
