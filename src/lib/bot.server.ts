@@ -1579,8 +1579,18 @@ export async function handleUpdate(update: TelegramUpdate) {
         const nextState = { ...user.state, locale, mode: "idle" as const };
         await setState(from_id, nextState);
         await tg("sendMessage", { chat_id, text: botCopy[locale].languageSaved });
+        const base = originFromState();
+        const needCountry = !nextState.country_code;
+        await tg("sendMessage", {
+          chat_id,
+          text: welcomeStartHtml(user.first_name, needCountry),
+          parse_mode: "HTML",
+          reply_markup: legalInlineKeyboard(base),
+          disable_web_page_preview: true,
+        });
         await sendMain(chat_id, undefined, undefined, locale);
         if (!nextState.country_code) await askCountry(chat_id, from_id);
+        void syncBotPublicDescription();
         return;
       }
 
