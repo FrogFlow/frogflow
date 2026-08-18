@@ -32,6 +32,7 @@ import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
 import { Switch } from "@/components-ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 
 export const Route = createFileRoute("/operator/_authed/$botId")({
   head: () => ({ meta: [{ title: "Клиент — панель оператора" }] }),
@@ -200,196 +201,217 @@ function OperatorClientCard() {
         </div>
       </div>
 
-      <section className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="font-medium">Статус бота</h2>
-        <p className="text-sm text-muted-foreground">
-          Пауза/приостановка не трогает вебхук и токен — бот просто отвечает текстом ниже вместо
-          обработки заказа.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant={bot.status === "active" ? "default" : "outline"}
-            disabled={busyStatus}
-            onClick={() => onSetStatus("active")}
-          >
-            Активен
-          </Button>
-          <Button
-            size="sm"
-            variant={bot.status === "paused" ? "default" : "outline"}
-            disabled={busyStatus}
-            onClick={() => onSetStatus("paused")}
-          >
-            Пауза
-          </Button>
-          <Button
-            size="sm"
-            variant={bot.status === "suspended" ? "destructive" : "outline"}
-            disabled={busyStatus}
-            onClick={() => onSetStatus("suspended")}
-          >
-            Приостановить
-          </Button>
-        </div>
-      </section>
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+          <TabsTrigger value="overview">Обзор</TabsTrigger>
+          <TabsTrigger value="modules">Модули</TabsTrigger>
+          <TabsTrigger value="client">Клиент</TabsTrigger>
+          <TabsTrigger value="subscription">Подписка</TabsTrigger>
+          <TabsTrigger value="deploy">Деплой</TabsTrigger>
+          <TabsTrigger value="journal">Журнал</TabsTrigger>
+        </TabsList>
 
-      <section className="bg-card border rounded-lg p-4 space-y-4">
-        <h2 className="font-medium">Модули</h2>
-        {orderedGroups.map((group) => (
-          <div key={group} className="space-y-2">
-            <h3 className="text-xs uppercase tracking-wider text-muted-foreground">{group}</h3>
-            <div className="divide-y rounded-md border">
-              {groups.get(group)!.map((key) => {
-                const def = moduleDef(key);
-                const planned = def.status === "planned";
-                return (
-                  <div
-                    key={key}
-                    className={`flex items-center justify-between gap-4 p-3 ${planned ? "opacity-60" : ""}`}
-                  >
-                    <div>
-                      <div className="text-sm font-medium flex items-center gap-2">
-                        {def.title}
-                        {planned && <Badge variant="secondary">в разработке</Badge>}
+        <TabsContent value="overview" className="space-y-6">
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">Статус бота</h2>
+            <p className="text-sm text-muted-foreground">
+              Пауза/приостановка не трогает вебхук и токен — бот просто отвечает текстом ниже вместо
+              обработки заказа.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant={bot.status === "active" ? "default" : "outline"}
+                disabled={busyStatus}
+                onClick={() => onSetStatus("active")}
+              >
+                Активен
+              </Button>
+              <Button
+                size="sm"
+                variant={bot.status === "paused" ? "default" : "outline"}
+                disabled={busyStatus}
+                onClick={() => onSetStatus("paused")}
+              >
+                Пауза
+              </Button>
+              <Button
+                size="sm"
+                variant={bot.status === "suspended" ? "destructive" : "outline"}
+                disabled={busyStatus}
+                onClick={() => onSetStatus("suspended")}
+              >
+                Приостановить
+              </Button>
+            </div>
+          </section>
+
+          <StatsSection botId={botId} />
+        </TabsContent>
+
+        <TabsContent value="modules" className="space-y-6">
+          <section className="bg-card border rounded-lg p-4 space-y-4">
+            <h2 className="font-medium">Модули</h2>
+            {orderedGroups.map((group) => (
+              <div key={group} className="space-y-2">
+                <h3 className="text-xs uppercase tracking-wider text-muted-foreground">{group}</h3>
+                <div className="divide-y rounded-md border">
+                  {groups.get(group)!.map((key) => {
+                    const def = moduleDef(key);
+                    const planned = def.status === "planned";
+                    return (
+                      <div
+                        key={key}
+                        className={`flex items-center justify-between gap-4 p-3 ${planned ? "opacity-60" : ""}`}
+                      >
+                        <div>
+                          <div className="text-sm font-medium flex items-center gap-2">
+                            {def.title}
+                            {planned && <Badge variant="secondary">в разработке</Badge>}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {def.price != null
+                              ? `${def.price.toLocaleString("ru-RU")} ₸`
+                              : "входит в базу"}
+                            {def.note ? ` · ${def.note}` : ""}
+                          </div>
+                        </div>
+                        <Switch
+                          checked={bot.modules[key] === true}
+                          disabled={planned || busyModule === key}
+                          onCheckedChange={(checked) => onToggleModule(key, checked)}
+                        />
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {def.price != null
-                          ? `${def.price.toLocaleString("ru-RU")} ₸`
-                          : "входит в базу"}
-                        {def.note ? ` · ${def.note}` : ""}
-                      </div>
-                    </div>
-                    <Switch
-                      checked={bot.modules[key] === true}
-                      disabled={planned || busyModule === key}
-                      onCheckedChange={(checked) => onToggleModule(key, checked)}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </section>
-
-      <section className="bg-card border rounded-lg p-4 space-y-4">
-        <h2 className="font-medium">Данные клиента</h2>
-        <form onSubmit={onSaveMeta} className="space-y-3">
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Название клиента</Label>
-              <Input
-                value={meta.bot_name}
-                onChange={(e) => setMeta((m) => ({ ...m, bot_name: e.target.value }))}
-                placeholder="Как показывать в списке"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Идентификатор</Label>
-              <Input
-                value={meta.owner_slug}
-                onChange={(e) => setMeta((m) => ({ ...m, owner_slug: e.target.value }))}
-                placeholder="saltanat"
-              />
-              <p className="text-xs text-muted-foreground">
-                Латиница, цифры, дефис и подчёркивание.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <Label>Имя владельца</Label>
-              <Input
-                value={meta.owner_name}
-                onChange={(e) => setMeta((m) => ({ ...m, owner_name: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Контакт (телефон/почта)</Label>
-              <Input
-                value={meta.owner_contact}
-                onChange={(e) => setMeta((m) => ({ ...m, owner_contact: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Telegram ID владельца</Label>
-              <Input
-                value={meta.owner_telegram_id}
-                onChange={(e) => setMeta((m) => ({ ...m, owner_telegram_id: e.target.value }))}
-                placeholder="Например: 123456789"
-                inputMode="numeric"
-              />
-              <OwnerPicker
-                botId={botId}
-                onPick={(id) => setMeta((m) => ({ ...m, owner_telegram_id: String(id) }))}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Адрес деплоя</Label>
-              <Input
-                value={meta.app_url}
-                onChange={(e) => setMeta((m) => ({ ...m, app_url: e.target.value }))}
-                placeholder="https://…vercel.app"
-              />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label>Сообщение на паузе</Label>
-            <Textarea
-              value={meta.paused_message}
-              onChange={(e) => setMeta((m) => ({ ...m, paused_message: e.target.value }))}
-              rows={2}
-              placeholder="Бот временно недоступен. Загляните чуть позже — мы уже разбираемся."
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>Заметки</Label>
-            <Textarea
-              value={meta.notes}
-              onChange={(e) => setMeta((m) => ({ ...m, notes: e.target.value }))}
-              rows={3}
-            />
-          </div>
-          <Button type="submit" disabled={savingMeta}>
-            {savingMeta ? "Сохранение…" : "Сохранить"}
-          </Button>
-        </form>
-      </section>
-
-      <StatsSection botId={botId} />
-
-      <SubscriptionSection botId={botId} />
-
-      <WebhookSection botId={botId} appUrl={bot.app_url} />
-
-      <ReadinessSection botId={botId} />
-
-      <EnvBlockSection botId={botId} modules={bot.modules} appUrl={bot.app_url} />
-
-      <section className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="font-medium">Журнал действий</h2>
-        {eventsQuery.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-        {(eventsQuery.data?.length ?? 0) === 0 && !eventsQuery.isLoading && (
-          <p className="text-sm text-muted-foreground">Пока пусто.</p>
-        )}
-        {(eventsQuery.data?.length ?? 0) > 0 && (
-          <div className="divide-y text-sm">
-            {eventsQuery.data!.map((ev) => (
-              <div key={ev.id} className="py-2 flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground">
-                  {new Date(ev.at).toLocaleString("ru-RU")}
-                </span>
-                <span className="font-medium">{ev.actor}</span>
-                <Badge variant="outline">{ev.kind}</Badge>
-                {ev.payload != null && (
-                  <span className="text-xs text-muted-foreground">
-                    {JSON.stringify(ev.payload)}
-                  </span>
-                )}
+                    );
+                  })}
+                </div>
               </div>
             ))}
-          </div>
-        )}
-      </section>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="client" className="space-y-6">
+          <section className="bg-card border rounded-lg p-4 space-y-4">
+            <h2 className="font-medium">Данные клиента</h2>
+            <form onSubmit={onSaveMeta} className="space-y-3">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Название клиента</Label>
+                  <Input
+                    value={meta.bot_name}
+                    onChange={(e) => setMeta((m) => ({ ...m, bot_name: e.target.value }))}
+                    placeholder="Как показывать в списке"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Идентификатор</Label>
+                  <Input
+                    value={meta.owner_slug}
+                    onChange={(e) => setMeta((m) => ({ ...m, owner_slug: e.target.value }))}
+                    placeholder="saltanat"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Латиница, цифры, дефис и подчёркивание.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <Label>Имя владельца</Label>
+                  <Input
+                    value={meta.owner_name}
+                    onChange={(e) => setMeta((m) => ({ ...m, owner_name: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Контакт (телефон/почта)</Label>
+                  <Input
+                    value={meta.owner_contact}
+                    onChange={(e) => setMeta((m) => ({ ...m, owner_contact: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Telegram ID владельца</Label>
+                  <Input
+                    value={meta.owner_telegram_id}
+                    onChange={(e) => setMeta((m) => ({ ...m, owner_telegram_id: e.target.value }))}
+                    placeholder="Например: 123456789"
+                    inputMode="numeric"
+                  />
+                  <OwnerPicker
+                    botId={botId}
+                    onPick={(id) => setMeta((m) => ({ ...m, owner_telegram_id: String(id) }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Адрес деплоя</Label>
+                  <Input
+                    value={meta.app_url}
+                    onChange={(e) => setMeta((m) => ({ ...m, app_url: e.target.value }))}
+                    placeholder="https://…vercel.app"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label>Сообщение на паузе</Label>
+                <Textarea
+                  value={meta.paused_message}
+                  onChange={(e) => setMeta((m) => ({ ...m, paused_message: e.target.value }))}
+                  rows={2}
+                  placeholder="Бот временно недоступен. Загляните чуть позже — мы уже разбираемся."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Заметки</Label>
+                <Textarea
+                  value={meta.notes}
+                  onChange={(e) => setMeta((m) => ({ ...m, notes: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+              <Button type="submit" disabled={savingMeta}>
+                {savingMeta ? "Сохранение…" : "Сохранить"}
+              </Button>
+            </form>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="subscription" className="space-y-6">
+          <SubscriptionSection botId={botId} />
+        </TabsContent>
+
+        <TabsContent value="deploy" className="space-y-6">
+          <WebhookSection botId={botId} appUrl={bot.app_url} />
+          <ReadinessSection botId={botId} />
+          <EnvBlockSection botId={botId} modules={bot.modules} appUrl={bot.app_url} />
+        </TabsContent>
+
+        <TabsContent value="journal" className="space-y-6">
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">Журнал действий</h2>
+            {eventsQuery.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+            {(eventsQuery.data?.length ?? 0) === 0 && !eventsQuery.isLoading && (
+              <p className="text-sm text-muted-foreground">Пока пусто.</p>
+            )}
+            {(eventsQuery.data?.length ?? 0) > 0 && (
+              <div className="divide-y text-sm">
+                {eventsQuery.data!.map((ev) => (
+                  <div key={ev.id} className="py-2 flex flex-wrap items-center gap-2">
+                    <span className="text-muted-foreground">
+                      {new Date(ev.at).toLocaleString("ru-RU")}
+                    </span>
+                    <span className="font-medium">{ev.actor}</span>
+                    <Badge variant="outline">{ev.kind}</Badge>
+                    {ev.payload != null && (
+                      <span className="text-xs text-muted-foreground">
+                        {JSON.stringify(ev.payload)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
