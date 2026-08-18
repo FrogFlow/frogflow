@@ -70,7 +70,11 @@ async function handleRobokassaResult(request: Request) {
   }
 
   const orderId = Number(invId);
-  const { data: order } = await s.from("orders").select("status, total, platform").eq("id", orderId).maybeSingle();
+  const { data: order } = await s
+    .from("orders")
+    .select("status, total, platform")
+    .eq("id", orderId)
+    .maybeSingle();
 
   if (!order) {
     return new Response("order not found", { status: 404 });

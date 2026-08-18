@@ -27,7 +27,8 @@ function Dashboard() {
       </div>
       {delivering > 0 && (
         <p className="text-sm text-blue-700">
-          Выдаётся сейчас: <b>{delivering}</b> — порции файлов ещё идут (см. «Заказы» → Продолжить выдачу).
+          Выдаётся сейчас: <b>{delivering}</b> — порции файлов ещё идут (см. «Заказы» → Продолжить
+          выдачу).
         </p>
       )}
       <div className="bg-card border rounded-lg p-4">
@@ -35,10 +36,13 @@ function Dashboard() {
         <ol className="list-decimal pl-5 text-sm space-y-1 text-muted-foreground">
           <li>Создайте категории и добавьте товары.</li>
           <li>В разделе «Реквизиты» отредактируйте инструкции по оплате для каждой страны.</li>
-          <li>В «Настройках» укажите ваш Telegram ID — туда будут приходить уведомления о заказах.</li>
           <li>
-            При выключенной Robokassa: проверьте скриншот и нажмите «Подтвердить». При включённой — для RU/BY/OTHER/KZ
-            чек может выдать файлы сразу (уведомление без кнопки); прочие страны — через Robokassa.
+            В «Настройках» укажите ваш Telegram ID — туда будут приходить уведомления о заказах.
+          </li>
+          <li>
+            При выключенной Robokassa: проверьте скриншот и нажмите «Подтвердить». При включённой —
+            для RU/BY/OTHER/KZ чек может выдать файлы сразу (уведомление без кнопки); прочие страны
+            — через Robokassa.
           </li>
         </ol>
       </div>
@@ -48,9 +52,13 @@ function Dashboard() {
 
 function Stat({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
   return (
-    <div className={`rounded-lg border p-4 bg-card ${highlight ? "border-primary ring-1 ring-primary/40" : ""}`}>
+    <div
+      className={`rounded-lg border p-4 bg-card ${highlight ? "border-primary ring-1 ring-primary/40" : ""}`}
+    >
       <div className="text-sm text-muted-foreground">{label}</div>
-      <div className={`text-2xl font-semibold mt-1 ${highlight ? "text-primary" : ""}`}>{value}</div>
+      <div className={`text-2xl font-semibold mt-1 ${highlight ? "text-primary" : ""}`}>
+        {value}
+      </div>
     </div>
   );
 }

@@ -36,7 +36,11 @@ export type MaterialFile = { path?: string | null; name?: string | null; url?: s
 // Orders placed before multi-file materials existed only have the single
 // *_snapshot columns — wrap that into the same array shape so delivery code
 // has one path to follow.
-export function legacyAsMaterials(path?: string | null, name?: string | null, url?: string | null): MaterialFile[] {
+export function legacyAsMaterials(
+  path?: string | null,
+  name?: string | null,
+  url?: string | null,
+): MaterialFile[] {
   if (url) return [{ url }];
   if (path) return [{ path, name }];
   return [];
@@ -68,8 +72,6 @@ async function claimOrderForDelivery(orderId: number) {
   }
   throw new Error(`Заказ #${orderId} нельзя выдать (статус: ${existing.status})`);
 }
-
-
 
 /**
  * Deliver product files as Telegram documents in batches.
@@ -109,7 +111,10 @@ export async function deliverOrder(
   });
 
   if (items.length === 0) {
-    await supabaseAdmin.from("orders").update({ status: "delivered", delivery_index: 0 }).eq("id", orderId);
+    await supabaseAdmin
+      .from("orders")
+      .update({ status: "delivered", delivery_index: 0 })
+      .eq("id", orderId);
     return { ok: true as const, pending: false, sent: 0, total: 0 };
   }
 
@@ -197,10 +202,18 @@ export async function deliverOrder(
       // are empty.
       const materialsRu = item.material_files_snapshot?.length
         ? item.material_files_snapshot
-        : legacyAsMaterials(item.file_path_snapshot, item.file_name_snapshot, item.file_url_snapshot);
+        : legacyAsMaterials(
+            item.file_path_snapshot,
+            item.file_name_snapshot,
+            item.file_url_snapshot,
+          );
       const materialsKz = item.material_files_kz_snapshot?.length
         ? item.material_files_kz_snapshot
-        : legacyAsMaterials(item.file_path_kz_snapshot, item.file_name_kz_snapshot, item.file_url_kz_snapshot);
+        : legacyAsMaterials(
+            item.file_path_kz_snapshot,
+            item.file_name_kz_snapshot,
+            item.file_url_kz_snapshot,
+          );
 
       // 1. Продвигаем индекс вперёд с помощью CAS ДО отправки файла
       const { data: updated } = await supabaseAdmin
@@ -248,7 +261,7 @@ export async function deliverOrder(
       }
 
       if (!itemOk) {
-        // Откат (Rollback) CAS лока с обязательным обновлением updated_at, 
+        // Откат (Rollback) CAS лока с обязательным обновлением updated_at,
         // чтобы cron подождал 2 минуты до следующей попытки и не спамил
         await supabaseAdmin
           .from("orders")
@@ -261,7 +274,6 @@ export async function deliverOrder(
         });
         break;
       }
-
 
       sent++;
       if (n + 1 < BATCH_SIZE && idx + 1 < items.length) await sleep(ITEM_DELAY_MS);
@@ -404,7 +416,11 @@ export async function sendFileToUser(
 
   async function sendViaTelegramUrl(): Promise<boolean> {
     if (!signed?.signedUrl || !telegramUrlTypes.has(ext)) return false;
-    if (fileSize > 0 && fileSize > Math.min(TG_MAX, CLOUD_TG_MAX) && !process.env.TELEGRAM_API_BASE) {
+    if (
+      fileSize > 0 &&
+      fileSize > Math.min(TG_MAX, CLOUD_TG_MAX) &&
+      !process.env.TELEGRAM_API_BASE
+    ) {
       // URL method also capped ~20MB by Telegram for some cases; still try below for pdf
     }
     const res = await tg("sendDocument", {
@@ -424,7 +440,9 @@ export async function sendFileToUser(
     if (await sendViaTelegramUrl()) return true;
   }
 
-  const { data: dl, error: dlErr } = await supabaseAdmin.storage.from("product-files").download(path);
+  const { data: dl, error: dlErr } = await supabaseAdmin.storage
+    .from("product-files")
+    .download(path);
   if (dlErr || !dl) {
     if (await sendViaTelegramUrl()) return true;
     console.error("[orders] storage download failed", path, dlErr);

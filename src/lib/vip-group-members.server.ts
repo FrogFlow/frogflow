@@ -37,6 +37,10 @@ export async function loadVipGroupId(
   // module synchronously, so no Awaited<> wrapper either.
   s: (typeof import("@/integrations-supabase/client.server"))["supabaseAdmin"],
 ): Promise<string> {
-  const { data } = await s.from("app_settings").select("value").eq("key", "vip_group_id").maybeSingle();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", "vip_group_id")
+    .maybeSingle();
   return ((data?.value as string) || "").trim();
 }

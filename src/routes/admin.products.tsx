@@ -20,7 +20,12 @@ export const Route = createFileRoute("/admin/products")({
 });
 
 type Img = { id?: string; image_path: string; sort_order: number };
-type MaterialFile = { id?: string; file_path: string; file_name: string | null; sort_order: number };
+type MaterialFile = {
+  id?: string;
+  file_path: string;
+  file_name: string | null;
+  sort_order: number;
+};
 type Product = {
   id?: string;
   category_id: string | null;
@@ -90,13 +95,17 @@ async function uploadFile(
   onProgress?: (percent: number) => void,
 ): Promise<{ path: string; name: string }> {
   // 1. Получаем одноразовую ссылку для прямой загрузки от сервера
-  const { path, name, signedUrl } = await getSignedUploadUrl({ data: { bucket, filename: file.name } });
+  const { path, name, signedUrl } = await getSignedUploadUrl({
+    data: { bucket, filename: file.name },
+  });
 
   // 2. Грузим файл напрямую в Supabase в обход лимитов Vercel.
   // Для файлов товаров определяем Content-Type по расширению (надёжнее, чем
   // file.type, который пуст для .7z). Для картинок доверяем типу браузера.
   const contentType =
-    bucket === "product-files" ? mimeForFile(file.name, file.type) : file.type || "application/octet-stream";
+    bucket === "product-files"
+      ? mimeForFile(file.name, file.type)
+      : file.type || "application/octet-stream";
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -128,7 +137,8 @@ async function uploadManyWithProgress(
   try {
     for (let i = 0; i < list.length; i++) {
       const f = list[i];
-      const update = (percent: number) => setStatus({ label: f.name, index: i + 1, total: list.length, percent });
+      const update = (percent: number) =>
+        setStatus({ label: f.name, index: i + 1, total: list.length, percent });
       update(0);
       results.push(await uploadFile(f, bucket, update));
     }
@@ -146,18 +156,30 @@ function UploadProgressBar({ status }: { status: UploadStatus | null }) {
         Загружаю {status.index} из {status.total}: {status.label} — {status.percent}%
       </div>
       <div className="h-1.5 w-full bg-muted rounded overflow-hidden">
-        <div className="h-full bg-primary transition-[width]" style={{ width: `${status.percent}%` }} />
+        <div
+          className="h-full bg-primary transition-[width]"
+          style={{ width: `${status.percent}%` }}
+        />
       </div>
     </div>
   );
 }
 
-function MaterialFilesList({ files, onRemove }: { files: MaterialFile[]; onRemove: (idx: number) => void }) {
+function MaterialFilesList({
+  files,
+  onRemove,
+}: {
+  files: MaterialFile[];
+  onRemove: (idx: number) => void;
+}) {
   if (files.length === 0) return null;
   return (
     <ul className="text-sm space-y-1 mt-1">
       {files.map((f, idx) => (
-        <li key={`${f.file_path}-${idx}`} className="flex items-center justify-between gap-2 text-muted-foreground">
+        <li
+          key={`${f.file_path}-${idx}`}
+          className="flex items-center justify-between gap-2 text-muted-foreground"
+        >
           <span className="truncate">📎 {f.file_name || f.file_path}</span>
           <button
             type="button"
@@ -176,7 +198,7 @@ function ProductsPage() {
   const qc = useQueryClient();
   const products = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
   const cats = useQuery({ queryKey: ["cats-flat"], queryFn: () => listCategoriesForProducts() });
-  
+
   const pMethods = useQuery({
     queryKey: ["payment-methods-admin"],
     queryFn: () => listPaymentMethods(),
@@ -240,24 +262,47 @@ function ProductsPage() {
       file_url_kz: p.file_url_kz,
       country_prices: p.country_prices || {},
     });
-    const imgs = (p.product_images ?? []).slice().sort((a: Img, b: Img) => a.sort_order - b.sort_order);
+    const imgs = (p.product_images ?? [])
+      .slice()
+      .sort((a: Img, b: Img) => a.sort_order - b.sort_order);
     setImages(imgs);
 
-    const materialRows = (p.product_material_files ?? []) as (MaterialFile & { language: "ru" | "kz" })[];
-    const ru = materialRows.filter((f) => f.language === "ru").sort((a, b) => a.sort_order - b.sort_order);
-    const kz = materialRows.filter((f) => f.language === "kz").sort((a, b) => a.sort_order - b.sort_order);
+    const materialRows = (p.product_material_files ?? []) as (MaterialFile & {
+      language: "ru" | "kz";
+    })[];
+    const ru = materialRows
+      .filter((f) => f.language === "ru")
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const kz = materialRows
+      .filter((f) => f.language === "kz")
+      .sort((a, b) => a.sort_order - b.sort_order);
     // Products saved before multi-file materials existed only have the
     // single legacy file_path column — show that as one item so it stays
     // visible/editable instead of silently disappearing from the list.
-    setMaterialFilesRu(ru.length ? ru : p.file_path ? [{ file_path: p.file_path, file_name: p.file_name, sort_order: 0 }] : []);
-    setMaterialFilesKz(kz.length ? kz : p.file_path_kz ? [{ file_path: p.file_path_kz, file_name: p.file_name_kz, sort_order: 0 }] : []);
+    setMaterialFilesRu(
+      ru.length
+        ? ru
+        : p.file_path
+          ? [{ file_path: p.file_path, file_name: p.file_name, sort_order: 0 }]
+          : [],
+    );
+    setMaterialFilesKz(
+      kz.length
+        ? kz
+        : p.file_path_kz
+          ? [{ file_path: p.file_path_kz, file_name: p.file_name_kz, sort_order: 0 }]
+          : [],
+    );
   }
 
   async function onImagesChange(files: FileList | null) {
     if (!files) return;
     try {
       const uploaded = await uploadManyWithProgress(files, "product-images", setImagesUpload);
-      setImages([...images, ...uploaded.map((r, i) => ({ image_path: r.path, sort_order: images.length + i }))]);
+      setImages([
+        ...images,
+        ...uploaded.map((r, i) => ({ image_path: r.path, sort_order: images.length + i })),
+      ]);
     } catch (e: any) {
       alert("Ошибка загрузки фото: " + e.message);
     }
@@ -270,7 +315,14 @@ function ProductsPage() {
     const setStatus = lang === "ru" ? setMaterialsRuUpload : setMaterialsKzUpload;
     try {
       const uploaded = await uploadManyWithProgress(files, "product-files", setStatus);
-      setList([...current, ...uploaded.map((r, i) => ({ file_path: r.path, file_name: r.name, sort_order: current.length + i }))]);
+      setList([
+        ...current,
+        ...uploaded.map((r, i) => ({
+          file_path: r.path,
+          file_name: r.name,
+          sort_order: current.length + i,
+        })),
+      ]);
     } catch (e: any) {
       alert(`Ошибка загрузки файла${lang === "kz" ? " (KZ)" : ""}: ${e.message}`);
     }
@@ -301,8 +353,14 @@ function ProductsPage() {
           file_url: editing.file_url,
           file_url_kz: editing.file_url_kz,
           image_paths: images.map((i) => i.image_path),
-          material_files_ru: materialFilesRu.map((f) => ({ file_path: f.file_path, file_name: f.file_name })),
-          material_files_kz: materialFilesKz.map((f) => ({ file_path: f.file_path, file_name: f.file_name })),
+          material_files_ru: materialFilesRu.map((f) => ({
+            file_path: f.file_path,
+            file_name: f.file_name,
+          })),
+          material_files_kz: materialFilesKz.map((f) => ({
+            file_path: f.file_path,
+            file_name: f.file_name,
+          })),
           country_prices: editing.country_prices,
         },
       });
@@ -342,7 +400,10 @@ function ProductsPage() {
           <div className="grid md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Название</Label>
-              <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+              <Input
+                value={editing.name}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label>Категории (можно выбрать несколько)</Label>
@@ -394,7 +455,9 @@ function ProductsPage() {
               placeholder="Подробное описание материала для покупателя"
             />
             {!editing.description.trim() && (
-              <p className="text-xs text-amber-600">Рекомендуется заполнить подробное описание товара/услуги.</p>
+              <p className="text-xs text-amber-600">
+                Рекомендуется заполнить подробное описание товара/услуги.
+              </p>
             )}
           </div>
 
@@ -464,11 +527,15 @@ function ProductsPage() {
           {pMethods.data && pMethods.data.length > 0 && (
             <div className="space-y-4 pt-4 border-t">
               <h3 className="font-medium">Цены для разных стран (вручную)</h3>
-              <p className="text-xs text-muted-foreground">Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.</p>
+              <p className="text-xs text-muted-foreground">
+                Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.
+              </p>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {pMethods.data.map((m) => (
                   <div key={m.country_code} className="space-y-2">
-                    <Label>{m.country_name} ({m.currency})</Label>
+                    <Label>
+                      {m.country_name} ({m.currency})
+                    </Label>
                     <Input
                       type="number"
                       placeholder="Авто (по курсу)"
@@ -492,9 +559,18 @@ function ProductsPage() {
 
           <div className="space-y-2 pt-4 border-t">
             <Label htmlFor="file-ru">📄 Материал (Русский) — можно несколько файлов/фото</Label>
-            <Input id="file-ru" type="file" multiple disabled={!!materialsRuUpload} onChange={(e) => onMaterialFilesChange(e.target.files, "ru")} />
+            <Input
+              id="file-ru"
+              type="file"
+              multiple
+              disabled={!!materialsRuUpload}
+              onChange={(e) => onMaterialFilesChange(e.target.files, "ru")}
+            />
             <UploadProgressBar status={materialsRuUpload} />
-            <MaterialFilesList files={materialFilesRu} onRemove={(idx) => setMaterialFilesRu(materialFilesRu.filter((_, i) => i !== idx))} />
+            <MaterialFilesList
+              files={materialFilesRu}
+              onRemove={(idx) => setMaterialFilesRu(materialFilesRu.filter((_, i) => i !== idx))}
+            />
             <div className="pt-2">
               <Label>Или внешняя ссылка на файл (Русский)</Label>
               <Input
@@ -510,9 +586,18 @@ function ProductsPage() {
 
           <div className="space-y-2 pt-4 border-t">
             <Label htmlFor="file-kz">📄 Материал (Қазақша) — можно несколько файлов/фото</Label>
-            <Input id="file-kz" type="file" multiple disabled={!!materialsKzUpload} onChange={(e) => onMaterialFilesChange(e.target.files, "kz")} />
+            <Input
+              id="file-kz"
+              type="file"
+              multiple
+              disabled={!!materialsKzUpload}
+              onChange={(e) => onMaterialFilesChange(e.target.files, "kz")}
+            />
             <UploadProgressBar status={materialsKzUpload} />
-            <MaterialFilesList files={materialFilesKz} onRemove={(idx) => setMaterialFilesKz(materialFilesKz.filter((_, i) => i !== idx))} />
+            <MaterialFilesList
+              files={materialFilesKz}
+              onRemove={(idx) => setMaterialFilesKz(materialFilesKz.filter((_, i) => i !== idx))}
+            />
             <div className="pt-2">
               <Label>Или внешняя ссылка на файл (Қазақша)</Label>
               <Input
@@ -522,7 +607,8 @@ function ProductsPage() {
               />
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Если загрузить материал только на русском, бот не будет спрашивать язык при выдаче заказа.
+              Если загрузить материал только на русском, бот не будет спрашивать язык при выдаче
+              заказа.
             </p>
           </div>
 
@@ -546,67 +632,76 @@ function ProductsPage() {
         </div>
       ) : (
         <>
-        <div className="bg-card border rounded-lg p-4 space-y-3">
-          <Label>🔍 Поиск по материалам</Label>
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Название, ключевое слово или описание…"
-          />
-          <p className="text-xs text-muted-foreground">
-            Найдено: {filtered.length} из {list.length}
-          </p>
-        </div>
-        <div className="bg-card border rounded-lg divide-y">
-          {filtered.length === 0 && (
-            <div className="p-4 text-sm text-muted-foreground">
-              {list.length === 0 ? "Пока нет товаров." : "Ничего не найдено."}
-            </div>
-          )}
-          {filtered.map((p) => (
-            <div key={p.id} className="p-3 flex items-center gap-3">
-              {p.product_images?.[0] ? (
-                <img
-                  src={`/api/public/img/${p.product_images[0].image_path}`}
-                  className="w-12 h-12 object-cover rounded border shrink-0"
-                  alt=""
-                />
-              ) : (
-                <div className="w-12 h-12 bg-muted rounded shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">
-                  {p.name} {!p.is_active && <span className="text-xs text-muted-foreground">(скрыт)</span>}
+          <div className="bg-card border rounded-lg p-4 space-y-3">
+            <Label>🔍 Поиск по материалам</Label>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Название, ключевое слово или описание…"
+            />
+            <p className="text-xs text-muted-foreground">
+              Найдено: {filtered.length} из {list.length}
+            </p>
+          </div>
+          <div className="bg-card border rounded-lg divide-y">
+            {filtered.length === 0 && (
+              <div className="p-4 text-sm text-muted-foreground">
+                {list.length === 0 ? "Пока нет товаров." : "Ничего не найдено."}
+              </div>
+            )}
+            {filtered.map((p) => (
+              <div key={p.id} className="p-3 flex items-center gap-3">
+                {p.product_images?.[0] ? (
+                  <img
+                    src={`/api/public/img/${p.product_images[0].image_path}`}
+                    className="w-12 h-12 object-cover rounded border shrink-0"
+                    alt=""
+                  />
+                ) : (
+                  <div className="w-12 h-12 bg-muted rounded shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">
+                    {p.name}{" "}
+                    {!p.is_active && <span className="text-xs text-muted-foreground">(скрыт)</span>}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {p.category_ids && p.category_ids.length > 0
+                      ? p.category_ids
+                          .map((id: string) => getCategoryPath(id, catsTree))
+                          .filter(Boolean)
+                          .join(", ") || "без категории"
+                      : p.categories?.name || "без категории"}{" "}
+                    · {p.price} {p.currency}
+                    {(() => {
+                      const materials = (p.product_material_files ?? []) as {
+                        language: "ru" | "kz";
+                      }[];
+                      const hasRu =
+                        materials.some((f) => f.language === "ru") || !!p.file_path || !!p.file_url;
+                      const hasKz =
+                        materials.some((f) => f.language === "kz") ||
+                        !!p.file_path_kz ||
+                        !!p.file_url_kz;
+                      if (!hasRu && !hasKz)
+                        return <span className="text-destructive"> · нет файла</span>;
+                      if (hasRu && hasKz) return <span className="text-green-500"> · 🇷🇺🇰🇿</span>;
+                      if (hasRu) return <span className="text-muted-foreground"> · 🇷🇺</span>;
+                      return <span className="text-muted-foreground"> · 🇰🇿</span>;
+                    })()}
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {p.category_ids && p.category_ids.length > 0
-                    ? p.category_ids
-                        .map((id: string) => getCategoryPath(id, catsTree))
-                        .filter(Boolean)
-                        .join(", ") || "без категории"
-                    : p.categories?.name || "без категории"} · {p.price} {p.currency}
-                  {(() => {
-                    const materials = (p.product_material_files ?? []) as { language: "ru" | "kz" }[];
-                    const hasRu = materials.some((f) => f.language === "ru") || !!p.file_path || !!p.file_url;
-                    const hasKz = materials.some((f) => f.language === "kz") || !!p.file_path_kz || !!p.file_url_kz;
-                    if (!hasRu && !hasKz) return <span className="text-destructive"> · нет файла</span>;
-                    if (hasRu && hasKz) return <span className="text-green-500"> · 🇷🇺🇰🇿</span>;
-                    if (hasRu) return <span className="text-muted-foreground"> · 🇷🇺</span>;
-                    return <span className="text-muted-foreground"> · 🇰🇿</span>;
-                  })()}
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
+                    Изм.
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => onDelete(p.id)}>
+                    Удал.
+                  </Button>
                 </div>
               </div>
-              <div className="flex gap-1 shrink-0">
-                <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
-                  Изм.
-                </Button>
-                <Button size="sm" variant="destructive" onClick={() => onDelete(p.id)}>
-                  Удал.
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
         </>
       )}
     </div>

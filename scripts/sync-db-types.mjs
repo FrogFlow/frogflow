@@ -37,7 +37,8 @@ const defs = spec.definitions ?? {};
 function tsType(prop) {
   const fmt = prop.format ?? "";
   if (fmt.includes("json")) return "Json";
-  if (prop.type === "array") return fmt.startsWith("uuid") || fmt.startsWith("text") ? "string[]" : "Json";
+  if (prop.type === "array")
+    return fmt.startsWith("uuid") || fmt.startsWith("text") ? "string[]" : "Json";
   if (prop.type === "integer" || prop.type === "number") return "number";
   if (prop.type === "boolean") return "boolean";
   return "string";
@@ -85,7 +86,11 @@ function renderTable(table, def) {
     const t = tsType(props[col]);
     const nullable = !required.has(col);
     const optional =
-      kind === "update" ? true : kind === "insert" ? optionalOnInsert(props[col], required.has(col), table, col) : false;
+      kind === "update"
+        ? true
+        : kind === "insert"
+          ? optionalOnInsert(props[col], required.has(col), table, col)
+          : false;
     return `          ${col}${optional ? "?" : ""}: ${t}${nullable ? " | null" : ""}`;
   };
 

@@ -37,7 +37,9 @@ export async function tg(method: string, payload: unknown) {
     // Telegram rate limit — wait Retry-After and try again
     if (res.status === 429) {
       const retryAfter = (data?.parameters?.retry_after as number) || attempt * 2;
-      console.warn(`[telegram] ${method} rate limited, retrying after ${retryAfter}s (attempt ${attempt}/${MAX_RETRIES})`);
+      console.warn(
+        `[telegram] ${method} rate limited, retrying after ${retryAfter}s (attempt ${attempt}/${MAX_RETRIES})`,
+      );
       if (attempt < MAX_RETRIES) {
         await sleep(retryAfter * 1000);
         continue;
@@ -47,14 +49,17 @@ export async function tg(method: string, payload: unknown) {
     // Telegram's own 5xx (unlike a network failure, this reaches Telegram but
     // it fails there) — retry with backoff same as a dropped connection.
     if (res.status >= 500 && attempt < MAX_RETRIES) {
-      console.warn(`[telegram] ${method} got ${res.status}, retrying (attempt ${attempt}/${MAX_RETRIES})`);
+      console.warn(
+        `[telegram] ${method} got ${res.status}, retrying (attempt ${attempt}/${MAX_RETRIES})`,
+      );
       await sleep(Math.min(1000 * 2 ** (attempt - 1), 5000));
       continue;
     }
 
     // editMessageText/editMessageMedia re-rendering onto identical content is
     // an expected no-op, not a real failure worth logging as one.
-    const benign = typeof data?.description === "string" && /message is not modified/i.test(data.description);
+    const benign =
+      typeof data?.description === "string" && /message is not modified/i.test(data.description);
 
     if ((!res.ok || (data && data.ok === false)) && !benign) {
       console.error(`[telegram] ${method} failed`, res.status, data);
@@ -75,7 +80,13 @@ export async function tgSendMultipart(
 export async function tgSendMultipartMany(
   method: string,
   fields: Record<string, string | number>,
-  files: Array<{ field: string; filename: string; bytes?: Uint8Array; blob?: Blob; contentType?: string }>,
+  files: Array<{
+    field: string;
+    filename: string;
+    bytes?: Uint8Array;
+    blob?: Blob;
+    contentType?: string;
+  }>,
 ) {
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -88,10 +99,10 @@ export async function tgSendMultipartMany(
       } else if (file.bytes) {
         b = new Blob([file.bytes.buffer as ArrayBuffer], { type: file.contentType });
       } else continue;
-      
+
       fd.append(file.field, b, file.filename);
     }
-    
+
     let res: Response;
     try {
       res = await fetch(botUrl(method), {
@@ -108,7 +119,9 @@ export async function tgSendMultipartMany(
     // Telegram rate limit — wait Retry-After and try again
     if (res.status === 429) {
       const retryAfter = (data?.parameters?.retry_after as number) || attempt * 2;
-      console.warn(`[telegram] ${method} multipart rate limited, retrying after ${retryAfter}s (attempt ${attempt}/${MAX_RETRIES})`);
+      console.warn(
+        `[telegram] ${method} multipart rate limited, retrying after ${retryAfter}s (attempt ${attempt}/${MAX_RETRIES})`,
+      );
       if (attempt < MAX_RETRIES) {
         await sleep(retryAfter * 1000);
         continue;
@@ -117,7 +130,9 @@ export async function tgSendMultipartMany(
 
     // Telegram's own 5xx — retry with backoff same as a dropped connection.
     if (res.status >= 500 && attempt < MAX_RETRIES) {
-      console.warn(`[telegram] ${method} multipart got ${res.status}, retrying (attempt ${attempt}/${MAX_RETRIES})`);
+      console.warn(
+        `[telegram] ${method} multipart got ${res.status}, retrying (attempt ${attempt}/${MAX_RETRIES})`,
+      );
       await sleep(Math.min(1000 * 2 ** (attempt - 1), 5000));
       continue;
     }
@@ -130,7 +145,9 @@ export async function tgSendMultipartMany(
   return { ok: false } as { ok: boolean; result?: unknown; description?: string };
 }
 
-export async function downloadTelegramFile(file_id: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+export async function downloadTelegramFile(
+  file_id: string,
+): Promise<{ bytes: Uint8Array; mime: string } | null> {
   const info = await tg("getFile", { file_id });
   // @ts-expect-error dynamic
   const path = info?.result?.file_path as string | undefined;

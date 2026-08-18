@@ -2,9 +2,9 @@
 
 Один репозиторий обслуживает два разных типа деплоя:
 
-* **деплой клиента** — магазин и админка одного бота. У него есть `BOT_ID`,
+- **деплой клиента** — магазин и админка одного бота. У него есть `BOT_ID`,
   и в базу он ходит ключом арендатора: RLS отдаёт только его строки.
-* **панель оператора** — `CONTROL_PLANE=1`. Своей строки в `bots` у неё нет,
+- **панель оператора** — `CONTROL_PLANE=1`. Своей строки в `bots` у неё нет,
   магазин и админка клиента там отключены (см. `assertTenantDeployment`).
 
 Переменные у них разные, поэтому и таблицы ниже разные.
@@ -15,20 +15,20 @@
 
 ### Обязательные
 
-| Переменная | Описание |
-|---|---|
-| `BOT_ID` | UUID строки клиента в таблице `bots`. Без него деплой не знает, чей он. |
-| `SUPABASE_TENANT_KEY` | JWT с `role: tenant_bot` и `bot_id`. Выпускается `scripts/mint-tenant-key.mjs`. Именно он ограничивает деплой своими строками. |
-| `SUPABASE_URL` | URL проекта Supabase. |
-| `SUPABASE_PUBLISHABLE_KEY` | Anon key. Идёт в заголовок `apikey`. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Нужен шлюзу Supabase как ключ проекта. Роль при этом берётся из `SUPABASE_TENANT_KEY`, а не отсюда. |
-| `VITE_SUPABASE_URL` | То же значение, что `SUPABASE_URL`. Читается **в браузере**. |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | То же, что `SUPABASE_PUBLISHABLE_KEY`, тоже для браузера. |
-| `TELEGRAM_BOT_TOKEN` | Токен основного бота (@BotFather). |
-| `ADMIN_PASSWORD` | Пароль в админку. **Без него вход — `admin` / `admin`.** |
-| `SESSION_SECRET` | Ключ подписи cookie сессии. **Без него используется общеизвестное значение по умолчанию, и cookie админа можно подделать.** Не короче 32 символов. |
-| `PUBLIC_APP_URL` | Публичный адрес деплоя, например `https://client.vercel.app`. По нему ставится webhook. |
-| `CRON_SECRET` | Секрет для `/api/cron/*`. |
+| Переменная                      | Описание                                                                                                                                           |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOT_ID`                        | UUID строки клиента в таблице `bots`. Без него деплой не знает, чей он.                                                                            |
+| `SUPABASE_TENANT_KEY`           | JWT с `role: tenant_bot` и `bot_id`. Выпускается `scripts/mint-tenant-key.mjs`. Именно он ограничивает деплой своими строками.                     |
+| `SUPABASE_URL`                  | URL проекта Supabase.                                                                                                                              |
+| `SUPABASE_PUBLISHABLE_KEY`      | Anon key. Идёт в заголовок `apikey`.                                                                                                               |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Нужен шлюзу Supabase как ключ проекта. Роль при этом берётся из `SUPABASE_TENANT_KEY`, а не отсюда.                                                |
+| `VITE_SUPABASE_URL`             | То же значение, что `SUPABASE_URL`. Читается **в браузере**.                                                                                       |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | То же, что `SUPABASE_PUBLISHABLE_KEY`, тоже для браузера.                                                                                          |
+| `TELEGRAM_BOT_TOKEN`            | Токен основного бота (@BotFather).                                                                                                                 |
+| `ADMIN_PASSWORD`                | Пароль в админку. **Без него вход — `admin` / `admin`.**                                                                                           |
+| `SESSION_SECRET`                | Ключ подписи cookie сессии. **Без него используется общеизвестное значение по умолчанию, и cookie админа можно подделать.** Не короче 32 символов. |
+| `PUBLIC_APP_URL`                | Публичный адрес деплоя, например `https://client.vercel.app`. По нему ставится webhook.                                                            |
+| `CRON_SECRET`                   | Секрет для `/api/cron/*`.                                                                                                                          |
 
 > `VITE_*` подставляются **в момент сборки**. Добавили их после деплоя — нужен
 > пересбор, иначе в браузерном бандле их не будет.
@@ -44,45 +44,45 @@
 > Значения типа Sensitive в интерфейсе Vercel показываются замаскированными
 > (`eyJhbGci••••`). **Копировать их оттуда нельзя** — вставится буквально
 > символ «•» (U+2022), и деплой упадёт с `Cannot convert argument to a
-> ByteString`. Берите значение из первоисточника.
+ByteString`. Берите значение из первоисточника.
 
 ### Необязательные
 
-| Переменная | По умолчанию | Описание |
-|---|---|---|
-| `ADMIN_USERNAME` | `admin` | Логин в админку. |
-| `TELEGRAM_WEBHOOK_SECRET` | — | `secret_token` Telegram: чужой POST на вебхук отбрасывается. |
-| `VIP_BOT_TOKEN` | — | Токен второго, VIP-бота. Нужен только модулю `vip`. |
-| `VIP_BOT_USERNAME` | — | Юзернейм VIP-бота. **`@` можно и не писать** — ведущая `@` отрезается. |
-| `VIP_TELEGRAM_WEBHOOK_SECRET` | — | То же, что `TELEGRAM_WEBHOOK_SECRET`, но для VIP-бота. |
-| `ZERNIO_API_KEY` | — | Ключ Zernio (`sk_…`). Нужен модулю `instagram`. |
-| `ZERNIO_BASE_URL` | `https://zernio.com/api/v1` | |
-| `ZERNIO_PROFILE_ID` | — | Профиль Instagram по умолчанию. |
-| `GOOGLE_VISION_API_KEY` | — | Распознавание чеков (`receipt_ocr`). |
-| `APP_TIMEZONE` | `Asia/Almaty` | Часовой пояс дат в админке и боте. |
-| `DELIVERY_BATCH_SIZE` | `8` | Файлов в одной порции выдачи (1–20). |
-| `DELIVERY_MAX_FILE_MB` | `100` | Предел размера файла (1–200). |
-| `ZERNIO_LOG_RETENTION_DAYS` | `30` | Сколько дней держать отработанные события Instagram в `zernio_logs` (1–365). Уборка идёт внутри `/api/cron/broadcast`; `error` и `pending` не удаляются никогда. |
-| `SMTP_HOST` | — | Почтовый сервер продавца, например `smtp.yandex.ru`. **Обязателен для продаж в Instagram Direct:** заказы оттуда выдаются письмом, потому что Direct не принимает вложениями документы, а окно на ответ там 24 часа. |
-| `SMTP_USER` | — | Ящик, от имени которого уходят письма покупателям. |
-| `SMTP_PASSWORD` | — | Пароль приложения для этого ящика (не основной пароль от почты). |
-| `SMTP_PORT` | `465` | 465 — TLS сразу (Яндекс, Mail.ru), 587 — STARTTLS. |
-| `SMTP_FROM` | значение `SMTP_USER` | Адрес в поле «От кого», если он отличается от логина. Многие провайдеры чужой адрес отвергают — меняйте, только если уверены. |
-| `TELEGRAM_API_BASE` | `https://api.telegram.org` | Свой Bot API server — снимает лимит в 50 МБ на отправку файла. |
+| Переменная                    | По умолчанию                | Описание                                                                                                                                                                                                             |
+| ----------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_USERNAME`              | `admin`                     | Логин в админку.                                                                                                                                                                                                     |
+| `TELEGRAM_WEBHOOK_SECRET`     | —                           | `secret_token` Telegram: чужой POST на вебхук отбрасывается.                                                                                                                                                         |
+| `VIP_BOT_TOKEN`               | —                           | Токен второго, VIP-бота. Нужен только модулю `vip`.                                                                                                                                                                  |
+| `VIP_BOT_USERNAME`            | —                           | Юзернейм VIP-бота. **`@` можно и не писать** — ведущая `@` отрезается.                                                                                                                                               |
+| `VIP_TELEGRAM_WEBHOOK_SECRET` | —                           | То же, что `TELEGRAM_WEBHOOK_SECRET`, но для VIP-бота.                                                                                                                                                               |
+| `ZERNIO_API_KEY`              | —                           | Ключ Zernio (`sk_…`). Нужен модулю `instagram`.                                                                                                                                                                      |
+| `ZERNIO_BASE_URL`             | `https://zernio.com/api/v1` |                                                                                                                                                                                                                      |
+| `ZERNIO_PROFILE_ID`           | —                           | Профиль Instagram по умолчанию.                                                                                                                                                                                      |
+| `GOOGLE_VISION_API_KEY`       | —                           | Распознавание чеков (`receipt_ocr`).                                                                                                                                                                                 |
+| `APP_TIMEZONE`                | `Asia/Almaty`               | Часовой пояс дат в админке и боте.                                                                                                                                                                                   |
+| `DELIVERY_BATCH_SIZE`         | `8`                         | Файлов в одной порции выдачи (1–20).                                                                                                                                                                                 |
+| `DELIVERY_MAX_FILE_MB`        | `100`                       | Предел размера файла (1–200).                                                                                                                                                                                        |
+| `ZERNIO_LOG_RETENTION_DAYS`   | `30`                        | Сколько дней держать отработанные события Instagram в `zernio_logs` (1–365). Уборка идёт внутри `/api/cron/broadcast`; `error` и `pending` не удаляются никогда.                                                     |
+| `SMTP_HOST`                   | —                           | Почтовый сервер продавца, например `smtp.yandex.ru`. **Обязателен для продаж в Instagram Direct:** заказы оттуда выдаются письмом, потому что Direct не принимает вложениями документы, а окно на ответ там 24 часа. |
+| `SMTP_USER`                   | —                           | Ящик, от имени которого уходят письма покупателям.                                                                                                                                                                   |
+| `SMTP_PASSWORD`               | —                           | Пароль приложения для этого ящика (не основной пароль от почты).                                                                                                                                                     |
+| `SMTP_PORT`                   | `465`                       | 465 — TLS сразу (Яндекс, Mail.ru), 587 — STARTTLS.                                                                                                                                                                   |
+| `SMTP_FROM`                   | значение `SMTP_USER`        | Адрес в поле «От кого», если он отличается от логина. Многие провайдеры чужой адрес отвергают — меняйте, только если уверены.                                                                                        |
+| `TELEGRAM_API_BASE`           | `https://api.telegram.org`  | Свой Bot API server — снимает лимит в 50 МБ на отправку файла.                                                                                                                                                       |
 
 ---
 
 ## Переменные панели оператора
 
-| Переменная | Описание |
-|---|---|
-| `CONTROL_PLANE` | `1`. Включает панель и **выключает** магазин с админкой клиента. |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Панель работает поверх всех клиентов, поэтому здесь ключ арендатора не подходит. |
-| `SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | |
-| `SUPABASE_JWT_SECRET` | Нужен только мастеру подключения: им подписывается `SUPABASE_TENANT_KEY` новому клиенту. |
-| `OPERATOR_USERNAME`, `OPERATOR_PASSWORD` | Вход в панель. Если не заданы, вход не работает вовсе — значения по умолчанию тут нет намеренно. |
-| `OPERATOR_SESSION_SECRET` | Ключ подписи cookie оператора. Как и `SESSION_SECRET`, без него берётся общеизвестное значение. |
-| `CRON_SECRET` | Секрет для суточного прохода по подпискам. |
+| Переменная                                                                       | Описание                                                                                         |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `CONTROL_PLANE`                                                                  | `1`. Включает панель и **выключает** магазин с админкой клиента.                                 |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`                                      | Панель работает поверх всех клиентов, поэтому здесь ключ арендатора не подходит.                 |
+| `SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` |                                                                                                  |
+| `SUPABASE_JWT_SECRET`                                                            | Нужен только мастеру подключения: им подписывается `SUPABASE_TENANT_KEY` новому клиенту.         |
+| `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`                                         | Вход в панель. Если не заданы, вход не работает вовсе — значения по умолчанию тут нет намеренно. |
+| `OPERATOR_SESSION_SECRET`                                                        | Ключ подписи cookie оператора. Как и `SESSION_SECRET`, без него берётся общеизвестное значение.  |
+| `CRON_SECRET`                                                                    | Секрет для суточного прохода по подпискам.                                                       |
 
 Токенов ботов у панели нет **намеренно**: рассылку владельцам она отправляет
 не сама, а запросом `POST {bots.app_url}/api/internal/notify-owner` в деплой
@@ -124,6 +124,7 @@
 ```
 GET https://your-app.vercel.app/api/cron/broadcast?secret=YOUR_CRON_SECRET
 ```
+
 Интервал: раз в 1–2 минуты.
 
 ### Webhook — `/api/cron/ensure-webhook`
@@ -155,13 +156,13 @@ GET https://panel.vercel.app/api/operator-cron/subscriptions?secret=YOUR_CRON_SE
 
 ### Кабинет Robokassa (технастройки)
 
-| Поле | Значение |
-|------|----------|
-| Result URL | `https://YOUR_APP/api/public/robokassa/result` |
-| Метод Result URL | **POST** |
-| Success URL | `https://YOUR_APP/api/public/robokassa/success` |
-| Fail URL | `https://YOUR_APP/api/public/robokassa/fail` |
-| Алгоритм хеша | **MD5** |
+| Поле             | Значение                                        |
+| ---------------- | ----------------------------------------------- |
+| Result URL       | `https://YOUR_APP/api/public/robokassa/result`  |
+| Метод Result URL | **POST**                                        |
+| Success URL      | `https://YOUR_APP/api/public/robokassa/success` |
+| Fail URL         | `https://YOUR_APP/api/public/robokassa/fail`    |
+| Алгоритм хеша    | **MD5**                                         |
 
 В админке → Настройки → блок Robokassa: MerchantLogin, пароли #1/#2 (боевые и
 тестовые), включить оплату.

@@ -46,7 +46,9 @@ function AdminVipDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Активных подписок</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Активных подписок
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{activeSubs.length}</div>
@@ -54,7 +56,9 @@ function AdminVipDashboard() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Ожидают оплаты/подтверждения</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Ожидают оплаты/подтверждения
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-orange-600">{pendingSubs.length}</div>
@@ -62,7 +66,9 @@ function AdminVipDashboard() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Истёкших подписок</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Истёкших подписок
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-muted-foreground">{expiredSubs.length}</div>

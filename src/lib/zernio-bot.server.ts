@@ -158,7 +158,9 @@ export async function handleZernioMessage(payload: any) {
   let features = { catalog: true, search: true, cart: true, checkout: true };
   try {
     features = { ...features, ...JSON.parse(setting("instagram_direct_bot_features") || "{}") };
-  } catch { /* defaults */ }
+  } catch {
+    /* defaults */
+  }
 
   /**
    * Область ответов. По умолчанию — только покупки.
@@ -433,7 +435,12 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
 /**
  * Поиск и отправка товаров в DM
  */
-async function sendInteractiveProductResults(conversationId: string, accountId: string, user: any, query: string) {
+async function sendInteractiveProductResults(
+  conversationId: string,
+  accountId: string,
+  user: any,
+  query: string,
+) {
   const s = await db();
   const { data: products } = await s
     .from("products")
@@ -543,7 +550,9 @@ async function sendCart(conversationId: string, accountId: string, user: any) {
     accountId,
     `В заказе ${cart.length === 1 ? "материал" : `${cart.length} материала`}:\n\n` +
       `${flow.renderCart(total.lines)}\n\n` +
-      (cart.length > 1 && !total.mixedCurrency ? `Итого: ${total.total} ${total.currency}\n\n` : "") +
+      (cart.length > 1 && !total.mixedCurrency
+        ? `Итого: ${total.total} ${total.currency}\n\n`
+        : "") +
       (cart.length > 1
         ? "Можно добавить ещё номер или убрать лишнее — напишите «убрать 018».\n"
         : "Можно добавить ещё — напишите следующий номер.\n"),
@@ -744,10 +753,12 @@ async function sendDirectPaymentDetails(params: {
 
   // Цены — в валюте выбранной страны: покупателю из России сумма и реквизиты
   // должны совпадать по валюте, иначе он платит непонятно сколько.
-  const { lines: pricedLines, total: amount, currency, mixedCurrency } = await flow.priceCart(
-    cart,
-    country.code,
-  );
+  const {
+    lines: pricedLines,
+    total: amount,
+    currency,
+    mixedCurrency,
+  } = await flow.priceCart(cart, country.code);
   if (mixedCurrency) {
     // Складывать разные валюты нельзя: сумма получилась бы бессмысленной.
     await say(
@@ -764,13 +775,14 @@ async function sendDirectPaymentDetails(params: {
 
   await say(
     `${flow.renderCart(pricedLines)}\n\n` +
-      (remembered ? `Реквизиты для ${country.name} — если страна другая, напишите «отмена».\n\n` : "") +
+      (remembered
+        ? `Реквизиты для ${country.name} — если страна другая, напишите «отмена».\n\n`
+        : "") +
       `${requisites.instructions}\n\n` +
       `К оплате: ${amount} ${currency}\n` +
       "После оплаты пришлите чек сюда — картинкой или файлом.",
   );
 }
-
 
 /**
  * Автовыдача после онлайн-оплаты — одним путём с ручной.
@@ -849,7 +861,10 @@ export async function handleZernioAccountDisconnected(payload: any) {
   if (!raw) return;
 
   const { tg } = await import("./telegram.server");
-  for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
+  for (const chatId of raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
     try {
       await tg("sendMessage", {
         chat_id: chatId,
@@ -894,9 +909,8 @@ async function handlePurchaseFlow(params: {
 }): Promise<boolean> {
   const { conversationId, accountId, user, text, attachmentUrl, answersEverything } = params;
   const flow = await import("./direct-purchase.server");
-  const { classifyIncoming, isCancel, isPaymentComplaint, matchDirectCommand } = await import(
-    "./direct-flow"
-  );
+  const { classifyIncoming, isCancel, isPaymentComplaint, matchDirectCommand } =
+    await import("./direct-flow");
   const state = flow.readDirectState(user.state);
   const say = (message: string) => reply(user, conversationId, accountId, message);
 
@@ -917,7 +931,9 @@ async function handlePurchaseFlow(params: {
     // добавлял не тот номер, отменял, добавлял верный — и в заказ попадали оба.
     await flow.clearDirectFlow(user.user_key);
     await flow.clearCart(user);
-    await say("Отменил, корзина пуста. Напишите номер материала, когда будете готовы — например «018».");
+    await say(
+      "Отменил, корзина пуста. Напишите номер материала, когда будете готовы — например «018».",
+    );
     return true;
   }
 
@@ -1243,7 +1259,10 @@ async function handlePurchaseFlow(params: {
           .update(
             order?.payment_proof_path
               ? {
-                  admin_note: `${order.admin_note ?? ""}; ещё один чек: ${extra.path}`.slice(0, 500),
+                  admin_note: `${order.admin_note ?? ""}; ещё один чек: ${extra.path}`.slice(
+                    0,
+                    500,
+                  ),
                 }
               : { payment_proof_path: extra.path },
           )

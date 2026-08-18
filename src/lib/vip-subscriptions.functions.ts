@@ -72,7 +72,11 @@ async function getLatestActiveExpiry(
   return new Date(data.expires_at as string);
 }
 
-function addTariffDuration(base: Date, tariff: { duration_minutes?: number; duration_days?: number } | null, isTest: boolean): Date {
+function addTariffDuration(
+  base: Date,
+  tariff: { duration_minutes?: number; duration_days?: number } | null,
+  isTest: boolean,
+): Date {
   const expiresAt = new Date(base);
   if (isTest) {
     expiresAt.setMinutes(expiresAt.getMinutes() + (tariff?.duration_minutes || 1));
@@ -155,46 +159,45 @@ async function grantVipAccessAfterManual(
 }
 
 // Test function to check Supabase connection (real totals, not limit(1))
-export const testVipDbConnection = createServerFn({ method: "GET" })
-  .handler(async () => {
-    await requireAdminWithModule();
+export const testVipDbConnection = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdminWithModule();
 
-    try {
-      const s = await db();
+  try {
+    const s = await db();
 
-      const [settingsRes, tariffsRes, subsRes, pendingRes] = await Promise.all([
-        s.from("app_settings").select("*", { count: "exact", head: true }),
-        s.from("vip_tariffs").select("*", { count: "exact", head: true }),
-        s.from("vip_subscriptions").select("*", { count: "exact", head: true }),
-        s
-          .from("vip_subscriptions")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "pending_payment"),
-      ]);
+    const [settingsRes, tariffsRes, subsRes, pendingRes] = await Promise.all([
+      s.from("app_settings").select("*", { count: "exact", head: true }),
+      s.from("vip_tariffs").select("*", { count: "exact", head: true }),
+      s.from("vip_subscriptions").select("*", { count: "exact", head: true }),
+      s
+        .from("vip_subscriptions")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending_payment"),
+    ]);
 
-      const firstError =
-        settingsRes.error?.message ||
-        tariffsRes.error?.message ||
-        subsRes.error?.message ||
-        pendingRes.error?.message;
+    const firstError =
+      settingsRes.error?.message ||
+      tariffsRes.error?.message ||
+      subsRes.error?.message ||
+      pendingRes.error?.message;
 
-      if (firstError) {
-        return { success: false, error: firstError };
-      }
-
-      return {
-        success: true,
-        settingsCount: settingsRes.count ?? 0,
-        tariffsCount: tariffsRes.count ?? 0,
-        subscriptionsCount: subsRes.count ?? 0,
-        pendingCount: pendingRes.count ?? 0,
-        message: "All queries successful",
-      };
-    } catch (error) {
-      console.error("[testVipDbConnection] Exception:", error);
-      return { success: false, error: (error as Error).message };
+    if (firstError) {
+      return { success: false, error: firstError };
     }
-  });
+
+    return {
+      success: true,
+      settingsCount: settingsRes.count ?? 0,
+      tariffsCount: tariffsRes.count ?? 0,
+      subscriptionsCount: subsRes.count ?? 0,
+      pendingCount: pendingRes.count ?? 0,
+      message: "All queries successful",
+    };
+  } catch (error) {
+    console.error("[testVipDbConnection] Exception:", error);
+    return { success: false, error: (error as Error).message };
+  }
+});
 
 export const getVipSubscriptions = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ status: z.string().optional() }).parse(d ?? {}))
@@ -218,7 +221,10 @@ export const getVipSubscriptions = createServerFn({ method: "GET" })
       }
 
       console.error("[getVipSubscriptions] Join query error, fallback:", error.message);
-      let simple = s.from("vip_subscriptions").select("*").order("created_at", { ascending: false });
+      let simple = s
+        .from("vip_subscriptions")
+        .select("*")
+        .order("created_at", { ascending: false });
       if (status) simple = simple.eq("status", status);
       const { data: simpleSubs, error: simpleError } = await simple;
       if (simpleError) {
@@ -390,7 +396,9 @@ export const getVipMemberProfiles = createServerFn({ method: "GET" }).handler(as
     const s = await db();
     const { data, error } = await s
       .from("vip_member_profiles")
-      .select("telegram_id, assigned_tariff_id, assigned_at, assigned_source, vip_tariffs(name, price, currency, is_public)")
+      .select(
+        "telegram_id, assigned_tariff_id, assigned_at, assigned_source, vip_tariffs(name, price, currency, is_public)",
+      )
       .order("assigned_at", { ascending: false });
     if (error) {
       console.error("[getVipMemberProfiles]", error.message);
@@ -417,58 +425,60 @@ export const confirmVipSubscription = createServerFn({ method: "POST" })
   });
 
 /** Shared reject: Telegram callbacks and admin panel. Notifies user only if row was updated. */
-export const rejectVipSubscriptionCore = createServerOnlyFn(async (id: string): Promise<{ ok: true; alreadyProcessed?: boolean }> => {
-  const s = await db();
+export const rejectVipSubscriptionCore = createServerOnlyFn(
+  async (id: string): Promise<{ ok: true; alreadyProcessed?: boolean }> => {
+    const s = await db();
 
-  const { data: sub, error: fetchError } = await s
-    .from("vip_subscriptions")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+    const { data: sub, error: fetchError } = await s
+      .from("vip_subscriptions")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
 
-  if (fetchError) throw new Error(fetchError.message);
-  if (!sub) throw new Error("Подписка не найдена");
-  if (sub.status !== "pending_payment") {
-    return { ok: true, alreadyProcessed: true };
-  }
+    if (fetchError) throw new Error(fetchError.message);
+    if (!sub) throw new Error("Подписка не найдена");
+    if (sub.status !== "pending_payment") {
+      return { ok: true, alreadyProcessed: true };
+    }
 
-  const { data: settingsData } = await s.from("app_settings").select("*");
-  const settings: Record<string, string> = {};
-  for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
-  const groupId = settings.vip_group_id;
+    const { data: settingsData } = await s.from("app_settings").select("*");
+    const settings: Record<string, string> = {};
+    for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
+    const groupId = settings.vip_group_id;
 
-  if (groupId && sub.group_invite_link) {
-    await revokeVipInvite(groupId, sub.group_invite_link as string);
-  }
+    if (groupId && sub.group_invite_link) {
+      await revokeVipInvite(groupId, sub.group_invite_link as string);
+    }
 
-  const { data: updated, error } = await s
-    .from("vip_subscriptions")
-    .update({ status: "cancelled" })
-    .eq("id", id)
-    .eq("status", "pending_payment")
-    .select("telegram_id")
-    .maybeSingle();
+    const { data: updated, error } = await s
+      .from("vip_subscriptions")
+      .update({ status: "cancelled" })
+      .eq("id", id)
+      .eq("status", "pending_payment")
+      .select("telegram_id")
+      .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!updated) {
-    return { ok: true, alreadyProcessed: true };
-  }
+    if (error) throw new Error(error.message);
+    if (!updated) {
+      return { ok: true, alreadyProcessed: true };
+    }
 
-  // Одна «отклонённая» на человека — старые cancelled не копятся в админке
-  await s
-    .from("vip_subscriptions")
-    .delete()
-    .eq("telegram_id", updated.telegram_id)
-    .eq("status", "cancelled")
-    .neq("id", id);
+    // Одна «отклонённая» на человека — старые cancelled не копятся в админке
+    await s
+      .from("vip_subscriptions")
+      .delete()
+      .eq("telegram_id", updated.telegram_id)
+      .eq("status", "cancelled")
+      .neq("id", id);
 
-  await tgVip("sendMessage", {
-    chat_id: updated.telegram_id,
-    text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",
-  });
+    await tgVip("sendMessage", {
+      chat_id: updated.telegram_id,
+      text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",
+    });
 
-  return { ok: true };
-});
+    return { ok: true };
+  },
+);
 
 export const rejectVipSubscription = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
@@ -577,7 +587,9 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
         user: userFields,
       });
     } else if (data.status === "active" && inserted?.id && !groupId) {
-      memberWarning = (memberWarning ? memberWarning + " " : "") + "VIP группа не настроена — инвайт не отправлен.";
+      memberWarning =
+        (memberWarning ? memberWarning + " " : "") +
+        "VIP группа не настроена — инвайт не отправлен.";
     }
 
     if (tariff?.is_public === false && !tariff?.is_entry) {
@@ -595,7 +607,10 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
 const ExtendInput = z.object({
   id: z.string().uuid(),
   /** Positive = add days, negative = subtract days. Zero forbidden. */
-  days: z.number().int().refine((n) => n !== 0, "days must be non-zero"),
+  days: z
+    .number()
+    .int()
+    .refine((n) => n !== 0, "days must be non-zero"),
 });
 
 export const extendVipSubscription = createServerFn({ method: "POST" })
@@ -612,12 +627,13 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
     const groupId = (settings.vip_group_id || "").trim();
 
     const pastDue =
-      sub.status === "active" &&
-      new Date(sub.expires_at as string).getTime() <= Date.now();
+      sub.status === "active" && new Date(sub.expires_at as string).getTime() <= Date.now();
     const wasInactive = sub.status !== "active" || pastDue;
 
     if (data.days < 0 && wasInactive) {
-      throw new Error("Нельзя уменьшить истёкшую подписку. Сначала продлите (+дни) или создайте новую.");
+      throw new Error(
+        "Нельзя уменьшить истёкшую подписку. Сначала продлите (+дни) или создайте новую.",
+      );
     }
 
     const base = wasInactive ? new Date() : new Date(sub.expires_at as string);
@@ -701,7 +717,9 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
           expire_date: Math.floor(baseSafe.getTime() / 1000),
         });
         if (!invite.ok) {
-          throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
+          throw new Error(
+            "Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.",
+          );
         }
         inviteLink = (invite.result as any).invite_link;
 
@@ -745,7 +763,11 @@ export const excludeVipFromCommunity = createServerFn({ method: "POST" })
     await requireAdminWithModule();
     const s = await db();
 
-    const { data: sub } = await s.from("vip_subscriptions").select("*").eq("id", data.id).maybeSingle();
+    const { data: sub } = await s
+      .from("vip_subscriptions")
+      .select("*")
+      .eq("id", data.id)
+      .maybeSingle();
     if (!sub) throw new Error("Подписка не найдена");
 
     const telegramId = sub.telegram_id as number;
@@ -772,7 +794,9 @@ export const excludeVipFromCommunity = createServerFn({ method: "POST" })
       revoke_messages: false,
     });
     if (!ban.ok && !isAlreadyNotInChat(ban.description)) {
-      throw new Error(ban.description || "Не удалось исключить из группы (бот админ? право ban users?)");
+      throw new Error(
+        ban.description || "Не удалось исключить из группы (бот админ? право ban users?)",
+      );
     }
     await tgVip("unbanChatMember", {
       chat_id: groupId,
@@ -808,7 +832,11 @@ export const deleteVipSubscription = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdminWithModule();
     const s = await db();
-    const { data: sub } = await s.from("vip_subscriptions").select("*").eq("id", data.id).maybeSingle();
+    const { data: sub } = await s
+      .from("vip_subscriptions")
+      .select("*")
+      .eq("id", data.id)
+      .maybeSingle();
     if (!sub) throw new Error("Not found");
 
     const { data: settingsData } = await s.from("app_settings").select("*");

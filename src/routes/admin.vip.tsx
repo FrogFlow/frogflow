@@ -7,7 +7,15 @@ export const Route = createFileRoute("/admin/vip")({
   component: AdminVipLayout,
 });
 
-function NavLink({ to, children, exact }: { to: string; children: React.ReactNode; exact?: boolean }) {
+function NavLink({
+  to,
+  children,
+  exact,
+}: {
+  to: string;
+  children: React.ReactNode;
+  exact?: boolean;
+}) {
   return (
     <Link
       to={to}
@@ -24,7 +32,9 @@ function AdminVipLayout() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-1 border-b pb-2 overflow-x-auto">
-        <NavLink to="/admin/vip" exact>Дашборд VIP</NavLink>
+        <NavLink to="/admin/vip" exact>
+          Дашборд VIP
+        </NavLink>
         <NavLink to="/admin/vip/tariffs">Тарифы</NavLink>
         <NavLink to="/admin/vip/subscribers">Подписчики</NavLink>
         <NavLink to="/admin/vip/settings">Настройки VIP</NavLink>

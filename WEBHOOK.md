@@ -18,13 +18,16 @@ https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook?url=https://tg-bot-a
    - `CRON_SECRET=<тот же длинный секрет>`
 
 2. На [cron-job.org](https://cron-job.org) **каждый час** GET:
+
    ```
    https://tg-bot-ashen-one.vercel.app/api/cron/ensure-webhook?secret=ВАШ_CRON_SECRET
    ```
+
    Если URL пустой или другой — endpoint сам вызовет `setWebhook` снова.
 
 3. Не запускай бота через `getUpdates` / long polling на том же токене — многие скрипты делают `deleteWebhook`.
 
 Ответ ensure-webhook:
+
 - `action: "unchanged"` — всё ок
 - `action: "set"` — хук был сбит и восстановлен

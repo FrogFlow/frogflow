@@ -25,7 +25,8 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return new Response("bad json", { status: 400 });
         }
 
-        const callbackData = (update as { callback_query?: { data?: string } })?.callback_query?.data;
+        const callbackData = (update as { callback_query?: { data?: string } })?.callback_query
+          ?.data;
         const runUpdate = async () => {
           const { handleUpdate } = await import("@/lib/bot.server");
           await handleUpdate(update);
@@ -33,7 +34,10 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
 
         // confirm/reject can take minutes on large orders — answer Telegram immediately
         // so it does not retry the same callback and deliver files multiple times
-        if (typeof callbackData === "string" && (callbackData.startsWith("confirm:") || callbackData.startsWith("reject:"))) {
+        if (
+          typeof callbackData === "string" &&
+          (callbackData.startsWith("confirm:") || callbackData.startsWith("reject:"))
+        ) {
           await runInBackground(runUpdate);
           return new Response("ok");
         }

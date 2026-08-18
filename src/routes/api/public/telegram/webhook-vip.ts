@@ -5,7 +5,12 @@ export const Route = createFileRoute("/api/public/telegram/webhook-vip")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        if (!verifyTelegramWebhookSecret(request, ["VIP_TELEGRAM_WEBHOOK_SECRET", "TELEGRAM_WEBHOOK_SECRET"])) {
+        if (
+          !verifyTelegramWebhookSecret(request, [
+            "VIP_TELEGRAM_WEBHOOK_SECRET",
+            "TELEGRAM_WEBHOOK_SECRET",
+          ])
+        ) {
           return new Response("unauthorized", { status: 401 });
         }
         let update: unknown;

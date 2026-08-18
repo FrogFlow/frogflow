@@ -13,7 +13,8 @@ export const Route = createFileRoute("/api/public/vip/cron")({
         try {
           // Self-heal shop+VIP webhooks every cron tick (URL empty / secret mismatch / delivery errors)
           const webhooks = await ensureDidWebhooks();
-          let vipCron: Awaited<ReturnType<typeof runVipCronJob>> | { skipped: true; reason: string };
+          let vipCron:
+            Awaited<ReturnType<typeof runVipCronJob>> | { skipped: true; reason: string };
           try {
             vipCron = await runVipCronJob();
           } catch (e) {

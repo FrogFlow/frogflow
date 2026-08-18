@@ -38,9 +38,7 @@ export const getDashboardStats = createServerFn({ method: "GET" }).handler(async
   const [products, total, awaiting, delivered, delivering] = await Promise.all([
     countExact("products"),
     countExact("orders"),
-    countExact("orders", (q) =>
-      q.in("status", ["awaiting_payment", "awaiting_confirmation"]),
-    ),
+    countExact("orders", (q) => q.in("status", ["awaiting_payment", "awaiting_confirmation"])),
     countExact("orders", (q) => q.eq("status", "delivered")),
     countExact("orders", (q) => q.eq("status", "delivering")),
   ]);
@@ -93,7 +91,9 @@ export const continueDeliveryOrder = createServerFn({ method: "POST" })
   });
 
 export const rejectOrder = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ id: z.number().int(), note: z.string().max(500).optional() }).parse(d))
+  .validator((d: unknown) =>
+    z.object({ id: z.number().int(), note: z.string().max(500).optional() }).parse(d),
+  )
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
     const { notifyOrderCustomer } = await import("./orders.server");

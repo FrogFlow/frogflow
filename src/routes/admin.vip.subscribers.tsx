@@ -20,13 +20,14 @@ import { formatDateTimeRu } from "@/lib/datetime";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components-ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components-ui/dialog";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components-ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components-ui/dialog";
 
 export const Route = createFileRoute("/admin/vip/subscribers")({
   component: AdminVipSubscribers,
@@ -77,7 +78,12 @@ function AdminVipSubscribers() {
   }, [subs.data, statusFilter, tableSearch]);
 
   const [addingManual, setAddingManual] = useState(false);
-  const [manualData, setManualData] = useState({ telegram_id: "", tariff_id: "", days: 30, status: "active" });
+  const [manualData, setManualData] = useState({
+    telegram_id: "",
+    tariff_id: "",
+    days: 30,
+    status: "active",
+  });
   const [manualSearch, setManualSearch] = useState("");
   const [manualHits, setManualHits] = useState<TelegramUserHit[]>([]);
   const [manualLookupLoading, setManualLookupLoading] = useState(false);
@@ -126,7 +132,8 @@ function AdminVipSubscribers() {
   };
 
   const handleAddManual = async () => {
-    if (!manualData.telegram_id || !manualData.tariff_id) return alert("Заполните ID и выберите тариф");
+    if (!manualData.telegram_id || !manualData.tariff_id)
+      return alert("Заполните ID и выберите тариф");
     const days = Number.isFinite(manualData.days) && manualData.days >= 1 ? manualData.days : 30;
     try {
       const res = await addVipSubscriptionManual({
@@ -259,8 +266,8 @@ function AdminVipSubscribers() {
         <div className="bg-card border rounded-lg p-4 space-y-4 max-w-xl">
           <h3 className="font-medium">Добавление участника вручную</h3>
           <p className="text-xs text-muted-foreground">
-            После добавления запись появится во вкладке «Активные». Бот отправит ссылку, если пользователь
-            ещё не в группе (нужно чтобы человек хотя бы раз писал VIP-боту).
+            После добавления запись появится во вкладке «Активные». Бот отправит ссылку, если
+            пользователь ещё не в группе (нужно чтобы человек хотя бы раз писал VIP-боту).
           </p>
           <div className="space-y-2">
             <Label>Найти в базе (ID, @username, имя)</Label>
@@ -463,9 +470,7 @@ function AdminVipSubscribers() {
                     })()}
                   </td>
                   <td className="p-2">
-                    {s.status === "pending_payment"
-                      ? "-"
-                      : formatDateTimeRu(s.expires_at)}
+                    {s.status === "pending_payment" ? "-" : formatDateTimeRu(s.expires_at)}
                   </td>
                   <td className="p-2">
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -559,7 +564,9 @@ function AdminVipSubscribers() {
               }
               return (
                 <div className="text-center py-6 space-y-3">
-                  <p className="text-muted-foreground">Формат не поддерживается для предпросмотра.</p>
+                  <p className="text-muted-foreground">
+                    Формат не поддерживается для предпросмотра.
+                  </p>
                   <Button asChild>
                     <a href={src} target="_blank" rel="noreferrer">
                       Скачать чек

@@ -51,7 +51,11 @@ export async function resolveAudienceIds(
   const s = await db();
 
   if (audience_type === "test") {
-    const { data: setting } = await s.from("app_settings").select("value").eq("key", "admin_chat_id").maybeSingle();
+    const { data: setting } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("key", "admin_chat_id")
+      .maybeSingle();
     if (!setting?.value) return [];
     return setting.value
       .split(",")
@@ -78,7 +82,8 @@ export async function resolveAudienceIds(
     return (users ?? [])
       .filter(
         (u) =>
-          ((u.state as { country_code?: string } | null)?.country_code ?? "").toUpperCase() === code,
+          ((u.state as { country_code?: string } | null)?.country_code ?? "").toUpperCase() ===
+          code,
       )
       .map((u) => u.telegram_id as number);
   }
@@ -139,11 +144,9 @@ async function sendBroadcastPhotos(telegram_id: number, photoPaths: string[]) {
 
   if (images.length === 1) {
     const img = images[0];
-    await tgMultipartOrThrow(
-      "sendPhoto",
-      { chat_id: telegram_id },
-      [{ field: "photo", filename: img.filename, bytes: img.bytes, contentType: img.contentType }],
-    );
+    await tgMultipartOrThrow("sendPhoto", { chat_id: telegram_id }, [
+      { field: "photo", filename: img.filename, bytes: img.bytes, contentType: img.contentType },
+    ]);
     return;
   }
 
@@ -298,7 +301,8 @@ export async function processBroadcastBatch() {
       .select("sent_count, total_count")
       .eq("id", broadcast.id)
       .single();
-    const finalStatus = final && final.sent_count === 0 && final.total_count > 0 ? "failed" : "completed";
+    const finalStatus =
+      final && final.sent_count === 0 && final.total_count > 0 ? "failed" : "completed";
     await s
       .from("broadcasts")
       .update({ status: finalStatus, completed_at: new Date().toISOString() })
@@ -350,23 +354,33 @@ export async function processBroadcastBatch() {
     if (blocked > 0) increments["blocked_count"] = `blocked_count + ${blocked}`;
 
     // Используем raw SQL через rpc для атомарного инкремента
-    await s.rpc("increment_broadcast_counts", {
-      p_broadcast_id: broadcast.id,
-      p_sent: sent,
-      p_failed: failed,
-      p_blocked: blocked,
-    }).then(({ error }) => {
-      if (error) {
-        // Fallback: если rpc не создан, используем read-then-write
-        return s.from("broadcasts").select("sent_count, failed_count, blocked_count").eq("id", broadcast.id).single().then(({ data: fresh }) =>
-          s.from("broadcasts").update({
-            sent_count: (fresh?.sent_count ?? 0) + sent,
-            failed_count: (fresh?.failed_count ?? 0) + failed,
-            blocked_count: (fresh?.blocked_count ?? 0) + blocked,
-          }).eq("id", broadcast.id)
-        );
-      }
-    });
+    await s
+      .rpc("increment_broadcast_counts", {
+        p_broadcast_id: broadcast.id,
+        p_sent: sent,
+        p_failed: failed,
+        p_blocked: blocked,
+      })
+      .then(({ error }) => {
+        if (error) {
+          // Fallback: если rpc не создан, используем read-then-write
+          return s
+            .from("broadcasts")
+            .select("sent_count, failed_count, blocked_count")
+            .eq("id", broadcast.id)
+            .single()
+            .then(({ data: fresh }) =>
+              s
+                .from("broadcasts")
+                .update({
+                  sent_count: (fresh?.sent_count ?? 0) + sent,
+                  failed_count: (fresh?.failed_count ?? 0) + failed,
+                  blocked_count: (fresh?.blocked_count ?? 0) + blocked,
+                })
+                .eq("id", broadcast.id),
+            );
+        }
+      });
   }
 
   const { count } = await s
@@ -381,7 +395,8 @@ export async function processBroadcastBatch() {
       .select("sent_count, total_count")
       .eq("id", broadcast.id)
       .single();
-    const finalStatus2 = final2 && final2.sent_count === 0 && final2.total_count > 0 ? "failed" : "completed";
+    const finalStatus2 =
+      final2 && final2.sent_count === 0 && final2.total_count > 0 ? "failed" : "completed";
     await s
       .from("broadcasts")
       .update({ status: finalStatus2, completed_at: new Date().toISOString() })

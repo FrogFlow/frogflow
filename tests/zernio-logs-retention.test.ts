@@ -50,11 +50,29 @@ describe.skipIf(!ready)("pruneZernioLogs", () => {
     const s = await client();
     const { error } = await s.from("zernio_logs").insert([
       // Отработано и старое — единственное, что проход вправе удалить.
-      { event_id: OLD_ID, event_type: "test", status: "processed", payload: {}, created_at: days(90) },
+      {
+        event_id: OLD_ID,
+        event_type: "test",
+        status: "processed",
+        payload: {},
+        created_at: days(90),
+      },
       // Отработано, но свежее — обязано пережить проход.
-      { event_id: FRESH_ID, event_type: "test", status: "processed", payload: {}, created_at: days(1) },
+      {
+        event_id: FRESH_ID,
+        event_type: "test",
+        status: "processed",
+        payload: {},
+        created_at: days(1),
+      },
       // Старое, но со следом ошибки — его удалять нельзя ни при каком возрасте.
-      { event_id: ERROR_ID, event_type: "test", status: "error", payload: {}, created_at: days(90) },
+      {
+        event_id: ERROR_ID,
+        event_type: "test",
+        status: "error",
+        payload: {},
+        created_at: days(90),
+      },
     ]);
     if (error) throw new Error(`не удалось подготовить строки: ${error.message}`);
   });

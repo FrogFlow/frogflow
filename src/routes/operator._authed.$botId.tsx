@@ -979,8 +979,8 @@ function EnvBlockSection({
             <div className="space-y-1 sm:col-span-2">
               <Label htmlFor="env-smtp-host">Почта продавца для выдачи заказов</Label>
               <p className="text-xs text-muted-foreground">
-                Заказы из Instagram выдаются письмом: Direct не принимает документы вложением.
-                Нужен обычный ящик клиента и <b>пароль приложения</b> — не основной пароль от почты.
+                Заказы из Instagram выдаются письмом: Direct не принимает документы вложением. Нужен
+                обычный ящик клиента и <b>пароль приложения</b> — не основной пароль от почты.
               </p>
               <div className="grid gap-2 sm:grid-cols-3">
                 <Input

@@ -1,7 +1,11 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { blockTelegramUserFn, listBlockedUsersFn, unblockTelegramUserFn } from "@/lib/blocked-users.functions";
+import {
+  blockTelegramUserFn,
+  listBlockedUsersFn,
+  unblockTelegramUserFn,
+} from "@/lib/blocked-users.functions";
 import { searchTelegramUsersFn, type TelegramUserHit } from "@/lib/users-search.functions";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
@@ -108,7 +112,8 @@ function BlockedUsersPage() {
       <div>
         <h1 className="text-2xl font-semibold">Чёрный список</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Заблокированные пользователи не могут пользоваться магазином и VIP-ботом. Доступ к группе закрывается автоматически.
+          Заблокированные пользователи не могут пользоваться магазином и VIP-ботом. Доступ к группе
+          закрывается автоматически.
         </p>
       </div>
 
@@ -161,7 +166,8 @@ function BlockedUsersPage() {
           />
           {selectedUser && (
             <p className="text-xs text-muted-foreground">
-              Выбран: {[selectedUser.first_name, selectedUser.last_name].filter(Boolean).join(" ") || "—"}
+              Выбран:{" "}
+              {[selectedUser.first_name, selectedUser.last_name].filter(Boolean).join(" ") || "—"}
               {selectedUser.username ? ` @${selectedUser.username}` : ""}
             </p>
           )}
@@ -182,15 +188,15 @@ function BlockedUsersPage() {
 
       <div className="space-y-3">
         <h2 className="font-medium">Заблокированные ({list.length})</h2>
-        {list.length === 0 && (
-          <p className="text-sm text-muted-foreground">Список пуст.</p>
-        )}
+        {list.length === 0 && <p className="text-sm text-muted-foreground">Список пуст.</p>}
         {list.map((u) => (
-          <div key={u.telegram_id} className="bg-card border rounded-lg p-3 text-sm flex flex-wrap items-start justify-between gap-3">
+          <div
+            key={u.telegram_id}
+            className="bg-card border rounded-lg p-3 text-sm flex flex-wrap items-start justify-between gap-3"
+          >
             <div>
               <div className="font-medium">
-                {u.first_name || "—"}{" "}
-                {u.username ? `@${u.username}` : `ID: ${u.telegram_id}`}
+                {u.first_name || "—"} {u.username ? `@${u.username}` : `ID: ${u.telegram_id}`}
               </div>
               <div className="text-muted-foreground">ID: {u.telegram_id}</div>
               {u.reason && <div className="mt-1">Причина: {u.reason}</div>}
@@ -198,7 +204,12 @@ function BlockedUsersPage() {
                 {new Date(u.blocked_at).toLocaleString("ru-RU")}
               </div>
             </div>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => onUnblock(u.telegram_id)}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => onUnblock(u.telegram_id)}
+            >
               Разблокировать
             </Button>
           </div>

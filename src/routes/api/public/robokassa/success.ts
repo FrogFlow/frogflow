@@ -118,7 +118,7 @@ async function handleSuccess() {
   const html = htmlPage(
     "Оплата прошла успешно!",
     "Спасибо! Платёж принят. Файлы уже отправлены в ваш Telegram-бот.",
-    botUrl
+    botUrl,
   );
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }

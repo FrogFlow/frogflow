@@ -34,7 +34,8 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             if (!last.processed) break;
           }
 
-          let deliveries: Awaited<ReturnType<typeof processPendingDeliveries>> | { error: string } | undefined;
+          let deliveries:
+            Awaited<ReturnType<typeof processPendingDeliveries>> | { error: string } | undefined;
           try {
             deliveries = await processPendingDeliveries(5);
           } catch (e: any) {
@@ -57,7 +58,8 @@ export const Route = createFileRoute("/api/cron/broadcast")({
           // Добор зависших событий Instagram — тоже здесь и тоже без права
           // ронять остальной крон: застрявший pending не должен мешать
           // рассылке и выдаче заказов.
-          let stuckEvents: Awaited<ReturnType<typeof retryStuckZernioEvents>> | { error: string } | undefined;
+          let stuckEvents:
+            Awaited<ReturnType<typeof retryStuckZernioEvents>> | { error: string } | undefined;
           try {
             stuckEvents = await retryStuckZernioEvents();
           } catch (e: any) {

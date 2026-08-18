@@ -12,14 +12,20 @@ export const listProducts = createServerFn({ method: "GET" }).handler(async () =
   const s = await db();
   const { data, error } = await s
     .from("products")
-    .select("*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order), categories(name)")
+    .select(
+      "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order), categories(name)",
+    )
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return data ?? [];
 });
 
 export const getSignedUploadUrl = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ bucket: z.enum(["product-images", "product-files"]), filename: z.string() }).parse(d))
+  .validator((d: unknown) =>
+    z
+      .object({ bucket: z.enum(["product-images", "product-files"]), filename: z.string() })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
     await requireAdmin();
     const ext = (data.filename.split(".").pop() || "bin").toLowerCase().slice(0, 10);
@@ -37,7 +43,9 @@ export const getProduct = createServerFn({ method: "GET" })
     const s = await db();
     const { data: prod, error } = await s
       .from("products")
-      .select("*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order)")
+      .select(
+        "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order)",
+      )
       .eq("id", data.id)
       .single();
     if (error) throw new Error(error.message);
@@ -65,8 +73,12 @@ const SaveInput = z.object({
   // A material can be several files/photos (e.g. worksheet pages), not just
   // the single file_path/file_url above — those stay for older products that
   // predate multi-file support.
-  material_files_ru: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })).default([]),
-  material_files_kz: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })).default([]),
+  material_files_ru: z
+    .array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() }))
+    .default([]),
+  material_files_kz: z
+    .array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() }))
+    .default([]),
   country_prices: z.record(z.number()).optional().default({}),
 });
 

@@ -44,16 +44,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components-ui/select";
-import { 
-  ImageIcon, 
-  X, 
-  Settings2, 
-  MessageSquare, 
-  Zap, 
-  Plus, 
-  RefreshCcw, 
-  Trash2, 
-  Play, 
+import {
+  ImageIcon,
+  X,
+  Settings2,
+  MessageSquare,
+  Zap,
+  Plus,
+  RefreshCcw,
+  Trash2,
+  Play,
   Pause,
   ExternalLink,
   History,
@@ -66,7 +66,14 @@ import {
   UserCircle2,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components-ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components-ui/card";
 import { Badge } from "@/components-ui/badge";
 
 export const Route = createFileRoute("/admin/instagram")({
@@ -80,10 +87,16 @@ export const Route = createFileRoute("/admin/instagram")({
 function AdminInstagramPage() {
   const qc = useQueryClient();
 
-  const accountsQuery = useQuery({ queryKey: ["ig_accounts"], queryFn: () => getInstagramAccountsFn() });
-  const automationsQuery = useQuery({ queryKey: ["ig_automations"], queryFn: () => getAutomationsFn() });
+  const accountsQuery = useQuery({
+    queryKey: ["ig_accounts"],
+    queryFn: () => getInstagramAccountsFn(),
+  });
+  const automationsQuery = useQuery({
+    queryKey: ["ig_automations"],
+    queryFn: () => getAutomationsFn(),
+  });
   const logsQuery = useQuery({ queryKey: ["ig_logs"], queryFn: () => getInstagramLogsFn() });
-  
+
   const accounts = accountsQuery.data?.accounts || [];
   const acc = accounts[0];
   const displayProfile = (profile: any) => {
@@ -91,11 +104,11 @@ function AdminInstagramPage() {
     if (typeof profile === "string") return profile;
     return profile.name || profile._id || "default";
   };
-  
-  const postsQuery = useQuery({ 
-    queryKey: ["ig_posts", acc?._id], 
-    queryFn: () => getZernioPostsFn({ data: { accountId: acc?._id } }), 
-    enabled: !!acc?._id 
+
+  const postsQuery = useQuery({
+    queryKey: ["ig_posts", acc?._id],
+    queryFn: () => getZernioPostsFn({ data: { accountId: acc?._id } }),
+    enabled: !!acc?._id,
   });
   const accountHealthQuery = useQuery({
     queryKey: ["ig_account_health", acc?._id],
@@ -107,12 +120,30 @@ function AdminInstagramPage() {
     queryFn: () => getInstagramConversationsFn({ data: { accountId: acc?._id } }),
     enabled: !!acc?._id,
   });
-  const dashboardQuery = useQuery({ queryKey: ["ig_dashboard"], queryFn: () => getInstagramDashboardFn() });
-  const directBotSettingsQuery = useQuery({ queryKey: ["ig_direct_bot_settings"], queryFn: () => getInstagramDirectBotSettingsFn() });
-  const directBotScriptQuery = useQuery({ queryKey: ["ig_direct_bot_script"], queryFn: () => getInstagramDirectBotScriptFn() });
-  const directBotFeaturesQuery = useQuery({ queryKey: ["ig_direct_bot_features"], queryFn: () => getInstagramDirectBotFeaturesFn() });
-  const directBotScopeQuery = useQuery({ queryKey: ["ig_direct_bot_scope"], queryFn: () => getInstagramDirectBotScopeFn() });
-  const directBotTriggersQuery = useQuery({ queryKey: ["ig_direct_bot_triggers"], queryFn: () => getInstagramDirectBotTriggersFn() });
+  const dashboardQuery = useQuery({
+    queryKey: ["ig_dashboard"],
+    queryFn: () => getInstagramDashboardFn(),
+  });
+  const directBotSettingsQuery = useQuery({
+    queryKey: ["ig_direct_bot_settings"],
+    queryFn: () => getInstagramDirectBotSettingsFn(),
+  });
+  const directBotScriptQuery = useQuery({
+    queryKey: ["ig_direct_bot_script"],
+    queryFn: () => getInstagramDirectBotScriptFn(),
+  });
+  const directBotFeaturesQuery = useQuery({
+    queryKey: ["ig_direct_bot_features"],
+    queryFn: () => getInstagramDirectBotFeaturesFn(),
+  });
+  const directBotScopeQuery = useQuery({
+    queryKey: ["ig_direct_bot_scope"],
+    queryFn: () => getInstagramDirectBotScopeFn(),
+  });
+  const directBotTriggersQuery = useQuery({
+    queryKey: ["ig_direct_bot_triggers"],
+    queryFn: () => getInstagramDirectBotTriggersFn(),
+  });
 
   const [connecting, setConnecting] = useState(false);
   const [registeringWebhook, setRegisteringWebhook] = useState(false);
@@ -129,13 +160,18 @@ function AdminInstagramPage() {
   const [collaboratorsText, setCollaboratorsText] = useState("");
   const [shareToFeed, setShareToFeed] = useState(true);
   const [isAiGenerated, setIsAiGenerated] = useState(false);
-  useEffect(() => { if (directBotScriptQuery.data) setDirectBotScript(directBotScriptQuery.data.text); }, [directBotScriptQuery.data]);
+  useEffect(() => {
+    if (directBotScriptQuery.data) setDirectBotScript(directBotScriptQuery.data.text);
+  }, [directBotScriptQuery.data]);
   const [postActionId, setPostActionId] = useState<string | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [inboxReply, setInboxReply] = useState("");
   const messagesQuery = useQuery({
     queryKey: ["ig_conversation_messages", acc?._id, selectedConversationId],
-    queryFn: () => getInstagramConversationMessagesFn({ data: { accountId: acc?._id, conversationId: selectedConversationId! } }),
+    queryFn: () =>
+      getInstagramConversationMessagesFn({
+        data: { accountId: acc?._id, conversationId: selectedConversationId! },
+      }),
     enabled: !!acc?._id && !!selectedConversationId,
   });
 
@@ -148,17 +184,23 @@ function AdminInstagramPage() {
     .slice(0, 100);
   const contactProfilesQuery = useQuery({
     queryKey: ["ig_contact_profiles", conversationParticipantIds.join(",")],
-    queryFn: () => getInstagramContactProfilesFn({ data: { participantIds: conversationParticipantIds } }),
+    queryFn: () =>
+      getInstagramContactProfilesFn({ data: { participantIds: conversationParticipantIds } }),
     enabled: conversationParticipantIds.length > 0,
   });
 
   const handleInboxReply = async () => {
     if (!acc?._id || !selectedConversationId || !inboxReply.trim()) return;
     try {
-      const result = await sendInstagramConversationMessageFn({ data: { accountId: acc._id, conversationId: selectedConversationId, message: inboxReply } });
-      if (!result.ok) throw new Error(result.error || "Не удалось отправить сообщение. Повторите попытку.");
+      const result = await sendInstagramConversationMessageFn({
+        data: { accountId: acc._id, conversationId: selectedConversationId, message: inboxReply },
+      });
+      if (!result.ok)
+        throw new Error(result.error || "Не удалось отправить сообщение. Повторите попытку.");
       setInboxReply("");
-      qc.invalidateQueries({ queryKey: ["ig_conversation_messages", acc._id, selectedConversationId] });
+      qc.invalidateQueries({
+        queryKey: ["ig_conversation_messages", acc._id, selectedConversationId],
+      });
       qc.invalidateQueries({ queryKey: ["ig_conversations", acc._id] });
     } catch (e: any) {
       setStatusMsg(`Ошибка отправки: ${e.message}`);
@@ -169,7 +211,9 @@ function AdminInstagramPage() {
     try {
       await saveInstagramDirectBotSettingsFn({ data: { enabled } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_settings"] });
-      setStatusMsg(enabled ? "✅ Автоответчик Direct включён." : "✅ Автоответчик Direct остановлен.");
+      setStatusMsg(
+        enabled ? "✅ Автоответчик Direct включён." : "✅ Автоответчик Direct остановлен.",
+      );
     } catch (e: any) {
       setStatusMsg(`Ошибка настройки автоответчика: ${e.message}`);
     }
@@ -180,7 +224,9 @@ function AdminInstagramPage() {
       await saveInstagramDirectBotScriptFn({ data: { text: directBotScript } });
       qc.invalidateQueries({ queryKey: ["ig_direct_bot_script"] });
       setStatusMsg("✅ Текст автоответчика сохранён.");
-    } catch (e: any) { setStatusMsg(`Ошибка сохранения: ${e.message}`); }
+    } catch (e: any) {
+      setStatusMsg(`Ошибка сохранения: ${e.message}`);
+    }
   };
 
   const handleScopeChange = async (scope: "purchases" | "all") => {
@@ -212,8 +258,16 @@ function AdminInstagramPage() {
     }
   };
 
-  const handleFeatureToggle = async (key: "catalog" | "search" | "cart" | "checkout", value: boolean) => {
-    const current = directBotFeaturesQuery.data || { catalog: true, search: true, cart: true, checkout: true };
+  const handleFeatureToggle = async (
+    key: "catalog" | "search" | "cart" | "checkout",
+    value: boolean,
+  ) => {
+    const current = directBotFeaturesQuery.data || {
+      catalog: true,
+      search: true,
+      cart: true,
+      checkout: true,
+    };
     await saveInstagramDirectBotFeaturesFn({ data: { ...current, [key]: value } });
     qc.invalidateQueries({ queryKey: ["ig_direct_bot_features"] });
   };
@@ -223,11 +277,16 @@ function AdminInstagramPage() {
     setPostActionId(postId);
     setStatusMsg(null);
     try {
-      const result = action === "cancel"
-        ? await cancelInstagramPostFn({ data: { postId } })
-        : await retryInstagramPostFn({ data: { postId } });
+      const result =
+        action === "cancel"
+          ? await cancelInstagramPostFn({ data: { postId } })
+          : await retryInstagramPostFn({ data: { postId } });
       if (!result.ok) throw new Error(result.error || "Сервис публикаций не выполнил действие.");
-      setStatusMsg(action === "cancel" ? "✅ Публикация отменена." : "✅ Повторная публикация поставлена в очередь.");
+      setStatusMsg(
+        action === "cancel"
+          ? "✅ Публикация отменена."
+          : "✅ Повторная публикация поставлена в очередь.",
+      );
       qc.invalidateQueries({ queryKey: ["ig_posts"] });
     } catch (e: any) {
       setStatusMsg(`Ошибка: ${e.message}`);
@@ -237,7 +296,12 @@ function AdminInstagramPage() {
   };
 
   const handleDisconnectAccount = async (accountId: string, accountName: string) => {
-    if (!confirm(`Отключить аккаунт "${accountName}"? Все автоматизации для этого аккаунта перестанут работать.`)) return;
+    if (
+      !confirm(
+        `Отключить аккаунт "${accountName}"? Все автоматизации для этого аккаунта перестанут работать.`,
+      )
+    )
+      return;
     setDisconnecting(accountId);
     setStatusMsg(null);
     try {
@@ -305,7 +369,9 @@ function AdminInstagramPage() {
       if (res?.ok) {
         setStatusMsg("✅ Соединение успешно обновлено!");
       } else {
-        setStatusMsg(`❌ Ошибка при обновлении соединения: ${res?.error || "Не удалось сохранить настройки webhook."}`);
+        setStatusMsg(
+          `❌ Ошибка при обновлении соединения: ${res?.error || "Не удалось сохранить настройки webhook."}`,
+        );
       }
     } catch (e: any) {
       setStatusMsg(`Ошибка: ${e.message}`);
@@ -320,7 +386,10 @@ function AdminInstagramPage() {
       setStatusMsg("Сначала подключите аккаунт Instagram.");
       return;
     }
-    const mediaUrls = mediaUrlsText.split("\n").map((url) => url.trim()).filter(Boolean);
+    const mediaUrls = mediaUrlsText
+      .split("\n")
+      .map((url) => url.trim())
+      .filter(Boolean);
     if (!mediaUrls.length) {
       setStatusMsg("Добавьте хотя бы одну прямую ссылку на изображение или видео.");
       return;
@@ -337,13 +406,18 @@ function AdminInstagramPage() {
           contentType: publishType,
           scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : undefined,
           firstComment: firstComment || undefined,
-          collaborators: collaboratorsText.split(",").map((name) => name.trim()).filter(Boolean),
+          collaborators: collaboratorsText
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean),
           shareToFeed,
           isAiGenerated,
         },
       });
       if (!result?.ok) throw new Error(result?.error || "Сервис публикаций не принял публикацию.");
-      const timing = result.scheduledFor ? ` запланирована на ${new Date(result.scheduledFor).toLocaleString("ru-RU")}` : " отправлена на публикацию";
+      const timing = result.scheduledFor
+        ? ` запланирована на ${new Date(result.scheduledFor).toLocaleString("ru-RU")}`
+        : " отправлена на публикацию";
       setStatusMsg(`✅ Публикация${timing}.`);
       setPublishContent("");
       setMediaUrlsText("");
@@ -368,7 +442,7 @@ function AdminInstagramPage() {
       return;
     }
     const acc = accountsQuery.data.accounts[0];
-    
+
     setSavingAuto(true);
     try {
       const keywords = keywordsStr
@@ -392,13 +466,29 @@ function AdminInstagramPage() {
         matchMode: "contains" as const,
         dmMessage: dmText,
         commentReply: replyText,
-        platformPostId: (postId && postId !== "ALL_POSTS") ? (selectedPost?.platformPostId || postId.trim()) : undefined,
-        postId: (postId && postId !== "ALL_POSTS") ? (selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || undefined) : undefined,
-        postTitle: selectedPost ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500) : undefined,
-        buttons: buttons.length > 0 ? buttons.map(b => ({
-          ...b,
-          url: b.url && b.type === 'url' ? (b.url.startsWith('http') ? b.url : `https://${b.url}`) : b.url
-        })) : undefined,
+        platformPostId:
+          postId && postId !== "ALL_POSTS"
+            ? selectedPost?.platformPostId || postId.trim()
+            : undefined,
+        postId:
+          postId && postId !== "ALL_POSTS"
+            ? selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || undefined
+            : undefined,
+        postTitle: selectedPost
+          ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500)
+          : undefined,
+        buttons:
+          buttons.length > 0
+            ? buttons.map((b) => ({
+                ...b,
+                url:
+                  b.url && b.type === "url"
+                    ? b.url.startsWith("http")
+                      ? b.url
+                      : `https://${b.url}`
+                    : b.url,
+              }))
+            : undefined,
         dmMessageVariations: dmVariations.filter(Boolean),
         commentReplyVariations: replyVariations.filter(Boolean),
         linkTracking,
@@ -410,7 +500,8 @@ function AdminInstagramPage() {
       if (!result?.ok) {
         let errMsg = (result as any)?.error || "Сервис автоматизации отклонил создание правила.";
         if (errMsg.includes("409")) {
-          errMsg = "Для этого поста уже есть активная автоматизация. Отредактируйте существующую или удалите её перед созданием новой.";
+          errMsg =
+            "Для этого поста уже есть активная автоматизация. Отредактируйте существующую или удалите её перед созданием новой.";
         }
         throw new Error(errMsg);
       }
@@ -460,8 +551,8 @@ function AdminInstagramPage() {
     setReplyVariations(auto.commentReplyVariations || []);
     setLinkTracking(auto.linkTracking !== false);
     setClickTag(auto.clickTag || "");
-    
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleAddButton = () => {
@@ -502,9 +593,10 @@ function AdminInstagramPage() {
   const logs = logsQuery.data?.logs || [];
   const posts = postsQuery.data?.posts || [];
 
-  const existingAutoForPost = postId !== "ALL_POSTS" 
-    ? automations.find((a: any) => a.platformPostId === postId && a.id !== editingId)
-    : null;
+  const existingAutoForPost =
+    postId !== "ALL_POSTS"
+      ? automations.find((a: any) => a.platformPostId === postId && a.id !== editingId)
+      : null;
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-8 pb-20">
@@ -519,8 +611,17 @@ function AdminInstagramPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleRegisterWebhook} disabled={registeringWebhook} size="sm">
-            {registeringWebhook ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2" />}
+          <Button
+            variant="outline"
+            onClick={handleRegisterWebhook}
+            disabled={registeringWebhook}
+            size="sm"
+          >
+            {registeringWebhook ? (
+              <RefreshCcw className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Zap className="w-4 h-4 mr-2" />
+            )}
             Обновить Webhook
           </Button>
           <Button onClick={handleConnect} disabled={connecting} size="sm">
@@ -550,10 +651,12 @@ function AdminInstagramPage() {
             <Bot className="w-4 h-4" /> <span className="hidden sm:inline">Автоответчик</span>
           </TabsTrigger>
           <TabsTrigger value="automations" className="gap-2">
-            <Settings2 className="w-4 h-4" /> <span className="hidden sm:inline">Автоматизации</span>
+            <Settings2 className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">Автоматизации</span>
           </TabsTrigger>
           <TabsTrigger value="publish" className="gap-2">
-            <CalendarClock className="w-4 h-4" /> <span className="hidden sm:inline">Публикации</span>
+            <CalendarClock className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">Публикации</span>
           </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <History className="w-4 h-4" /> <span className="hidden sm:inline">Журнал</span>
@@ -580,13 +683,19 @@ function AdminInstagramPage() {
             <CardHeader>
               <CardTitle>Автоответчик в Direct</CardTitle>
               <CardDescription>
-                Отвечает на входящие сообщения: показывает каталог, ищет товары, ведёт корзину и оформление заказа. От правил «Комментарий → Direct» не зависит.
+                Отвечает на входящие сообщения: показывает каталог, ищет товары, ведёт корзину и
+                оформление заказа. От правил «Комментарий → Direct» не зависит.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex items-center justify-between gap-4">
               <div>
-                <p className="font-medium">{directBotSettingsQuery.data?.enabled === false ? "Остановлен" : "Включён"}</p>
-                <p className="text-sm text-muted-foreground">Выключение прекращает новые автоматические ответы, но не отключает ручную переписку и правила комментариев.</p>
+                <p className="font-medium">
+                  {directBotSettingsQuery.data?.enabled === false ? "Остановлен" : "Включён"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Выключение прекращает новые автоматические ответы, но не отключает ручную
+                  переписку и правила комментариев.
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -655,19 +764,51 @@ function AdminInstagramPage() {
                 </Button>
               </div>
               {directBotTriggersQuery.data?.isDefault && (
-                <p className="text-xs text-muted-foreground">Сейчас используются значения по умолчанию.</p>
+                <p className="text-xs text-muted-foreground">
+                  Сейчас используются значения по умолчанию.
+                </p>
               )}
             </CardContent>
             <CardContent className="space-y-2 pt-0">
               <Label htmlFor="direct-bot-script">Ответ на короткое или непонятное сообщение</Label>
-              <Textarea id="direct-bot-script" value={directBotScript} onChange={(event) => setDirectBotScript(event.target.value)} placeholder="Оставьте пустым, чтобы использовать стандартное приветствие и каталог." rows={4} maxLength={1500} />
-              <div className="flex items-center justify-between"><p className="text-xs text-muted-foreground">Этот текст не заменяет поиск товаров, корзину и оформление заказа.</p><Button size="sm" onClick={handleSaveDirectBotScript}>Сохранить текст</Button></div>
+              <Textarea
+                id="direct-bot-script"
+                value={directBotScript}
+                onChange={(event) => setDirectBotScript(event.target.value)}
+                placeholder="Оставьте пустым, чтобы использовать стандартное приветствие и каталог."
+                rows={4}
+                maxLength={1500}
+              />
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Этот текст не заменяет поиск товаров, корзину и оформление заказа.
+                </p>
+                <Button size="sm" onClick={handleSaveDirectBotScript}>
+                  Сохранить текст
+                </Button>
+              </div>
             </CardContent>
             <CardContent className="space-y-2 pt-0">
               <Label>Сценарии</Label>
-              <p className="text-xs text-muted-foreground">Товары берутся из активного каталога этого клиента: название, описание и ключевые слова.</p>
+              <p className="text-xs text-muted-foreground">
+                Товары берутся из активного каталога этого клиента: название, описание и ключевые
+                слова.
+              </p>
               <div className="grid gap-2 sm:grid-cols-2">
-                {[["catalog", "Каталог"], ["search", "Поиск товаров"], ["cart", "Корзина"], ["checkout", "Оформление заказа"]].map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><Checkbox checked={(directBotFeaturesQuery.data as any)?.[key] !== false} onCheckedChange={(value) => handleFeatureToggle(key as any, value === true)} />{label}</label>)}
+                {[
+                  ["catalog", "Каталог"],
+                  ["search", "Поиск товаров"],
+                  ["cart", "Корзина"],
+                  ["checkout", "Оформление заказа"],
+                ].map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={(directBotFeaturesQuery.data as any)?.[key] !== false}
+                      onCheckedChange={(value) => handleFeatureToggle(key as any, value === true)}
+                    />
+                    {label}
+                  </label>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -681,31 +822,41 @@ function AdminInstagramPage() {
               <Card className="shadow-sm border-primary/10">
                 <CardHeader>
                   <CardTitle className="text-xl flex items-center gap-2">
-                    {editingId ? <Settings2 className="w-5 h-5 text-primary" /> : <Plus className="w-5 h-5 text-primary" />}
+                    {editingId ? (
+                      <Settings2 className="w-5 h-5 text-primary" />
+                    ) : (
+                      <Plus className="w-5 h-5 text-primary" />
+                    )}
                     {editingId ? "Редактировать правило" : "Новая автоматизация"}
                   </CardTitle>
-                  <CardDescription>
-                    Что должно сработать и что ответить в Direct
-                  </CardDescription>
+                  <CardDescription>Что должно сработать и что ответить в Direct</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSaveAutomation} className="space-y-5">
                     <div className="space-y-2">
                       <Label htmlFor="auto_title">Название</Label>
-                      <Input 
-                        id="auto_title" 
-                        value={title} 
-                        onChange={(e) => setTitle(e.target.value)} 
+                      <Input
+                        id="auto_title"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
                         placeholder="Например: рассылка чек-листа"
-                        required 
+                        required
                       />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Триггер</Label>
-                        <Select value={trigger} onValueChange={(v: any) => { setTrigger(v); setPostId("ALL_POSTS"); }}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
+                        <Select
+                          value={trigger}
+                          onValueChange={(v: any) => {
+                            setTrigger(v);
+                            setPostId("ALL_POSTS");
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="comment">💬 Комментарий</SelectItem>
                             <SelectItem value="story_reply">📱 Ответ на Story</SelectItem>
@@ -714,9 +865,9 @@ function AdminInstagramPage() {
                       </div>
                       <div className="space-y-2">
                         <Label>Ключевые слова</Label>
-                        <Input 
-                          value={keywordsStr} 
-                          onChange={(e) => setKeywordsStr(e.target.value)} 
+                        <Input
+                          value={keywordsStr}
+                          onChange={(e) => setKeywordsStr(e.target.value)}
                           placeholder={replyToAll ? "Отвечает на все" : "хочу, инфо, +"}
                           disabled={replyToAll}
                         />
@@ -724,15 +875,15 @@ function AdminInstagramPage() {
                     </div>
 
                     <div className="flex items-center space-x-2 py-1">
-                      <Checkbox 
-                        id="reply_to_all" 
-                        checked={replyToAll} 
+                      <Checkbox
+                        id="reply_to_all"
+                        checked={replyToAll}
                         disabled={!postId || postId === "ALL_POSTS"}
-                        onCheckedChange={(v: boolean) => setReplyToAll(v)} 
+                        onCheckedChange={(v: boolean) => setReplyToAll(v)}
                       />
-                      <Label 
-                        htmlFor="reply_to_all" 
-                        className={`text-sm font-medium leading-none cursor-pointer ${(!postId || postId === "ALL_POSTS") ? "opacity-50" : ""}`}
+                      <Label
+                        htmlFor="reply_to_all"
+                        className={`text-sm font-medium leading-none cursor-pointer ${!postId || postId === "ALL_POSTS" ? "opacity-50" : ""}`}
                       >
                         Отвечать на все комментарии (без ключевых слов)
                         {(!postId || postId === "ALL_POSTS") && (
@@ -748,12 +899,21 @@ function AdminInstagramPage() {
                         <Label className="flex items-center gap-2">
                           {trigger === "story_reply" ? "Целевая Story" : "Целевой пост"}
                           {existingAutoForPost && (
-                            <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200 animate-pulse">
+                            <Badge
+                              variant="outline"
+                              className="text-[9px] bg-amber-50 text-amber-700 border-amber-200 animate-pulse"
+                            >
                               ⚠️ Занят: "{existingAutoForPost.name}"
                             </Badge>
                           )}
                         </Label>
-                        <Button type="button" variant="ghost" size="sm" onClick={handleRefreshPosts} className="h-6 text-[10px] px-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleRefreshPosts}
+                          className="h-6 text-[10px] px-2"
+                        >
                           <RefreshCcw className="w-3 h-3 mr-1" /> Обновить список
                         </Button>
                       </div>
@@ -766,12 +926,21 @@ function AdminInstagramPage() {
                             {trigger === "story_reply" ? "✨ Любая Story" : "✨ Любой пост"}
                           </SelectItem>
                           {posts
-                            .filter((p: any) => trigger === "story_reply" ? p._isStory : !p._isStory)
+                            .filter((p: any) =>
+                              trigger === "story_reply" ? p._isStory : !p._isStory,
+                            )
                             .map((p: any) => (
-                              <SelectItem key={p.platformPostId || p._id || p.id} value={p.platformPostId || p._id || p.id}>
+                              <SelectItem
+                                key={p.platformPostId || p._id || p.id}
+                                value={p.platformPostId || p._id || p.id}
+                              >
                                 <div className="flex items-center gap-3 py-1 max-w-[300px]">
                                   {p._thumbnail ? (
-                                    <img src={p._thumbnail} className="w-8 h-8 object-cover rounded shrink-0 bg-muted" alt="" />
+                                    <img
+                                      src={p._thumbnail}
+                                      className="w-8 h-8 object-cover rounded shrink-0 bg-muted"
+                                      alt=""
+                                    />
                                   ) : (
                                     <div className="w-8 h-8 bg-muted rounded flex items-center justify-center shrink-0">
                                       <ImageIcon className="w-4 h-4 opacity-40" />
@@ -779,10 +948,14 @@ function AdminInstagramPage() {
                                   )}
                                   <div className="flex flex-col min-w-0 text-left">
                                     <span className="text-[9px] text-muted-foreground font-bold uppercase">
-                                      {p._date ? new Date(p._date).toLocaleDateString("ru-RU") : "Нет даты"}
+                                      {p._date
+                                        ? new Date(p._date).toLocaleDateString("ru-RU")
+                                        : "Нет даты"}
                                     </span>
                                     <span className="text-xs truncate font-medium">
-                                      {p.caption || p.content || (p._isStory ? "Story без текста" : "Без текста")}
+                                      {p.caption ||
+                                        p.content ||
+                                        (p._isStory ? "Story без текста" : "Без текста")}
                                     </span>
                                   </div>
                                 </div>
@@ -797,15 +970,17 @@ function AdminInstagramPage() {
                         <Label className="flex items-center gap-2">
                           <MessageSquare className="w-4 h-4 text-primary" /> Публичный ответ
                         </Label>
-                        <Textarea 
-                          value={replyText} 
-                          onChange={(e) => setReplyText(e.target.value)} 
+                        <Textarea
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
                           placeholder="Ответили вам в Директ! 📩"
                           rows={2}
                         />
                         <div className="bg-muted/30 p-2 rounded text-[10px] space-y-1">
-                          <span className="text-muted-foreground font-semibold uppercase">Вариации против однотипных ответов:</span>
-                          <Textarea 
+                          <span className="text-muted-foreground font-semibold uppercase">
+                            Вариации против однотипных ответов:
+                          </span>
+                          <Textarea
                             className="text-[11px] min-h-[40px] bg-transparent border-none focus-visible:ring-0 p-0"
                             placeholder="Одна вариация на строку"
                             value={replyVariations.join("\n")}
@@ -818,83 +993,124 @@ function AdminInstagramPage() {
                         <Label className="flex items-center gap-2">
                           <Zap className="w-4 h-4 text-primary" /> Личное сообщение (DM)
                         </Label>
-                        <Textarea 
-                          value={dmText} 
-                          onChange={(e) => setDmText(e.target.value)} 
+                        <Textarea
+                          value={dmText}
+                          onChange={(e) => setDmText(e.target.value)}
                           placeholder="Привет! Вот ссылка на материал..."
                           rows={3}
                         />
-                        
+
                         {/* Buttons inside DM */}
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase text-muted-foreground">Кнопки в DM ({buttons.length}/3)</span>
-                                            <Button type="button" variant="outline" size="sm" onClick={handleAddButton} disabled={buttons.length >= 3} className="h-7 text-[10px]">
-                  + Добавить
-                </Button>
-
+                            <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                              Кнопки в DM ({buttons.length}/3)
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={handleAddButton}
+                              disabled={buttons.length >= 3}
+                              className="h-7 text-[10px]"
+                            >
+                              + Добавить
+                            </Button>
                           </div>
                           <div className="grid grid-cols-1 gap-2">
                             {buttons.map((btn, i) => (
-                              <div key={i} className="flex items-start gap-2 p-2 border rounded-md bg-muted/20 relative group">
+                              <div
+                                key={i}
+                                className="flex items-start gap-2 p-2 border rounded-md bg-muted/20 relative group"
+                              >
                                 <div className="flex-1 grid grid-cols-2 gap-2">
-                                  <Input 
-                                    value={btn.title} 
-                                    onChange={(e) => handleUpdateButton(i, "title", e.target.value)} 
-                                    placeholder="Текст" 
+                                  <Input
+                                    value={btn.title}
+                                    onChange={(e) => handleUpdateButton(i, "title", e.target.value)}
+                                    placeholder="Текст"
                                     className="h-7 text-[11px]"
                                   />
-                                  <Select value={btn.type} onValueChange={(v) => handleUpdateButton(i, "type", v)}>
-                                    <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
+                                  <Select
+                                    value={btn.type}
+                                    onValueChange={(v) => handleUpdateButton(i, "type", v)}
+                                  >
+                                    <SelectTrigger className="h-7 text-[11px]">
+                                      <SelectValue />
+                                    </SelectTrigger>
                                     <SelectContent>
                                       <SelectItem value="url">🔗 URL</SelectItem>
                                       <SelectItem value="postback">🤖 CMD</SelectItem>
                                     </SelectContent>
                                   </Select>
                                   {btn.type === "url" ? (
-                                    <Input 
-                                      value={btn.url} 
-                                      onChange={(e) => handleUpdateButton(i, "url", e.target.value)} 
-                                      placeholder="https://..." 
+                                    <Input
+                                      value={btn.url}
+                                      onChange={(e) => handleUpdateButton(i, "url", e.target.value)}
+                                      placeholder="https://..."
                                       className="h-7 text-[11px] col-span-2"
                                     />
                                   ) : (
-                                    <Input 
-                                      value={btn.payload} 
-                                      onChange={(e) => handleUpdateButton(i, "payload", e.target.value)} 
-                                      placeholder="Команда, например BUY_NOW" 
+                                    <Input
+                                      value={btn.payload}
+                                      onChange={(e) =>
+                                        handleUpdateButton(i, "payload", e.target.value)
+                                      }
+                                      placeholder="Команда, например BUY_NOW"
                                       className="h-7 text-[11px] col-span-2"
                                     />
                                   )}
                                 </div>
-                                <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoveButton(i)} className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveButton(i)}
+                                  className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
+                                >
                                   <X className="w-3 h-3" />
                                 </Button>
                               </div>
                             ))}
                           </div>
                         </div>
-
                       </div>
                     </div>
 
                     <div className="pt-4 border-t space-y-4">
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
-                          <Checkbox id="trk" checked={linkTracking} onCheckedChange={(v) => setLinkTracking(!!v)} />
-                          <Label htmlFor="trk" className="cursor-pointer">Трекинг ссылок</Label>
+                          <Checkbox
+                            id="trk"
+                            checked={linkTracking}
+                            onCheckedChange={(v) => setLinkTracking(!!v)}
+                          />
+                          <Label htmlFor="trk" className="cursor-pointer">
+                            Трекинг ссылок
+                          </Label>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Checkbox id="act" checked={isActive} onCheckedChange={(v) => setIsActive(!!v)} />
-                          <Label htmlFor="act" className="cursor-pointer">Активно</Label>
+                          <Checkbox
+                            id="act"
+                            checked={isActive}
+                            onCheckedChange={(v) => setIsActive(!!v)}
+                          />
+                          <Label htmlFor="act" className="cursor-pointer">
+                            Активно
+                          </Label>
                         </div>
                       </div>
                       <div className="flex gap-2">
                         <Button type="submit" className="flex-1" disabled={savingAuto}>
-                          {savingAuto ? "Сохранение..." : editingId ? "Сохранить изменения" : "Создать автоматизацию"}
+                          {savingAuto
+                            ? "Сохранение..."
+                            : editingId
+                              ? "Сохранить изменения"
+                              : "Создать автоматизацию"}
                         </Button>
                         {editingId && (
-                          <Button variant="ghost" onClick={handleResetForm}>Отмена</Button>
+                          <Button variant="ghost" onClick={handleResetForm}>
+                            Отмена
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -922,14 +1138,28 @@ function AdminInstagramPage() {
               ) : (
                 <div className="grid grid-cols-1 gap-3">
                   {automations.map((auto: any) => (
-                    <Card key={auto.id} className={`transition-all ${auto.isActive ? 'border-l-4 border-l-primary' : 'opacity-70'}`}>
+                    <Card
+                      key={auto.id}
+                      className={`transition-all ${auto.isActive ? "border-l-4 border-l-primary" : "opacity-70"}`}
+                    >
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="space-y-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="font-bold truncate">{auto.name}</span>
-                              {!auto.isActive && <Badge variant="secondary" className="text-[9px] h-4">Пауза</Badge>}
-                              {auto.trigger === "story_reply" && <Badge variant="outline" className="text-[9px] h-4 bg-purple-50 text-purple-600 border-purple-200">Story</Badge>}
+                              {!auto.isActive && (
+                                <Badge variant="secondary" className="text-[9px] h-4">
+                                  Пауза
+                                </Badge>
+                              )}
+                              {auto.trigger === "story_reply" && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] h-4 bg-purple-50 text-purple-600 border-purple-200"
+                                >
+                                  Story
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                               <span className="flex items-center gap-1">
@@ -937,14 +1167,24 @@ function AdminInstagramPage() {
                               </span>
                               {auto.stats?.linkClicks > 0 && (
                                 <span className="flex items-center gap-1 text-blue-600 font-medium">
-                                  <ExternalLink className="w-3 h-3" /> {auto.stats.linkClicks} кликов
+                                  <ExternalLink className="w-3 h-3" /> {auto.stats.linkClicks}{" "}
+                                  кликов
                                 </span>
                               )}
                               <span className="truncate flex items-center gap-1">
-                                • {auto.replyToAll ? (
-                                  <Badge variant="outline" className="text-[9px] h-4 bg-primary/5 text-primary border-primary/20">Отвечать всем</Badge>
+                                •{" "}
+                                {auto.replyToAll ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[9px] h-4 bg-primary/5 text-primary border-primary/20"
+                                  >
+                                    Отвечать всем
+                                  </Badge>
                                 ) : (
-                                  <>Ключи: {auto.keywords?.length ? auto.keywords.join(", ") : "Любые"}</>
+                                  <>
+                                    Ключи:{" "}
+                                    {auto.keywords?.length ? auto.keywords.join(", ") : "Любые"}
+                                  </>
                                 )}
                               </span>
                             </div>
@@ -955,13 +1195,32 @@ function AdminInstagramPage() {
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditAutomation(auto)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleEditAutomation(auto)}
+                            >
                               <Settings2 className="w-4 h-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleToggleAutomation(auto.id, auto.isActive)}>
-                              {auto.isActive ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleToggleAutomation(auto.id, auto.isActive)}
+                            >
+                              {auto.isActive ? (
+                                <Pause className="w-4 h-4" />
+                              ) : (
+                                <Play className="w-4 h-4" />
+                              )}
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => handleDeleteAutomation(auto.id)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                              onClick={() => handleDeleteAutomation(auto.id)}
+                            >
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </div>
@@ -979,9 +1238,12 @@ function AdminInstagramPage() {
         <TabsContent value="publish" className="space-y-6">
           <Card className="max-w-3xl">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><CalendarClock className="w-5 h-5 text-primary" /> Публикация и планировщик</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarClock className="w-5 h-5 text-primary" /> Публикация и планировщик
+              </CardTitle>
               <CardDescription>
-                Feed, Reels, Stories и карусели входят в Instagram-автоматизацию. Для публикации нужны прямые публичные ссылки на файлы.
+                Feed, Reels, Stories и карусели входят в Instagram-автоматизацию. Для публикации
+                нужны прямые публичные ссылки на файлы.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -989,14 +1251,21 @@ function AdminInstagramPage() {
                 <div className="space-y-2">
                   <Label>Аккаунт</Label>
                   <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                    {acc ? (acc.name || acc.username || acc._id) : "Подключите Instagram-аккаунт во вкладке «Аккаунты»"}
+                    {acc
+                      ? acc.name || acc.username || acc._id
+                      : "Подключите Instagram-аккаунт во вкладке «Аккаунты»"}
                   </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Формат</Label>
-                    <Select value={publishType} onValueChange={(value) => setPublishType(value as "feed" | "story")}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Select
+                      value={publishType}
+                      onValueChange={(value) => setPublishType(value as "feed" | "story")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="feed">Feed / Reel / карусель</SelectItem>
                         <SelectItem value="story">Story</SelectItem>
@@ -1005,8 +1274,13 @@ function AdminInstagramPage() {
                   </div>
                   <div className="space-y-2">
                     <Label>Медиа</Label>
-                    <Select value={mediaType} onValueChange={(value) => setMediaType(value as "image" | "video")}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    <Select
+                      value={mediaType}
+                      onValueChange={(value) => setMediaType(value as "image" | "video")}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="image">Изображение</SelectItem>
                         <SelectItem value="video">Видео (публикуется как Reel)</SelectItem>
@@ -1016,38 +1290,102 @@ function AdminInstagramPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="publish-media">Прямые ссылки на медиа</Label>
-                  <Textarea id="publish-media" value={mediaUrlsText} onChange={(e) => setMediaUrlsText(e.target.value)} rows={4} placeholder={mediaType === "video" ? "https://cdn.example.com/reel.mp4" : "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg"} required />
-                  <p className="text-xs text-muted-foreground">Одна ссылка на строку. Story и Reel: один файл; карусель: до 10 изображений.</p>
+                  <Textarea
+                    id="publish-media"
+                    value={mediaUrlsText}
+                    onChange={(e) => setMediaUrlsText(e.target.value)}
+                    rows={4}
+                    placeholder={
+                      mediaType === "video"
+                        ? "https://cdn.example.com/reel.mp4"
+                        : "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg"
+                    }
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Одна ссылка на строку. Story и Reel: один файл; карусель: до 10 изображений.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="publish-caption">Подпись</Label>
-                  <Textarea id="publish-caption" value={publishContent} onChange={(e) => setPublishContent(e.target.value)} maxLength={2200} rows={5} placeholder="Текст публикации и хэштеги" />
-                  <p className="text-right text-xs text-muted-foreground">{publishContent.length}/2200</p>
+                  <Textarea
+                    id="publish-caption"
+                    value={publishContent}
+                    onChange={(e) => setPublishContent(e.target.value)}
+                    maxLength={2200}
+                    rows={5}
+                    placeholder="Текст публикации и хэштеги"
+                  />
+                  <p className="text-right text-xs text-muted-foreground">
+                    {publishContent.length}/2200
+                  </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="scheduled-for">Время публикации</Label>
-                    <Input id="scheduled-for" type="datetime-local" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)} />
-                    <p className="text-xs text-muted-foreground">Оставьте пустым, чтобы опубликовать сейчас.</p>
+                    <Input
+                      id="scheduled-for"
+                      type="datetime-local"
+                      value={scheduledFor}
+                      onChange={(e) => setScheduledFor(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Оставьте пустым, чтобы опубликовать сейчас.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="collaborators">Соавторы</Label>
-                    <Input id="collaborators" value={collaboratorsText} onChange={(e) => setCollaboratorsText(e.target.value)} placeholder="brand_one, brand_two" />
-                    <p className="text-xs text-muted-foreground">До трёх публичных Business/Creator аккаунтов.</p>
+                    <Input
+                      id="collaborators"
+                      value={collaboratorsText}
+                      onChange={(e) => setCollaboratorsText(e.target.value)}
+                      placeholder="brand_one, brand_two"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      До трёх публичных Business/Creator аккаунтов.
+                    </p>
                   </div>
                 </div>
                 {publishType === "feed" && mediaType === "image" && (
                   <div className="space-y-2">
                     <Label htmlFor="first-comment">Первый комментарий</Label>
-                    <Textarea id="first-comment" value={firstComment} onChange={(e) => setFirstComment(e.target.value)} rows={2} placeholder="Ссылка или дополнительная информация" />
+                    <Textarea
+                      id="first-comment"
+                      value={firstComment}
+                      onChange={(e) => setFirstComment(e.target.value)}
+                      rows={2}
+                      placeholder="Ссылка или дополнительная информация"
+                    />
                   </div>
                 )}
                 <div className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
-                  {mediaType === "video" ? <div className="flex items-center gap-2"><Checkbox id="share-to-feed" checked={shareToFeed} onCheckedChange={(checked) => setShareToFeed(checked === true)} /><Label htmlFor="share-to-feed">Показывать Reel и в основной ленте</Label></div> : <span />}
-                  <div className="flex items-center gap-2"><Checkbox id="ai-generated" checked={isAiGenerated} onCheckedChange={(checked) => setIsAiGenerated(checked === true)} /><Label htmlFor="ai-generated">Контент создан ИИ</Label></div>
+                  {mediaType === "video" ? (
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="share-to-feed"
+                        checked={shareToFeed}
+                        onCheckedChange={(checked) => setShareToFeed(checked === true)}
+                      />
+                      <Label htmlFor="share-to-feed">Показывать Reel и в основной ленте</Label>
+                    </div>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="ai-generated"
+                      checked={isAiGenerated}
+                      onCheckedChange={(checked) => setIsAiGenerated(checked === true)}
+                    />
+                    <Label htmlFor="ai-generated">Контент создан ИИ</Label>
+                  </div>
                 </div>
                 <Button type="submit" disabled={publishing || !acc} className="w-full">
-                  {publishing ? "Отправляем…" : scheduledFor ? "Запланировать публикацию" : "Опубликовать сейчас"}
+                  {publishing
+                    ? "Отправляем…"
+                    : scheduledFor
+                      ? "Запланировать публикацию"
+                      : "Опубликовать сейчас"}
                 </Button>
               </form>
             </CardContent>
@@ -1056,9 +1394,16 @@ function AdminInstagramPage() {
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
                 <CardTitle>Очередь публикаций</CardTitle>
-                <CardDescription>Запланированные, опубликованные и неудачные посты.</CardDescription>
+                <CardDescription>
+                  Запланированные, опубликованные и неудачные посты.
+                </CardDescription>
               </div>
-              <Button variant="outline" size="sm" onClick={handleRefreshPosts} disabled={postsQuery.isFetching}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshPosts}
+                disabled={postsQuery.isFetching}
+              >
                 <RefreshCcw className="w-4 h-4 mr-2" /> Обновить
               </Button>
             </CardHeader>
@@ -1068,29 +1413,64 @@ function AdminInstagramPage() {
               ) : posts.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Публикаций пока нет.</p>
               ) : (
-                posts.filter((post: any) => post._zernioPostId).map((post: any) => {
-                  const postId = post._zernioPostId as string;
-                  const status = String(post.status || "published").toLowerCase();
-                  const canCancel = ["scheduled", "draft", "pending", "queued"].includes(status);
-                  const canRetry = ["failed", "partial", "cancelled"].includes(status);
-                  const when = post.scheduledFor || post.publishedAt || post._date;
-                  return (
-                    <div key={postId} className="flex gap-3 rounded-md border p-3">
-                      {post._thumbnail ? <img src={post._thumbnail} alt="" className="h-12 w-12 rounded object-cover bg-muted" /> : <div className="h-12 w-12 rounded bg-muted flex items-center justify-center"><ImageIcon className="w-5 h-5 text-muted-foreground" /></div>}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium">{post.caption || post.content || "Публикация без подписи"}</span>
-                          <Badge variant="outline">{status}</Badge>
+                posts
+                  .filter((post: any) => post._zernioPostId)
+                  .map((post: any) => {
+                    const postId = post._zernioPostId as string;
+                    const status = String(post.status || "published").toLowerCase();
+                    const canCancel = ["scheduled", "draft", "pending", "queued"].includes(status);
+                    const canRetry = ["failed", "partial", "cancelled"].includes(status);
+                    const when = post.scheduledFor || post.publishedAt || post._date;
+                    return (
+                      <div key={postId} className="flex gap-3 rounded-md border p-3">
+                        {post._thumbnail ? (
+                          <img
+                            src={post._thumbnail}
+                            alt=""
+                            className="h-12 w-12 rounded object-cover bg-muted"
+                          />
+                        ) : (
+                          <div className="h-12 w-12 rounded bg-muted flex items-center justify-center">
+                            <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {post.caption || post.content || "Публикация без подписи"}
+                            </span>
+                            <Badge variant="outline">{status}</Badge>
+                          </div>
+                          {when && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {new Date(when).toLocaleString("ru-RU")}
+                            </p>
+                          )}
                         </div>
-                        {when && <p className="mt-1 text-xs text-muted-foreground">{new Date(when).toLocaleString("ru-RU")}</p>}
+                        <div className="flex shrink-0 items-center gap-2">
+                          {canCancel && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={postActionId === postId}
+                              onClick={() => handlePostAction(postId, "cancel")}
+                            >
+                              Отменить
+                            </Button>
+                          )}
+                          {canRetry && (
+                            <Button
+                              size="sm"
+                              disabled={postActionId === postId}
+                              onClick={() => handlePostAction(postId, "retry")}
+                            >
+                              Повторить
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {canCancel && <Button size="sm" variant="outline" disabled={postActionId === postId} onClick={() => handlePostAction(postId, "cancel")}>Отменить</Button>}
-                        {canRetry && <Button size="sm" disabled={postActionId === postId} onClick={() => handlePostAction(postId, "retry")}>Повторить</Button>}
-                      </div>
-                    </div>
-                  );
-                })
+                    );
+                  })
               )}
             </CardContent>
           </Card>
@@ -1100,8 +1480,17 @@ function AdminInstagramPage() {
         <TabsContent value="inbox" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <div><CardTitle>Instagram Direct</CardTitle><CardDescription>Диалоги подключённого аккаунта.</CardDescription></div>
-              <Button size="sm" variant="outline" onClick={() => qc.invalidateQueries({ queryKey: ["ig_conversations"] })}><RefreshCcw className="w-4 h-4 mr-2" /> Обновить</Button>
+              <div>
+                <CardTitle>Instagram Direct</CardTitle>
+                <CardDescription>Диалоги подключённого аккаунта.</CardDescription>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => qc.invalidateQueries({ queryKey: ["ig_conversations"] })}
+              >
+                <RefreshCcw className="w-4 h-4 mr-2" /> Обновить
+              </Button>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
               <div className="max-h-[520px] space-y-2 overflow-y-auto border-r pr-3">
@@ -1111,17 +1500,40 @@ function AdminInstagramPage() {
                   // «неизвестно» и «не подписан» это разные вещи.
                   const profile = contactProfilesQuery.data?.profiles?.[conversation.participantId];
                   return (
-                    <button key={conversation.id} type="button" onClick={() => setSelectedConversationId(conversation.id)} className={`w-full rounded-md border p-3 text-left ${selectedConversationId === conversation.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}>
-                      <div className="flex justify-between gap-2"><span className="font-medium truncate">{conversation.participantName || conversation.participantUsername || "Диалог"}</span>{conversation.unreadCount ? <Badge>{conversation.unreadCount}</Badge> : null}</div>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">{conversation.lastMessage || "Нет сообщений"}</p>
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      onClick={() => setSelectedConversationId(conversation.id)}
+                      className={`w-full rounded-md border p-3 text-left ${selectedConversationId === conversation.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+                    >
+                      <div className="flex justify-between gap-2">
+                        <span className="font-medium truncate">
+                          {conversation.participantName ||
+                            conversation.participantUsername ||
+                            "Диалог"}
+                        </span>
+                        {conversation.unreadCount ? (
+                          <Badge>{conversation.unreadCount}</Badge>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {conversation.lastMessage || "Нет сообщений"}
+                      </p>
                       {profile && (
                         <div className="mt-2 flex flex-wrap items-center gap-1">
                           {profile.isFollower !== undefined && (
-                            <Badge variant={profile.isFollower ? "secondary" : "outline"} className="text-[10px]">
+                            <Badge
+                              variant={profile.isFollower ? "secondary" : "outline"}
+                              className="text-[10px]"
+                            >
                               {profile.isFollower ? "Подписчик" : "Не подписан"}
                             </Badge>
                           )}
-                          {profile.isVerified && <Badge variant="outline" className="text-[10px]">Верифицирован</Badge>}
+                          {profile.isVerified && (
+                            <Badge variant="outline" className="text-[10px]">
+                              Верифицирован
+                            </Badge>
+                          )}
                           {profile.followerCount !== undefined && (
                             <span className="text-[10px] text-muted-foreground">
                               {profile.followerCount.toLocaleString("ru-RU")} подписчиков
@@ -1132,36 +1544,103 @@ function AdminInstagramPage() {
                     </button>
                   );
                 })}
-                {!conversationsQuery.isLoading && !(conversationsQuery.data?.conversations || []).length && <p className="text-sm text-muted-foreground">Диалогов пока нет.</p>}
+                {!conversationsQuery.isLoading &&
+                  !(conversationsQuery.data?.conversations || []).length && (
+                    <p className="text-sm text-muted-foreground">Диалогов пока нет.</p>
+                  )}
               </div>
               <div className="flex min-h-[440px] flex-col gap-3">
-                {!selectedConversationId ? <p className="m-auto text-sm text-muted-foreground">Выберите диалог слева.</p> : <>
-                  <div className="flex-1 space-y-2 overflow-y-auto rounded-md bg-muted/30 p-3">
-                    {(messagesQuery.data?.messages || []).map((message: any) => <div key={message.id} className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${message.direction === "outgoing" ? "ml-auto bg-primary text-primary-foreground" : "bg-background border"}`}><p>{message.message || "Вложение"}</p><p className="mt-1 text-[10px] opacity-70">{message.createdAt ? new Date(message.createdAt).toLocaleString("ru-RU") : ""}</p></div>)}
-                    {messagesQuery.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-                  </div>
-                  <div className="flex gap-2"><Textarea value={inboxReply} onChange={(event) => setInboxReply(event.target.value)} placeholder="Напишите ответ…" rows={2} /><Button onClick={handleInboxReply} disabled={!inboxReply.trim()}>Отправить</Button></div>
-                </>}
+                {!selectedConversationId ? (
+                  <p className="m-auto text-sm text-muted-foreground">Выберите диалог слева.</p>
+                ) : (
+                  <>
+                    <div className="flex-1 space-y-2 overflow-y-auto rounded-md bg-muted/30 p-3">
+                      {(messagesQuery.data?.messages || []).map((message: any) => (
+                        <div
+                          key={message.id}
+                          className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${message.direction === "outgoing" ? "ml-auto bg-primary text-primary-foreground" : "bg-background border"}`}
+                        >
+                          <p>{message.message || "Вложение"}</p>
+                          <p className="mt-1 text-[10px] opacity-70">
+                            {message.createdAt
+                              ? new Date(message.createdAt).toLocaleString("ru-RU")
+                              : ""}
+                          </p>
+                        </div>
+                      ))}
+                      {messagesQuery.isLoading && (
+                        <p className="text-sm text-muted-foreground">Загрузка…</p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Textarea
+                        value={inboxReply}
+                        onChange={(event) => setInboxReply(event.target.value)}
+                        placeholder="Напишите ответ…"
+                        rows={2}
+                      />
+                      <Button onClick={handleInboxReply} disabled={!inboxReply.trim()}>
+                        Отправить
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
-          <div className="flex items-center justify-between"><div><h2 className="text-xl font-bold">Instagram за 30 дней</h2><p className="text-sm text-muted-foreground">Автоматизации, Direct и оплаченные заказы.</p></div><Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["ig_dashboard"] })}><RefreshCcw className="w-4 h-4 mr-2" /> Обновить</Button></div>
-          {dashboardQuery.isLoading ? <p className="text-sm text-muted-foreground">Считаем показатели…</p> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["Срабатывания", dashboardQuery.data?.automation.triggered || 0],
-              ["Отправлено DM", dashboardQuery.data?.automation.dms || 0],
-              ["Клики по ссылкам", dashboardQuery.data?.automation.clicks || 0],
-              ["Входящие Direct", dashboardQuery.data?.direct.incoming || 0],
-              ["Instagram-заказы", dashboardQuery.data?.orders.total || 0],
-              ["Оплачено / выдано", dashboardQuery.data?.orders.paid || 0],
-              ["Выручка", `${dashboardQuery.data?.orders.revenue || 0} KZT`],
-              ["Ошибки обработки", dashboardQuery.data?.direct.errors || 0],
-            ].map(([label, value]) => <Card key={String(label)}><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-bold">{value}</p></CardContent></Card>)}
-          </div>}
-          <Card><CardHeader><CardTitle>Правила автоматизации</CardTitle><CardDescription>Активных правил: {dashboardQuery.data?.automation.rules || 0}</CardDescription></CardHeader><CardContent className="text-sm text-muted-foreground">Показатели считаются по данным Instagram; продажи — по заказам, созданным из Instagram Direct.</CardContent></Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Instagram за 30 дней</h2>
+              <p className="text-sm text-muted-foreground">
+                Автоматизации, Direct и оплаченные заказы.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => qc.invalidateQueries({ queryKey: ["ig_dashboard"] })}
+            >
+              <RefreshCcw className="w-4 h-4 mr-2" /> Обновить
+            </Button>
+          </div>
+          {dashboardQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Считаем показатели…</p>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ["Срабатывания", dashboardQuery.data?.automation.triggered || 0],
+                ["Отправлено DM", dashboardQuery.data?.automation.dms || 0],
+                ["Клики по ссылкам", dashboardQuery.data?.automation.clicks || 0],
+                ["Входящие Direct", dashboardQuery.data?.direct.incoming || 0],
+                ["Instagram-заказы", dashboardQuery.data?.orders.total || 0],
+                ["Оплачено / выдано", dashboardQuery.data?.orders.paid || 0],
+                ["Выручка", `${dashboardQuery.data?.orders.revenue || 0} KZT`],
+                ["Ошибки обработки", dashboardQuery.data?.direct.errors || 0],
+              ].map(([label, value]) => (
+                <Card key={String(label)}>
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                    <p className="mt-1 text-2xl font-bold">{value}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+          <Card>
+            <CardHeader>
+              <CardTitle>Правила автоматизации</CardTitle>
+              <CardDescription>
+                Активных правил: {dashboardQuery.data?.automation.rules || 0}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              Показатели считаются по данным Instagram; продажи — по заказам, созданным из Instagram
+              Direct.
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="logs">
@@ -1171,7 +1650,11 @@ function AdminInstagramPage() {
                 <CardTitle>Журнал событий</CardTitle>
                 <CardDescription>Последние действия автоматизации</CardDescription>
               </div>
-              <Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["ig_logs"] })}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => qc.invalidateQueries({ queryKey: ["ig_logs"] })}
+              >
                 <RefreshCcw className="w-4 h-4 mr-2" /> Обновить
               </Button>
             </CardHeader>
@@ -1189,19 +1672,30 @@ function AdminInstagramPage() {
                   <tbody className="divide-y">
                     {logs.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="p-8 text-center text-muted-foreground">Логов пока нет</td>
+                        <td colSpan={4} className="p-8 text-center text-muted-foreground">
+                          Логов пока нет
+                        </td>
                       </tr>
                     ) : (
                       logs.map((log: any) => (
                         <tr key={log.id} className="hover:bg-muted/20 transition-colors">
                           <td className="p-3 text-xs whitespace-nowrap">
-                            {new Date(log.created_at).toLocaleString("ru-RU", { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            {new Date(log.created_at).toLocaleString("ru-RU", {
+                              day: "2-digit",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </td>
                           <td className="p-3">
                             <div className="flex flex-col">
-                              <span className="font-mono text-[11px] uppercase">{log.event_type}</span>
+                              <span className="font-mono text-[11px] uppercase">
+                                {log.event_type}
+                              </span>
                               {log.payload?.data?.senderUsername && (
-                                <span className="text-[10px] text-primary">@{log.payload.data.senderUsername}</span>
+                                <span className="text-[10px] text-primary">
+                                  @{log.payload.data.senderUsername}
+                                </span>
                               )}
                               {log.payload?.data?.commentText && (
                                 <span className="text-[10px] italic text-muted-foreground truncate max-w-[200px]">
@@ -1211,12 +1705,20 @@ function AdminInstagramPage() {
                             </div>
                           </td>
                           <td className="p-3">
-                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-[10px]">
+                            <Badge
+                              variant="outline"
+                              className="bg-green-50 text-green-700 border-green-200 text-[10px]"
+                            >
                               {log.status}
                             </Badge>
                           </td>
                           <td className="p-3 text-right">
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => alert(JSON.stringify(log.payload, null, 2))}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0"
+                              onClick={() => alert(JSON.stringify(log.payload, null, 2))}
+                            >
                               <Eye className="w-3 h-3" />
                             </Button>
                           </td>
@@ -1238,8 +1740,16 @@ function AdminInstagramPage() {
                 <Card key={account._id || Math.random().toString()}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">{account.name || account.username || "Instagram Account"}</CardTitle>
-                      <Badge className={account.isExpired ? "bg-amber-600 text-white border-none" : "bg-green-600 text-white border-none"}>
+                      <CardTitle className="text-lg">
+                        {account.name || account.username || "Instagram Account"}
+                      </CardTitle>
+                      <Badge
+                        className={
+                          account.isExpired
+                            ? "bg-amber-600 text-white border-none"
+                            : "bg-green-600 text-white border-none"
+                        }
+                      >
                         {account.isExpired ? "Требуется переподключение" : "Активен"}
                       </Badge>
                     </div>
@@ -1253,34 +1763,72 @@ function AdminInstagramPage() {
                       </div>
                       <div className="p-3 bg-muted rounded-lg">
                         <div className="text-muted-foreground mb-1">Профиль интеграции</div>
-                        <div className="font-bold truncate">{displayProfile(account.profileId)}</div>
+                        <div className="font-bold truncate">
+                          {displayProfile(account.profileId)}
+                        </div>
                       </div>
                     </div>
                     {account._id === acc?._id && (
                       <div className="rounded-lg border p-3 text-xs space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-muted-foreground">Готовность подключения</span>
-                          <Badge variant="outline" className={accountHealthQuery.data?.health?.status === "healthy" ? "text-green-700 border-green-200 bg-green-50" : "text-amber-700 border-amber-200 bg-amber-50"}>
-                            {accountHealthQuery.isLoading ? "Проверяем…" : accountHealthQuery.data?.health?.status || "нет данных"}
+                          <Badge
+                            variant="outline"
+                            className={
+                              accountHealthQuery.data?.health?.status === "healthy"
+                                ? "text-green-700 border-green-200 bg-green-50"
+                                : "text-amber-700 border-amber-200 bg-amber-50"
+                            }
+                          >
+                            {accountHealthQuery.isLoading
+                              ? "Проверяем…"
+                              : accountHealthQuery.data?.health?.status || "нет данных"}
                           </Badge>
                         </div>
                         {accountHealthQuery.data?.health && (
                           <>
-                            <p>Публикации: {accountHealthQuery.data.health.permissions?.canPost ? "доступны" : "недоступны"}; аналитика: {accountHealthQuery.data.health.permissions?.canFetchAnalytics ? "доступна" : "недоступна"}.</p>
-                            {accountHealthQuery.data.health.issues?.slice(0, 2).map((issue: string) => <p key={issue} className="text-amber-700">{issue}</p>)}
-                            {accountHealthQuery.data.health.recommendations?.slice(0, 1).map((recommendation: string) => <p key={recommendation} className="text-muted-foreground">{recommendation}</p>)}
+                            <p>
+                              Публикации:{" "}
+                              {accountHealthQuery.data.health.permissions?.canPost
+                                ? "доступны"
+                                : "недоступны"}
+                              ; аналитика:{" "}
+                              {accountHealthQuery.data.health.permissions?.canFetchAnalytics
+                                ? "доступна"
+                                : "недоступна"}
+                              .
+                            </p>
+                            {accountHealthQuery.data.health.issues
+                              ?.slice(0, 2)
+                              .map((issue: string) => (
+                                <p key={issue} className="text-amber-700">
+                                  {issue}
+                                </p>
+                              ))}
+                            {accountHealthQuery.data.health.recommendations
+                              ?.slice(0, 1)
+                              .map((recommendation: string) => (
+                                <p key={recommendation} className="text-muted-foreground">
+                                  {recommendation}
+                                </p>
+                              ))}
                           </>
                         )}
                       </div>
                     )}
                   </CardContent>
                   <CardFooter className="border-t pt-4">
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      className="w-full" 
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="w-full"
                       disabled={disconnecting === account._id}
-                      onClick={() => handleDisconnectAccount(account._id, account.name || account.username || "Account")}
+                      onClick={() =>
+                        handleDisconnectAccount(
+                          account._id,
+                          account.name || account.username || "Account",
+                        )
+                      }
                     >
                       {disconnecting === account._id ? "Отключение..." : "🔓 Отключить аккаунт"}
                     </Button>

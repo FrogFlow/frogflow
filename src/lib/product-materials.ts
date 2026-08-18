@@ -78,5 +78,7 @@ export function materialsForProduct(
 
 /** Есть ли вообще что выдавать — та же проверка, что и у снимка. */
 export function hasAnyMaterial(product: ProductWithFiles | null | undefined): boolean {
-  return materialsForProduct(product, "ru").length > 0 || materialsForProduct(product, "kz").length > 0;
+  return (
+    materialsForProduct(product, "ru").length > 0 || materialsForProduct(product, "kz").length > 0
+  );
 }

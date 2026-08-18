@@ -75,7 +75,11 @@ export const getBroadcastFn = createServerFn({ method: "GET" })
     const { requireAdmin } = await import("./admin-session.server");
     await requireAdmin();
     const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-    const { data: row, error } = await supabaseAdmin.from("broadcasts").select("*").eq("id", data.id).single();
+    const { data: row, error } = await supabaseAdmin
+      .from("broadcasts")
+      .select("*")
+      .eq("id", data.id)
+      .single();
     if (error) throw new Error(error.message);
     return row;
   });
@@ -104,7 +108,9 @@ export const getBroadcastUploadUrl = createServerFn({ method: "POST" })
     const ext = (data.filename.split(".").pop() || "jpg").toLowerCase().slice(0, 10);
     const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-    const { data: signed, error } = await supabaseAdmin.storage.from("broadcast-images").createSignedUploadUrl(key);
+    const { data: signed, error } = await supabaseAdmin.storage
+      .from("broadcast-images")
+      .createSignedUploadUrl(key);
     if (error || !signed) throw new Error(error?.message || "Upload error");
     return { path: key, signedUrl: signed.signedUrl };
   });

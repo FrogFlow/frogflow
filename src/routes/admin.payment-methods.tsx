@@ -38,7 +38,9 @@ const empty: PM = {
 };
 
 async function uploadFile(file: File) {
-  const { path, name, signedUrl } = await getSignedUploadUrl({ data: { bucket: "product-images", filename: file.name } });
+  const { path, name, signedUrl } = await getSignedUploadUrl({
+    data: { bucket: "product-images", filename: file.name },
+  });
   const contentType = file.type || "application/octet-stream";
   const resUpload = await fetch(signedUrl, {
     method: "PUT",
@@ -59,7 +61,7 @@ function PaymentMethodsPage() {
     if (!file) return;
     try {
       const r = await uploadFile(file);
-      setEditing((prev) => prev ? { ...prev, qr_code_path: r.path } : prev);
+      setEditing((prev) => (prev ? { ...prev, qr_code_path: r.path } : prev));
     } catch (e: any) {
       alert("Ошибка загрузки QR-кода: " + e.message);
     }
@@ -95,7 +97,9 @@ function PaymentMethodsPage() {
               <Label>Код страны</Label>
               <Input
                 value={editing.country_code}
-                onChange={(e) => setEditing({ ...editing, country_code: e.target.value.toUpperCase() })}
+                onChange={(e) =>
+                  setEditing({ ...editing, country_code: e.target.value.toUpperCase() })
+                }
                 placeholder="KZ, RU, KG..."
               />
             </div>
@@ -127,7 +131,11 @@ function PaymentMethodsPage() {
           </div>
           <div className="space-y-2">
             <Label>QR-код для оплаты (опционально)</Label>
-            <Input type="file" accept="image/*" onChange={(e) => onQrChange(e.target.files?.[0] ?? null)} />
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={(e) => onQrChange(e.target.files?.[0] ?? null)}
+            />
             {editing.qr_code_path && (
               <div className="mt-2 relative inline-block">
                 <img
@@ -180,7 +188,8 @@ function PaymentMethodsPage() {
           <div key={m.id} className="p-3 flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <div className="font-medium">
-                {m.country_name} <span className="text-xs text-muted-foreground">[{m.country_code}]</span>
+                {m.country_name}{" "}
+                <span className="text-xs text-muted-foreground">[{m.country_code}]</span>
                 <span className="text-xs text-muted-foreground"> · {m.currency}</span>
                 {!m.is_active && <span className="text-xs text-muted-foreground"> · скрыт</span>}
               </div>

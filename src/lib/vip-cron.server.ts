@@ -53,9 +53,7 @@ async function sendWarn(
       };
 
   // If no username configured, tell user to open /start renew (callback answered in bot)
-  const extraHint = botUsername
-    ? ""
-    : "\n\nНажмите /start renew в этом боте, чтобы выбрать тариф.";
+  const extraHint = botUsername ? "" : "\n\nНажмите /start renew в этом боте, чтобы выбрать тариф.";
 
   return tgVip("sendMessage", {
     chat_id: telegramId,

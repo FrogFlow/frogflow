@@ -32,10 +32,17 @@ export type VipGroupMemberLookup = {
 // (imported by a route component, not just behind createServerFn) doesn't
 // drag the server-only Telegram Bot API calls into the client bundle.
 function memberStatusIsInGroup(status: string): boolean {
-  return status === "member" || status === "administrator" || status === "creator" || status === "restricted";
+  return (
+    status === "member" ||
+    status === "administrator" ||
+    status === "creator" ||
+    status === "restricted"
+  );
 }
 
-function toLookup(member: NonNullable<Awaited<ReturnType<typeof fetchVipChatMember>>>): VipGroupMemberLookup {
+function toLookup(
+  member: NonNullable<Awaited<ReturnType<typeof fetchVipChatMember>>>,
+): VipGroupMemberLookup {
   return {
     telegram_id: member.user.id,
     username: member.user.username ?? null,

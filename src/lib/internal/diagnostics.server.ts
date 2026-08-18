@@ -213,7 +213,7 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
       smtpReady
         ? `настроена (${process.env.SMTP_HOST})`
         : `не задано: ${smtpMissing.join(", ")} — заказы из Instagram выдать будет нечем, ` +
-          "материалы туда уходят письмом",
+            "материалы туда уходят письмом",
     );
 
     /**
@@ -235,7 +235,9 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
     add(
       "Профиль Instagram",
       has(process.env.ZERNIO_PROFILE_ID) ? "ok" : "fail",
-      has(process.env.ZERNIO_PROFILE_ID) ? "задан" : "Instagram включён, но профиль интеграции не задан — webhook будет отключён для безопасности",
+      has(process.env.ZERNIO_PROFILE_ID)
+        ? "задан"
+        : "Instagram включён, но профиль интеграции не задан — webhook будет отключён для безопасности",
     );
     add(
       "Секрет Instagram webhook",

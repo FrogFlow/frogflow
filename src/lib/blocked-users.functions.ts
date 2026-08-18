@@ -45,9 +45,7 @@ export const blockTelegramUserFn = createServerFn({ method: "POST" })
   });
 
 export const unblockTelegramUserFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) =>
-    z.object({ telegram_id: z.union([z.string(), z.number()]) }).parse(d),
-  )
+  .validator((d: unknown) => z.object({ telegram_id: z.union([z.string(), z.number()]) }).parse(d))
   .handler(async ({ data }) => {
     const { unblockTelegramUser } = await import("./blocked-users.server");
     await requireAdminWithModule();

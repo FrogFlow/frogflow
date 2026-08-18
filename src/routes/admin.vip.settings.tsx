@@ -76,8 +76,15 @@ function AdminVipSettings() {
       <div className="bg-card border rounded-lg p-4 space-y-4">
         <div className="space-y-2">
           <Label>ID Telegram Группы (начинается с -100)</Label>
-          <Input value={groupId} onChange={(e) => setGroupId(e.target.value)} placeholder="-100123456789" />
-          <p className="text-xs text-muted-foreground">Бот должен быть администратором в этой группе с правом "Приглашать участников" и "Исключать участников".</p>
+          <Input
+            value={groupId}
+            onChange={(e) => setGroupId(e.target.value)}
+            placeholder="-100123456789"
+          />
+          <p className="text-xs text-muted-foreground">
+            Бот должен быть администратором в этой группе с правом "Приглашать участников" и
+            "Исключать участников".
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -85,7 +92,12 @@ function AdminVipSettings() {
             <Label>
               {testMode ? "1-е предупреждение (за N минут)" : "1-е предупреждение (за N дней)"}
             </Label>
-            <Input type="number" min={1} value={warnDays} onChange={(e) => setWarnDays(e.target.value)} />
+            <Input
+              type="number"
+              min={1}
+              value={warnDays}
+              onChange={(e) => setWarnDays(e.target.value)}
+            />
             <p className="text-xs text-muted-foreground">
               Обычно 3 {testMode ? "минуты" : "дня"} до конца.
             </p>
@@ -94,7 +106,12 @@ function AdminVipSettings() {
             <Label>
               {testMode ? "2-е предупреждение (за N минут)" : "2-е предупреждение (за N дней)"}
             </Label>
-            <Input type="number" min={1} value={warnDays2} onChange={(e) => setWarnDays2(e.target.value)} />
+            <Input
+              type="number"
+              min={1}
+              value={warnDays2}
+              onChange={(e) => setWarnDays2(e.target.value)}
+            />
             <p className="text-xs text-muted-foreground">
               Обычно 1 {testMode ? "минута" : "день"} до конца. Должно быть меньше первого.
             </p>
@@ -103,20 +120,22 @@ function AdminVipSettings() {
 
         <div className="space-y-2 pt-2">
           <Label>Текст с реквизитами для VIP</Label>
-          <Textarea 
-            value={instructions} 
-            onChange={(e) => setInstructions(e.target.value)} 
+          <Textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
             rows={5}
             placeholder="Оплатите на Каспи +7... и пришлите чек"
           />
-          <p className="text-xs text-muted-foreground">Этот текст показывается после того как пользователь выбрал тариф.</p>
+          <p className="text-xs text-muted-foreground">
+            Этот текст показывается после того как пользователь выбрал тариф.
+          </p>
         </div>
 
         <div className="space-y-2 pt-2">
           <Label>Приветственное сообщение после выдачи доступа</Label>
-          <Textarea 
-            value={welcomeMsg} 
-            onChange={(e) => setWelcomeMsg(e.target.value)} 
+          <Textarea
+            value={welcomeMsg}
+            onChange={(e) => setWelcomeMsg(e.target.value)}
             rows={3}
             placeholder="Спасибо за оплату! Ваша ссылка ниже:"
           />
@@ -125,19 +144,34 @@ function AdminVipSettings() {
         <div className="border rounded-md p-4 bg-muted/30 mt-4 space-y-2">
           <div className="flex items-center gap-2">
             <Checkbox checked={testMode} onCheckedChange={(c) => setTestMode(!!c)} id="test-mode" />
-            <Label htmlFor="test-mode" className="font-semibold text-destructive cursor-pointer">Включить режим тестирования</Label>
+            <Label htmlFor="test-mode" className="font-semibold text-destructive cursor-pointer">
+              Включить режим тестирования
+            </Label>
           </div>
           <p className="text-xs text-muted-foreground ml-6">
-            Если включено: срок берётся из поля «минуты» в тарифе (не из дней). Включайте <b>до</b> подтверждения
-            оплаты — уже активные подписки сами не пересчитаются. Оба предупреждения тоже в минутах.
+            Если включено: срок берётся из поля «минуты» в тарифе (не из дней). Включайте <b>до</b>{" "}
+            подтверждения оплаты — уже активные подписки сами не пересчитаются. Оба предупреждения
+            тоже в минутах.
           </p>
           <div className="ml-6 pt-2 flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={onRunCron} disabled={cronBusy}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRunCron}
+              disabled={cronBusy}
+            >
               {cronBusy ? "Проверяю…" : "Запустить проверку подписок сейчас"}
             </Button>
-            <span className="text-xs text-muted-foreground">Для теста кика/напоминаний без ожидания cron</span>
+            <span className="text-xs text-muted-foreground">
+              Для теста кика/напоминаний без ожидания cron
+            </span>
           </div>
-          {cronResult && <pre className="text-xs ml-6 whitespace-pre-wrap text-muted-foreground">{cronResult}</pre>}
+          {cronResult && (
+            <pre className="text-xs ml-6 whitespace-pre-wrap text-muted-foreground">
+              {cronResult}
+            </pre>
+          )}
         </div>
 
         <div className="pt-4 flex items-center gap-3">

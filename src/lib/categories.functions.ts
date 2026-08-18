@@ -67,9 +67,7 @@ export const updateCategory = createServerFn({ method: "POST" })
   });
 
 export const setCategoryVisible = createServerFn({ method: "POST" })
-  .validator((d: unknown) =>
-    z.object({ id: z.string().uuid(), is_visible: z.boolean() }).parse(d),
-  )
+  .validator((d: unknown) => z.object({ id: z.string().uuid(), is_visible: z.boolean() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
@@ -103,11 +101,16 @@ export const deleteCategory = createServerFn({ method: "POST" })
 
     // Strip removed ids from products.category_ids (JSON array is not FK-managed)
     const { data: products } = await s.from("products").select("id, category_ids, category_id");
-    const productUpdates: Array<{ id: string; category_ids: string[]; category_id: string | null }> = [];
+    const productUpdates: Array<{
+      id: string;
+      category_ids: string[];
+      category_id: string | null;
+    }> = [];
     for (const p of products ?? []) {
       const ids = Array.isArray(p.category_ids) ? (p.category_ids as string[]) : [];
       const next = ids.filter((id) => !toRemove.has(id));
-      const primary = p.category_id && toRemove.has(p.category_id) ? next[0] ?? null : p.category_id;
+      const primary =
+        p.category_id && toRemove.has(p.category_id) ? (next[0] ?? null) : p.category_id;
       if (next.length !== ids.length || primary !== p.category_id) {
         productUpdates.push({ id: p.id, category_ids: next, category_id: primary ?? null });
       }
@@ -116,8 +119,11 @@ export const deleteCategory = createServerFn({ method: "POST" })
     // Параллельное обновление вместо N+1 последовательных запросов
     await Promise.all(
       productUpdates.map((u) =>
-        s.from("products").update({ category_ids: u.category_ids, category_id: u.category_id }).eq("id", u.id)
-      )
+        s
+          .from("products")
+          .update({ category_ids: u.category_ids, category_id: u.category_id })
+          .eq("id", u.id),
+      ),
     );
 
     const { error } = await s.from("categories").delete().eq("id", data.id);

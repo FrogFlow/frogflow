@@ -39,10 +39,12 @@ describe("buildAutomationBody", () => {
 
   it("с кнопками предел 640 символов", () => {
     const buttons = [{ type: "postback" as const, title: "Купить", payload: "BUY" }];
+    expect(() => buildAutomationBody({ ...base, dmMessage: "я".repeat(641), buttons })).toThrow(
+      /640/,
+    );
     expect(() =>
-      buildAutomationBody({ ...base, dmMessage: "я".repeat(641), buttons }),
-    ).toThrow(/640/);
-    expect(() => buildAutomationBody({ ...base, dmMessage: "я".repeat(640), buttons })).not.toThrow();
+      buildAutomationBody({ ...base, dmMessage: "я".repeat(640), buttons }),
+    ).not.toThrow();
   });
 
   it("без кнопок предел 1000 символов", () => {
@@ -51,8 +53,8 @@ describe("buildAutomationBody", () => {
   });
 
   it("проверяет длину и у вариантов текста — они ротируются наравне с основным", () => {
-    expect(() =>
-      buildAutomationBody({ ...base, dmMessageVariations: ["я".repeat(1001)] }),
-    ).toThrow(/вариантов/i);
+    expect(() => buildAutomationBody({ ...base, dmMessageVariations: ["я".repeat(1001)] })).toThrow(
+      /вариантов/i,
+    );
   });
 });

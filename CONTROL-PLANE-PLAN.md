@@ -23,12 +23,12 @@ Vercel и недоступна из клиентских деплоев.
 
 **2. `bots.modules` не соответствует действительности и не унифицирован.**
 
-| Клиент | ключи в БД сейчас |
-|---|---|
-| Анастасия | `shop, coupons, courses, referral, instagram, broadcasts, ai_assistant, multi_currency, crm_integration` |
-| Салтанат / Print KZ | `vip, shop, blocked, instagram, multi_currency` |
-| Дидактика | `vip, shop, instagram, broadcasts, multi_currency` |
-| Развивашка | `vip, shop, instagram, broadcasts, multi_currency` |
+| Клиент              | ключи в БД сейчас                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| Анастасия           | `shop, coupons, courses, referral, instagram, broadcasts, ai_assistant, multi_currency, crm_integration` |
+| Салтанат / Print KZ | `vip, shop, blocked, instagram, multi_currency`                                                          |
+| Дидактика           | `vip, shop, instagram, broadcasts, multi_currency`                                                       |
+| Развивашка          | `vip, shop, instagram, broadcasts, multi_currency`                                                       |
 
 Наборы ключей разные, часть значений — про модули, которых в коде нет
 (`ai_assistant`, `crm_integration`). Пока флаги читаются из кода, это никого не
@@ -112,16 +112,16 @@ export async function requireOperator() {
 
 ### 2.1. Переменные проекта панели — проверено запуском
 
-| Переменная | Зачем |
-|---|---|
-| `CONTROL_PLANE=1` | слой 1: без неё весь `/operator/*` отвечает 404 |
-| `OPERATOR_SESSION_SECRET` | своя сессия, не пересекается с админкой клиентов |
-| `OPERATOR_USERNAME`, `OPERATOR_PASSWORD` | вход; без них логин отвечает явной ошибкой |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | доступ к общей базе |
-| `SUPABASE_PUBLISHABLE_KEY` | SSR-мидлварь создаёт браузерный клиент на каждый запрос |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | **нужны на сборке**, см. ниже |
-| `SUPABASE_JWT_SECRET` | только для подключения клиента (выпуск ключа арендатора) |
-| `CRON_SECRET` | только для ежедневного обхода подписок |
+| Переменная                                           | Зачем                                                    |
+| ---------------------------------------------------- | -------------------------------------------------------- |
+| `CONTROL_PLANE=1`                                    | слой 1: без неё весь `/operator/*` отвечает 404          |
+| `OPERATOR_SESSION_SECRET`                            | своя сессия, не пересекается с админкой клиентов         |
+| `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`             | вход; без них логин отвечает явной ошибкой               |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`          | доступ к общей базе                                      |
+| `SUPABASE_PUBLISHABLE_KEY`                           | SSR-мидлварь создаёт браузерный клиент на каждый запрос  |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | **нужны на сборке**, см. ниже                            |
+| `SUPABASE_JWT_SECRET`                                | только для подключения клиента (выпуск ключа арендатора) |
+| `CRON_SECRET`                                        | только для ежедневного обхода подписок                   |
 
 **`BOT_ID` на панели задавать нельзя.** Панель не арендатор, своей строки в
 `bots` у неё нет. А `client.server.ts` намеренно падает, если `BOT_ID` задан
@@ -139,7 +139,7 @@ service_role в обход RLS.
 Проверено на собранном бандле: у панели `/operator` → 307 на логин, после
 входа виден список из 5 клиентов; у деплоя без `CONTROL_PLANE` те же пути
 отвечают 404, а прямой вызов серверной функции панели — «Not found» даже с
-действительной операторской кукой (без неё, но на самой панели, — 
+действительной операторской кукой (без неё, но на самой панели, —
 «Unauthorized»).
 
 ---
@@ -155,33 +155,50 @@ service_role в обход RLS.
 export type ModuleKey = keyof typeof MODULES;
 
 export type ModuleDef = {
-  title: string;            // как показывать в панели
-  group: string;            // группировка, совпадает с разделами прайса
-  price: number | null;     // ₸, из прайса; null — входит в базу
-  status: "available" | "planned";  // planned — записан в прайсе, кода ещё нет
-  requires?: ModuleKey[];   // зависимости (напр. dm_shop требует instagram)
-  note?: string;            // подсказка оператору
+  title: string; // как показывать в панели
+  group: string; // группировка, совпадает с разделами прайса
+  price: number | null; // ₸, из прайса; null — входит в базу
+  status: "available" | "planned"; // planned — записан в прайсе, кода ещё нет
+  requires?: ModuleKey[]; // зависимости (напр. dm_shop требует instagram)
+  note?: string; // подсказка оператору
 };
 
 export const MODULES = {
-  shop:            { title: "Магазин",              group: "База",     price: null, status: "available" },
-  vip:             { title: "VIP-подписки",         group: "Каталог",  price: 22000, status: "available" },
-  blocked:         { title: "Блокировка",           group: "Сервис",   price: 14000, status: "available" },
-  instagram:       { title: "Instagram-автоматизация", group: "Instagram", price: 30000, status: "available" },
-  dm_shop:         { title: "Магазин в директе",    group: "Instagram", price: 25000, status: "available", requires: ["instagram"] },
-  broadcasts:      { title: "Рассылки",             group: "База",     price: null, status: "available" },
-  multi_currency:  { title: "Мультивалютность",     group: "Каталог",  price: 18000, status: "available" },
-  robokassa:       { title: "Онлайн-эквайринг",     group: "Оплата",   price: 25000, status: "available" },
-  receipt_ocr:     { title: "Распознавание чека",   group: "Оплата",   price: 20000, status: "available" },
-  legal_docs:      { title: "Юридические страницы", group: "База",     price: null, status: "available" },
-  courses:         { title: "Курсы",                group: "Каталог",  price: 18000, status: "planned" },
-  coupons:         { title: "Скидки и промокоды",   group: "Оплата",   price: 20000, status: "planned" },
-  referral:        { title: "Реферальная программа", group: "Удержание", price: 14000, status: "planned" },
+  shop: { title: "Магазин", group: "База", price: null, status: "available" },
+  vip: { title: "VIP-подписки", group: "Каталог", price: 22000, status: "available" },
+  blocked: { title: "Блокировка", group: "Сервис", price: 14000, status: "available" },
+  instagram: {
+    title: "Instagram-автоматизация",
+    group: "Instagram",
+    price: 30000,
+    status: "available",
+  },
+  dm_shop: {
+    title: "Магазин в директе",
+    group: "Instagram",
+    price: 25000,
+    status: "available",
+    requires: ["instagram"],
+  },
+  broadcasts: { title: "Рассылки", group: "База", price: null, status: "available" },
+  multi_currency: {
+    title: "Мультивалютность",
+    group: "Каталог",
+    price: 18000,
+    status: "available",
+  },
+  robokassa: { title: "Онлайн-эквайринг", group: "Оплата", price: 25000, status: "available" },
+  receipt_ocr: { title: "Распознавание чека", group: "Оплата", price: 20000, status: "available" },
+  legal_docs: { title: "Юридические страницы", group: "База", price: null, status: "available" },
+  courses: { title: "Курсы", group: "Каталог", price: 18000, status: "planned" },
+  coupons: { title: "Скидки и промокоды", group: "Оплата", price: 20000, status: "planned" },
+  referral: { title: "Реферальная программа", group: "Удержание", price: 14000, status: "planned" },
   // …остальное из прайса добавляется сюда же по мере готовности
 } as const satisfies Record<string, ModuleDef>;
 ```
 
 Правила:
+
 - `status: "planned"` — модуль есть в прайсе, кода нет. В панели показывается
   серым, «в разработке», включить нельзя. Это честная дорожная карта: видно,
   что продано авансом, а что готово.
@@ -306,12 +323,12 @@ Body:   { text: "…" }
 
 Сейчас так закрыты все четыре операции:
 
-| Операция | Кто делает | Токен у панели |
-|---|---|---|
-| Написать владельцу | деплой, `/api/internal/notify-owner` | не нужен |
-| Сбросить кеш модулей | деплой, `/api/internal/reload` | не нужен |
-| Проставить вебхук | деплой, `/api/internal/set-webhook` | не нужен |
-| Проверить, жив ли бот | деплой, `/api/internal/health` | не нужен |
+| Операция              | Кто делает                           | Токен у панели |
+| --------------------- | ------------------------------------ | -------------- |
+| Написать владельцу    | деплой, `/api/internal/notify-owner` | не нужен       |
+| Сбросить кеш модулей  | деплой, `/api/internal/reload`       | не нужен       |
+| Проставить вебхук     | деплой, `/api/internal/set-webhook`  | не нужен       |
+| Проверить, жив ли бот | деплой, `/api/internal/health`       | не нужен       |
 
 Побочная выгода у `set-webhook`: адрес берётся из `PUBLIC_APP_URL` самого
 деплоя, а не из того, что оператор набрал в панели. Ошибиться доменом нельзя
@@ -319,11 +336,11 @@ Body:   { text: "…" }
 
 **Что рассматривалось и отвергнуто.**
 
-*Открытым текстом в `bots.bot_token`.* Так было до Фазы 0. Утечка базы панели
+_Открытым текстом в `bots.bot_token`._ Так было до Фазы 0. Утечка базы панели
 = потеря пяти ботов целиком: чужие переписки, рассылка спама от имени клиента,
 смена вебхука на сторонний сервер. Цена ошибки несоразмерна удобству.
 
-*Шифрование в базе (AES-256-GCM, ключ в переменных панели).* Заметно лучше
+_Шифрование в базе (AES-256-GCM, ключ в переменных панели)._ Заметно лучше
 открытого текста: утечки одной только базы недостаточно, нужен ещё доступ к
 переменным окружения панели. Но выигрыша над внутренним API нет — тот, кто
 получил переменные панели, и так может дёргать её серверные функции, — а
@@ -389,15 +406,15 @@ Body:   { text: "…" }
 
 ### `bots` — добавить
 
-| Колонка | Тип | Зачем |
-|---|---|---|
-| `app_url` | text | адрес деплоя; для внутреннего API и ссылок в панели |
-| `internal_secret` | text | аутентификация внутреннего API (§5) |
-| `owner_telegram_id` | bigint | кому писать от бота оператора |
-| `owner_name` | text | как зовут владельца |
-| `owner_contact` | text | телефон/почта |
-| `paused_message` | text | что бот отвечает в паузе |
-| `notes` | text | ваши заметки по клиенту |
+| Колонка             | Тип    | Зачем                                               |
+| ------------------- | ------ | --------------------------------------------------- |
+| `app_url`           | text   | адрес деплоя; для внутреннего API и ссылок в панели |
+| `internal_secret`   | text   | аутентификация внутреннего API (§5)                 |
+| `owner_telegram_id` | bigint | кому писать от бота оператора                       |
+| `owner_name`        | text   | как зовут владельца                                 |
+| `owner_contact`     | text   | телефон/почта                                       |
+| `paused_message`    | text   | что бот отвечает в паузе                            |
+| `notes`             | text   | ваши заметки по клиенту                             |
 
 `settings` (jsonb, уже существует, сейчас пуст) — поведение при неоплате,
 см. §10.
@@ -411,6 +428,7 @@ Body:   { text: "…" }
 **`bot_events`** — журнал действий оператора. Кто, когда, что переключил.
 Не роскошь: при пяти клиентах и растущем числе модулей «почему у него это
 выключено» станет частым вопросом.
+
 ```
 id, bot_id, at, actor, kind ('module_on'|'module_off'|'pause'|'resume'|'onboard'|'message'), payload jsonb
 ```
@@ -446,13 +464,13 @@ amount, currency, paid_at, note`. Прайс делает подписку об�
    полный канонический набор ключей, значения — **как есть у клиента
    сегодня**. Сверять не с прошлыми намерениями, а с фактом:
 
-   | Клиент | vip | instagram | blocked | broadcasts | robokassa | receipt_ocr | legal_docs |
-   |---|---|---|---|---|---|---|---|
-   | Анастасия | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
-   | Салтанат | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-   | Print KZ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-   | Дидактика | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ |
-   | Развивашка | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+   | Клиент     | vip | instagram | blocked | broadcasts | robokassa | receipt_ocr | legal_docs |
+   | ---------- | --- | --------- | ------- | ---------- | --------- | ----------- | ---------- |
+   | Анастасия  | ✗   | ✓         | ✗       | ✓          | ✓         | ✓           | ✓          |
+   | Салтанат   | ✗   | ✗         | ✗       | ✗          | ✗         | ✗           | ✗          |
+   | Print KZ   | ✗   | ✗         | ✗       | ✗          | ✗         | ✗           | ✗          |
+   | Дидактика  | ✓   | ✗         | ✓       | ✗          | ✗         | ✗           | ✗          |
+   | Развивашка | ✓   | ✓         | ✓       | ✗          | ✗         | ✗           | ✗          |
 
    Таблица составлена по наличию кода и значению `feature-flags.ts` в каждом
    репозитории **до** слияния. **Эта опора уже устарела — перепроверить
@@ -485,6 +503,7 @@ amount, currency, paid_at, note`. Прайс делает подписку об�
 ### Фаза 2 — панель, минимум ✅ ВЫПОЛНЕНО
 
 Роуты `/operator/*`, отдельная сессия, guard из §2. Экраны:
+
 - **Клиенты** — список, статус, подписка до, ссылка на деплой, заметки.
 - **Карточка клиента** — тумблеры модулей из реестра (сгруппированные, с
   ценами, `planned` серым), пауза/возобновление, журнал событий.
@@ -583,9 +602,9 @@ SUM(байт) и ничего больше: ни названий товаров
 
 ```jsonc
 {
-  "on_overdue": "warn",      // "warn" | "suspend"
-  "warn_days_before": 5,     // за сколько дней предупредить
-  "grace_days": 3            // сколько терпеть просрочку до suspend
+  "on_overdue": "warn", // "warn" | "suspend"
+  "warn_days_before": 5, // за сколько дней предупредить
+  "grace_days": 3, // сколько терпеть просрочку до suspend
 }
 ```
 

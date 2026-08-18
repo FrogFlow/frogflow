@@ -68,7 +68,11 @@ export const commitLegalDocFn = createServerFn({ method: "POST" })
     const nameKey = data.kind === "offer" ? "legal_offer_filename" : "legal_privacy_filename";
     const htmlKey = data.kind === "offer" ? "legal_offer_html" : "legal_privacy_html";
 
-    const { data: row } = await s.from("app_settings").select("value").eq("key", pathKey).maybeSingle();
+    const { data: row } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("key", pathKey)
+      .maybeSingle();
     const oldPath = (row?.value as string | undefined)?.trim() || "";
 
     const now = new Date().toISOString();
@@ -95,7 +99,11 @@ export const clearLegalDocFn = createServerFn({ method: "POST" })
     const pathKey = data.kind === "offer" ? "legal_offer_file" : "legal_privacy_file";
     const nameKey = data.kind === "offer" ? "legal_offer_filename" : "legal_privacy_filename";
     const htmlKey = data.kind === "offer" ? "legal_offer_html" : "legal_privacy_html";
-    const { data: row } = await s.from("app_settings").select("value").eq("key", pathKey).maybeSingle();
+    const { data: row } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("key", pathKey)
+      .maybeSingle();
     const path = (row?.value as string | undefined)?.trim();
     if (path) {
       await s.storage.from("legal-docs").remove([path]);
@@ -127,7 +135,9 @@ export const getInstructionVideoUploadUrl = createServerFn({ method: "POST" })
     } catch (e) {
       console.warn("[settings] ensure instruction-videos bucket", e);
     }
-    const { data: signed, error } = await s.storage.from("instruction-videos").createSignedUploadUrl(key);
+    const { data: signed, error } = await s.storage
+      .from("instruction-videos")
+      .createSignedUploadUrl(key);
     if (error || !signed) throw new Error(error?.message || "Upload error");
     return { path: key, signedUrl: signed.signedUrl, filename: data.filename };
   });

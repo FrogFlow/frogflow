@@ -62,7 +62,7 @@ async function getRates(): Promise<Record<string, number>> {
     inMemoryCache = { ts: Date.now(), rates: cached.rates };
     return cached.rates;
   }
-  
+
   try {
     const rates = await fetchRates();
     await saveCache({ ts: Date.now(), rates });
@@ -82,7 +82,7 @@ export async function convertAmount(amount: number, from: string, to: string): P
   const f = from.toUpperCase();
   const t = to.toUpperCase();
   if (!amount || f === t) return Math.round(amount);
-  
+
   try {
     const rates = await getRates();
     const rf = rates[f];

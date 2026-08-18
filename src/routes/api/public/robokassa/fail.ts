@@ -118,7 +118,7 @@ async function handleFail() {
   const html = htmlPage(
     "Оплата не завершена",
     "Платёж отменён или не прошёл. Вернитесь в бот, чтобы попробовать оплатить ещё раз.",
-    botUrl
+    botUrl,
   );
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }

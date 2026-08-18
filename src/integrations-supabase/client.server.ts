@@ -11,11 +11,11 @@
 // Storage is deliberately excluded: buckets are shared and the storage service
 // does not resolve the custom role, so `.storage` keeps using service_role
 // while `.from()` / `.rpc()` go through the isolated connection.
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from './types';
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "./types";
 
 function isNewSupabaseApiKey(value: string): boolean {
-  return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
+  return value.startsWith("sb_publishable_") || value.startsWith("sb_secret_");
 }
 
 /**
@@ -27,20 +27,20 @@ function isNewSupabaseApiKey(value: string): boolean {
 function createSupabaseFetch(apiKey: string, bearer: string): typeof fetch {
   return (input, init) => {
     const headers = new Headers(
-      typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined,
+      typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
     );
 
     if (init?.headers) {
       new Headers(init.headers).forEach((value, key) => headers.set(key, value));
     }
 
-    headers.set('apikey', apiKey);
+    headers.set("apikey", apiKey);
 
     // New Supabase API keys are opaque strings, not bearer JWTs.
     if (isNewSupabaseApiKey(bearer)) {
-      headers.delete('Authorization');
+      headers.delete("Authorization");
     } else {
-      headers.set('Authorization', `Bearer ${bearer}`);
+      headers.set("Authorization", `Bearer ${bearer}`);
     }
 
     return fetch(input, { ...init, headers });
@@ -53,8 +53,8 @@ function readEnv() {
 
   if (!url || !serviceKey) {
     const missing = [
-      ...(!url ? ['SUPABASE_URL'] : []),
-      ...(!serviceKey ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
+      ...(!url ? ["SUPABASE_URL"] : []),
+      ...(!serviceKey ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
     ];
     const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Set them in your deployment environment.`;
     console.error(`[Supabase] ${message}`);
@@ -112,7 +112,7 @@ function dbClient(): Client {
 //   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
 export const supabaseAdmin = new Proxy({} as Client, {
   get(_, prop, receiver) {
-    if (prop === 'storage') return serviceClient().storage;
+    if (prop === "storage") return serviceClient().storage;
     return Reflect.get(dbClient(), prop, receiver);
   },
 });

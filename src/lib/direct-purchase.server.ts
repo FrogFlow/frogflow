@@ -76,13 +76,7 @@ export type DirectState = {
  * Запомненную страну бот называет вслух, чтобы человек мог возразить, а сменить
  * её можно словом «отмена».
  */
-const FLOW_KEYS = [
-  "mode",
-  "product_id",
-  "pending_order_id",
-  "email_optional",
-  "misses",
-] as const;
+const FLOW_KEYS = ["mode", "product_id", "pending_order_id", "email_optional", "misses"] as const;
 
 /**
  * Дописывает поля в состояние, не затирая остальные.
@@ -239,7 +233,8 @@ export async function sendDirectReply(params: {
   const state = readDirectState(existing?.state);
   const mark = fingerprint(params.text);
   const fresh =
-    Boolean(state.last_reply_at) && Date.now() - Date.parse(state.last_reply_at!) < REPEAT_WINDOW_MS;
+    Boolean(state.last_reply_at) &&
+    Date.now() - Date.parse(state.last_reply_at!) < REPEAT_WINDOW_MS;
 
   if (!params.force && state.last_reply === mark && fresh) {
     console.log(`[direct] повтор подавлен для ${params.userKey}: «${params.text.slice(0, 60)}…»`);
@@ -555,7 +550,9 @@ export async function notifyAdminAboutDirectOrder(
 
   const { data: order } = await s
     .from("orders")
-    .select("total, currency, username, display_name, payment_proof_path, order_items(name_snapshot, price_snapshot)")
+    .select(
+      "total, currency, username, display_name, payment_proof_path, order_items(name_snapshot, price_snapshot)",
+    )
     .eq("id", orderId)
     .maybeSingle();
 
@@ -565,7 +562,10 @@ export async function notifyAdminAboutDirectOrder(
   const who = order?.username ? `@${order.username}` : order?.display_name || "покупатель";
 
   const { tg } = await import("./telegram.server");
-  for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
+  for (const chatId of raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
     try {
       const needsAction = options?.needsAction !== false;
       await tg("sendMessage", {
@@ -667,7 +667,10 @@ export async function notifyAdminAboutQuestion(params: {
 
   const who = params.senderUsername ? `@${params.senderUsername}` : params.senderName;
   const { tg } = await import("./telegram.server");
-  for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
+  for (const chatId of raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
     try {
       await tg("sendMessage", {
         chat_id: chatId,
@@ -739,7 +742,10 @@ export async function notifyAdminAboutComplaint(params: {
 
   const who = params.senderUsername ? `@${params.senderUsername}` : params.senderName;
   const { tg } = await import("./telegram.server");
-  for (const chatId of raw.split(",").map((part) => part.trim()).filter(Boolean)) {
+  for (const chatId of raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
     try {
       await tg("sendMessage", {
         chat_id: chatId,
@@ -974,7 +980,12 @@ export function renderCart(priced: PricedLine[]): string {
  * сценарий не давал купить два материала за раз, хотя корзина в базе была.
  */
 export async function createOrderFromCart(params: {
-  user: { telegram_id: number; user_key: string; username: string | null; first_name: string | null };
+  user: {
+    telegram_id: number;
+    user_key: string;
+    username: string | null;
+    first_name: string | null;
+  };
   countryCode: string;
 }): Promise<{ id: number; order_no: number | null } | null> {
   const s = await db();
@@ -1024,7 +1035,10 @@ export async function createOrderFromCart(params: {
     .select(
       "id, name, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)",
     )
-    .in("id", lines.map((line) => line.productId));
+    .in(
+      "id",
+      lines.map((line) => line.productId),
+    );
 
   const byId = new Map((products ?? []).map((p) => [p.id, p]));
   const { error: itemsError } = await s.from("order_items").insert(

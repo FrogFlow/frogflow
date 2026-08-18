@@ -51,34 +51,61 @@ export const getInstagramAccountHealthFn = createServerFn({ method: "GET" })
   });
 
 /** Settings for the in-app Direct assistant (separate from comment rules). */
-export const getInstagramDirectBotSettingsFn = createServerFn({ method: "GET" }).handler(async () => {
-  await requireAdminWithModule();
-  const s = await db();
-  const { data } = await s.from("app_settings").select("key, value").eq("bot_id", requireBotId()).eq("key", "instagram_direct_bot_enabled").maybeSingle();
-  return { enabled: data?.value !== "false" };
-});
+export const getInstagramDirectBotSettingsFn = createServerFn({ method: "GET" }).handler(
+  async () => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { data } = await s
+      .from("app_settings")
+      .select("key, value")
+      .eq("bot_id", requireBotId())
+      .eq("key", "instagram_direct_bot_enabled")
+      .maybeSingle();
+    return { enabled: data?.value !== "false" };
+  },
+);
 
 export const saveInstagramDirectBotSettingsFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ enabled: z.boolean() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdminWithModule();
     const s = await db();
-    const { error } = await s
-      .from("app_settings")
-      .upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_enabled", value: String(data.enabled), updated_at: new Date().toISOString() });
+    const { error } = await s.from("app_settings").upsert({
+      bot_id: requireBotId(),
+      key: "instagram_direct_bot_enabled",
+      value: String(data.enabled),
+      updated_at: new Date().toISOString(),
+    });
     if (error) throw new Error(error.message);
     return { ok: true, enabled: data.enabled };
   });
 
 export const getInstagramDirectBotScriptFn = createServerFn({ method: "GET" }).handler(async () => {
-  await requireAdminWithModule(); const s = await db();
-  const { data } = await s.from("app_settings").select("value").eq("bot_id", requireBotId()).eq("key", "instagram_direct_bot_script").maybeSingle();
+  await requireAdminWithModule();
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", requireBotId())
+    .eq("key", "instagram_direct_bot_script")
+    .maybeSingle();
   return { text: data?.value || "" };
 });
 
 export const saveInstagramDirectBotScriptFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ text: z.string().trim().max(1500) }).parse(d))
-  .handler(async ({ data }) => { await requireAdminWithModule(); const s = await db(); const { error } = await s.from("app_settings").upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_script", value: data.text, updated_at: new Date().toISOString() }); if (error) throw new Error(error.message); return { ok: true }; });
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { error } = await s.from("app_settings").upsert({
+      bot_id: requireBotId(),
+      key: "instagram_direct_bot_script",
+      value: data.text,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
 
 /**
  * На что бот вообще отвечает.
@@ -148,7 +175,10 @@ export const getInstagramDirectBotTriggersFn = createServerFn({ method: "GET" })
       .split(",")
       .map((word) => word.trim())
       .filter(Boolean);
-    return { words: words.length > 0 ? words : DEFAULT_TRIGGER_WORDS, isDefault: words.length === 0 };
+    return {
+      words: words.length > 0 ? words : DEFAULT_TRIGGER_WORDS,
+      isDefault: words.length === 0,
+    };
   },
 );
 
@@ -176,9 +206,43 @@ export const saveInstagramDirectBotTriggersFn = createServerFn({ method: "POST" 
     return { ok: true, words: cleaned };
   });
 
-const directFeaturesSchema = z.object({ catalog: z.boolean(), search: z.boolean(), cart: z.boolean(), checkout: z.boolean() });
-export const getInstagramDirectBotFeaturesFn = createServerFn({ method: "GET" }).handler(async () => { await requireAdminWithModule(); const s = await db(); const { data } = await s.from("app_settings").select("value").eq("bot_id", requireBotId()).eq("key", "instagram_direct_bot_features").maybeSingle(); try { return directFeaturesSchema.parse(JSON.parse(data?.value || "{}")); } catch { return { catalog: true, search: true, cart: true, checkout: true }; } });
-export const saveInstagramDirectBotFeaturesFn = createServerFn({ method: "POST" }).validator((d: unknown) => directFeaturesSchema.parse(d)).handler(async ({ data }) => { await requireAdminWithModule(); const s = await db(); const { error } = await s.from("app_settings").upsert({ bot_id: requireBotId(), key: "instagram_direct_bot_features", value: JSON.stringify(data), updated_at: new Date().toISOString() }); if (error) throw new Error(error.message); return { ok: true }; });
+const directFeaturesSchema = z.object({
+  catalog: z.boolean(),
+  search: z.boolean(),
+  cart: z.boolean(),
+  checkout: z.boolean(),
+});
+export const getInstagramDirectBotFeaturesFn = createServerFn({ method: "GET" }).handler(
+  async () => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { data } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("bot_id", requireBotId())
+      .eq("key", "instagram_direct_bot_features")
+      .maybeSingle();
+    try {
+      return directFeaturesSchema.parse(JSON.parse(data?.value || "{}"));
+    } catch {
+      return { catalog: true, search: true, cart: true, checkout: true };
+    }
+  },
+);
+export const saveInstagramDirectBotFeaturesFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => directFeaturesSchema.parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { error } = await s.from("app_settings").upsert({
+      bot_id: requireBotId(),
+      key: "instagram_direct_bot_features",
+      value: JSON.stringify(data),
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
 
 export const getInstagramConversationsFn = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ accountId: z.string().min(1) }).parse(d))
@@ -189,7 +253,9 @@ export const getInstagramConversationsFn = createServerFn({ method: "GET" })
   });
 
 export const getInstagramConversationMessagesFn = createServerFn({ method: "GET" })
-  .validator((d: unknown) => z.object({ accountId: z.string().min(1), conversationId: z.string().min(1) }).parse(d))
+  .validator((d: unknown) =>
+    z.object({ accountId: z.string().min(1), conversationId: z.string().min(1) }).parse(d),
+  )
   .handler(async ({ data }) => {
     const { listZernioConversationMessages } = await import("./zernio.server");
     await requireAdminWithModule();
@@ -197,50 +263,64 @@ export const getInstagramConversationMessagesFn = createServerFn({ method: "GET"
   });
 
 export const sendInstagramConversationMessageFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ accountId: z.string().min(1), conversationId: z.string().min(1), message: z.string().trim().min(1).max(1000) }).parse(d))
+  .validator((d: unknown) =>
+    z
+      .object({
+        accountId: z.string().min(1),
+        conversationId: z.string().min(1),
+        message: z.string().trim().min(1).max(1000),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
     const { sendZernioInboxMessage } = await import("./zernio.server");
     await requireAdminWithModule();
     return await sendZernioInboxMessage(data.conversationId, data.accountId, data.message);
   });
 
-export const getInstagramDashboardFn = createServerFn({ method: "GET" })
-  .handler(async () => {
-    const { listCommentAutomations } = await import("./zernio.server");
-    await requireAdminWithModule();
-    const s = await db();
-    const since = new Date();
-    since.setDate(since.getDate() - 30);
-    const sinceIso = since.toISOString();
-    const [automations, logsResult, ordersResult] = await Promise.all([
-      listCommentAutomations(),
-      s.from("zernio_logs").select("event_type, status, created_at").gte("created_at", sinceIso),
-      s.from("orders").select("total, status, created_at").eq("platform", "instagram").gte("created_at", sinceIso),
-    ]);
-    const rules = automations.automations || [];
-    const totals = rules.reduce(
-      (summary: { triggered: number; dms: number; clicks: number }, rule: any) => ({
-        triggered: summary.triggered + Number(rule.stats?.triggered || 0),
-        dms: summary.dms + Number(rule.stats?.dmsSent || 0),
-        clicks: summary.clicks + Number(rule.stats?.linkClicks || 0),
-      }),
-      { triggered: 0, dms: 0, clicks: 0 },
-    );
-    const orders = ordersResult.data || [];
-    return {
-      periodDays: 30,
-      automation: { rules: rules.length, ...totals },
-      direct: {
-        incoming: (logsResult.data || []).filter((log: any) => log.event_type === "message.received").length,
-        errors: (logsResult.data || []).filter((log: any) => log.status === "error").length,
-      },
-      orders: {
-        total: orders.length,
-        paid: orders.filter((order: any) => ["paid", "delivered"].includes(order.status)).length,
-        revenue: orders.filter((order: any) => ["paid", "delivered"].includes(order.status)).reduce((sum: number, order: any) => sum + Number(order.total || 0), 0),
-      },
-    };
-  });
+export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { listCommentAutomations } = await import("./zernio.server");
+  await requireAdminWithModule();
+  const s = await db();
+  const since = new Date();
+  since.setDate(since.getDate() - 30);
+  const sinceIso = since.toISOString();
+  const [automations, logsResult, ordersResult] = await Promise.all([
+    listCommentAutomations(),
+    s.from("zernio_logs").select("event_type, status, created_at").gte("created_at", sinceIso),
+    s
+      .from("orders")
+      .select("total, status, created_at")
+      .eq("platform", "instagram")
+      .gte("created_at", sinceIso),
+  ]);
+  const rules = automations.automations || [];
+  const totals = rules.reduce(
+    (summary: { triggered: number; dms: number; clicks: number }, rule: any) => ({
+      triggered: summary.triggered + Number(rule.stats?.triggered || 0),
+      dms: summary.dms + Number(rule.stats?.dmsSent || 0),
+      clicks: summary.clicks + Number(rule.stats?.linkClicks || 0),
+    }),
+    { triggered: 0, dms: 0, clicks: 0 },
+  );
+  const orders = ordersResult.data || [];
+  return {
+    periodDays: 30,
+    automation: { rules: rules.length, ...totals },
+    direct: {
+      incoming: (logsResult.data || []).filter((log: any) => log.event_type === "message.received")
+        .length,
+      errors: (logsResult.data || []).filter((log: any) => log.status === "error").length,
+    },
+    orders: {
+      total: orders.length,
+      paid: orders.filter((order: any) => ["paid", "delivered"].includes(order.status)).length,
+      revenue: orders
+        .filter((order: any) => ["paid", "delivered"].includes(order.status))
+        .reduce((sum: number, order: any) => sum + Number(order.total || 0), 0),
+    },
+  };
+});
 
 export const registerInstagramWebhookFn = createServerFn({ method: "POST" }).handler(async () => {
   const { registerZernioWebhook } = await import("./zernio.server");
@@ -267,13 +347,25 @@ const PublishInstagramPostInput = z
   })
   .superRefine((data, ctx) => {
     if (data.contentType === "story" && data.mediaUrls.length !== 1) {
-      ctx.addIssue({ code: "custom", path: ["mediaUrls"], message: "Story принимает ровно один файл." });
+      ctx.addIssue({
+        code: "custom",
+        path: ["mediaUrls"],
+        message: "Story принимает ровно один файл.",
+      });
     }
     if (data.mediaType === "video" && data.mediaUrls.length !== 1) {
-      ctx.addIssue({ code: "custom", path: ["mediaUrls"], message: "Reel принимает ровно один видеоролик." });
+      ctx.addIssue({
+        code: "custom",
+        path: ["mediaUrls"],
+        message: "Reel принимает ровно один видеоролик.",
+      });
     }
     if (data.scheduledFor && new Date(data.scheduledFor).getTime() <= Date.now()) {
-      ctx.addIssue({ code: "custom", path: ["scheduledFor"], message: "Время публикации должно быть в будущем." });
+      ctx.addIssue({
+        code: "custom",
+        path: ["scheduledFor"],
+        message: "Время публикации должно быть в будущем.",
+      });
     }
   });
 
@@ -286,7 +378,9 @@ export const createInstagramPostFn = createServerFn({ method: "POST" })
     return createInstagramPost({
       ...data,
       contentType: data.contentType === "story" ? "story" : undefined,
-      collaborators: data.collaborators?.map((username) => username.replace(/^@/, "").trim()).filter(Boolean),
+      collaborators: data.collaborators
+        ?.map((username) => username.replace(/^@/, "").trim())
+        .filter(Boolean),
     });
   });
 
@@ -299,15 +393,15 @@ export const getAutomationsFn = createServerFn({ method: "GET" }).handler(async 
   const { listCommentAutomations } = await import("./zernio.server");
   await requireAdminWithModule();
   const res = await listCommentAutomations();
-  
+
   // Добавляем флаг replyToAll для удобства фронтенда
   if (res.automations) {
     res.automations = res.automations.map((a: any) => ({
       ...a,
-      replyToAll: !a.keywords || a.keywords.length === 0
+      replyToAll: !a.keywords || a.keywords.length === 0,
     }));
   }
-  
+
   return res;
 });
 
@@ -333,30 +427,56 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         platformPostId: z.string().optional().nullable(),
         postId: z.string().optional().nullable(),
         postTitle: z.string().max(500).optional(),
-        buttons: z.array(z.object({ type: z.enum(["url", "postback", "phone"]), title: z.string().min(1), url: z.string().optional(), payload: z.string().optional(), phone: z.string().optional() })).max(3).optional(),
+        buttons: z
+          .array(
+            z.object({
+              type: z.enum(["url", "postback", "phone"]),
+              title: z.string().min(1),
+              url: z.string().optional(),
+              payload: z.string().optional(),
+              phone: z.string().optional(),
+            }),
+          )
+          .max(3)
+          .optional(),
         dmMessageVariations: z.array(z.string()).max(5).optional(),
         commentReplyVariations: z.array(z.string()).max(5).optional(),
-        linkTracking: z.boolean().optional(), clickTag: z.string().max(100).optional(), isActive: z.boolean().optional(),
+        linkTracking: z.boolean().optional(),
+        clickTag: z.string().max(100).optional(),
+        isActive: z.boolean().optional(),
       })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    const { createCommentAutomation, deleteCommentAutomation, ensureDefaultZernioProfile, updateCommentAutomation } = await import("./zernio.server");
+    const {
+      createCommentAutomation,
+      deleteCommentAutomation,
+      ensureDefaultZernioProfile,
+      updateCommentAutomation,
+    } = await import("./zernio.server");
     await requireAdminWithModule();
     if (data.platformPostId && data.platformPostId === data.accountId) {
-      throw new Error("Выбран ID аккаунта вместо ID публикации. Обновите список и выберите пост заново.");
+      throw new Error(
+        "Выбран ID аккаунта вместо ID публикации. Обновите список и выберите пост заново.",
+      );
     }
-    
+
     let profileId = typeof data.profileId === "string" ? data.profileId : "";
     if (!profileId) {
       const defaultProfile = await ensureDefaultZernioProfile();
       profileId = defaultProfile._id;
     }
 
-    const { id: automationId, originalPlatformPostId, originalTrigger, replyToAll, ...automationData } = data;
-    
-    // Если включен режим "Отвечать всем", очищаем ключевые слова, 
-    // но ТОЛЬКО если выбран конкретный пост. 
+    const {
+      id: automationId,
+      originalPlatformPostId,
+      originalTrigger,
+      replyToAll,
+      ...automationData
+    } = data;
+
+    // Если включен режим "Отвечать всем", очищаем ключевые слова,
+    // но ТОЛЬКО если выбран конкретный пост.
     // На уровне "Все посты" отвечать на всё опасно (конфликты с другими ботами).
     const isSpecificPost = !!automationData.platformPostId;
     if (replyToAll && isSpecificPost) {
@@ -364,7 +484,9 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     } else if (replyToAll && !isSpecificPost) {
       // Если это не конкретный пост, игнорируем флаг replyToAll и требуем ключи
       if (!automationData.keywords || automationData.keywords.length === 0) {
-        throw new Error("Для автоматизации на все посты необходимо указать хотя бы одно ключевое слово.");
+        throw new Error(
+          "Для автоматизации на все посты необходимо указать хотя бы одно ключевое слово.",
+        );
       }
     }
 
@@ -375,7 +497,10 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     // Zernio PATCH cannot change platformPostId, postId, or trigger. If those
     // fields are unchanged, preserve the rule and its statistics with PATCH.
     if (automationId) {
-      if (originalPlatformPostId === data.platformPostId && (originalTrigger || "comment") === data.trigger) {
+      if (
+        originalPlatformPostId === data.platformPostId &&
+        (originalTrigger || "comment") === data.trigger
+      ) {
         return await updateCommentAutomation(automationId, automation);
       }
       // Target changed: create first. This keeps the old working rule intact
@@ -404,9 +529,7 @@ export const deleteAutomationFn = createServerFn({ method: "POST" })
  * Включить/выключить автоматизацию через Zernio API
  */
 export const toggleAutomationFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) =>
-    z.object({ id: z.string(), isActive: z.boolean() }).parse(d),
-  )
+  .validator((d: unknown) => z.object({ id: z.string(), isActive: z.boolean() }).parse(d))
   .handler(async ({ data }) => {
     const { updateCommentAutomation } = await import("./zernio.server");
     await requireAdminWithModule();

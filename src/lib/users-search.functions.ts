@@ -104,9 +104,7 @@ export async function searchTelegramUsers(query: string, limit = 30): Promise<Te
 }
 
 export const searchTelegramUsersFn = createServerFn({ method: "GET" })
-  .validator((d: unknown) =>
-    z.object({ query: z.string().min(1).max(100) }).parse(d),
-  )
+  .validator((d: unknown) => z.object({ query: z.string().min(1).max(100) }).parse(d))
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
     await requireAdmin();

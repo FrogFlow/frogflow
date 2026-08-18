@@ -85,10 +85,11 @@ export async function syncBotPublicDescription() {
   try {
     await tg("setMyDescription", { description });
     await tg("setMyShortDescription", {
-      short_description: "Каталог материалов. Нажимая /start, вы принимаете оферту и политику конфиденциальности.".slice(
-        0,
-        120,
-      ),
+      short_description:
+        "Каталог материалов. Нажимая /start, вы принимаете оферту и политику конфиденциальности.".slice(
+          0,
+          120,
+        ),
     });
   } catch (e) {
     console.error("[bot] setMyDescription failed", e);
@@ -98,9 +99,7 @@ export async function syncBotPublicDescription() {
 function welcomeStartHtml(firstName: string | null, withCountryHint: boolean): string {
   const base = originFromState();
   const name = firstName || "друг";
-  const hint = withCountryHint
-    ? `\n\nСначала выберите страну — или откройте «ℹ️ Информация».`
-    : "";
+  const hint = withCountryHint ? `\n\nСначала выберите страну — или откройте «ℹ️ Информация».` : "";
   return (
     `Привет, ${escapeHtml(name)}! Добро пожаловать в магазин.\n\n` +
     `→ Каталог учебных материалов\n` +
@@ -117,7 +116,11 @@ function imageUrl(path: string): string {
 
 function formatMoney(amount: number | string, currency: string): string {
   const n = typeof amount === "number" ? amount : Number(amount);
-  const value = Number.isFinite(n) ? (Number.isInteger(n) ? String(n) : n.toFixed(2)) : String(amount);
+  const value = Number.isFinite(n)
+    ? Number.isInteger(n)
+      ? String(n)
+      : n.toFixed(2)
+    : String(amount);
   const cur = (currency || "").toUpperCase();
   if (cur === "KZT") return `${value} ₸`;
   return `${value} ${currency}`;
@@ -137,7 +140,7 @@ async function upsertUser(from: {
   language_code?: string;
 }): Promise<BotUser> {
   const s = await db();
-  
+
   // 1. Try to get existing user
   const { data: existing } = await s
     .from("bot_users")
@@ -158,9 +161,11 @@ async function upsertUser(from: {
       .eq("telegram_id", from.id)
       .select("*")
       .single();
-    
+
     if (error) console.error("[bot] updateUser error", error);
-    console.log(`[bot] upsertUser(tg_${from.id}): state in DB is ${JSON.stringify(existing.state)}`);
+    console.log(
+      `[bot] upsertUser(tg_${from.id}): state in DB is ${JSON.stringify(existing.state)}`,
+    );
     return (updated || existing) as BotUser;
   }
 
@@ -198,7 +203,7 @@ async function upsertUser(from: {
 
 async function setState(telegram_id: number, state: BotUser["state"]) {
   const s = await db();
-  
+
   // Если в state нет country_code, попробуем сохранить старый из базы, чтобы не затереть
   if (state && !state.country_code) {
     const { data: existing } = await s
@@ -206,7 +211,7 @@ async function setState(telegram_id: number, state: BotUser["state"]) {
       .select("state")
       .eq("telegram_id", telegram_id)
       .maybeSingle();
-    
+
     // `state` в базе — jsonb, то есть по типам это Json: скаляр и массив там
     // не менее допустимы, чем объект. Читаем страну только из настоящего
     // объекта, иначе обращение к полю на строке молча дало бы undefined.
@@ -225,18 +230,32 @@ async function setState(telegram_id: number, state: BotUser["state"]) {
   console.log(`[bot] setState(tg_${telegram_id}): saving state ${JSON.stringify(state)}`);
   // Обновляем по user_key если он существует, иначе по telegram_id (обратная совместимость)
   const userKey = `tg_${telegram_id}`;
-  const { data: byKey } = await s.from("bot_users").select("user_key").eq("user_key", userKey).maybeSingle();
+  const { data: byKey } = await s
+    .from("bot_users")
+    .select("user_key")
+    .eq("user_key", userKey)
+    .maybeSingle();
   if (byKey) {
-    await s.from("bot_users").update({ state: state ?? {} }).eq("user_key", userKey);
+    await s
+      .from("bot_users")
+      .update({ state: state ?? {} })
+      .eq("user_key", userKey);
   } else {
-    await s.from("bot_users").update({ state: state ?? {} }).eq("telegram_id", telegram_id);
+    await s
+      .from("bot_users")
+      .update({ state: state ?? {} })
+      .eq("telegram_id", telegram_id);
   }
 }
 
 async function setContact(telegram_id: number, phone: string) {
   const s = await db();
   const userKey = `tg_${telegram_id}`;
-  const { data: byKey } = await s.from("bot_users").select("user_key").eq("user_key", userKey).maybeSingle();
+  const { data: byKey } = await s
+    .from("bot_users")
+    .select("user_key")
+    .eq("user_key", userKey)
+    .maybeSingle();
   if (byKey) {
     await s.from("bot_users").update({ contact_phone: phone }).eq("user_key", userKey);
   } else {
@@ -256,7 +275,11 @@ function mainMenu() {
   };
 }
 
-async function sendMain(chat_id: number, text = "Выберите раздел:", opts?: { parse_mode?: "HTML" }) {
+async function sendMain(
+  chat_id: number,
+  text = "Выберите раздел:",
+  opts?: { parse_mode?: "HTML" },
+) {
   await tg("sendMessage", {
     chat_id,
     text,
@@ -300,7 +323,8 @@ async function sendInstruction(chat_id: number) {
   }
 
   function extractVideoFileId(result: unknown): string | null {
-    const r = result as { video?: { file_id?: string }; document?: { file_id?: string } } | undefined;
+    const r = result as
+      { video?: { file_id?: string }; document?: { file_id?: string } } | undefined;
     return r?.video?.file_id || r?.document?.file_id || null;
   }
 
@@ -313,8 +337,7 @@ async function sendInstruction(chat_id: number) {
   if (!path) {
     await tg("sendMessage", {
       chat_id,
-      text:
-        "📖 Инструкция скоро появится.\nПока: «Каталог» или «Поиск» → корзина → оплата → чек или Robokassa. Файлы придут после оплаты.",
+      text: "📖 Инструкция скоро появится.\nПока: «Каталог» или «Поиск» → корзина → оплата → чек или Robokassa. Файлы придут после оплаты.",
       reply_markup: mainMenu(),
     });
     return;
@@ -384,7 +407,12 @@ async function sendInstruction(chat_id: number) {
   });
 }
 
-async function showCategories(chat_id: number, parentId: string | null, userCountryCode?: string, offset = 0) {
+async function showCategories(
+  chat_id: number,
+  parentId: string | null,
+  userCountryCode?: string,
+  offset = 0,
+) {
   const s = await db();
   const q = s
     .from("categories")
@@ -392,7 +420,9 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
     .eq("is_visible", true)
     .order("sort_order")
     .order("name");
-  const { data: cats } = parentId ? await q.eq("parent_id", parentId) : await q.is("parent_id", null);
+  const { data: cats } = parentId
+    ? await q.eq("parent_id", parentId)
+    : await q.is("parent_id", null);
   const productsQuery = s
     .from("products")
     .select("*, product_images(image_path, sort_order)")
@@ -406,10 +436,16 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
   if (offset === 0 && cats && cats.length > 0) {
     const catButtons: Array<Array<{ text: string; callback_data: string }>> = [];
     for (const c of cats) {
-      catButtons.push([{ text: categoryButtonLabel(c.name as string), callback_data: `cat:${c.id}:0` }]);
+      catButtons.push([
+        { text: categoryButtonLabel(c.name as string), callback_data: `cat:${c.id}:0` },
+      ]);
     }
     if (parentId) {
-      const { data: cur } = await s.from("categories").select("parent_id").eq("id", parentId).single();
+      const { data: cur } = await s
+        .from("categories")
+        .select("parent_id")
+        .eq("id", parentId)
+        .single();
       const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
       catButtons.push([{ text: "« Назад", callback_data: back }]);
     }
@@ -427,11 +463,19 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
     if (offset === 0) {
       const navButtons = [];
       if (parentId) {
-        const { data: cur } = await s.from("categories").select("parent_id").eq("id", parentId).single();
+        const { data: cur } = await s
+          .from("categories")
+          .select("parent_id")
+          .eq("id", parentId)
+          .single();
         const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
         navButtons.push([{ text: "« Назад", callback_data: back }]);
       }
-      await tg("sendMessage", { chat_id, text: "📂 Здесь пока пусто.", reply_markup: navButtons.length ? { inline_keyboard: navButtons } : undefined });
+      await tg("sendMessage", {
+        chat_id,
+        text: "📂 Здесь пока пусто.",
+        reply_markup: navButtons.length ? { inline_keyboard: navButtons } : undefined,
+      });
     }
     return;
   }
@@ -442,22 +486,40 @@ async function showCategories(chat_id: number, parentId: string | null, userCoun
 
   const navButtons = [];
   if (offset + 5 < allProds.length) {
-    navButtons.push([{ text: "⬇️ Показать ещё", callback_data: parentId ? `cat:${parentId}:${offset + 5}` : `cat:root:${offset + 5}` }]);
+    navButtons.push([
+      {
+        text: "⬇️ Показать ещё",
+        callback_data: parentId ? `cat:${parentId}:${offset + 5}` : `cat:root:${offset + 5}`,
+      },
+    ]);
   }
-  
+
   // Show back button at the end of products if we didn't show categories
   if (parentId && (!cats || cats.length === 0 || offset > 0)) {
-    const { data: cur } = await s.from("categories").select("parent_id").eq("id", parentId).single();
+    const { data: cur } = await s
+      .from("categories")
+      .select("parent_id")
+      .eq("id", parentId)
+      .single();
     const back = cur?.parent_id ? `cat:${cur.parent_id}:0` : "cat:root:0";
     navButtons.push([{ text: "« Назад в категории", callback_data: back }]);
   }
 
   if (navButtons.length > 0) {
-    await tg("sendMessage", { chat_id, text: "Навигация:", reply_markup: { inline_keyboard: navButtons } });
+    await tg("sendMessage", {
+      chat_id,
+      text: "Навигация:",
+      reply_markup: { inline_keyboard: navButtons },
+    });
   }
 }
 
-async function sendProductCard(chat_id: number, p: any, userCountryCode: string | undefined, s: any) {
+async function sendProductCard(
+  chat_id: number,
+  p: any,
+  userCountryCode: string | undefined,
+  s: any,
+) {
   const imgs = (p.product_images || [])
     .slice()
     .sort((a: any, b: any) => a.sort_order - b.sort_order);
@@ -485,9 +547,7 @@ async function sendProductCard(chat_id: number, p: any, userCountryCode: string 
     : `\n\n<i>Подробное описание уточняется у продавца.</i>`;
   const caption = `📦 <b>${escapeHtml(p.name as string)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>`;
   const reply_markup = {
-    inline_keyboard: [
-      [{ text: "➕ В корзину", callback_data: `add:${p.id}` }]
-    ],
+    inline_keyboard: [[{ text: "➕ В корзину", callback_data: `add:${p.id}` }]],
   };
 
   if (imgs.length === 0) {
@@ -681,9 +741,7 @@ async function showCart(chat_id: number, user: BotUser) {
     const line = Number(money.amount) * Number(it.quantity);
     total += line;
     text += `• ${escapeHtml(p.name)} × ${it.quantity} — ${formatMoney(line, currency)}\n`;
-    buttons.push([
-      { text: `❌ Убрать «${p.name}»`, callback_data: `rem:${it.id}` },
-    ]);
+    buttons.push([{ text: `❌ Убрать «${p.name}»`, callback_data: `rem:${it.id}` }]);
   }
   text += `\n<b>Итого: ${formatMoney(total, currency)}</b>`;
   buttons.push([
@@ -713,8 +771,7 @@ async function startCheckout(chat_id: number, user: BotUser) {
     await setState(telegram_id, { ...user.state, mode: "awaiting_contact" });
     await tg("sendMessage", {
       chat_id,
-      text:
-        "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
+      text: "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
       parse_mode: "HTML",
       reply_markup: {
         keyboard: [[{ text: "📱 Поделиться контактом", request_contact: true }]],
@@ -724,7 +781,7 @@ async function startCheckout(chat_id: number, user: BotUser) {
     });
     return;
   }
-  
+
   if (!user.state?.country_code) {
     await askCountry(chat_id, telegram_id, true);
     return;
@@ -752,9 +809,9 @@ async function askCountry(chat_id: number, telegram_id: number, forCheckout = fa
     });
     return;
   }
-  
+
   const prefix = forCheckout ? "country:" : "setcountry:";
-  
+
   await tg("sendMessage", {
     chat_id,
     text: "Пожалуйста, выберите вашу страну (для отображения цен и реквизитов):",
@@ -785,7 +842,9 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .single();
   const { data: items } = await s
     .from("cart_items")
-    .select("id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, country_prices, product_material_files(language, file_path, file_name, sort_order))")
+    .select(
+      "id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, country_prices, product_material_files(language, file_path, file_name, sort_order))",
+    )
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: "🛒 Корзина пуста." });
@@ -811,7 +870,9 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     total += money.amount * Number(it.quantity);
   }
 
-  const display = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() || (user?.username ? `@${user.username}` : `id${telegram_id}`);
+  const display =
+    [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() ||
+    (user?.username ? `@${user.username}` : `id${telegram_id}`);
 
   const { data: order, error } = await s
     .from("orders")
@@ -868,7 +929,8 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
 
   const rk = await loadRobokassaSettings();
   const cc = String(method?.country_code ?? country_code ?? "").toUpperCase();
-  const instructions = (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.";
+  const instructions =
+    (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.";
 
   // Robokassa off (or misconfigured) → all countries: receipt + manual admin confirm
   if (!rk.ready) {
@@ -945,14 +1007,21 @@ export async function remindOrderPayment(orderId: number) {
 
   const telegram_id = Number(order.telegram_id);
   const chat_id = telegram_id;
-  const { data: botUser } = await s.from("bot_users").select("*").eq("telegram_id", telegram_id).maybeSingle();
+  const { data: botUser } = await s
+    .from("bot_users")
+    .select("*")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
   const userState = (botUser?.state as BotUser["state"]) ?? {};
 
   const cc = String(order.country_code ?? "").toUpperCase();
-  const { data: method } = await s.from("payment_methods").select("*").eq("country_code", cc || "OTHER").maybeSingle();
+  const { data: method } = await s
+    .from("payment_methods")
+    .select("*")
+    .eq("country_code", cc || "OTHER")
+    .maybeSingle();
   const instructions =
-    (method?.instructions as string) ||
-    "Свяжитесь с продавцом для уточнения реквизитов.";
+    (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.";
   const total = Number(order.total);
   const currency = (order.currency as string) || (method?.currency as string) || "USD";
 
@@ -1072,7 +1141,8 @@ async function loadRobokassaSettings() {
   const enabled = getSetting("robokassa_enabled") === "true";
   const testMode = getSetting("robokassa_test_mode") === "true";
   const login = getSetting("robokassa_login")?.trim() || "";
-  const pass1 = (testMode ? getSetting("robokassa_pass1_test") : getSetting("robokassa_pass1"))?.trim() || "";
+  const pass1 =
+    (testMode ? getSetting("robokassa_pass1_test") : getSetting("robokassa_pass1"))?.trim() || "";
   return { enabled, testMode, login, pass1, ready: enabled && Boolean(login && pass1) };
 }
 
@@ -1180,7 +1250,10 @@ async function notifyAdminNewOrder(
     console.warn("[bot] admin_chat_id not configured");
     return;
   }
-  const adminIds = adminChatIdStr.split(",").map((s: string) => s.trim()).filter(Boolean);
+  const adminIds = adminChatIdStr
+    .split(",")
+    .map((s: string) => s.trim())
+    .filter(Boolean);
   if (adminIds.length === 0) return;
 
   const { data: order } = await s
@@ -1192,7 +1265,13 @@ async function notifyAdminNewOrder(
   // Покупателю и админу показывается сквозной номер этого бота, а не глобальный
   // id (id остаётся во внутренних ссылках, callback_data и InvId Robokassa).
   const displayNo = (order as any).order_no ?? order.id;
-  const items = ((order as any).order_items as Array<{ product_id: string | null; name_snapshot: string; price_snapshot: number; quantity: number }>) || [];
+  const items =
+    ((order as any).order_items as Array<{
+      product_id: string | null;
+      name_snapshot: string;
+      price_snapshot: number;
+      quantity: number;
+    }>) || [];
 
   // --- Задача 4: обложки товаров отдельным сообщением (чтобы админ сразу видел, что продаётся) ---
   const productIds = items.map((i) => i.product_id).filter(Boolean) as string[];
@@ -1329,7 +1408,6 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     return;
   }
 
-
   const all = data;
   const page = all.slice(offset, offset + 5);
 
@@ -1347,7 +1425,9 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     await tg("sendMessage", {
       chat_id,
       text: `Показано ${nextOffset} из ${all.length}`,
-      reply_markup: { inline_keyboard: [[{ text: "⬇️ Показать ещё", callback_data: `searchmore:${nextOffset}` }]] },
+      reply_markup: {
+        inline_keyboard: [[{ text: "⬇️ Показать ещё", callback_data: `searchmore:${nextOffset}` }]],
+      },
     });
   }
 }
@@ -1394,7 +1474,7 @@ export async function handleUpdate(update: any) {
 
       const user = await upsertUser(cq.from as any);
       if (!user) return;
-      
+
       // Before allowing navigation, require country code
       if (
         !data.startsWith("setcountry:") &&
@@ -1431,7 +1511,10 @@ export async function handleUpdate(update: any) {
           return;
         }
         if (order.status !== "awaiting_payment") {
-          await tg("sendMessage", { chat_id, text: `Заказ #${orderId} уже обрабатывается или закрыт.` });
+          await tg("sendMessage", {
+            chat_id,
+            text: `Заказ #${orderId} уже обрабатывается или закрыт.`,
+          });
           return;
         }
 
@@ -1446,7 +1529,10 @@ export async function handleUpdate(update: any) {
         if (isRk) {
           const rk = await loadRobokassaSettings();
           if (!rk.ready) {
-            await tg("sendMessage", { chat_id, text: "Robokassa временно недоступна. Выберите оплату по реквизитам." });
+            await tg("sendMessage", {
+              chat_id,
+              text: "Robokassa временно недоступна. Выберите оплату по реквизитам.",
+            });
             return;
           }
           await sendRobokassaPayLink({
@@ -1454,7 +1540,7 @@ export async function handleUpdate(update: any) {
             telegram_id: from_id,
             userState: user.state,
             orderId,
-      displayNo: (order as any).order_no ?? orderId,
+            displayNo: (order as any).order_no ?? orderId,
             total: Number(order.total),
             currency: (order.currency as string) || "KZT",
             rk,
@@ -1472,10 +1558,11 @@ export async function handleUpdate(update: any) {
           telegram_id: from_id,
           userState: user.state,
           orderId,
-      displayNo: (order as any).order_no ?? orderId,
+          displayNo: (order as any).order_no ?? orderId,
           total: Number(order.total),
           currency: (order.currency as string) || "KZT",
-          instructions: (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.",
+          instructions:
+            (method?.instructions as string) || "Свяжитесь с продавцом для уточнения реквизитов.",
           autoDeliver: true,
         });
         return;
@@ -1489,7 +1576,8 @@ export async function handleUpdate(update: any) {
         const parts = data.split(":");
         return showCategories(chat_id, parts[1], user.state?.country_code, Number(parts[2] || 0));
       }
-      if (data.startsWith("prod:")) return showProduct(chat_id, data.slice(5), user.state?.country_code);
+      if (data.startsWith("prod:"))
+        return showProduct(chat_id, data.slice(5), user.state?.country_code);
       if (data.startsWith("searchmore:")) {
         // Пагинация поиска: запрос берём из state.last_search
         const offset = Number(data.slice(11)) || 0;
@@ -1518,13 +1606,24 @@ export async function handleUpdate(update: any) {
       }
       if (data === "checkout") return startCheckout(chat_id, user);
       if (data.startsWith("country:")) return placeOrder(chat_id, user, data.slice(8));
-      
+
       if (data.startsWith("setcountry:")) {
         const code = data.slice(11);
         const s = await db();
-        const { data: m } = await s.from("payment_methods").select("country_name").eq("country_code", code).maybeSingle();
-        await setState(from_id, { ...user.state, country_code: code, country_name: m?.country_name });
-        await tg("sendMessage", { chat_id, text: `✅ Ваша страна сохранена: ${m?.country_name}\nТеперь вы видите корректные цены!` });
+        const { data: m } = await s
+          .from("payment_methods")
+          .select("country_name")
+          .eq("country_code", code)
+          .maybeSingle();
+        await setState(from_id, {
+          ...user.state,
+          country_code: code,
+          country_name: m?.country_name,
+        });
+        await tg("sendMessage", {
+          chat_id,
+          text: `✅ Ваша страна сохранена: ${m?.country_name}\nТеперь вы видите корректные цены!`,
+        });
         await sendMain(chat_id);
         return;
       }
@@ -1535,12 +1634,19 @@ export async function handleUpdate(update: any) {
         const orderId = Number(parts[1]);
         const idx = Number(parts[2]);
         const s = await db();
-        const { data: order } = await s.from("orders").select("*, order_items(*)").eq("id", orderId).single();
+        const { data: order } = await s
+          .from("orders")
+          .select("*, order_items(*)")
+          .eq("id", orderId)
+          .single();
         if (!order) return;
-        
+
         // Security: verify the order belongs to the user clicking the button
         if (order.telegram_id !== from_id) {
-          await tg("answerCallbackQuery", { callback_query_id: cq.id, text: "⛔ Доступ запрещён." });
+          await tg("answerCallbackQuery", {
+            callback_query_id: cq.id,
+            text: "⛔ Доступ запрещён.",
+          });
           return;
         }
 
@@ -1561,32 +1667,50 @@ export async function handleUpdate(update: any) {
         }
 
         const { sendMaterials, legacyAsMaterials } = await import("./orders.server");
-        const materials = lang === "ru"
-          ? (item.material_files_snapshot?.length
+        const materials =
+          lang === "ru"
+            ? item.material_files_snapshot?.length
               ? item.material_files_snapshot
-              : legacyAsMaterials(item.file_path_snapshot, item.file_name_snapshot, item.file_url_snapshot))
-          : (item.material_files_kz_snapshot?.length
+              : legacyAsMaterials(
+                  item.file_path_snapshot,
+                  item.file_name_snapshot,
+                  item.file_url_snapshot,
+                )
+            : item.material_files_kz_snapshot?.length
               ? item.material_files_kz_snapshot
-              : legacyAsMaterials(item.file_path_kz_snapshot, item.file_name_kz_snapshot, item.file_url_kz_snapshot));
+              : legacyAsMaterials(
+                  item.file_path_kz_snapshot,
+                  item.file_name_kz_snapshot,
+                  item.file_url_kz_snapshot,
+                );
 
         if (materials.length) {
-          await tg("sendMessage", { chat_id, text: `⏳ Загружаю материалы (${lang === "ru" ? "Русский" : "Қазақша"})...` });
+          await tg("sendMessage", {
+            chat_id,
+            text: `⏳ Загружаю материалы (${lang === "ru" ? "Русский" : "Қазақша"})...`,
+          });
           // Always 1 copy — quantity is cart price, not file copies
           await sendMaterials(order.telegram_id, materials, item.name_snapshot, 1);
         } else {
-          await tg("sendMessage", { chat_id, text: `⚠️ Файл (${lang === "ru" ? "Русский" : "Қазақша"}) не настроен. Продавец вышлет вручную.` });
+          await tg("sendMessage", {
+            chat_id,
+            text: `⚠️ Файл (${lang === "ru" ? "Русский" : "Қазақша"}) не настроен. Продавец вышлет вручную.`,
+          });
         }
 
         // Update delivered_language tracking
         const newDeliveredLang = item.delivered_language ? "both" : lang;
-        await s.from("order_items").update({ delivered_language: newDeliveredLang }).eq("id", item.id);
+        await s
+          .from("order_items")
+          .update({ delivered_language: newDeliveredLang })
+          .eq("id", item.id);
 
         // Edit the message to remove buttons
         if (cq.message?.message_id) {
           await tg("editMessageReplyMarkup", {
             chat_id,
             message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] }
+            reply_markup: { inline_keyboard: [] },
           });
         }
 
@@ -1604,15 +1728,23 @@ export async function handleUpdate(update: any) {
           });
         }
         // Админу показываем сквозной номер этого бота, а не внутренний id.
-        const { data: ordRow } = await (await db())
-          .from("orders").select("order_no").eq("id", orderId).maybeSingle();
+        const { data: ordRow } = await (
+          await db()
+        )
+          .from("orders")
+          .select("order_no")
+          .eq("id", orderId)
+          .maybeSingle();
         const shownNo = (ordRow as any)?.order_no ?? orderId;
         await tg("sendMessage", { chat_id, text: `⏳ Выдаю заказ #${shownNo}...` });
         const { deliverOrder } = await import("./orders.server");
         try {
           const result = await deliverOrder(orderId);
           if (result.alreadyDelivered) {
-            await tg("sendMessage", { chat_id, text: `ℹ️ Заказ #${shownNo} уже выдаётся или выдан.` });
+            await tg("sendMessage", {
+              chat_id,
+              text: `ℹ️ Заказ #${shownNo} уже выдаётся или выдан.`,
+            });
           } else {
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} выдан.` });
           }
@@ -1710,7 +1842,16 @@ export async function handleUpdate(update: any) {
 
     // Phone number typed as text during checkout
     if (user.state?.mode === "awaiting_contact" && msg.text) {
-      if (["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы", "📖 Инструкция", "ℹ️ Информация"].includes(msg.text)) {
+      if (
+        [
+          "📚 Каталог",
+          "🔍 Поиск",
+          "🛒 Корзина",
+          "📋 Мои заказы",
+          "📖 Инструкция",
+          "ℹ️ Информация",
+        ].includes(msg.text)
+      ) {
         await setState(from.id, { ...user.state, mode: "idle" });
         // Fallthrough to the main menu switch below
       } else {
@@ -1758,8 +1899,23 @@ export async function handleUpdate(update: any) {
       if (openOrder?.id) proofOrderId = Number(openOrder.id);
     }
 
-    if (user.state?.mode === "awaiting_proof" && user.state.pending_order_id && !msg.photo && !msg.document) {
-      if (msg.text && ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы", "📖 Инструкция", "ℹ️ Информация"].includes(msg.text)) {
+    if (
+      user.state?.mode === "awaiting_proof" &&
+      user.state.pending_order_id &&
+      !msg.photo &&
+      !msg.document
+    ) {
+      if (
+        msg.text &&
+        [
+          "📚 Каталог",
+          "🔍 Поиск",
+          "🛒 Корзина",
+          "📋 Мои заказы",
+          "📖 Инструкция",
+          "ℹ️ Информация",
+        ].includes(msg.text)
+      ) {
         await setState(from.id, { ...user.state, mode: "idle" });
         // Fallthrough to the main menu switch below
       } else {
@@ -1785,7 +1941,11 @@ export async function handleUpdate(update: any) {
         await tg("sendMessage", { chat_id, text: "Заказ не найден." });
         return;
       }
-      if (orderRow.status === "delivered" || orderRow.status === "rejected" || orderRow.status === "delivering") {
+      if (
+        orderRow.status === "delivered" ||
+        orderRow.status === "rejected" ||
+        orderRow.status === "delivering"
+      ) {
         await tg("sendMessage", {
           chat_id,
           text: `Заказ #${orderId} уже обрабатывается или закрыт.`,
@@ -1840,7 +2000,9 @@ export async function handleUpdate(update: any) {
         }
 
         const key = `order-${orderId}/${Date.now()}.${fileExt}`;
-        const body = new Blob([dl.bytes as BlobPart], { type: dl.mime || "application/octet-stream" });
+        const body = new Blob([dl.bytes as BlobPart], {
+          type: dl.mime || "application/octet-stream",
+        });
         const upRes = await supabaseAdmin.storage.from("payment-proofs").upload(key, body, {
           contentType: dl.mime || "application/octet-stream",
           upsert: true,
@@ -1993,7 +2155,10 @@ export async function handleUpdate(update: any) {
           .update({ payment_proof_path: proofPath, status: "awaiting_confirmation" })
           .eq("id", orderId);
       } else {
-        await supabaseAdmin.from("orders").update({ status: "awaiting_confirmation" }).eq("id", orderId);
+        await supabaseAdmin
+          .from("orders")
+          .update({ status: "awaiting_confirmation" })
+          .eq("id", orderId);
       }
 
       if (proofSaved || proofFileId) {
@@ -2021,7 +2186,11 @@ export async function handleUpdate(update: any) {
       return showSearch(chat_id, user, msg.text);
     }
 
-    if (!user.state?.country_code && msg.text && ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(msg.text)) {
+    if (
+      !user.state?.country_code &&
+      msg.text &&
+      ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(msg.text)
+    ) {
       await askCountry(chat_id, from.id);
       return;
     }

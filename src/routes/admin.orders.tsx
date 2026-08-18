@@ -55,8 +55,7 @@ function OrdersPage() {
    */
   const [platform, setPlatform] = useState<"all" | "telegram" | "instagram">("all");
   const platformOf = (order: any) => (order.platform === "instagram" ? "instagram" : "telegram");
-  const list =
-    platform === "all" ? allOrders : allOrders.filter((o) => platformOf(o) === platform);
+  const list = platform === "all" ? allOrders : allOrders.filter((o) => platformOf(o) === platform);
 
   const counts = {
     all: allOrders.length,
@@ -224,9 +223,7 @@ function OrdersPage() {
 
       {list.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          {allOrders.length === 0
-            ? "Пока нет заказов."
-            : "В этой площадке заказов пока нет."}
+          {allOrders.length === 0 ? "Пока нет заказов." : "В этой площадке заказов пока нет."}
         </p>
       )}
       <div className="space-y-3">

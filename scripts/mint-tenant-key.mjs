@@ -27,7 +27,9 @@ const botId = process.argv[2];
 const years = Number(process.argv[3] ?? 5);
 
 if (!secret || !botId) {
-  console.error("Использование: SUPABASE_JWT_SECRET=… node scripts/mint-tenant-key.mjs <bot_id> [лет]");
+  console.error(
+    "Использование: SUPABASE_JWT_SECRET=… node scripts/mint-tenant-key.mjs <bot_id> [лет]",
+  );
   process.exit(1);
 }
 if (!/^[0-9a-f-]{36}$/i.test(botId)) {
@@ -53,6 +55,8 @@ const signature = b64url(crypto.createHmac("sha256", secret).update(signingInput
 
 console.log(`\nbot_id : ${botId}`);
 console.log(`годен до: ${new Date(payload.exp * 1000).toISOString().slice(0, 10)}\n`);
-console.log("Добавить в переменные окружения деплоя (SUPABASE_SERVICE_ROLE_KEY оставить как есть):\n");
+console.log(
+  "Добавить в переменные окружения деплоя (SUPABASE_SERVICE_ROLE_KEY оставить как есть):\n",
+);
 console.log(`BOT_ID=${botId}`);
 console.log(`SUPABASE_TENANT_KEY=${signingInput}.${signature}\n`);

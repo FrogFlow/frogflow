@@ -42,14 +42,19 @@ export const resetAllData = createServerFn({ method: "POST" }).handler(async () 
   const s = await db();
 
   // ── Collect this tenant's file paths BEFORE deleting the rows that name them.
-  const [{ data: products }, { data: images }, { data: orders }, { data: materials }, { data: settings }] =
-    await Promise.all([
-      s.from("products").select("file_path, file_path_kz").eq("bot_id", botId),
-      s.from("product_images").select("image_path").eq("bot_id", botId),
-      s.from("orders").select("payment_proof_path").eq("bot_id", botId),
-      s.from("product_material_files").select("file_path").eq("bot_id", botId),
-      s.from("app_settings").select("key, value").eq("bot_id", botId),
-    ]);
+  const [
+    { data: products },
+    { data: images },
+    { data: orders },
+    { data: materials },
+    { data: settings },
+  ] = await Promise.all([
+    s.from("products").select("file_path, file_path_kz").eq("bot_id", botId),
+    s.from("product_images").select("image_path").eq("bot_id", botId),
+    s.from("orders").select("payment_proof_path").eq("bot_id", botId),
+    s.from("product_material_files").select("file_path").eq("bot_id", botId),
+    s.from("app_settings").select("key, value").eq("bot_id", botId),
+  ]);
 
   const productFiles = [
     ...(products ?? []).flatMap((p: any) => [p.file_path, p.file_path_kz]),
@@ -57,7 +62,9 @@ export const resetAllData = createServerFn({ method: "POST" }).handler(async () 
   ].filter(Boolean) as string[];
 
   const imageFiles = (images ?? []).map((i: any) => i.image_path).filter(Boolean) as string[];
-  const proofFiles = (orders ?? []).map((o: any) => o.payment_proof_path).filter(Boolean) as string[];
+  const proofFiles = (orders ?? [])
+    .map((o: any) => o.payment_proof_path)
+    .filter(Boolean) as string[];
 
   const settingValue = (key: string) =>
     (settings ?? []).find((r: any) => r.key === key)?.value?.trim() || null;

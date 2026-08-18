@@ -24,9 +24,10 @@ if (!token) {
   process.exit(1);
 }
 
-const base = (
-  process.env.PUBLIC_APP_URL || "https://tg-bot-ashen-one.vercel.app"
-).replace(/\/$/, "");
+const base = (process.env.PUBLIC_APP_URL || "https://tg-bot-ashen-one.vercel.app").replace(
+  /\/$/,
+  "",
+);
 
 const description = (
   `📚 Каталог цифровых учебных материалов.\n` +
@@ -41,7 +42,10 @@ const description = (
 ).slice(0, 512);
 
 const short_description =
-  "Каталог материалов. Нажимая /start, вы принимаете оферту и политику конфиденциальности.".slice(0, 120);
+  "Каталог материалов. Нажимая /start, вы принимаете оферту и политику конфиденциальности.".slice(
+    0,
+    120,
+  );
 
 async function call(method, body) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {

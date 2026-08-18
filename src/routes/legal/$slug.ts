@@ -111,7 +111,8 @@ function contentTypeForName(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase();
   if (ext === "pdf") return "application/pdf";
   if (ext === "doc") return "application/msword";
-  if (ext === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (ext === "docx")
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   return "application/octet-stream";
 }
 
@@ -135,7 +136,10 @@ export const Route = createFileRoute("/legal/$slug")({
         const meta = SLUGS[slug];
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const keys = [meta.htmlKey, meta.fileKey, meta.nameKey].filter(Boolean) as string[];
-        const { data: rows } = await supabaseAdmin.from("app_settings").select("key, value").in("key", keys);
+        const { data: rows } = await supabaseAdmin
+          .from("app_settings")
+          .select("key, value")
+          .in("key", keys);
         const get = (key: string | null) =>
           key ? (rows?.find((r) => r.key === key)?.value as string | undefined)?.trim() || "" : "";
 
@@ -159,23 +163,30 @@ export const Route = createFileRoute("/legal/$slug")({
           }
 
           const origin =
-            process.env.PUBLIC_APP_URL?.replace(/\/$/, "") ||
-            `${reqUrl.protocol}//${reqUrl.host}`;
+            process.env.PUBLIC_APP_URL?.replace(/\/$/, "") || `${reqUrl.protocol}//${reqUrl.host}`;
           const rawUrl = `${origin}/legal/${slug}?raw=1&v=${v}`;
 
           // DOCX → HTML page (opens as website, including in Telegram)
           if (ext === "docx" && !wantRaw) {
-            const { data, error } = await supabaseAdmin.storage.from("legal-docs").download(filePath);
+            const { data, error } = await supabaseAdmin.storage
+              .from("legal-docs")
+              .download(filePath);
             if (error || !data) {
-              return new Response("Файл документа не найден", { status: 404, headers: { ...NO_CACHE } });
+              return new Response("Файл документа не найден", {
+                status: 404,
+                headers: { ...NO_CACHE },
+              });
             }
             try {
               const mammoth = await import("mammoth");
               const arrayBuffer = await data.arrayBuffer();
               const result = await mammoth.convertToHtml({ arrayBuffer });
-              return new Response(wrapPage(meta.title, result.value || "<p>(пустой документ)</p>", rawUrl), {
-                headers: { "Content-Type": "text/html; charset=utf-8", ...NO_CACHE },
-              });
+              return new Response(
+                wrapPage(meta.title, result.value || "<p>(пустой документ)</p>", rawUrl),
+                {
+                  headers: { "Content-Type": "text/html; charset=utf-8", ...NO_CACHE },
+                },
+              );
             } catch (e) {
               console.error("[legal] mammoth convert failed", e);
               return new Response(officeViewerFallback(meta.title, rawUrl, fileName), {
@@ -194,12 +205,17 @@ export const Route = createFileRoute("/legal/$slug")({
           // PDF (or ?raw=1 for any) — stream file
           const { data, error } = await supabaseAdmin.storage.from("legal-docs").download(filePath);
           if (error || !data) {
-            return new Response("Файл документа не найден", { status: 404, headers: { ...NO_CACHE } });
+            return new Response("Файл документа не найден", {
+              status: 404,
+              headers: { ...NO_CACHE },
+            });
           }
           const buf = await data.arrayBuffer();
           const asciiName = fileName.replace(/[^\x20-\x7E]/g, "_") || "document.pdf";
           const ctype =
-            data.type && data.type !== "application/octet-stream" ? data.type : contentTypeForName(fileName);
+            data.type && data.type !== "application/octet-stream"
+              ? data.type
+              : contentTypeForName(fileName);
           return new Response(buf, {
             headers: {
               "Content-Type": ctype,

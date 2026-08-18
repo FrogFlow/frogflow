@@ -38,7 +38,12 @@ function CategoriesPage() {
 
   function insertEmoji(emoji: string) {
     const el = nameInputRef.current;
-    const { next, cursor } = insertAtCursor(name, emoji, el?.selectionStart ?? null, el?.selectionEnd ?? null);
+    const { next, cursor } = insertAtCursor(
+      name,
+      emoji,
+      el?.selectionStart ?? null,
+      el?.selectionEnd ?? null,
+    );
     setName(next);
     requestAnimationFrame(() => {
       el?.focus();
@@ -107,8 +112,8 @@ function CategoriesPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Категории</h1>
       <p className="text-sm text-muted-foreground">
-        Скрытые категории не показываются в каталоге бота, но товары и файлы сохраняются. Удобно для сезонных
-        папок (1 сентября, День учителя).
+        Скрытые категории не показываются в каталоге бота, но товары и файлы сохраняются. Удобно для
+        сезонных папок (1 сентября, День учителя).
       </p>
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-card border rounded-lg p-4 space-y-3">
@@ -122,8 +127,8 @@ function CategoriesPage() {
               placeholder="Например: 📐 Математика"
             />
             <p className="text-xs text-muted-foreground">
-              Эмодзи в названии отображаются в кнопках каталога бота. На ПК — кликните ниже или Win+. /
-              Ctrl+Cmd+Space.
+              Эмодзи в названии отображаются в кнопках каталога бота. На ПК — кликните ниже или
+              Win+. / Ctrl+Cmd+Space.
             </p>
             <EmojiInsertBar onInsert={insertEmoji} />
           </div>
@@ -147,7 +152,11 @@ function CategoriesPage() {
             </select>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={isVisible} onChange={(e) => setIsVisible(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={isVisible}
+              onChange={(e) => setIsVisible(e.target.checked)}
+            />
             Видна в каталоге бота
           </label>
           <div className="flex gap-2">

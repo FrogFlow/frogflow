@@ -39,8 +39,8 @@ function requiredEnv(name: string): string {
 export function isMailConfigured(): boolean {
   return Boolean(
     process.env.SMTP_HOST?.trim() &&
-      process.env.SMTP_USER?.trim() &&
-      process.env.SMTP_PASSWORD?.trim(),
+    process.env.SMTP_USER?.trim() &&
+    process.env.SMTP_PASSWORD?.trim(),
   );
 }
 

@@ -6,7 +6,16 @@ import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Checkbox } from "@/components-ui/checkbox";
 import { Textarea } from "@/components-ui/textarea";
-import { getSettings, saveSetting, getLegalDocUploadUrl, commitLegalDocFn, clearLegalDocFn, getInstructionVideoUploadUrl, commitInstructionVideoFn, clearInstructionVideoFn } from "@/lib/settings.functions";
+import {
+  getSettings,
+  saveSetting,
+  getLegalDocUploadUrl,
+  commitLegalDocFn,
+  clearLegalDocFn,
+  getInstructionVideoUploadUrl,
+  commitInstructionVideoFn,
+  clearInstructionVideoFn,
+} from "@/lib/settings.functions";
 import { resetAllData } from "@/lib/reset.functions";
 
 const ROLES = [
@@ -67,7 +76,8 @@ function SettingsPage() {
     setInstructionVideoPath(settings.data?.instruction_video_path ?? "");
   }, [settings.data]);
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://your-app.vercel.app";
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "https://your-app.vercel.app";
 
   async function onSave() {
     try {
@@ -178,7 +188,9 @@ function SettingsPage() {
     }
     setInstructionUploading(true);
     try {
-      const { path, signedUrl } = await getInstructionVideoUploadUrl({ data: { filename: file.name } });
+      const { path, signedUrl } = await getInstructionVideoUploadUrl({
+        data: { filename: file.name },
+      });
       const res = await fetch(signedUrl, {
         method: "PUT",
         body: file,
@@ -234,7 +246,10 @@ function SettingsPage() {
           <Label>Получатели уведомлений о заказах (Telegram ID)</Label>
           <div className="flex flex-col gap-3 py-2">
             {ROLES.map((role) => {
-              const ids = adminChatId.split(",").map((s) => s.trim()).filter(Boolean);
+              const ids = adminChatId
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean);
               const checked = ids.includes(role.id);
               return (
                 <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer">
@@ -263,7 +278,8 @@ function SettingsPage() {
             placeholder="например, 123456789, 987654321"
           />
           <p className="text-xs text-muted-foreground">
-            Выберите роли из списка или впишите ID вручную (через запятую). Уведомления будут приходить всем указанным получателям.
+            Выберите роли из списка или впишите ID вручную (через запятую). Уведомления будут
+            приходить всем указанным получателям.
           </p>
         </div>
         <div className="space-y-2 pt-2 border-t border-border/50">
@@ -274,7 +290,8 @@ function SettingsPage() {
             placeholder="например, @my_username или ссылка на WhatsApp"
           />
           <p className="text-xs text-muted-foreground">
-            Эта ссылка или текст будет показываться пользователям при нажатии на кнопку «💬 Связаться с автором».
+            Эта ссылка или текст будет показываться пользователям при нажатии на кнопку «💬
+            Связаться с автором».
           </p>
         </div>
         <div className="flex items-center gap-2 pt-2">
@@ -309,7 +326,8 @@ function SettingsPage() {
         <div className="space-y-2">
           <Label>Договор оферты (файл PDF / DOC / DOCX)</Label>
           <p className="text-xs text-muted-foreground">
-            Для удобного просмотра в браузере лучше загружать <b>PDF</b>. DOC/DOCX откроются через веб-просмотрщик.
+            Для удобного просмотра в браузере лучше загружать <b>PDF</b>. DOC/DOCX откроются через
+            веб-просмотрщик.
           </p>
           <Input
             type="file"
@@ -337,7 +355,8 @@ function SettingsPage() {
         <div className="space-y-2">
           <Label>Политика конфиденциальности (файл PDF / DOC / DOCX)</Label>
           <p className="text-xs text-muted-foreground">
-            Для удобного просмотра в браузере лучше загружать <b>PDF</b>. DOC/DOCX откроются через веб-просмотрщик.
+            Для удобного просмотра в браузере лучше загружать <b>PDF</b>. DOC/DOCX откроются через
+            веб-просмотрщик.
           </p>
           <Input
             type="file"
@@ -345,7 +364,9 @@ function SettingsPage() {
             disabled={uploadingKind !== null}
             onChange={(e) => onUploadLegal("privacy", e.target.files?.[0] ?? null)}
           />
-          {uploadingKind === "privacy" && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+          {uploadingKind === "privacy" && (
+            <p className="text-sm text-muted-foreground">Загрузка…</p>
+          )}
           {privacyFile && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <a
@@ -356,7 +377,12 @@ function SettingsPage() {
               >
                 {privacyFileName || privacyFile}
               </a>
-              <Button type="button" size="sm" variant="ghost" onClick={() => onClearLegal("privacy")}>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => onClearLegal("privacy")}
+              >
                 Удалить
               </Button>
             </div>
@@ -364,7 +390,12 @@ function SettingsPage() {
         </div>
         <div className="space-y-2">
           <Label>О продавце / авторе (HTML или текст)</Label>
-          <Textarea rows={5} value={legalAbout} onChange={(e) => setLegalAbout(e.target.value)} className="font-mono text-xs" />
+          <Textarea
+            rows={5}
+            value={legalAbout}
+            onChange={(e) => setLegalAbout(e.target.value)}
+            className="font-mono text-xs"
+          />
         </div>
         <div className="flex items-center gap-2">
           <Button onClick={onSaveLegal}>Сохранить документы</Button>
@@ -375,7 +406,8 @@ function SettingsPage() {
       <div className="bg-card border rounded-lg p-4 space-y-4">
         <h2 className="text-lg font-semibold">Инструкция для покупателей</h2>
         <p className="text-sm text-muted-foreground">
-          Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до <b>50 МБ</b> (лимит Telegram), формат MP4.
+          Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до <b>50 МБ</b> (лимит Telegram),
+          формат MP4.
         </p>
         <div className="space-y-2">
           <Label>Видео</Label>
@@ -388,7 +420,9 @@ function SettingsPage() {
           {instructionUploading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
           {instructionVideoPath && (
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-muted-foreground truncate max-w-md">{instructionVideoPath}</span>
+              <span className="text-muted-foreground truncate max-w-md">
+                {instructionVideoPath}
+              </span>
               <Button type="button" size="sm" variant="ghost" onClick={onClearInstruction}>
                 Удалить видео
               </Button>
@@ -428,10 +462,10 @@ function SettingsPage() {
         </label>
         {rkEnabled && (
           <p className="text-xs text-muted-foreground">
-            При включении: RU, BY, OTHER — только чек с автовыдачей; KZ — выбор Robokassa или чек с автовыдачей;
-            остальные страны — только Robokassa. При выключении все страны — чек с ручной проверкой.
-            Автовыдача по чеку требует <code>GOOGLE_VISION_API_KEY</code> (OCR, сумма ±10%); без ключа чек уходит на
-            ручную проверку.
+            При включении: RU, BY, OTHER — только чек с автовыдачей; KZ — выбор Robokassa или чек с
+            автовыдачей; остальные страны — только Robokassa. При выключении все страны — чек с
+            ручной проверкой. Автовыдача по чеку требует <code>GOOGLE_VISION_API_KEY</code> (OCR,
+            сумма ±10%); без ключа чек уходит на ручную проверку.
           </p>
         )}
 
@@ -439,24 +473,44 @@ function SettingsPage() {
           <div className="space-y-4 pt-2 border-t border-border/50">
             <div className="space-y-2">
               <Label>Идентификатор магазина (MerchantLogin)</Label>
-              <Input value={rkLogin} onChange={(e) => setRkLogin(e.target.value)} placeholder="my_shop_id" />
+              <Input
+                value={rkLogin}
+                onChange={(e) => setRkLogin(e.target.value)}
+                placeholder="my_shop_id"
+              />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Пароль #1 (боевой)</Label>
-                <Input type="password" value={rkPass1} onChange={(e) => setRkPass1(e.target.value)} />
+                <Input
+                  type="password"
+                  value={rkPass1}
+                  onChange={(e) => setRkPass1(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Пароль #2 (боевой)</Label>
-                <Input type="password" value={rkPass2} onChange={(e) => setRkPass2(e.target.value)} />
+                <Input
+                  type="password"
+                  value={rkPass2}
+                  onChange={(e) => setRkPass2(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Пароль #1 (тестовый)</Label>
-                <Input type="password" value={rkPass1Test} onChange={(e) => setRkPass1Test(e.target.value)} />
+                <Input
+                  type="password"
+                  value={rkPass1Test}
+                  onChange={(e) => setRkPass1Test(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Пароль #2 (тестовый)</Label>
-                <Input type="password" value={rkPass2Test} onChange={(e) => setRkPass2Test(e.target.value)} />
+                <Input
+                  type="password"
+                  value={rkPass2Test}
+                  onChange={(e) => setRkPass2Test(e.target.value)}
+                />
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -486,8 +540,9 @@ function SettingsPage() {
       <div className="bg-card border border-destructive/40 rounded-lg p-4 space-y-3">
         <h2 className="font-medium text-destructive">Опасная зона</h2>
         <p className="text-sm text-muted-foreground">
-          Полный сброс: удалит все товары, категории, изображения, файлы товаров, заказы, корзины пользователей и
-          скриншоты оплаты. Счётчики обнулятся. Настройки и реквизиты оплаты сохранятся.
+          Полный сброс: удалит все товары, категории, изображения, файлы товаров, заказы, корзины
+          пользователей и скриншоты оплаты. Счётчики обнулятся. Настройки и реквизиты оплаты
+          сохранятся.
         </p>
         <div className="flex items-center gap-2">
           <Button variant="destructive" onClick={onReset} disabled={resetting}>
