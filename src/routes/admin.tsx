@@ -13,7 +13,6 @@ import { Button } from "@/components-ui/button";
 import { useModules } from "@/lib/modules/use-modules";
 import { localeNames, SUPPORTED_LOCALES, t, type Locale } from "@/lib/i18n";
 import { useEffect, useState } from "react";
-import { AdminAutoTranslator } from "@/components/admin-auto-translator";
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: async ({ context }) => {
@@ -43,7 +42,6 @@ function AdminLayout() {
 
   return (
     <div className="min-h-screen bg-muted/30">
-      <AdminAutoTranslator locale={locale} />
       <header className="border-b bg-card">
         <div className="max-w-7xl mx-auto px-4 min-h-[3.5rem] py-2 flex items-center justify-between gap-4">
           {/*
