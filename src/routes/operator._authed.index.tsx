@@ -8,6 +8,7 @@ import {
   checkReadinessAllFn,
 } from "@/lib/operator/bots.functions";
 import { Button } from "@/components-ui/button";
+import { Input } from "@/components-ui/input";
 import { moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
@@ -50,6 +51,7 @@ function OperatorClientsPage() {
   // клиент исчезает из панели совсем, вместе с кнопкой «Вернуть из архива» на
   // своей карточке — попасть на неё становится неоткуда.
   const [showArchived, setShowArchived] = useState(false);
+  const [search, setSearch] = useState("");
   const bots = useQuery({
     queryKey: ["operator_bots", showArchived],
     queryFn: () => listBotsFn({ data: { includeArchived: showArchived } }),
@@ -67,6 +69,15 @@ function OperatorClientsPage() {
   });
   const list = bots.data ?? [];
   const troubled = Object.values(health.data ?? {}).filter((h) => !h.ok).length;
+
+  // Клиентская фильтрация: клиентов немного, бэкенд-поиск не нужен.
+  // «Требует внимания» и счётчик неотвечающих считаются по полному списку —
+  // поиск сужает только таблицу, чтобы не спрятать проблему у клиента,
+  // которого не искали.
+  const q = search.trim().toLowerCase();
+  const filteredList = q
+    ? list.filter((b) => `${b.bot_name} ${b.owner_name ?? ""}`.toLowerCase().includes(q))
+    : list;
 
   /**
    * Что требует внимания — одной строкой сверху. Состояние и так рассыпано по
@@ -116,12 +127,20 @@ function OperatorClientsPage() {
             <span className="text-muted-foreground">Показывать архивных</span>
           </label>
         </div>
-        <Link
-          to="/operator/onboard"
-          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 shrink-0"
-        >
-          Подключить клиента
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по названию или владельцу…"
+            className="w-56"
+          />
+          <Link
+            to="/operator/onboard"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 shrink-0"
+          >
+            Подключить клиента
+          </Link>
+        </div>
       </div>
 
       {attention.length > 0 && (
@@ -156,7 +175,11 @@ function OperatorClientsPage() {
         </p>
       )}
 
-      {list.length > 0 && (
+      {list.length > 0 && filteredList.length === 0 && (
+        <p className="text-sm text-muted-foreground">Ничего не найдено по «{search}».</p>
+      )}
+
+      {filteredList.length > 0 && (
         <div className="bg-card border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
@@ -173,7 +196,7 @@ function OperatorClientsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {list.map((bot) => {
+              {filteredList.map((bot) => {
                 const st = STATUS_LABEL[bot.status] ?? {
                   text: bot.status,
                   variant: "outline" as const,
