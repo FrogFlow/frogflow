@@ -5,6 +5,7 @@ import {
   productNumberFromName,
   productNumberFromKeywords,
   matchCountry,
+  matchLocalePick,
   extractEmail,
   isAffirmative,
   classifyIncoming,
@@ -127,6 +128,38 @@ describe("matchCountry", () => {
   });
 });
 
+describe("matchLocalePick", () => {
+  it("понимает порядковый номер из показанного списка (ru, kk, en, uz)", () => {
+    expect(matchLocalePick("1")).toBe("ru");
+    expect(matchLocalePick("2.")).toBe("kk");
+    expect(matchLocalePick("3)")).toBe("en");
+    expect(matchLocalePick("4")).toBe("uz");
+  });
+
+  it("понимает код языка в любом регистре", () => {
+    expect(matchLocalePick("RU")).toBe("ru");
+    expect(matchLocalePick("kk")).toBe("kk");
+    expect(matchLocalePick("En")).toBe("en");
+    expect(matchLocalePick("UZ")).toBe("uz");
+  });
+
+  it("понимает родное название языка целиком или его начало", () => {
+    expect(matchLocalePick("Русский")).toBe("ru");
+    expect(matchLocalePick("рус")).toBe("ru");
+    expect(matchLocalePick("Қазақша")).toBe("kk");
+    expect(matchLocalePick("English")).toBe("en");
+    expect(matchLocalePick("O‘zbekcha")).toBe("uz");
+  });
+
+  it("не угадывает наугад", () => {
+    expect(matchLocalePick("не знаю")).toBeNull();
+    expect(matchLocalePick("99")).toBeNull();
+    expect(matchLocalePick("")).toBeNull();
+    // Двух букв мало: под них подошло бы слишком многое.
+    expect(matchLocalePick("ру")).toBeNull();
+  });
+});
+
 describe("extractEmail", () => {
   it("находит адрес в реплике", () => {
     expect(extractEmail("моя почта anna@mail.ru")).toBe("anna@mail.ru");
@@ -235,6 +268,15 @@ describe("matchDirectCommand", () => {
     expect(matchDirectCommand("мои заказы")).toBe("orders");
     expect(matchDirectCommand("/start")).toBe("catalog");
     expect(matchDirectCommand("Каталог!")).toBe("catalog");
+  });
+
+  it("понимает запрос смены языка на любом из поддерживаемых языков", () => {
+    expect(matchDirectCommand("язык")).toBe("language");
+    expect(matchDirectCommand("Язык!")).toBe("language");
+    expect(matchDirectCommand("тіл")).toBe("language");
+    expect(matchDirectCommand("til")).toBe("language");
+    expect(matchDirectCommand("language")).toBe("language");
+    expect(matchDirectCommand("/language")).toBe("language");
   });
 
   it("не принимает за команду живую фразу, в которой команда лишь внутри", () => {

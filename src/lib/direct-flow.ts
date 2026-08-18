@@ -1,3 +1,5 @@
+import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
+
 /**
  * Разбор реплик покупателя в Instagram Direct — без побочных действий, чтобы
  * можно было проверить тестом.
@@ -16,9 +18,19 @@
  * и оно существует ровно на время одного вызова, чтобы второе вложение,
  * пришедшее раньше, чем первое обработалось, не создало второй заказ из той
  * же корзины.
+ *
+ * `awaiting_locale` — самый первый шаг нового покупателя: у Instagram Direct
+ * нет команды `/start`, а значит нет и естественной точки, где предложить
+ * выбор языка, как это делает Telegram-бот. Заводим её сами — первым же
+ * ответом новому отправителю, до всего остального сценария.
  */
 export type DirectMode =
-  "awaiting_country" | "awaiting_proof" | "processing_proof" | "awaiting_email" | null;
+  | "awaiting_locale"
+  | "awaiting_country"
+  | "awaiting_proof"
+  | "processing_proof"
+  | "awaiting_email"
+  | null;
 
 /**
  * Клиенты нумеруют товары сами: у товара «018. Набор „Пазлы БУКВЫ“» первым
@@ -114,6 +126,42 @@ export function pickCartLineToRemove(number: string, names: string[]): number | 
 
   const position = Number(number);
   if (Number.isInteger(position) && position >= 1 && position <= names.length) return position - 1;
+  return null;
+}
+
+/**
+ * Понять, какой язык выбрал покупатель на первом шаге разговора.
+ *
+ * Тот же приём, что и у matchCountry чуть ниже, и по той же причине: кнопок
+ * Instagram даёт максимум три на сообщение, а языков у нас четыре. Текстовый
+ * список работает везде, включая папку «Запросы сообщений», куда попадает
+ * весь трафик от неподписчиков — то есть все новые покупатели из Direct.
+ *
+ * Принимаем порядковый номер из показанного списка (порядок — SUPPORTED_LOCALES),
+ * код языка («ru», «kk», «en», «uz») и родное название языка целиком или его
+ * начало («English», «Рус», «Tilni»).
+ */
+export function matchLocalePick(text: string): Locale | null {
+  const raw = text.trim().toLowerCase();
+  if (!raw) return null;
+
+  const ordinal = raw.match(/^(\d{1,2})\s*[.)]?$/);
+  if (ordinal) {
+    const index = Number(ordinal[1]) - 1;
+    return SUPPORTED_LOCALES[index] ?? null;
+  }
+
+  const strip = (value: string) => value.toLowerCase().replace(/[^\p{L}]+/gu, "");
+  const needle = strip(raw);
+  if (!needle) return null;
+
+  if (isLocale(needle)) return needle;
+
+  for (const locale of SUPPORTED_LOCALES) {
+    const name = strip(localeNames[locale]);
+    if (name === needle) return locale;
+    if (needle.length >= 3 && name.startsWith(needle)) return locale;
+  }
   return null;
 }
 
@@ -319,7 +367,7 @@ export function isCancel(text: string): boolean {
  * Целое сообщение такой ошибки сделать не может: «оплатить» — это команда,
  * «я оплатила 400тг» — это фраза человека, и путать их нельзя.
  */
-export type DirectCommand = "catalog" | "cart" | "checkout" | "orders";
+export type DirectCommand = "catalog" | "cart" | "checkout" | "orders" | "language";
 
 const COMMANDS: Array<[DirectCommand, string[]]> = [
   [
@@ -342,6 +390,13 @@ const COMMANDS: Array<[DirectCommand, string[]]> = [
     ],
   ],
   ["orders", ["мои заказы", "заказы", "мой заказ", "где мой заказ", "статус заказа"]],
+  /**
+   * Повторный вызов выбора языка — на случай, если выбрали не тот язык на
+   * первом шаге или разговор хочет продолжить кто-то другой. Слова заданы на
+   * всех четырёх поддерживаемых языках и по-английски, каждое — как оно
+   * называет само себя.
+   */
+  ["language", ["язык", "тіл", "til", "language", "/language"]],
 ];
 
 export function matchDirectCommand(text: string): DirectCommand | null {
