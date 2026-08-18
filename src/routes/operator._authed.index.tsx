@@ -73,27 +73,25 @@ function OperatorClientsPage() {
    * колонкам, но чтобы ответить «всё ли нормально сегодня», приходилось
    * просматривать таблицу целиком.
    */
-  const attention: { text: string; who: string[] }[] = [];
+  const who = (bots: typeof list) => bots.map((b) => ({ id: b.id, bot_name: b.bot_name }));
+  const attention: { text: string; who: { id: string; bot_name: string }[] }[] = [];
   const overdue = list.filter((b) => ["overdue", "grace_over"].includes(b.subscription_state));
-  if (overdue.length)
-    attention.push({ text: "просрочена подписка", who: overdue.map((b) => b.bot_name) });
+  if (overdue.length) attention.push({ text: "просрочена подписка", who: who(overdue) });
   const dead = list.filter((b) => health.data?.[b.id] && !health.data[b.id].ok);
-  if (dead.length) attention.push({ text: "бот не отвечает", who: dead.map((b) => b.bot_name) });
+  if (dead.length) attention.push({ text: "бот не отвечает", who: who(dead) });
   const queued = list.filter((b) => {
     const h = health.data?.[b.id];
     return h?.ok && (h.report.pending_updates ?? 0) > 0;
   });
-  if (queued.length)
-    attention.push({ text: "копится очередь апдейтов", who: queued.map((b) => b.bot_name) });
+  if (queued.length) attention.push({ text: "копится очередь апдейтов", who: who(queued) });
   const noOwner = list.filter((b) => !b.has_owner_telegram_id && !b.archived_at);
   if (noOwner.length)
     attention.push({
       text: "не заполнен Telegram владельца — не написать",
-      who: noOwner.map((b) => b.bot_name),
+      who: who(noOwner),
     });
   const noUrl = list.filter((b) => !b.app_url && !b.archived_at);
-  if (noUrl.length)
-    attention.push({ text: "не указан адрес деплоя", who: noUrl.map((b) => b.bot_name) });
+  if (noUrl.length) attention.push({ text: "не указан адрес деплоя", who: who(noUrl) });
 
   return (
     <div className="space-y-6">
@@ -131,7 +129,19 @@ function OperatorClientsPage() {
           <p className="font-medium text-sm text-amber-900 dark:text-amber-200">Требует внимания</p>
           {attention.map((a) => (
             <p key={a.text} className="text-sm text-amber-900 dark:text-amber-200/90">
-              {a.text}: <span className="font-medium">{a.who.join(", ")}</span>
+              {a.text}:{" "}
+              {a.who.map((b, i) => (
+                <span key={b.id}>
+                  {i > 0 && ", "}
+                  <Link
+                    to="/operator/$botId"
+                    params={{ botId: b.id }}
+                    className="font-medium hover:underline"
+                  >
+                    {b.bot_name}
+                  </Link>
+                </span>
+              ))}
             </p>
           ))}
         </div>

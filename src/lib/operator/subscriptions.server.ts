@@ -149,6 +149,43 @@ export async function addPayment(botId: string, p: NewPayment, actor: string) {
     period_end: p.period_end,
     amount: p.amount,
   });
+
+  await reactivateIfPaidOff(botId, actor);
+}
+
+/**
+ * Возврат из suspended после платежа.
+ *
+ * sweepSubscriptions() умеет приостановить бота за просрочку сама, но
+ * обратно не включает — раньше это оставалось на памяти оператора: платёж
+ * записан, «Подписка» показывает «оплачена», а бот молча стоит на паузе,
+ * потому что status никто не тронул. Включаем сами, но только если новый
+ * платёж действительно закрывает просрочку (дата уже пересчитана триггером
+ * MIGRATION-09 к этому моменту) — старый платёж для истории не должен
+ * поднимать бота, у которого текущий период всё равно не оплачен.
+ */
+async function reactivateIfPaidOff(botId: string, actor: string) {
+  const s = await db();
+  const { data: bot } = await s
+    .from("bots")
+    .select("status, subscription_expires_at, settings")
+    .eq("id", botId)
+    .single();
+  if (!bot || bot.status !== "suspended") return;
+
+  const state = computeState(bot.subscription_expires_at, readPolicy(bot.settings), true);
+  if (state.state === "overdue" || state.state === "grace_over" || state.state === "no_data")
+    return;
+
+  const { error } = await s.from("bots").update({ status: "active" }).eq("id", botId);
+  if (error) {
+    console.error(
+      `[operator] не удалось вернуть ${botId} из suspended после платежа:`,
+      error.message,
+    );
+    return;
+  }
+  await logEvent(botId, actor, "resume", { reason: "payment_covers_arrears" });
 }
 
 export async function deletePayment(botId: string, paymentId: string, actor: string) {
