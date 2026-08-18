@@ -4,6 +4,7 @@ import {
   type ZernioWebhookMessagePayload,
 } from "./zernio.server";
 import crypto from "node:crypto";
+import { localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 
 async function db() {
@@ -18,6 +19,568 @@ function instagramCustomerId(userKey: string): number {
   const hex = crypto.createHash("sha256").update(userKey).digest("hex").slice(0, 13);
   return -parseInt(hex, 16);
 }
+
+/**
+ * Текст выбора языка для нового покупателя Instagram Direct.
+ *
+ * У Direct нет команды `/start`, а значит нет и естественной точки, где, как в
+ * Telegram-боте, предложить выбор языка. Решение: показываем этот список первым
+ * же ответом новому отправителю — до чего бы то ни было ещё — и тем же текстом
+ * отвечаем на явный повторный вызов («язык» / «тіл» / «til» / «language», см.
+ * matchDirectCommand в direct-flow.ts).
+ *
+ * Текст пишем сразу на всех четырёх языках: до выбора язык покупателя ещё не
+ * известен, показывать его на одном языке было бы гаданием. Кнопки здесь не
+ * годятся — у Instagram их максимум три на сообщение, а языков четыре (то же
+ * ограничение, что не даёт показать кнопками список стран, см. matchCountry в
+ * direct-flow.ts). Пронумерованный текст работает и в папке «Запросы
+ * сообщений», куда попадает весь трафик от неподписчиков — то есть
+ * практически все новые покупатели из Direct.
+ */
+function languagePickerText(): string {
+  const lines = SUPPORTED_LOCALES.map((locale, index) => `${index + 1}. ${localeNames[locale]}`);
+  return (
+    "Выберите язык / Тілді таңдаңыз / Tilni tanlang / Choose language:\n\n" +
+    `${lines.join("\n")}\n\n` +
+    "Ответьте номером. / Нөмірімен жауап беріңіз. / Raqami bilan javob bering. / Reply with the number."
+  );
+}
+
+/**
+ * Словарь ответов покупателю Instagram Direct.
+ *
+ * Тот же приём, что у `botCopy` в bot.server.ts, только локально: Direct —
+ * отдельный канал со своим сценарием, и держать его словарь при себе, а не в
+ * общем i18n.ts, соответствует тому, как Telegram-бот держит свой.
+ *
+ * Часть подсказок называет конкретное слово, которое нужно написать боту —
+ * «отмена», «убрать 018». Эти слова разбирают isCancel и parseRemoveCommand в
+ * direct-flow.ts, а их список — русский и трогать его здесь нельзя (это была
+ * бы смена логики, а не перевод). Поэтому в переводах вместо русских слов
+ * подсказки используют то, что эти же функции и так понимают вне зависимости
+ * от языка: «/stop» есть прямо в списке CANCEL_WORDS, а «-018» (дефис перед
+ * номером) parseRemoveCommand принимает наравне с «убрать 018» — это просто
+ * другой из уже поддерживаемых вариантов записи той же команды, а не новый.
+ */
+type OrderStatusKey =
+  "awaiting_confirmation" | "awaiting_payment" | "delivering" | "delivered" | "rejected";
+
+interface DirectCopy {
+  languageSaved: string;
+  greetingFull: (name: string) => string;
+  greetingShort: string;
+  catalogIntro: string;
+  catalogNumberHint: string;
+  catalogBotLink: (link: string) => string;
+  searchNoResults: (query: string, link: string) => string;
+  searchFoundCount: (n: number) => string;
+  btnCatalog: string;
+  btnAddToCart: string;
+  btnCart: string;
+  btnCheckout: string;
+  productUnavailable: string;
+  productNoFiles: (name: string) => string;
+  cartEmptyHint: string;
+  /** Заголовок «В заказе:» перед списком строк корзины на шаге выбора страны. */
+  orderCartHeader: string;
+  cartHeader: (count: number) => string;
+  cartTotal: (total: number, currency: string) => string;
+  cartHintMulti: string;
+  cartHintSingle: string;
+  noOrders: string;
+  ordersHeader: string;
+  orderLine: (no: number | string, total: number, currency: string, statusLabel: string) => string;
+  orderStatus: Record<OrderStatusKey, string>;
+  checkoutGiveUp: string;
+  checkoutNeedNumber: string;
+  noPaymentMethods: string;
+  noRequisitesForCountry: string;
+  cartEmptiedRestart: string;
+  mixedCurrencySplit: string;
+  rememberedCountryNote: (name: string) => string;
+  amountDue: (amount: number, currency: string) => string;
+  sendProofHint: string;
+  cancelled: string;
+  complaintAck: string;
+  removeNothing: string;
+  removeNotFound: (number: string, list: string) => string;
+  removedCartEmpty: (name: string) => string;
+  removed: (name: string) => string;
+  awaitingProofHint: string;
+  receiptProcessing: string;
+  receiptSaveFailed: string;
+  orderCreateFailed: string;
+  receiptReceivedKnownEmail: (displayNo: number | string, email: string) => string;
+  receiptReceivedAskEmailOptional: (displayNo: number | string, email: string) => string;
+  receiptReceivedNeedEmail: (displayNo: number | string) => string;
+  countryHint: string;
+  emailStepGotReceipt: string;
+  emailHint: string;
+  emailSaved: (email: string) => string;
+  strayAttachmentAck: string;
+  ambiguousProduct: (number: string, names: string) => string;
+  productNotFound: (number: string) => string;
+  addedSingle: (name: string, priceLine: string) => string;
+  addedMulti: (name: string, priceLine: string, count: number, list: string) => string;
+  addedFooter: string;
+  affirmativeReply: string;
+  dismissalReply: string;
+}
+
+const directCopy: Record<Locale, DirectCopy> = {
+  ru: {
+    languageSaved: "✅ Язык сохранён.",
+    greetingFull: (name) =>
+      `Здравствуйте, ${name}! 👋\n\n` +
+      "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
+      "Если хотите что-то купить прямо сейчас, напишите номер товара из публикации — например «196».",
+    greetingShort: "Передал ваш вопрос продавцу — он ответит здесь же.",
+    catalogIntro: "Здесь можно оформить заказ по номеру материала.",
+    catalogNumberHint:
+      "Напишите номер из публикации — например «018», — и я подскажу, как оплатить.",
+    catalogBotLink: (link) =>
+      `А чтобы посмотреть весь каталог, поискать по теме и получить файлы, заходите в наш бот: ${link}`,
+    searchNoResults: (query, link) =>
+      `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог в нашем боте: ${link}`,
+    searchFoundCount: (n) => `🔎 Нашли ${n} вариантов:`,
+    btnCatalog: "Каталог",
+    btnAddToCart: "Добавить в корзину",
+    btnCart: "Корзина",
+    btnCheckout: "Оформить заказ",
+    productUnavailable: "Этот материал больше недоступен.",
+    productNoFiles: (name) =>
+      `«${name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
+    cartEmptyHint:
+      "В заказе пока ничего нет. Напишите номер материала из публикации — например «018».",
+    orderCartHeader: "В заказе:",
+    cartHeader: (count) => `В заказе ${count === 1 ? "материал" : `${count} материала`}:`,
+    cartTotal: (total, currency) => `Итого: ${total} ${currency}`,
+    cartHintMulti: "Можно добавить ещё номер или убрать лишнее — напишите «убрать 018».\n",
+    cartHintSingle: "Можно добавить ещё — напишите следующий номер.\n",
+    noOrders: "У вас пока нет заказов. 📋",
+    ordersHeader: "📋 Ваши заказы:\n\n",
+    orderLine: (no, total, currency, statusLabel) =>
+      `Заказ #${no} — ${total} ${currency} [${statusLabel}]\n`,
+    orderStatus: {
+      awaiting_confirmation: "⏳ Проверяем оплату",
+      awaiting_payment: "⏳ Ожидает оплаты",
+      delivering: "📤 Отправляем материалы",
+      delivered: "✅ Материалы отправлены на почту",
+      rejected: "❌ Отклонён",
+    },
+    checkoutGiveUp:
+      "Похоже, я не помогаю — не буду мешать. Продавец увидит переписку и ответит сам.",
+    checkoutNeedNumber:
+      "Чтобы оформить заказ, сначала напишите номер материала из публикации — например «018».\n\n" +
+      "Я посчитаю сумму и пришлю реквизиты.",
+    noPaymentMethods: "Реквизиты для оплаты пока не заведены. Продавец свяжется с вами.",
+    noRequisitesForCountry:
+      "Для этой страны реквизиты пока не заведены. Продавец свяжется с вами и подскажет, как оплатить.",
+    cartEmptiedRestart: "Корзина опустела. Напишите номер материала, и начнём заново.",
+    mixedCurrencySplit:
+      "В заказе материалы в разных валютах — оформите их по отдельности.\n\n" +
+      "Напишите «отмена», а потом номер одного материала.",
+    rememberedCountryNote: (name) =>
+      `Реквизиты для ${name} — если страна другая, напишите «отмена».\n\n`,
+    amountDue: (amount, currency) => `К оплате: ${amount} ${currency}\n`,
+    sendProofHint: "После оплаты пришлите чек сюда — картинкой или файлом.",
+    cancelled:
+      "Отменил, корзина пуста. Напишите номер материала, когда будете готовы — например «018».",
+    complaintAck:
+      "Вижу, что вопрос по оплате. Это решает продавец — я его уже позвал, " +
+      "он ответит вам здесь же.\n\nБольше отвечать не буду, чтобы не мешать.",
+    removeNothing: "Убирать пока нечего — в заказе ничего нет.",
+    removeNotFound: (number, list) =>
+      `Материала с номером ${number} в заказе нет. Сейчас в нём:\n\n${list}\n\n` +
+      "Чтобы убрать всё, напишите «отмена».",
+    removedCartEmpty: (name) =>
+      `Убрал «${name}». В заказе больше ничего нет — напишите номер материала, когда будете готовы.`,
+    removed: (name) => `Убрал «${name}».`,
+    awaitingProofHint:
+      "Жду чек об оплате — пришлите его сюда картинкой или файлом.\n\nЕсли передумали, напишите «отмена».",
+    receiptProcessing: "Уже обрабатываю ваш чек — секунду.",
+    receiptSaveFailed:
+      "Чек не удалось сохранить. Пришлите его, пожалуйста, ещё раз — картинкой или файлом.",
+    orderCreateFailed:
+      "Не получилось оформить заказ. Напишите номер материала ещё раз, пожалуйста.",
+    receiptReceivedKnownEmail: (displayNo, email) =>
+      `Чек получил, заказ №${displayNo} принят. Отправим материалы на ${email} после проверки.`,
+    receiptReceivedAskEmailOptional: (displayNo, email) =>
+      `Чек получил, заказ №${displayNo} принят. Проверим оплату и пришлём материалы на ${email}.\n\n` +
+      "Если нужен другой адрес — напишите его сюда. По остальным вопросам ответит продавец.",
+    receiptReceivedNeedEmail: (displayNo) =>
+      `Чек получил, заказ №${displayNo} принят.\n\n` +
+      "На какую почту прислать материалы? Instagram не умеет пересылать документы, поэтому файлы уходят письмом.",
+    countryHint:
+      "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\n" +
+      "Чтобы выйти, напишите «отмена».",
+    emailStepGotReceipt:
+      "Чек получил, он уже у продавца. Осталось одно: напишите почту, " +
+      "на которую отправить материалы — например anna@mail.ru",
+    emailHint:
+      "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\n" +
+      "Чтобы выйти, напишите «отмена».",
+    emailSaved: (email) =>
+      `Записал: ${email}\n\n` +
+      "Проверим оплату и пришлём материалы на этот адрес.\n\n" +
+      "Если появятся вопросы — просто напишите здесь, дальше отвечает продавец.",
+    strayAttachmentAck:
+      "Вижу вложение. Если это чек об оплате — передал продавцу, он проверит и ответит здесь же.\n\n" +
+      "Если хотите заказать материал через меня, напишите его номер из публикации.",
+    ambiguousProduct: (number, names) =>
+      `Под номером ${number} у нас несколько материалов:\n\n${names}\n\n` +
+      "Напишите точное название нужного или уточните номер у продавца.",
+    productNotFound: (number) =>
+      `Товар с номером ${number} не нашёл. Проверьте номер в публикации — ` +
+      "или напишите, что ищете, и продавец подскажет.",
+    addedSingle: (name, priceLine) => `Добавил «${name}» — ${priceLine}.`,
+    addedMulti: (name, priceLine, count, list) =>
+      `Добавил «${name}» — ${priceLine}.\n\nВ заказе ${count}:\n${list}`,
+    addedFooter: "Можно добавить ещё — просто напишите следующий номер. Или оформляйте заказ.",
+    affirmativeReply:
+      "Отлично! Напишите номер товара из публикации — например «196», — и я подскажу, как оплатить.",
+    dismissalReply: "Хорошо! Если что-то понадобится — просто напишите сюда. 🙂",
+  },
+  kk: {
+    languageSaved: "✅ Тіл сақталды.",
+    greetingFull: (name) =>
+      `Сәлеметсіз бе, ${name}! 👋\n\n` +
+      "Сұрағыңызды сатушыға жеткіздім — дәл осында жауап береді.\n\n" +
+      "Егер қазір бірдеңе сатып алғыңыз келсе, жарияланымдағы тауар нөмірін жазыңыз — мысалы «196».",
+    greetingShort: "Сұрағыңызды сатушыға жеткіздім — дәл осында жауап береді.",
+    catalogIntro: "Мұнда материал нөмірі бойынша тапсырыс беруге болады.",
+    catalogNumberHint:
+      "Жарияланымдағы нөмірді жазыңыз — мысалы «018», — қалай төлеу керегін айтамын.",
+    catalogBotLink: (link) =>
+      `Толық каталогты көру, тақырып бойынша іздеу және файлдарды алу үшін біздің боттан өтіңіз: ${link}`,
+    searchNoResults: (query, link) =>
+      `«${query}» бойынша ештеңе табылмады. Басқа сөзбен көріңіз немесе боттағы каталогты ашыңыз: ${link}`,
+    searchFoundCount: (n) => `🔎 ${n} нұсқа таптық:`,
+    btnCatalog: "Каталог",
+    btnAddToCart: "Себетке қосу",
+    btnCart: "Себет",
+    btnCheckout: "Тапсырысты рәсімдеу",
+    productUnavailable: "Бұл материал енді қолжетімсіз.",
+    productNoFiles: (name) =>
+      `«${name}» қазір жүктеуге қолжетімсіз. Ол қашан пайда болатынын сатушы айтады.`,
+    cartEmptyHint:
+      "Тапсырыста әзірге ештеңе жоқ. Жарияланымдағы материал нөмірін жазыңыз — мысалы «018».",
+    orderCartHeader: "Тапсырыста:",
+    cartHeader: (count) => `Тапсырыста ${count} материал:`,
+    cartTotal: (total, currency) => `Барлығы: ${total} ${currency}`,
+    cartHintMulti: "Тағы нөмір қосуға немесе артығын алып тастауға болады — «-018» деп жазыңыз.\n",
+    cartHintSingle: "Тағы қосуға болады — келесі нөмірді жазыңыз.\n",
+    noOrders: "Сізде әзірге тапсырыс жоқ. 📋",
+    ordersHeader: "📋 Сіздің тапсырыстарыңыз:\n\n",
+    orderLine: (no, total, currency, statusLabel) =>
+      `Тапсырыс #${no} — ${total} ${currency} [${statusLabel}]\n`,
+    orderStatus: {
+      awaiting_confirmation: "⏳ Төлемді тексерудеміз",
+      awaiting_payment: "⏳ Төлем күтілуде",
+      delivering: "📤 Материалдарды жіберудеміз",
+      delivered: "✅ Материалдар поштаға жіберілді",
+      rejected: "❌ Қабылданбады",
+    },
+    checkoutGiveUp:
+      "Байқаймын, көмектесе алмай тұрмын — бөгет жасамайын. Сатушы жазысуды көріп, өзі жауап береді.",
+    checkoutNeedNumber:
+      "Тапсырыс беру үшін алдымен жарияланымдағы материал нөмірін жазыңыз — мысалы «018».\n\n" +
+      "Соманы есептеп, төлем деректемелерін жіберемін.",
+    noPaymentMethods: "Төлем деректемелері әлі енгізілмеген. Сатушы сізбен байланысады.",
+    noRequisitesForCountry:
+      "Бұл ел үшін төлем деректемелері әлі енгізілмеген. Сатушы сізбен байланысып, қалай төлеу керегін айтады.",
+    cartEmptiedRestart: "Себет бос қалды. Материал нөмірін жазыңыз, қайтадан бастайық.",
+    mixedCurrencySplit:
+      "Тапсырыста әртүрлі валютадағы материалдар бар — оларды бөлек рәсімдеңіз.\n\n" +
+      "«/stop» деп жазыңыз, содан кейін бір материалдың нөмірін жазыңыз.",
+    rememberedCountryNote: (name) =>
+      `${name} үшін деректемелер — ел басқа болса, «/stop» деп жазыңыз.\n\n`,
+    amountDue: (amount, currency) => `Төлеуге: ${amount} ${currency}\n`,
+    sendProofHint: "Төлегеннен кейін чекті осында жіберіңіз — суретпен немесе файлмен.",
+    cancelled: "Болдырмадым, себет бос. Дайын болғанда материал нөмірін жазыңыз — мысалы «018».",
+    complaintAck:
+      "Бұл төлем бойынша сұрақ екенін көріп тұрмын. Мұны сатушы шешеді — оны шақырдым, " +
+      "дәл осында жауап береді.\n\nОдан әрі жауап бермеймін, бөгет жасамау үшін.",
+    removeNothing: "Алып тастайтын ештеңе жоқ — тапсырыста бос.",
+    removeNotFound: (number, list) =>
+      `Тапсырыста ${number} нөмірлі материал жоқ. Қазір онда:\n\n${list}\n\n` +
+      "Барлығын алып тастау үшін «/stop» деп жазыңыз.",
+    removedCartEmpty: (name) =>
+      `«${name}» алып тастадым. Тапсырыста басқа ештеңе жоқ — дайын болғанда материал нөмірін жазыңыз.`,
+    removed: (name) => `«${name}» алып тастадым.`,
+    awaitingProofHint:
+      "Төлем чегін күтудемін — оны осында суретпен немесе файлмен жіберіңіз.\n\n" +
+      "Ойыңыз өзгерсе, «/stop» деп жазыңыз.",
+    receiptProcessing: "Чегіңізді өңдеп жатырмын — сәл күтіңіз.",
+    receiptSaveFailed:
+      "Чекті сақтау мүмкін болмады. Оны қайтадан жіберіңізші — суретпен немесе файлмен.",
+    orderCreateFailed: "Тапсырысты рәсімдеу шықпады. Материал нөмірін қайта жазыңызшы.",
+    receiptReceivedKnownEmail: (displayNo, email) =>
+      `Чекті алдым, №${displayNo} тапсырыс қабылданды. Тексерістен кейін материалдарды ${email} мекенжайына жібереміз.`,
+    receiptReceivedAskEmailOptional: (displayNo, email) =>
+      `Чекті алдым, №${displayNo} тапсырыс қабылданды. Төлемді тексеріп, материалдарды ${email} мекенжайына жібереміз.\n\n` +
+      "Басқа мекенжай керек болса — осында жазыңыз. Басқа сұрақтарға сатушы жауап береді.",
+    receiptReceivedNeedEmail: (displayNo) =>
+      `Чекті алдым, №${displayNo} тапсырыс қабылданды.\n\n` +
+      "Материалдарды қай поштаға жіберу керек? Instagram құжаттарды жібере алмайды, сондықтан файлдар поштамен жіберіледі.",
+    countryHint:
+      "Елді түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Қазақстан».\n\n" +
+      "Шығу үшін «/stop» деп жазыңыз.",
+    emailStepGotReceipt:
+      "Чекті алдым, ол сатушыда. Бір-ақ нәрсе қалды: материалдарды жіберетін поштаны жазыңыз " +
+      "— мысалы anna@mail.ru",
+    emailHint:
+      "Бұл пошта мекенжайына ұқсамайды. Толық жазыңыз, мысалы anna@mail.ru\n\n" +
+      "Шығу үшін «/stop» деп жазыңыз.",
+    emailSaved: (email) =>
+      `Жаздым: ${email}\n\n` +
+      "Төлемді тексеріп, материалдарды осы мекенжайға жібереміз.\n\n" +
+      "Сұрақтар туындаса — осында жазыңыз, әрі қарай сатушы жауап береді.",
+    strayAttachmentAck:
+      "Тіркеме көрдім. Егер бұл төлем чегі болса — сатушыға жеткіздім, ол тексеріп, дәл осында жауап береді.\n\n" +
+      "Материалды мен арқылы тапсырыс бергіңіз келсе, оның нөмірін жазыңыз.",
+    ambiguousProduct: (number, names) =>
+      `${number} нөмірінде бізде бірнеше материал бар:\n\n${names}\n\n` +
+      "Керегінің дәл атауын жазыңыз немесе нөмірді сатушыдан нақтылаңыз.",
+    productNotFound: (number) =>
+      `${number} нөмірлі тауар табылмады. Жарияланымдағы нөмірді тексеріңіз — ` +
+      "немесе не іздеп жатқаныңызды жазыңыз, сатушы көмектеседі.",
+    addedSingle: (name, priceLine) => `«${name}» қостым — ${priceLine}.`,
+    addedMulti: (name, priceLine, count, list) =>
+      `«${name}» қостым — ${priceLine}.\n\nТапсырыста ${count}:\n${list}`,
+    addedFooter: "Тағы қосуға болады — келесі нөмірді жазыңыз. Немесе тапсырысты рәсімдеңіз.",
+    affirmativeReply:
+      "Тамаша! Жарияланымдағы тауар нөмірін жазыңыз — мысалы «196», — қалай төлеу керегін айтамын.",
+    dismissalReply: "Жарайды! Бірдеңе керек болса — осында жазыңыз. 🙂",
+  },
+  en: {
+    languageSaved: "✅ Language saved.",
+    greetingFull: (name) =>
+      `Hi, ${name}! 👋\n\n` +
+      "I've passed your question to the seller — they'll reply right here.\n\n" +
+      'If you\'d like to order something right now, send the item number from the post — for example "196".',
+    greetingShort: "I've passed your question to the seller — they'll reply right here.",
+    catalogIntro: "Here you can place an order using the material's number.",
+    catalogNumberHint:
+      'Send the number from the post — for example "018" — and I\'ll tell you how to pay.',
+    catalogBotLink: (link) =>
+      `To browse the full catalog, search by topic, and get the files, check out our bot: ${link}`,
+    searchNoResults: (query, link) =>
+      `Nothing found for "${query}". Try another word, or open the catalog in our bot: ${link}`,
+    searchFoundCount: (n) => `🔎 Found ${n} matching items:`,
+    btnCatalog: "Catalog",
+    btnAddToCart: "Add to cart",
+    btnCart: "Cart",
+    btnCheckout: "Place order",
+    productUnavailable: "This material is no longer available.",
+    productNoFiles: (name) =>
+      `"${name}" isn't available for download right now. The seller will let you know when it's back.`,
+    cartEmptyHint:
+      "There's nothing in your order yet. Send the material's number from the post — for example \"018\".",
+    orderCartHeader: "Your order:",
+    cartHeader: (count) => `Your order has ${count} ${count === 1 ? "material" : "materials"}:`,
+    cartTotal: (total, currency) => `Total: ${total} ${currency}`,
+    cartHintMulti: 'You can add another number or remove one — send "-018" to remove.\n',
+    cartHintSingle: "You can add another — just send the next number.\n",
+    noOrders: "You don't have any orders yet. 📋",
+    ordersHeader: "📋 Your orders:\n\n",
+    orderLine: (no, total, currency, statusLabel) =>
+      `Order #${no} — ${total} ${currency} [${statusLabel}]\n`,
+    orderStatus: {
+      awaiting_confirmation: "⏳ Checking your payment",
+      awaiting_payment: "⏳ Awaiting payment",
+      delivering: "📤 Sending materials",
+      delivered: "✅ Materials sent by email",
+      rejected: "❌ Declined",
+    },
+    checkoutGiveUp:
+      "Looks like I'm not helping — I'll step aside. The seller will see this chat and reply themselves.",
+    checkoutNeedNumber:
+      'To place an order, first send the material\'s number from the post — for example "018".\n\n' +
+      "I'll work out the total and send the payment details.",
+    noPaymentMethods: "Payment details aren't set up yet. The seller will contact you.",
+    noRequisitesForCountry:
+      "Payment details for this country aren't set up yet. The seller will contact you and explain how to pay.",
+    cartEmptiedRestart: "Your cart is empty now. Send a material's number to start again.",
+    mixedCurrencySplit:
+      "Your order has materials priced in different currencies — please order them separately.\n\n" +
+      'Send "/stop", then the number of a single material.',
+    rememberedCountryNote: (name) =>
+      `Payment details for ${name} — if that's not your country, send "/stop".\n\n`,
+    amountDue: (amount, currency) => `Total due: ${amount} ${currency}\n`,
+    sendProofHint: "After paying, send the receipt here — as a photo or a file.",
+    cancelled:
+      "Cancelled — your cart is empty. Send a material's number when you're ready — for example \"018\".",
+    complaintAck:
+      "I can see this is about a payment. That's for the seller to sort out — I've already called them in, " +
+      "and they'll reply right here.\n\nI won't reply further, so as not to get in the way.",
+    removeNothing: "There's nothing to remove — your order is empty.",
+    removeNotFound: (number, list) =>
+      `There's no material numbered ${number} in your order. Right now it has:\n\n${list}\n\n` +
+      'To clear everything, send "/stop".',
+    removedCartEmpty: (name) =>
+      `Removed "${name}". Your order is now empty — send a material's number when you're ready.`,
+    removed: (name) => `Removed "${name}".`,
+    awaitingProofHint:
+      'Waiting for your payment receipt — send it here as a photo or a file.\n\nChanged your mind? Send "/stop".',
+    receiptProcessing: "Already processing your receipt — one moment.",
+    receiptSaveFailed: "Couldn't save the receipt. Please send it again — as a photo or a file.",
+    orderCreateFailed: "Couldn't place the order. Please send the material's number again.",
+    receiptReceivedKnownEmail: (displayNo, email) =>
+      `Got the receipt, order #${displayNo} is in. We'll send the materials to ${email} after checking.`,
+    receiptReceivedAskEmailOptional: (displayNo, email) =>
+      `Got the receipt, order #${displayNo} is in. We'll check the payment and send the materials to ${email}.\n\n` +
+      "If you need a different address, send it here. For anything else, the seller will reply.",
+    receiptReceivedNeedEmail: (displayNo) =>
+      `Got the receipt, order #${displayNo} is in.\n\n` +
+      "Which email should we send the materials to? Instagram can't forward documents, so files go out by email.",
+    countryHint:
+      'Didn\'t catch the country. Reply with the number from the list or the name — for example "1" or "Kazakhstan".\n\n' +
+      'To exit, send "/stop".',
+    emailStepGotReceipt:
+      "Got the receipt, the seller already has it. One thing left: send the email " +
+      "to send the materials to — for example anna@mail.ru",
+    emailHint:
+      "That doesn't look like an email address. Send it in full, for example anna@mail.ru\n\n" +
+      'To exit, send "/stop".',
+    emailSaved: (email) =>
+      `Saved: ${email}\n\n` +
+      "We'll check the payment and send the materials to this address.\n\n" +
+      "If you have questions, just write here — the seller takes it from here.",
+    strayAttachmentAck:
+      "I see an attachment. If it's a payment receipt, I've passed it to the seller — they'll check it and reply right here.\n\n" +
+      "If you'd like to order a material through me, send its number from the post.",
+    ambiguousProduct: (number, names) =>
+      `There are several materials under number ${number}:\n\n${names}\n\n` +
+      "Send the exact name of the one you want, or ask the seller to confirm the number.",
+    productNotFound: (number) =>
+      `Couldn't find an item numbered ${number}. Please check the number in the post — ` +
+      "or tell me what you're looking for and the seller will help.",
+    addedSingle: (name, priceLine) => `Added "${name}" — ${priceLine}.`,
+    addedMulti: (name, priceLine, count, list) =>
+      `Added "${name}" — ${priceLine}.\n\nYour order has ${count}:\n${list}`,
+    addedFooter: "You can add more — just send the next number. Or go ahead and place the order.",
+    affirmativeReply:
+      'Great! Send the item number from the post — for example "196" — and I\'ll tell you how to pay.',
+    dismissalReply: "All good! If you need anything, just write here. 🙂",
+  },
+  uz: {
+    languageSaved: "✅ Til saqlandi.",
+    greetingFull: (name) =>
+      `Salom, ${name}! 👋\n\n` +
+      "Savolingizni sotuvchiga yetkazdim — shu yerda javob beradi.\n\n" +
+      "Agar hozir biror narsa buyurtma qilmoqchi bo‘lsangiz, e’londagi mahsulot raqamini yozing — masalan, «196».",
+    greetingShort: "Savolingizni sotuvchiga yetkazdim — shu yerda javob beradi.",
+    catalogIntro: "Bu yerda material raqami orqali buyurtma berish mumkin.",
+    catalogNumberHint:
+      "E’londagi raqamni yozing — masalan, «018», — qanday to‘lash kerakligini aytaman.",
+    catalogBotLink: (link) =>
+      `To‘liq katalogni ko‘rish, mavzu bo‘yicha qidirish va fayllarni olish uchun botimizga o‘ting: ${link}`,
+    searchNoResults: (query, link) =>
+      `«${query}» bo‘yicha hech narsa topilmadi. Boshqa so‘z bilan urinib ko‘ring yoki botimizdagi katalogni oching: ${link}`,
+    searchFoundCount: (n) => `🔎 ${n} ta variant topildi:`,
+    btnCatalog: "Katalog",
+    btnAddToCart: "Savatga qo‘shish",
+    btnCart: "Savat",
+    btnCheckout: "Buyurtma berish",
+    productUnavailable: "Bu material endi mavjud emas.",
+    productNoFiles: (name) =>
+      `«${name}» hozircha yuklab olish uchun mavjud emas. U qachon paydo bo‘lishini sotuvchi aytadi.`,
+    cartEmptyHint:
+      "Buyurtmada hozircha hech narsa yo‘q. E’londagi material raqamini yozing — masalan, «018».",
+    orderCartHeader: "Buyurtmada:",
+    cartHeader: (count) => `Buyurtmada ${count} ta material:`,
+    cartTotal: (total, currency) => `Jami: ${total} ${currency}`,
+    cartHintMulti:
+      "Yana raqam qo‘shishingiz yoki ortiqchasini olib tashlashingiz mumkin — «-018» deb yozing.\n",
+    cartHintSingle: "Yana qo‘shishingiz mumkin — keyingi raqamni yozing.\n",
+    noOrders: "Sizda hozircha buyurtma yo‘q. 📋",
+    ordersHeader: "📋 Sizning buyurtmalaringiz:\n\n",
+    orderLine: (no, total, currency, statusLabel) =>
+      `Buyurtma #${no} — ${total} ${currency} [${statusLabel}]\n`,
+    orderStatus: {
+      awaiting_confirmation: "⏳ To‘lovni tekshirmoqdamiz",
+      awaiting_payment: "⏳ To‘lov kutilmoqda",
+      delivering: "📤 Materiallarni yubormoqdamiz",
+      delivered: "✅ Materiallar pochtaga yuborildi",
+      rejected: "❌ Rad etildi",
+    },
+    checkoutGiveUp:
+      "Chamasi, yordam berolmayapman — xalaqit bermayman. Sotuvchi yozishmani ko‘rib, o‘zi javob beradi.",
+    checkoutNeedNumber:
+      "Buyurtma berish uchun avval e’londagi material raqamini yozing — masalan, «018».\n\n" +
+      "Summani hisoblab, to‘lov rekvizitlarini yuboraman.",
+    noPaymentMethods: "To‘lov rekvizitlari hali kiritilmagan. Sotuvchi siz bilan bog‘lanadi.",
+    noRequisitesForCountry:
+      "Bu davlat uchun to‘lov rekvizitlari hali kiritilmagan. Sotuvchi siz bilan bog‘lanib, qanday to‘lashni aytadi.",
+    cartEmptiedRestart: "Savat bo‘shab qoldi. Material raqamini yozing, qaytadan boshlaymiz.",
+    mixedCurrencySplit:
+      "Buyurtmada turli valyutadagi materiallar bor — ularni alohida rasmiylashtiring.\n\n" +
+      "«/stop» deb yozing, keyin bitta material raqamini yozing.",
+    rememberedCountryNote: (name) =>
+      `${name} uchun rekvizitlar — davlat boshqa bo‘lsa, «/stop» deb yozing.\n\n`,
+    amountDue: (amount, currency) => `To‘lov uchun: ${amount} ${currency}\n`,
+    sendProofHint: "To‘lovdan so‘ng chekni shu yerga yuboring — surat yoki fayl sifatida.",
+    cancelled:
+      "Bekor qildim, savat bo‘sh. Tayyor bo‘lganingizda material raqamini yozing — masalan, «018».",
+    complaintAck:
+      "Bu to‘lov bo‘yicha savol ekanini ko‘ryapman. Buni sotuvchi hal qiladi — men uni allaqachon chaqirdim, " +
+      "shu yerda javob beradi.\n\nXalaqit bermaslik uchun boshqa javob bermayman.",
+    removeNothing: "Olib tashlaydigan hech narsa yo‘q — buyurtma bo‘sh.",
+    removeNotFound: (number, list) =>
+      `Buyurtmada ${number} raqamli material yo‘q. Hozir unda:\n\n${list}\n\n` +
+      "Hammasini olib tashlash uchun «/stop» deb yozing.",
+    removedCartEmpty: (name) =>
+      `«${name}» olib tashladim. Buyurtmada boshqa hech narsa yo‘q — tayyor bo‘lganingizda material raqamini yozing.`,
+    removed: (name) => `«${name}» olib tashladim.`,
+    awaitingProofHint:
+      "To‘lov chekini kutyapman — uni shu yerga surat yoki fayl sifatida yuboring.\n\n" +
+      "Fikringiz o‘zgarsa, «/stop» deb yozing.",
+    receiptProcessing: "Chekingizni qayta ishlayapman — bir soniya.",
+    receiptSaveFailed:
+      "Chekni saqlab bo‘lmadi. Iltimos, uni yana yuboring — surat yoki fayl sifatida.",
+    orderCreateFailed:
+      "Buyurtmani rasmiylashtirib bo‘lmadi. Material raqamini qaytadan yozing, iltimos.",
+    receiptReceivedKnownEmail: (displayNo, email) =>
+      `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. Tekshirgach materiallarni ${email} manziliga yuboramiz.`,
+    receiptReceivedAskEmailOptional: (displayNo, email) =>
+      `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. To‘lovni tekshirib, materiallarni ${email} manziliga yuboramiz.\n\n` +
+      "Boshqa manzil kerak bo‘lsa — shu yerga yozing. Boshqa savollarga sotuvchi javob beradi.",
+    receiptReceivedNeedEmail: (displayNo) =>
+      `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi.\n\n` +
+      "Materiallarni qaysi pochtaga yuborish kerak? Instagram hujjatlarni yuborolmaydi, shuning uchun fayllar pochta orqali yuboriladi.",
+    countryHint:
+      "Davlatni tushunmadim. Ro‘yxatdagi raqam yoki nomi bilan javob bering — masalan, «1» yoki «Qozog‘iston».\n\n" +
+      "Chiqish uchun «/stop» deb yozing.",
+    emailStepGotReceipt:
+      "Chek qabul qilindi, u sotuvchida. Bitta narsa qoldi: materiallarni yuborish uchun pochtangizni yozing " +
+      "— masalan, anna@mail.ru",
+    emailHint:
+      "Bu pochta manziliga o‘xshamayapti. To‘liq yozing, masalan anna@mail.ru\n\n" +
+      "Chiqish uchun «/stop» deb yozing.",
+    emailSaved: (email) =>
+      `Yozib oldim: ${email}\n\n` +
+      "To‘lovni tekshirib, materiallarni shu manzilga yuboramiz.\n\n" +
+      "Savollar bo‘lsa — shu yerga yozing, keyin sotuvchi javob beradi.",
+    strayAttachmentAck:
+      "Ilova ko‘rinmoqda. Agar bu to‘lov cheki bo‘lsa — sotuvchiga yetkazdim, u tekshirib shu yerda javob beradi.\n\n" +
+      "Agar men orqali material buyurtma qilmoqchi bo‘lsangiz, uning raqamini yozing.",
+    ambiguousProduct: (number, names) =>
+      `${number} raqami ostida bizda bir nechta material bor:\n\n${names}\n\n` +
+      "Kerakli materialning aniq nomini yozing yoki raqamni sotuvchidan aniqlashtiring.",
+    productNotFound: (number) =>
+      `${number} raqamli mahsulot topilmadi. E’londagi raqamni tekshiring — ` +
+      "yoki nima izlayotganingizni yozing, sotuvchi yordam beradi.",
+    addedSingle: (name, priceLine) => `«${name}» qo‘shdim — ${priceLine}.`,
+    addedMulti: (name, priceLine, count, list) =>
+      `«${name}» qo‘shdim — ${priceLine}.\n\nBuyurtmada ${count} ta:\n${list}`,
+    addedFooter:
+      "Yana qo‘shishingiz mumkin — keyingi raqamni yozing. Yoki buyurtmani rasmiylashtiring.",
+    affirmativeReply:
+      "Ajoyib! E’londagi mahsulot raqamini yozing — masalan, «196», — qanday to‘lashni aytaman.",
+    dismissalReply: "Bo‘pti! Biror narsa kerak bo‘lsa — shu yerga yozing. 🙂",
+  },
+};
 
 /**
  * Ответ покупателю в Direct.
@@ -85,7 +648,10 @@ export async function upsertZernioUser(
     }
 
     await s.from("bot_users").update(updates).eq("user_key", userKey);
-    return { ...existing, ...updates };
+    // `isNewUser: false` — сигнал для handleZernioMessage, что это не первое
+    // сообщение от отправителя, а значит выбор языка ему уже предлагали (или
+    // предлагать не нужно — запись старше самой этой возможности).
+    return { ...existing, ...updates, isNewUser: false };
   }
 
   const newUser = {
@@ -104,13 +670,32 @@ export async function upsertZernioUser(
   const { data: inserted, error } = await s.from("bot_users").insert(newUser).select().single();
   if (error) {
     console.error("[zernio-bot] error upserting user:", error);
-    return newUser;
+    return { ...newUser, isNewUser: true };
   }
-  return inserted;
+  // Запись только что создана — handleZernioMessage покажет ей выбор языка
+  // раньше чего бы то ни было ещё, ровно один раз в жизни этого отправителя.
+  return { ...inserted, isNewUser: true };
 }
 
 /** Строка bot_users, как её возвращает upsertZernioUser — покупатель Instagram Direct. */
 type ZernioBotUser = Awaited<ReturnType<typeof upsertZernioUser>>;
+
+/**
+ * Показать выбор языка: и новому покупателю, и по явному запросу («язык» /
+ * «тіл» / «til» / «language», см. matchDirectCommand). Оба случая должны
+ * привести к одному и тому же следующему шагу — ждать ответ на этот выбор,
+ * — поэтому идут через одну функцию.
+ *
+ * `force: true`, потому что список языков могли уже показывать (например,
+ * человек ответил не тем, что мы поняли, и переспросил словом «язык») — это
+ * осознанный повторный вызов, а не повтор одного и того же вебхук-события,
+ * который стоит подавить (см. sendDirectReply).
+ */
+async function sendLanguagePicker(conversationId: string, accountId: string, user: ZernioBotUser) {
+  const flow = await import("./direct-purchase.server");
+  await flow.setDirectState(user.user_key, { mode: "awaiting_locale" });
+  await reply(user, conversationId, accountId, languagePickerText(), undefined, true);
+}
 
 /**
  * Обработать входящее личное сообщение (DM) из Instagram Direct.
@@ -193,6 +778,22 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     senderName,
     metadata,
   );
+
+  /**
+   * Первое сообщение от нового отправителя — раньше чего бы то ни было ещё.
+   *
+   * У Instagram Direct нет команды `/start`, а значит нет и естественной
+   * точки, где, как в Telegram-боте, спросить язык. Заводим её сами: как
+   * только `upsertZernioUser` завела запись впервые, показываем выбор языка и
+   * останавливаемся — весь остальной разбор этого события подождёт следующего
+   * сообщения. Проверка нарочно ничего не знает про текст, вложение или
+   * постбэк: даже если самое первое событие от человека — вложение или нажатая
+   * кнопка автоматизации воронки, язык важнее и должен быть выбран раньше.
+   */
+  if (user.isNewUser) {
+    await sendLanguagePicker(conversationId, accountId, user);
+    return;
+  }
 
   const lower = text.toLowerCase();
 
@@ -298,6 +899,17 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     await sendOrders(conversationId, accountId, user);
     return;
   }
+  /**
+   * Смена языка — тоже обслуживание себя, а не болтовня, и отвечает в любом
+   * режиме, как корзина и оформление чуть выше. Внутри шага сценария (страна,
+   * чек, почта) слово-команда не ловится вовсе — так же, как не ловятся здесь
+   * «корзина» и «оформить»: до этого места разбор просто не доходит, реплику
+   * уже забирает шаг (см. handlePurchaseFlow).
+   */
+  if (command === "language") {
+    await sendLanguagePicker(conversationId, accountId, user);
+    return;
+  }
 
   const triggerWords = parseTriggerWords(setting("instagram_direct_bot_triggers"));
   if (triggerWords.includes(plain)) {
@@ -349,6 +961,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    */
   const flow = await import("./direct-purchase.server");
   const questionState = flow.readDirectState(user.state);
+  const copy = directCopy[flow.directLocale(questionState)];
   const now = Date.now();
 
   /**
@@ -387,11 +1000,8 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     conversationId,
     accountId,
     greetedRecently
-      ? "Передал ваш вопрос продавцу — он ответит здесь же."
-      : setting("instagram_direct_bot_script") ||
-          `Здравствуйте, ${senderName}! 👋\n\n` +
-            "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
-            "Если хотите что-то купить прямо сейчас, напишите номер товара из публикации — например «196».",
+      ? copy.greetingShort
+      : setting("instagram_direct_bot_script") || copy.greetingFull(senderName),
   );
 }
 
@@ -417,19 +1027,14 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
  * товара. Разбирать каталог удобнее в Telegram-боте — туда и ведём.
  */
 async function sendCatalogMenu(conversationId: string, accountId: string, user: ZernioBotUser) {
+  const flow = await import("./direct-purchase.server");
+  const copy = directCopy[flow.directLocale(flow.readDirectState(user.state))];
   const botLink = await telegramBotLink();
 
-  const lines = [
-    "Здесь можно оформить заказ по номеру материала.",
-    "",
-    "Напишите номер из публикации — например «018», — и я подскажу, как оплатить.",
-  ];
+  const lines = [copy.catalogIntro, "", copy.catalogNumberHint];
 
   if (botLink) {
-    lines.push(
-      "",
-      `А чтобы посмотреть весь каталог, поискать по теме и получить файлы, заходите в наш бот: ${botLink}`,
-    );
+    lines.push("", copy.catalogBotLink(botLink));
   }
 
   // «/start», «купить» и прочие слова-вызовы — явное повторное обращение
@@ -447,6 +1052,10 @@ async function sendInteractiveProductResults(
   user: ZernioBotUser,
   query: string,
 ) {
+  const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
+  const copy = directCopy[flow.directLocale(state)];
+
   const s = await db();
   const { data: products } = await s
     .from("products")
@@ -462,17 +1071,16 @@ async function sendInteractiveProductResults(
       user,
       conversationId,
       accountId,
-      `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог в нашем боте: ${(await telegramBotLink()) ?? ""}`,
-      [{ type: "postback", title: "Каталог", payload: "CATALOG" }],
+      copy.searchNoResults(query, (await telegramBotLink()) ?? ""),
+      [{ type: "postback", title: copy.btnCatalog, payload: "CATALOG" }],
     );
     return;
   }
 
   // Список идёт отдельными сообщениями с кнопками у каждого товара — через
   // защиту от повторов их не гоняем: тексты и так все разные.
-  await sendZernioInboxMessage(conversationId, accountId, `🔎 Нашли ${products.length} вариантов:`);
-  const flow = await import("./direct-purchase.server");
-  const country = flow.readDirectState(user.state).country_code ?? null;
+  await sendZernioInboxMessage(conversationId, accountId, copy.searchFoundCount(products.length));
+  const country = state.country_code ?? null;
   for (const product of products) {
     const description = product.description ? `\n${String(product.description).slice(0, 180)}` : "";
     const money = await flow.resolveProductPrice(product, country);
@@ -483,8 +1091,8 @@ async function sendInteractiveProductResults(
       undefined,
       undefined,
       [
-        { type: "postback", title: "Добавить в корзину", payload: `BUY:${product.id}` },
-        { type: "postback", title: "Корзина", payload: "CART" },
+        { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
+        { type: "postback", title: copy.btnCart, payload: "CART" },
       ],
     );
   }
@@ -505,6 +1113,7 @@ async function addProductToCart(
   productId: string,
 ) {
   const flow = await import("./direct-purchase.server");
+  const copy = directCopy[flow.directLocale(flow.readDirectState(user.state))];
   const s = await db();
   const { data: product } = await s
     .from("products")
@@ -513,16 +1122,11 @@ async function addProductToCart(
     .maybeSingle();
 
   if (!product?.is_active) {
-    await reply(user, conversationId, accountId, "Этот материал больше недоступен.");
+    await reply(user, conversationId, accountId, copy.productUnavailable);
     return;
   }
   if (!(await flow.productHasFiles(product.id))) {
-    await reply(
-      user,
-      conversationId,
-      accountId,
-      `«${product.name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
-    );
+    await reply(user, conversationId, accountId, copy.productNoFiles(product.name));
     return;
   }
 
@@ -536,36 +1140,32 @@ async function addProductToCart(
 /** Показывает корзину и кнопку оформления. */
 async function sendCart(conversationId: string, accountId: string, user: ZernioBotUser) {
   const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
+  const copy = directCopy[flow.directLocale(state)];
   const cart = await flow.readCart(user);
 
   if (cart.length === 0) {
-    await reply(
-      user,
-      conversationId,
-      accountId,
-      "В заказе пока ничего нет. Напишите номер материала из публикации — например «018».",
-    );
+    await reply(user, conversationId, accountId, copy.cartEmptyHint);
     return;
   }
 
-  const state = flow.readDirectState(user.state);
   const total = await flow.priceCart(cart, state.country_code ?? null);
   await reply(
     user,
     conversationId,
     accountId,
-    `В заказе ${cart.length === 1 ? "материал" : `${cart.length} материала`}:\n\n` +
+    `${copy.cartHeader(cart.length)}\n\n` +
       `${flow.renderCart(total.lines)}\n\n` +
       (cart.length > 1 && !total.mixedCurrency
-        ? `Итого: ${total.total} ${total.currency}\n\n`
+        ? copy.cartTotal(total.total, total.currency) + "\n\n"
         : "") +
-      (cart.length > 1
-        ? "Можно добавить ещё номер или убрать лишнее — напишите «убрать 018».\n"
-        : "Можно добавить ещё — напишите следующий номер.\n"),
-    [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }],
+      (cart.length > 1 ? copy.cartHintMulti : copy.cartHintSingle),
+    [{ type: "postback", title: copy.btnCheckout, payload: "CHECKOUT" }],
   );
 }
 async function sendOrders(conversationId: string, accountId: string, user: ZernioBotUser) {
+  const flow = await import("./direct-purchase.server");
+  const copy = directCopy[flow.directLocale(flow.readDirectState(user.state))];
   const s = await db();
   const { data: orders } = await s
     .from("orders")
@@ -575,7 +1175,7 @@ async function sendOrders(conversationId: string, accountId: string, user: Zerni
     .limit(5);
 
   if (!orders || orders.length === 0) {
-    await reply(user, conversationId, accountId, `У вас пока нет заказов. 📋`);
+    await reply(user, conversationId, accountId, copy.noOrders);
     return;
   }
 
@@ -587,17 +1187,12 @@ async function sendOrders(conversationId: string, accountId: string, user: Zerni
    * заказ и проводит время, пока продавец сверяет чек. Покупатель видел просто
    * технический код и не понимал, ждать ему или писать.
    */
-  const statusMap: Record<string, string> = {
-    awaiting_confirmation: "⏳ Проверяем оплату",
-    awaiting_payment: "⏳ Ожидает оплаты",
-    delivering: "📤 Отправляем материалы",
-    delivered: "✅ Материалы отправлены на почту",
-    rejected: "❌ Отклонён",
-  };
+  const statusMap = copy.orderStatus;
 
-  let msg = `📋 Ваши заказы:\n\n`;
+  let msg = copy.ordersHeader;
   orders.forEach((o) => {
-    msg += `Заказ #${o.order_no ?? o.id} — ${o.total} ${o.currency} [${statusMap[o.status] || o.status}]\n`;
+    const label = statusMap[o.status as OrderStatusKey] || o.status;
+    msg += copy.orderLine(o.order_no ?? o.id, o.total, o.currency, label);
   });
 
   await reply(user, conversationId, accountId, msg);
@@ -643,6 +1238,7 @@ async function startInstagramCheckout(
    */
   if (cart.length === 0) {
     const state = flow.readDirectState(user.state);
+    const copy = directCopy[flow.directLocale(state)];
 
     // Разговор уже у продавца — кнопку человек мог нажать от растерянности, и
     // очередная подсказка от бота ему сейчас не нужна.
@@ -655,12 +1251,7 @@ async function startInstagramCheckout(
 
     if (attempts >= flow.MAX_STEP_MISSES) {
       await flow.clearDirectFlow(user.user_key);
-      await reply(
-        user,
-        conversationId,
-        accountId,
-        "Похоже, я не помогаю — не буду мешать. Продавец увидит переписку и ответит сам.",
-      );
+      await reply(user, conversationId, accountId, copy.checkoutGiveUp);
       await flow.notifyAdminAboutQuestion({
         question: "Нажимает «Оформить заказ», но в корзине ничего нет — не может выбрать материал.",
         senderName: user.first_name || "покупатель",
@@ -670,24 +1261,15 @@ async function startInstagramCheckout(
     }
 
     await flow.setDirectState(user.user_key, { misses: attempts });
-    await reply(
-      user,
-      conversationId,
-      accountId,
-      "Чтобы оформить заказ, сначала напишите номер материала из публикации — например «018».\n\n" +
-        "Я посчитаю сумму и пришлю реквизиты.",
-    );
+    await reply(user, conversationId, accountId, copy.checkoutNeedNumber);
     return;
   }
 
   const options = await flow.listCountries();
+  const state = flow.readDirectState(user.state);
+  const locale = flow.directLocale(state);
   if (options.length === 0) {
-    await reply(
-      user,
-      conversationId,
-      accountId,
-      "Реквизиты для оплаты пока не заведены. Продавец свяжется с вами.",
-    );
+    await reply(user, conversationId, accountId, directCopy[locale].noPaymentMethods);
     return;
   }
 
@@ -699,7 +1281,6 @@ async function startInstagramCheckout(
    * «Оформить» → реквизиты. Название страны бот проговаривает, чтобы можно было
    * возразить, и напоминает про «отмена», если она всё-таки другая.
    */
-  const state = flow.readDirectState(user.state);
   const remembered = state.country_code
     ? options.find((option) => option.code === state.country_code)
     : undefined;
@@ -726,7 +1307,8 @@ async function startInstagramCheckout(
     user,
     conversationId,
     accountId,
-    `В заказе:\n${flow.renderCart(shown.lines)}\n\n` + flow.renderCountryPrompt(options),
+    `${directCopy[locale].orderCartHeader}\n${flow.renderCart(shown.lines)}\n\n` +
+      flow.renderCountryPrompt(options, locale),
   );
 }
 
@@ -744,19 +1326,18 @@ async function sendDirectPaymentDetails(params: {
   const { conversationId, accountId, user, country, remembered } = params;
   const flow = await import("./direct-purchase.server");
   const say = (message: string) => reply(user, conversationId, accountId, message);
+  const copy = directCopy[flow.directLocale(flow.readDirectState(user.state))];
 
   const requisites = await flow.paymentInstructionsFor(country.code);
   if (!requisites) {
-    await say(
-      "Для этой страны реквизиты пока не заведены. Продавец свяжется с вами и подскажет, как оплатить.",
-    );
+    await say(copy.noRequisitesForCountry);
     await flow.clearDirectFlow(user.user_key);
     return;
   }
 
   const cart = await flow.readCart(user);
   if (cart.length === 0) {
-    await say("Корзина опустела. Напишите номер материала, и начнём заново.");
+    await say(copy.cartEmptiedRestart);
     await flow.clearDirectFlow(user.user_key);
     return;
   }
@@ -771,10 +1352,7 @@ async function sendDirectPaymentDetails(params: {
   } = await flow.priceCart(cart, country.code);
   if (mixedCurrency) {
     // Складывать разные валюты нельзя: сумма получилась бы бессмысленной.
-    await say(
-      "В заказе материалы в разных валютах — оформите их по отдельности.\n\n" +
-        "Напишите «отмена», а потом номер одного материала.",
-    );
+    await say(copy.mixedCurrencySplit);
     return;
   }
 
@@ -785,12 +1363,10 @@ async function sendDirectPaymentDetails(params: {
 
   await say(
     `${flow.renderCart(pricedLines)}\n\n` +
-      (remembered
-        ? `Реквизиты для ${country.name} — если страна другая, напишите «отмена».\n\n`
-        : "") +
+      (remembered ? copy.rememberedCountryNote(country.name) : "") +
       `${requisites.instructions}\n\n` +
-      `К оплате: ${amount} ${currency}\n` +
-      "После оплаты пришлите чек сюда — картинкой или файлом.",
+      copy.amountDue(amount, currency) +
+      copy.sendProofHint,
   );
 }
 
@@ -921,10 +1497,47 @@ async function handlePurchaseFlow(params: {
 }): Promise<boolean> {
   const { conversationId, accountId, user, text, attachmentUrl, answersEverything } = params;
   const flow = await import("./direct-purchase.server");
-  const { classifyIncoming, isCancel, isPaymentComplaint, matchDirectCommand } =
+  const { classifyIncoming, isCancel, isPaymentComplaint, matchDirectCommand, matchLocalePick } =
     await import("./direct-flow");
   const state = flow.readDirectState(user.state);
+  const locale = flow.directLocale(state);
+  const copy = directCopy[locale];
   const say = (message: string) => reply(user, conversationId, accountId, message);
+
+  /**
+   * Ждём ответ на выбор языка — шаг важнее всего остального в сценарии.
+   *
+   * Показывается либо новым отправителям (см. handleZernioMessage), либо по
+   * явному запросу словом «язык» (см. sendLanguagePicker). Ни isCancel, ни
+   * isPaymentComplaint здесь не имеют смысла: обе проверки разбирают русский
+   * текст, а на этом шаге язык покупателя ещё не выбран.
+   */
+  if (state.mode === "awaiting_locale") {
+    const picked = matchLocalePick(text);
+    if (!picked) {
+      const misses = (state.misses ?? 0) + 1;
+      if (misses >= flow.MAX_STEP_MISSES) {
+        // Не упорствуем: дальше отвечаем по-русски — как отвечали до появления
+        // локализации, — а не держим человека на нераспознанном шаге вечно.
+        await flow.setDirectState(user.user_key, { locale: "ru" });
+        await flow.clearDirectFlow(user.user_key);
+        await sendCatalogMenu(conversationId, accountId, user);
+        return true;
+      }
+      await flow.setDirectState(user.user_key, { misses });
+      await reply(user, conversationId, accountId, languagePickerText(), undefined, true);
+      return true;
+    }
+
+    await flow.setDirectState(user.user_key, { locale: picked });
+    await flow.clearDirectFlow(user.user_key);
+    await say(directCopy[picked].languageSaved);
+    await sendCatalogMenu(conversationId, accountId, {
+      ...user,
+      state: { ...state, locale: picked, mode: undefined, misses: undefined },
+    });
+    return true;
+  }
 
   /**
    * Выход из сценария — на любом шаге, а не только на ожидании чека.
@@ -943,9 +1556,7 @@ async function handlePurchaseFlow(params: {
     // добавлял не тот номер, отменял, добавлял верный — и в заказ попадали оба.
     await flow.clearDirectFlow(user.user_key);
     await flow.clearCart(user);
-    await say(
-      "Отменил, корзина пуста. Напишите номер материала, когда будете готовы — например «018».",
-    );
+    await say(copy.cancelled);
     return true;
   }
 
@@ -984,10 +1595,7 @@ async function handlePurchaseFlow(params: {
     // Отвечаем только если бот в этом разговоре уже говорил: молчать после
     // собственных сообщений — значит бросить человека на полуслове.
     if (answersEverything || state.mode) {
-      await say(
-        "Вижу, что вопрос по оплате. Это решает продавец — я его уже позвал, " +
-          "он ответит вам здесь же.\n\nБольше отвечать не буду, чтобы не мешать.",
-      );
+      await say(copy.complaintAck);
     } else {
       console.log(`[zernio-bot] жалоба по оплате от ${user.user_key} передана продавцу молча`);
     }
@@ -1006,7 +1614,7 @@ async function handlePurchaseFlow(params: {
   if (removeNumber && state.mode !== "awaiting_email") {
     const cart = await flow.readCart(user);
     if (cart.length === 0) {
-      await say("Убирать пока нечего — в заказе ничего нет.");
+      await say(copy.removeNothing);
       return true;
     }
 
@@ -1016,11 +1624,7 @@ async function handlePurchaseFlow(params: {
     );
     if (index === null) {
       const shown = await flow.priceCart(cart, state.country_code ?? null);
-      await say(
-        `Материала с номером ${removeNumber} в заказе нет. Сейчас в нём:\n\n` +
-          `${flow.renderCart(shown.lines)}\n\n` +
-          "Чтобы убрать всё, напишите «отмена».",
-      );
+      await say(copy.removeNotFound(removeNumber, flow.renderCart(shown.lines)));
       return true;
     }
 
@@ -1030,13 +1634,11 @@ async function handlePurchaseFlow(params: {
 
     if (rest.length === 0) {
       await flow.clearDirectFlow(user.user_key);
-      await say(
-        `Убрал «${removed.name}». В заказе больше ничего нет — напишите номер материала, когда будете готовы.`,
-      );
+      await say(copy.removedCartEmpty(removed.name));
       return true;
     }
 
-    await say(`Убрал «${removed.name}».`);
+    await say(copy.removed(removed.name));
 
     // Реквизиты уже отправлены — значит, названная сумма устарела, и её надо
     // назвать заново, вместе с обновлённым составом заказа.
@@ -1066,10 +1668,9 @@ async function handlePurchaseFlow(params: {
         user,
         state,
         text,
-        hint:
-          "Жду чек об оплате — пришлите его сюда картинкой или файлом.\n\n" +
-          "Если передумали, напишите «отмена».",
+        hint: copy.awaitingProofHint,
         say,
+        locale,
       });
       return true;
     }
@@ -1097,7 +1698,7 @@ async function handlePurchaseFlow(params: {
         senderName: user.first_name || "покупатель",
         senderUsername: user.username || "",
       });
-      await say("Уже обрабатываю ваш чек — секунду.");
+      await say(copy.receiptProcessing);
       return true;
     }
 
@@ -1113,15 +1714,13 @@ async function handlePurchaseFlow(params: {
       // Возвращаем шаг как был — иначе повторная попытка ткнётся в
       // «processing_proof» и решит, что чек уже кто-то обрабатывает.
       await flow.releaseAwaitingProof(user.user_key);
-      await say(
-        "Чек не удалось сохранить. Пришлите его, пожалуйста, ещё раз — картинкой или файлом.",
-      );
+      await say(copy.receiptSaveFailed);
       return true;
     }
 
     const order = await flow.createOrderFromCart({ user, countryCode: claim.country_code! });
     if (!order) {
-      await say("Не получилось оформить заказ. Напишите номер материала ещё раз, пожалуйста.");
+      await say(copy.orderCreateFailed);
       await flow.clearDirectFlow(user.user_key);
       return true;
     }
@@ -1178,9 +1777,7 @@ async function handlePurchaseFlow(params: {
       } catch (e) {
         console.error("[zernio-bot] автовыдача не удалась, отдаём продавцу", e);
         await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
-        await say(
-          `Чек получил, заказ №${displayNo} принят. Отправим материалы на ${email} после проверки.`,
-        );
+        await say(copy.receiptReceivedKnownEmail(displayNo, email));
         return true;
       }
     }
@@ -1194,10 +1791,7 @@ async function handlePurchaseFlow(params: {
         pending_order_id: order.id,
         email_optional: true,
       });
-      await say(
-        `Чек получил, заказ №${displayNo} принят. Проверим оплату и пришлём материалы на ${email}.\n\n` +
-          "Если нужен другой адрес — напишите его сюда. По остальным вопросам ответит продавец.",
-      );
+      await say(copy.receiptReceivedAskEmailOptional(displayNo, email));
       return true;
     }
 
@@ -1205,10 +1799,7 @@ async function handlePurchaseFlow(params: {
       mode: "awaiting_email",
       pending_order_id: order.id,
     });
-    await say(
-      `Чек получил, заказ №${displayNo} принят.\n\n` +
-        "На какую почту прислать материалы? Instagram не умеет пересылать документы, поэтому файлы уходят письмом.",
-    );
+    await say(copy.receiptReceivedNeedEmail(displayNo));
     return true;
   }
 
@@ -1221,10 +1812,9 @@ async function handlePurchaseFlow(params: {
         user,
         state,
         text,
-        hint:
-          "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\n" +
-          "Чтобы выйти, напишите «отмена».",
+        hint: copy.countryHint,
         say,
+        locale,
       });
       return true;
     }
@@ -1286,10 +1876,7 @@ async function handlePurchaseFlow(params: {
           senderUsername: user.username || "",
         });
       }
-      await say(
-        "Чек получил, он уже у продавца. Осталось одно: напишите почту, " +
-          "на которую отправить материалы — например anna@mail.ru",
-      );
+      await say(copy.emailStepGotReceipt);
       return true;
     }
 
@@ -1307,10 +1894,9 @@ async function handlePurchaseFlow(params: {
         user,
         state,
         text,
-        hint:
-          "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\n" +
-          "Чтобы выйти, напишите «отмена».",
+        hint: copy.emailHint,
         say,
+        locale,
       });
       return true;
     }
@@ -1365,11 +1951,7 @@ async function handlePurchaseFlow(params: {
      * непрочитанное в Instagram снова видно, а покупатель предупреждён, что
      * ответит живой человек, и не ждёт от бота невозможного.
      */
-    await say(
-      `Записал: ${email}\n\n` +
-        "Проверим оплату и пришлём материалы на этот адрес.\n\n" +
-        "Если появятся вопросы — просто напишите здесь, дальше отвечает продавец.",
-    );
+    await say(copy.emailSaved(email));
     return true;
   }
 
@@ -1402,10 +1984,7 @@ async function handlePurchaseFlow(params: {
     }
 
     if (answersEverything) {
-      await say(
-        "Вижу вложение. Если это чек об оплате — передал продавцу, он проверит и ответит здесь же.\n\n" +
-          "Если хотите заказать материал через меня, напишите его номер из публикации.",
-      );
+      await say(copy.strayAttachmentAck);
     }
     return true;
   }
@@ -1435,10 +2014,7 @@ async function handlePurchaseFlow(params: {
       // Под одним номером несколько товаров. Не угадываем: продать не тот
       // материал хуже, чем задать лишний вопрос.
       const names = lookup.products.map((p, i) => `${i + 1}. ${p.name}`).join("\n");
-      await say(
-        `Под номером ${incoming.number} у нас несколько материалов:\n\n${names}\n\n` +
-          "Напишите точное название нужного или уточните номер у продавца.",
-      );
+      await say(copy.ambiguousProduct(incoming.number, names));
       return true;
     }
 
@@ -1452,18 +2028,13 @@ async function handlePurchaseFlow(params: {
        * продавец разберётся сам — переписка останется непрочитанной.
        */
       if (!answersEverything) return false;
-      await say(
-        `Товар с номером ${incoming.number} не нашёл. Проверьте номер в публикации — ` +
-          "или напишите, что ищете, и продавец подскажет.",
-      );
+      await say(copy.productNotFound(incoming.number));
       return true;
     }
     // Материал без файла продавать нельзя: заказ дошёл бы до подтверждения и
     // упёрся бы там — уже после того, как человек заплатил. Таких в каталоге 8.
     if (!(await flow.productHasFiles(product.id))) {
-      await say(
-        `«${product.name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
-      );
+      await say(copy.productNoFiles(product.name));
       return true;
     }
 
@@ -1493,23 +2064,18 @@ async function handlePurchaseFlow(params: {
      * базовая у клиента намеренно завышена (500 ₸ настоящих против 700 в
      * основном поле), и именно её покупатели видели раньше.
      */
-    const state = flow.readDirectState(user.state);
     const shown = await flow.priceCart(cart, state.country_code ?? null);
     const line = shown.lines.find((item) => item.productId === product.id);
     const priceLine = line ? `${line.sum} ${line.currency}` : "";
 
     const added =
       cart.length === 1
-        ? `Добавил «${product.name}» — ${priceLine}.`
-        : `Добавил «${product.name}» — ${priceLine}.\n\nВ заказе ${cart.length}:\n${flow.renderCart(shown.lines)}`;
+        ? copy.addedSingle(product.name, priceLine)
+        : copy.addedMulti(product.name, priceLine, cart.length, flow.renderCart(shown.lines));
 
-    await reply(
-      user,
-      conversationId,
-      accountId,
-      `${added}\n\nМожно добавить ещё — просто напишите следующий номер. Или оформляйте заказ.`,
-      [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }],
-    );
+    await reply(user, conversationId, accountId, `${added}\n\n${copy.addedFooter}`, [
+      { type: "postback", title: copy.btnCheckout, payload: "CHECKOUT" },
+    ]);
     return true;
   }
 
@@ -1518,9 +2084,7 @@ async function handlePurchaseFlow(params: {
     // воронки. Но такое же «да» звучит и в обычном разговоре с продавцом,
     // поэтому в тихом режиме не вмешиваемся.
     if (!answersEverything) return false;
-    await say(
-      "Отлично! Напишите номер товара из публикации — например «196», — и я подскажу, как оплатить.",
-    );
+    await say(copy.affirmativeReply);
     return true;
   }
 
@@ -1535,7 +2099,7 @@ async function handlePurchaseFlow(params: {
      * незачем.
      */
     if (!answersEverything) return false;
-    await say("Хорошо! Если что-то понадобится — просто напишите сюда. 🙂");
+    await say(copy.dismissalReply);
     return true;
   }
 

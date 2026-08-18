@@ -8,6 +8,7 @@ import {
   type CountryOption,
   type DirectMode,
 } from "./direct-flow";
+import { isLocale, type Locale } from "./i18n";
 import type { Json } from "@/integrations-supabase/types";
 
 /**
@@ -41,6 +42,16 @@ export type DirectState = {
   product_id?: string;
   country_code?: string;
   pending_order_id?: number;
+  /**
+   * Язык покупателя. Тот же ключ, что и у Telegram-бота (`bot_users.state.locale`),
+   * только запись живёт в отдельной строке `bot_users`, заведённой под
+   * Instagram (см. instagramCustomerId в zernio-bot.server.ts): пересечься со
+   * значением из Telegram он не может, а формат состояния остаётся общим.
+   *
+   * Пока не выбран — это значит, что разговор ещё не прошёл шаг
+   * `awaiting_locale`, и бот отвечает по-русски, как отвечал всегда.
+   */
+  locale?: Locale;
   /** Когда поздоровались — чтобы не делать это заново на каждую реплику. */
   greeted_at?: string;
   /** Когда в последний раз дёргали продавца — чтобы не звать его на каждое слово. */
@@ -186,6 +197,17 @@ export async function releaseAwaitingProof(userKey: string): Promise<void> {
 export function readDirectState(raw: unknown): DirectState {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   return raw as DirectState;
+}
+
+/**
+ * Язык покупателя с безопасным запасным значением.
+ *
+ * Русский — вариант по умолчанию для тех, кто ещё не прошёл шаг выбора языка
+ * (старые записи, заведённые до этой функции, или сбой на самом первом шаге):
+ * так бот продолжает вести себя ровно так, как вёл до появления локализации.
+ */
+export function directLocale(state: DirectState): Locale {
+  return state.locale && isLocale(state.locale) ? state.locale : "ru";
 }
 
 /**
@@ -393,14 +415,30 @@ export async function resolveProductPrice(
   return await resolvePrice(product, countryCode);
 }
 
+const countryPromptCopy: Record<Locale, { question: string; answerHint: string }> = {
+  ru: {
+    question: "Из какой вы страны? Реквизиты для оплаты у каждой свои.",
+    answerHint: "Ответьте номером или названием.",
+  },
+  kk: {
+    question: "Сіз қай елдесіз? Әр елдің төлем деректемелері өз алдына.",
+    answerHint: "Нөмірімен немесе атауымен жауап беріңіз.",
+  },
+  en: {
+    question: "Which country are you in? Each has its own payment details.",
+    answerHint: "Reply with the number or the name.",
+  },
+  uz: {
+    question: "Qaysi davlatdansiz? Har birining to‘lov rekvizitlari o‘ziga xos.",
+    answerHint: "Raqami yoki nomi bilan javob bering.",
+  },
+};
+
 /** Список стран, пронумерованный — покупатель отвечает цифрой или названием. */
-export function renderCountryPrompt(options: CountryOption[]): string {
+export function renderCountryPrompt(options: CountryOption[], locale: Locale = "ru"): string {
+  const copy = countryPromptCopy[locale];
   const lines = options.map((option, index) => `${index + 1}. ${option.name}`);
-  return (
-    `Из какой вы страны? Реквизиты для оплаты у каждой свои.\n\n` +
-    `${lines.join("\n")}\n\n` +
-    `Ответьте номером или названием.`
-  );
+  return `${copy.question}\n\n${lines.join("\n")}\n\n${copy.answerHint}`;
 }
 
 /** Реквизиты выбранной страны. */
@@ -1089,12 +1127,20 @@ export const MAX_STEP_MISSES = 2;
  * бот на третьей попытке, а непрочитанное в Instagram снова станет видно
  * продавцу — бот перестанет отвечать и помечать переписку прочитанной.
  */
+const stepMissGiveUpCopy: Record<Locale, string> = {
+  ru: "Похоже, я не понимаю — не буду мешать. Продавец увидит вашу переписку и ответит сам.",
+  kk: "Байқаймын, түсінбей тұрмын — бөгет жасамайын. Сатушы жазысуды көріп, өзі жауап береді.",
+  en: "Looks like I'm not following — I'll step aside. The seller will see this chat and reply themselves.",
+  uz: "Chamasi, tushunmayapman — xalaqit bermayman. Sotuvchi yozishmani ko‘rib, o‘zi javob beradi.",
+};
+
 export async function handleStepMiss(params: {
   user: { user_key: string; first_name: string | null; username: string | null };
   state: DirectState;
   text: string;
   hint: string;
   say: (message: string) => Promise<unknown>;
+  locale?: Locale;
 }): Promise<void> {
   const misses = (params.state.misses ?? 0) + 1;
 
@@ -1105,9 +1151,7 @@ export async function handleStepMiss(params: {
   }
 
   await clearDirectFlow(params.user.user_key);
-  await params.say(
-    "Похоже, я не понимаю — не буду мешать. Продавец увидит вашу переписку и ответит сам.",
-  );
+  await params.say(stepMissGiveUpCopy[params.locale ?? directLocale(params.state)]);
   await notifyAdminAboutQuestion({
     question: `Не смог довести до конца оформление. Последнее сообщение: «${params.text}»`,
     senderName: params.user.first_name || "покупатель",
