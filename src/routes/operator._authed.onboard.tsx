@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useState } from "react";
 import { onboardClientFn, verifyBotTokenFn } from "@/lib/operator/onboard.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
@@ -91,7 +92,7 @@ function OnboardPage() {
       const me = await verifyBotTokenFn({ data: { token: form.bot_token.trim() } });
       setBotIdentity(`@${me.username} — ${me.first_name}`);
     } catch (e: unknown) {
-      setError((e as Error)?.message || "Не удалось проверить токен");
+      setError(errorMessage(e) || "Не удалось проверить токен");
     } finally {
       setChecking(false);
     }
@@ -120,7 +121,7 @@ function OnboardPage() {
       });
       setResult(res);
     } catch (e: unknown) {
-      setError((e as Error)?.message || "Не удалось подключить клиента");
+      setError(errorMessage(e) || "Не удалось подключить клиента");
     } finally {
       setBusy(false);
     }

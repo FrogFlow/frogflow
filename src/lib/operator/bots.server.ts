@@ -4,6 +4,7 @@ import { callInternal } from "./internal-client.server";
 import { logEvent } from "./events.server";
 import type { Json } from "@/integrations-supabase/types";
 import { computeState, readPolicy, type SubscriptionState } from "./subscriptions.server";
+import { errorMessage } from "@/lib/error-message";
 
 type BotStatus = "active" | "paused" | "suspended";
 
@@ -659,7 +660,7 @@ export async function checkReadinessAll(): Promise<Record<string, Readiness>> {
               {
                 name: "Проверка",
                 level: "fail" as const,
-                detail: (e as Error)?.message ?? "не удалась",
+                detail: errorMessage(e) || "не удалась",
               },
             ],
           },

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -171,7 +172,7 @@ function OperatorClientsPage() {
       {bots.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
       {bots.isError && (
         <p className="text-sm text-destructive">
-          {(bots.error as Error)?.message || "Не удалось загрузить список"}
+          {errorMessage(bots.error) || "Не удалось загрузить список"}
         </p>
       )}
 
@@ -423,7 +424,7 @@ function ReadinessAll() {
     try {
       setRes(await checkReadinessAllFn());
     } catch (e: unknown) {
-      setError((e as Error)?.message || "Не удалось проверить");
+      setError(errorMessage(e) || "Не удалось проверить");
     } finally {
       setBusy(false);
     }

@@ -2,6 +2,7 @@ import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { buildEnvBlockFor, randomSecret, verifyBotToken } from "./env-block.server";
 import { logEvent } from "./events.server";
+import { errorMessage } from "@/lib/error-message";
 
 export type { TelegramBotIdentity } from "./env-block.server";
 export { verifyBotToken };
@@ -195,6 +196,6 @@ async function setTelegramWebhook(
           detail: body?.description ?? `HTTP ${res.status}`,
         };
   } catch (e: unknown) {
-    return { attempted: true, ok: false, detail: (e as Error)?.message ?? String(e) };
+    return { attempted: true, ok: false, detail: errorMessage(e) };
   }
 }

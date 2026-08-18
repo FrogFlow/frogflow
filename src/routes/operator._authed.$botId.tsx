@@ -170,7 +170,7 @@ function OperatorClientCard() {
   if (botQuery.isError || !botQuery.data) {
     return (
       <p className="text-sm text-destructive">
-        {(botQuery.error as Error)?.message || "Клиент не найден"}
+        {errorMessage(botQuery.error) || "Клиент не найден"}
       </p>
     );
   }
@@ -434,7 +434,7 @@ function WebhookSection({ botId, appUrl }: { botId: string; appUrl: string | nul
     try {
       setHook(await requestWebhookSetupFn({ data: { botId } }));
     } catch (e: unknown) {
-      setHook({ ok: false, detail: (e as Error)?.message || "Не удалось" });
+      setHook({ ok: false, detail: errorMessage(e) || "Не удалось" });
     } finally {
       setBusy(null);
     }
@@ -446,7 +446,7 @@ function WebhookSection({ botId, appUrl }: { botId: string; appUrl: string | nul
     try {
       setHealth(await checkBotHealthFn({ data: { botId } }));
     } catch (e: unknown) {
-      setHealth({ ok: false, error: (e as Error)?.message || "Не удалось" });
+      setHealth({ ok: false, error: errorMessage(e) || "Не удалось" });
     } finally {
       setBusy(null);
     }
@@ -919,7 +919,7 @@ function EnvBlockSection({
         }),
       );
     } catch (e: unknown) {
-      setError((e as Error)?.message || "Не удалось собрать блок");
+      setError(errorMessage(e) || "Не удалось собрать блок");
     } finally {
       setBusy(false);
     }
@@ -1166,7 +1166,7 @@ function ArchiveButton({
       await setArchivedFn({ data: { botId, archived: !archived } });
       await onDone();
     } catch (e: unknown) {
-      alert((e as Error)?.message || "Не удалось");
+      alert(errorMessage(e) || "Не удалось");
     } finally {
       setBusy(false);
     }
@@ -1200,7 +1200,7 @@ function ReadinessSection({ botId }: { botId: string }) {
     try {
       setRes(await checkReadinessFn({ data: { botId } }));
     } catch (e: unknown) {
-      setError((e as Error)?.message || "Не удалось проверить");
+      setError(errorMessage(e) || "Не удалось проверить");
     } finally {
       setBusy(false);
     }
@@ -1297,7 +1297,7 @@ function OwnerPicker({ botId, onPick }: { botId: string; onPick: (id: number) =>
       </div>
       {list.isError && (
         <p className="text-xs text-destructive px-2 py-1">
-          {(list.error as Error)?.message || "Не удалось получить список"}
+          {errorMessage(list.error) || "Не удалось получить список"}
         </p>
       )}
       <ul className="max-h-52 overflow-y-auto divide-y">

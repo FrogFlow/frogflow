@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { requireOperator, operatorSessionSecretReady } from "./guard.server";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * Сборка блока переменных окружения для деплоя клиента.
@@ -73,7 +74,7 @@ export async function verifyBotToken(token: string): Promise<TelegramBotIdentity
       signal: AbortSignal.timeout(10_000),
     });
   } catch (e: unknown) {
-    throw new Error(`Не удалось связаться с Telegram: ${(e as Error)?.message ?? e}`);
+    throw new Error(`Не удалось связаться с Telegram: ${errorMessage(e)}`);
   }
   const body = (await res.json().catch(() => null)) as {
     ok?: boolean;
