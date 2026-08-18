@@ -106,12 +106,19 @@ function isProofAutoOnlyCountry(countryCode?: string | null): boolean {
 }
 
 /** Robokassa: согласие + ссылки на оферту и политику (HTML для сообщений в чате). */
-function legalConsentHtml(base: string): string {
+function legalConsentHtml(base: string, locale: Locale = "ru"): string {
+  const copy: Record<Locale, [string, string, string]> = {
+    ru: ["Нажимая /start, вы соглашаетесь с:", "Условиями использования", "Политикой конфиденциальности"],
+    kk: ["/start пәрменін басу арқылы сіз мыналармен келісесіз:", "Пайдалану шарттарымен", "Құпиялылық саясатымен"],
+    en: ["By pressing /start, you agree to:", "Terms of Use", "Privacy Policy"],
+    uz: ["/start tugmasini bosish orqali quyidagilarga rozilik bildirasiz:", "Foydalanish shartlari", "Maxfiylik siyosati"],
+  };
+  const [intro, terms, privacy] = copy[locale];
   return (
-    `Нажимая /start, вы соглашаетесь с:\n` +
-    `• <a href="${base}/legal/offer">Условиями использования</a>\n` +
+    `${intro}\n` +
+    `• <a href="${base}/legal/offer">${terms}</a>\n` +
     `${base}/legal/offer\n` +
-    `• <a href="${base}/legal/privacy">Политикой конфиденциальности</a>\n` +
+    `• <a href="${base}/legal/privacy">${privacy}</a>\n` +
     `${base}/legal/privacy`
   );
 }
@@ -147,16 +154,21 @@ export async function syncBotPublicDescription() {
   }
 }
 
-function welcomeStartHtml(firstName: string | null, withCountryHint: boolean): string {
+function welcomeStartHtml(firstName: string | null, withCountryHint: boolean, locale: Locale = "ru"): string {
   const base = originFromState();
-  const name = firstName || "друг";
-  const hint = withCountryHint ? `\n\nСначала выберите страну — или откройте «ℹ️ Информация».` : "";
+  const copy: Record<Locale, { hello: string; friend: string; greeting: string; catalog: string; payment: string; documents: string; hint: string }> = {
+    ru: { hello: "Привет", friend: "друг", greeting: "Добро пожаловать в магазин.", catalog: "Каталог учебных материалов", payment: "Оплата и выдача файлов", documents: "Документы и реквизиты — в «ℹ️ Информация»", hint: "Сначала выберите страну — или откройте «ℹ️ Информация»." },
+    kk: { hello: "Сәлем", friend: "дос", greeting: "Дүкенге қош келдіңіз!", catalog: "Оқу материалдарының каталогы", payment: "Төлем және файлдарды алу", documents: "Құжаттар мен деректемелер — «ℹ️ Ақпарат» бөлімінде", hint: "Алдымен еліңізді таңдаңыз немесе «ℹ️ Ақпарат» бөлімін ашыңыз." },
+    en: { hello: "Hello", friend: "friend", greeting: "Welcome to the store!", catalog: "Learning materials catalog", payment: "Payment and file delivery", documents: "Documents and payment details are in “ℹ️ Information”", hint: "First choose your country, or open “ℹ️ Information”." },
+    uz: { hello: "Salom", friend: "do‘st", greeting: "Do‘konga xush kelibsiz!", catalog: "O‘quv materiallari katalogi", payment: "To‘lov va fayllarni yetkazib berish", documents: "Hujjatlar va to‘lov ma’lumotlari “ℹ️ Ma’lumot” bo‘limida", hint: "Avval mamlakatingizni tanlang yoki “ℹ️ Ma’lumot” bo‘limini oching." },
+  };
+  const c = copy[locale];
+  const name = firstName || c.friend;
+  const hint = withCountryHint ? `\n\n${c.hint}` : "";
   return (
-    `Привет, ${escapeHtml(name)}! Добро пожаловать в магазин.\n\n` +
-    `→ Каталог учебных материалов\n` +
-    `→ Оплата и выдача файлов\n` +
-    `→ Документы и реквизиты — в «ℹ️ Информация»\n\n` +
-    legalConsentHtml(base) +
+    `${c.hello}, ${escapeHtml(name)}! ${c.greeting}\n\n` +
+    `→ ${c.catalog}\n→ ${c.payment}\n→ ${c.documents}\n\n` +
+    legalConsentHtml(base, locale) +
     hint
   );
 }
@@ -1584,7 +1596,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         const needCountry = !nextState.country_code;
         await tg("sendMessage", {
           chat_id,
-          text: welcomeStartHtml(user.first_name, needCountry),
+          text: welcomeStartHtml(user.first_name, needCountry, locale),
           parse_mode: "HTML",
           reply_markup: legalInlineKeyboard(base),
           disable_web_page_preview: true,
