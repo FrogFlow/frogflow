@@ -11,6 +11,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { adminCheck, adminLogout } from "@/lib/admin.functions";
 import { Button } from "@/components-ui/button";
 import { useModules } from "@/lib/modules/use-modules";
+import { localeNames, SUPPORTED_LOCALES, t, type Locale } from "@/lib/i18n";
+import { useEffect, useState } from "react";
+import { AdminAutoTranslator } from "@/components/admin-auto-translator";
 
 export const Route = createFileRoute("/admin")({
   beforeLoad: async ({ context }) => {
@@ -26,9 +29,20 @@ function AdminLayout() {
   const router = useRouter();
   const logout = useServerFn(adminLogout);
   const modules = useModules();
+  const [locale, setLocale] = useState<Locale>("ru");
+  useEffect(() => {
+    const saved = window.localStorage.getItem("admin-locale");
+    if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) setLocale(saved as Locale);
+  }, []);
+  function changeLocale(next: Locale) {
+    setLocale(next);
+    window.localStorage.setItem("admin-locale", next);
+    document.documentElement.lang = next;
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">
+      <AdminAutoTranslator locale={locale} />
       <header className="border-b bg-card">
         <div className="max-w-7xl mx-auto px-4 min-h-[3.5rem] py-2 flex items-center justify-between gap-4">
           {/*
@@ -40,31 +54,34 @@ function AdminLayout() {
           */}
           <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1">
             <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground">
-              Админ-панель
+              {t("adminPanel", locale)}
             </div>
-            <NavLink to="/admin">Дашборд</NavLink>
-            <NavLink to="/admin/categories">Категории</NavLink>
-            <NavLink to="/admin/products">Товары</NavLink>
-            <NavLink to="/admin/orders">Заказы</NavLink>
-            <NavLink to="/admin/broadcast">Рассылка</NavLink>
-            <NavLink to="/admin/payment-methods">Реквизиты</NavLink>
+            <NavLink to="/admin">{t("dashboard", locale)}</NavLink>
+            <NavLink to="/admin/categories">{t("categories", locale)}</NavLink>
+            <NavLink to="/admin/products">{t("products", locale)}</NavLink>
+            <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
+            <NavLink to="/admin/broadcast">{t("broadcast", locale)}</NavLink>
+            <NavLink to="/admin/payment-methods">{t("payments", locale)}</NavLink>
             {modules.instagram ? (
               <NavLink to="/admin/instagram">Instagram</NavLink>
             ) : (
               <LockedNavLink>Instagram</LockedNavLink>
             )}
             {modules.vip ? (
-              <NavLink to="/admin/vip">VIP-группа</NavLink>
+              <NavLink to="/admin/vip">{t("vip", locale)}</NavLink>
             ) : (
-              <LockedNavLink>VIP-группа</LockedNavLink>
+              <LockedNavLink>{t("vip", locale)}</LockedNavLink>
             )}
             {modules.blocked ? (
-              <NavLink to="/admin/blocked">Блокировка</NavLink>
+              <NavLink to="/admin/blocked">{t("blocked", locale)}</NavLink>
             ) : (
-              <LockedNavLink>Блокировка</LockedNavLink>
+              <LockedNavLink>{t("blocked", locale)}</LockedNavLink>
             )}
-            <NavLink to="/admin/settings">Настройки</NavLink>
+            <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
           </div>
+          <select aria-label={t("language", locale)} value={locale} onChange={(e) => changeLocale(e.target.value as Locale)} className="h-8 rounded-md border bg-background px-2 text-sm">
+            {SUPPORTED_LOCALES.map((code) => <option key={code} value={code}>{localeNames[code]}</option>)}
+          </select>
           <Button
             variant="ghost"
             size="sm"
@@ -73,7 +90,7 @@ function AdminLayout() {
               await router.navigate({ to: "/login" });
             }}
           >
-            Выйти
+            {t("logout", locale)}
           </Button>
         </div>
       </header>

@@ -5,6 +5,7 @@ import { replyIfBlocked } from "./blocked-users.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
 import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
+import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
 type ProductCard = {
@@ -64,6 +65,8 @@ type BotUser = {
     country_code?: string;
     country_name?: string;
     last_search?: string;
+    /** Explicit UI language selected by the customer (not Telegram's device language). */
+    locale?: Locale;
     /** When true, attaching a payment receipt auto-delivers files (RU/KZ with Robokassa on). */
     proof_auto?: boolean;
   } | null;
@@ -311,12 +314,20 @@ async function setContact(telegram_id: number, phone: string) {
   }
 }
 
-function mainMenu() {
+const botCopy: Record<Locale, Record<"chooseLanguage" | "chooseSection" | "catalog" | "search" | "cart" | "myOrders" | "instruction" | "information" | "languageSaved", string>> = {
+  ru: { chooseLanguage: "Выберите язык", chooseSection: "Выберите раздел:", catalog: "📚 Каталог", search: "🔍 Поиск", cart: "🛒 Корзина", myOrders: "📋 Мои заказы", instruction: "📖 Инструкция", information: "ℹ️ Информация", languageSaved: "✅ Язык сохранён." },
+  kk: { chooseLanguage: "Тілді таңдаңыз", chooseSection: "Бөлімді таңдаңыз:", catalog: "📚 Каталог", search: "🔍 Іздеу", cart: "🛒 Себет", myOrders: "📋 Тапсырыстарым", instruction: "📖 Нұсқаулық", information: "ℹ️ Ақпарат", languageSaved: "✅ Тіл сақталды." },
+  en: { chooseLanguage: "Choose your language", chooseSection: "Choose a section:", catalog: "📚 Catalog", search: "🔍 Search", cart: "🛒 Cart", myOrders: "📋 My orders", instruction: "📖 Guide", information: "ℹ️ Information", languageSaved: "✅ Language saved." },
+  uz: { chooseLanguage: "Tilni tanlang", chooseSection: "Bo‘limni tanlang:", catalog: "📚 Katalog", search: "🔍 Qidirish", cart: "🛒 Savat", myOrders: "📋 Buyurtmalarim", instruction: "📖 Yo‘riqnoma", information: "ℹ️ Ma’lumot", languageSaved: "✅ Til saqlandi." },
+};
+
+function mainMenu(locale: Locale = "ru") {
+  const c = botCopy[locale];
   return {
     keyboard: [
-      [{ text: "📚 Каталог" }, { text: "🔍 Поиск" }],
-      [{ text: "🛒 Корзина" }, { text: "📋 Мои заказы" }],
-      [{ text: "📖 Инструкция" }, { text: "ℹ️ Информация" }],
+      [{ text: c.catalog }, { text: c.search }],
+      [{ text: c.cart }, { text: c.myOrders }],
+      [{ text: c.instruction }, { text: c.information }],
       [{ text: "💬 Связаться с автором" }],
     ],
     resize_keyboard: true,
@@ -325,16 +336,39 @@ function mainMenu() {
 
 async function sendMain(
   chat_id: number,
-  text = "Выберите раздел:",
+  text?: string,
   opts?: { parse_mode?: "HTML" },
+  locale: Locale = "ru",
 ) {
   await tg("sendMessage", {
     chat_id,
-    text,
-    reply_markup: mainMenu(),
+    text: text ?? botCopy[locale].chooseSection,
+    reply_markup: mainMenu(locale),
     disable_web_page_preview: true,
     ...(opts?.parse_mode ? { parse_mode: opts.parse_mode } : {}),
   });
+}
+
+function canonicalMenuAction(text: string | undefined): string | undefined {
+  if (!text) return text;
+  for (const locale of SUPPORTED_LOCALES) {
+    const c = botCopy[locale];
+    if (text === c.catalog) return "📚 Каталог";
+    if (text === c.search) return "🔍 Поиск";
+    if (text === c.cart) return "🛒 Корзина";
+    if (text === c.myOrders) return "📋 Мои заказы";
+    if (text === c.instruction) return "📖 Инструкция";
+    if (text === c.information) return "ℹ️ Информация";
+  }
+  return text;
+}
+
+function languageKeyboard() {
+  return { inline_keyboard: SUPPORTED_LOCALES.map((locale) => [{ text: localeNames[locale], callback_data: `locale:${locale}` }]) };
+}
+
+async function askLanguage(chat_id: number) {
+  await tg("sendMessage", { chat_id, text: botCopy.ru.chooseLanguage, reply_markup: languageKeyboard() });
 }
 
 function legalInlineKeyboard(base: string) {
@@ -1529,6 +1563,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         !data.startsWith("add:") &&
         !data.startsWith("lang_ru:") &&
         !data.startsWith("lang_kz:") &&
+        !data.startsWith("locale:") &&
         !data.startsWith("searchmore:") &&
         !data.startsWith("prod:")
       ) {
@@ -1536,6 +1571,17 @@ export async function handleUpdate(update: TelegramUpdate) {
           await askCountry(chat_id, from_id);
           return;
         }
+      }
+
+      if (data.startsWith("locale:")) {
+        const locale = data.slice("locale:".length);
+        if (!isLocale(locale)) return;
+        const nextState = { ...user.state, locale, mode: "idle" as const };
+        await setState(from_id, nextState);
+        await tg("sendMessage", { chat_id, text: botCopy[locale].languageSaved });
+        await sendMain(chat_id, undefined, undefined, locale);
+        if (!nextState.country_code) await askCountry(chat_id, from_id);
+        return;
       }
 
       if (data.startsWith("pay:rk:") || data.startsWith("pay:manual:")) {
@@ -1840,6 +1886,12 @@ export async function handleUpdate(update: TelegramUpdate) {
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start") {
       await setState(from.id, { ...user.state, mode: "idle" });
+      // Do not infer the UI language from Telegram: the customer explicitly selects it.
+      // This keeps the choice stable when the Telegram app language changes.
+      if (!user.state?.locale) {
+        await askLanguage(chat_id);
+        return;
+      }
       const s = await db();
       const { data: setting } = await s
         .from("app_settings")
@@ -1864,7 +1916,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         reply_markup: legalInlineKeyboard(base),
         disable_web_page_preview: true,
       });
-      await sendMain(chat_id, "Выберите раздел:");
+      await sendMain(chat_id, undefined, undefined, user.state.locale);
       if (needCountry) {
         await askCountry(chat_id, from.id);
       }
@@ -2229,17 +2281,18 @@ export async function handleUpdate(update: TelegramUpdate) {
       return showSearch(chat_id, user, msg.text);
     }
 
+    const menuAction = canonicalMenuAction(msg.text);
     if (
       !user.state?.country_code &&
-      msg.text &&
-      ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(msg.text)
+      menuAction &&
+      ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(menuAction)
     ) {
       await askCountry(chat_id, from.id);
       return;
     }
 
     // Main menu buttons
-    switch (msg.text) {
+    switch (menuAction) {
       case "📚 Каталог":
         return showCategories(chat_id, null, user.state?.country_code);
       case "🔍 Поиск":
