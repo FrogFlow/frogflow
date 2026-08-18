@@ -34,7 +34,10 @@ export const Route = createFileRoute("/admin/vip/subscribers")({
   component: AdminVipSubscribers,
 });
 
-function matchesSearch(s: any, q: string): boolean {
+function matchesSearch(
+  s: Awaited<ReturnType<typeof getVipSubscriptions>>[number],
+  q: string,
+): boolean {
   const needle = q.trim().toLowerCase().replace(/^@/, "");
   if (!needle) return true;
   const id = String(s.telegram_id ?? "");
@@ -65,12 +68,10 @@ function AdminVipSubscribers() {
   const profiles = useQuery({ queryKey: ["vip_profiles"], queryFn: () => getVipMemberProfiles() });
   const tariffs = useQuery({ queryKey: ["vip_tariffs"], queryFn: () => getVipTariffs() });
 
-  const profileByTelegram = new Map(
-    (profiles.data ?? []).map((p: any) => [String(p.telegram_id), p]),
-  );
+  const profileByTelegram = new Map((profiles.data ?? []).map((p) => [String(p.telegram_id), p]));
 
   const filteredSubs = useMemo(() => {
-    const list = (subs.data ?? []) as any[];
+    const list = subs.data ?? [];
     const byStatus =
       tableSearch.trim() || statusFilter === "all"
         ? list
@@ -336,7 +337,7 @@ function AdminVipSubscribers() {
                 <SelectValue placeholder="Выберите тариф" />
               </SelectTrigger>
               <SelectContent>
-                {tariffs.data?.map((t: any) => (
+                {tariffs.data?.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.name}
                   </SelectItem>
@@ -427,7 +428,7 @@ function AdminVipSubscribers() {
             </tr>
           </thead>
           <tbody>
-            {filteredSubs.map((s: any) => {
+            {filteredSubs.map((s) => {
               const profile = profileByTelegram.get(String(s.telegram_id));
               const personalTariff = profile?.vip_tariffs;
               return (
@@ -450,7 +451,10 @@ function AdminVipSubscribers() {
                       )}
                     </div>
                   </td>
-                  <td className="p-2">{s.vip_tariffs?.name || "Удалён"}</td>
+                  <td className="p-2">
+                    {(s as { vip_tariffs?: { name?: string } | null }).vip_tariffs?.name ||
+                      "Удалён"}
+                  </td>
                   <td className="p-2">
                     {(() => {
                       const pastDue =
@@ -480,7 +484,7 @@ function AdminVipSubscribers() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setProofModal({ path: s.payment_proof_path })}
+                            onClick={() => setProofModal({ path: s.payment_proof_path! })}
                           >
                             Чек
                           </Button>

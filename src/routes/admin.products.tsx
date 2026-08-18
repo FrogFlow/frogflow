@@ -208,7 +208,7 @@ function ProductsPage() {
   // useMemo, а не голое приведение: без него (products.data ?? []) — новый
   // массив на каждый рендер, пока данные ещё грузятся, и useMemo на filtered
   // ниже пересчитывался бы всякий раз вхолостую.
-  const list = useMemo(() => (products.data ?? []) as any[], [products.data]);
+  const list = useMemo(() => products.data ?? [], [products.data]);
   const [search, setSearch] = useState("");
   const [catQuery, setCatQuery] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);
@@ -220,7 +220,7 @@ function ProductsPage() {
   const [materialsKzUpload, setMaterialsKzUpload] = useState<UploadStatus | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const catsTree = useMemo(() => sortCategoriesTree((cats.data ?? []) as any[]), [cats.data]);
+  const catsTree = useMemo(() => sortCategoriesTree(cats.data ?? []), [cats.data]);
   const catsFiltered = useMemo(
     () => filterCategoriesByQuery(catsTree, catQuery),
     [catsTree, catQuery],
@@ -243,11 +243,11 @@ function ProductsPage() {
     setMaterialFilesRu([]);
     setMaterialFilesKz([]);
   }
-  function startEdit(p: any) {
+  function startEdit(p: (typeof list)[number]) {
     setEditing({
       id: p.id,
       category_id: p.category_id,
-      category_ids: p.category_ids || (p.category_id ? [p.category_id] : []),
+      category_ids: (p.category_ids as string[] | null) || (p.category_id ? [p.category_id] : []),
       name: p.name,
       description: p.description ?? "",
       keywords: p.keywords ?? "",
@@ -261,7 +261,7 @@ function ProductsPage() {
       file_name_kz: p.file_name_kz,
       file_url: p.file_url,
       file_url_kz: p.file_url_kz,
-      country_prices: p.country_prices || {},
+      country_prices: (p.country_prices as Record<string, number> | null) || {},
     });
     const imgs = (p.product_images ?? [])
       .slice()
@@ -414,7 +414,7 @@ function ProductsPage() {
                 placeholder="Поиск категории…"
               />
               <div className="border rounded-md p-2 max-h-56 overflow-y-auto space-y-1 bg-background text-sm">
-                {catsFiltered.map((c: any) => (
+                {catsFiltered.map((c) => (
                   <label key={c.id} className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -667,9 +667,9 @@ function ProductsPage() {
                     {!p.is_active && <span className="text-xs text-muted-foreground">(скрыт)</span>}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {p.category_ids && p.category_ids.length > 0
-                      ? p.category_ids
-                          .map((id: string) => getCategoryPath(id, catsTree))
+                    {p.category_ids && (p.category_ids as string[]).length > 0
+                      ? (p.category_ids as string[])
+                          .map((id) => getCategoryPath(id, catsTree))
                           .filter(Boolean)
                           .join(", ") || "без категории"
                       : p.categories?.name || "без категории"}{" "}

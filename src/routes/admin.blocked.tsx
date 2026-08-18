@@ -106,7 +106,7 @@ function BlockedUsersPage() {
     }
   }
 
-  const list = (blocked.data ?? []) as any[];
+  const list = blocked.data ?? [];
 
   return (
     <div className="space-y-6 max-w-3xl">

@@ -34,7 +34,19 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         if (!verifyZernioWebhookSignature(rawBody, signature, secret)) {
           return new Response("invalid signature", { status: 401 });
         }
-        let payload: any;
+        let payload: {
+          event?: string;
+          id?: string;
+          account?: {
+            accountId?: string;
+            id?: string;
+            _id?: string;
+            username?: string;
+            name?: string;
+          };
+          message?: { accountId?: string };
+          data?: { accountId?: string };
+        };
         try {
           payload = JSON.parse(rawBody);
         } catch {
@@ -130,10 +142,14 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
             // внутри выводят из него Idempotency-Key, чтобы повторная доставка
             // не превратилась во второе сообщение клиенту.
             await runWithZernioEvent(eventId ? String(eventId) : null, async () => {
+              // Граница доверия: тело запроса проверено секретом заголовка выше,
+              // дальше типизированная форма — то, что обработчики реально читают.
               if (eventType === "message.received") {
-                await handleZernioMessage(payload);
+                await handleZernioMessage(payload as Parameters<typeof handleZernioMessage>[0]);
               } else if (eventType === "account.disconnected") {
-                await handleZernioAccountDisconnected(payload);
+                await handleZernioAccountDisconnected(
+                  payload as Parameters<typeof handleZernioAccountDisconnected>[0],
+                );
               }
             });
 

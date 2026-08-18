@@ -1,6 +1,7 @@
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
+import { errorMessage } from "@/lib/error-message";
 import { operatorLoginFn, operatorRouteStatusFn } from "@/lib/operator/operator-auth.functions";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
@@ -36,8 +37,8 @@ function OperatorLoginPage() {
       } else {
         setError("Неверный логин или пароль");
       }
-    } catch (err: any) {
-      setError(err?.message || "Не удалось войти");
+    } catch (err: unknown) {
+      setError(errorMessage(err) || "Не удалось войти");
     } finally {
       setLoading(false);
     }

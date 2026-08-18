@@ -43,7 +43,7 @@ const statusMap: Record<string, { label: string; cls: string }> = {
 function OrdersPage() {
   const qc = useQueryClient();
   const orders = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
-  const allOrders = (orders.data ?? []) as any[];
+  const allOrders = orders.data ?? [];
   const [busy, setBusy] = useState<number | null>(null);
 
   /**
@@ -55,7 +55,8 @@ function OrdersPage() {
    * позже, чем начались продажи.
    */
   const [platform, setPlatform] = useState<"all" | "telegram" | "instagram">("all");
-  const platformOf = (order: any) => (order.platform === "instagram" ? "instagram" : "telegram");
+  const platformOf = (order: (typeof allOrders)[number]) =>
+    order.platform === "instagram" ? "instagram" : "telegram";
   const list = platform === "all" ? allOrders : allOrders.filter((o) => platformOf(o) === platform);
 
   const counts = {
@@ -97,9 +98,9 @@ function OrdersPage() {
     try {
       const res = await continueDeliveryOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
-      if ((res as any).pending) {
+      if ("pending" in res && res.pending) {
         alert(
-          `Отправлена порция файлов (${(res as any).sent}). Ещё осталось — нажмите «Продолжить» снова или дождитесь cron.`,
+          `Отправлена порция файлов (${res.sent}). Ещё осталось — нажмите «Продолжить» снова или дождитесь cron.`,
         );
       } else {
         alert(`Заказ #${displayNo} выдан полностью.`);
@@ -288,7 +289,7 @@ function OrdersPage() {
                 )}
               </div>
               <ul className="text-sm list-disc pl-5">
-                {(o.order_items ?? []).map((it: any) => (
+                {(o.order_items ?? []).map((it) => (
                   <li key={it.id}>
                     {it.name_snapshot} × {it.quantity} — {it.price_snapshot} {o.currency}
                   </li>
@@ -297,7 +298,7 @@ function OrdersPage() {
               {o.payment_proof_path && (
                 <button
                   className="inline-block text-sm text-primary underline text-left"
-                  onClick={() => onViewScreenshot(o.payment_proof_path)}
+                  onClick={() => onViewScreenshot(o.payment_proof_path!)}
                 >
                   📷 Скриншот оплаты
                 </button>

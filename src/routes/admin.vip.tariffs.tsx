@@ -13,10 +13,18 @@ import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Checkbox } from "@/components-ui/checkbox";
+import type { Tables } from "@/integrations-supabase/types";
 
 export const Route = createFileRoute("/admin/vip/tariffs")({
   component: AdminVipTariffs,
 });
+
+/** Черновик формы редактирования тарифа продления: новый ещё без id. */
+type TariffDraft = Partial<Tables<"vip_tariffs">> &
+  Pick<Tables<"vip_tariffs">, "name" | "price" | "currency" | "duration_days" | "duration_minutes">;
+
+/** Черновик формы «Первый вход»: спред ответа getVipEntryTariff + флаг схемы. */
+type EntryDraft = Partial<Tables<"vip_tariffs">> & { _needsSchema?: boolean };
 
 function tariffDeepLink(botUsername: string, tariffId: string) {
   const user = botUsername.replace(/^@/, "").trim();
@@ -30,8 +38,8 @@ function AdminVipTariffs() {
   const entryQ = useQuery({ queryKey: ["vip_entry"], queryFn: () => getVipEntryTariff() });
   const bot = useQuery({ queryKey: ["vip_bot_username"], queryFn: () => getVipBotUsername() });
 
-  const [editing, setEditing] = useState<any>(null);
-  const [entry, setEntry] = useState<any>(null);
+  const [editing, setEditing] = useState<TariffDraft | null>(null);
+  const [entry, setEntry] = useState<EntryDraft | null>(null);
   const [entrySaved, setEntrySaved] = useState(false);
 
   const botUsername = (bot.data?.username || "").replace(/^@/, "").trim();
@@ -40,9 +48,9 @@ function AdminVipTariffs() {
     if (entryQ.data) setEntry({ ...entryQ.data });
   }, [entryQ.data]);
 
-  const renewTariffs = (tariffs.data ?? []).filter((t: any) => !t.is_entry);
+  const renewTariffs = (tariffs.data ?? []).filter((t) => !t.is_entry);
 
-  const handleEdit = (t: any) =>
+  const handleEdit = (t: Tables<"vip_tariffs">) =>
     setEditing({ ...t, is_public: t.is_public !== false, is_entry: false });
   const handleNew = () =>
     setEditing({
@@ -58,14 +66,14 @@ function AdminVipTariffs() {
     });
 
   const handleSave = async () => {
-    if (!editing.name || editing.price < 0) return alert("Проверьте поля");
+    if (!editing?.name || Number(editing.price) < 0) return alert("Проверьте поля");
     await saveVipTariff({ data: { ...editing, is_entry: false } });
     setEditing(null);
     qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
   };
 
   const handleSaveEntry = async () => {
-    if (!entry?.name || entry.price < 0) return alert("Проверьте поля входа");
+    if (!entry?.name || Number(entry.price) < 0) return alert("Проверьте поля входа");
     if (entry._needsSchema) {
       return alert(
         "Сначала выполните SQL в Supabase (колонка is_entry):\n\nALTER TABLE vip_tariffs ADD COLUMN IF NOT EXISTS is_entry BOOLEAN NOT NULL DEFAULT false;",
@@ -267,7 +275,7 @@ function AdminVipTariffs() {
               <Label>Срок для тест-режима (в минутах)</Label>
               <Input
                 type="number"
-                value={editing.duration_minutes}
+                value={editing.duration_minutes ?? 0}
                 onChange={(e) =>
                   setEditing({ ...editing, duration_minutes: Number(e.target.value) })
                 }
@@ -306,7 +314,7 @@ function AdminVipTariffs() {
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => copyLink(editing.id)}
+                onClick={() => copyLink(editing.id!)}
               >
                 Скопировать ссылку
               </Button>
@@ -324,7 +332,7 @@ function AdminVipTariffs() {
       {!editing && (
         <div className="space-y-3">
           <h3 className="font-medium">Тарифы продления</h3>
-          {renewTariffs.map((t: any) => {
+          {renewTariffs.map((t) => {
             const link = tariffDeepLink(botUsername, t.id);
             const hidden = t.is_active && t.is_public === false;
             return (
