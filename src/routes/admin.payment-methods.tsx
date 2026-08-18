@@ -12,10 +12,137 @@ import {
   savePaymentMethod,
 } from "@/lib/payment-methods.functions";
 import { getSignedUploadUrl } from "@/lib/products.functions";
+import { useAdminLocale } from "@/lib/admin-locale";
+import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/payment-methods")({
   component: PaymentMethodsPage,
 });
+
+const copy: Record<
+  Locale,
+  {
+    title: string;
+    addBtn: string;
+    countryCode: string;
+    countryCodePlaceholder: string;
+    countryName: string;
+    countryNamePlaceholder: string;
+    currency: string;
+    currencyPlaceholder: string;
+    instructions: string;
+    instructionsPlaceholder: string;
+    qrLabel: string;
+    sortOrder: string;
+    active: string;
+    save: string;
+    cancel: string;
+    empty: string;
+    hidden: string;
+    editShort: string;
+    deleteShort: string;
+    confirmDelete: string;
+    qrUploadError: (msg: string) => string;
+    saveError: (msg: string) => string;
+  }
+> = {
+  ru: {
+    title: "Реквизиты по странам",
+    addBtn: "+ Добавить",
+    countryCode: "Код страны",
+    countryCodePlaceholder: "KZ, RU, KG...",
+    countryName: "Название (как будет в боте)",
+    countryNamePlaceholder: "🇰🇿 Казахстан",
+    currency: "Валюта",
+    currencyPlaceholder: "KZT, RUB, KGS, BYN, USD...",
+    instructions: "Инструкция для оплаты (что увидит покупатель)",
+    instructionsPlaceholder: "Kaspi: +7 XXX...\nHalyk: ...",
+    qrLabel: "QR-код для оплаты (опционально)",
+    sortOrder: "Порядок",
+    active: "Активен",
+    save: "Сохранить",
+    cancel: "Отмена",
+    empty: "Нет способов оплаты.",
+    hidden: " · скрыт",
+    editShort: "Изм.",
+    deleteShort: "Удал.",
+    confirmDelete: "Удалить способ оплаты?",
+    qrUploadError: (msg) => `Ошибка загрузки QR-кода: ${msg}`,
+    saveError: (msg) => `Ошибка при сохранении: ${msg}`,
+  },
+  kk: {
+    title: "Елдер бойынша төлем деректері",
+    addBtn: "+ Қосу",
+    countryCode: "Ел коды",
+    countryCodePlaceholder: "KZ, RU, KG...",
+    countryName: "Атауы (ботта көрсетілетін)",
+    countryNamePlaceholder: "🇰🇿 Қазақстан",
+    currency: "Валюта",
+    currencyPlaceholder: "KZT, RUB, KGS, BYN, USD...",
+    instructions: "Төлем нұсқаулығы (сатып алушы көретін мәтін)",
+    instructionsPlaceholder: "Kaspi: +7 XXX...\nHalyk: ...",
+    qrLabel: "Төлем үшін QR-код (міндетті емес)",
+    sortOrder: "Реті",
+    active: "Белсенді",
+    save: "Сақтау",
+    cancel: "Бас тарту",
+    empty: "Төлем әдістері жоқ.",
+    hidden: " · жасырын",
+    editShort: "Өзг.",
+    deleteShort: "Жою",
+    confirmDelete: "Төлем әдісін жою керек пе?",
+    qrUploadError: (msg) => `QR-кодты жүктеу қатесі: ${msg}`,
+    saveError: (msg) => `Сақтау кезінде қате: ${msg}`,
+  },
+  en: {
+    title: "Payment details by country",
+    addBtn: "+ Add",
+    countryCode: "Country code",
+    countryCodePlaceholder: "KZ, RU, KG...",
+    countryName: "Name (shown in the bot)",
+    countryNamePlaceholder: "🇰🇿 Kazakhstan",
+    currency: "Currency",
+    currencyPlaceholder: "KZT, RUB, KGS, BYN, USD...",
+    instructions: "Payment instructions (what the buyer will see)",
+    instructionsPlaceholder: "Kaspi: +7 XXX...\nHalyk: ...",
+    qrLabel: "Payment QR code (optional)",
+    sortOrder: "Order",
+    active: "Active",
+    save: "Save",
+    cancel: "Cancel",
+    empty: "No payment methods yet.",
+    hidden: " · hidden",
+    editShort: "Edit",
+    deleteShort: "Delete",
+    confirmDelete: "Delete this payment method?",
+    qrUploadError: (msg) => `Failed to upload the QR code: ${msg}`,
+    saveError: (msg) => `Failed to save: ${msg}`,
+  },
+  uz: {
+    title: "Mamlakatlar bo‘yicha to‘lov ma’lumotlari",
+    addBtn: "+ Qo‘shish",
+    countryCode: "Mamlakat kodi",
+    countryCodePlaceholder: "KZ, RU, KG...",
+    countryName: "Nomi (botda ko‘rinadigan)",
+    countryNamePlaceholder: "🇰🇿 Qozog‘iston",
+    currency: "Valyuta",
+    currencyPlaceholder: "KZT, RUB, KGS, BYN, USD...",
+    instructions: "To‘lov yo‘riqnomasi (xaridor ko‘radigan matn)",
+    instructionsPlaceholder: "Kaspi: +7 XXX...\nHalyk: ...",
+    qrLabel: "To‘lov uchun QR-kod (ixtiyoriy)",
+    sortOrder: "Tartib",
+    active: "Faol",
+    save: "Saqlash",
+    cancel: "Bekor qilish",
+    empty: "To‘lov usullari yo‘q.",
+    hidden: " · yashirin",
+    editShort: "Tahr.",
+    deleteShort: "O‘chir.",
+    confirmDelete: "To‘lov usulini o‘chirasizmi?",
+    qrUploadError: (msg) => `QR-kodni yuklashda xato: ${msg}`,
+    saveError: (msg) => `Saqlashda xato: ${msg}`,
+  },
+};
 
 type PM = {
   id?: string;
@@ -53,6 +180,8 @@ async function uploadFile(file: File) {
 }
 
 function PaymentMethodsPage() {
+  const { locale } = useAdminLocale();
+  const tr = copy[locale];
   const qc = useQueryClient();
   const methods = useQuery({ queryKey: ["payment-methods"], queryFn: () => listPaymentMethods() });
   const list = (methods.data ?? []) as PM[];
@@ -64,7 +193,7 @@ function PaymentMethodsPage() {
       const r = await uploadFile(file);
       setEditing((prev) => (prev ? { ...prev, qr_code_path: r.path } : prev));
     } catch (e: unknown) {
-      alert("Ошибка загрузки QR-кода: " + errorMessage(e));
+      alert(tr.qrUploadError(errorMessage(e)));
     }
   }
 
@@ -75,11 +204,11 @@ function PaymentMethodsPage() {
       setEditing(null);
       qc.invalidateQueries({ queryKey: ["payment-methods"] });
     } catch (e: unknown) {
-      alert("Ошибка при сохранении: " + errorMessage(e));
+      alert(tr.saveError(errorMessage(e)));
     }
   }
   async function onDelete(id: string) {
-    if (!confirm("Удалить способ оплаты?")) return;
+    if (!confirm(tr.confirmDelete)) return;
     await deletePaymentMethod({ data: { id } });
     qc.invalidateQueries({ queryKey: ["payment-methods"] });
   }
@@ -87,51 +216,51 @@ function PaymentMethodsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Реквизиты по странам</h1>
-        {!editing && <Button onClick={() => setEditing({ ...empty })}>+ Добавить</Button>}
+        <h1 className="text-2xl font-semibold">{tr.title}</h1>
+        {!editing && <Button onClick={() => setEditing({ ...empty })}>{tr.addBtn}</Button>}
       </div>
 
       {editing && (
         <div className="bg-card border rounded-lg p-4 space-y-3">
           <div className="grid md:grid-cols-3 gap-3">
             <div className="space-y-2">
-              <Label>Код страны</Label>
+              <Label>{tr.countryCode}</Label>
               <Input
                 value={editing.country_code}
                 onChange={(e) =>
                   setEditing({ ...editing, country_code: e.target.value.toUpperCase() })
                 }
-                placeholder="KZ, RU, KG..."
+                placeholder={tr.countryCodePlaceholder}
               />
             </div>
             <div className="space-y-2">
-              <Label>Название (как будет в боте)</Label>
+              <Label>{tr.countryName}</Label>
               <Input
                 value={editing.country_name}
                 onChange={(e) => setEditing({ ...editing, country_name: e.target.value })}
-                placeholder="🇰🇿 Казахстан"
+                placeholder={tr.countryNamePlaceholder}
               />
             </div>
             <div className="space-y-2">
-              <Label>Валюта</Label>
+              <Label>{tr.currency}</Label>
               <Input
                 value={editing.currency}
                 onChange={(e) => setEditing({ ...editing, currency: e.target.value.toUpperCase() })}
-                placeholder="KZT, RUB, KGS, BYN, USD..."
+                placeholder={tr.currencyPlaceholder}
               />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Инструкция для оплаты (что увидит покупатель)</Label>
+            <Label>{tr.instructions}</Label>
             <Textarea
               rows={6}
               value={editing.instructions}
               onChange={(e) => setEditing({ ...editing, instructions: e.target.value })}
-              placeholder="Kaspi: +7 XXX...&#10;Halyk: ..."
+              placeholder={tr.instructionsPlaceholder}
             />
           </div>
           <div className="space-y-2">
-            <Label>QR-код для оплаты (опционально)</Label>
+            <Label>{tr.qrLabel}</Label>
             <Input
               type="file"
               accept="image/*"
@@ -156,7 +285,7 @@ function PaymentMethodsPage() {
           </div>
           <div className="grid md:grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Порядок</Label>
+              <Label>{tr.sortOrder}</Label>
               <Input
                 type="number"
                 value={editing.sort_order}
@@ -169,22 +298,20 @@ function PaymentMethodsPage() {
                 checked={editing.is_active}
                 onChange={(e) => setEditing({ ...editing, is_active: e.target.checked })}
               />
-              Активен
+              {tr.active}
             </label>
           </div>
           <div className="flex gap-2">
-            <Button onClick={onSave}>Сохранить</Button>
+            <Button onClick={onSave}>{tr.save}</Button>
             <Button variant="outline" onClick={() => setEditing(null)}>
-              Отмена
+              {tr.cancel}
             </Button>
           </div>
         </div>
       )}
 
       <div className="bg-card border rounded-lg divide-y">
-        {list.length === 0 && (
-          <div className="p-4 text-sm text-muted-foreground">Нет способов оплаты.</div>
-        )}
+        {list.length === 0 && <div className="p-4 text-sm text-muted-foreground">{tr.empty}</div>}
         {list.map((m) => (
           <div key={m.id} className="p-3 flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
@@ -192,7 +319,7 @@ function PaymentMethodsPage() {
                 {m.country_name}{" "}
                 <span className="text-xs text-muted-foreground">[{m.country_code}]</span>
                 <span className="text-xs text-muted-foreground"> · {m.currency}</span>
-                {!m.is_active && <span className="text-xs text-muted-foreground"> · скрыт</span>}
+                {!m.is_active && <span className="text-xs text-muted-foreground">{tr.hidden}</span>}
               </div>
               <pre className="text-xs text-muted-foreground whitespace-pre-wrap mt-1 font-sans">
                 {m.instructions}
@@ -200,10 +327,10 @@ function PaymentMethodsPage() {
             </div>
             <div className="flex gap-1 shrink-0">
               <Button size="sm" variant="outline" onClick={() => setEditing(m)}>
-                Изм.
+                {tr.editShort}
               </Button>
               <Button size="sm" variant="destructive" onClick={() => onDelete(m.id!)}>
-                Удал.
+                {tr.deleteShort}
               </Button>
             </div>
           </div>

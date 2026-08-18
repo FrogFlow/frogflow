@@ -12,6 +12,7 @@ import { adminCheck, adminLogout } from "@/lib/admin.functions";
 import { Button } from "@/components-ui/button";
 import { useModules } from "@/lib/modules/use-modules";
 import { localeNames, SUPPORTED_LOCALES, t, type Locale } from "@/lib/i18n";
+import { AdminLocaleContext } from "@/lib/admin-locale";
 import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/admin")({
@@ -41,71 +42,73 @@ function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      <header className="border-b bg-card">
-        <div className="max-w-7xl mx-auto px-4 min-h-[3.5rem] py-2 flex items-center justify-between gap-4">
-          {/*
-            Переносим пункты на новую строку, а не прячем в горизонтальный
-            скролл. Ширина меню зависит от того, сколько модулей НЕ куплено:
-            заблокированный пункт несёт ещё и замок, поэтому у клиента с одним
-            магазином меню шире, чем у клиента со всеми модулями. Скрытая
-            прокрутка в такой ситуации просто съедала «Настройки».
-          */}
-          <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1">
-            <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground">
-              {t("adminPanel", locale)}
+    <AdminLocaleContext.Provider value={{ locale, changeLocale }}>
+      <div className="min-h-screen bg-muted/30">
+        <header className="border-b bg-card">
+          <div className="max-w-7xl mx-auto px-4 min-h-[3.5rem] py-2 flex items-center justify-between gap-4">
+            {/*
+              Переносим пункты на новую строку, а не прячем в горизонтальный
+              скролл. Ширина меню зависит от того, сколько модулей НЕ куплено:
+              заблокированный пункт несёт ещё и замок, поэтому у клиента с одним
+              магазином меню шире, чем у клиента со всеми модулями. Скрытая
+              прокрутка в такой ситуации просто съедала «Настройки».
+            */}
+            <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1">
+              <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground">
+                {t("adminPanel", locale)}
+              </div>
+              <NavLink to="/admin">{t("dashboard", locale)}</NavLink>
+              <NavLink to="/admin/categories">{t("categories", locale)}</NavLink>
+              <NavLink to="/admin/products">{t("products", locale)}</NavLink>
+              <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
+              <NavLink to="/admin/broadcast">{t("broadcast", locale)}</NavLink>
+              <NavLink to="/admin/payment-methods">{t("payments", locale)}</NavLink>
+              {modules.instagram ? (
+                <NavLink to="/admin/instagram">Instagram</NavLink>
+              ) : (
+                <LockedNavLink locale={locale}>Instagram</LockedNavLink>
+              )}
+              {modules.vip ? (
+                <NavLink to="/admin/vip">{t("vip", locale)}</NavLink>
+              ) : (
+                <LockedNavLink locale={locale}>{t("vip", locale)}</LockedNavLink>
+              )}
+              {modules.blocked ? (
+                <NavLink to="/admin/blocked">{t("blocked", locale)}</NavLink>
+              ) : (
+                <LockedNavLink locale={locale}>{t("blocked", locale)}</LockedNavLink>
+              )}
+              <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
             </div>
-            <NavLink to="/admin">{t("dashboard", locale)}</NavLink>
-            <NavLink to="/admin/categories">{t("categories", locale)}</NavLink>
-            <NavLink to="/admin/products">{t("products", locale)}</NavLink>
-            <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
-            <NavLink to="/admin/broadcast">{t("broadcast", locale)}</NavLink>
-            <NavLink to="/admin/payment-methods">{t("payments", locale)}</NavLink>
-            {modules.instagram ? (
-              <NavLink to="/admin/instagram">Instagram</NavLink>
-            ) : (
-              <LockedNavLink>Instagram</LockedNavLink>
-            )}
-            {modules.vip ? (
-              <NavLink to="/admin/vip">{t("vip", locale)}</NavLink>
-            ) : (
-              <LockedNavLink>{t("vip", locale)}</LockedNavLink>
-            )}
-            {modules.blocked ? (
-              <NavLink to="/admin/blocked">{t("blocked", locale)}</NavLink>
-            ) : (
-              <LockedNavLink>{t("blocked", locale)}</LockedNavLink>
-            )}
-            <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
+            <select
+              aria-label={t("language", locale)}
+              value={locale}
+              onChange={(e) => changeLocale(e.target.value as Locale)}
+              className="h-8 rounded-md border bg-background px-2 text-sm"
+            >
+              {SUPPORTED_LOCALES.map((code) => (
+                <option key={code} value={code}>
+                  {localeNames[code]}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={async () => {
+                await logout();
+                await router.navigate({ to: "/login" });
+              }}
+            >
+              {t("logout", locale)}
+            </Button>
           </div>
-          <select
-            aria-label={t("language", locale)}
-            value={locale}
-            onChange={(e) => changeLocale(e.target.value as Locale)}
-            className="h-8 rounded-md border bg-background px-2 text-sm"
-          >
-            {SUPPORTED_LOCALES.map((code) => (
-              <option key={code} value={code}>
-                {localeNames[code]}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={async () => {
-              await logout();
-              await router.navigate({ to: "/login" });
-            }}
-          >
-            {t("logout", locale)}
-          </Button>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto p-4 md:p-6">
-        <Outlet />
-      </main>
-    </div>
+        </header>
+        <main className="max-w-7xl mx-auto p-4 md:p-6">
+          <Outlet />
+        </main>
+      </div>
+    </AdminLocaleContext.Provider>
   );
 }
 
@@ -123,18 +126,16 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
 }
 
 /** Non-clickable stand-in for a nav item whose module isn't part of this client's package yet. */
-function LockedNavLink({ children }: { children: React.ReactNode }) {
+function LockedNavLink({ children, locale }: { children: React.ReactNode; locale: Locale }) {
   return (
     <span
       role="button"
       aria-disabled="true"
-      title="Модуль не подключён. Чтобы активировать — свяжитесь с администратором."
+      title={t("moduleLocked", locale)}
       className="px-2.5 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
       onClick={(e) => {
         e.preventDefault();
-        alert(
-          "Этот раздел не подключён к вашему тарифу.\nЧтобы активировать — свяжитесь с администратором.",
-        );
+        alert(t("moduleLockedAlert", locale));
       }}
     >
       {children}

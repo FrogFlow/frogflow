@@ -29,6 +29,8 @@ import {
   SelectValue,
 } from "@/components-ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components-ui/dialog";
+import { useAdminLocale } from "@/lib/admin-locale";
+import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/vip/subscribers")({
   component: AdminVipSubscribers,
@@ -54,7 +56,358 @@ function matchesSearch(
   );
 }
 
+// Примечание: даты форматируются через formatDateTimeRu() (src/lib/datetime.ts) —
+// эта функция общая с ботом (vip-bot.server.ts, vip-subscriptions.functions.ts,
+// vip-cron.server.ts) и намеренно не тронута, чтобы не расходиться с форматом
+// дат в сообщениях бота.
+
+const copy: Record<
+  Locale,
+  {
+    title: string;
+    addManualBtn: string;
+    cancelBtn: string;
+    addManualTitle: string;
+    addManualHint: string;
+    findLabel: string;
+    findPlaceholder: string;
+    idLabel: string;
+    idPlaceholder: string;
+    checkInTelegramBtn: string;
+    tariffLabel: string;
+    tariffPlaceholder: string;
+    daysLabel: string;
+    saveBtn: string;
+    searchPlaceholder: string;
+    searchAllHint: string;
+    filterAll: string;
+    filterActive: string;
+    filterPending: string;
+    filterExpired: string;
+    filterCancelled: string;
+    colUser: string;
+    colTariff: string;
+    colStatus: string;
+    colExpires: string;
+    colActions: string;
+    importedTag: string;
+    personalTariffTag: (price: number, currency: string) => string;
+    tariffDeleted: string;
+    statusActive: string;
+    statusPastDue: string;
+    statusPending: string;
+    statusExpired: string;
+    statusCancelled: string;
+    receiptBtn: string;
+    confirmBtn: string;
+    rejectBtn: string;
+    extendBtn: string;
+    excludeBtn: string;
+    blockBtn: string;
+    deleteBtn: string;
+    nothingFound: string;
+    receiptModalTitle: string;
+    unsupportedFormat: string;
+    downloadReceipt: string;
+    unknown: string;
+    invalidTelegramId: string;
+    foundInGroup: (name: string, status: string) => string;
+    genericError: (msg: string) => string;
+    fillIdAndTariff: string;
+    memberAdded: string;
+    memberAddedInvite: string;
+    confirmPaymentPrompt: string;
+    rejectPaymentPrompt: string;
+    extendPrompt: string;
+    extendInvalid: string;
+    extendReduceConfirm: (days: number) => string;
+    excludeConfirm: string;
+    blockConfirm: (id: number) => string;
+    blockReason: string;
+    deleteConfirm: string;
+  }
+> = {
+  ru: {
+    title: "Подписчики VIP",
+    addManualBtn: "+ Добавить вручную (Импорт)",
+    cancelBtn: "Отмена",
+    addManualTitle: "Добавление участника вручную",
+    addManualHint:
+      "После добавления запись появится во вкладке «Активные». Бот отправит ссылку, если пользователь ещё не в группе (нужно чтобы человек хотя бы раз писал VIP-боту).",
+    findLabel: "Найти в базе (ID, @username, имя)",
+    findPlaceholder: "Иван или @username",
+    idLabel: "Telegram ID участника",
+    idPlaceholder: "Например: 123456789",
+    checkInTelegramBtn: "Проверить в Telegram",
+    tariffLabel: "Тариф",
+    tariffPlaceholder: "Выберите тариф",
+    daysLabel: "Дней до истечения (остаток)",
+    saveBtn: "Сохранить",
+    searchPlaceholder: "Поиск: ID, @username, имя…",
+    searchAllHint: "Поиск по всей базе подписок (все статусы)",
+    filterAll: "Все",
+    filterActive: "Активные",
+    filterPending: "Ожидают проверки",
+    filterExpired: "Истёкшие",
+    filterCancelled: "Отклонённые",
+    colUser: "Пользователь",
+    colTariff: "Тариф",
+    colStatus: "Статус",
+    colExpires: "Истекает",
+    colActions: "Действия",
+    importedTag: "импорт",
+    personalTariffTag: (price, currency) => `личный тариф: ${price} ${currency}`,
+    tariffDeleted: "Удалён",
+    statusActive: "Активен",
+    statusPastDue: "Истёк (ожидает кик)",
+    statusPending: "Ожидает",
+    statusExpired: "Истёк",
+    statusCancelled: "Отклонён",
+    receiptBtn: "Чек",
+    confirmBtn: "Подтвердить",
+    rejectBtn: "Отклонить",
+    extendBtn: "Срок ±",
+    excludeBtn: "Исключить",
+    blockBtn: "Заблокировать",
+    deleteBtn: "Удалить",
+    nothingFound: "Ничего не найдено.",
+    receiptModalTitle: "Чек оплаты VIP",
+    unsupportedFormat: "Формат не поддерживается для предпросмотра.",
+    downloadReceipt: "Скачать чек",
+    unknown: "—",
+    invalidTelegramId: "Введите корректный Telegram ID (только цифры)",
+    foundInGroup: (name, status) => `Найден в группе: ${name} · статус: ${status}`,
+    genericError: (msg) => `Ошибка: ${msg}`,
+    fillIdAndTariff: "Заполните ID и выберите тариф",
+    memberAdded: "Подписчик добавлен. Смотрите вкладку «Активные».",
+    memberAddedInvite: "Пользователю отправлена ссылка для вступления.",
+    confirmPaymentPrompt: "Подтвердить оплату и выдать доступ?",
+    rejectPaymentPrompt: "Отклонить оплату? Пользователь получит уведомление в VIP-боте.",
+    extendPrompt:
+      "Изменить срок (дни):\n+ число — продлить (например 2)\n− число — уменьшить (например -3)",
+    extendInvalid: "Укажите целое число дней, не ноль (например 5 или -2)",
+    extendReduceConfirm: (days) =>
+      `Уменьшить срок на ${days} дн.?\nЕсли дата окажется в прошлом — подписка станет «Истёк» и доступ к группе закроется.`,
+    excludeConfirm:
+      "Исключить из VIP-сообщества?\n\nЧеловека кикнут из группы, активные подписки станут «Истёкшие», он получит сообщение в боте.",
+    blockConfirm: (id) =>
+      `Заблокировать пользователя ${id} навсегда?\n\nБот перестанет отвечать, доступ к VIP-группе закроется, подписки и незавершённые заказы отменятся.`,
+    blockReason: "заблокирован из VIP-подписчиков",
+    deleteConfirm:
+      "Удалить подписку?\n\nЕсли у человека больше не останется записей — бот забудет его (личный тариф и «уже был в VIP»), и снова покажет «Первый вход».\n\nДля кика из группы лучше «Исключить». Для полного запрета — «Заблокировать».",
+  },
+  kk: {
+    title: "VIP жазылушылары",
+    addManualBtn: "+ Қолмен қосу (Импорт)",
+    cancelBtn: "Бас тарту",
+    addManualTitle: "Қатысушыны қолмен қосу",
+    addManualHint:
+      "Қосылғаннан кейін жазба «Белсенді» бөлімінде пайда болады. Пайдаланушы топта әлі болмаса, бот сілтеме жібереді (адам VIP-ботқа кемінде бір рет жазуы керек).",
+    findLabel: "Базадан табу (ID, @username, аты)",
+    findPlaceholder: "Иван немесе @username",
+    idLabel: "Қатысушының Telegram ID",
+    idPlaceholder: "Мысалы: 123456789",
+    checkInTelegramBtn: "Telegram-нан тексеру",
+    tariffLabel: "Тариф",
+    tariffPlaceholder: "Тарифті таңдаңыз",
+    daysLabel: "Мерзімі бітуге дейінгі күн (қалдық)",
+    saveBtn: "Сақтау",
+    searchPlaceholder: "Іздеу: ID, @username, аты…",
+    searchAllHint: "Барлық жазылым базасы бойынша іздеу (барлық статустар)",
+    filterAll: "Барлығы",
+    filterActive: "Белсенді",
+    filterPending: "Тексеруді күтуде",
+    filterExpired: "Мерзімі өткен",
+    filterCancelled: "Қабылданбаған",
+    colUser: "Пайдаланушы",
+    colTariff: "Тариф",
+    colStatus: "Мәртебесі",
+    colExpires: "Аяқталады",
+    colActions: "Әрекеттер",
+    importedTag: "импорт",
+    personalTariffTag: (price, currency) => `жеке тариф: ${price} ${currency}`,
+    tariffDeleted: "Жойылған",
+    statusActive: "Белсенді",
+    statusPastDue: "Мерзімі өтті (кикті күтуде)",
+    statusPending: "Күтуде",
+    statusExpired: "Мерзімі өтті",
+    statusCancelled: "Қабылданбады",
+    receiptBtn: "Чек",
+    confirmBtn: "Растау",
+    rejectBtn: "Қабылдамау",
+    extendBtn: "Мерзімі ±",
+    excludeBtn: "Шығару",
+    blockBtn: "Бұғаттау",
+    deleteBtn: "Жою",
+    nothingFound: "Ештеңе табылмады.",
+    receiptModalTitle: "VIP төлем чегі",
+    unsupportedFormat: "Алдын ала қарау үшін формат қолдау таппайды.",
+    downloadReceipt: "Чекті жүктеп алу",
+    unknown: "—",
+    invalidTelegramId: "Дұрыс Telegram ID енгізіңіз (тек сандар)",
+    foundInGroup: (name, status) => `Топта табылды: ${name} · мәртебесі: ${status}`,
+    genericError: (msg) => `Қате: ${msg}`,
+    fillIdAndTariff: "ID толтырып, тарифті таңдаңыз",
+    memberAdded: "Жазылушы қосылды. «Белсенді» бөлімін қараңыз.",
+    memberAddedInvite: "Пайдаланушыға кіру сілтемесі жіберілді.",
+    confirmPaymentPrompt: "Төлемді растап, қолжетімділік беру керек пе?",
+    rejectPaymentPrompt: "Төлемді қабылдамау керек пе? Пайдаланушы VIP-ботта хабарлама алады.",
+    extendPrompt:
+      "Мерзімді өзгерту (күн):\n+ сан — ұзарту (мысалы 2)\n− сан — қысқарту (мысалы -3)",
+    extendInvalid: "Бүтін сан енгізіңіз, нөл болмасын (мысалы 5 немесе -2)",
+    extendReduceConfirm: (days) =>
+      `Мерзімді ${days} күнге қысқарту керек пе?\nКүн өткенде болса — жазылым «Мерзімі өтті» болады және топқа қолжетімділік жабылады.`,
+    excludeConfirm:
+      "VIP-қоғамдастықтан шығару керек пе?\n\nАдам топтан кикке ұшырайды, белсенді жазылымдар «Мерзімі өткен» болады, ол ботта хабарлама алады.",
+    blockConfirm: (id) =>
+      `${id} пайдаланушысын мәңгіге бұғаттау керек пе?\n\nБот жауап беруді тоқтатады, VIP-топқа қолжетімділік жабылады, жазылымдар мен аяқталмаған тапсырыстар бас тартылады.`,
+    blockReason: "VIP жазылушыларынан бұғатталды",
+    deleteConfirm:
+      "Жазылымды жою керек пе?\n\nАдамда басқа жазба қалмаса — бот оны ұмытады (жеке тариф және «VIP-те болған»), қайта «Алғашқы кіру» көрсетіледі.\n\nТоптан кику үшін «Шығару» жақсырақ. Толық тыйым үшін — «Бұғаттау».",
+  },
+  en: {
+    title: "VIP subscribers",
+    addManualBtn: "+ Add manually (import)",
+    cancelBtn: "Cancel",
+    addManualTitle: "Add a member manually",
+    addManualHint:
+      'After adding, the record appears under "Active". The bot will send an invite link if the user isn\'t in the group yet (they need to have messaged the VIP bot at least once).',
+    findLabel: "Find in the database (ID, @username, name)",
+    findPlaceholder: "John or @username",
+    idLabel: "Member's Telegram ID",
+    idPlaceholder: "e.g. 123456789",
+    checkInTelegramBtn: "Check in Telegram",
+    tariffLabel: "Plan",
+    tariffPlaceholder: "Choose a plan",
+    daysLabel: "Days remaining until expiry",
+    saveBtn: "Save",
+    searchPlaceholder: "Search: ID, @username, name…",
+    searchAllHint: "Searching the whole subscription database (all statuses)",
+    filterAll: "All",
+    filterActive: "Active",
+    filterPending: "Awaiting review",
+    filterExpired: "Expired",
+    filterCancelled: "Rejected",
+    colUser: "User",
+    colTariff: "Plan",
+    colStatus: "Status",
+    colExpires: "Expires",
+    colActions: "Actions",
+    importedTag: "imported",
+    personalTariffTag: (price, currency) => `personal plan: ${price} ${currency}`,
+    tariffDeleted: "Deleted",
+    statusActive: "Active",
+    statusPastDue: "Expired (kick pending)",
+    statusPending: "Pending",
+    statusExpired: "Expired",
+    statusCancelled: "Rejected",
+    receiptBtn: "Receipt",
+    confirmBtn: "Confirm",
+    rejectBtn: "Reject",
+    extendBtn: "Duration ±",
+    excludeBtn: "Exclude",
+    blockBtn: "Block",
+    deleteBtn: "Delete",
+    nothingFound: "Nothing found.",
+    receiptModalTitle: "VIP payment receipt",
+    unsupportedFormat: "This format can't be previewed.",
+    downloadReceipt: "Download receipt",
+    unknown: "—",
+    invalidTelegramId: "Enter a valid Telegram ID (digits only)",
+    foundInGroup: (name, status) => `Found in the group: ${name} · status: ${status}`,
+    genericError: (msg) => `Error: ${msg}`,
+    fillIdAndTariff: "Fill in the ID and choose a plan",
+    memberAdded: 'Subscriber added. See the "Active" tab.',
+    memberAddedInvite: "An invite link was sent to the user.",
+    confirmPaymentPrompt: "Confirm payment and grant access?",
+    rejectPaymentPrompt: "Reject the payment? The user will be notified in the VIP bot.",
+    extendPrompt:
+      "Change the duration (days):\n+ number — extend (e.g. 2)\n− number — shorten (e.g. -3)",
+    extendInvalid: "Enter a non-zero whole number of days (e.g. 5 or -2)",
+    extendReduceConfirm: (days) =>
+      `Shorten the duration by ${days} day(s)?\nIf the date ends up in the past, the subscription will become "Expired" and group access will be revoked.`,
+    excludeConfirm:
+      'Exclude from the VIP community?\n\nThe person will be kicked from the group, active subscriptions will become "Expired", and they\'ll get a message in the bot.',
+    blockConfirm: (id) =>
+      `Permanently block user ${id}?\n\nThe bot will stop responding, VIP group access will be revoked, and subscriptions and unfinished orders will be cancelled.`,
+    blockReason: "blocked from VIP subscribers",
+    deleteConfirm:
+      'Delete this subscription?\n\nIf the person has no other records left, the bot will forget them (personal plan and "already had VIP"), and show "First entry" again.\n\nFor kicking from the group, "Exclude" is better. For a full ban, use "Block".',
+  },
+  uz: {
+    title: "VIP obunachilari",
+    addManualBtn: "+ Qo‘lda qo‘shish (import)",
+    cancelBtn: "Bekor qilish",
+    addManualTitle: "A’zoni qo‘lda qo‘shish",
+    addManualHint:
+      "Qo‘shilgandan keyin yozuv «Faol» bo‘limida paydo bo‘ladi. Foydalanuvchi hali guruhda bo‘lmasa, bot taklif havolasini yuboradi (odam VIP-botga kamida bir marta yozgan bo‘lishi kerak).",
+    findLabel: "Bazadan topish (ID, @username, ism)",
+    findPlaceholder: "Ivan yoki @username",
+    idLabel: "A’zoning Telegram ID",
+    idPlaceholder: "Masalan: 123456789",
+    checkInTelegramBtn: "Telegram’da tekshirish",
+    tariffLabel: "Tarif",
+    tariffPlaceholder: "Tarifni tanlang",
+    daysLabel: "Muddati tugashiga qolgan kun",
+    saveBtn: "Saqlash",
+    searchPlaceholder: "Qidiruv: ID, @username, ism…",
+    searchAllHint: "Barcha obuna bazasi bo‘yicha qidiruv (barcha holatlar)",
+    filterAll: "Barchasi",
+    filterActive: "Faol",
+    filterPending: "Tekshiruvni kutmoqda",
+    filterExpired: "Muddati o‘tgan",
+    filterCancelled: "Rad etilgan",
+    colUser: "Foydalanuvchi",
+    colTariff: "Tarif",
+    colStatus: "Holati",
+    colExpires: "Tugaydi",
+    colActions: "Amallar",
+    importedTag: "import",
+    personalTariffTag: (price, currency) => `shaxsiy tarif: ${price} ${currency}`,
+    tariffDeleted: "O‘chirilgan",
+    statusActive: "Faol",
+    statusPastDue: "Muddati o‘tdi (kick kutilmoqda)",
+    statusPending: "Kutmoqda",
+    statusExpired: "Muddati o‘tdi",
+    statusCancelled: "Rad etildi",
+    receiptBtn: "Chek",
+    confirmBtn: "Tasdiqlash",
+    rejectBtn: "Rad etish",
+    extendBtn: "Muddat ±",
+    excludeBtn: "Chiqarish",
+    blockBtn: "Bloklash",
+    deleteBtn: "O‘chirish",
+    nothingFound: "Hech narsa topilmadi.",
+    receiptModalTitle: "VIP to‘lov cheki",
+    unsupportedFormat: "Bu format oldindan ko‘rish uchun qo‘llab-quvvatlanmaydi.",
+    downloadReceipt: "Chekni yuklab olish",
+    unknown: "—",
+    invalidTelegramId: "To‘g‘ri Telegram ID kiriting (faqat raqamlar)",
+    foundInGroup: (name, status) => `Guruhda topildi: ${name} · holati: ${status}`,
+    genericError: (msg) => `Xato: ${msg}`,
+    fillIdAndTariff: "ID’ni to‘ldiring va tarifni tanlang",
+    memberAdded: "Obunachi qo‘shildi. «Faol» bo‘limini qarang.",
+    memberAddedInvite: "Foydalanuvchiga kirish havolasi yuborildi.",
+    confirmPaymentPrompt: "To‘lovni tasdiqlab, kirishni berasizmi?",
+    rejectPaymentPrompt: "To‘lovni rad etasizmi? Foydalanuvchi VIP-botda xabar oladi.",
+    extendPrompt:
+      "Muddatni o‘zgartirish (kun):\n+ son — uzaytirish (masalan 2)\n− son — qisqartirish (masalan -3)",
+    extendInvalid: "Nol bo‘lmagan butun son kiriting (masalan 5 yoki -2)",
+    extendReduceConfirm: (days) =>
+      `Muddatni ${days} kunga qisqartirasizmi?\nAgar sana o‘tmishda bo‘lib qolsa — obuna «Muddati o‘tgan» bo‘ladi va guruhga kirish yopiladi.`,
+    excludeConfirm:
+      "VIP hamjamiyatidan chiqarasizmi?\n\nOdam guruhdan chiqariladi, faol obunalar «Muddati o‘tgan» bo‘ladi, u botda xabar oladi.",
+    blockConfirm: (id) =>
+      `${id} foydalanuvchisini butunlay bloklaysizmi?\n\nBot javob berishni to‘xtatadi, VIP-guruhga kirish yopiladi, obunalar va tugallanmagan buyurtmalar bekor qilinadi.`,
+    blockReason: "VIP obunachilaridan bloklandi",
+    deleteConfirm:
+      "Obunani o‘chirasizmi?\n\nOdamda boshqa yozuv qolmasa — bot uni unutadi (shaxsiy tarif va «avval VIP’da bo‘lgan»), yana «Birinchi kirish» ko‘rsatiladi.\n\nGuruhdan chiqarish uchun «Chiqarish» yaxshiroq. To‘liq taqiqlash uchun — «Bloklash».",
+  },
+};
+
 function AdminVipSubscribers() {
+  const { locale } = useAdminLocale();
+  const tr = copy[locale];
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState("pending_payment");
   const [tableSearch, setTableSearch] = useState("");
@@ -116,26 +469,25 @@ function AdminVipSubscribers() {
   const handleLookupManualId = async () => {
     const id = manualData.telegram_id.trim();
     if (!/^\d{5,15}$/.test(id)) {
-      return alert("Введите корректный Telegram ID (только цифры)");
+      return alert(tr.invalidTelegramId);
     }
     setManualLookupLoading(true);
     setManualLookupHint(null);
     try {
       const row = await lookupVipGroupMemberFn({ data: { telegram_id: id } });
-      const name = [row.first_name, row.last_name].filter(Boolean).join(" ") || "—";
+      const name = [row.first_name, row.last_name].filter(Boolean).join(" ") || tr.unknown;
       setManualLookupHint(
-        `Найден в группе: ${name}${row.username ? ` @${row.username}` : ""} · статус: ${row.member_status}`,
+        tr.foundInGroup(`${name}${row.username ? ` @${row.username}` : ""}`, row.member_status),
       );
     } catch (e: unknown) {
-      alert("Ошибка: " + errorMessage(e));
+      alert(tr.genericError(errorMessage(e)));
     } finally {
       setManualLookupLoading(false);
     }
   };
 
   const handleAddManual = async () => {
-    if (!manualData.telegram_id || !manualData.tariff_id)
-      return alert("Заполните ID и выберите тариф");
+    if (!manualData.telegram_id || !manualData.tariff_id) return alert(tr.fillIdAndTariff);
     const days = Number.isFinite(manualData.days) && manualData.days >= 1 ? manualData.days : 30;
     try {
       const res = await addVipSubscriptionManual({
@@ -149,71 +501,61 @@ function AdminVipSubscribers() {
       setStatusFilter("active");
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
       const msg =
-        "Подписчик добавлен. Смотрите вкладку «Активные»." +
+        tr.memberAdded +
         (res.warning ? `\n\n⚠ ${res.warning}` : "") +
-        (res.inviteSent ? "\n\nПользователю отправлена ссылка для вступления." : "");
+        (res.inviteSent ? `\n\n${tr.memberAddedInvite}` : "");
       alert(msg);
     } catch (e: unknown) {
-      alert("Ошибка: " + errorMessage(e));
+      alert(tr.genericError(errorMessage(e)));
     }
   };
 
   const handleConfirm = async (id: string) => {
-    if (!confirm("Подтвердить оплату и выдать доступ?")) return;
+    if (!confirm(tr.confirmPaymentPrompt)) return;
     try {
       await confirmVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert("Ошибка: " + errorMessage(e));
+      alert(tr.genericError(errorMessage(e)));
     }
   };
 
   const handleReject = async (id: string) => {
-    if (!confirm("Отклонить оплату? Пользователь получит уведомление в VIP-боте.")) return;
+    if (!confirm(tr.rejectPaymentPrompt)) return;
     try {
       await rejectVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert("Ошибка: " + errorMessage(e));
+      alert(tr.genericError(errorMessage(e)));
     }
   };
 
   const handleExtend = async (id: string) => {
-    const days = prompt(
-      "Изменить срок (дни):\n+ число — продлить (например 2)\n− число — уменьшить (например -3)",
-      "30",
-    );
+    const days = prompt(tr.extendPrompt, "30");
     if (days === null || days.trim() === "") return;
     const n = parseInt(days.trim(), 10);
     if (!Number.isFinite(n) || n === 0) {
-      return alert("Укажите целое число дней, не ноль (например 5 или -2)");
+      return alert(tr.extendInvalid);
     }
     if (n < 0) {
-      const ok = confirm(
-        `Уменьшить срок на ${Math.abs(n)} дн.?\nЕсли дата окажется в прошлом — подписка станет «Истёк» и доступ к группе закроется.`,
-      );
+      const ok = confirm(tr.extendReduceConfirm(Math.abs(n)));
       if (!ok) return;
     }
     try {
       await extendVipSubscription({ data: { id, days: n } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert("Ошибка: " + errorMessage(e));
+      alert(tr.genericError(errorMessage(e)));
     }
   };
 
   const handleExclude = async (id: string) => {
-    if (
-      !confirm(
-        "Исключить из VIP-сообщества?\n\nЧеловека кикнут из группы, активные подписки станут «Истёкшие», он получит сообщение в боте.",
-      )
-    )
-      return;
+    if (!confirm(tr.excludeConfirm)) return;
     try {
       await excludeVipFromCommunity({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert("Ошибка: " + errorMessage(e));
+      alert(tr.genericError(errorMessage(e)));
     }
   };
 
@@ -222,34 +564,24 @@ function AdminVipSubscribers() {
     username?: string | null;
     first_name?: string | null;
   }) => {
-    if (
-      !confirm(
-        `Заблокировать пользователя ${sub.telegram_id} навсегда?\n\nБот перестанет отвечать, доступ к VIP-группе закроется, подписки и незавершённые заказы отменятся.`,
-      )
-    )
-      return;
+    if (!confirm(tr.blockConfirm(sub.telegram_id))) return;
     try {
       await blockTelegramUserFn({
         data: {
           telegram_id: sub.telegram_id,
           username: sub.username ?? undefined,
           first_name: sub.first_name ?? undefined,
-          reason: "заблокирован из VIP-подписчиков",
+          reason: tr.blockReason,
         },
       });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert("Ошибка: " + errorMessage(e));
+      alert(tr.genericError(errorMessage(e)));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (
-      !confirm(
-        "Удалить подписку?\n\nЕсли у человека больше не останется записей — бот забудет его (личный тариф и «уже был в VIP»), и снова покажет «Первый вход».\n\nДля кика из группы лучше «Исключить». Для полного запрета — «Заблокировать».",
-      )
-    )
-      return;
+    if (!confirm(tr.deleteConfirm)) return;
     await deleteVipSubscription({ data: { id } });
     qc.invalidateQueries({ queryKey: ["vip_subs"] });
     qc.invalidateQueries({ queryKey: ["vip_profiles"] });
@@ -258,25 +590,22 @@ function AdminVipSubscribers() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center gap-2 flex-wrap">
-        <h2 className="text-xl font-semibold">Подписчики VIP</h2>
+        <h2 className="text-xl font-semibold">{tr.title}</h2>
         <Button onClick={() => setAddingManual(!addingManual)}>
-          {addingManual ? "Отмена" : "+ Добавить вручную (Импорт)"}
+          {addingManual ? tr.cancelBtn : tr.addManualBtn}
         </Button>
       </div>
 
       {addingManual && (
         <div className="bg-card border rounded-lg p-4 space-y-4 max-w-xl">
-          <h3 className="font-medium">Добавление участника вручную</h3>
-          <p className="text-xs text-muted-foreground">
-            После добавления запись появится во вкладке «Активные». Бот отправит ссылку, если
-            пользователь ещё не в группе (нужно чтобы человек хотя бы раз писал VIP-боту).
-          </p>
+          <h3 className="font-medium">{tr.addManualTitle}</h3>
+          <p className="text-xs text-muted-foreground">{tr.addManualHint}</p>
           <div className="space-y-2">
-            <Label>Найти в базе (ID, @username, имя)</Label>
+            <Label>{tr.findLabel}</Label>
             <Input
               value={manualSearch}
               onChange={(e) => setManualSearch(e.target.value)}
-              placeholder="Иван или @username"
+              placeholder={tr.findPlaceholder}
             />
             {manualHits.length > 0 && (
               <ul className="border rounded-md divide-y max-h-40 overflow-y-auto">
@@ -291,7 +620,7 @@ function AdminVipSubscribers() {
                         setManualHits([]);
                       }}
                     >
-                      {[u.first_name, u.last_name].filter(Boolean).join(" ") || "—"}
+                      {[u.first_name, u.last_name].filter(Boolean).join(" ") || tr.unknown}
                       {u.username ? ` @${u.username}` : ""}
                       <span className="text-muted-foreground"> · {u.telegram_id}</span>
                     </button>
@@ -301,7 +630,7 @@ function AdminVipSubscribers() {
             )}
           </div>
           <div className="space-y-2">
-            <Label>Telegram ID участника</Label>
+            <Label>{tr.idLabel}</Label>
             <div className="flex gap-2">
               <Input
                 className="flex-1"
@@ -310,7 +639,7 @@ function AdminVipSubscribers() {
                   setManualData({ ...manualData, telegram_id: e.target.value });
                   setManualLookupHint(null);
                 }}
-                placeholder="Например: 123456789"
+                placeholder={tr.idPlaceholder}
               />
               <Button
                 type="button"
@@ -318,7 +647,7 @@ function AdminVipSubscribers() {
                 disabled={manualLookupLoading}
                 onClick={handleLookupManualId}
               >
-                {manualLookupLoading ? "…" : "Проверить в Telegram"}
+                {manualLookupLoading ? "…" : tr.checkInTelegramBtn}
               </Button>
             </div>
             {manualLookupHint && (
@@ -328,13 +657,13 @@ function AdminVipSubscribers() {
             )}
           </div>
           <div className="space-y-2">
-            <Label>Тариф</Label>
+            <Label>{tr.tariffLabel}</Label>
             <Select
               value={manualData.tariff_id}
               onValueChange={(v) => setManualData({ ...manualData, tariff_id: v })}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Выберите тариф" />
+                <SelectValue placeholder={tr.tariffPlaceholder} />
               </SelectTrigger>
               <SelectContent>
                 {tariffs.data?.map((t) => (
@@ -346,7 +675,7 @@ function AdminVipSubscribers() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Дней до истечения (остаток)</Label>
+            <Label>{tr.daysLabel}</Label>
             <Input
               type="number"
               min={1}
@@ -357,7 +686,7 @@ function AdminVipSubscribers() {
               }}
             />
           </div>
-          <Button onClick={handleAddManual}>Сохранить</Button>
+          <Button onClick={handleAddManual}>{tr.saveBtn}</Button>
         </div>
       )}
 
@@ -366,11 +695,9 @@ function AdminVipSubscribers() {
           className="max-w-sm"
           value={tableSearch}
           onChange={(e) => setTableSearch(e.target.value)}
-          placeholder="Поиск: ID, @username, имя…"
+          placeholder={tr.searchPlaceholder}
         />
-        {tableSearch.trim() && (
-          <p className="text-xs text-muted-foreground">Поиск по всей базе подписок (все статусы)</p>
-        )}
+        {tableSearch.trim() && <p className="text-xs text-muted-foreground">{tr.searchAllHint}</p>}
       </div>
 
       <div className="flex gap-2 flex-wrap">
@@ -380,7 +707,7 @@ function AdminVipSubscribers() {
           onClick={() => setStatusFilter("all")}
           disabled={!!tableSearch.trim()}
         >
-          Все
+          {tr.filterAll}
         </Button>
         <Button
           variant={statusFilter === "active" ? "default" : "outline"}
@@ -388,7 +715,7 @@ function AdminVipSubscribers() {
           onClick={() => setStatusFilter("active")}
           disabled={!!tableSearch.trim()}
         >
-          Активные
+          {tr.filterActive}
         </Button>
         <Button
           variant={statusFilter === "pending_payment" ? "default" : "outline"}
@@ -396,7 +723,7 @@ function AdminVipSubscribers() {
           onClick={() => setStatusFilter("pending_payment")}
           disabled={!!tableSearch.trim()}
         >
-          Ожидают проверки
+          {tr.filterPending}
         </Button>
         <Button
           variant={statusFilter === "expired" ? "default" : "outline"}
@@ -404,7 +731,7 @@ function AdminVipSubscribers() {
           onClick={() => setStatusFilter("expired")}
           disabled={!!tableSearch.trim()}
         >
-          Истёкшие
+          {tr.filterExpired}
         </Button>
         <Button
           variant={statusFilter === "cancelled" ? "default" : "outline"}
@@ -412,7 +739,7 @@ function AdminVipSubscribers() {
           onClick={() => setStatusFilter("cancelled")}
           disabled={!!tableSearch.trim()}
         >
-          Отклонённые
+          {tr.filterCancelled}
         </Button>
       </div>
 
@@ -420,11 +747,11 @@ function AdminVipSubscribers() {
         <table className="w-full text-sm text-left">
           <thead className="bg-muted">
             <tr>
-              <th className="p-2 font-medium">Пользователь</th>
-              <th className="p-2 font-medium">Тариф</th>
-              <th className="p-2 font-medium">Статус</th>
-              <th className="p-2 font-medium">Истекает</th>
-              <th className="p-2 font-medium text-right">Действия</th>
+              <th className="p-2 font-medium">{tr.colUser}</th>
+              <th className="p-2 font-medium">{tr.colTariff}</th>
+              <th className="p-2 font-medium">{tr.colStatus}</th>
+              <th className="p-2 font-medium">{tr.colExpires}</th>
+              <th className="p-2 font-medium text-right">{tr.colActions}</th>
             </tr>
           </thead>
           <tbody>
@@ -442,35 +769,41 @@ function AdminVipSubscribers() {
                     </div>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {s.imported && (
-                        <span className="text-[10px] bg-secondary px-1 rounded">импорт</span>
+                        <span className="text-[10px] bg-secondary px-1 rounded">
+                          {tr.importedTag}
+                        </span>
                       )}
                       {personalTariff && (
                         <span className="text-[10px] bg-orange-100 text-orange-800 px-1 rounded border border-orange-200">
-                          личный тариф: {personalTariff.price} {personalTariff.currency}
+                          {tr.personalTariffTag(personalTariff.price, personalTariff.currency)}
                         </span>
                       )}
                     </div>
                   </td>
                   <td className="p-2">
                     {(s as { vip_tariffs?: { name?: string } | null }).vip_tariffs?.name ||
-                      "Удалён"}
+                      tr.tariffDeleted}
                   </td>
                   <td className="p-2">
                     {(() => {
                       const pastDue =
                         s.status === "active" && new Date(s.expires_at).getTime() <= Date.now();
                       if (s.status === "active" && !pastDue)
-                        return <span className="text-green-600 font-medium">Активен</span>;
+                        return (
+                          <span className="text-green-600 font-medium">{tr.statusActive}</span>
+                        );
                       if (pastDue)
                         return (
-                          <span className="text-amber-600 font-medium">Истёк (ожидает кик)</span>
+                          <span className="text-amber-600 font-medium">{tr.statusPastDue}</span>
                         );
                       if (s.status === "pending_payment")
-                        return <span className="text-orange-600 font-medium">Ожидает</span>;
+                        return (
+                          <span className="text-orange-600 font-medium">{tr.statusPending}</span>
+                        );
                       if (s.status === "expired")
-                        return <span className="text-red-600 font-medium">Истёк</span>;
+                        return <span className="text-red-600 font-medium">{tr.statusExpired}</span>;
                       if (s.status === "cancelled")
-                        return <span className="text-muted-foreground">Отклонён</span>;
+                        return <span className="text-muted-foreground">{tr.statusCancelled}</span>;
                       return <span className="text-muted-foreground">{s.status}</span>;
                     })()}
                   </td>
@@ -486,26 +819,26 @@ function AdminVipSubscribers() {
                             size="sm"
                             onClick={() => setProofModal({ path: s.payment_proof_path! })}
                           >
-                            Чек
+                            {tr.receiptBtn}
                           </Button>
                         ) : (
                           <Button variant="outline" size="sm" disabled>
-                            Чек
+                            {tr.receiptBtn}
                           </Button>
                         ))}
                       {s.status === "pending_payment" && (
                         <>
                           <Button variant="default" size="sm" onClick={() => handleConfirm(s.id)}>
-                            Подтвердить
+                            {tr.confirmBtn}
                           </Button>
                           <Button variant="outline" size="sm" onClick={() => handleReject(s.id)}>
-                            Отклонить
+                            {tr.rejectBtn}
                           </Button>
                         </>
                       )}
                       {s.status !== "pending_payment" && (
                         <Button variant="outline" size="sm" onClick={() => handleExtend(s.id)}>
-                          Срок ±
+                          {tr.extendBtn}
                         </Button>
                       )}
                       {s.status === "active" && (
@@ -515,7 +848,7 @@ function AdminVipSubscribers() {
                           className="text-destructive border-destructive/40 hover:bg-destructive/10"
                           onClick={() => handleExclude(s.id)}
                         >
-                          Исключить
+                          {tr.excludeBtn}
                         </Button>
                       )}
                       <Button
@@ -524,7 +857,7 @@ function AdminVipSubscribers() {
                         className="text-destructive border-destructive/40 hover:bg-destructive/10"
                         onClick={() => handleBlock(s)}
                       >
-                        Заблокировать
+                        {tr.blockBtn}
                       </Button>
                       <Button
                         variant="outline"
@@ -532,7 +865,7 @@ function AdminVipSubscribers() {
                         className="text-destructive border-destructive/40 hover:bg-destructive/10"
                         onClick={() => handleDelete(s.id)}
                       >
-                        Удалить
+                        {tr.deleteBtn}
                       </Button>
                     </div>
                   </td>
@@ -542,7 +875,7 @@ function AdminVipSubscribers() {
             {filteredSubs.length === 0 && (
               <tr>
                 <td colSpan={5} className="p-4 text-center text-muted-foreground">
-                  Ничего не найдено.
+                  {tr.nothingFound}
                 </td>
               </tr>
             )}
@@ -553,28 +886,36 @@ function AdminVipSubscribers() {
       <Dialog open={!!proofModal} onOpenChange={(open) => !open && setProofModal(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Чек оплаты VIP</DialogTitle>
+            <DialogTitle>{tr.receiptModalTitle}</DialogTitle>
           </DialogHeader>
           {proofModal &&
             (() => {
               const kind = paymentProofKind(proofModal.path);
               const src = `/api/admin/file/${proofModal.path}?bucket=payment-proofs`;
               if (kind === "image") {
-                return <img src={src} alt="Чек оплаты" className="max-h-[80vh] mx-auto rounded" />;
+                return (
+                  <img
+                    src={src}
+                    alt={tr.receiptModalTitle}
+                    className="max-h-[80vh] mx-auto rounded"
+                  />
+                );
               }
               if (kind === "pdf") {
                 return (
-                  <iframe src={src} className="w-full h-[80vh] rounded border" title="Чек оплаты" />
+                  <iframe
+                    src={src}
+                    className="w-full h-[80vh] rounded border"
+                    title={tr.receiptModalTitle}
+                  />
                 );
               }
               return (
                 <div className="text-center py-6 space-y-3">
-                  <p className="text-muted-foreground">
-                    Формат не поддерживается для предпросмотра.
-                  </p>
+                  <p className="text-muted-foreground">{tr.unsupportedFormat}</p>
                   <Button asChild>
                     <a href={src} target="_blank" rel="noreferrer">
-                      Скачать чек
+                      {tr.downloadReceipt}
                     </a>
                   </Button>
                 </div>
