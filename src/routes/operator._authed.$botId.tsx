@@ -21,6 +21,7 @@ import {
   getSubscriptionFn,
   listPaymentsFn,
   addPaymentFn,
+  updatePaymentFn,
   deletePaymentFn,
   setPolicyFn,
 } from "@/lib/operator/subscriptions.functions";
@@ -545,12 +546,9 @@ function SubscriptionSection({ botId }: { botId: string }) {
     queryFn: () => listPaymentsFn({ data: { botId } }),
   });
 
-  const [form, setForm] = useState({
-    period_start: "",
-    period_end: "",
-    amount: "15000",
-    note: "",
-  });
+  const emptyForm = { period_start: "", period_end: "", amount: "15000", note: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [policyBusy, setPolicyBusy] = useState(false);
   const [policy, setPolicyState] = useState({
@@ -572,24 +570,48 @@ function SubscriptionSection({ botId }: { botId: string }) {
     ]);
   }
 
-  async function onAdd(e: React.FormEvent) {
+  function onStartEdit(p: {
+    id: string;
+    period_start: string;
+    period_end: string;
+    amount: number;
+    note: string | null;
+  }) {
+    setEditingId(p.id);
+    setForm({
+      period_start: p.period_start,
+      period_end: p.period_end,
+      amount: String(p.amount),
+      note: p.note ?? "",
+    });
+  }
+
+  function onCancelEdit() {
+    setEditingId(null);
+    setForm(emptyForm);
+  }
+
+  async function onSubmitPayment(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      await addPaymentFn({
-        data: {
-          botId,
-          period_start: form.period_start,
-          period_end: form.period_end,
-          amount: Number(form.amount || "0"),
-          currency: "KZT",
-          note: form.note.trim() || null,
-        },
-      });
-      setForm({ period_start: "", period_end: "", amount: "15000", note: "" });
+      const payload = {
+        period_start: form.period_start,
+        period_end: form.period_end,
+        amount: Number(form.amount || "0"),
+        currency: "KZT",
+        note: form.note.trim() || null,
+      };
+      if (editingId) {
+        await updatePaymentFn({ data: { botId, paymentId: editingId, ...payload } });
+      } else {
+        await addPaymentFn({ data: { botId, ...payload } });
+      }
+      setEditingId(null);
+      setForm(emptyForm);
       await refresh();
     } catch (e: unknown) {
-      alert((e as Error)?.message);
+      alert(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -599,9 +621,10 @@ function SubscriptionSection({ botId }: { botId: string }) {
     if (!confirm("Удалить платёж? Дата «оплачен до» пересчитается.")) return;
     try {
       await deletePaymentFn({ data: { botId, paymentId } });
+      if (editingId === paymentId) onCancelEdit();
       await refresh();
     } catch (e: unknown) {
-      alert((e as Error)?.message);
+      alert(errorMessage(e));
     }
   }
 
@@ -612,7 +635,7 @@ function SubscriptionSection({ botId }: { botId: string }) {
       await setPolicyFn({ data: { botId, ...policy } });
       await refresh();
     } catch (e: unknown) {
-      alert((e as Error)?.message);
+      alert(errorMessage(e));
     } finally {
       setPolicyBusy(false);
     }
@@ -665,17 +688,24 @@ function SubscriptionSection({ botId }: { botId: string }) {
                   </div>
                   {p.note && <div className="text-xs text-muted-foreground">{p.note}</div>}
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => onDelete(p.id)}>
-                  Удалить
-                </Button>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" onClick={() => onStartEdit(p)}>
+                    Изменить
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => onDelete(p.id)}>
+                    Удалить
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <form onSubmit={onAdd} className="space-y-3 border-t pt-3">
-        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">Записать платёж</h3>
+      <form onSubmit={onSubmitPayment} className="space-y-3 border-t pt-3">
+        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+          {editingId ? "Изменить платёж" : "Записать платёж"}
+        </h3>
         <div className="grid sm:grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label>Период с</Label>
@@ -713,9 +743,16 @@ function SubscriptionSection({ botId }: { botId: string }) {
             placeholder="Например: Kaspi перевод"
           />
         </div>
-        <Button type="submit" size="sm" disabled={busy}>
-          {busy ? "Записываю…" : "Записать"}
-        </Button>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={busy}>
+            {busy ? "Сохраняю…" : editingId ? "Сохранить" : "Записать"}
+          </Button>
+          {editingId && (
+            <Button type="button" size="sm" variant="ghost" onClick={onCancelEdit} disabled={busy}>
+              Отмена
+            </Button>
+          )}
+        </div>
       </form>
 
       <form onSubmit={onSavePolicy} className="space-y-3 border-t pt-3">

@@ -5,6 +5,7 @@ import {
   listPayments,
   getSubscription,
   addPayment,
+  updatePayment,
   deletePayment,
   setPolicy,
 } from "./subscriptions.server";
@@ -52,6 +53,31 @@ export const addPaymentFn = createServerFn({ method: "POST" })
     await requireOperator();
     const { botId, ...payment } = data;
     await addPayment(botId, payment, await actor());
+    return { ok: true as const };
+  });
+
+export const updatePaymentFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        botId: z.string().uuid(),
+        paymentId: z.string().uuid(),
+        period_start: IsoDate,
+        period_end: IsoDate,
+        amount: z.number().nonnegative(),
+        currency: z.string().min(1).max(8),
+        note: z.string().nullable(),
+      })
+      .refine((v) => v.period_end >= v.period_start, {
+        message: "Конец периода раньше начала",
+        path: ["period_end"],
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    const { botId, paymentId, ...payment } = data;
+    await updatePayment(botId, paymentId, payment, await actor());
     return { ok: true as const };
   });
 

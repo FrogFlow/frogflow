@@ -188,6 +188,37 @@ async function reactivateIfPaidOff(botId: string, actor: string) {
   await logEvent(botId, actor, "resume", { reason: "payment_covers_arrears" });
 }
 
+export async function updatePayment(
+  botId: string,
+  paymentId: string,
+  p: NewPayment,
+  actor: string,
+) {
+  await requireOperator();
+  const s = await db();
+  const { error } = await s
+    .from("subscription_payments")
+    .update({
+      period_start: p.period_start,
+      period_end: p.period_end,
+      amount: p.amount,
+      currency: p.currency,
+      note: p.note,
+    })
+    .eq("id", paymentId)
+    .eq("bot_id", botId);
+  if (error) throw new Error(`Не удалось изменить платёж: ${error.message}`);
+
+  await logEvent(botId, actor, "payment", {
+    action: "edited",
+    payment_id: paymentId,
+    period_end: p.period_end,
+    amount: p.amount,
+  });
+
+  await reactivateIfPaidOff(botId, actor);
+}
+
 export async function deletePayment(botId: string, paymentId: string, actor: string) {
   await requireOperator();
   const s = await db();
