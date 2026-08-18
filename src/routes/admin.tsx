@@ -32,7 +32,8 @@ function AdminLayout() {
   const [locale, setLocale] = useState<Locale>("ru");
   useEffect(() => {
     const saved = window.localStorage.getItem("admin-locale");
-    if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) setLocale(saved as Locale);
+    if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved))
+      setLocale(saved as Locale);
   }, []);
   function changeLocale(next: Locale) {
     setLocale(next);
@@ -79,8 +80,17 @@ function AdminLayout() {
             )}
             <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
           </div>
-          <select aria-label={t("language", locale)} value={locale} onChange={(e) => changeLocale(e.target.value as Locale)} className="h-8 rounded-md border bg-background px-2 text-sm">
-            {SUPPORTED_LOCALES.map((code) => <option key={code} value={code}>{localeNames[code]}</option>)}
+          <select
+            aria-label={t("language", locale)}
+            value={locale}
+            onChange={(e) => changeLocale(e.target.value as Locale)}
+            className="h-8 rounded-md border bg-background px-2 text-sm"
+          >
+            {SUPPORTED_LOCALES.map((code) => (
+              <option key={code} value={code}>
+                {localeNames[code]}
+              </option>
+            ))}
           </select>
           <Button
             variant="ghost"

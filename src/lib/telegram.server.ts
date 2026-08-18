@@ -38,7 +38,8 @@ async function localeForChat(chatId: unknown): Promise<TelegramLocale> {
       .eq("telegram_id", id)
       .maybeSingle();
     const locale = (data?.state as { locale?: unknown } | null)?.locale;
-    const value: TelegramLocale = locale === "kk" || locale === "en" || locale === "uz" ? locale : "ru";
+    const value: TelegramLocale =
+      locale === "kk" || locale === "en" || locale === "uz" ? locale : "ru";
     localeCache.set(id, { value, expires: Date.now() + 5 * 60_000 });
     return value;
   } catch {
@@ -60,17 +61,28 @@ async function translate(text: string, locale: TelegramLocale): Promise<string> 
 
 /** Localise every customer-facing Telegram payload at the common send boundary. */
 async function localizePayload(method: string, payload: unknown): Promise<unknown> {
-  if (!/^send(Message|Photo|Video|Document|MediaGroup)$/.test(method) || !payload || typeof payload !== "object") return payload;
+  if (
+    !/^send(Message|Photo|Video|Document|MediaGroup)$/.test(method) ||
+    !payload ||
+    typeof payload !== "object"
+  )
+    return payload;
   const value = payload as Record<string, unknown>;
   const locale = await localeForChat(value.chat_id);
   if (locale === "ru") return payload;
   const next = { ...value };
   if (typeof next.text === "string") next.text = await translate(next.text, locale);
   if (typeof next.caption === "string") next.caption = await translate(next.caption, locale);
-  const markup = next.reply_markup as { keyboard?: Array<Array<{ text?: string }>>; inline_keyboard?: Array<Array<{ text?: string }>> } | undefined;
+  const markup = next.reply_markup as
+    | {
+        keyboard?: Array<Array<{ text?: string }>>;
+        inline_keyboard?: Array<Array<{ text?: string }>>;
+      }
+    | undefined;
   if (markup) {
-    next.reply_markup = structuredClone(markup);
-    for (const row of [...(next.reply_markup.keyboard ?? []), ...(next.reply_markup.inline_keyboard ?? [])]) {
+    const cloned = structuredClone(markup);
+    next.reply_markup = cloned;
+    for (const row of [...(cloned.keyboard ?? []), ...(cloned.inline_keyboard ?? [])]) {
       for (const button of row) if (button.text) button.text = await translate(button.text, locale);
     }
   }

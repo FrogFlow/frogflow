@@ -108,10 +108,22 @@ function isProofAutoOnlyCountry(countryCode?: string | null): boolean {
 /** Robokassa: согласие + ссылки на оферту и политику (HTML для сообщений в чате). */
 function legalConsentHtml(base: string, locale: Locale = "ru"): string {
   const copy: Record<Locale, [string, string, string]> = {
-    ru: ["Нажимая /start, вы соглашаетесь с:", "Условиями использования", "Политикой конфиденциальности"],
-    kk: ["/start пәрменін басу арқылы сіз мыналармен келісесіз:", "Пайдалану шарттарымен", "Құпиялылық саясатымен"],
+    ru: [
+      "Нажимая /start, вы соглашаетесь с:",
+      "Условиями использования",
+      "Политикой конфиденциальности",
+    ],
+    kk: [
+      "/start пәрменін басу арқылы сіз мыналармен келісесіз:",
+      "Пайдалану шарттарымен",
+      "Құпиялылық саясатымен",
+    ],
     en: ["By pressing /start, you agree to:", "Terms of Use", "Privacy Policy"],
-    uz: ["/start tugmasini bosish orqali quyidagilarga rozilik bildirasiz:", "Foydalanish shartlari", "Maxfiylik siyosati"],
+    uz: [
+      "/start tugmasini bosish orqali quyidagilarga rozilik bildirasiz:",
+      "Foydalanish shartlari",
+      "Maxfiylik siyosati",
+    ],
   };
   const [intro, terms, privacy] = copy[locale];
   return (
@@ -154,13 +166,60 @@ export async function syncBotPublicDescription() {
   }
 }
 
-function welcomeStartHtml(firstName: string | null, withCountryHint: boolean, locale: Locale = "ru"): string {
+function welcomeStartHtml(
+  firstName: string | null,
+  withCountryHint: boolean,
+  locale: Locale = "ru",
+): string {
   const base = originFromState();
-  const copy: Record<Locale, { hello: string; friend: string; greeting: string; catalog: string; payment: string; documents: string; hint: string }> = {
-    ru: { hello: "Привет", friend: "друг", greeting: "Добро пожаловать в магазин.", catalog: "Каталог учебных материалов", payment: "Оплата и выдача файлов", documents: "Документы и реквизиты — в «ℹ️ Информация»", hint: "Сначала выберите страну — или откройте «ℹ️ Информация»." },
-    kk: { hello: "Сәлем", friend: "дос", greeting: "Дүкенге қош келдіңіз!", catalog: "Оқу материалдарының каталогы", payment: "Төлем және файлдарды алу", documents: "Құжаттар мен деректемелер — «ℹ️ Ақпарат» бөлімінде", hint: "Алдымен еліңізді таңдаңыз немесе «ℹ️ Ақпарат» бөлімін ашыңыз." },
-    en: { hello: "Hello", friend: "friend", greeting: "Welcome to the store!", catalog: "Learning materials catalog", payment: "Payment and file delivery", documents: "Documents and payment details are in “ℹ️ Information”", hint: "First choose your country, or open “ℹ️ Information”." },
-    uz: { hello: "Salom", friend: "do‘st", greeting: "Do‘konga xush kelibsiz!", catalog: "O‘quv materiallari katalogi", payment: "To‘lov va fayllarni yetkazib berish", documents: "Hujjatlar va to‘lov ma’lumotlari “ℹ️ Ma’lumot” bo‘limida", hint: "Avval mamlakatingizni tanlang yoki “ℹ️ Ma’lumot” bo‘limini oching." },
+  const copy: Record<
+    Locale,
+    {
+      hello: string;
+      friend: string;
+      greeting: string;
+      catalog: string;
+      payment: string;
+      documents: string;
+      hint: string;
+    }
+  > = {
+    ru: {
+      hello: "Привет",
+      friend: "друг",
+      greeting: "Добро пожаловать в магазин.",
+      catalog: "Каталог учебных материалов",
+      payment: "Оплата и выдача файлов",
+      documents: "Документы и реквизиты — в «ℹ️ Информация»",
+      hint: "Сначала выберите страну — или откройте «ℹ️ Информация».",
+    },
+    kk: {
+      hello: "Сәлем",
+      friend: "дос",
+      greeting: "Дүкенге қош келдіңіз!",
+      catalog: "Оқу материалдарының каталогы",
+      payment: "Төлем және файлдарды алу",
+      documents: "Құжаттар мен деректемелер — «ℹ️ Ақпарат» бөлімінде",
+      hint: "Алдымен еліңізді таңдаңыз немесе «ℹ️ Ақпарат» бөлімін ашыңыз.",
+    },
+    en: {
+      hello: "Hello",
+      friend: "friend",
+      greeting: "Welcome to the store!",
+      catalog: "Learning materials catalog",
+      payment: "Payment and file delivery",
+      documents: "Documents and payment details are in “ℹ️ Information”",
+      hint: "First choose your country, or open “ℹ️ Information”.",
+    },
+    uz: {
+      hello: "Salom",
+      friend: "do‘st",
+      greeting: "Do‘konga xush kelibsiz!",
+      catalog: "O‘quv materiallari katalogi",
+      payment: "To‘lov va fayllarni yetkazib berish",
+      documents: "Hujjatlar va to‘lov ma’lumotlari “ℹ️ Ma’lumot” bo‘limida",
+      hint: "Avval mamlakatingizni tanlang yoki “ℹ️ Ma’lumot” bo‘limini oching.",
+    },
   };
   const c = copy[locale];
   const name = firstName || c.friend;
@@ -326,11 +385,65 @@ async function setContact(telegram_id: number, phone: string) {
   }
 }
 
-const botCopy: Record<Locale, Record<"chooseLanguage" | "chooseSection" | "catalog" | "search" | "cart" | "myOrders" | "instruction" | "information" | "languageSaved", string>> = {
-  ru: { chooseLanguage: "Выберите язык", chooseSection: "Выберите раздел:", catalog: "📚 Каталог", search: "🔍 Поиск", cart: "🛒 Корзина", myOrders: "📋 Мои заказы", instruction: "📖 Инструкция", information: "ℹ️ Информация", languageSaved: "✅ Язык сохранён." },
-  kk: { chooseLanguage: "Тілді таңдаңыз", chooseSection: "Бөлімді таңдаңыз:", catalog: "📚 Каталог", search: "🔍 Іздеу", cart: "🛒 Себет", myOrders: "📋 Тапсырыстарым", instruction: "📖 Нұсқаулық", information: "ℹ️ Ақпарат", languageSaved: "✅ Тіл сақталды." },
-  en: { chooseLanguage: "Choose your language", chooseSection: "Choose a section:", catalog: "📚 Catalog", search: "🔍 Search", cart: "🛒 Cart", myOrders: "📋 My orders", instruction: "📖 Guide", information: "ℹ️ Information", languageSaved: "✅ Language saved." },
-  uz: { chooseLanguage: "Tilni tanlang", chooseSection: "Bo‘limni tanlang:", catalog: "📚 Katalog", search: "🔍 Qidirish", cart: "🛒 Savat", myOrders: "📋 Buyurtmalarim", instruction: "📖 Yo‘riqnoma", information: "ℹ️ Ma’lumot", languageSaved: "✅ Til saqlandi." },
+const botCopy: Record<
+  Locale,
+  Record<
+    | "chooseLanguage"
+    | "chooseSection"
+    | "catalog"
+    | "search"
+    | "cart"
+    | "myOrders"
+    | "instruction"
+    | "information"
+    | "languageSaved",
+    string
+  >
+> = {
+  ru: {
+    chooseLanguage: "Выберите язык",
+    chooseSection: "Выберите раздел:",
+    catalog: "📚 Каталог",
+    search: "🔍 Поиск",
+    cart: "🛒 Корзина",
+    myOrders: "📋 Мои заказы",
+    instruction: "📖 Инструкция",
+    information: "ℹ️ Информация",
+    languageSaved: "✅ Язык сохранён.",
+  },
+  kk: {
+    chooseLanguage: "Тілді таңдаңыз",
+    chooseSection: "Бөлімді таңдаңыз:",
+    catalog: "📚 Каталог",
+    search: "🔍 Іздеу",
+    cart: "🛒 Себет",
+    myOrders: "📋 Тапсырыстарым",
+    instruction: "📖 Нұсқаулық",
+    information: "ℹ️ Ақпарат",
+    languageSaved: "✅ Тіл сақталды.",
+  },
+  en: {
+    chooseLanguage: "Choose your language",
+    chooseSection: "Choose a section:",
+    catalog: "📚 Catalog",
+    search: "🔍 Search",
+    cart: "🛒 Cart",
+    myOrders: "📋 My orders",
+    instruction: "📖 Guide",
+    information: "ℹ️ Information",
+    languageSaved: "✅ Language saved.",
+  },
+  uz: {
+    chooseLanguage: "Tilni tanlang",
+    chooseSection: "Bo‘limni tanlang:",
+    catalog: "📚 Katalog",
+    search: "🔍 Qidirish",
+    cart: "🛒 Savat",
+    myOrders: "📋 Buyurtmalarim",
+    instruction: "📖 Yo‘riqnoma",
+    information: "ℹ️ Ma’lumot",
+    languageSaved: "✅ Til saqlandi.",
+  },
 };
 
 function mainMenu(locale: Locale = "ru") {
@@ -376,11 +489,19 @@ function canonicalMenuAction(text: string | undefined): string | undefined {
 }
 
 function languageKeyboard() {
-  return { inline_keyboard: SUPPORTED_LOCALES.map((locale) => [{ text: localeNames[locale], callback_data: `locale:${locale}` }]) };
+  return {
+    inline_keyboard: SUPPORTED_LOCALES.map((locale) => [
+      { text: localeNames[locale], callback_data: `locale:${locale}` },
+    ]),
+  };
 }
 
 async function askLanguage(chat_id: number) {
-  await tg("sendMessage", { chat_id, text: botCopy.ru.chooseLanguage, reply_markup: languageKeyboard() });
+  await tg("sendMessage", {
+    chat_id,
+    text: botCopy.ru.chooseLanguage,
+    reply_markup: languageKeyboard(),
+  });
 }
 
 function legalInlineKeyboard(base: string) {
@@ -1909,10 +2030,10 @@ export async function handleUpdate(update: TelegramUpdate) {
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start") {
       await setState(from.id, { ...user.state, mode: "idle" });
-      // /start is also the language-change entry point. Never infer this from
-      // Telegram's device setting: the customer explicitly selects every time.
-      await askLanguage(chat_id);
-      return;
+
+      // Разовая настройка бота, не имеет отношения к языку покупателя —
+      // поэтому идёт до выбора языка и всегда по-русски: тому, кто это
+      // видит, ещё только предстоит открыть панель и выбрать язык магазина.
       const s = await db();
       const { data: setting } = await s
         .from("app_settings")
@@ -1928,21 +2049,10 @@ export async function handleUpdate(update: TelegramUpdate) {
         });
       }
 
-      const base = originFromState();
-      const needCountry = !user.state?.country_code;
-      await tg("sendMessage", {
-        chat_id,
-        text: welcomeStartHtml(user.first_name, needCountry),
-        parse_mode: "HTML",
-        reply_markup: legalInlineKeyboard(base),
-        disable_web_page_preview: true,
-      });
-      await sendMain(chat_id, undefined, undefined, user.state.locale);
-      if (needCountry) {
-        await askCountry(chat_id, from.id);
-      }
-      // Keep BotFather profile text in sync (Robokassa / «Что умеет этот бот?»)
-      void syncBotPublicDescription();
+      // /start is also the language-change entry point. Never infer this from
+      // Telegram's device setting: the customer explicitly selects every time.
+      // Дальше — в обработчике locale: (welcome, оферта, страна, sendMain).
+      await askLanguage(chat_id);
       return;
     }
     if (msg.text === "/id") {
