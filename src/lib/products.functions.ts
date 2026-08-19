@@ -29,7 +29,9 @@ export const getSignedUploadUrl = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const ext = (data.filename.split(".").pop() || "bin").toLowerCase().slice(0, 10);
-    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { randomBytes } = await import("node:crypto");
+    const botId = process.env.BOT_ID?.trim() || "unknown";
+    const key = `${botId}/${randomBytes(16).toString("hex")}.${ext}`;
     const s = await db();
     const { data: signed, error } = await s.storage.from(data.bucket).createSignedUploadUrl(key);
     if (error || !signed) throw new Error(error?.message || "Error");

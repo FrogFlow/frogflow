@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { errorMessage } from "@/lib/error-message";
 import { sweepSubscriptions } from "@/lib/operator/subscription-cron.server";
+import { isCronAuthorized } from "@/lib/cron-auth.server";
 
 /**
  * Ежедневный обход подписок. Живёт на проекте панели: только у неё есть доступ
@@ -10,14 +11,6 @@ import { sweepSubscriptions } from "@/lib/operator/subscription-cron.server";
  * путь обязан выглядеть несуществующим, как и весь /operator), CRON_SECRET —
  * всех остальных.
  */
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  return new URL(request.url).searchParams.get("secret") === secret;
-}
-
 export const Route = createFileRoute("/api/operator-cron/subscriptions")({
   server: {
     handlers: {
@@ -25,7 +18,7 @@ export const Route = createFileRoute("/api/operator-cron/subscriptions")({
         if (process.env.CONTROL_PLANE !== "1") {
           return new Response("Not found", { status: 404 });
         }
-        if (!isAuthorized(request)) {
+        if (!isCronAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 });
         }
         try {

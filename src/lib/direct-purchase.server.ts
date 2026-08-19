@@ -161,26 +161,15 @@ export async function clearDirectFlow(userKey: string): Promise<void> {
  * или `null`, если забрать не удалось.
  */
 export async function claimAwaitingProof(userKey: string): Promise<DirectState | null> {
+  const { claimBotUserState } = await import("./bot-user-claim.server");
   const s = await db();
-  const { data: existing } = await s
-    .from("bot_users")
-    .select("state, updated_at")
-    .eq("user_key", userKey)
-    .maybeSingle();
-
-  const state = readDirectState(existing?.state);
-  if (state.mode !== "awaiting_proof" || !existing?.updated_at) return null;
-
-  const claimed: DirectState = { ...state, mode: "processing_proof" };
-  const { data: updated } = await s
-    .from("bot_users")
-    .update({ state: claimed as unknown as Json, updated_at: new Date().toISOString() })
-    .eq("user_key", userKey)
-    .eq("updated_at", existing.updated_at)
-    .select("state")
-    .maybeSingle();
-
-  return updated ? state : null;
+  return claimBotUserState<DirectState>({
+    db: s,
+    column: "user_key",
+    value: userKey,
+    isClaimable: (raw) => readDirectState(raw).mode === "awaiting_proof",
+    claim: (raw) => ({ ...readDirectState(raw), mode: "processing_proof" }),
+  });
 }
 
 /**
@@ -495,7 +484,12 @@ export async function storeReceipt(
           : "jpg";
 
     const s = await db();
-    const key = `${folder}/${Date.now()}.${extension}`;
+    // Бакет payment-proofs общий на все шесть деплоев (Storage не проходит
+    // через RLS — см. client.server.ts). Без bot_id-префикса чеки покупателей
+    // разных арендаторов, писавших одному и тому же Instagram-профилю, лежали
+    // бы в одной папке общего бакета (см. ANALYSIS.md, пятое обследование).
+    const botId = process.env.BOT_ID?.trim() || "unknown";
+    const key = `${botId}/${folder}/${Date.now()}.${extension}`;
     const { error } = await s.storage
       .from("payment-proofs")
       .upload(key, new Blob([bytes as BlobPart], { type: contentType }), {

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
 import { isAdminAuthed } from "@/lib/admin-session.server";
 
@@ -15,7 +16,8 @@ export const Route = createFileRoute("/api/admin/upload")({
           return new Response("Bad request", { status: 400 });
         }
         const ext = (file.name.split(".").pop() || "bin").toLowerCase().slice(0, 10);
-        const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const botId = process.env.BOT_ID?.trim() || "unknown";
+        const key = `${botId}/${randomBytes(16).toString("hex")}.${ext}`;
         const bytes = new Uint8Array(await file.arrayBuffer());
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const { error } = await supabaseAdmin.storage.from(bucket).upload(key, bytes, {

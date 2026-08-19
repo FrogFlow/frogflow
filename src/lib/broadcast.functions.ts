@@ -106,7 +106,9 @@ export const getBroadcastUploadUrl = createServerFn({ method: "POST" })
     const { requireAdmin } = await import("./admin-session.server");
     await requireAdmin();
     const ext = (data.filename.split(".").pop() || "jpg").toLowerCase().slice(0, 10);
-    const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { randomBytes } = await import("node:crypto");
+    const botId = process.env.BOT_ID?.trim() || "unknown";
+    const key = `${botId}/${randomBytes(16).toString("hex")}.${ext}`;
     const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
     const { data: signed, error } = await supabaseAdmin.storage
       .from("broadcast-images")

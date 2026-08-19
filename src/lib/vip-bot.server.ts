@@ -1186,7 +1186,8 @@ async function handlePhoto(
   const fileInfo = await downloadVipTelegramFile(photoId);
   let proofSaved = false;
   if (fileInfo) {
-    const path = `vip-${pendingSub.id}/${Date.now()}.${fileInfo.ext}`;
+    // bot_id-префикс — payment-proofs общий на все деплои, см. bot.server.ts.
+    const path = `${process.env.BOT_ID?.trim() || "unknown"}/vip-${pendingSub.id}/${Date.now()}.${fileInfo.ext}`;
     const { error } = await s.storage.from("payment-proofs").upload(path, fileInfo.bytes, {
       contentType: fileInfo.mime,
     });

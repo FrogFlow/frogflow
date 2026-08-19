@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components-ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components-ui/dialog";
@@ -355,7 +356,7 @@ function OrdersPage() {
   };
 
   async function onConfirm(id: number, displayNo: number) {
-    if (!confirm(tr.confirmOrderMsg(displayNo))) return;
+    if (!(await confirmToast(tr.confirmOrderMsg(displayNo)))) return;
     setBusy(id);
     try {
       const result = await confirmOrder({ data: { id } });
@@ -370,7 +371,7 @@ function OrdersPage() {
     }
   }
   async function onRedeliver(id: number, displayNo: number) {
-    if (!confirm(tr.redeliverConfirm(displayNo))) return;
+    if (!(await confirmToast(tr.redeliverConfirm(displayNo)))) return;
     setBusy(id);
     try {
       await redeliverOrder({ data: { id } });
@@ -382,7 +383,7 @@ function OrdersPage() {
     }
   }
   async function onContinue(id: number, displayNo: number) {
-    if (!confirm(tr.continueConfirm(displayNo))) return;
+    if (!(await confirmToast(tr.continueConfirm(displayNo)))) return;
     setBusy(id);
     try {
       const res = await continueDeliveryOrder({ data: { id } });
@@ -415,7 +416,7 @@ function OrdersPage() {
     }
   }
   async function onRemindPayment(id: number, displayNo: number) {
-    if (!confirm(tr.remindConfirm(displayNo))) return;
+    if (!(await confirmToast(tr.remindConfirm(displayNo)))) return;
     setBusy(id);
     try {
       await remindPaymentOrder({ data: { id } });
@@ -427,8 +428,8 @@ function OrdersPage() {
     }
   }
   async function onDelete(id: number, displayNo: number) {
-    if (!confirm(tr.deleteConfirm1(displayNo))) return;
-    if (!confirm(tr.deleteConfirm2(displayNo))) return;
+    if (!(await confirmToast(tr.deleteConfirm1(displayNo)))) return;
+    if (!(await confirmToast(tr.deleteConfirm2(displayNo)))) return;
     setBusy(id);
     try {
       await deleteOrder({ data: { id } });
@@ -445,7 +446,7 @@ function OrdersPage() {
     username?: string | null;
     display_name?: string | null;
   }) {
-    if (!confirm(tr.blockConfirm(o.display_name || String(o.telegram_id)))) return;
+    if (!(await confirmToast(tr.blockConfirm(o.display_name || String(o.telegram_id))))) return;
     setBusy(o.id);
     try {
       await blockTelegramUserFn({

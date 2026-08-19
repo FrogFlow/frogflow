@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -512,7 +513,7 @@ function AdminVipSubscribers() {
   };
 
   const handleConfirm = async (id: string) => {
-    if (!confirm(tr.confirmPaymentPrompt)) return;
+    if (!(await confirmToast(tr.confirmPaymentPrompt))) return;
     try {
       await confirmVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
@@ -522,7 +523,7 @@ function AdminVipSubscribers() {
   };
 
   const handleReject = async (id: string) => {
-    if (!confirm(tr.rejectPaymentPrompt)) return;
+    if (!(await confirmToast(tr.rejectPaymentPrompt))) return;
     try {
       await rejectVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
@@ -539,7 +540,7 @@ function AdminVipSubscribers() {
       return toast.warning(tr.extendInvalid);
     }
     if (n < 0) {
-      const ok = confirm(tr.extendReduceConfirm(Math.abs(n)));
+      const ok = await confirmToast(tr.extendReduceConfirm(Math.abs(n)));
       if (!ok) return;
     }
     try {
@@ -551,7 +552,7 @@ function AdminVipSubscribers() {
   };
 
   const handleExclude = async (id: string) => {
-    if (!confirm(tr.excludeConfirm)) return;
+    if (!(await confirmToast(tr.excludeConfirm))) return;
     try {
       await excludeVipFromCommunity({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
@@ -565,7 +566,7 @@ function AdminVipSubscribers() {
     username?: string | null;
     first_name?: string | null;
   }) => {
-    if (!confirm(tr.blockConfirm(sub.telegram_id))) return;
+    if (!(await confirmToast(tr.blockConfirm(sub.telegram_id)))) return;
     try {
       await blockTelegramUserFn({
         data: {
@@ -582,7 +583,7 @@ function AdminVipSubscribers() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(tr.deleteConfirm)) return;
+    if (!(await confirmToast(tr.deleteConfirm))) return;
     await deleteVipSubscription({ data: { id } });
     qc.invalidateQueries({ queryKey: ["vip_subs"] });
     qc.invalidateQueries({ queryKey: ["vip_profiles"] });

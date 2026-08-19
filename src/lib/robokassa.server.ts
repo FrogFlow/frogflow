@@ -42,5 +42,7 @@ export function verifyRobokassaResultSignature(params: {
     checkString += `:${custom.map((p) => `${p.key}=${p.value}`).join(":")}`;
   }
   const expected = md5Hex(checkString).toUpperCase();
-  return params.signature.toUpperCase() === expected;
+  const provided = params.signature.toUpperCase();
+  if (provided.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
 }

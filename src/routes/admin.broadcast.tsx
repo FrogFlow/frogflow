@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -406,7 +407,11 @@ function BroadcastPage() {
 
   async function onStart() {
     if (!messageText.trim()) return toast.warning(tr.enterText);
-    if (audienceType !== "test" && !confirm(tr.startConfirm(String(audienceCount ?? "?")))) return;
+    if (
+      audienceType !== "test" &&
+      !(await confirmToast(tr.startConfirm(String(audienceCount ?? "?"))))
+    )
+      return;
     setBusy(true);
     try {
       const row = await startBroadcastFn({ data: payload });
@@ -595,7 +600,7 @@ function BroadcastPage() {
                 variant="destructive"
                 disabled={busy}
                 onClick={async () => {
-                  if (!confirm(tr.cancelConfirm)) return;
+                  if (!(await confirmToast(tr.cancelConfirm))) return;
                   setBusy(true);
                   try {
                     await cancelBroadcastFn({ data: { id: activeId! } });

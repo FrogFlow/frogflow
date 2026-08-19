@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -209,7 +210,7 @@ function PaymentMethodsPage() {
     }
   }
   async function onDelete(id: string) {
-    if (!confirm(tr.confirmDelete)) return;
+    if (!(await confirmToast(tr.confirmDelete))) return;
     await deletePaymentMethod({ data: { id } });
     qc.invalidateQueries({ queryKey: ["payment-methods"] });
   }

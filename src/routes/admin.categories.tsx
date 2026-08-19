@@ -12,6 +12,7 @@ import {
   updateCategory,
 } from "@/lib/categories.functions";
 import { getCategoryPath, sortCategoriesTree } from "@/lib/category-tree";
+import { confirmToast } from "@/lib/confirm-toast";
 import { EmojiInsertBar, insertAtCursor } from "@/components-ui/emoji-insert-bar";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
@@ -216,7 +217,7 @@ function CategoriesPage() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm(tr.confirmDelete)) return;
+    if (!(await confirmToast(tr.confirmDelete))) return;
     await deleteCategory({ data: { id } });
     qc.invalidateQueries({ queryKey: ["categories"] });
     qc.invalidateQueries({ queryKey: ["products"] });

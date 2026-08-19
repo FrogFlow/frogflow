@@ -13,8 +13,16 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Fail-closed: без настроенного секрета вебхук не принимает ничего,
+        // а не тихо доверяет любому POST. Тот же принцип, что уже применён
+        // к вебхуку Zernio (api/public/zernio/webhook.ts).
+        const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+        if (!expectedSecret) {
+          console.error("[telegram webhook] TELEGRAM_WEBHOOK_SECRET не задан — запрос отклонён");
+          return new Response("misconfigured", { status: 503 });
+        }
         const secret = request.headers.get("x-telegram-bot-api-secret-token");
-        if (process.env.TELEGRAM_WEBHOOK_SECRET && secret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+        if (secret !== expectedSecret) {
           return new Response("forbidden", { status: 403 });
         }
 

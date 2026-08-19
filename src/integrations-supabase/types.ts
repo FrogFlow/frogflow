@@ -8,6 +8,42 @@ export type Database = {
   };
   public: {
     Tables: {
+      // Заведена MIGRATION-22-admin-login-attempts.sql. Добавлена вручную
+      // здесь по тому же поводу, что описан в комментарии к Functions ниже:
+      // scripts/sync-db-types.mjs подтягивает только то, что уже применено к
+      // живой базе, а эта миграция готова, но применяется отдельным шагом.
+      admin_login_attempts: {
+        Row: {
+          id: string;
+          at: string;
+          bot_id: string;
+          ip: string | null;
+          ok: boolean;
+        };
+        Insert: {
+          id?: string;
+          at?: string;
+          bot_id: string;
+          ip?: string | null;
+          ok: boolean;
+        };
+        Update: {
+          id?: string;
+          at?: string;
+          bot_id?: string;
+          ip?: string | null;
+          ok?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "admin_login_attempts_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       subscription_payments: {
         Row: {
           id: string;

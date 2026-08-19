@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -664,7 +665,7 @@ function ProductsPage() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm(tr.confirmDelete)) return;
+    if (!(await confirmToast(tr.confirmDelete))) return;
     try {
       await deleteProduct({ data: { id } });
       qc.invalidateQueries({ queryKey: ["products"] });

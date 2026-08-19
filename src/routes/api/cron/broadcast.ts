@@ -3,6 +3,7 @@ import { errorMessage } from "@/lib/error-message";
 import { processBroadcastBatch } from "@/lib/broadcast.server";
 import { processPendingDeliveries } from "@/lib/orders.server";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
+import { isCronAuthorized } from "@/lib/cron-auth.server";
 
 /**
  * Рассылка + выдача отложенных заказов + подтверждение вебхука. Ретеншн
@@ -13,15 +14,6 @@ import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
  * /api/cron/zernio-retry — каждая задача теперь на своём расписании и не
  * может задержать самую частую и самую денежную часть крона.
  */
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  const url = new URL(request.url);
-  return url.searchParams.get("secret") === secret;
-}
-
 export const Route = createFileRoute("/api/cron/broadcast")({
   server: {
     handlers: {
@@ -32,7 +24,7 @@ export const Route = createFileRoute("/api/cron/broadcast")({
         if (process.env.CONTROL_PLANE === "1") {
           return new Response("Not found", { status: 404 });
         }
-        if (!isAuthorized(request)) {
+        if (!isCronAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 });
         }
         try {

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { listBotsFn } from "@/lib/operator/bots.functions";
@@ -68,9 +69,9 @@ function OperatorBroadcastPage() {
     if (botIds.length === 0) return toast.warning("Выберите хотя бы одного получателя");
     if (!text.trim()) return toast.warning("Введите текст сообщения");
     if (
-      !confirm(
+      !(await confirmToast(
         `Отправить сообщение ${botIds.length} владельц(ам)? Каждый получит его от своего бота.`,
-      )
+      ))
     ) {
       return;
     }

@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -123,9 +124,9 @@ function OperatorClientCard() {
   async function onSetStatus(status: "active" | "paused" | "suspended") {
     if (
       status !== "active" &&
-      !confirm(
+      !(await confirmToast(
         `Перевести бота в статус «${STATUS_LABEL[status].text}»? Клиент увидит текст из «Сообщение на паузе».`,
-      )
+      ))
     ) {
       return;
     }
@@ -429,7 +430,8 @@ function WebhookSection({ botId, appUrl }: { botId: string; appUrl: string | nul
   const [health, setHealth] = useState<Awaited<ReturnType<typeof checkBotHealthFn>> | null>(null);
 
   async function onSetWebhook() {
-    if (!confirm("Направить бота на этот деплой? Текущий вебхук будет перезаписан.")) return;
+    if (!(await confirmToast("Направить бота на этот деплой? Текущий вебхук будет перезаписан.")))
+      return;
     setBusy("hook");
     setHook(null);
     try {
@@ -619,7 +621,7 @@ function SubscriptionSection({ botId }: { botId: string }) {
   }
 
   async function onDelete(paymentId: string) {
-    if (!confirm("Удалить платёж? Дата «оплачен до» пересчитается.")) return;
+    if (!(await confirmToast("Удалить платёж? Дата «оплачен до» пересчитается."))) return;
     try {
       await deletePaymentFn({ data: { botId, paymentId } });
       if (editingId === paymentId) onCancelEdit();
@@ -1161,7 +1163,7 @@ function ArchiveButton({
     const question = archived
       ? "Вернуть клиента в работу? Бот останется приостановленным — включите его вручную."
       : "Убрать клиента в архив? Бот будет приостановлен и перестанет отвечать. Данные сохранятся.";
-    if (!confirm(question)) return;
+    if (!(await confirmToast(question))) return;
     setBusy(true);
     try {
       await setArchivedFn({ data: { botId, archived: !archived } });

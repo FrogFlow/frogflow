@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { deliverOrder } from "@/lib/orders.server";
 import { verifyRobokassaResultSignature } from "@/lib/robokassa.server";
+import { logger } from "@/lib/logger.server";
 
 export const Route = createFileRoute("/api/public/robokassa/result")({
   server: {
@@ -65,7 +66,7 @@ async function handleRobokassaResult(request: Request) {
   });
 
   if (!ok) {
-    console.error("[robokassa] signature mismatch", { outSum, invId });
+    logger.error("robokassa.signature_mismatch", { out_sum: outSum, inv_id: invId });
     return new Response("bad sign", { status: 400 });
   }
 
@@ -82,7 +83,11 @@ async function handleRobokassaResult(request: Request) {
 
   // Защита от подделки суммы
   if (Math.abs(Number(outSum) - Number(order.total)) > 0.01) {
-    console.error("[robokassa] amount mismatch", { outSum, expected: order.total });
+    logger.error("robokassa.amount_mismatch", {
+      order_id: orderId,
+      out_sum: outSum,
+      expected: order.total,
+    });
     return new Response("amount mismatch", { status: 400 });
   }
 
@@ -103,7 +108,7 @@ async function handleRobokassaResult(request: Request) {
         })
         .eq("id", orderId);
     } catch (e) {
-      console.error("[robokassa] deliver error:", e);
+      logger.error("robokassa.deliver_failed", { order_id: orderId, err: e });
     }
   }
 

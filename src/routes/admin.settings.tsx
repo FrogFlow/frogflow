@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -540,7 +541,8 @@ function SettingsPage() {
   }
 
   async function onClearLegal(kind: "offer" | "privacy") {
-    if (!confirm(kind === "offer" ? tr.confirmDeleteOffer : tr.confirmDeletePrivacy)) return;
+    if (!(await confirmToast(kind === "offer" ? tr.confirmDeleteOffer : tr.confirmDeletePrivacy)))
+      return;
     try {
       await clearLegalDocFn({ data: { kind } });
       if (kind === "offer") {
@@ -591,7 +593,7 @@ function SettingsPage() {
   }
 
   async function onClearInstruction() {
-    if (!confirm(tr.confirmDeleteVideo)) return;
+    if (!(await confirmToast(tr.confirmDeleteVideo))) return;
     try {
       await clearInstructionVideoFn();
       setInstructionVideoPath("");
@@ -604,9 +606,9 @@ function SettingsPage() {
   const [resetting, setResetting] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   async function onReset() {
-    const ok = window.confirm(tr.resetConfirm1);
+    const ok = await confirmToast(tr.resetConfirm1);
     if (!ok) return;
-    const ok2 = window.confirm(tr.resetConfirm2);
+    const ok2 = await confirmToast(tr.resetConfirm2);
     if (!ok2) return;
     setResetting(true);
     try {

@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { logger, maskEmail } from "./logger.server";
 
 /**
  * Отправка писем покупателям через SMTP обычного почтового ящика продавца
@@ -141,7 +142,11 @@ export async function sendOrderMaterialsEmail(params: {
     });
     return { ok: true };
   } catch (e) {
-    console.error("[mail] sendOrderMaterialsEmail failed", e);
+    logger.error("mail.send_order_materials_failed", {
+      to: maskEmail(to),
+      order_no: orderNo,
+      err: e,
+    });
     return { ok: false, error: e instanceof Error ? e.message : "Не удалось отправить письмо." };
   }
 }

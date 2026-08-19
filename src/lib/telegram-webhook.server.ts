@@ -3,11 +3,12 @@
 export function verifyTelegramWebhookSecret(request: Request, envNames: string[]): boolean {
   const expected = envNames.map((n) => process.env[n]).find((v) => v && v.length > 0);
   if (!expected) {
-    // Keep existing deploys working until secret is configured and setWebhook is updated.
-    console.warn(
-      `[webhook] No secret configured (${envNames.join(" / ")}). Set env + secret_token on setWebhook for production.`,
+    // Fail-closed: без секрета вебхук не принимает ничего, а не тихо
+    // доверяет любому POST. Тот же принцип, что и в telegram/webhook.ts.
+    console.error(
+      `[webhook] No secret configured (${envNames.join(" / ")}). Set env + secret_token on setWebhook.`,
     );
-    return true;
+    return false;
   }
   const header = request.headers.get("x-telegram-bot-api-secret-token");
   return header === expected;

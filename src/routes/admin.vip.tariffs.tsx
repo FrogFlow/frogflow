@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -396,7 +397,7 @@ function AdminVipTariffs() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(tr.confirmDelete)) return;
+    if (!(await confirmToast(tr.confirmDelete))) return;
     try {
       await deleteVipTariff({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_tariffs"] });

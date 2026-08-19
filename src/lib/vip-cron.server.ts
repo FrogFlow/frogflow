@@ -9,6 +9,7 @@ import {
 } from "@/lib/vip-bot.server";
 import { memberStatusExemptFromSubscription } from "@/lib/vip-group-members.server";
 import { formatDateTimeRu } from "@/lib/datetime";
+import { isCronAuthorized } from "@/lib/cron-auth.server";
 
 export type VipCronResult = {
   warned: number;
@@ -233,18 +234,13 @@ export async function runVipCronJob(): Promise<VipCronResult> {
   return result;
 }
 
+/**
+ * Раньше здесь же принимался голый заголовок `x-vercel-cron: 1` без всякой
+ * проверки секрета — это не подписанное значение, и снаружи его может
+ * выставить кто угодно, обнулив весь смысл CRON_SECRET. Убрано; секрет
+ * теперь проверяется общим `isCronAuthorized` (см. cron-auth.server.ts),
+ * которым уже пользуются /api/cron/* и /api/operator-cron/*.
+ */
 export function isVipCronAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-
-  const url = new URL(request.url);
-  if (url.searchParams.get("secret") === secret) return true;
-
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-
-  // Keep Vercel Cron header support if ever enabled on a paid plan
-  if (request.headers.get("x-vercel-cron") === "1") return true;
-
-  return false;
+  return isCronAuthorized(request);
 }

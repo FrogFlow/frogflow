@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
@@ -201,7 +202,7 @@ function BlockedUsersPage() {
   async function onBlock() {
     const id = telegramId.trim();
     if (!id) return toast.warning(tr.provideId);
-    if (!confirm(tr.blockConfirm(id))) return;
+    if (!(await confirmToast(tr.blockConfirm(id)))) return;
     setBusy(true);
     try {
       await blockTelegramUserFn({
@@ -225,7 +226,7 @@ function BlockedUsersPage() {
   }
 
   async function onUnblock(id: number) {
-    if (!confirm(tr.unblockConfirm(id))) return;
+    if (!(await confirmToast(tr.unblockConfirm(id)))) return;
     setBusy(true);
     try {
       await unblockTelegramUserFn({ data: { telegram_id: id } });

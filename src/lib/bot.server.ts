@@ -1631,29 +1631,16 @@ import { materialsForProduct } from "./product-materials";
  * ошибка вставки заказа), где никто больше state не перезапишет.
  */
 export async function claimOrderPlacement(telegram_id: number): Promise<boolean> {
+  const { claimBotUserState } = await import("./bot-user-claim.server");
   const s = await db();
-  const { data: existing } = await s
-    .from("bot_users")
-    .select("state, updated_at")
-    .eq("telegram_id", telegram_id)
-    .maybeSingle();
-  if (!existing?.updated_at) return false;
-
-  const state = (existing.state as BotUser["state"]) ?? {};
-  if (state?.placing_order) return false;
-
-  const { data: claimed } = await s
-    .from("bot_users")
-    .update({
-      state: { ...state, placing_order: true } as unknown as Json,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("telegram_id", telegram_id)
-    .eq("updated_at", existing.updated_at)
-    .select("id")
-    .maybeSingle();
-
-  return !!claimed;
+  const result = await claimBotUserState<NonNullable<BotUser["state"]>>({
+    db: s,
+    column: "telegram_id",
+    value: telegram_id,
+    isClaimable: (state) => !state?.placing_order,
+    claim: (state) => ({ ...state, placing_order: true }),
+  });
+  return result !== null;
 }
 
 export async function releaseOrderPlacement(telegram_id: number, state: BotUser["state"]) {
@@ -2870,7 +2857,10 @@ export async function handleUpdate(update: TelegramUpdate) {
           console.error("[bot] ensure payment-proofs bucket", e);
         }
 
-        const key = `order-${orderId}/${Date.now()}.${fileExt}`;
+        // payment-proofs общий на все деплои (Storage не проходит через RLS) —
+        // bot_id-префикс не даёт чекам разных арендаторов оказаться в одной
+        // папке общего бакета (см. ANALYSIS.md, пятое обследование).
+        const key = `${process.env.BOT_ID?.trim() || "unknown"}/order-${orderId}/${Date.now()}.${fileExt}`;
         const body = new Blob([dl.bytes as BlobPart], {
           type: dl.mime || "application/octet-stream",
         });

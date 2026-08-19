@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -1445,7 +1446,7 @@ function AdminInstagramPage() {
   };
 
   const handlePostAction = async (postId: string, action: "cancel" | "retry") => {
-    if (action === "cancel" && !confirm(tr.postCancelConfirm)) return;
+    if (action === "cancel" && !(await confirmToast(tr.postCancelConfirm))) return;
     setPostActionId(postId);
     setStatusMsg(null);
     try {
@@ -1464,7 +1465,7 @@ function AdminInstagramPage() {
   };
 
   const handleDisconnectAccount = async (accountId: string, accountName: string) => {
-    if (!confirm(tr.disconnectConfirm(accountName))) return;
+    if (!(await confirmToast(tr.disconnectConfirm(accountName)))) return;
     setDisconnecting(accountId);
     setStatusMsg(null);
     try {
@@ -1740,7 +1741,7 @@ function AdminInstagramPage() {
   };
 
   const handleDeleteAutomation = async (id: string) => {
-    if (!confirm(tr.deleteAutomationConfirm)) return;
+    if (!(await confirmToast(tr.deleteAutomationConfirm))) return;
     try {
       await deleteAutomationFn({ data: { id } });
       qc.invalidateQueries({ queryKey: ["ig_automations"] });

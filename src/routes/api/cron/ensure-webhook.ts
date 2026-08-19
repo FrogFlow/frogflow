@@ -1,14 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
-
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const auth = request.headers.get("authorization");
-  if (auth === `Bearer ${secret}`) return true;
-  const url = new URL(request.url);
-  return url.searchParams.get("secret") === secret;
-}
+import { isCronAuthorized } from "@/lib/cron-auth.server";
 
 /**
  * Часовой независимый self-heal вебхука — подстраховка сверх той же проверки,
@@ -26,7 +18,7 @@ export const Route = createFileRoute("/api/cron/ensure-webhook")({
         if (process.env.CONTROL_PLANE === "1") {
           return new Response("Not found", { status: 404 });
         }
-        if (!isAuthorized(request)) {
+        if (!isCronAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 });
         }
         const result = await ensureTelegramWebhook();

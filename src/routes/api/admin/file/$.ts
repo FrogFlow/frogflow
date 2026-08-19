@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { errorMessage } from "@/lib/error-message";
 import { isAdminAuthed } from "@/lib/admin-session.server";
+import { isOwnTenantStorageKey } from "@/lib/tenant-storage-key.server";
 
 export const Route = createFileRoute("/api/admin/file/$")({
   server: {
@@ -14,6 +15,12 @@ export const Route = createFileRoute("/api/admin/file/$")({
           const bucket = url.searchParams.get("bucket") || "product-files";
           if (!["product-files", "payment-proofs", "product-images"].includes(bucket)) {
             return new Response("Bad bucket", { status: 400 });
+          }
+          // Второй слой поверх сессии админки: эти бакеты общие на все
+          // деплои (Storage не проходит через RLS), а сессия свою бы
+          // изоляцию не дала, если бы кто-то подобрал/угадал чужой путь.
+          if (!isOwnTenantStorageKey(splat)) {
+            return new Response("Not found", { status: 404 });
           }
           const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
           const { data, error } = await supabaseAdmin.storage.from(bucket).download(splat);
