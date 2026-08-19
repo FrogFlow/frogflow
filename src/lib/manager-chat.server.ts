@@ -86,9 +86,27 @@ export async function handleManagerChatInbound(
   return isManagerConnected(telegramId);
 }
 
-/** То же самое для callback-кнопок — нечего логировать как реплику, только обрыв автоматики. */
-export async function isManagerChatBlockingCallbacks(telegramId: number): Promise<boolean> {
+/**
+ * То же самое для нажатий инлайн-кнопок (callback_query) — раньше здесь
+ * ничего не логировалось («нечего показывать как текст»), из-за чего вся
+ * навигация по каталогу инлайн-кнопками (категории, карточки товаров и
+ * т.п.) была не видна в /admin/manager-chat: оператор видел только ответы
+ * бота, но не то, что на них нажимал клиент. Префикс 👉 отличает нажатие
+ * кнопки от свободного текста в том же треде.
+ */
+export async function handleManagerChatCallback(
+  telegramId: number,
+  buttonLabel: string,
+): Promise<boolean> {
   if (!(await hasModule("manager_chat"))) return false;
+
+  await recordMessage({
+    telegramId,
+    direction: "in",
+    sender: "customer",
+    text: `👉 ${buttonLabel || "нажал кнопку"}`,
+  });
+
   return isManagerConnected(telegramId);
 }
 

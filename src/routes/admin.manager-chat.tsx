@@ -31,6 +31,16 @@ function conversationLabel(c: {
   return c.first_name || (c.username ? `@${c.username}` : `ID ${c.telegram_id}`);
 }
 
+/**
+ * Бот часто шлёт текст с parse_mode: "HTML" (<b>, <a href>…) — в чистом
+ * виде теги читались как есть (видно на скриншоте: буквально
+ * `<a href="...">Условиями использования</a>`). Для читаемости в панели
+ * достаточно голого текста, полноценный рендер HTML тут не нужен.
+ */
+function stripHtml(text: string): string {
+  return text.replace(/<[^>]+>/g, "");
+}
+
 const SENDER_STYLE: Record<string, string> = {
   customer: "bg-background border",
   bot: "bg-muted text-foreground",
@@ -138,7 +148,7 @@ function ManagerChatPage() {
                 </div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">
                   {c.last_message_direction === "out" ? "Вы: " : ""}
-                  {c.last_message_preview || "Нет сообщений"}
+                  {c.last_message_preview ? stripHtml(c.last_message_preview) : "Нет сообщений"}
                 </p>
               </button>
             ))}
@@ -176,7 +186,7 @@ function ManagerChatPage() {
                       {m.sender === "bot" && (
                         <p className="mb-1 text-[10px] uppercase opacity-60">автоответ бота</p>
                       )}
-                      <p className="whitespace-pre-wrap">{m.text}</p>
+                      <p className="whitespace-pre-wrap">{stripHtml(m.text)}</p>
                       <p className="mt-1 text-[10px] opacity-70">
                         {new Date(m.created_at).toLocaleString("ru-RU")}
                       </p>

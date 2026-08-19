@@ -2,7 +2,7 @@ import { tg, downloadTelegramFile } from "./telegram.server";
 import { errorMessage } from "@/lib/error-message";
 import { requireAppOrigin } from "./app-origin.server";
 import { replyIfBlocked } from "./blocked-users.server";
-import { handleManagerChatInbound, isManagerChatBlockingCallbacks } from "./manager-chat.server";
+import { handleManagerChatInbound, handleManagerChatCallback } from "./manager-chat.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
 import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
@@ -45,8 +45,26 @@ export type TelegramCallbackQuery = {
   id: string;
   data?: string;
   from?: TelegramUser;
-  message?: { chat?: { id: number }; message_id?: number };
+  message?: {
+    chat?: { id: number };
+    message_id?: number;
+    // Нужно только для manager-chat.server.ts: найти подпись нажатой
+    // инлайн-кнопки по callback_data, чтобы в /admin/manager-chat было
+    // видно не код вроде "cat:12", а текст самой кнопки.
+    reply_markup?: { inline_keyboard?: Array<Array<{ text: string; callback_data?: string }>> };
+  };
 };
+
+/** Подпись нажатой инлайн-кнопки — для лога /admin/manager-chat, чтобы там был текст «📚 Каталог», а не сырой callback_data вроде "cat:12". */
+function callbackButtonLabel(cq: TelegramCallbackQuery): string {
+  const rows = cq.message?.reply_markup?.inline_keyboard ?? [];
+  for (const row of rows) {
+    for (const btn of row) {
+      if (btn.callback_data === cq.data) return btn.text;
+    }
+  }
+  return cq.data || "";
+}
 
 export type TelegramUpdate = {
   message?: TelegramMessage;
@@ -2308,7 +2326,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (!chat_id || !cq.from) return;
       const from_id = cq.from.id;
       if (await replyIfBlocked(chat_id, from_id)) return;
-      if (await isManagerChatBlockingCallbacks(from_id)) return;
+      if (await handleManagerChatCallback(from_id, callbackButtonLabel(cq))) return;
       if (await replyIfPaused(chat_id)) return;
 
       const user = await upsertUser(cq.from);

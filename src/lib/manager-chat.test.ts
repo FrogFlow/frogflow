@@ -58,7 +58,7 @@ vi.mock("@/integrations-supabase/client.server", () => ({
   },
 }));
 
-const { handleManagerChatInbound, isManagerChatBlockingCallbacks } =
+const { handleManagerChatInbound, handleManagerChatCallback } =
   await import("./manager-chat.server");
 
 beforeEach(() => {
@@ -105,16 +105,18 @@ describe("handleManagerChatInbound", () => {
   });
 });
 
-describe("isManagerChatBlockingCallbacks", () => {
-  it("is false when the module is off, even if a stale active row exists", async () => {
+describe("handleManagerChatCallback", () => {
+  it("does nothing when the module is off, even if a stale active row exists", async () => {
     moduleEnabled = false;
     stateStore.push({ bot_id: process.env.BOT_ID!, telegram_id: 7, active: true });
-    expect(await isManagerChatBlockingCallbacks(7)).toBe(false);
+    expect(await handleManagerChatCallback(7, "📚 Каталог")).toBe(false);
+    expect(messagesInserted).toHaveLength(0);
   });
 
-  it("mirrors the active flag when the module is on", async () => {
+  it("logs the tapped button with a 👉 prefix and mirrors the active flag", async () => {
     stateStore.push({ bot_id: process.env.BOT_ID!, telegram_id: 7, active: true });
-    expect(await isManagerChatBlockingCallbacks(7)).toBe(true);
-    expect(await isManagerChatBlockingCallbacks(8)).toBe(false);
+    expect(await handleManagerChatCallback(7, "📚 Каталог")).toBe(true);
+    expect(messagesInserted[0]?.text).toBe("👉 📚 Каталог");
+    expect(await handleManagerChatCallback(8, "📚 Каталог")).toBe(false);
   });
 });

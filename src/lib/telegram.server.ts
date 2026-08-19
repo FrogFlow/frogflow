@@ -39,11 +39,21 @@ function sleep(ms: number) {
  * hasModule — первая проверка и самая дешёвая (кеш 60с в модуле modules),
  * чтобы боты без этого модуля не платили лишним походом в базу на каждый
  * sendMessage.
+ *
+ * Помимо sendMessage логируются sendPhoto/sendDocument (карточки товаров,
+ * файлы) — у них текст лежит в caption, а не в text. Без этого в
+ * /admin/manager-chat пропадали все ответы бота с картинкой (например,
+ * карточка товара с кнопкой «В корзину»).
  */
-async function logOutboundIfCustomer(payload: unknown): Promise<void> {
+const OUTBOUND_LOG_METHODS = new Set(["sendMessage", "sendPhoto", "sendDocument"]);
+
+async function logOutboundIfCustomer(method: string, payload: unknown): Promise<void> {
+  if (!OUTBOUND_LOG_METHODS.has(method)) return;
   if (typeof payload !== "object" || payload === null) return;
   const chatId = (payload as { chat_id?: unknown }).chat_id;
-  const text = (payload as { text?: unknown }).text;
+  const text =
+    (payload as { text?: unknown; caption?: unknown }).text ??
+    (payload as { caption?: unknown }).caption;
   if (typeof chatId !== "number" || typeof text !== "string" || !text) return;
 
   try {
@@ -112,8 +122,8 @@ export async function tg(method: string, payload: unknown, opts?: { skipChatLog?
     if ((!res.ok || (data && data.ok === false)) && !benign) {
       console.error(`[telegram] ${method} failed`, res.status, data);
     }
-    if (method === "sendMessage" && data?.ok !== false && !opts?.skipChatLog) {
-      await logOutboundIfCustomer(payload);
+    if (data?.ok !== false && !opts?.skipChatLog) {
+      await logOutboundIfCustomer(method, payload);
     }
     return data as { ok: boolean; result?: unknown; description?: string };
   }
