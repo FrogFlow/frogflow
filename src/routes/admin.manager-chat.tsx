@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components-ui/button";
 import { Textarea } from "@/components-ui/textarea";
@@ -37,10 +37,13 @@ const SENDER_STYLE: Record<string, string> = {
   manager: "ml-auto bg-primary text-primary-foreground",
 };
 
+const CHAT_HEIGHT = "h-[560px]";
+
 function ManagerChatPage() {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [reply, setReply] = useState("");
+  const threadRef = useRef<HTMLDivElement | null>(null);
 
   const conversations = useQuery({
     queryKey: ["manager_chat_conversations"],
@@ -61,6 +64,12 @@ function ManagerChatPage() {
       .then(() => qc.invalidateQueries({ queryKey: ["manager_chat_conversations"] }))
       .catch(() => {});
   }, [selectedId, qc]);
+
+  // Прокручиваем окно переписки, а не страницу — открыли диалог или
+  // пришло/ушло новое сообщение (в т.ч. по 3-секундному polling'у).
+  useEffect(() => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
+  }, [messages.data]);
 
   const selected = (conversations.data ?? []).find((c) => c.telegram_id === selectedId) ?? null;
 
@@ -106,7 +115,7 @@ function ManagerChatPage() {
           <CardDescription>Список обновляется каждые несколько секунд.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-          <div className="max-h-[520px] space-y-2 overflow-y-auto border-r pr-3">
+          <div className={`${CHAT_HEIGHT} space-y-2 overflow-y-auto border-r pr-3`}>
             {(conversations.data ?? []).map((c) => (
               <button
                 key={c.telegram_id}
@@ -138,12 +147,12 @@ function ManagerChatPage() {
             )}
           </div>
 
-          <div className="flex min-h-[440px] flex-col gap-3">
+          <div className={`${CHAT_HEIGHT} flex flex-col gap-3`}>
             {selectedId === null ? (
               <p className="m-auto text-sm text-muted-foreground">Выберите диалог слева.</p>
             ) : (
               <>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 shrink-0">
                   <span className="text-sm font-medium">
                     {selected ? conversationLabel(selected) : ""}
                   </span>
@@ -155,7 +164,10 @@ function ManagerChatPage() {
                     {selected?.active ? "Завершить диалог" : "Подключиться к диалогу"}
                   </Button>
                 </div>
-                <div className="flex-1 space-y-2 overflow-y-auto rounded-md bg-muted/30 p-3">
+                <div
+                  ref={threadRef}
+                  className="flex-1 min-h-0 space-y-2 overflow-y-auto rounded-md bg-muted/30 p-3"
+                >
                   {(messages.data ?? []).map((m) => (
                     <div
                       key={m.id}
@@ -172,7 +184,7 @@ function ManagerChatPage() {
                   ))}
                   {messages.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                   <Textarea
                     value={reply}
                     onChange={(e) => setReply(e.target.value)}
