@@ -17,7 +17,55 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function tg(method: string, payload: unknown) {
+/**
+ * Централизованное логирование чата с менеджером (registry.ts:
+ * manager_chat). У бота нет единой точки, через которую проходят все
+ * автоответы — switch(menuAction) и обработчики callback-кнопок в
+ * bot.server.ts разбросаны по файлу на тысячи строк, — а tg() наоборот,
+ * единственная точка, через которую проходит буквально любая отправка
+ * sendMessage. Поэтому лог исходящих реплик бота живёт здесь, а не в
+ * каждом месте, где бот что-то отвечает.
+ *
+ * Фильтр — позитивный, а не «список ID админов»: логируем только когда
+ * chat_id уже есть в bot_users этого бота (значит это отслеживаемый
+ * клиент). Уведомления на admin_chat_id почти всегда мимо этого фильтра,
+ * потому что админ обычно не оформлял заказ через тот же Telegram ID —
+ * но не гарантированно: если оператор сам когда-то протестировал бота под
+ * тем же ID, что указан как admin_chat_id, эти уведомления попадут в
+ * список переписок как «разговор с самим собой». Известное, принятое
+ * ограничение v1 — не приватностный риск (это его собственные данные в
+ * его собственной панели), не решается сейчас.
+ *
+ * hasModule — первая проверка и самая дешёвая (кеш 60с в модуле modules),
+ * чтобы боты без этого модуля не платили лишним походом в базу на каждый
+ * sendMessage.
+ */
+async function logOutboundIfCustomer(payload: unknown): Promise<void> {
+  if (typeof payload !== "object" || payload === null) return;
+  const chatId = (payload as { chat_id?: unknown }).chat_id;
+  const text = (payload as { text?: unknown }).text;
+  if (typeof chatId !== "number" || typeof text !== "string" || !text) return;
+
+  try {
+    const { hasModule } = await import("./modules/modules.server");
+    if (!(await hasModule("manager_chat"))) return;
+
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    const { data: known } = await supabaseAdmin
+      .from("bot_users")
+      .select("telegram_id")
+      .eq("telegram_id", chatId)
+      .maybeSingle();
+    if (!known) return;
+
+    const { recordMessage } = await import("./manager-chat.server");
+    await recordMessage({ telegramId: chatId, direction: "out", sender: "bot", text });
+  } catch (e) {
+    console.error("[manager-chat] outbound auto-log failed", e);
+  }
+}
+
+export async function tg(method: string, payload: unknown, opts?: { skipChatLog?: boolean }) {
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let res: Response;
@@ -63,6 +111,9 @@ export async function tg(method: string, payload: unknown) {
 
     if ((!res.ok || (data && data.ok === false)) && !benign) {
       console.error(`[telegram] ${method} failed`, res.status, data);
+    }
+    if (method === "sendMessage" && data?.ok !== false && !opts?.skipChatLog) {
+      await logOutboundIfCustomer(payload);
     }
     return data as { ok: boolean; result?: unknown; description?: string };
   }

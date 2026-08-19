@@ -44,6 +44,89 @@ export type Database = {
           },
         ];
       };
+      // Заведена MIGRATION-26-manager-chat.sql — тем же поводом, что и
+      // admin_login_attempts выше.
+      manager_chat_state: {
+        Row: {
+          bot_id: string;
+          telegram_id: number;
+          active: boolean;
+          connected_at: string | null;
+          last_message_at: string;
+          last_message_preview: string | null;
+          last_message_direction: string | null;
+          unread_count: number;
+        };
+        Insert: {
+          bot_id: string;
+          telegram_id: number;
+          active?: boolean;
+          connected_at?: string | null;
+          last_message_at?: string;
+          last_message_preview?: string | null;
+          last_message_direction?: string | null;
+          unread_count?: number;
+        };
+        Update: {
+          bot_id?: string;
+          telegram_id?: number;
+          active?: boolean;
+          connected_at?: string | null;
+          last_message_at?: string;
+          last_message_preview?: string | null;
+          last_message_direction?: string | null;
+          unread_count?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "manager_chat_state_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // Заведена MIGRATION-26-manager-chat.sql — тем же поводом, что и
+      // admin_login_attempts выше.
+      manager_chat_messages: {
+        Row: {
+          id: string;
+          bot_id: string;
+          telegram_id: number;
+          direction: string;
+          sender: string;
+          text: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          telegram_id: number;
+          direction: string;
+          sender: string;
+          text: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          telegram_id?: number;
+          direction?: string;
+          sender?: string;
+          text?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "manager_chat_messages_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       // Заведена MIGRATION-25-module-requests.sql — тем же поводом, что и
       // admin_login_attempts выше: миграция уже применена к живой базе, но
       // scripts/sync-db-types.mjs не заводит новые таблицы, только колонки.
@@ -1588,6 +1671,19 @@ export type Database = {
           p_sent: number;
           p_failed: number;
           p_blocked: number;
+        };
+        Returns: undefined;
+      };
+      // Добавлено вручную по той же причине. MIGRATION-26. Атомарный
+      // upsert+инкремент unread_count в manager_chat_state — вызывается под
+      // tenant_bot на каждое сообщение чата с менеджером.
+      manager_chat_touch: {
+        Args: {
+          p_bot_id: string;
+          p_telegram_id: number;
+          p_direction: string;
+          p_sender: string;
+          p_preview: string;
         };
         Returns: undefined;
       };

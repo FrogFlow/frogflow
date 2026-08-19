@@ -33,6 +33,12 @@ const messages: Dictionary = {
   promotionGroup: { ru: "Продвижение", kk: "Жылжыту", en: "Promotion", uz: "Reklama" },
   audienceGroup: { ru: "Аудитория", kk: "Аудитория", en: "Audience", uz: "Auditoriya" },
   modules: { ru: "Модули", kk: "Модульдер", en: "Modules", uz: "Modullar" },
+  managerChat: {
+    ru: "Чат с менеджером",
+    kk: "Менеджермен чат",
+    en: "Manager chat",
+    uz: "Menejer bilan chat",
+  },
   logout: { ru: "Выйти", kk: "Шығу", en: "Log out", uz: "Chiqish" },
   language: { ru: "Язык", kk: "Тіл", en: "Language", uz: "Til" },
   blocked: { ru: "Блокировка", kk: "Бұғаттау", en: "Blocking", uz: "Bloklash" },

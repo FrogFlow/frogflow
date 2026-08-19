@@ -2,6 +2,7 @@ import { tg, downloadTelegramFile } from "./telegram.server";
 import { errorMessage } from "@/lib/error-message";
 import { requireAppOrigin } from "./app-origin.server";
 import { replyIfBlocked } from "./blocked-users.server";
+import { handleManagerChatInbound, isManagerChatBlockingCallbacks } from "./manager-chat.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
 import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
@@ -2307,6 +2308,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (!chat_id || !cq.from) return;
       const from_id = cq.from.id;
       if (await replyIfBlocked(chat_id, from_id)) return;
+      if (await isManagerChatBlockingCallbacks(from_id)) return;
       if (await replyIfPaused(chat_id)) return;
 
       const user = await upsertUser(cq.from);
@@ -2672,6 +2674,7 @@ export async function handleUpdate(update: TelegramUpdate) {
     const from = msg.from;
     if (!from) return;
     if (await replyIfBlocked(chat_id, from.id)) return;
+    if (await handleManagerChatInbound(from.id, msg.text)) return;
     if (await replyIfPaused(chat_id)) return;
     const user = await upsertUser(from);
     if (!user) return;

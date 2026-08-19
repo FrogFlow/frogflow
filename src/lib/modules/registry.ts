@@ -201,7 +201,8 @@ export const MODULES = {
     title: "Чат с менеджером",
     group: "Сервис",
     price: 14000,
-    status: "planned",
+    status: "available",
+    note: "Автоответы бота логируются только начиная с включения модуля — истории до этого момента нет.",
   },
   helpdesk: {
     title: "Мини-helpdesk",

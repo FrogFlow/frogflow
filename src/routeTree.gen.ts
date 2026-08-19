@@ -24,6 +24,7 @@ import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminModulesRouteImport } from './routes/admin.modules'
+import { Route as AdminManagerChatRouteImport } from './routes/admin.manager-chat'
 import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
 import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
@@ -131,6 +132,11 @@ const AdminOrdersRoute = AdminOrdersRouteImport.update({
 const AdminModulesRoute = AdminModulesRouteImport.update({
   id: '/modules',
   path: '/modules',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminManagerChatRoute = AdminManagerChatRouteImport.update({
+  id: '/manager-chat',
+  path: '/manager-chat',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminInstagramRoute = AdminInstagramRouteImport.update({
@@ -319,6 +325,7 @@ export interface FileRoutesByFullPath {
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
@@ -368,6 +375,7 @@ export interface FileRoutesByTo {
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
@@ -417,6 +425,7 @@ export interface FileRoutesById {
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
@@ -470,6 +479,7 @@ export interface FileRouteTypes {
     | '/admin/broadcast'
     | '/admin/categories'
     | '/admin/instagram'
+    | '/admin/manager-chat'
     | '/admin/modules'
     | '/admin/orders'
     | '/admin/payment-methods'
@@ -519,6 +529,7 @@ export interface FileRouteTypes {
     | '/admin/broadcast'
     | '/admin/categories'
     | '/admin/instagram'
+    | '/admin/manager-chat'
     | '/admin/modules'
     | '/admin/orders'
     | '/admin/payment-methods'
@@ -567,6 +578,7 @@ export interface FileRouteTypes {
     | '/admin/broadcast'
     | '/admin/categories'
     | '/admin/instagram'
+    | '/admin/manager-chat'
     | '/admin/modules'
     | '/admin/orders'
     | '/admin/payment-methods'
@@ -744,6 +756,13 @@ declare module '@tanstack/react-router' {
       path: '/modules'
       fullPath: '/admin/modules'
       preLoaderRoute: typeof AdminModulesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/manager-chat': {
+      id: '/admin/manager-chat'
+      path: '/manager-chat'
+      fullPath: '/admin/manager-chat'
+      preLoaderRoute: typeof AdminManagerChatRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/instagram': {
@@ -1010,6 +1029,7 @@ interface AdminRouteChildren {
   AdminBroadcastRoute: typeof AdminBroadcastRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
   AdminInstagramRoute: typeof AdminInstagramRoute
+  AdminManagerChatRoute: typeof AdminManagerChatRoute
   AdminModulesRoute: typeof AdminModulesRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPaymentMethodsRoute: typeof AdminPaymentMethodsRoute
@@ -1025,6 +1045,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBroadcastRoute: AdminBroadcastRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
   AdminInstagramRoute: AdminInstagramRoute,
+  AdminManagerChatRoute: AdminManagerChatRoute,
   AdminModulesRoute: AdminModulesRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPaymentMethodsRoute: AdminPaymentMethodsRoute,
