@@ -1687,6 +1687,16 @@ export type Database = {
         };
         Returns: undefined;
       };
+      // MIGRATION-27. Атомарный захват «этот покупатель уже оформляет заказ»
+      // одним оператором — пришёл на смену CAS по updated_at, который рушился
+      // от посторонних записей в ту же строку bot_users.
+      claim_order_placement: {
+        Args: {
+          p_bot_id: string;
+          p_telegram_id: number;
+        };
+        Returns: boolean;
+      };
     };
     Enums: {
       [_ in never]: never;

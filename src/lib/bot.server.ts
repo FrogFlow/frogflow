@@ -1645,10 +1645,18 @@ import { materialsForProduct } from "./product-materials";
  * inline-callback, и двойной тап по ней (частое дело в Telegram) до этой
  * правки успевал прочитать одну и ту же корзину дважды и создать два
  * одинаковых заказа: cart_items не трогается до самого конца placeOrder.
- * Тот же приём, что claimAwaitingProof в direct-purchase.server.ts —
- * условный UPDATE по прочитанному updated_at, а не «прочитал, потом
- * записал»: Postgres сериализует два одновременных UPDATE над одной
- * строкой, и совпасть под WHERE может только у одного из них.
+ *
+ * Раньше здесь был CAS по updated_at (claimBotUserState). Он оказался
+ * ненадёжен: токеном служил updated_at, а его двигает триггер
+ * trg_bot_users_touch на любой апдейт строки — включая upsertUser(), который
+ * handleUpdate вызывает на каждое нажатие ещё до оформления. Достаточно было
+ * двум исполнениям одного и того же «Оформить заказ» наложиться (Telegram
+ * повторяет обновление, если не дождался ответа), и они рушили захваты друг
+ * друга: оба возвращали false, placeOrder молча выходил — ни заказа, ни
+ * сообщения покупателю. См. MIGRATION-27-atomic-order-claim.sql.
+ *
+ * Теперь проверка и запись — один оператор внутри claim_order_placement():
+ * посторонние записи в строку на него не влияют.
  *
  * Флаг сам стирается на успешном пути: startManualProofPath /
  * sendKzPaymentChoice / sendRobokassaPayLink переписывают state целиком из
@@ -1657,16 +1665,17 @@ import { materialsForProduct } from "./product-materials";
  * ошибка вставки заказа), где никто больше state не перезапишет.
  */
 export async function claimOrderPlacement(telegram_id: number): Promise<boolean> {
-  const { claimBotUserState } = await import("./bot-user-claim.server");
   const s = await db();
-  const result = await claimBotUserState<NonNullable<BotUser["state"]>>({
-    db: s,
-    column: "telegram_id",
-    value: telegram_id,
-    isClaimable: (state) => !state?.placing_order,
-    claim: (state) => ({ ...state, placing_order: true }),
+  const { data, error } = await s.rpc("claim_order_placement", {
+    p_bot_id: process.env.BOT_ID?.trim() ?? "",
+    p_telegram_id: telegram_id,
   });
-  return result !== null;
+  if (error) {
+    // Не глотаем: без захвата placeOrder просто молча выйдет, а покупатель
+    // так и не поймёт, почему «Оформить заказ» ничего не делает.
+    throw new Error(`claim_order_placement failed: ${error.message}`);
+  }
+  return data === true;
 }
 
 export async function releaseOrderPlacement(telegram_id: number, state: BotUser["state"]) {

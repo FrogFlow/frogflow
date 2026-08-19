@@ -123,7 +123,14 @@ export async function tg(method: string, payload: unknown, opts?: { skipChatLog?
       console.error(`[telegram] ${method} failed`, res.status, data);
     }
     if (data?.ok !== false && !opts?.skipChatLog) {
-      await logOutboundIfCustomer(method, payload);
+      // Сознательно НЕ await: лог переписки — вспомогательная запись, а этот
+      // путь обслуживает живого покупателя. Пока здесь стоял await, каждое
+      // исходящее сообщение бота тянуло за собой ещё несколько обращений к
+      // базе, оформление заказа (самый долгий сценарий — много сообщений
+      // подряд) переставало укладываться в ответ вебхуку, Telegram повторял
+      // то же обновление, и параллельные исполнения глушили друг друга.
+      // Потерять строку лога не страшно, задержать заказ — страшно.
+      void logOutboundIfCustomer(method, payload);
     }
     return data as { ok: boolean; result?: unknown; description?: string };
   }
