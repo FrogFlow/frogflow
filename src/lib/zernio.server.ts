@@ -872,6 +872,14 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
       Array.isArray(v) ? (v as ZernioPost[]) : [];
     const asText = (v: Json | undefined): string | undefined =>
       typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined;
+    // `_date` is frequently an ISO string (Zernio's publishedAt), not a unix
+    // timestamp — Number(isoString) is NaN, so this must go through `new
+    // Date()` directly, the same way it accepts both forms natively.
+    const asDate = (v: Json | undefined): Date | null => {
+      if (typeof v !== "number" && typeof v !== "string") return null;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
 
     const findPlatform = (items: ZernioPost[]) =>
       items.find((item) => asText(item.accountId) === accountId && item.platform === "instagram");
@@ -965,8 +973,7 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
 
         // Zernio can return the same Instagram media from separate analytics
         // records. Their internal IDs differ, so also deduplicate by content.
-        const dateNum = Number(p._date) || 0;
-        const parsedDate = dateNum ? new Date(dateNum) : null;
+        const parsedDate = asDate(p._date);
         const dateKey =
           parsedDate && !Number.isNaN(parsedDate.getTime())
             ? parsedDate.toISOString().slice(0, 10)

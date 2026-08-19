@@ -1279,6 +1279,14 @@ function AdminInstagramPage() {
 
   const accounts = accountsQuery.data?.accounts || [];
   const acc = accounts[0];
+  // p._date can be either a ms timestamp or an ISO string (Zernio's
+  // publishedAt) — Number() on the latter is NaN, so this must go through
+  // `new Date()` directly rather than forcing it to a number first.
+  const formatPostDate = (value: unknown): string => {
+    if (typeof value !== "number" && typeof value !== "string") return "Нет даты";
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? "Нет даты" : d.toLocaleDateString("ru-RU");
+  };
   const displayProfile = (profile: string | { _id: string; name?: string } | undefined) => {
     if (!profile) return "default";
     if (typeof profile === "string") return profile;
@@ -2092,9 +2100,7 @@ function AdminInstagramPage() {
                                   )}
                                   <div className="flex flex-col min-w-0 text-left">
                                     <span className="text-[9px] text-muted-foreground font-bold uppercase">
-                                      {p._date
-                                        ? new Date(Number(p._date)).toLocaleDateString("ru-RU")
-                                        : "Нет даты"}
+                                      {formatPostDate(p._date)}
                                     </span>
                                     <span className="text-xs truncate font-medium">
                                       {String(
