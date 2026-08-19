@@ -19,9 +19,11 @@ import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
 import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
 import { Route as AdminVipRouteImport } from './routes/admin.vip'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminRobokassaRouteImport } from './routes/admin.robokassa'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
+import { Route as AdminModulesRouteImport } from './routes/admin.modules'
 import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
 import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
@@ -106,6 +108,11 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminRobokassaRoute = AdminRobokassaRouteImport.update({
+  id: '/robokassa',
+  path: '/robokassa',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminProductsRoute = AdminProductsRouteImport.update({
   id: '/products',
   path: '/products',
@@ -119,6 +126,11 @@ const AdminPaymentMethodsRoute = AdminPaymentMethodsRouteImport.update({
 const AdminOrdersRoute = AdminOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminModulesRoute = AdminModulesRouteImport.update({
+  id: '/modules',
+  path: '/modules',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminInstagramRoute = AdminInstagramRouteImport.update({
@@ -307,9 +319,11 @@ export interface FileRoutesByFullPath {
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/legal/$slug': typeof LegalSlugRoute
@@ -354,9 +368,11 @@ export interface FileRoutesByTo {
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/legal/$slug': typeof LegalSlugRoute
   '/operator/login': typeof OperatorLoginRoute
@@ -401,9 +417,11 @@ export interface FileRoutesById {
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
   '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/legal/$slug': typeof LegalSlugRoute
@@ -452,9 +470,11 @@ export interface FileRouteTypes {
     | '/admin/broadcast'
     | '/admin/categories'
     | '/admin/instagram'
+    | '/admin/modules'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
+    | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/vip'
     | '/legal/$slug'
@@ -499,9 +519,11 @@ export interface FileRouteTypes {
     | '/admin/broadcast'
     | '/admin/categories'
     | '/admin/instagram'
+    | '/admin/modules'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
+    | '/admin/robokassa'
     | '/admin/settings'
     | '/legal/$slug'
     | '/operator/login'
@@ -545,9 +567,11 @@ export interface FileRouteTypes {
     | '/admin/broadcast'
     | '/admin/categories'
     | '/admin/instagram'
+    | '/admin/modules'
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
+    | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/vip'
     | '/legal/$slug'
@@ -687,6 +711,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/robokassa': {
+      id: '/admin/robokassa'
+      path: '/robokassa'
+      fullPath: '/admin/robokassa'
+      preLoaderRoute: typeof AdminRobokassaRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/products': {
       id: '/admin/products'
       path: '/products'
@@ -706,6 +737,13 @@ declare module '@tanstack/react-router' {
       path: '/orders'
       fullPath: '/admin/orders'
       preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/modules': {
+      id: '/admin/modules'
+      path: '/modules'
+      fullPath: '/admin/modules'
+      preLoaderRoute: typeof AdminModulesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/instagram': {
@@ -972,9 +1010,11 @@ interface AdminRouteChildren {
   AdminBroadcastRoute: typeof AdminBroadcastRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
   AdminInstagramRoute: typeof AdminInstagramRoute
+  AdminModulesRoute: typeof AdminModulesRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPaymentMethodsRoute: typeof AdminPaymentMethodsRoute
   AdminProductsRoute: typeof AdminProductsRoute
+  AdminRobokassaRoute: typeof AdminRobokassaRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminVipRoute: typeof AdminVipRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
@@ -985,9 +1025,11 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBroadcastRoute: AdminBroadcastRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
   AdminInstagramRoute: AdminInstagramRoute,
+  AdminModulesRoute: AdminModulesRoute,
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPaymentMethodsRoute: AdminPaymentMethodsRoute,
   AdminProductsRoute: AdminProductsRoute,
+  AdminRobokassaRoute: AdminRobokassaRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminVipRoute: AdminVipRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,

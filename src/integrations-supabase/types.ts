@@ -44,6 +44,44 @@ export type Database = {
           },
         ];
       };
+      // Заведена MIGRATION-25-module-requests.sql — тем же поводом, что и
+      // admin_login_attempts выше: миграция уже применена к живой базе, но
+      // scripts/sync-db-types.mjs не заводит новые таблицы, только колонки.
+      module_requests: {
+        Row: {
+          id: string;
+          bot_id: string;
+          module_key: string;
+          requested_at: string;
+          status: string;
+          resolved_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          module_key: string;
+          requested_at?: string;
+          status?: string;
+          resolved_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          module_key?: string;
+          requested_at?: string;
+          status?: string;
+          resolved_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "module_requests_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       subscription_payments: {
         Row: {
           id: string;

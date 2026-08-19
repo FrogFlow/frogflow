@@ -20,6 +20,10 @@ import {
   listOwnerCandidatesFn,
 } from "@/lib/operator/bots.functions";
 import {
+  listPendingModuleRequestsFn,
+  resolveModuleRequestFn,
+} from "@/lib/operator/module-requests.functions";
+import {
   getSubscriptionFn,
   listPaymentsFn,
   addPaymentFn,
@@ -74,8 +78,14 @@ function OperatorClientCard() {
     queryKey: ["operator_bot_events", botId],
     queryFn: () => listBotEventsFn({ data: { botId } }),
   });
+  const moduleRequestsQuery = useQuery({
+    queryKey: ["operator_module_requests"],
+    queryFn: () => listPendingModuleRequestsFn(),
+  });
+  const pendingRequests = (moduleRequestsQuery.data ?? []).filter((r) => r.bot_id === botId);
 
   const [busyModule, setBusyModule] = useState<ModuleKey | null>(null);
+  const [resolvingKey, setResolvingKey] = useState<ModuleKey | null>(null);
   const [busyStatus, setBusyStatus] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
   const [meta, setMeta] = useState({
@@ -118,6 +128,18 @@ function OperatorClientCard() {
       toast.error(errorMessage(e));
     } finally {
       setBusyModule(null);
+    }
+  }
+
+  async function onResolveRequest(key: ModuleKey) {
+    setResolvingKey(key);
+    try {
+      await resolveModuleRequestFn({ data: { botId, moduleKey: key } });
+      await qc.invalidateQueries({ queryKey: ["operator_module_requests"] });
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setResolvingKey(null);
     }
   }
 
@@ -253,6 +275,30 @@ function OperatorClientCard() {
         </TabsContent>
 
         <TabsContent value="modules" className="space-y-6">
+          {pendingRequests.length > 0 && (
+            <section className="bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900 rounded-lg p-4 space-y-2">
+              <h2 className="font-medium text-sm text-amber-900 dark:text-amber-200">
+                Клиент заказал подключение
+              </h2>
+              {pendingRequests.map((r) => (
+                <div
+                  key={r.module_key}
+                  className="flex items-center justify-between gap-2 text-sm text-amber-900 dark:text-amber-200/90"
+                >
+                  <span>{r.module_title}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={resolvingKey === r.module_key}
+                    onClick={() => onResolveRequest(r.module_key)}
+                  >
+                    Обработано
+                  </Button>
+                </div>
+              ))}
+            </section>
+          )}
+
           <section className="bg-card border rounded-lg p-4 space-y-4">
             <h2 className="font-medium">Модули</h2>
             {orderedGroups.map((group) => (

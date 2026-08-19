@@ -28,6 +28,11 @@ const messages: Dictionary = {
     uz: "To‘lov ma’lumotlari",
   },
   settings: { ru: "Настройки", kk: "Баптаулар", en: "Settings", uz: "Sozlamalar" },
+  catalogGroup: { ru: "Каталог", kk: "Каталог", en: "Catalog", uz: "Katalog" },
+  paymentGroup: { ru: "Оплата", kk: "Төлем", en: "Payment", uz: "To‘lov" },
+  promotionGroup: { ru: "Продвижение", kk: "Жылжыту", en: "Promotion", uz: "Reklama" },
+  audienceGroup: { ru: "Аудитория", kk: "Аудитория", en: "Audience", uz: "Auditoriya" },
+  modules: { ru: "Модули", kk: "Модульдер", en: "Modules", uz: "Modullar" },
   logout: { ru: "Выйти", kk: "Шығу", en: "Log out", uz: "Chiqish" },
   language: { ru: "Язык", kk: "Тіл", en: "Language", uz: "Til" },
   blocked: { ru: "Блокировка", kk: "Бұғаттау", en: "Blocking", uz: "Bloklash" },
@@ -65,6 +70,31 @@ const messages: Dictionary = {
   error: { ru: "Ошибка", kk: "Қате", en: "Error", uz: "Xato" },
   success: { ru: "Готово", kk: "Дайын", en: "Done", uz: "Tayyor" },
   noData: { ru: "Пока пусто", kk: "Әзірге бос", en: "Nothing here yet", uz: "Hozircha bo‘sh" },
+  requestConnection: {
+    ru: "Заказать подключение",
+    kk: "Қосуды тапсырыс беру",
+    en: "Request connection",
+    uz: "Ulanishni buyurtma qilish",
+  },
+  requestSent: {
+    ru: "Заявка отправлена",
+    kk: "Өтінім жіберілді",
+    en: "Request sent",
+    uz: "So‘rov yuborildi",
+  },
+  alreadyRequested: {
+    ru: "Заявка уже отправлена — ожидайте связи",
+    kk: "Өтінім жіберілген — байланысты күтіңіз",
+    en: "Already requested — we'll reach out",
+    uz: "So‘rov allaqachon yuborilgan — kuting",
+  },
+  connected: { ru: "Подключено", kk: "Қосылған", en: "Connected", uz: "Ulangan" },
+  includedInPlan: {
+    ru: "Входит в пакет",
+    kk: "Пакетке кіреді",
+    en: "Included in your plan",
+    uz: "Paketga kiradi",
+  },
 };
 
 export function t(key: keyof typeof messages, locale: Locale): string {

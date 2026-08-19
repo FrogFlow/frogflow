@@ -8,6 +8,7 @@ import {
   listHealthFn,
   checkReadinessAllFn,
 } from "@/lib/operator/bots.functions";
+import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { moduleDef, type ModuleKey } from "@/lib/modules/registry";
@@ -68,6 +69,10 @@ function OperatorClientsPage() {
     queryFn: () => listHealthFn(),
     refetchInterval: 60_000,
   });
+  const moduleRequests = useQuery({
+    queryKey: ["operator_module_requests"],
+    queryFn: () => listPendingModuleRequestsFn(),
+  });
   const list = bots.data ?? [];
   const troubled = Object.values(health.data ?? {}).filter((h) => !h.ok).length;
 
@@ -104,6 +109,10 @@ function OperatorClientsPage() {
     });
   const noUrl = list.filter((b) => !b.app_url && !b.archived_at);
   if (noUrl.length) attention.push({ text: "не указан адрес деплоя", who: who(noUrl) });
+  const requestedBotIds = new Set((moduleRequests.data ?? []).map((r) => r.bot_id));
+  const wantsModule = list.filter((b) => requestedBotIds.has(b.id));
+  if (wantsModule.length)
+    attention.push({ text: "заказал подключение модуля", who: who(wantsModule) });
 
   return (
     <div className="space-y-6">

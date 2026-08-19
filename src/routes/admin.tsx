@@ -9,8 +9,15 @@ import {
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import { ChevronDown } from "lucide-react";
 import { adminCheck, adminLogout } from "@/lib/admin.functions";
 import { Button } from "@/components-ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components-ui/dropdown-menu";
 import { useModules } from "@/lib/modules/use-modules";
 import { localeNames, SUPPORTED_LOCALES, t, type Locale } from "@/lib/i18n";
 import { AdminLocaleContext } from "@/lib/admin-locale";
@@ -30,6 +37,7 @@ function AdminLayout() {
   const router = useRouter();
   const logout = useServerFn(adminLogout);
   const modules = useModules();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [locale, setLocale] = useState<Locale>("ru");
   useEffect(() => {
     const saved = window.localStorage.getItem("admin-locale");
@@ -49,36 +57,76 @@ function AdminLayout() {
           <div className="max-w-7xl mx-auto px-4 min-h-[3.5rem] py-2 flex items-center justify-between gap-4">
             {/*
               Переносим пункты на новую строку, а не прячем в горизонтальный
-              скролл. Ширина меню зависит от того, сколько модулей НЕ куплено:
-              заблокированный пункт несёт ещё и замок, поэтому у клиента с одним
-              магазином меню шире, чем у клиента со всеми модулями. Скрытая
-              прокрутка в такой ситуации просто съедала «Настройки».
+              скролл. Плоский список из 9+ пунктов больше не умещался ни при
+              каком разумном количестве модулей — сгруппировано в разделы
+              (Каталог/Оплата/Продвижение/Аудитория), каждый со своим
+              выпадающим меню, чтобы верхний уровень оставался коротким и не
+              рос с каждым новым модулем.
             */}
             <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1">
               <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground">
                 {t("adminPanel", locale)}
               </div>
               <NavLink to="/admin">{t("dashboard", locale)}</NavLink>
-              <NavLink to="/admin/categories">{t("categories", locale)}</NavLink>
-              <NavLink to="/admin/products">{t("products", locale)}</NavLink>
+
+              <GroupNav
+                label={t("catalogGroup", locale)}
+                active={
+                  pathname.startsWith("/admin/categories") || pathname.startsWith("/admin/products")
+                }
+              >
+                <GroupLink to="/admin/categories" locale={locale}>
+                  {t("categories", locale)}
+                </GroupLink>
+                <GroupLink to="/admin/products" locale={locale}>
+                  {t("products", locale)}
+                </GroupLink>
+              </GroupNav>
+
               <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
-              <NavLink to="/admin/broadcast">{t("broadcast", locale)}</NavLink>
-              <NavLink to="/admin/payment-methods">{t("payments", locale)}</NavLink>
-              {modules.instagram ? (
-                <NavLink to="/admin/instagram">Instagram</NavLink>
-              ) : (
-                <LockedNavLink locale={locale}>Instagram</LockedNavLink>
-              )}
-              {modules.vip ? (
-                <NavLink to="/admin/vip">{t("vip", locale)}</NavLink>
-              ) : (
-                <LockedNavLink locale={locale}>{t("vip", locale)}</LockedNavLink>
-              )}
-              {modules.blocked ? (
-                <NavLink to="/admin/blocked">{t("blocked", locale)}</NavLink>
-              ) : (
-                <LockedNavLink locale={locale}>{t("blocked", locale)}</LockedNavLink>
-              )}
+
+              <GroupNav
+                label={t("paymentGroup", locale)}
+                active={
+                  pathname.startsWith("/admin/payment-methods") ||
+                  pathname.startsWith("/admin/robokassa")
+                }
+              >
+                <GroupLink to="/admin/payment-methods" locale={locale}>
+                  {t("payments", locale)}
+                </GroupLink>
+                <GroupLink to="/admin/robokassa" locked={!modules.robokassa} locale={locale}>
+                  Robokassa
+                </GroupLink>
+              </GroupNav>
+
+              <GroupNav
+                label={t("promotionGroup", locale)}
+                active={
+                  pathname.startsWith("/admin/broadcast") || pathname.startsWith("/admin/instagram")
+                }
+              >
+                <GroupLink to="/admin/broadcast" locale={locale}>
+                  {t("broadcast", locale)}
+                </GroupLink>
+                <GroupLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
+                  Instagram
+                </GroupLink>
+              </GroupNav>
+
+              <GroupNav
+                label={t("audienceGroup", locale)}
+                active={pathname.startsWith("/admin/vip") || pathname.startsWith("/admin/blocked")}
+              >
+                <GroupLink to="/admin/vip" locked={!modules.vip} locale={locale}>
+                  {t("vip", locale)}
+                </GroupLink>
+                <GroupLink to="/admin/blocked" locked={!modules.blocked} locale={locale}>
+                  {t("blocked", locale)}
+                </GroupLink>
+              </GroupNav>
+
+              <NavLink to="/admin/modules">{t("modules", locale)}</NavLink>
               <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
             </div>
             <select
@@ -126,21 +174,71 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   );
 }
 
-/** Non-clickable stand-in for a nav item whose module isn't part of this client's package yet. */
-function LockedNavLink({ children, locale }: { children: React.ReactNode; locale: Locale }) {
+/** Top-level group with a dropdown of its own sub-pages — see GroupLink for locked items. */
+function GroupNav({
+  label,
+  active,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <span
-      role="button"
-      aria-disabled="true"
-      title={t("moduleLocked", locale)}
-      className="px-2.5 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
-      onClick={(e) => {
-        e.preventDefault();
-        toast(t("moduleLockedAlert", locale));
-      }}
-    >
-      {children}
-      <span aria-hidden="true">🔒</span>
-    </span>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={`px-2.5 py-1.5 rounded-md text-sm hover:bg-accent shrink-0 flex items-center gap-1 ${
+            active ? "bg-accent font-medium" : ""
+          }`}
+        >
+          {label}
+          <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">{children}</DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** An item inside a GroupNav dropdown — either a real link, or a locked stand-in. */
+function GroupLink({
+  to,
+  locked,
+  locale,
+  children,
+}: {
+  to: string;
+  locked?: boolean;
+  locale: Locale;
+  children: React.ReactNode;
+}) {
+  if (locked) {
+    // Не используем disabled: Radix перестаёт вызывать onSelect у
+    // отключённых пунктов, а клик всё равно должен показать тост с
+    // объяснением — тем же, что был у LockedNavLink в плоском меню.
+    return (
+      <DropdownMenuItem
+        title={t("moduleLocked", locale)}
+        className="text-muted-foreground/60"
+        onSelect={(e) => {
+          e.preventDefault();
+          toast(t("moduleLockedAlert", locale));
+        }}
+      >
+        {children}
+        <span aria-hidden="true" className="ml-auto">
+          🔒
+        </span>
+      </DropdownMenuItem>
+    );
+  }
+  return (
+    <DropdownMenuItem asChild>
+      <Link to={to} className="w-full">
+        {children}
+      </Link>
+    </DropdownMenuItem>
   );
 }
