@@ -105,7 +105,9 @@ function AdminLayout() {
               <GroupNav
                 label={t("promotionGroup", locale)}
                 active={
-                  pathname.startsWith("/admin/broadcast") || pathname.startsWith("/admin/instagram")
+                  pathname.startsWith("/admin/broadcast") ||
+                  pathname.startsWith("/admin/instagram") ||
+                  pathname.startsWith("/admin/manager-chat")
                 }
               >
                 <GroupLink to="/admin/broadcast" locale={locale}>
@@ -114,6 +116,13 @@ function AdminLayout() {
                 <GroupLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
                   Instagram
                 </GroupLink>
+                {modules.manager_chat ? (
+                  <ManagerChatGroupLink locale={locale} />
+                ) : (
+                  <GroupLink to="/admin/manager-chat" locked locale={locale}>
+                    {t("managerChat", locale)}
+                  </GroupLink>
+                )}
               </GroupNav>
 
               <GroupNav
@@ -128,11 +137,6 @@ function AdminLayout() {
                 </GroupLink>
               </GroupNav>
 
-              {modules.manager_chat ? (
-                <ManagerChatNavLink locale={locale} />
-              ) : (
-                <LockedNavLink locale={locale}>{t("managerChat", locale)}</LockedNavLink>
-              )}
               <NavLink to="/admin/modules">{t("modules", locale)}</NavLink>
               <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
             </div>
@@ -181,48 +185,24 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
   );
 }
 
-/** Non-clickable stand-in for a top-level nav item whose module isn't part of this client's package yet. */
-function LockedNavLink({ children, locale }: { children: React.ReactNode; locale: Locale }) {
-  return (
-    <span
-      role="button"
-      aria-disabled="true"
-      title={t("moduleLocked", locale)}
-      className="px-2.5 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
-      onClick={(e) => {
-        e.preventDefault();
-        toast(t("moduleLockedAlert", locale));
-      }}
-    >
-      {children}
-      <span aria-hidden="true">🔒</span>
-    </span>
-  );
-}
-
-/** «Чат» nav item with an unread-count badge — light polling so a new customer message is noticed off-tab. */
-function ManagerChatNavLink({ locale }: { locale: Locale }) {
+/** «Чат» item inside the «Продвижение» dropdown, with an unread-count badge — light polling so a new customer message is noticed off-tab. */
+function ManagerChatGroupLink({ locale }: { locale: Locale }) {
   const unread = useQuery({
     queryKey: ["manager_chat_total_unread"],
     queryFn: () => totalManagerChatUnreadFn(),
     refetchInterval: 20_000,
   });
   return (
-    <Link
-      to="/admin/manager-chat"
-      className="px-2.5 py-1.5 rounded-md text-sm hover:bg-accent shrink-0 flex items-center gap-1.5"
-      activeProps={{
-        className:
-          "px-2.5 py-1.5 rounded-md text-sm bg-accent font-medium shrink-0 flex items-center gap-1.5",
-      }}
-    >
-      {t("managerChat", locale)}
-      {!!unread.data && (
-        <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
-          {unread.data}
-        </span>
-      )}
-    </Link>
+    <DropdownMenuItem asChild>
+      <Link to="/admin/manager-chat" className="w-full flex items-center justify-between gap-2">
+        {t("managerChat", locale)}
+        {!!unread.data && (
+          <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
+            {unread.data}
+          </span>
+        )}
+      </Link>
+    </DropdownMenuItem>
   );
 }
 
