@@ -2352,13 +2352,12 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (!chat_id || !cq.from) return;
       const from_id = cq.from.id;
       if (await replyIfBlocked(chat_id, from_id)) return;
-      const managerConnected = await handleManagerChatCallback(from_id, callbackButtonLabel(cq));
-      // A connected manager pauses conversational automation, but must not
-      // swallow the checkout's explicit transactional actions.  Otherwise a
-      // customer can tap "Оформить заказ" (or choose a country) and the tap is
-      // merely written to the manager-chat log: placeOrder is never reached.
-      const checkoutAction = data === "checkout" || data.startsWith("country:");
-      if (managerConnected && !checkoutAction) return;
+      // Keep the manager-chat audit trail, but do not let takeover suppress
+      // callback queries. These are explicit actions in the bot UI (catalog,
+      // cart, checkout, country selection), not free-form conversation. A
+      // previous takeover guard returned here and made the button tap visible
+      // in the chat log while silently preventing order placement.
+      await handleManagerChatCallback(from_id, callbackButtonLabel(cq));
       if (await replyIfPaused(chat_id)) return;
 
       const user = await upsertUser(cq.from);
