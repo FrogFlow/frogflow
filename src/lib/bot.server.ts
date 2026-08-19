@@ -1553,11 +1553,18 @@ async function startCheckout(chat_id: number, user: BotUser) {
   const locale: Locale = user.state?.locale ?? "ru";
   const m = copy[locale];
   const telegram_id = user.telegram_id;
+  console.info(`[bot] checkout start for telegram_id=${telegram_id}`, {
+    hasContact: Boolean(user.contact_phone),
+    countryCode: user.state?.country_code ?? null,
+  });
   const s = await db();
-  const { count } = await s
+  const { count, error: cartError } = await s
     .from("cart_items")
     .select("id", { count: "exact", head: true })
     .eq("telegram_id", telegram_id);
+  if (cartError) {
+    throw new Error(`checkout cart lookup failed: ${cartError.message}`);
+  }
   if (!count) {
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
     return;
@@ -1675,6 +1682,11 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   if (!(await claimOrderPlacement(telegram_id))) {
     // Второй тап той же кнопки (или другая гонка с оформлением) — не создаём
     // дубль заказа. Первый вызов доведёт дело до конца сам.
+    console.warn(`[bot] checkout claim was not acquired for telegram_id=${telegram_id}`);
+    await tg("sendMessage", {
+      chat_id,
+      text: "⏳ Оформление уже выполняется. Подождите несколько секунд и проверьте сообщения бота.",
+    }).catch(() => {});
     return;
   }
 
@@ -2529,7 +2541,18 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", { chat_id, text: m.cartCleared });
         return;
       }
-      if (data === "checkout") return startCheckout(chat_id, user);
+      if (data === "checkout") {
+        try {
+          return await startCheckout(chat_id, user);
+        } catch (e: unknown) {
+          console.error(`[bot] checkout failed for telegram_id=${from_id}`, e);
+          await tg("sendMessage", {
+            chat_id,
+            text: "⚠️ Не удалось начать оформление заказа. Попробуйте ещё раз через минуту или напишите продавцу.",
+          }).catch(() => {});
+          return;
+        }
+      }
       if (data.startsWith("country:")) return placeOrder(chat_id, user, data.slice(8));
 
       if (data.startsWith("setcountry:")) {
