@@ -1093,6 +1093,13 @@ export type Database = {
         Row: {
           customer_email: string | null;
           order_no: number;
+          // MIGRATION-28. Номер, единожды показанный покупателю — в отличие
+          // от order_no, никогда не меняется renumber_orders(). Добавлено
+          // вручную по той же причине, что и остальные ручные правки этого
+          // файла: миграция уже применена к живой базе, но
+          // scripts/sync-db-types.mjs подтягивает только уже известные
+          // таблицы/колонки при следующем запуске.
+          display_no: number | null;
           bot_id: string | null;
           zernio_conversation_id: string | null;
           user_key: string | null;
@@ -1116,6 +1123,7 @@ export type Database = {
         Insert: {
           customer_email?: string | null;
           order_no?: number;
+          display_no?: number | null;
           bot_id?: string | null;
           zernio_conversation_id?: string | null;
           user_key?: string | null;
@@ -1139,6 +1147,7 @@ export type Database = {
         Update: {
           customer_email?: string | null;
           order_no?: number;
+          display_no?: number | null;
           bot_id?: string | null;
           zernio_conversation_id?: string | null;
           user_key?: string | null;

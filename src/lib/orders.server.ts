@@ -172,7 +172,7 @@ export async function deliverOrder(
     for (let n = 0; n < BATCH_SIZE; n++) {
       const { data: fresh, error: readErr } = await supabaseAdmin
         .from("orders")
-        .select("status, delivery_index, telegram_id, order_no")
+        .select("status, delivery_index, telegram_id, order_no, display_no")
         .eq("id", orderId)
         .single();
       if (readErr || !fresh) throw new Error(readErr?.message || "Order not found");
@@ -184,18 +184,22 @@ export async function deliverOrder(
       const idx = Math.max(0, Number(fresh.delivery_index) || 0);
       if (idx >= items.length) break;
 
+      // Тот же номер, что покупатель уже видел при оформлении — не живой
+      // order_no (его двигает ночная перенумерация заказов), см. MIGRATION-28.
+      const displayNo = fresh.display_no ?? fresh.order_no ?? orderId;
+
       // Мы не увеличиваем delivery_index заранее (чтобы не пропустить файл при краше Vercel/таймауте).
       // Если файл успешно отправлен, мы делаем CAS-обновление индекса.
       if (idx === 0) {
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
-          text: `✅ Оплата подтверждена! Заказ #${fresh.order_no ?? orderId}.\nОтправляю ваши материалы файлами (${items.length} шт.)…`,
+          text: `✅ Оплата подтверждена! Заказ #${displayNo}.\nОтправляю ваши материалы файлами (${items.length} шт.)…`,
         });
       } else if (!announcedContinue) {
         announcedContinue = true;
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
-          text: `📤 Продолжаю выдачу заказа #${fresh.order_no ?? orderId}: с позиции ${idx + 1} из ${items.length}…`,
+          text: `📤 Продолжаю выдачу заказа #${displayNo}: с позиции ${idx + 1} из ${items.length}…`,
         });
       }
 
@@ -547,7 +551,12 @@ function downloadFileName(displayName: string, storagePath: string): string {
  */
 async function deliverOrderByEmail(
   orderId: number,
-  order: { customer_email?: string | null; order_no?: number | null; user_key?: string | null },
+  order: {
+    customer_email?: string | null;
+    order_no?: number | null;
+    display_no?: number | null;
+    user_key?: string | null;
+  },
   items: OrderItem[],
 ) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -670,7 +679,7 @@ async function deliverOrderByEmail(
 
   const result = await sendOrderMaterialsEmail({
     to: email,
-    orderNo: order.order_no ?? orderId,
+    orderNo: order.display_no ?? order.order_no ?? orderId,
     shopName: shopSetting?.value?.trim() || "Магазин",
     files,
     linkDays: EMAIL_LINK_DAYS,
@@ -704,7 +713,7 @@ async function deliverOrderByEmail(
       await sendZernioInboxMessage(
         buyer.zernio_conversation_id,
         buyer.zernio_account_id,
-        `Оплата подтверждена — материалы по заказу №${order.order_no ?? orderId} отправлены на ${email}.\n\n` +
+        `Оплата подтверждена — материалы по заказу №${order.display_no ?? order.order_no ?? orderId} отправлены на ${email}.\n\n` +
           `Ссылки в письме действуют ${EMAIL_LINK_DAYS} дней, лучше скачать файлы сразу.\n\n` +
           "Если письма нет — проверьте папку «Спам» и напишите сюда, поможем.",
       );

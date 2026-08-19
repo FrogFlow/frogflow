@@ -88,6 +88,14 @@ type BotUser = {
     mode?:
       "idle" | "search" | "awaiting_contact" | "awaiting_payment" | "awaiting_proof" | "choose_pay";
     pending_order_id?: number;
+    /**
+     * Номер заказа, замороженный один раз (orders.display_no, MIGRATION-28) —
+     * тот же самый номер, что уже показан покупателю в «Заказ №X создан»,
+     * нужен здесь, чтобы позже, когда придёт чек, «отправлен на проверку»
+     * показал то же число, а не живой order_no (его двигает ночная
+     * перенумерация — покупатель мог прислать чек через день).
+     */
+    pending_display_no?: number;
     country_code?: string;
     country_name?: string;
     last_search?: string;
@@ -1831,7 +1839,7 @@ async function placeOrderInner(
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
-      displayNo: order.order_no ?? order.id,
+      displayNo: order.display_no ?? order.order_no ?? order.id,
       total,
       currency,
       instructions,
@@ -1848,7 +1856,7 @@ async function placeOrderInner(
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
-      displayNo: order.order_no ?? order.id,
+      displayNo: order.display_no ?? order.order_no ?? order.id,
       total,
       currency,
       instructions,
@@ -1865,7 +1873,7 @@ async function placeOrderInner(
       telegram_id,
       userState: user.state,
       orderId: order.id as number,
-      displayNo: order.order_no ?? order.id,
+      displayNo: order.display_no ?? order.order_no ?? order.id,
       total,
       currency,
       locale,
@@ -1879,7 +1887,7 @@ async function placeOrderInner(
     telegram_id,
     userState: user.state,
     orderId: order.id as number,
-    displayNo: order.order_no ?? order.id,
+    displayNo: order.display_no ?? order.order_no ?? order.id,
     total,
     currency,
     rk,
@@ -1892,7 +1900,9 @@ export async function remindOrderPayment(orderId: number) {
   const s = await db();
   const { data: order, error } = await s
     .from("orders")
-    .select("id, order_no, telegram_id, status, total, currency, country_code, country_name")
+    .select(
+      "id, order_no, display_no, telegram_id, status, total, currency, country_code, country_name",
+    )
     .eq("id", orderId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -1921,10 +1931,11 @@ export async function remindOrderPayment(orderId: number) {
   const instructions = (method?.instructions as string) || m.defaultInstructions;
   const total = Number(order.total);
   const currency = (order.currency as string) || (method?.currency as string) || "USD";
+  const displayNo = order.display_no ?? order.order_no ?? orderId;
 
   await tg("sendMessage", {
     chat_id,
-    text: m.paymentReminder(order.order_no ?? orderId, formatMoney(total, currency)),
+    text: m.paymentReminder(displayNo, formatMoney(total, currency)),
     parse_mode: "HTML",
     reply_markup: mainMenu(locale),
   });
@@ -1937,7 +1948,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
-      displayNo: order.order_no ?? orderId,
+      displayNo,
       total,
       currency,
       instructions,
@@ -1954,7 +1965,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
-      displayNo: order.order_no ?? orderId,
+      displayNo,
       total,
       currency,
       instructions,
@@ -1971,7 +1982,7 @@ export async function remindOrderPayment(orderId: number) {
       telegram_id,
       userState,
       orderId,
-      displayNo: order.order_no ?? orderId,
+      displayNo,
       total,
       currency,
       reminder: true,
@@ -1983,7 +1994,7 @@ export async function remindOrderPayment(orderId: number) {
   await sendRobokassaPayLink({
     chat_id,
     telegram_id,
-    displayNo: order.order_no ?? orderId,
+    displayNo,
     userState,
     orderId,
     total,
@@ -2011,6 +2022,7 @@ async function sendKzPaymentChoice(params: {
     ...params.userState,
     mode: "choose_pay",
     pending_order_id: params.orderId,
+    pending_display_no: params.displayNo,
     proof_auto: false,
   });
   const title = params.reminder
@@ -2074,6 +2086,7 @@ async function sendRobokassaPayLink(params: {
     ...params.userState,
     mode: "awaiting_payment",
     pending_order_id: params.orderId,
+    pending_display_no: params.displayNo,
     proof_auto: false,
   });
   const title = params.reminder
@@ -2115,6 +2128,7 @@ async function startManualProofPath(params: {
     ...params.userState,
     mode: "awaiting_proof",
     pending_order_id: params.orderId,
+    pending_display_no: params.displayNo,
     proof_auto: params.autoDeliver,
   });
 
@@ -2436,17 +2450,18 @@ export async function handleUpdate(update: TelegramUpdate) {
         const s = await db();
         const { data: order } = await s
           .from("orders")
-          .select("id, order_no, telegram_id, status, total, currency, country_code")
+          .select("id, order_no, display_no, telegram_id, status, total, currency, country_code")
           .eq("id", orderId)
           .maybeSingle();
         if (!order || Number(order.telegram_id) !== Number(from_id)) {
           await tg("sendMessage", { chat_id, text: m.orderNotFound });
           return;
         }
+        const displayNo = order.display_no ?? order.order_no ?? orderId;
         if (order.status !== "awaiting_payment") {
           await tg("sendMessage", {
             chat_id,
-            text: m.alreadyProcessed(orderId),
+            text: m.alreadyProcessed(displayNo),
           });
           return;
         }
@@ -2473,7 +2488,7 @@ export async function handleUpdate(update: TelegramUpdate) {
             telegram_id: from_id,
             userState: user.state,
             orderId,
-            displayNo: order.order_no ?? orderId,
+            displayNo,
             total: Number(order.total),
             currency: (order.currency as string) || "KZT",
             rk,
@@ -2492,7 +2507,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           telegram_id: from_id,
           userState: user.state,
           orderId,
-          displayNo: order.order_no ?? orderId,
+          displayNo,
           total: Number(order.total),
           currency: (order.currency as string) || "KZT",
           instructions: (method?.instructions as string) || m.defaultInstructions,
@@ -2717,14 +2732,18 @@ export async function handleUpdate(update: TelegramUpdate) {
           .from("orders")
           .update({ status: "rejected" })
           .eq("id", orderId)
-          .select("order_no, telegram_id")
+          .select("order_no, display_no, telegram_id")
           .single();
 
         // Пишем туда, откуда пришёл заказ: у покупателя из Instagram
         // telegram_id синтетический, и прямая отправка улетала в пустоту —
         // человек не узнавал об отказе и продолжал ждать материалы.
         const { notifyOrderCustomer } = await import("./orders.server");
+        // Админу — сквозной номер этого бота (как и в confirm: выше);
+        // покупателю — замороженный при создании, MIGRATION-28, чтобы
+        // совпадал с тем, что он уже видел в переписке.
         const shownNo = order?.order_no ?? orderId;
+        const customerDisplayNo = order?.display_no ?? order?.order_no ?? orderId;
         const { data: buyer } = order?.telegram_id
           ? await s
               .from("bot_users")
@@ -2735,7 +2754,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         const buyerLocale: Locale = (buyer?.state as BotUser["state"])?.locale ?? "ru";
         const notified = await notifyOrderCustomer(
           orderId,
-          copy[buyerLocale].rejectedNotice(shownNo),
+          copy[buyerLocale].rejectedNotice(customerDisplayNo),
         );
 
         await tg("sendMessage", {
@@ -2875,7 +2894,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       const sOrder = await db();
       const { data: orderRow } = await sOrder
         .from("orders")
-        .select("id, status, admin_note, country_code, telegram_id, total, currency")
+        .select("id, display_no, status, admin_note, country_code, telegram_id, total, currency")
         .eq("id", orderId)
         .maybeSingle();
 
@@ -2883,6 +2902,9 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", { chat_id, text: m.orderNotFound });
         return;
       }
+      // Тот же номер, что видел покупатель в «Заказ №X создан» — не живой
+      // order_no (его двигает ночная перенумерация), см. MIGRATION-28.
+      const displayNo = orderRow.display_no ?? user.state?.pending_display_no ?? orderId;
       if (
         orderRow.status === "delivered" ||
         orderRow.status === "rejected" ||
@@ -2890,7 +2912,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       ) {
         await tg("sendMessage", {
           chat_id,
-          text: m.alreadyProcessed(orderId),
+          text: m.alreadyProcessed(displayNo),
           reply_markup: mainMenu(locale),
         });
         return;
@@ -3006,7 +3028,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           }
           await tg("sendMessage", {
             chat_id,
-            text: m.notReceiptLike(orderId),
+            text: m.notReceiptLike(displayNo),
           });
           return;
         }
@@ -3030,7 +3052,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
           await tg("sendMessage", {
             chat_id,
-            text: m.receiptManualReview(orderId),
+            text: m.receiptManualReview(displayNo),
             reply_markup: mainMenu(locale),
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
@@ -3057,7 +3079,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         await tg("sendMessage", {
           chat_id,
-          text: m.receiptVerifiedDelivering(orderId),
+          text: m.receiptVerifiedDelivering(displayNo),
           reply_markup: mainMenu(locale),
         });
 
@@ -3073,7 +3095,7 @@ export async function handleUpdate(update: TelegramUpdate) {
             .eq("id", orderId);
           await tg("sendMessage", {
             chat_id,
-            text: m.deliveryFailedAfterOcr(orderId),
+            text: m.deliveryFailedAfterOcr(displayNo),
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
             reviewReason: "Ошибка выдачи после успешного OCR",
@@ -3106,15 +3128,15 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", {
           chat_id,
           text: proofSaved
-            ? m.receiptForwardedAwaitingConfirm(orderId)
-            : m.receiptForwardedNoStorage(orderId),
+            ? m.receiptForwardedAwaitingConfirm(displayNo)
+            : m.receiptForwardedNoStorage(displayNo),
           reply_markup: mainMenu(locale),
         });
         await notifyAdminNewOrder(orderId, proofFileId, proofKind);
       } else {
         await tg("sendMessage", {
           chat_id,
-          text: m.receiptSaveFailed(orderId),
+          text: m.receiptSaveFailed(displayNo),
           reply_markup: mainMenu(locale),
         });
         await notifyAdminNewOrder(orderId, null, null);
