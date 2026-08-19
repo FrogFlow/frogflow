@@ -1678,6 +1678,32 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     return;
   }
 
+  // Раньше исключение где угодно в этой функции ловилось общим catch в самом
+  // handleUpdate и превращалось в полную тишину для покупателя — ни заказа,
+  // ни сообщения об ошибке, только console.error, невидимый ему. Плюс
+  // placing_order оставался бы выставлен навсегда (следующий тап «Оформить»
+  // молча ничего не делал бы), если бы не try/catch именно здесь — он же
+  // снимает claim перед тем, как что-то ответить покупателю.
+  try {
+    await placeOrderInner(chat_id, user, country_code, telegram_id, locale, m);
+  } catch (e: unknown) {
+    console.error(`[bot] placeOrder failed for telegram_id=${telegram_id}`, e);
+    await releaseOrderPlacement(telegram_id, user.state);
+    await tg("sendMessage", {
+      chat_id,
+      text: "⚠️ Не удалось оформить заказ. Попробуйте ещё раз через минуту — если не получится, напишите продавцу.",
+    }).catch(() => {});
+  }
+}
+
+async function placeOrderInner(
+  chat_id: number,
+  user: BotUser,
+  country_code: string,
+  telegram_id: number,
+  locale: Locale,
+  m: (typeof copy)["ru"],
+) {
   const s = await db();
   const { data: method } = await s
     .from("payment_methods")
