@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -64,8 +65,8 @@ function OperatorBroadcastPage() {
 
   async function onSend() {
     const botIds = [...selected];
-    if (botIds.length === 0) return alert("Выберите хотя бы одного получателя");
-    if (!text.trim()) return alert("Введите текст сообщения");
+    if (botIds.length === 0) return toast.warning("Выберите хотя бы одного получателя");
+    if (!text.trim()) return toast.warning("Введите текст сообщения");
     if (
       !confirm(
         `Отправить сообщение ${botIds.length} владельц(ам)? Каждый получит его от своего бота.`,
@@ -82,7 +83,7 @@ function OperatorBroadcastPage() {
       // сообщение, и его надо иметь возможность отправить повторно.
       await qc.invalidateQueries({ queryKey: ["operator_broadcasts"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setSending(false);
     }

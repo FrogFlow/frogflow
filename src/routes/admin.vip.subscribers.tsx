@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -469,7 +470,7 @@ function AdminVipSubscribers() {
   const handleLookupManualId = async () => {
     const id = manualData.telegram_id.trim();
     if (!/^\d{5,15}$/.test(id)) {
-      return alert(tr.invalidTelegramId);
+      return toast.warning(tr.invalidTelegramId);
     }
     setManualLookupLoading(true);
     setManualLookupHint(null);
@@ -480,14 +481,14 @@ function AdminVipSubscribers() {
         tr.foundInGroup(`${name}${row.username ? ` @${row.username}` : ""}`, row.member_status),
       );
     } catch (e: unknown) {
-      alert(tr.genericError(errorMessage(e)));
+      toast.error(tr.genericError(errorMessage(e)));
     } finally {
       setManualLookupLoading(false);
     }
   };
 
   const handleAddManual = async () => {
-    if (!manualData.telegram_id || !manualData.tariff_id) return alert(tr.fillIdAndTariff);
+    if (!manualData.telegram_id || !manualData.tariff_id) return toast.warning(tr.fillIdAndTariff);
     const days = Number.isFinite(manualData.days) && manualData.days >= 1 ? manualData.days : 30;
     try {
       const res = await addVipSubscriptionManual({
@@ -504,9 +505,9 @@ function AdminVipSubscribers() {
         tr.memberAdded +
         (res.warning ? `\n\n⚠ ${res.warning}` : "") +
         (res.inviteSent ? `\n\n${tr.memberAddedInvite}` : "");
-      alert(msg);
+      toast.success(msg);
     } catch (e: unknown) {
-      alert(tr.genericError(errorMessage(e)));
+      toast.error(tr.genericError(errorMessage(e)));
     }
   };
 
@@ -516,7 +517,7 @@ function AdminVipSubscribers() {
       await confirmVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert(tr.genericError(errorMessage(e)));
+      toast.error(tr.genericError(errorMessage(e)));
     }
   };
 
@@ -526,7 +527,7 @@ function AdminVipSubscribers() {
       await rejectVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert(tr.genericError(errorMessage(e)));
+      toast.error(tr.genericError(errorMessage(e)));
     }
   };
 
@@ -535,7 +536,7 @@ function AdminVipSubscribers() {
     if (days === null || days.trim() === "") return;
     const n = parseInt(days.trim(), 10);
     if (!Number.isFinite(n) || n === 0) {
-      return alert(tr.extendInvalid);
+      return toast.warning(tr.extendInvalid);
     }
     if (n < 0) {
       const ok = confirm(tr.extendReduceConfirm(Math.abs(n)));
@@ -545,7 +546,7 @@ function AdminVipSubscribers() {
       await extendVipSubscription({ data: { id, days: n } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert(tr.genericError(errorMessage(e)));
+      toast.error(tr.genericError(errorMessage(e)));
     }
   };
 
@@ -555,7 +556,7 @@ function AdminVipSubscribers() {
       await excludeVipFromCommunity({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert(tr.genericError(errorMessage(e)));
+      toast.error(tr.genericError(errorMessage(e)));
     }
   };
 
@@ -576,7 +577,7 @@ function AdminVipSubscribers() {
       });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
-      alert(tr.genericError(errorMessage(e)));
+      toast.error(tr.genericError(errorMessage(e)));
     }
   };
 

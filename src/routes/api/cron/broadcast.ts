@@ -3,9 +3,16 @@ import { errorMessage } from "@/lib/error-message";
 import { processBroadcastBatch } from "@/lib/broadcast.server";
 import { processPendingDeliveries } from "@/lib/orders.server";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
-import { pruneZernioLogs } from "@/lib/zernio-logs.server";
-import { retryStuckZernioEvents } from "@/lib/zernio-retry.server";
 
+/**
+ * Рассылка + выдача отложенных заказов + подтверждение вебхука. Ретеншн
+ * zernio_logs и добор зависших Instagram-событий раньше жили тоже здесь
+ * (см. git-историю) — на Hobby второй внешний cron-вызов ради одной задачи
+ * не окупался. На Vercel Pro лимита на число cron-заданий практически нет,
+ * поэтому они вынесены в /api/cron/zernio-logs-prune и
+ * /api/cron/zernio-retry — каждая задача теперь на своём расписании и не
+ * может задержать самую частую и самую денежную часть крона.
+ */
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
@@ -19,6 +26,12 @@ export const Route = createFileRoute("/api/cron/broadcast")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        // Панели оператора (CONTROL_PLANE=1) рассылать/выдавать нечего — своего
+        // BOT_ID у неё нет. vercel.json crons общий для всех деплоев этого
+        // репозитория, поэтому явный no-op, а не ошибка на каждый тик.
+        if (process.env.CONTROL_PLANE === "1") {
+          return new Response("Not found", { status: 404 });
+        }
         if (!isAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 });
         }
@@ -44,38 +57,12 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             deliveries = { error: errorMessage(e) || String(e) };
           }
 
-          // Уборка логов Instagram — здесь, а не отдельным кроном: на Hobby
-          // расписание задаётся внешним вызовом, и второй такой вызов на
-          // каждом деплое ради одного DELETE не окупается. Своей ошибкой
-          // проход не роняет ответ: рассылка и выдача важнее уборки.
-          let logs: Awaited<ReturnType<typeof pruneZernioLogs>> | { error: string } | undefined;
-          try {
-            logs = await pruneZernioLogs();
-          } catch (e: unknown) {
-            console.error("[cron/broadcast] zernio logs prune", e);
-            logs = { error: errorMessage(e) || String(e) };
-          }
-
-          // Добор зависших событий Instagram — тоже здесь и тоже без права
-          // ронять остальной крон: застрявший pending не должен мешать
-          // рассылке и выдаче заказов.
-          let stuckEvents:
-            Awaited<ReturnType<typeof retryStuckZernioEvents>> | { error: string } | undefined;
-          try {
-            stuckEvents = await retryStuckZernioEvents();
-          } catch (e: unknown) {
-            console.error("[cron/broadcast] zernio stuck events", e);
-            stuckEvents = { error: errorMessage(e) || String(e) };
-          }
-
           return Response.json({
             ok: true,
             webhook,
             processed: total,
             done,
             deliveries,
-            logs,
-            stuckEvents,
             ...last,
           });
         } catch (e: unknown) {

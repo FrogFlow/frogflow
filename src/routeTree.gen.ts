@@ -38,6 +38,8 @@ import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/rel
 import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
 import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/health'
 import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
+import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio-retry'
+import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
@@ -200,6 +202,16 @@ const ApiInternalDiagnosticsRoute = ApiInternalDiagnosticsRouteImport.update({
   path: '/api/internal/diagnostics',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronZernioRetryRoute = ApiCronZernioRetryRouteImport.update({
+  id: '/api/cron/zernio-retry',
+  path: '/api/cron/zernio-retry',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCronZernioLogsPruneRoute = ApiCronZernioLogsPruneRouteImport.update({
+  id: '/api/cron/zernio-logs-prune',
+  path: '/api/cron/zernio-logs-prune',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
   id: '/api/cron/ensure-webhook',
   path: '/api/cron/ensure-webhook',
@@ -309,6 +321,8 @@ export interface FileRoutesByFullPath {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
+  '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
@@ -353,6 +367,8 @@ export interface FileRoutesByTo {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
+  '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
@@ -400,6 +416,8 @@ export interface FileRoutesById {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
+  '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
@@ -448,6 +466,8 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/zernio-logs-prune'
+    | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
@@ -492,6 +512,8 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/zernio-logs-prune'
+    | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
@@ -538,6 +560,8 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/zernio-logs-prune'
+    | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
@@ -571,6 +595,8 @@ export interface RootRouteChildren {
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronEnsureWebhookRoute: typeof ApiCronEnsureWebhookRoute
+  ApiCronZernioLogsPruneRoute: typeof ApiCronZernioLogsPruneRoute
+  ApiCronZernioRetryRoute: typeof ApiCronZernioRetryRoute
   ApiInternalDiagnosticsRoute: typeof ApiInternalDiagnosticsRoute
   ApiInternalHealthRoute: typeof ApiInternalHealthRoute
   ApiInternalNotifyOwnerRoute: typeof ApiInternalNotifyOwnerRoute
@@ -794,6 +820,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalDiagnosticsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/zernio-retry': {
+      id: '/api/cron/zernio-retry'
+      path: '/api/cron/zernio-retry'
+      fullPath: '/api/cron/zernio-retry'
+      preLoaderRoute: typeof ApiCronZernioRetryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/zernio-logs-prune': {
+      id: '/api/cron/zernio-logs-prune'
+      path: '/api/cron/zernio-logs-prune'
+      fullPath: '/api/cron/zernio-logs-prune'
+      preLoaderRoute: typeof ApiCronZernioLogsPruneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/ensure-webhook': {
       id: '/api/cron/ensure-webhook'
       path: '/api/cron/ensure-webhook'
@@ -998,6 +1038,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronEnsureWebhookRoute: ApiCronEnsureWebhookRoute,
+  ApiCronZernioLogsPruneRoute: ApiCronZernioLogsPruneRoute,
+  ApiCronZernioRetryRoute: ApiCronZernioRetryRoute,
   ApiInternalDiagnosticsRoute: ApiInternalDiagnosticsRoute,
   ApiInternalHealthRoute: ApiInternalHealthRoute,
   ApiInternalNotifyOwnerRoute: ApiInternalNotifyOwnerRoute,

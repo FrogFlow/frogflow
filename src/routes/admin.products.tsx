@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -590,7 +591,7 @@ function ProductsPage() {
         ...uploaded.map((r, i) => ({ image_path: r.path, sort_order: images.length + i })),
       ]);
     } catch (e: unknown) {
-      alert(tr.uploadPhotoError(errorMessage(e)));
+      toast.error(tr.uploadPhotoError(errorMessage(e)));
     }
   }
 
@@ -610,7 +611,7 @@ function ProductsPage() {
         })),
       ]);
     } catch (e: unknown) {
-      alert(tr.uploadFileError(lang === "kz" ? tr.kzSuffix : "", errorMessage(e)));
+      toast.error(tr.uploadFileError(lang === "kz" ? tr.kzSuffix : "", errorMessage(e)));
     }
   }
 
@@ -656,7 +657,7 @@ function ProductsPage() {
       setMaterialFilesKz([]);
       qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: unknown) {
-      alert(tr.saveError(errorMessage(e) || tr.unknownError));
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setSaving(false);
     }
@@ -668,7 +669,7 @@ function ProductsPage() {
       await deleteProduct({ data: { id } });
       qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: unknown) {
-      alert(tr.deleteError(errorMessage(e) || tr.unknownError));
+      toast.error(tr.deleteError(errorMessage(e) || tr.unknownError));
     }
   }
 

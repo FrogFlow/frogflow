@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -384,27 +385,27 @@ function BroadcastPage() {
       }
       setPhotoPaths(next);
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setUploading(false);
     }
   }
 
   async function onTestSend() {
-    if (!messageText.trim()) return alert(tr.enterText);
+    if (!messageText.trim()) return toast.warning(tr.enterText);
     setBusy(true);
     try {
       await sendTestBroadcastFn({ data: { ...payload, audience_type: "test" } });
-      alert(tr.testSent);
+      toast.success(tr.testSent);
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
   }
 
   async function onStart() {
-    if (!messageText.trim()) return alert(tr.enterText);
+    if (!messageText.trim()) return toast.warning(tr.enterText);
     if (audienceType !== "test" && !confirm(tr.startConfirm(String(audienceCount ?? "?")))) return;
     setBusy(true);
     try {
@@ -412,7 +413,7 @@ function BroadcastPage() {
       setActiveId(row.id as string);
       await qc.invalidateQueries({ queryKey: ["broadcasts"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -601,7 +602,7 @@ function BroadcastPage() {
                     setActiveId(null);
                     await qc.invalidateQueries({ queryKey: ["broadcasts"] });
                   } catch (e: unknown) {
-                    alert(errorMessage(e));
+                    toast.error(errorMessage(e));
                   } finally {
                     setBusy(false);
                   }

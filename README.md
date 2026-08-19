@@ -1,0 +1,58 @@
+# tg_bot
+
+Мультиарендная платформа Telegram-магазинов: один репозиторий разворачивается
+в несколько проектов Vercel — отдельный деплой на каждого клиента (магазин +
+админка) и один деплой панели оператора (`CONTROL_PLANE=1`), различаются
+только переменными окружения. Стек — TanStack Start (React 19, Vite, Nitro)
+поверх Supabase/Postgres с RLS. Плюс интеграции: Telegram Bot API, Instagram
+Direct через Zernio, Robokassa.
+
+Это не полная документация — она уже написана и разложена по файлам ниже.
+README — только указатель, с чего начать.
+
+## С чего начать
+
+| Вопрос | Куда смотреть |
+| --- | --- |
+| Какие переменные окружения нужны деплою клиента и панели, как подключить нового клиента, как настроен cron | [`DEPLOYMENT.md`](./DEPLOYMENT.md) |
+| Как устроена изоляция арендаторов, зачем нужен `SUPABASE_TENANT_KEY`, порядок миграций | [`MIGRATION-README.md`](./MIGRATION-README.md) |
+| Как спроектирована и что умеет панель оператора | [`CONTROL-PLANE-PLAN.md`](./CONTROL-PLANE-PLAN.md) |
+| История объединения клиентов в одну базу | [`CONSOLIDATION-PLAN.md`](./CONSOLIDATION-PLAN.md), [`MERGE-MAP.md`](./MERGE-MAP.md) |
+| Как принимается и подтверждается вебхук Telegram/Zernio | [`WEBHOOK.md`](./WEBHOOK.md) |
+| Что найдено и починено при аудитах — от безопасности хранилища до гонок в оформлении заказа | [`ANALYSIS.md`](./ANALYSIS.md) |
+
+## Локальная разработка
+
+```bash
+npm install
+npm run dev      # dev-сервер (vite dev)
+npm run lint      # eslint
+npx tsc --noEmit  # проверка типов
+npm test          # vitest — часть тестов пропускается без ключей настоящей базы
+npm run build     # production-сборка
+```
+
+Переменные окружения — см. таблицы в `DEPLOYMENT.md`. Файла `.env.example` в
+репозитории намеренно нет: причина и подробности — там же, в начале раздела
+«Переменные деплоя клиента».
+
+## Структура
+
+```
+src/routes/            маршруты TanStack Start (файловый роутинг) — транспорт
+src/routes/api/        HTTP-эндпоинты: вебхуки, cron, внутренние вызовы панели
+src/lib/*.server.ts     доменная логика ботов, заказов, платежей — только сервер
+src/lib/*.functions.ts  серверные функции, вызываемые с клиента
+src/lib/operator/       логика панели оператора (control-plane), изолирована от клиентского кода
+src/components-ui/      UI-примитивы (shadcn/ui поверх Radix)
+tests/                  интеграционные и юнит-тесты (часть ходит в настоящую БД)
+supabase/, MIGRATION-*.sql   схема и миграции базы
+```
+
+## CI
+
+`.github/workflows/ci.yml` — lint, typecheck, build и тесты на каждый PR и push
+в `master`. Тесты против настоящей базы включаются автоматически, если в
+секретах репозитория заданы `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`/
+`SUPABASE_TENANT_KEY`/`SUPABASE_JWT_SECRET` — без них соответствующие наборы
+тестов сами себя пропускают (`describe.skipIf`), сборка при этом не падает.

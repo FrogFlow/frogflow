@@ -60,7 +60,14 @@ type BotUser = {
   language_code: string | null;
   contact_phone: string | null;
   state: {
-    mode?: string;
+    /**
+     * Не полноценная машина состояний — просто типизированный набор
+     * известных значений вместо голого string, чтобы опечатка в новом mode
+     * ловилась tsc, а не тихо проваливалась в default-ветку где-то в
+     * handleUpdate. Список — по факту использования в этом файле.
+     */
+    mode?:
+      "idle" | "search" | "awaiting_contact" | "awaiting_payment" | "awaiting_proof" | "choose_pay";
     pending_order_id?: number;
     country_code?: string;
     country_name?: string;
@@ -69,6 +76,8 @@ type BotUser = {
     locale?: Locale;
     /** When true, attaching a payment receipt auto-delivers files (RU/KZ with Robokassa on). */
     proof_auto?: boolean;
+    /** Транзиентный флаг claimOrderPlacement — оформление заказа уже идёт. */
+    placing_order?: boolean;
   } | null;
 };
 
@@ -1554,10 +1563,10 @@ async function startCheckout(chat_id: number, user: BotUser) {
     return;
   }
 
-  // Prevent duplicate double-clicks
-  if (user.state.mode === "placing_order") return;
-  await setState(telegram_id, { ...user.state, mode: "placing_order" });
-
+  // Двойной тап по "Оформить" гасится атомарным claimOrderPlacement внутри
+  // placeOrder (тем же приёмом, что checkout через кнопку страны) — здесь
+  // раньше стоял свой, отдельный и неатомарный guard "прочитал mode, потом
+  // записал", ровно тот паттерн гонки, который claimOrderPlacement и чинит.
   // user has contact and country, proceed directly to placeOrder
   await placeOrder(chat_id, user, user.state.country_code);
 }
@@ -1605,10 +1614,64 @@ async function askCountry(
 // оплаченного, но не выданного заказа (см. комментарий в том файле).
 import { materialsForProduct } from "./product-materials";
 
+/**
+ * Атомарно помечает начало оформления заказа. Кнопка выбора страны — обычный
+ * inline-callback, и двойной тап по ней (частое дело в Telegram) до этой
+ * правки успевал прочитать одну и ту же корзину дважды и создать два
+ * одинаковых заказа: cart_items не трогается до самого конца placeOrder.
+ * Тот же приём, что claimAwaitingProof в direct-purchase.server.ts —
+ * условный UPDATE по прочитанному updated_at, а не «прочитал, потом
+ * записал»: Postgres сериализует два одновременных UPDATE над одной
+ * строкой, и совпасть под WHERE может только у одного из них.
+ *
+ * Флаг сам стирается на успешном пути: startManualProofPath /
+ * sendKzPaymentChoice / sendRobokassaPayLink переписывают state целиком из
+ * user.state, снятого ДО claim'а, — в нём placing_order никогда не было.
+ * Явно снимать его нужно только на ранних выходах ниже (пустая корзина,
+ * ошибка вставки заказа), где никто больше state не перезапишет.
+ */
+export async function claimOrderPlacement(telegram_id: number): Promise<boolean> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state, updated_at")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  if (!existing?.updated_at) return false;
+
+  const state = (existing.state as BotUser["state"]) ?? {};
+  if (state?.placing_order) return false;
+
+  const { data: claimed } = await s
+    .from("bot_users")
+    .update({
+      state: { ...state, placing_order: true } as unknown as Json,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("telegram_id", telegram_id)
+    .eq("updated_at", existing.updated_at)
+    .select("id")
+    .maybeSingle();
+
+  return !!claimed;
+}
+
+export async function releaseOrderPlacement(telegram_id: number, state: BotUser["state"]) {
+  const { placing_order: _placing_order, ...rest } = (state ?? {}) as NonNullable<BotUser["state"]>;
+  await setState(telegram_id, rest);
+}
+
 async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
   const locale: Locale = user.state?.locale ?? "ru";
   const m = copy[locale];
   const telegram_id = user.telegram_id;
+
+  if (!(await claimOrderPlacement(telegram_id))) {
+    // Второй тап той же кнопки (или другая гонка с оформлением) — не создаём
+    // дубль заказа. Первый вызов доведёт дело до конца сам.
+    return;
+  }
+
   const s = await db();
   const { data: method } = await s
     .from("payment_methods")
@@ -1623,6 +1686,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
+    await releaseOrderPlacement(telegram_id, user.state);
     return;
   }
 
@@ -1666,6 +1730,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
     .single();
   if (error || !order) {
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
+    await releaseOrderPlacement(telegram_id, user.state);
     return;
   }
 

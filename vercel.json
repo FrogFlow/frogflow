@@ -4,5 +4,12 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "tanstack-start",
-  "regions": ["fra1"]
+  "regions": ["fra1"],
+  "crons": [
+    { "path": "/api/cron/broadcast", "schedule": "*/1 * * * *" },
+    { "path": "/api/cron/zernio-retry", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/zernio-logs-prune", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/ensure-webhook", "schedule": "0 * * * *" },
+    { "path": "/api/operator-cron/subscriptions", "schedule": "0 4 * * *" }
+  ]
 }

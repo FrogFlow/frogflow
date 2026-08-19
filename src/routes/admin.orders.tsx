@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components-ui/button";
@@ -360,10 +361,10 @@ function OrdersPage() {
       const result = await confirmOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
       if (result.alreadyDelivered) {
-        alert(tr.alreadyDelivered(displayNo));
+        toast.success(tr.alreadyDelivered(displayNo));
       }
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -375,7 +376,7 @@ function OrdersPage() {
       await redeliverOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -387,12 +388,12 @@ function OrdersPage() {
       const res = await continueDeliveryOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
       if ("pending" in res && res.pending) {
-        alert(tr.batchSent(res.sent));
+        toast.success(tr.batchSent(res.sent));
       } else {
-        alert(tr.orderDelivered(displayNo));
+        toast.success(tr.orderDelivered(displayNo));
       }
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -407,7 +408,7 @@ function OrdersPage() {
       // писать позже суток с его последнего сообщения. Отказ при этом
       // состоялся, и продавец должен знать, что окликнуть человека придётся сам.
       if (!result.customerNotified) {
-        alert(tr.rejectNotNotified);
+        toast.warning(tr.rejectNotNotified);
       }
     } finally {
       setBusy(null);
@@ -418,9 +419,9 @@ function OrdersPage() {
     setBusy(id);
     try {
       await remindPaymentOrder({ data: { id } });
-      alert(tr.remindSent(displayNo));
+      toast.success(tr.remindSent(displayNo));
     } catch (e: unknown) {
-      alert(errorMessage(e) || tr.remindFailed);
+      toast.error(errorMessage(e) || tr.remindFailed);
     } finally {
       setBusy(null);
     }
@@ -433,7 +434,7 @@ function OrdersPage() {
       await deleteOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -457,7 +458,7 @@ function OrdersPage() {
       });
       qc.invalidateQueries({ queryKey: ["orders"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -725,12 +726,12 @@ function ExportBar() {
     try {
       const res = await exportOrdersCsvFn({ data: { from: from || null, to: to || null } });
       if (res.count === 0) {
-        alert(tr.noOrdersInPeriod);
+        toast(tr.noOrdersInPeriod);
         return;
       }
       download(res.csv, `orders-${today()}.csv`);
     } catch (e: unknown) {
-      alert((e as Error)?.message);
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -741,12 +742,12 @@ function ExportBar() {
     try {
       const res = await exportCustomersCsvFn();
       if (res.count === 0) {
-        alert(tr.noCustomersYet);
+        toast(tr.noCustomersYet);
         return;
       }
       download(res.csv, `customers-${today()}.csv`);
     } catch (e: unknown) {
-      alert((e as Error)?.message);
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }

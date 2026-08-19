@@ -163,7 +163,7 @@ async function setOne(
       name,
       ok: false,
       url: "",
-      detail: `Не удалось вызвать Telegram: ${(e as Error)?.message}`,
+      detail: `Не удалось вызвать Telegram: ${errorMessage(e)}`,
     };
   }
 }
@@ -298,7 +298,7 @@ export async function botHealth(): Promise<
     return {
       ok: false,
       status: 502,
-      message: `Не удалось опросить Telegram: ${(e as Error)?.message}`,
+      message: `Не удалось опросить Telegram: ${errorMessage(e)}`,
     };
   }
 }

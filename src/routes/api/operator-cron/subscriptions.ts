@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { errorMessage } from "@/lib/error-message";
 import { sweepSubscriptions } from "@/lib/operator/subscription-cron.server";
 
 /**
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/api/operator-cron/subscriptions")({
           return Response.json({ ok: true, counts, results });
         } catch (e: unknown) {
           console.error("[operator-cron] обход подписок упал:", e);
-          return Response.json({ ok: false, error: (e as Error)?.message }, { status: 500 });
+          return Response.json({ ok: false, error: errorMessage(e) }, { status: 500 });
         }
       },
     },

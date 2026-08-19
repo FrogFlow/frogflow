@@ -491,7 +491,7 @@ export async function registerZernioWebhook(
     return { ok: true };
   } catch (e) {
     console.error("[zernio] registerZernioWebhook failed", e);
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: errorMessage(e) };
   }
 }
 
@@ -560,7 +560,7 @@ export async function createInstagramPost(input: CreateInstagramPostInput): Prom
     };
   } catch (e) {
     console.error("[zernio] createInstagramPost failed", e);
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: errorMessage(e) };
   }
 }
 
@@ -618,7 +618,7 @@ export async function deleteZernioPost(postId: string): Promise<{ ok: boolean; e
     return { ok: true };
   } catch (e) {
     console.error("[zernio] deleteZernioPost failed", e);
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: errorMessage(e) };
   }
 }
 
@@ -632,7 +632,7 @@ export async function retryZernioPost(postId: string): Promise<{ ok: boolean; er
     return { ok: true };
   } catch (e) {
     console.error("[zernio] retryZernioPost failed", e);
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: errorMessage(e) };
   }
 }
 

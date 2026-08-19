@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -363,16 +364,16 @@ function AdminVipTariffs() {
     });
 
   const handleSave = async () => {
-    if (!editing?.name || Number(editing.price) < 0) return alert(tr.validateFields);
+    if (!editing?.name || Number(editing.price) < 0) return toast.warning(tr.validateFields);
     await saveVipTariff({ data: { ...editing, is_entry: false } });
     setEditing(null);
     qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
   };
 
   const handleSaveEntry = async () => {
-    if (!entry?.name || Number(entry.price) < 0) return alert(tr.validateEntryFields);
+    if (!entry?.name || Number(entry.price) < 0) return toast.warning(tr.validateEntryFields);
     if (entry._needsSchema) {
-      return alert(tr.schemaAlert);
+      return toast.warning(tr.schemaAlert);
     }
     await saveVipTariff({
       data: {
@@ -400,19 +401,19 @@ function AdminVipTariffs() {
       await deleteVipTariff({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     }
   };
 
   const copyLink = async (tariffId: string) => {
     if (!botUsername) {
-      alert(tr.missingBotUsername);
+      toast.warning(tr.missingBotUsername);
       return;
     }
     const link = tariffDeepLink(botUsername, tariffId);
     try {
       await navigator.clipboard.writeText(link);
-      alert(tr.linkCopied(link));
+      toast.success(tr.linkCopied(link));
     } catch {
       prompt(tr.copyPrompt, link);
     }

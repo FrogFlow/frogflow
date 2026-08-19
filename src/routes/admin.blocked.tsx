@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -199,7 +200,7 @@ function BlockedUsersPage() {
 
   async function onBlock() {
     const id = telegramId.trim();
-    if (!id) return alert(tr.provideId);
+    if (!id) return toast.warning(tr.provideId);
     if (!confirm(tr.blockConfirm(id))) return;
     setBusy(true);
     try {
@@ -217,7 +218,7 @@ function BlockedUsersPage() {
       setSearch("");
       await qc.invalidateQueries({ queryKey: ["blocked_users"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -230,7 +231,7 @@ function BlockedUsersPage() {
       await unblockTelegramUserFn({ data: { telegram_id: id } });
       await qc.invalidateQueries({ queryKey: ["blocked_users"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }

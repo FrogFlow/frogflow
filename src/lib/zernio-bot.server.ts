@@ -4,6 +4,7 @@ import {
   type ZernioWebhookMessagePayload,
 } from "./zernio.server";
 import crypto from "node:crypto";
+import { logger, truncate } from "./logger.server";
 import { localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 
@@ -766,8 +767,14 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    */
   const answersEverything = setting("instagram_direct_bot_scope") === "all";
 
-  // Логируем сообщение
-  console.log(`[zernio-bot] DM from ${userKey} (${senderUsername}): "${text}"`);
+  // userKey — устойчивый идентификатор для корреляции, логируется как есть.
+  // username и текст сообщения — PII, только усечёнными; см. политику в
+  // logger.server.ts.
+  logger.info("zernio.dm_received", {
+    userKey,
+    senderUsername: truncate(senderUsername, 40),
+    text: truncate(text, 80),
+  });
 
   // Обновляем/создаем пользователя
   const user = await upsertZernioUser(

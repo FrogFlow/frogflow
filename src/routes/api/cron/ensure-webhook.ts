@@ -10,11 +10,22 @@ function isAuthorized(request: Request): boolean {
   return url.searchParams.get("secret") === secret;
 }
 
-/** Hourly/self-heal: re-set Telegram webhook if URL was cleared. Use with cron-job.org on free Vercel. */
+/**
+ * Часовой независимый self-heal вебхука — подстраховка сверх той же проверки,
+ * которая и так идёт на каждый тик /api/cron/broadcast. На Vercel Pro стоит
+ * отдельным заданием в vercel.json → crons; раньше здесь ожидался внешний
+ * cron-job.org, потому что нативный Vercel Cron на Hobby разрешал не чаще
+ * раза в сутки.
+ */
 export const Route = createFileRoute("/api/cron/ensure-webhook")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        // См. тот же no-op в /api/cron/broadcast — у панели оператора нет
+        // своего бота и нет вебхука, который надо было бы чинить.
+        if (process.env.CONTROL_PLANE === "1") {
+          return new Response("Not found", { status: 404 });
+        }
         if (!isAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 });
         }

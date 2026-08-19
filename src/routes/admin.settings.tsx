@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -471,7 +472,7 @@ function SettingsPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e: unknown) {
-      alert(tr.saveError(errorMessage(e) || tr.unknownError));
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     }
   }
 
@@ -491,7 +492,7 @@ function SettingsPage() {
       setRkSaved(true);
       setTimeout(() => setRkSaved(false), 2000);
     } catch (e: unknown) {
-      alert(tr.robokassaSaveError(errorMessage(e) || tr.unknownError));
+      toast.error(tr.robokassaSaveError(errorMessage(e) || tr.unknownError));
     }
   }
 
@@ -505,7 +506,7 @@ function SettingsPage() {
       setLegalSaved(true);
       setTimeout(() => setLegalSaved(false), 2000);
     } catch (e: unknown) {
-      alert(tr.docsSaveError(errorMessage(e) || tr.unknownError));
+      toast.error(tr.docsSaveError(errorMessage(e) || tr.unknownError));
     }
   }
 
@@ -532,7 +533,7 @@ function SettingsPage() {
       }
       await qc.invalidateQueries({ queryKey: ["settings"] });
     } catch (e: unknown) {
-      alert(errorMessage(e) || tr.uploadError);
+      toast.error(errorMessage(e) || tr.uploadError);
     } finally {
       setUploadingKind(null);
     }
@@ -551,7 +552,7 @@ function SettingsPage() {
       }
       await qc.invalidateQueries({ queryKey: ["settings"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     }
   }
 
@@ -565,7 +566,7 @@ function SettingsPage() {
   async function onUploadInstruction(file: File | null) {
     if (!file) return;
     if (file.size > 50 * 1024 * 1024) {
-      alert(tr.videoTooBig);
+      toast.warning(tr.videoTooBig);
       return;
     }
     setInstructionUploading(true);
@@ -583,7 +584,7 @@ function SettingsPage() {
       setInstructionVideoPath(path);
       await qc.invalidateQueries({ queryKey: ["settings"] });
     } catch (e: unknown) {
-      alert(errorMessage(e) || tr.uploadError);
+      toast.error(errorMessage(e) || tr.uploadError);
     } finally {
       setInstructionUploading(false);
     }
@@ -596,7 +597,7 @@ function SettingsPage() {
       setInstructionVideoPath("");
       await qc.invalidateQueries({ queryKey: ["settings"] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     }
   }
 

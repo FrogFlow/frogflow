@@ -9,6 +9,7 @@
  */
 
 import { tg } from "./telegram.server";
+import { errorMessage } from "./error-message";
 // Мягкий вариант, а не requireAppOrigin: это cron самовосстановления, он должен
 // сообщить о проблеме своим кодом ответа, а не упасть с исключением.
 import { appOrigin as publicAppOrigin } from "./app-origin.server";
@@ -146,7 +147,7 @@ export async function ensureTelegramWebhook(): Promise<EnsureWebhookResult> {
       action: "error",
       expected,
       previousUrl: "",
-      error: (e as Error).message,
+      error: errorMessage(e),
     };
   }
 }
@@ -294,7 +295,7 @@ async function ensureOne(
       action: "error",
       expected,
       previousUrl: "",
-      error: (e as Error).message,
+      error: errorMessage(e),
     };
   }
 }

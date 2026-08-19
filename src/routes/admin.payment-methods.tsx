@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -193,7 +194,7 @@ function PaymentMethodsPage() {
       const r = await uploadFile(file);
       setEditing((prev) => (prev ? { ...prev, qr_code_path: r.path } : prev));
     } catch (e: unknown) {
-      alert(tr.qrUploadError(errorMessage(e)));
+      toast.error(tr.qrUploadError(errorMessage(e)));
     }
   }
 
@@ -204,7 +205,7 @@ function PaymentMethodsPage() {
       setEditing(null);
       qc.invalidateQueries({ queryKey: ["payment-methods"] });
     } catch (e: unknown) {
-      alert(tr.saveError(errorMessage(e)));
+      toast.error(tr.saveError(errorMessage(e)));
     }
   }
   async function onDelete(id: string) {

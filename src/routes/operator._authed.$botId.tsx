@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -113,7 +114,7 @@ function OperatorClientCard() {
       await refetchBot();
       await qc.invalidateQueries({ queryKey: ["operator_bot_events", botId] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusyModule(null);
     }
@@ -134,7 +135,7 @@ function OperatorClientCard() {
       await refetchBot();
       await qc.invalidateQueries({ queryKey: ["operator_bot_events", botId] });
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusyStatus(false);
     }
@@ -160,7 +161,7 @@ function OperatorClientCard() {
       });
       await refetchBot();
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setSavingMeta(false);
     }
@@ -611,7 +612,7 @@ function SubscriptionSection({ botId }: { botId: string }) {
       setForm(emptyForm);
       await refresh();
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -624,7 +625,7 @@ function SubscriptionSection({ botId }: { botId: string }) {
       if (editingId === paymentId) onCancelEdit();
       await refresh();
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     }
   }
 
@@ -635,7 +636,7 @@ function SubscriptionSection({ botId }: { botId: string }) {
       await setPolicyFn({ data: { botId, ...policy } });
       await refresh();
     } catch (e: unknown) {
-      alert(errorMessage(e));
+      toast.error(errorMessage(e));
     } finally {
       setPolicyBusy(false);
     }
@@ -1166,7 +1167,7 @@ function ArchiveButton({
       await setArchivedFn({ data: { botId, archived: !archived } });
       await onDone();
     } catch (e: unknown) {
-      alert(errorMessage(e) || "Не удалось");
+      toast.error(errorMessage(e) || "Не удалось");
     } finally {
       setBusy(false);
     }

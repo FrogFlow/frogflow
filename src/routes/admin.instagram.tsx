@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -1598,7 +1599,7 @@ function AdminInstagramPage() {
     if (!title.trim()) return;
 
     if (!accountsQuery.data?.accounts || accountsQuery.data.accounts.length === 0) {
-      alert(tr.noAccountsConnected);
+      toast.warning(tr.noAccountsConnected);
       return;
     }
     const acc = accountsQuery.data.accounts[0];
@@ -1668,7 +1669,7 @@ function AdminInstagramPage() {
       handleResetForm();
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
     } catch (e: unknown) {
-      alert(tr.saveAutomationError(errorMessage(e)));
+      toast.error(tr.saveAutomationError(errorMessage(e)));
     } finally {
       setSavingAuto(false);
     }
@@ -1734,7 +1735,7 @@ function AdminInstagramPage() {
       await toggleAutomationFn({ data: { id, isActive: !currentIsActive } });
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
     } catch (e: unknown) {
-      alert(tr.toggleAutomationError(errorMessage(e)));
+      toast.error(tr.toggleAutomationError(errorMessage(e)));
     }
   };
 
@@ -1744,7 +1745,7 @@ function AdminInstagramPage() {
       await deleteAutomationFn({ data: { id } });
       qc.invalidateQueries({ queryKey: ["ig_automations"] });
     } catch (e: unknown) {
-      alert(tr.deleteAutomationError(errorMessage(e)));
+      toast.error(tr.deleteAutomationError(errorMessage(e)));
     }
   };
 
@@ -2865,7 +2866,10 @@ function AdminInstagramPage() {
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0"
-                              onClick={() => alert(JSON.stringify(log.payload, null, 2))}
+                              // Просмотр сырого payload — не уведомление, а
+                              // инспектор данных; toast для этого не годится
+                              // (может быть длиннее, чем помещается в тост).
+                              onClick={() => window.alert(JSON.stringify(log.payload, null, 2))}
                             >
                               <Eye className="w-3 h-3" />
                             </Button>

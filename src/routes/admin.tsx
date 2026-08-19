@@ -8,6 +8,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import { adminCheck, adminLogout } from "@/lib/admin.functions";
 import { Button } from "@/components-ui/button";
 import { useModules } from "@/lib/modules/use-modules";
@@ -135,7 +136,7 @@ function LockedNavLink({ children, locale }: { children: React.ReactNode; locale
       className="px-2.5 py-1.5 rounded-md text-sm text-muted-foreground/50 opacity-60 cursor-not-allowed select-none shrink-0 flex items-center gap-1"
       onClick={(e) => {
         e.preventDefault();
-        alert(t("moduleLockedAlert", locale));
+        toast(t("moduleLockedAlert", locale));
       }}
     >
       {children}
