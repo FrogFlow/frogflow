@@ -2352,7 +2352,13 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (!chat_id || !cq.from) return;
       const from_id = cq.from.id;
       if (await replyIfBlocked(chat_id, from_id)) return;
-      if (await handleManagerChatCallback(from_id, callbackButtonLabel(cq))) return;
+      const managerConnected = await handleManagerChatCallback(from_id, callbackButtonLabel(cq));
+      // A connected manager pauses conversational automation, but must not
+      // swallow the checkout's explicit transactional actions.  Otherwise a
+      // customer can tap "Оформить заказ" (or choose a country) and the tap is
+      // merely written to the manager-chat log: placeOrder is never reached.
+      const checkoutAction = data === "checkout" || data.startsWith("country:");
+      if (managerConnected && !checkoutAction) return;
       if (await replyIfPaused(chat_id)) return;
 
       const user = await upsertUser(cq.from);
