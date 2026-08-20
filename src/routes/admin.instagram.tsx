@@ -51,6 +51,8 @@ import {
 import {
   ImageIcon,
   Link2,
+  CheckCircle2,
+  XCircle,
   X,
   Settings2,
   MessageSquare,
@@ -1515,6 +1517,12 @@ function AdminInstagramPage() {
   const [syncUrlOpen, setSyncUrlOpen] = useState(false);
   const [syncUrlValue, setSyncUrlValue] = useState("");
   const [syncingUrl, setSyncingUrl] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    ok: boolean;
+    message: string;
+    caption?: string;
+    thumbnail?: string;
+  } | null>(null);
 
   const handleRefreshPosts = () => {
     qc.invalidateQueries({ queryKey: ["ig_posts"] });
@@ -1531,20 +1539,30 @@ function AdminInstagramPage() {
   const handleSyncPostByUrl = async () => {
     if (!acc?._id || !syncUrlValue.trim()) return;
     setSyncingUrl(true);
+    setSyncResult(null);
     try {
       const res = await syncZernioPostByUrlFn({
         data: { accountId: acc._id, url: syncUrlValue.trim() },
       });
       if (res.found) {
-        toast.success("Пост найден и добавлен в список");
-        setSyncUrlValue("");
-        setSyncUrlOpen(false);
+        const caption = res.post ? String(res.post.caption || res.post.content || "") : "";
+        const thumbnail = res.post?._thumbnail ? String(res.post._thumbnail) : undefined;
+        setSyncResult({
+          ok: true,
+          message: "Пост найден и добавлен в список",
+          caption: caption || undefined,
+          thumbnail,
+        });
         qc.invalidateQueries({ queryKey: ["ig_posts"] });
       } else {
-        toast.error("Zernio не нашёл пост по этой ссылке");
+        setSyncResult({
+          ok: false,
+          message:
+            "Zernio не нашёл пост по этой ссылке. Проверьте, что ссылка ведёт на пост именно этого аккаунта.",
+        });
       }
     } catch (e: unknown) {
-      toast.error(errorMessage(e));
+      setSyncResult({ ok: false, message: errorMessage(e) });
     } finally {
       setSyncingUrl(false);
     }
@@ -2151,28 +2169,77 @@ function AdminInstagramPage() {
                         </SelectContent>
                       </Select>
                       {syncUrlOpen ? (
-                        <div className="flex items-center gap-1.5">
-                          <Input
-                            value={syncUrlValue}
-                            onChange={(e) => setSyncUrlValue(e.target.value)}
-                            placeholder="Ссылка на пост из Instagram…"
-                            className="h-7 text-xs"
-                            disabled={syncingUrl}
-                          />
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-7 text-[10px] px-2 shrink-0"
-                            onClick={handleSyncPostByUrl}
-                            disabled={syncingUrl || !syncUrlValue.trim()}
-                          >
-                            {syncingUrl ? "Ищу…" : "Найти"}
-                          </Button>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              value={syncUrlValue}
+                              onChange={(e) => {
+                                setSyncUrlValue(e.target.value);
+                                setSyncResult(null);
+                              }}
+                              placeholder="Ссылка на пост из Instagram…"
+                              className="h-7 text-xs"
+                              disabled={syncingUrl}
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-7 text-[10px] px-2 shrink-0"
+                              onClick={handleSyncPostByUrl}
+                              disabled={syncingUrl || !syncUrlValue.trim()}
+                            >
+                              {syncingUrl ? "Ищу…" : "Найти"}
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSyncUrlOpen(false);
+                                setSyncUrlValue("");
+                                setSyncResult(null);
+                              }}
+                              className="text-[10px] text-muted-foreground hover:text-foreground shrink-0 px-1"
+                            >
+                              Скрыть
+                            </button>
+                          </div>
+                          {syncResult ? (
+                            <div
+                              className={`flex items-start gap-2 rounded-md border px-2 py-1.5 text-xs ${
+                                syncResult.ok
+                                  ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-400"
+                                  : "border-destructive/30 bg-destructive/10 text-destructive"
+                              }`}
+                            >
+                              {syncResult.ok ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                              ) : (
+                                <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="font-medium">{syncResult.message}</div>
+                                {syncResult.ok && syncResult.caption ? (
+                                  <div className="truncate text-muted-foreground mt-0.5">
+                                    {syncResult.caption}
+                                  </div>
+                                ) : null}
+                              </div>
+                              {syncResult.ok && syncResult.thumbnail ? (
+                                <img
+                                  src={syncResult.thumbnail}
+                                  className="w-8 h-8 object-cover rounded shrink-0 bg-muted"
+                                  alt=""
+                                />
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setSyncUrlOpen(true)}
+                          onClick={() => {
+                            setSyncUrlOpen(true);
+                            setSyncResult(null);
+                          }}
                           className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
                         >
                           <Link2 className="w-3 h-3" /> Не нашли только что опубликованный пост?
