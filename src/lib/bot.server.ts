@@ -2144,26 +2144,43 @@ async function startManualProofPath(params: {
     ? m.manualTitleReminder(params.displayNo)
     : m.manualTitleNew(params.displayNo);
 
-  // QR картинкой отдельным сообщением, до текста с суммой и инструкцией —
-  // раньше qr_code_path вообще нигде не читался в коде бота (только
-  // сохранялся из админки), поэтому клиенты с оплатой по QR получали одну
-  // голую надпись «Оплатите через Kaspi Qr» без самого QR.
+  const text =
+    `${title}\n\n` +
+    `${m.amountToPay(formatMoney(params.total, params.currency))}\n\n` +
+    `${params.instructions}\n\n` +
+    afterProof;
+
+  // QR раньше вообще нигде не читался в коде бота (только сохранялся из
+  // админки), поэтому клиенты с оплатой по QR получали одну голую надпись
+  // «Оплатите через Kaspi Qr» без самого QR.
+  //
+  // Предпочтительно — одним сообщением, картинка с текстом в подписи: так
+  // они физически не могут разъехаться на экране покупателя. Подпись у
+  // Telegram ограничена 1024 символами (у обычного текста — 4096), а
+  // instructions — свободный текст, который продавец мог написать длинным;
+  // если не влезает, шлём фото отдельным сообщением ПОСЛЕ текста — не до,
+  // чтобы не оставлять пустых отступов в тексте на месте, где раньше стояло
+  // изображение.
+  if (params.qrCodePath && text.length <= 1024) {
+    const res = await tg("sendPhoto", {
+      chat_id: params.chat_id,
+      photo: imageUrl(params.qrCodePath),
+      caption: text,
+      parse_mode: "HTML",
+    });
+    // Фото не ушло (например, файл недоступен) — покупатель не должен
+    // остаться совсем без ответа, шлём хотя бы текст.
+    if (res.ok) return;
+  }
+
+  await tg("sendMessage", { chat_id: params.chat_id, text, parse_mode: "HTML" });
+
   if (params.qrCodePath) {
     await tg("sendPhoto", {
       chat_id: params.chat_id,
       photo: imageUrl(params.qrCodePath),
     }).catch((e) => console.error("[bot] failed to send QR code photo", params.orderId, e));
   }
-
-  await tg("sendMessage", {
-    chat_id: params.chat_id,
-    text:
-      `${title}\n\n` +
-      `${m.amountToPay(formatMoney(params.total, params.currency))}\n\n` +
-      `${params.instructions}\n\n` +
-      afterProof,
-    parse_mode: "HTML",
-  });
 }
 
 async function notifyAdminNewOrder(
