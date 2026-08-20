@@ -587,6 +587,15 @@ export const getZernioPostsFn = createServerFn({ method: "GET" })
     return { posts };
   });
 
+/** «Не нашли пост в списке?» — досинхронизировать его напрямую по ссылке (см. zernio.server.ts). */
+export const syncZernioPostByUrlFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ accountId: z.string(), url: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { syncExternalPostByUrl } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return await syncExternalPostByUrl(data.accountId, data.url.trim());
+  });
+
 export const cancelInstagramPostFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ postId: z.string().min(1) }).parse(d))
   .handler(async ({ data }) => {

@@ -30,6 +30,7 @@ import {
   toggleAutomationFn,
   getInstagramLogsFn,
   getZernioPostsFn,
+  syncZernioPostByUrlFn,
   disconnectInstagramAccountFn,
   createInstagramPostFn,
   cancelInstagramPostFn,
@@ -49,6 +50,7 @@ import {
 } from "@/components-ui/select";
 import {
   ImageIcon,
+  Link2,
   X,
   Settings2,
   MessageSquare,
@@ -1510,9 +1512,42 @@ function AdminInstagramPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [originalPlatformPostId, setOriginalPlatformPostId] = useState<string | null>(null);
   const [originalTrigger, setOriginalTrigger] = useState<"comment" | "story_reply">("comment");
+  const [syncUrlOpen, setSyncUrlOpen] = useState(false);
+  const [syncUrlValue, setSyncUrlValue] = useState("");
+  const [syncingUrl, setSyncingUrl] = useState(false);
 
   const handleRefreshPosts = () => {
     qc.invalidateQueries({ queryKey: ["ig_posts"] });
+  };
+
+  /**
+   * «Обновить список» тянет то, что Zernio уже успел засинхронить сам —
+   * фоновый sync внешних (опубликованных не через Zernio) постов ходит раз
+   * в ~90 минут на аккаунт. Для «только что выложил, а в списке пока нет»
+   * у Zernio есть отдельный документированный путь: POST /posts/sync-external
+   * с конкретной ссылкой ищет ровно этот пост и подтягивает его сразу, а не
+   * ждёт следующего фонового прохода.
+   */
+  const handleSyncPostByUrl = async () => {
+    if (!acc?._id || !syncUrlValue.trim()) return;
+    setSyncingUrl(true);
+    try {
+      const res = await syncZernioPostByUrlFn({
+        data: { accountId: acc._id, url: syncUrlValue.trim() },
+      });
+      if (res.found) {
+        toast.success("Пост найден и добавлен в список");
+        setSyncUrlValue("");
+        setSyncUrlOpen(false);
+        qc.invalidateQueries({ queryKey: ["ig_posts"] });
+      } else {
+        toast.error("Zernio не нашёл пост по этой ссылке");
+      }
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setSyncingUrl(false);
+    }
   };
 
   const handleConnect = async () => {
@@ -2115,6 +2150,35 @@ function AdminInstagramPage() {
                             ))}
                         </SelectContent>
                       </Select>
+                      {syncUrlOpen ? (
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            value={syncUrlValue}
+                            onChange={(e) => setSyncUrlValue(e.target.value)}
+                            placeholder="Ссылка на пост из Instagram…"
+                            className="h-7 text-xs"
+                            disabled={syncingUrl}
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 text-[10px] px-2 shrink-0"
+                            onClick={handleSyncPostByUrl}
+                            disabled={syncingUrl || !syncUrlValue.trim()}
+                          >
+                            {syncingUrl ? "Ищу…" : "Найти"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setSyncUrlOpen(true)}
+                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                        >
+                          <Link2 className="w-3 h-3" /> Не нашли только что опубликованный пост?
+                          Вставить ссылку
+                        </button>
+                      )}
                     </div>
 
                     <div className="space-y-4 border-t pt-4">

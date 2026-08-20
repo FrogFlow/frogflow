@@ -1000,3 +1000,24 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
     return [];
   }
 }
+
+/**
+ * Досинхронизировать один конкретный пост по ссылке — задокументированный у
+ * Zernio «primary use case» для POST /posts/sync-external с `url`: клиент
+ * только что опубликовал пост, автоматический фоновый sync подхватывает
+ * внешние публикации только раз в ~90 минут на аккаунт, а без `url` тот же
+ * эндпоинт лишь обновляет уже известную Zernio ленту — не гарантирует, что
+ * попадёт именно этот пост (наблюдали: Reels может не попасть, хотя фото
+ * с той же публикации уже подтянулись). С конкретной ссылкой Zernio ищет
+ * ровно её, а не «последние N», и результат детерминирован.
+ */
+export async function syncExternalPostByUrl(
+  accountId: string,
+  url: string,
+): Promise<{ found: boolean; post: ZernioPost | null }> {
+  const res = await zernioRequest<{ found?: boolean; post?: ZernioPost | null }>(
+    "/posts/sync-external",
+    { method: "POST", body: { accountId, url } },
+  );
+  return { found: res.found === true, post: res.post ?? null };
+}
