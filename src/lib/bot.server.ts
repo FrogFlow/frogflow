@@ -1845,6 +1845,7 @@ async function placeOrderInner(
       instructions,
       autoDeliver: false,
       locale,
+      qrCodePath: method?.qr_code_path,
     });
     return;
   }
@@ -1862,6 +1863,7 @@ async function placeOrderInner(
       instructions,
       autoDeliver: true,
       locale,
+      qrCodePath: method?.qr_code_path,
     });
     return;
   }
@@ -1955,6 +1957,7 @@ export async function remindOrderPayment(orderId: number) {
       autoDeliver: false,
       reminder: true,
       locale,
+      qrCodePath: method?.qr_code_path,
     });
     return { ok: true as const };
   }
@@ -1972,6 +1975,7 @@ export async function remindOrderPayment(orderId: number) {
       autoDeliver: true,
       reminder: true,
       locale,
+      qrCodePath: method?.qr_code_path,
     });
     return { ok: true as const };
   }
@@ -2117,6 +2121,8 @@ async function startManualProofPath(params: {
   autoDeliver: boolean;
   reminder?: boolean;
   locale?: Locale;
+  /** payment_methods.qr_code_path для страны заказа — если задан, шлём QR картинкой перед текстом. */
+  qrCodePath?: string | null;
 }) {
   const m = copy[params.locale ?? "ru"];
   const s = await db();
@@ -2137,6 +2143,17 @@ async function startManualProofPath(params: {
   const title = params.reminder
     ? m.manualTitleReminder(params.displayNo)
     : m.manualTitleNew(params.displayNo);
+
+  // QR картинкой отдельным сообщением, до текста с суммой и инструкцией —
+  // раньше qr_code_path вообще нигде не читался в коде бота (только
+  // сохранялся из админки), поэтому клиенты с оплатой по QR получали одну
+  // голую надпись «Оплатите через Kaspi Qr» без самого QR.
+  if (params.qrCodePath) {
+    await tg("sendPhoto", {
+      chat_id: params.chat_id,
+      photo: imageUrl(params.qrCodePath),
+    }).catch((e) => console.error("[bot] failed to send QR code photo", params.orderId, e));
+  }
 
   await tg("sendMessage", {
     chat_id: params.chat_id,
@@ -2499,7 +2516,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         const { data: method } = await s
           .from("payment_methods")
-          .select("instructions")
+          .select("instructions, qr_code_path")
           .eq("country_code", order.country_code || "KZ")
           .maybeSingle();
         await startManualProofPath({
@@ -2513,6 +2530,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           instructions: (method?.instructions as string) || m.defaultInstructions,
           autoDeliver: true,
           locale,
+          qrCodePath: method?.qr_code_path,
         });
         return;
       }
