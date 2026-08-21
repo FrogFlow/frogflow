@@ -1,6 +1,7 @@
 import { tg, downloadTelegramFile } from "./telegram.server";
 import { errorMessage } from "@/lib/error-message";
 import { requireAppOrigin } from "./app-origin.server";
+import { imageUrl } from "./public-image";
 import { replyIfBlocked } from "./blocked-users.server";
 import { handleManagerChatInbound, handleManagerChatCallback } from "./manager-chat.server";
 import { botStatus, pausedMessage } from "./modules/modules.server";
@@ -266,10 +267,6 @@ function welcomeStartHtml(
     legalConsentHtml(base, locale) +
     hint
   );
-}
-
-function imageUrl(path: string): string {
-  return `${originFromState()}/api/public/img/${path}`;
 }
 
 function formatMoney(amount: number | string, currency: string): string {

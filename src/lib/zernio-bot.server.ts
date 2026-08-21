@@ -4,6 +4,7 @@ import {
   type ZernioWebhookMessagePayload,
 } from "./zernio.server";
 import { isZernioPlatform, PLATFORM_LABEL, type ZernioPlatform } from "./zernio-platform";
+import { imageUrl } from "./public-image";
 import crypto from "node:crypto";
 import { logger, truncate } from "./logger.server";
 import { localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
@@ -81,6 +82,25 @@ interface DirectCopy {
   catalogBotLink: (link: string) => string;
   searchNoResults: (query: string, link: string) => string;
   searchFoundCount: (n: number) => string;
+  /**
+   * Дальше — тексты каталога-списка. Он есть только в WhatsApp: в Instagram
+   * на сообщение три кнопки и нет списков, поэтому там каталог остаётся
+   * текстовым, со ссылкой на Telegram-бота (catalogBotLink выше).
+   *
+   * Ссылки на Telegram здесь нет намеренно. В Instagram она осмысленна — бот
+   * не может ни показать каталог целиком, ни отдать файл. WhatsApp умеет и
+   * то и другое, и уводить оттуда покупателя, который уже готов платить, —
+   * значит терять его на лишнем шаге.
+   */
+  catalogEmpty: string;
+  catalogPick: string;
+  catalogSectionCategories: string;
+  catalogSectionProducts: string;
+  catalogMore: string;
+  catalogBack: string;
+  catalogOpenBtn: string;
+  /** Ничего не найдено — вариант без ссылки на другой бот. */
+  searchNoResultsHere: (query: string) => string;
   btnCatalog: string;
   btnAddToCart: string;
   btnCart: string;
@@ -150,6 +170,15 @@ const directCopy: Record<Locale, DirectCopy> = {
     searchNoResults: (query, link) =>
       `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог в нашем боте: ${link}`,
     searchFoundCount: (n) => `🔎 Нашли ${n} вариантов:`,
+    catalogEmpty: "Каталог пока пуст — товары ещё не добавлены. Напишите продавцу, он подскажет.",
+    catalogPick: "Выберите из каталога:",
+    catalogSectionCategories: "Разделы",
+    catalogSectionProducts: "Товары",
+    catalogMore: "➡️ Показать ещё",
+    catalogBack: "⬆️ Назад",
+    catalogOpenBtn: "Открыть каталог",
+    searchNoResultsHere: (query) =>
+      `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог.`,
     btnCatalog: "Каталог",
     btnAddToCart: "Добавить в корзину",
     btnCart: "Корзина",
@@ -263,6 +292,15 @@ const directCopy: Record<Locale, DirectCopy> = {
     searchNoResults: (query, link) =>
       `«${query}» бойынша ештеңе табылмады. Басқа сөзбен көріңіз немесе боттағы каталогты ашыңыз: ${link}`,
     searchFoundCount: (n) => `🔎 ${n} нұсқа таптық:`,
+    catalogEmpty: "Каталог әзірге бос — тауарлар қосылмаған. Сатушыға жазыңыз.",
+    catalogPick: "Каталогтан таңдаңыз:",
+    catalogSectionCategories: "Бөлімдер",
+    catalogSectionProducts: "Тауарлар",
+    catalogMore: "➡️ Тағы көрсету",
+    catalogBack: "⬆️ Артқа",
+    catalogOpenBtn: "Каталогты ашу",
+    searchNoResultsHere: (query) =>
+      `«${query}» бойынша ештеңе табылмады. Басқа сөзбен көріңіз немесе каталогты ашыңыз.`,
     btnCatalog: "Каталог",
     btnAddToCart: "Себетке қосу",
     btnCart: "Себет",
@@ -375,6 +413,16 @@ const directCopy: Record<Locale, DirectCopy> = {
     searchNoResults: (query, link) =>
       `Nothing found for "${query}". Try another word, or open the catalog in our bot: ${link}`,
     searchFoundCount: (n) => `🔎 Found ${n} matching items:`,
+    catalogEmpty:
+      "The catalog is empty for now — no items yet. Message the seller and they'll help.",
+    catalogPick: "Pick from the catalog:",
+    catalogSectionCategories: "Sections",
+    catalogSectionProducts: "Items",
+    catalogMore: "➡️ Show more",
+    catalogBack: "⬆️ Back",
+    catalogOpenBtn: "Open catalog",
+    searchNoResultsHere: (query) =>
+      `Nothing found for "${query}". Try another word, or open the catalog.`,
     btnCatalog: "Catalog",
     btnAddToCart: "Add to cart",
     btnCart: "Cart",
@@ -486,6 +534,15 @@ const directCopy: Record<Locale, DirectCopy> = {
     searchNoResults: (query, link) =>
       `«${query}» bo‘yicha hech narsa topilmadi. Boshqa so‘z bilan urinib ko‘ring yoki botimizdagi katalogni oching: ${link}`,
     searchFoundCount: (n) => `🔎 ${n} ta variant topildi:`,
+    catalogEmpty: "Katalog hozircha bo'sh — mahsulotlar qo'shilmagan. Sotuvchiga yozing.",
+    catalogPick: "Katalogdan tanlang:",
+    catalogSectionCategories: "Bo'limlar",
+    catalogSectionProducts: "Mahsulotlar",
+    catalogMore: "➡️ Yana ko'rsatish",
+    catalogBack: "⬆️ Orqaga",
+    catalogOpenBtn: "Katalogni ochish",
+    searchNoResultsHere: (query) =>
+      `"${query}" bo'yicha hech narsa topilmadi. Boshqa so'z bilan urinib ko'ring yoki katalogni oching.`,
     btnCatalog: "Katalog",
     btnAddToCart: "Savatga qo‘shish",
     btnCart: "Savat",
@@ -664,37 +721,70 @@ function stripTail(value: string): string {
   return value.trim().replace(/[.!?]+$/, "");
 }
 
+export type WhatsAppListRow = { id: string; title: string; description?: string };
+
+/**
+ * Сколько строк помещается в один список WhatsApp.
+ *
+ * Лимит Meta, а не наш: документация Zernio его не повторяет, потому что
+ * передаёт объект `interactive` в Cloud API дословно. Проектируем под 10 строк
+ * на всё сообщение — если по факту Meta допускает больше, страница на 10
+ * строк всё равно останется рабочей; обратное неверно, а молча обрезанный
+ * каталог выглядит как «половина товаров пропала».
+ */
+export const WA_LIST_MAX_ROWS = 10;
+
+/**
+ * Сколько из них отдаём под содержимое.
+ *
+ * Две строки держим под навигацию — «Назад» и «Показать ещё». Обе нужны
+ * одновременно: во вложенной категории, где товаров больше страницы.
+ */
+export const WA_LIST_PAGE_SIZE = WA_LIST_MAX_ROWS - 2;
+
 /**
  * Список WhatsApp вместо кнопок.
  *
  * У Instagram Direct на сообщение максимум три кнопки — из-за этого и выбор
  * языка, и выбор страны там сделаны нумерованным текстом («ответьте цифрой»).
- * WhatsApp даёт списки: до 10 разделов по 10 строк, с заголовком и описанием у
- * каждой. Выбор строки приходит обратно тем же `interactiveId`, что и нажатие
- * кнопки, поэтому весь разбор ниже по течению остаётся общим.
+ * WhatsApp даёт списки, и выбор строки приходит обратно тем же `interactiveId`,
+ * что и нажатие кнопки, — поэтому весь разбор ниже по течению остаётся общим.
  *
  * Meta режет длины молча, обрезаем сами: заголовок строки 24 символа,
- * описание 72, текст кнопки 20.
+ * описание 72, текст кнопки 20, заголовок секции 24.
+ *
+ * Секции принимаются массивом, потому что на одном уровне каталога бывают и
+ * разделы, и товары, и валить их в одну кучу — значит заставлять покупателя
+ * различать их по эмодзи. Пустые секции выбрасываются: Meta на секцию без
+ * строк отвечает ошибкой.
  */
-function whatsappList(params: {
+export function whatsappList(params: {
   body: string;
   buttonLabel: string;
-  rows: Array<{ id: string; title: string; description?: string }>;
+  sections: Array<{ title: string; rows: WhatsAppListRow[] }>;
   header?: string;
 }): Json {
-  const rows = params.rows.slice(0, 10).map((row) => ({
-    id: row.id,
-    title: row.title.slice(0, 24),
-    ...(row.description ? { description: row.description.slice(0, 72) } : {}),
-  }));
+  // Общий лимит — на всё сообщение, а не на секцию, поэтому бюджет строк
+  // расходуется по порядку секций.
+  let budget = WA_LIST_MAX_ROWS;
+  const sections: Array<{ title: string; rows: WhatsAppListRow[] }> = [];
+  for (const section of params.sections) {
+    if (budget <= 0) break;
+    const rows = section.rows.slice(0, budget).map((row) => ({
+      id: row.id,
+      title: row.title.slice(0, 24),
+      ...(row.description ? { description: row.description.slice(0, 72) } : {}),
+    }));
+    if (rows.length === 0) continue;
+    budget -= rows.length;
+    sections.push({ title: section.title.slice(0, 24), rows });
+  }
+
   return {
     type: "list",
     ...(params.header ? { header: { type: "text", text: params.header.slice(0, 60) } } : {}),
     body: { text: params.body.slice(0, 1024) },
-    action: {
-      button: params.buttonLabel.slice(0, 20),
-      sections: [{ title: "Выберите", rows }],
-    },
+    action: { button: params.buttonLabel.slice(0, 20), sections },
   } as unknown as Json;
 }
 
@@ -805,13 +895,18 @@ async function sendLanguagePicker(conversationId: string, accountId: string, use
       whatsappList({
         body: "Выберите язык / Тілді таңдаңыз / Tilni tanlang / Choose language",
         buttonLabel: "Выбрать язык",
-        rows: SUPPORTED_LOCALES.map((locale, index) => ({
-          // STEP: — ответ на текущий шаг сценария, а не команда (см. STEP_PREFIX).
-          // Внутри номер, а не код языка: matchLocalePick разбирает именно его,
-          // так что ответ списком и ответ текстом попадают в одну ветку.
-          id: `${STEP_PREFIX}${index + 1}`,
-          title: localeNames[locale],
-        })),
+        sections: [
+          {
+            title: "Язык",
+            rows: SUPPORTED_LOCALES.map((locale, index) => ({
+              // STEP: — ответ на текущий шаг сценария, а не команда (см. STEP_PREFIX).
+              // Внутри номер, а не код языка: matchLocalePick разбирает именно его,
+              // так что ответ списком и ответ текстом попадают в одну ветку.
+              id: `${STEP_PREFIX}${index + 1}`,
+              title: localeNames[locale],
+            })),
+          },
+        ],
       }),
     );
     return;
@@ -1081,6 +1176,34 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
       await sendCatalogMenu(conversationId, accountId, user);
       return;
     }
+    /**
+     * Строки каталога-списка. Обе ветки обязаны стоять выше общего перехвата
+     * ниже: он молча гасит любой нераспознанный postback, и без них нажатие
+     * на раздел или товар просто ничего бы не делало — ровно то, что уже
+     * случилось со STEP: при первой сборке списков.
+     */
+    if (features.catalog) {
+      const level = parseCatalogPayload(postbackPayload);
+      if (level) {
+        await sendWhatsAppCatalogLevel(
+          conversationId,
+          accountId,
+          user,
+          level.parentId,
+          level.offset,
+        );
+        return;
+      }
+      if (postbackPayload.startsWith(PROD_PREFIX)) {
+        await sendWhatsAppProductCard(
+          conversationId,
+          accountId,
+          user,
+          postbackPayload.slice(PROD_PREFIX.length),
+        );
+        return;
+      }
+    }
     if (postbackPayload) return; // handled by the automation that sent the button
   }
 
@@ -1256,52 +1379,15 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
   const copy = directCopy[flow.directLocale(state)];
 
   /**
-   * В WhatsApp каталог — настоящий список, а не «ответьте номером».
+   * В WhatsApp каталог — настоящий список с заходом по разделам.
    *
-   * Инстаграмная витрина текстовая по необходимости: там три кнопки на
-   * сообщение, товаров больше, и единственный способ выбрать — попросить
-   * прислать номер. В WhatsApp список показывает до десяти позиций с ценой,
-   * и покупатель кладёт товар в корзину одним касанием: строка возвращает
-   * `BUY:<id>` — тот же payload, что и кнопка «В корзину», так что дальше
-   * работает уже существующий обработчик.
+   * Инстаграмная витрина ниже текстовая по необходимости: там три кнопки на
+   * сообщение и нет списков, поэтому единственный способ выбрать — попросить
+   * прислать номер из публикации.
    */
   if (platformOf(user) === "whatsapp") {
-    const s = await db();
-    const { data: products } = await s
-      .from("products")
-      .select("id, name, price, currency, country_prices, is_active")
-      .eq("is_active", true)
-      .order("sort_order", { ascending: true })
-      .limit(10);
-
-    if (products?.length) {
-      const country = state.country_code ?? null;
-      const rows = [];
-      for (const product of products) {
-        const money = await flow.resolveProductPrice(product, country);
-        rows.push({
-          id: `BUY:${product.id}`,
-          title: String(product.name),
-          description: `${money.amount} ${money.currency}`,
-        });
-      }
-
-      await reply(
-        user,
-        conversationId,
-        accountId,
-        copy.catalogIntro,
-        undefined,
-        true,
-        whatsappList({
-          body: copy.catalogIntro,
-          buttonLabel: copy.btnCatalog,
-          rows,
-        }),
-      );
-      return;
-    }
-    // Товаров нет — падаем в общий текстовый путь ниже, он про это скажет.
+    await sendWhatsAppCatalogLevel(conversationId, accountId, user, null, 0);
+    return;
   }
 
   const botLink = await telegramBotLink();
@@ -1317,6 +1403,239 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
   await reply(user, conversationId, accountId, lines.join("\n"), undefined, true);
 }
 
+/** Строка каталога: `CAT:<id|root>:<offset>` — уровень, `PROD:<id>` — карточка. */
+const CAT_PREFIX = "CAT:";
+const PROD_PREFIX = "PROD:";
+const CAT_ROOT = "root";
+
+/** Разбор `CAT:<id|root>:<offset>`. Возвращает null, если это не наша строка. */
+export function parseCatalogPayload(
+  payload: string,
+): { parentId: string | null; offset: number } | null {
+  if (!payload.startsWith(CAT_PREFIX)) return null;
+  // Идентификатор категории — UUID без двоеточий, так что split безопасен.
+  const [, rawId, rawOffset] = payload.split(":");
+  if (!rawId) return null;
+  const offset = Number(rawOffset ?? 0);
+  return {
+    parentId: rawId === CAT_ROOT ? null : rawId,
+    offset: Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0,
+  };
+}
+
+/**
+ * Один уровень каталога одним списком.
+ *
+ * Устроен так же, как каталог телеграм-бота (`showCategories` в
+ * bot.server.ts): вложенные категории по `parent_id`, товары уровня по
+ * `category_ids`, в корне — товары без категории вовсе. Запросы намеренно
+ * повторяют тамошние, чтобы витрина в двух каналах показывала одно и то же:
+ * `category_ids` здесь авторитетна, а `category_id` — синхронизируемый
+ * пережиток, который бот не читает.
+ *
+ * Постраничность обязательна: у самого крупного клиента 387 товаров и 50
+ * категорий, а в список WhatsApp помещается десять строк на всё сообщение.
+ */
+async function sendWhatsAppCatalogLevel(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+  parentId: string | null,
+  offset: number,
+) {
+  const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
+  const copy = directCopy[flow.directLocale(state)];
+  const s = await db();
+
+  const categoriesQuery = s
+    .from("categories")
+    .select("id, name, parent_id")
+    .eq("is_visible", true)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  const { data: categories } = parentId
+    ? await categoriesQuery.eq("parent_id", parentId)
+    : await categoriesQuery.is("parent_id", null);
+
+  const productsQuery = s
+    .from("products")
+    .select("id, name, price, currency, country_prices")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
+  const { data: products } = parentId
+    ? await productsQuery.contains("category_ids", JSON.stringify([parentId]))
+    : await productsQuery.eq("category_ids", "[]");
+
+  const cats = categories ?? [];
+  const prods = products ?? [];
+
+  /**
+   * Совсем пусто — так и сказать.
+   *
+   * Раньше этот случай проваливался в текстовую инструкцию «напишите номер из
+   * публикации», и покупатель пустого магазина получал совет искать номер там,
+   * где ничего нет.
+   */
+  if (cats.length === 0 && prods.length === 0) {
+    if (parentId) {
+      // Пустая категория — не тупик: вернём человека на уровень выше.
+      await sendWhatsAppCatalogLevel(conversationId, accountId, user, null, 0);
+      return;
+    }
+    await reply(user, conversationId, accountId, copy.catalogEmpty, undefined, true);
+    return;
+  }
+
+  // Категории и товары нумеруются одной сквозной страницей: иначе на уровне с
+  // девятью разделами товары не показались бы никогда.
+  const entries = [
+    ...cats.map((category) => ({ kind: "category" as const, row: category })),
+    ...prods.map((product) => ({ kind: "product" as const, row: product })),
+  ];
+  const page = entries.slice(offset, offset + WA_LIST_PAGE_SIZE);
+  const hasMore = offset + WA_LIST_PAGE_SIZE < entries.length;
+
+  const country = state.country_code ?? null;
+  const categoryRows: WhatsAppListRow[] = [];
+  const productRows: WhatsAppListRow[] = [];
+
+  for (const entry of page) {
+    if (entry.kind === "category") {
+      categoryRows.push({
+        id: `${CAT_PREFIX}${entry.row.id}:0`,
+        title: String(entry.row.name),
+      });
+      continue;
+    }
+    const money = await flow.resolveProductPrice(entry.row, country);
+    productRows.push({
+      // Карточка, а не сразу в корзину: в строке помещается 24 символа, а
+      // названия у клиентов бывают за сотню — без карточки покупатель выбирал
+      // бы товар по обрубку.
+      id: `${PROD_PREFIX}${entry.row.id}`,
+      title: String(entry.row.name),
+      description: `${money.amount} ${money.currency}`,
+    });
+  }
+
+  const navRows: WhatsAppListRow[] = [];
+  if (hasMore) {
+    navRows.push({
+      id: `${CAT_PREFIX}${parentId ?? CAT_ROOT}:${offset + WA_LIST_PAGE_SIZE}`,
+      title: copy.catalogMore,
+    });
+  }
+  if (parentId || offset > 0) {
+    // Наверх — к родителю текущей категории; у корневой это сам корень.
+    const parentOfCurrent = parentId
+      ? (cats[0]?.parent_id ??
+        (await s.from("categories").select("parent_id").eq("id", parentId).maybeSingle()).data
+          ?.parent_id ??
+        null)
+      : null;
+    navRows.push({
+      id: `${CAT_PREFIX}${parentOfCurrent ?? CAT_ROOT}:0`,
+      title: copy.catalogBack,
+    });
+  }
+
+  await reply(
+    user,
+    conversationId,
+    accountId,
+    copy.catalogPick,
+    undefined,
+    true,
+    whatsappList({
+      body: copy.catalogPick,
+      buttonLabel: copy.catalogOpenBtn,
+      sections: [
+        { title: copy.catalogSectionCategories, rows: categoryRows },
+        { title: copy.catalogSectionProducts, rows: productRows },
+        { title: "…", rows: navRows },
+      ],
+    }),
+  );
+}
+
+/**
+ * Карточка товара: фото, полное название, цена, описание и кнопка в корзину.
+ *
+ * Нужна именно из-за лимита строки списка в 24 символа — карточка первое
+ * место, где покупатель видит название целиком.
+ */
+async function sendWhatsAppProductCard(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+  productId: string,
+) {
+  const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
+  const copy = directCopy[flow.directLocale(state)];
+  const s = await db();
+
+  const { data: product } = await s
+    .from("products")
+    .select(
+      "id, name, description, price, currency, country_prices, category_ids, is_active, product_images(image_path, sort_order)",
+    )
+    .eq("id", productId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (!product) {
+    await reply(user, conversationId, accountId, copy.productUnavailable);
+    return;
+  }
+
+  const money = await flow.resolveProductPrice(product, state.country_code ?? null);
+  const description = product.description ? `\n\n${String(product.description).slice(0, 600)}` : "";
+  const text = `📦 *${product.name}*\n💰 ${money.amount} ${money.currency}${description}`;
+
+  // Первая картинка по sort_order — как в карточке телеграм-бота.
+  const images = (product.product_images ?? [])
+    .slice()
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const photo = images[0]?.image_path ? imageUrl(images[0].image_path) : null;
+
+  // Назад — в первую категорию товара, а если её нет, в корень каталога.
+  const categoryIds = Array.isArray(product.category_ids) ? product.category_ids : [];
+  const backTo = typeof categoryIds[0] === "string" ? categoryIds[0] : CAT_ROOT;
+
+  const buttons: ZernioDmButton[] = [
+    { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
+    { type: "postback", title: copy.catalogBack, payload: `${CAT_PREFIX}${backTo}:0` },
+  ];
+
+  const { sendZernioInboxMessage } = await import("./zernio.server");
+  if (photo) {
+    /**
+     * Фото и кнопки одним сообщением: Zernio собирает из вложения заголовок
+     * интерактивного сообщения с кнопками. Если конкретный аккаунт так не
+     * умеет, откатываемся на «фото отдельно, текст с кнопками следом» — тем
+     * же приёмом, что применён для QR-кода реквизитов в bot.server.ts.
+     */
+    const combined = await sendZernioInboxMessage(conversationId, accountId, text, {
+      attachmentUrl: photo,
+      attachmentType: "image",
+      buttons,
+      platform: "whatsapp",
+    });
+    if (combined.ok) return;
+
+    await sendZernioInboxMessage(conversationId, accountId, "", {
+      attachmentUrl: photo,
+      attachmentType: "image",
+      platform: "whatsapp",
+    });
+  }
+
+  await reply(user, conversationId, accountId, text, buttons, true);
+}
+
 /**
  * Поиск и отправка товаров в DM
  */
@@ -1330,6 +1649,8 @@ async function sendInteractiveProductResults(
   const state = flow.readDirectState(user.state);
   const copy = directCopy[flow.directLocale(state)];
 
+  const isWhatsApp = platformOf(user) === "whatsapp";
+
   const s = await db();
   const { data: products } = await s
     .from("products")
@@ -1338,15 +1659,56 @@ async function sendInteractiveProductResults(
     .select("id, name, price, currency, country_prices, description, is_active")
     .eq("is_active", true)
     .or(`name.ilike.%${query}%,description.ilike.%${query}%,keywords.ilike.%${query}%`)
-    .limit(5);
+    // В WhatsApp выдача помещается в один список — берём столько же, сколько
+    // и страница каталога. В Instagram каждый товар уходит отдельным
+    // сообщением, и пять — предел разумного.
+    .limit(isWhatsApp ? WA_LIST_PAGE_SIZE : 5);
 
   if (!products?.length) {
     await reply(
       user,
       conversationId,
       accountId,
-      copy.searchNoResults(query, (await telegramBotLink()) ?? ""),
+      // В WhatsApp каталог открывается тут же, звать в другой бот незачем.
+      isWhatsApp
+        ? copy.searchNoResultsHere(query)
+        : copy.searchNoResults(query, (await telegramBotLink()) ?? ""),
       [{ type: "postback", title: copy.btnCatalog, payload: "CATALOG" }],
+    );
+    return;
+  }
+
+  /**
+   * В WhatsApp результаты — один список, а не пачка сообщений.
+   *
+   * Пять отдельных сообщений подряд в мессенджере, где человек переписывается
+   * с живым продавцом, выглядят как спам; список занимает одно сообщение и
+   * ведёт в ту же карточку товара, что и каталог.
+   */
+  if (isWhatsApp) {
+    const country = state.country_code ?? null;
+    const rows: WhatsAppListRow[] = [];
+    for (const product of products) {
+      const money = await flow.resolveProductPrice(product, country);
+      rows.push({
+        id: `${PROD_PREFIX}${product.id}`,
+        title: String(product.name),
+        description: `${money.amount} ${money.currency}`,
+      });
+    }
+
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      copy.searchFoundCount(products.length),
+      undefined,
+      true,
+      whatsappList({
+        body: copy.searchFoundCount(products.length),
+        buttonLabel: copy.catalogOpenBtn,
+        sections: [{ title: copy.catalogSectionProducts, rows }],
+      }),
     );
     return;
   }
@@ -1598,10 +1960,15 @@ async function startInstagramCheckout(
       whatsappList({
         body: `${cartText}\n\nОткуда вы? От страны зависят реквизиты и валюта.`,
         buttonLabel: "Выбрать страну",
-        rows: options.map((option, index) => ({
-          id: `${STEP_PREFIX}${index + 1}`,
-          title: option.name,
-        })),
+        sections: [
+          {
+            title: "Страна",
+            rows: options.map((option, index) => ({
+              id: `${STEP_PREFIX}${index + 1}`,
+              title: option.name,
+            })),
+          },
+        ],
       }),
     );
     return;
