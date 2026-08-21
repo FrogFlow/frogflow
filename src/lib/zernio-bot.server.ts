@@ -742,6 +742,37 @@ export const WA_LIST_MAX_ROWS = 10;
  */
 export const WA_LIST_PAGE_SIZE = WA_LIST_MAX_ROWS - 2;
 
+/** Лимиты Meta на строку списка. Перебор она молча режет. */
+const WA_ROW_TITLE_MAX = 24;
+const WA_ROW_DESC_MAX = 72;
+
+/**
+ * Подпись строки: сначала хвост названия, потом цена.
+ *
+ * Картинку в строку списка положить нельзя — у Meta в этом типе сообщения
+ * такого поля нет вовсе. Зато есть 72 символа описания, и они пропадали
+ * впустую: там стояла одна цена. На живом каталоге это выглядело так, что
+ * четыре разных товара показывались как «034. Декор на дверь к 1», «035.
+ * Декор на дверь к 1», «036…» — заголовок обрывался ровно там, где названия
+ * ещё совпадали, и различить позиции было нечем.
+ *
+ * Теперь в описание уходит та часть названия, которая не поместилась в
+ * заголовок, — то самое место, где товары и расходятся. Цена дописывается
+ * следом, если остаётся место: она есть и в карточке, а вот отличить одну
+ * позицию от другой больше неоткуда.
+ */
+export function rowSubtitle(name: string, price: string): string {
+  const tail = name.length > WA_ROW_TITLE_MAX ? name.slice(WA_ROW_TITLE_MAX).trim() : "";
+  if (!tail) return price;
+
+  const withPrice = `${tail} · ${price}`;
+  if (withPrice.length <= WA_ROW_DESC_MAX) return withPrice;
+
+  // Не влезло вместе — хвост названия важнее цены: цену покупатель увидит в
+  // карточке, а понять, чем товары отличаются, там будет уже поздно.
+  return tail.slice(0, WA_ROW_DESC_MAX);
+}
+
 /**
  * Список WhatsApp вместо кнопок.
  *
@@ -1524,7 +1555,7 @@ async function sendWhatsAppCatalogLevel(
       // бы товар по обрубку.
       id: `${PROD_PREFIX}${entry.row.id}`,
       title: String(entry.row.name),
-      description: `${money.amount} ${money.currency}`,
+      description: rowSubtitle(String(entry.row.name), `${money.amount} ${money.currency}`),
     });
   }
 
@@ -1710,7 +1741,7 @@ async function sendInteractiveProductResults(
       rows.push({
         id: `${PROD_PREFIX}${product.id}`,
         title: String(product.name),
-        description: `${money.amount} ${money.currency}`,
+        description: rowSubtitle(String(product.name), `${money.amount} ${money.currency}`),
       });
     }
 

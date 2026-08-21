@@ -4,6 +4,7 @@ import {
   whatsappList,
   WA_LIST_MAX_ROWS,
   WA_LIST_PAGE_SIZE,
+  rowSubtitle,
   type WhatsAppListRow,
 } from "../src/lib/zernio-bot.server";
 
@@ -179,5 +180,51 @@ describe("whatsappList", () => {
     expect(flat).toHaveLength(WA_LIST_MAX_ROWS);
     expect(flat.at(-2)?.id).toBe("CAT:root:8");
     expect(flat.at(-1)?.id).toBe("CAT:root:0");
+  });
+});
+
+/**
+ * Подпись строки — единственное, чем в списке WhatsApp можно различить
+ * похожие товары: картинку туда положить нельзя, у Meta в строке такого поля
+ * нет. На живом каталоге четыре разные позиции выглядели одинаково —
+ * «034. Декор на дверь к 1», «035. Декор на дверь к 1», … — потому что
+ * заголовок обрывался ровно там, где названия ещё совпадали, а всё описание
+ * занимала одна цена.
+ */
+describe("rowSubtitle", () => {
+  it("короткому названию описание — просто цена", () => {
+    expect(rowSubtitle("Пазлы", "600 KZT")).toBe("600 KZT");
+  });
+
+  it("длинное название продолжается в описании — там товары и расходятся", () => {
+    const a = "034. Декор на дверь к 1 сентября: шары";
+    const b = "035. Декор на дверь к 1 сентября: цифры";
+
+    /**
+     * Различаются они только ведущим номером, а всё содержательное — «шары»
+     * против «цифр» — начинается за 24-м символом и в заголовок не попадает.
+     * Ровно так это и выглядело на живом каталоге: столбик почти одинаковых
+     * строк, где отличается одна цифра в начале.
+     */
+    expect(a.slice(0, 24).replace(/^\d+/, "")).toBe(b.slice(0, 24).replace(/^\d+/, ""));
+
+    // Описание обязано донести то, что заголовок обрезал.
+    expect(rowSubtitle(a, "600 KZT")).toContain("шары");
+    expect(rowSubtitle(b, "600 KZT")).toContain("цифры");
+    expect(rowSubtitle(a, "600 KZT")).not.toBe(rowSubtitle(b, "600 KZT"));
+  });
+
+  it("цена дописывается, когда остаётся место", () => {
+    expect(rowSubtitle("034. Декор на дверь к 1 сентября", "600 KZT")).toContain("600 KZT");
+  });
+
+  it("не влезает вместе — хвост названия важнее цены", () => {
+    // Цену покупатель увидит в карточке; понять, чем товары отличаются, там
+    // будет уже поздно.
+    const long = "А".repeat(24) + "Б".repeat(100);
+    const subtitle = rowSubtitle(long, "600 KZT");
+    expect(subtitle.length).toBeLessThanOrEqual(72);
+    expect(subtitle).not.toContain("600 KZT");
+    expect(subtitle.startsWith("Б")).toBe(true);
   });
 });
