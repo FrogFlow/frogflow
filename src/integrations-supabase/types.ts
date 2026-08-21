@@ -470,6 +470,58 @@ export type Database = {
           },
         ];
       };
+      // Заведена MIGRATION-29. Как и другие колонки/таблицы, добавленные
+      // вручную: scripts/sync-db-types.mjs новые объекты сюда не приносит.
+      whatsapp_templates: {
+        Row: {
+          id: string;
+          bot_id: string;
+          account_id: string;
+          name: string;
+          language: string;
+          category: string;
+          status: string;
+          reason: string | null;
+          components: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          account_id: string;
+          name: string;
+          language: string;
+          category: string;
+          status?: string;
+          reason?: string | null;
+          components?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          account_id?: string;
+          name?: string;
+          language?: string;
+          category?: string;
+          status?: string;
+          reason?: string | null;
+          components?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_templates_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       vip_member_profiles: {
         Row: {
           legacy_locked: boolean;

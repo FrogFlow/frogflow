@@ -169,6 +169,31 @@ export const MODULES = {
     note: "16 000 ₸ — цена «к вашему боту». Отдельным продуктом с нуля — 25 000 ₸.",
   },
 
+  // ── WhatsApp ──
+  whatsapp: {
+    title: "WhatsApp-автоматизация",
+    group: "WhatsApp",
+    price: 22000,
+    status: "available",
+    note: "Подключение номера, автоответчик и переписка в админке. Нужен WhatsApp Business Account у клиента; за доставку шаблонных сообщений Meta берёт деньги напрямую с его карты.",
+  },
+  wa_shop: {
+    title: "Магазин в WhatsApp",
+    group: "WhatsApp",
+    price: 16000,
+    status: "available",
+    requires: ["whatsapp"],
+    note: "Каталог списками, корзина, оформление и выдача материалов документом прямо в чат (WhatsApp принимает файлы до 100 МБ, в отличие от Instagram Direct).",
+  },
+  wa_broadcasts: {
+    title: "Рассылки в WhatsApp",
+    group: "WhatsApp",
+    price: 18000,
+    status: "available",
+    requires: ["whatsapp"],
+    note: "Отдельно от телеграмных рассылок: вне 24-часового окна WhatsApp разрешает только одобренные Meta шаблоны, и каждое доставленное сообщение Meta тарифицирует.",
+  },
+
   // ── Удержание: «Повторные продажи и удержание» ──
   winback: {
     title: "Возвратные продажи",

@@ -1101,12 +1101,12 @@ async function sendInteractiveProductResults(
       conversationId,
       accountId,
       `📌 ${product.name}\n💰 ${money.amount} ${money.currency}${description}`,
-      undefined,
-      undefined,
-      [
-        { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
-        { type: "postback", title: copy.btnCart, payload: "CART" },
-      ],
+      {
+        buttons: [
+          { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
+          { type: "postback", title: copy.btnCart, payload: "CART" },
+        ],
+      },
     );
   }
 }

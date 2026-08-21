@@ -1,5 +1,6 @@
 import type { Json } from "@/integrations-supabase/types";
 import type { ZernioWebhookMessagePayload } from "./zernio.server";
+import { isZernioPlatform, USER_KEY_PREFIX, type ZernioPlatform } from "./zernio-platform";
 
 /**
  * Разбор события `message.received` — отдельно от обработки и без побочных
@@ -19,25 +20,56 @@ import type { ZernioWebhookMessagePayload } from "./zernio.server";
 export type ParsedZernioMessage = {
   conversationId?: string;
   accountId?: string;
-  /** Ключ пользователя в bot_users: `ig_<идентификатор отправителя>`. */
+  /** Канал, из которого пришло сообщение. */
+  platform: ZernioPlatform;
+  /**
+   * Ключ пользователя в bot_users: `ig_<id>` для Instagram, `wa_<телефон>` для
+   * WhatsApp. Префикс обязателен — он и разводит один и тот же номер или
+   * никнейм по разным каналам, и задаёт разный синтетический telegram_id.
+   */
   userKey: string;
   senderUsername: string;
   senderName: string;
   text: string;
   /** Профиль отправителя плюс идентификатор его карточки в CRM Zernio. */
   metadata: Record<string, Json>;
-  /** Нажатие кнопки в DM: текста у такого сообщения нет, только payload кнопки. */
+  /** Нажатие кнопки или строки списка: текста у такого сообщения нет, только payload. */
   postbackPayload: string | null;
+  /**
+   * Покупатель прислал корзину из нативного каталога WhatsApp. Свой каталог у
+   * нас собственный, так что это не путь оформления — но распознать событие
+   * нужно, чтобы ответить, а не промолчать.
+   */
+  nativeOrder: NativeOrder | null;
 };
 
-/** Имя по умолчанию, когда Instagram не отдал ни имени, ни юзернейма. */
+export type NativeOrder = {
+  catalogId: string;
+  note: string;
+  items: Array<{ retailerId: string; quantity: number; price: number; currency: string }>;
+};
+
+/** Имя по умолчанию, когда платформа не отдала ни имени, ни юзернейма. */
 const FALLBACK_NAME = "друг";
+
+/**
+ * Типы `interactiveType`, означающие «покупатель нажал на то, что мы прислали».
+ * У Instagram это postback, у WhatsApp — кнопка и строка списка. Значение
+ * нашего payload во всех случаях лежит в `interactiveId`.
+ */
+const INTERACTIVE_TAP_TYPES = new Set(["postback", "button_reply", "list_reply"]);
 
 export function parseZernioMessage(payload: ZernioWebhookMessagePayload): ParsedZernioMessage {
   const message = payload.message ?? {};
   const conversation = payload.conversation ?? {};
   const account = payload.account ?? {};
   const sender = message.sender ?? {};
+
+  const platform: ZernioPlatform = isZernioPlatform(account.platform)
+    ? account.platform
+    : isZernioPlatform(message.platform)
+      ? message.platform
+      : "instagram";
 
   const senderId = sender.id || sender.username || conversation.participantId || "unknown";
   const senderUsername = sender.username || conversation.participantUsername || "";
@@ -47,19 +79,36 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   if (sender.contactId) metadata.zernioContactId = String(sender.contactId);
 
   const interactive = message.metadata ?? {};
-  const postbackPayload =
-    interactive.interactiveType === "postback" ? interactive.interactiveId || "" : null;
+  const postbackPayload = INTERACTIVE_TAP_TYPES.has(interactive.interactiveType ?? "")
+    ? interactive.interactiveId || ""
+    : null;
+
+  const order = interactive.order;
+  const nativeOrder: NativeOrder | null = order
+    ? {
+        catalogId: String(order.catalog_id ?? ""),
+        note: (order.text ?? "").trim(),
+        items: (order.product_items ?? []).map((item) => ({
+          retailerId: String(item.product_retailer_id ?? ""),
+          quantity: Number(item.quantity ?? 0),
+          price: Number(item.item_price ?? 0),
+          currency: String(item.currency ?? ""),
+        })),
+      }
+    : null;
 
   return {
     conversationId: message.conversationId || conversation.id,
     // `accountId` — каноническое поле фильтрации, `id` держим как запасное.
     accountId: account.accountId || account.id,
-    userKey: `ig_${senderId}`,
+    platform,
+    userKey: `${USER_KEY_PREFIX[platform]}${senderId}`,
     senderUsername,
     senderName,
     // text приходит null у сообщений с одним вложением — это не отсутствие поля.
     text: (message.text ?? "").trim(),
     metadata,
     postbackPayload,
+    nativeOrder,
   };
 }

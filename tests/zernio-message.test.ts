@@ -124,3 +124,99 @@ describe("parseZernioMessage", () => {
     expect(accountId).toBe("канонический");
   });
 });
+
+/**
+ * WhatsApp приезжает в тот же вебхук и тем же событием `message.received`, но
+ * отличается ровно там, где разбор мог бы промолчать: отправитель — номер
+ * телефона, а нажатие интерактивного элемента приходит не как `postback`, а
+ * как `button_reply` / `list_reply`. Промах здесь выглядел бы как «бот не
+ * реагирует на кнопки в WhatsApp» — то есть магазин просто не работает.
+ */
+describe("parseZernioMessage — WhatsApp", () => {
+  const waEvent = {
+    event: "message.received",
+    account: {
+      accountId: "6b1f2c3d4e5f60718293a4b5",
+      platform: "whatsapp",
+      username: "+77012345678",
+    },
+    message: {
+      conversationId: "6b1f2c3d4e5f60718293a4b6",
+      text: "Здравствуйте, хочу купить",
+      platform: "whatsapp",
+      direction: "incoming" as const,
+      sender: { id: "77012345678", name: "Екатерина" },
+    },
+    conversation: { id: "6b1f2c3d4e5f60718293a4b6", participantId: "77012345678" },
+  };
+
+  it("ключ покупателя получает префикс wa_, а не ig_", () => {
+    const parsed = parseZernioMessage(waEvent);
+    expect(parsed.platform).toBe("whatsapp");
+    expect(parsed.userKey).toBe("wa_77012345678");
+    expect(parsed.senderName).toBe("Екатерина");
+  });
+
+  it("нажатие кнопки WhatsApp читается как payload", () => {
+    const parsed = parseZernioMessage({
+      ...waEvent,
+      message: {
+        ...waEvent.message,
+        text: null,
+        metadata: { interactiveType: "button_reply", interactiveId: "CHECKOUT" },
+      },
+    });
+    expect(parsed.postbackPayload).toBe("CHECKOUT");
+  });
+
+  it("выбор строки списка читается как payload", () => {
+    const parsed = parseZernioMessage({
+      ...waEvent,
+      message: {
+        ...waEvent.message,
+        text: null,
+        metadata: { interactiveType: "list_reply", interactiveId: "BUY:42" },
+      },
+    });
+    expect(parsed.postbackPayload).toBe("BUY:42");
+  });
+
+  it("корзина из нативного каталога Meta разбирается, а не теряется", () => {
+    const parsed = parseZernioMessage({
+      ...waEvent,
+      message: {
+        ...waEvent.message,
+        text: null,
+        metadata: {
+          order: {
+            catalog_id: "194836987003835",
+            text: "срочно",
+            product_items: [
+              { product_retailer_id: "sku-1", quantity: 2, item_price: 1500, currency: "KZT" },
+            ],
+          },
+        },
+      },
+    });
+    expect(parsed.nativeOrder).toEqual({
+      catalogId: "194836987003835",
+      note: "срочно",
+      items: [{ retailerId: "sku-1", quantity: 2, price: 1500, currency: "KZT" }],
+    });
+  });
+
+  it("у обычного сообщения нативного заказа нет", () => {
+    expect(parseZernioMessage(waEvent).nativeOrder).toBeNull();
+    expect(parseZernioMessage(realEvent).nativeOrder).toBeNull();
+  });
+
+  it("неизвестная платформа не роняет разбор и считается instagram", () => {
+    const parsed = parseZernioMessage({
+      event: "message.received",
+      message: { conversationId: "c1", sender: { id: "u1" } },
+      account: { accountId: "a1", platform: "tiktok" },
+    });
+    expect(parsed.platform).toBe("instagram");
+    expect(parsed.userKey).toBe("ig_u1");
+  });
+});

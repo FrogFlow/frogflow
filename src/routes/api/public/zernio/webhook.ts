@@ -43,6 +43,7 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
             _id?: string;
             username?: string;
             name?: string;
+            platform?: string;
           };
           message?: { accountId?: string };
           data?: { accountId?: string };
@@ -53,12 +54,6 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
           return new Response("bad json", { status: 400 });
         }
 
-        // Как и у VIP-бота: выключенный модуль обязан гасить обработку, иначе
-        // тумблер «Instagram» убирает только раздел админки. 200 вместо ошибки —
-        // чтобы Zernio не копил повторные доставки, пока модуль выключен.
-        const { hasModule } = await import("@/lib/modules/modules.server");
-        if (!(await hasModule("instagram"))) return new Response("ok");
-
         const accountId =
           payload.account?.accountId ||
           payload.account?.id ||
@@ -67,7 +62,22 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         const eventType = payload.event || "unknown";
 
         /**
-         * account.disconnected — единственное событие, где эта проверка не
+         * Канал события. Один эндпоинт обслуживает и Instagram, и WhatsApp:
+         * вебхуки у Zernio общие на команду, а не на платформу.
+         *
+         * Платформа из тела запроса — подсказка, а не источник истины: тело
+         * подписано секретом, но `account.platform` в нём заполняет Zernio, и
+         * у части событий его нет вовсе. Настоящий ответ даёт
+         * `zernioAccountPlatform` — она же одновременно проверяет, что аккаунт
+         * вообще принадлежит профилю этого деплоя.
+         */
+        const { isZernioPlatform } = await import("@/lib/zernio-platform");
+        const hintedPlatform = isZernioPlatform(payload.account?.platform)
+          ? payload.account.platform
+          : null;
+
+        /**
+         * account.disconnected — единственное событие, где проверка профиля не
          * применима. Она сверяет accountId со списком аккаунтов, которые
          * Zernio сейчас считает подключёнными к нашему профилю, а к моменту
          * доставки такого события отключившийся аккаунт из этого списка уже
@@ -77,14 +87,36 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
          * области Zernio (webhook регистрируется под собственным ключом
          * клиента), так что для событий уровня аккаунта этого достаточно.
          */
+        let platform = hintedPlatform;
         if (eventType !== "account.disconnected") {
-          const { isInstagramAccountInConfiguredProfile } = await import("@/lib/zernio.server");
-          if (!(await isInstagramAccountInConfiguredProfile(String(accountId || "")))) {
+          const { zernioAccountPlatform } = await import("@/lib/zernio.server");
+          platform = await zernioAccountPlatform(String(accountId || ""));
+          if (!platform) {
             console.warn(
-              "[instagram-webhook] ignored event for an account outside this deployment profile",
+              "[zernio-webhook] ignored event for an account outside this deployment profile",
             );
             return new Response("ignored", { status: 202 });
           }
+        }
+
+        /**
+         * Выключенный модуль обязан гасить обработку, иначе тумблер убирает
+         * только раздел админки. 200 вместо ошибки — чтобы Zernio не копил
+         * повторные доставки, пока модуль выключен.
+         *
+         * Проверяется модуль того канала, из которого пришло событие: у
+         * клиента может быть куплен Instagram и не куплен WhatsApp (или
+         * наоборот). Когда канал определить не удалось (account.disconnected
+         * без подсказки в теле), пропускаем событие дальше, если куплен хотя бы
+         * один из каналов: это уведомление об отвалившемся аккаунте, и молчать
+         * о нём — тот самый случай, ради которого событие и подписано.
+         */
+        const { hasModule } = await import("@/lib/modules/modules.server");
+        const moduleForPlatform = { instagram: "instagram", whatsapp: "whatsapp" } as const;
+        if (platform) {
+          if (!(await hasModule(moduleForPlatform[platform]))) return new Response("ok");
+        } else if (!(await hasModule("instagram")) && !(await hasModule("whatsapp"))) {
+          return new Response("ok");
         }
 
         const eventId =
@@ -127,7 +159,7 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
           // без строки некому пометить событие обработанным, а повторная
           // доставка не отсеется — уж лучше отдать не-2xx и получить повтор
           // по расписанию Zernio.
-          console.error("[instagram-webhook] failed to record event", insertError);
+          console.error("[zernio-webhook] failed to record event", insertError);
           return new Response("failed to record event", { status: 500 });
         }
 
@@ -149,6 +181,11 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
               } else if (eventType === "account.disconnected") {
                 await handleZernioAccountDisconnected(
                   payload as Parameters<typeof handleZernioAccountDisconnected>[0],
+                );
+              } else if (eventType === "whatsapp.template.status_updated") {
+                const { handleWhatsAppTemplateStatus } = await import("@/lib/whatsapp.server");
+                await handleWhatsAppTemplateStatus(
+                  payload as Parameters<typeof handleWhatsAppTemplateStatus>[0],
                 );
               }
             });

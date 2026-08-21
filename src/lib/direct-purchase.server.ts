@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sendZernioInboxMessage, type ZernioDmButton } from "./zernio.server";
+import { sendZernioInboxMessage, type ZernioDmButton, type ZernioPlatform } from "./zernio.server";
 import {
   matchCountry,
   extractEmail,
@@ -229,6 +229,13 @@ export async function sendDirectReply(params: {
   text: string;
   buttons?: ZernioDmButton[];
   /**
+   * Родной interactive-объект WhatsApp (список товаров, языков, стран). Задан —
+   * значит кнопки не нужны, Zernio их всё равно проигнорирует.
+   */
+  interactive?: Json;
+  /** Канал покупателя. По умолчанию instagram — так вели себя все прежние вызовы. */
+  platform?: ZernioPlatform;
+  /**
    * Пользователь сам снова вызвал магазин. В этом случае одинаковое меню —
    * ожидаемый ответ, а не повтор доставки одного и того же webhook-события.
    */
@@ -252,14 +259,11 @@ export async function sendDirectReply(params: {
     return false;
   }
 
-  await sendZernioInboxMessage(
-    params.conversationId,
-    params.accountId,
-    params.text,
-    undefined,
-    undefined,
-    params.buttons,
-  );
+  await sendZernioInboxMessage(params.conversationId, params.accountId, params.text, {
+    buttons: params.buttons,
+    interactive: params.interactive,
+    platform: params.platform,
+  });
   await setDirectState(params.userKey, {
     last_reply: mark,
     last_reply_at: new Date().toISOString(),

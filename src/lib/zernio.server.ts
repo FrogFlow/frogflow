@@ -3,6 +3,12 @@
  */
 import type { Json } from "@/integrations-supabase/types";
 import { errorMessage } from "@/lib/error-message";
+import { isZernioPlatform, type ZernioPlatform } from "./zernio-platform";
+
+// Канал — общий словарь для серверного слоя и разбора событий, живёт в
+// отдельном нейтральном модуле (см. комментарий там). Реэкспорт — чтобы
+// существующие импорты «из zernio.server» продолжали работать.
+export { isZernioPlatform, ZERNIO_PLATFORMS, type ZernioPlatform } from "./zernio-platform";
 
 /**
  * Пост/сторис из ответа Zernio — намеренно не полный тип.
@@ -182,8 +188,34 @@ export type ZernioWebhookMessagePayload = {
         isVerified?: boolean | null;
       };
     };
-    /** Приходит при нажатии кнопки в DM: тип и идентификатор нажатого. */
-    metadata?: { interactiveType?: string; interactiveId?: string };
+    /**
+     * Нажатие интерактивного элемента. `interactiveType` различается по
+     * платформам: Instagram присылает `postback`, WhatsApp — `button_reply`
+     * (кнопка) или `list_reply` (строка списка). Наш payload во всех трёх
+     * случаях лежит в `interactiveId`.
+     *
+     * `order` и `referredProduct` — только WhatsApp и только для нативных
+     * commerce-сообщений Meta: покупатель собрал корзину в родном каталоге
+     * WABA или ткнул «Написать о товаре». Свой каталог мы ведём сами, но
+     * событие всё равно надо распознать — иначе на такое сообщение бот
+     * промолчит, а для покупателя это выглядит как «отправил заказ, ответа
+     * нет».
+     */
+    metadata?: {
+      interactiveType?: string;
+      interactiveId?: string;
+      order?: {
+        catalog_id?: string;
+        text?: string;
+        product_items?: Array<{
+          product_retailer_id?: string;
+          quantity?: number;
+          item_price?: number;
+          currency?: string;
+        }>;
+      };
+      referredProduct?: { catalog_id?: string; product_retailer_id?: string };
+    };
     sentAt?: string;
     isRead?: boolean;
   };
@@ -328,26 +360,60 @@ export async function listZernioAccounts(profileId?: string): Promise<ZernioAcco
 /**
  * Отправить личное сообщение в Instagram Direct (Zernio Inbox API).
  */
+export type ZernioSendOptions = {
+  attachmentUrl?: string;
+  attachmentType?: "image" | "video" | "audio" | "file";
+  /**
+   * WhatsApp показывает имя документа получателю. Без него имя выводится из
+   * URL, а у наших ссылок на материалы в пути лежит идентификатор — покупатель
+   * увидел бы «Untitled» вместо названия файла. Для image/video/audio
+   * игнорируется самим Zernio.
+   */
+  attachmentName?: string;
+  buttons?: ZernioDmButton[];
+  /**
+   * Родной interactive-объект Meta (списки, cta_url, flow). Форма повторяет
+   * Cloud API дословно, поэтому здесь он не типизируется полем за полем —
+   * конструирует его вызывающий код, а не этот слой. Только WhatsApp; при
+   * заданном interactive Zernio игнорирует buttons.
+   */
+  interactive?: Json;
+  /**
+   * Канал получателя. Нужен ровно для одного решения — дописывать ли
+   * инстаграмный хак с кнопкой «Оформить заказ» (см. ниже). По умолчанию
+   * instagram: так ведут себя все вызовы, написанные до появления WhatsApp.
+   */
+  platform?: ZernioPlatform;
+};
+
 export async function sendZernioInboxMessage(
   conversationId: string,
   accountId: string,
   message: string,
-  attachmentUrl?: string,
-  attachmentType?: "image" | "video" | "audio" | "file",
-  buttons?: ZernioDmButton[],
+  opts: ZernioSendOptions = {},
 ): Promise<{ ok: boolean; error?: string }> {
+  const { attachmentUrl, attachmentType, attachmentName, buttons, interactive } = opts;
+  const platform = opts.platform ?? "instagram";
   try {
     const body: Record<string, unknown> = buildInstagramInboxMessageBody(accountId, message);
 
     if (attachmentUrl) {
       body.attachmentUrl = attachmentUrl;
       body.attachmentType = attachmentType || "image";
+      if (attachmentName) body.attachmentName = attachmentName;
     }
-    if (buttons?.length) {
+    if (interactive) {
+      body.interactive = interactive;
+    } else if (buttons?.length) {
       body.buttons = buttons.slice(0, 3);
-    } else if (message.toLowerCase().includes("корзин")) {
+    } else if (platform === "instagram" && message.toLowerCase().includes("корзин")) {
       // The Direct store's cart response always exposes the next action;
       // this prevents customers from having to guess a text command.
+      //
+      // Только для Instagram: там у сообщения максимум три кнопки и нет
+      // списков, поэтому следующий шаг приходится угадывать по тексту. В
+      // WhatsApp кнопки и списки задаются явно на месте, и дописывание кнопки
+      // по подстроке там дало бы вторую кнопку «Оформить заказ» поверх своей.
       body.buttons = [{ type: "postback", title: "Оформить заказ", payload: "CHECKOUT" }];
     }
 
@@ -364,9 +430,23 @@ export async function sendZernioInboxMessage(
   } catch (e) {
     console.error(`[zernio] sendZernioInboxMessage failed for conversation ${conversationId}`, e);
     const details = e instanceof Error ? errorMessage(e) : "";
+    const channel = platform === "whatsapp" ? "WhatsApp" : "Instagram";
+    /**
+     * У WhatsApp есть своя частая и совершенно штатная причина отказа: вне
+     * 24-часового окна Meta не пропускает свободный текст. Ошибку про это
+     * нужно называть своим именем, иначе продавец читает «проверьте
+     * подключение» там, где подключение исправно, а нужен шаблон.
+     */
+    if (platform === "whatsapp" && /re-?engagement|131047|131026|24[- ]hour/i.test(details)) {
+      return {
+        ok: false,
+        error:
+          "Прошло больше 24 часов с последнего сообщения покупателя — WhatsApp разрешает писать только одобренным шаблоном.",
+      };
+    }
     const error = /inbox add-on required/i.test(details)
-      ? "Для этого аккаунта недоступна отправка в Direct. Проверьте права подключения и тариф сервиса."
-      : "Не удалось отправить сообщение. Проверьте подключение Instagram и повторите попытку.";
+      ? `Для этого аккаунта недоступна отправка сообщений (${channel}). Проверьте права подключения и тариф сервиса.`
+      : `Не удалось отправить сообщение. Проверьте подключение ${channel} и повторите попытку.`;
     return { ok: false, error };
   }
 }
@@ -412,12 +492,27 @@ export function resetProfileAccountsCache() {
   profileAccountsCache = null;
 }
 
-/** Fail closed: a deployment may process only accounts in its configured profile. */
-export async function isInstagramAccountInConfiguredProfile(accountId: string): Promise<boolean> {
+/**
+ * Fail closed: a deployment may process only accounts in its configured profile.
+ *
+ * Возвращает канал аккаунта, если он принадлежит профилю этого деплоя, и
+ * `null` во всех остальных случаях — аккаунт чужой, профиль не настроен,
+ * платформа не из тех, под которые у нас есть рантайм.
+ *
+ * Раньше это была `isInstagramAccountInConfiguredProfile` с булевым ответом и
+ * зашитым `platform === "instagram"`. Проверка стоит на горячем пути вебхука и
+ * решает две задачи сразу — «наш ли это аккаунт» и «чей канал», — поэтому
+ * ответом должна быть платформа, а не «да/нет»: иначе вызывающему пришлось бы
+ * спрашивать про каждый канал отдельно, то есть по разу на платформу за
+ * событие.
+ */
+export async function zernioAccountPlatform(accountId: string): Promise<ZernioPlatform | null> {
   const profileId = process.env.ZERNIO_PROFILE_ID?.trim();
-  if (!profileId || !accountId) return false;
+  if (!profileId || !accountId) return null;
   const accounts = await accountsInProfile(profileId);
-  return accounts.some((account) => account._id === accountId && account.platform === "instagram");
+  const account = accounts.find((candidate) => candidate._id === accountId);
+  if (!account) return null;
+  return isZernioPlatform(account.platform) ? account.platform : null;
 }
 
 /*
@@ -433,6 +528,11 @@ export async function isInstagramAccountInConfiguredProfile(accountId: string): 
  * private-reply нужно звать с `buttons`, а не текстом — quickReplies там не
  * отображаются.
  */
+
+/** Имя записи вебхука в Zernio. Канал в имени не указан — запись одна на все. */
+const ZERNIO_WEBHOOK_NAME = "Store Webhook";
+/** Как запись называлась до появления WhatsApp — ищется, чтобы не завести вторую. */
+const LEGACY_ZERNIO_WEBHOOK_NAME = "Instagram Store Webhook";
 
 /**
  * Зарегистрировать Webhook в Zernio на наш публичный эндпоинт.
@@ -465,12 +565,31 @@ export async function registerZernioWebhook(
      * или отозванный токен иначе означает, что бот молча перестаёт отвечать,
      * и продавец узнаёт об этом только от расстроенного покупателя.
      */
-    const events = ["message.received", "account.disconnected"];
+    /**
+     * `whatsapp.template.status_updated` — вердикт ревью Meta по шаблону.
+     * Документация Zernio прямо просит не опрашивать список шаблонов ради
+     * этого: ревью идёт до 24 часов, и опрос всё равно означал бы либо
+     * задержку, либо холостые запросы. Событие приходит само.
+     */
+    const events = ["message.received", "account.disconnected", "whatsapp.template.status_updated"];
     const current = await zernioRequest<{
       webhooks?: Array<{ _id?: string; id?: string; url?: string; name?: string }>;
     }>("/webhooks/settings");
+    /**
+     * Вебхуки у Zernio общие на команду, а не на платформу: один эндпоинт
+     * получает события и Instagram, и WhatsApp — второй регистрировать не
+     * надо, достаточно расширить список событий у существующего.
+     *
+     * Прежнее имя ищется наравне с новым намеренно: у уже работающих деплоев
+     * запись называется «Instagram Store Webhook», и без этой ветки они
+     * завели бы вторую запись на тот же URL — то есть каждое событие
+     * приходило бы дважды.
+     */
     const existing = (current.webhooks || []).find(
-      (webhook) => webhook.url === webhookUrl || webhook.name === "Instagram Store Webhook",
+      (webhook) =>
+        webhook.url === webhookUrl ||
+        webhook.name === ZERNIO_WEBHOOK_NAME ||
+        webhook.name === LEGACY_ZERNIO_WEBHOOK_NAME,
     );
     const response = await zernioRequest<{ success?: boolean; error?: string }>(
       "/webhooks/settings",
@@ -478,7 +597,7 @@ export async function registerZernioWebhook(
         method: existing ? "PUT" : "POST",
         body: {
           ...(existing ? { _id: existing._id || existing.id } : {}),
-          name: "Instagram Store Webhook",
+          name: ZERNIO_WEBHOOK_NAME,
           url: webhookUrl,
           secret,
           events,
@@ -578,10 +697,13 @@ export async function getZernioAccountHealth(
   }
 }
 
-export async function listZernioConversations(accountId: string): Promise<ZernioConversation[]> {
+export async function listZernioConversations(
+  accountId: string,
+  platform: ZernioPlatform = "instagram",
+): Promise<ZernioConversation[]> {
   try {
     const result = await zernioRequest<{ data?: ZernioConversation[] }>("/inbox/conversations", {
-      query: { platform: "instagram", accountId, sortOrder: "desc", limit: "50" },
+      query: { platform, accountId, sortOrder: "desc", limit: "50" },
     });
     return result.data || [];
   } catch (e) {
@@ -605,6 +727,128 @@ export async function listZernioConversationMessages(
   } catch (e) {
     console.error("[zernio] listZernioConversationMessages error", e);
     return [];
+  }
+}
+
+/* ───────────────────────── WhatsApp ───────────────────────── */
+
+/**
+ * Вердикт ревью Meta по шаблону. Значения приходят от Meta дословно.
+ * Отправить можно только APPROVED.
+ */
+export type WhatsAppTemplateStatus =
+  "PENDING" | "APPROVED" | "REJECTED" | "IN_APPEAL" | "PAUSED" | "DISABLED" | "PENDING_DELETION";
+
+export type WhatsAppTemplate = {
+  name: string;
+  language: string;
+  status: WhatsAppTemplateStatus | string;
+  category?: string;
+  /** Форма компонентов задаётся Meta и уходит к ней же без изменений. */
+  components?: Json;
+  /** Причина отказа от Meta; при одобрении приходит "NONE". */
+  reason?: string;
+};
+
+export async function listWhatsAppTemplates(accountId: string): Promise<WhatsAppTemplate[]> {
+  try {
+    const result = await zernioRequest<{ templates?: WhatsAppTemplate[] }>("/whatsapp/templates", {
+      query: { accountId },
+    });
+    return result.templates || [];
+  } catch (e) {
+    console.error("[zernio] listWhatsAppTemplates error", e);
+    return [];
+  }
+}
+
+export async function createWhatsAppTemplate(input: {
+  accountId: string;
+  name: string;
+  /** MARKETING допустим, но платится дороже; для магазина почти всегда UTILITY. */
+  category: "UTILITY" | "MARKETING" | "AUTHENTICATION";
+  language: string;
+  components: Json;
+}): Promise<{ ok: boolean; template?: WhatsAppTemplate; error?: string }> {
+  try {
+    const result = await zernioRequest<{ template?: WhatsAppTemplate }>("/whatsapp/templates", {
+      method: "POST",
+      body: input,
+    });
+    return { ok: true, template: result.template };
+  } catch (e) {
+    console.error("[zernio] createWhatsAppTemplate failed", e);
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/**
+ * Написать в WhatsApp первым — единственный способ начать разговор или
+ * вернуться в него после закрытия 24-часового окна.
+ *
+ * Meta не пропускает свободный текст к человеку, который нам ещё не писал (или
+ * писал больше суток назад). Есть ровно два законных пути, и оба заведены
+ * здесь:
+ *
+ *  - `templateName` — одобренный шаблон. Работает всегда, но требует пройти
+ *    ревью Meta заранее (до 24 часов) и стоит клиенту денег за доставку.
+ *  - `category: "utility"` (Direct Send) — служебное сообщение без заранее
+ *    одобренного шаблона: Meta подбирает или заводит шаблон сама. Доступно не
+ *    каждому WABA, поэтому это попытка, а не гарантия.
+ *
+ * Вызывающий код передаёт шаблон, когда он есть, и полагается на utility как
+ * на запасной путь. Молча «не отправить» нельзя: для покупателя это выглядит
+ * как оплаченный и потерянный заказ.
+ */
+export async function startWhatsAppConversation(params: {
+  accountId: string;
+  /** Телефон получателя в международном формате, только цифры. */
+  phone: string;
+  message?: string;
+  templateName?: string;
+  templateLanguage?: string;
+  templateParams?: string[];
+}): Promise<{ ok: boolean; conversationId?: string; error?: string }> {
+  const body: Record<string, unknown> = {
+    accountId: params.accountId,
+    participantId: params.phone.replace(/\D/g, ""),
+  };
+  if (params.templateName) {
+    body.templateName = params.templateName;
+    if (params.templateLanguage) body.templateLanguage = params.templateLanguage;
+    if (params.templateParams?.length) body.templateParams = params.templateParams;
+    if (params.message) body.message = params.message;
+  } else {
+    // Direct Send: category и templateName взаимоисключающи, и message обязателен.
+    body.category = "utility";
+    body.message = params.message ?? "";
+  }
+
+  try {
+    const { idempotencyKeyFor } = await import("./zernio-event-context.server");
+    const result = await zernioRequest<{ data?: { conversationId?: string } }>(
+      "/inbox/conversations",
+      { method: "POST", body, idempotencyKey: idempotencyKeyFor(body) },
+    );
+    return { ok: true, conversationId: result.data?.conversationId };
+  } catch (e) {
+    console.error("[zernio] startWhatsAppConversation failed", e);
+    const details = errorMessage(e);
+    if (/TEMPLATE_REQUIRED/i.test(details)) {
+      return {
+        ok: false,
+        error:
+          "WhatsApp требует одобренный шаблон, чтобы написать первым. Создайте шаблон во вкладке «Шаблоны» и дождитесь одобрения Meta.",
+      };
+    }
+    if (/Direct Send/i.test(details)) {
+      return {
+        ok: false,
+        error:
+          "Этот WhatsApp-аккаунт не допущен к отправке без шаблона. Нужен одобренный шаблон Meta.",
+      };
+    }
+    return { ok: false, error: details };
   }
 }
 
