@@ -747,6 +747,16 @@ const WA_ROW_TITLE_MAX = 24;
 const WA_ROW_DESC_MAX = 72;
 
 /**
+ * До скольких товаров раздел показывается карточками с фото вместо списка.
+ *
+ * Каждая карточка — отдельное сообщение, так что порог упирается не в API, а
+ * в терпение покупателя: пять подряд ещё читаются как витрина, десять уже
+ * выглядят как спам в чате, которым продавец пользуется и для живой
+ * переписки.
+ */
+export const WA_PHOTO_GALLERY_MAX = 5;
+
+/**
  * Подпись строки: сначала хвост названия, потом цена.
  *
  * Картинку в строку списка положить нельзя — у Meta в этом типе сообщения
@@ -761,6 +771,25 @@ const WA_ROW_DESC_MAX = 72;
  * следом, если остаётся место: она есть и в карточке, а вот отличить одну
  * позицию от другой больше неоткуда.
  */
+/**
+ * Родитель категории — спросить у самой категории, а не вывести из соседей.
+ *
+ * Соблазн взять `parent_id` у детей текущей категории обманчив: у них он и
+ * есть текущая категория, так что «Назад» вело бы на тот же уровень. Здесь
+ * это уже было один раз.
+ */
+async function parentCategoryOf(
+  s: Awaited<ReturnType<typeof db>>,
+  categoryId: string,
+): Promise<string | null> {
+  const { data } = await s
+    .from("categories")
+    .select("parent_id")
+    .eq("id", categoryId)
+    .maybeSingle();
+  return data?.parent_id ?? null;
+}
+
 export function rowSubtitle(name: string, price: string): string {
   const tail = name.length > WA_ROW_TITLE_MAX ? name.slice(WA_ROW_TITLE_MAX).trim() : "";
   if (!tail) return price;
@@ -1527,6 +1556,30 @@ async function sendWhatsAppCatalogLevel(
     return;
   }
 
+  /**
+   * Маленький раздел показываем карточками с фото, а не строчками.
+   *
+   * В строке списка картинки нет и быть не может — у Meta в этом типе
+   * сообщения такого поля нет вовсе. А на живом каталоге нашлись товары, у
+   * которых совпадают и название, и описание, и различает их только
+   * фотография: строчкой такие не различить ничем.
+   *
+   * Порог низкий намеренно. Карточка — отдельное сообщение, и пять подряд в
+   * мессенджере, где продавец ещё и живьём переписывается, это предел
+   * терпимого; на большем список выигрывает у ленты сообщений. Подкатегории
+   * тоже блокируют этот путь: их в карточках не покажешь, а терять раздел
+   * нельзя.
+   */
+  if (cats.length === 0 && prods.length > 0 && prods.length <= WA_PHOTO_GALLERY_MAX) {
+    // «Назад» с карточки — на уровень выше, а не в этот же раздел: карточки
+    // сейчас и есть он сам.
+    const upper = parentId ? await parentCategoryOf(s, parentId) : null;
+    for (const product of prods) {
+      await sendWhatsAppProductCard(conversationId, accountId, user, product.id, upper ?? CAT_ROOT);
+    }
+    return;
+  }
+
   // Категории и товары нумеруются одной сквозной страницей: иначе на уровне с
   // девятью разделами товары не показались бы никогда.
   const entries = [
@@ -1574,15 +1627,7 @@ async function sendWhatsAppCatalogLevel(
      * категории, значит их `parent_id` и есть `parentId`. «Назад» тогда ведёт
      * на тот же самый уровень, то есть никуда.
      */
-    let parentOfCurrent: string | null = null;
-    if (parentId) {
-      const { data: current } = await s
-        .from("categories")
-        .select("parent_id")
-        .eq("id", parentId)
-        .maybeSingle();
-      parentOfCurrent = current?.parent_id ?? null;
-    }
+    const parentOfCurrent = parentId ? await parentCategoryOf(s, parentId) : null;
     navRows.push({
       id: `${CAT_PREFIX}${parentOfCurrent ?? CAT_ROOT}:0`,
       title: copy.catalogBack,
@@ -1619,6 +1664,15 @@ async function sendWhatsAppProductCard(
   accountId: string,
   user: ZernioBotUser,
   productId: string,
+  /**
+   * Куда ведёт «Назад». По умолчанию — в категорию товара, откуда его и
+   * выбирали в списке.
+   *
+   * Задаётся явно там, где эта догадка неверна: в витрине маленького раздела
+   * карточки и есть сам раздел, и «Назад» в него вернуло бы человека ровно
+   * туда, где он уже стоит. Там передаётся уровень выше.
+   */
+  backToOverride?: string,
 ) {
   const flow = await import("./direct-purchase.server");
   const state = flow.readDirectState(user.state);
@@ -1651,7 +1705,7 @@ async function sendWhatsAppProductCard(
 
   // Назад — в первую категорию товара, а если её нет, в корень каталога.
   const categoryIds = Array.isArray(product.category_ids) ? product.category_ids : [];
-  const backTo = typeof categoryIds[0] === "string" ? categoryIds[0] : CAT_ROOT;
+  const backTo = backToOverride ?? (typeof categoryIds[0] === "string" ? categoryIds[0] : CAT_ROOT);
 
   const buttons: ZernioDmButton[] = [
     { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
