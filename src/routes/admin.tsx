@@ -107,6 +107,7 @@ function AdminLayout() {
                 active={
                   pathname.startsWith("/admin/broadcast") ||
                   pathname.startsWith("/admin/instagram") ||
+                  pathname.startsWith("/admin/whatsapp") ||
                   pathname.startsWith("/admin/manager-chat")
                 }
               >
@@ -115,6 +116,9 @@ function AdminLayout() {
                 </GroupLink>
                 <GroupLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
                   Instagram
+                </GroupLink>
+                <GroupLink to="/admin/whatsapp" locked={!modules.whatsapp} locale={locale}>
+                  WhatsApp
                 </GroupLink>
                 {modules.manager_chat ? (
                   <ManagerChatGroupLink locale={locale} />

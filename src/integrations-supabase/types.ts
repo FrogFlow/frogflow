@@ -326,6 +326,7 @@ export type Database = {
           status: string;
           error_message: string | null;
           sent_at: string | null;
+          phone: string | null;
           bot_id: string | null;
         };
         Insert: {
@@ -335,6 +336,7 @@ export type Database = {
           status?: string;
           error_message?: string | null;
           sent_at?: string | null;
+          phone?: string | null;
           bot_id?: string | null;
         };
         Update: {
@@ -344,6 +346,7 @@ export type Database = {
           status?: string;
           error_message?: string | null;
           sent_at?: string | null;
+          phone?: string | null;
           bot_id?: string | null;
         };
         Relationships: [
@@ -688,6 +691,11 @@ export type Database = {
           started_at: string | null;
           completed_at: string | null;
           bot_id: string | null;
+          channel: string;
+          account_id: string | null;
+          template_name: string | null;
+          template_language: string | null;
+          template_params: Json;
         };
         Insert: {
           id?: string;
@@ -706,6 +714,11 @@ export type Database = {
           started_at?: string | null;
           completed_at?: string | null;
           bot_id?: string | null;
+          channel?: string;
+          account_id?: string | null;
+          template_name?: string | null;
+          template_language?: string | null;
+          template_params?: Json;
         };
         Update: {
           id?: string;
@@ -724,6 +737,11 @@ export type Database = {
           started_at?: string | null;
           completed_at?: string | null;
           bot_id?: string | null;
+          channel?: string;
+          account_id?: string | null;
+          template_name?: string | null;
+          template_language?: string | null;
+          template_params?: Json;
         };
         Relationships: [
           {

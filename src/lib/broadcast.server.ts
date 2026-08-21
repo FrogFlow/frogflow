@@ -7,6 +7,9 @@ const TELEGRAM_MEDIA_GROUP_MAX = 10;
 
 export type AudienceType = "all" | "country" | "buyers" | "non_buyers" | "test";
 
+/** Канал рассылки. Телеграмный — исходный и остаётся значением по умолчанию. */
+export type BroadcastChannel = "telegram" | "whatsapp";
+
 export type BroadcastPayload = {
   message_text: string;
   photo_paths: string[];
@@ -14,6 +17,18 @@ export type BroadcastPayload = {
   show_catalog: boolean;
   audience_type: AudienceType;
   audience_filter?: { country_code?: string };
+  channel?: BroadcastChannel;
+  /**
+   * Дальше — только WhatsApp. Текст рассылки там задаёт не `message_text`, а
+   * одобренный Meta шаблон: свободный текст вне 24-часового окна запрещён, а
+   * у рассылки по базе окно закрыто почти у всех. `message_text` остаётся,
+   * чтобы продавец видел в панели, что именно он разослал.
+   */
+  account_id?: string;
+  template_name?: string;
+  template_language?: string;
+  /** Значения переменных шаблона одним плоским массивом, в порядке подстановки. */
+  template_params?: string[];
 };
 
 function sleep(ms: number) {
@@ -45,6 +60,21 @@ async function db() {
   return supabaseAdmin;
 }
 
+/**
+ * Кому уходит телеграм-рассылка.
+ *
+ * Возвращает только настоящие Telegram-чаты. Фильтр по платформе здесь не
+ * украшение: покупатели из Instagram и WhatsApp живут в той же `bot_users`, и
+ * `telegram_id` у них синтетический — отрицательный хеш от ключа (см.
+ * zernioCustomerId). Чата с таким номером не существует, и до этого фильтра
+ * рассылка «всем» честно пыталась в них писать: каждая такая попытка — ошибка
+ * от Telegram, а в отчёте о рассылке — раздутое число получателей, из которых
+ * часть не могла получить ничего в принципе.
+ *
+ * Условие `telegram_id > 0` дублирует фильтр по платформе намеренно: у
+ * аудитории `test` оно стояло и раньше, и это дешёвая страховка на случай
+ * строки, где платформа не проставлена.
+ */
 export async function resolveAudienceIds(
   audience_type: AudienceType,
   audience_filter?: { country_code?: string },
@@ -64,33 +94,47 @@ export async function resolveAudienceIds(
       .filter((id) => Number.isFinite(id) && id > 0);
   }
 
+  /** Телеграмные получатели: реальный чат, а не синтетический ключ другого канала. */
+  const telegramUsers = () => s.from("bot_users").select("telegram_id").eq("platform", "telegram");
+  const realChat = (id: number) => Number.isFinite(id) && id > 0;
+
   if (audience_type === "buyers") {
-    const { data: orders } = await s.from("orders").select("telegram_id").eq("status", "delivered");
-    return [...new Set((orders ?? []).map((o) => o.telegram_id as number))];
+    const { data: orders } = await s
+      .from("orders")
+      .select("telegram_id")
+      .eq("status", "delivered")
+      .eq("platform", "telegram");
+    return [...new Set((orders ?? []).map((o) => o.telegram_id as number))].filter(realChat);
   }
 
   if (audience_type === "non_buyers") {
     const buyerIds = await resolveAudienceIds("buyers");
     const buyerSet = new Set(buyerIds);
-    const { data: users } = await s.from("bot_users").select("telegram_id");
-    return (users ?? []).map((u) => u.telegram_id as number).filter((id) => !buyerSet.has(id));
+    const { data: users } = await telegramUsers();
+    return (users ?? [])
+      .map((u) => u.telegram_id as number)
+      .filter((id) => realChat(id) && !buyerSet.has(id));
   }
 
   if (audience_type === "country") {
     const code = audience_filter?.country_code?.trim().toUpperCase();
     if (!code) return [];
-    const { data: users } = await s.from("bot_users").select("telegram_id, state");
+    const { data: users } = await s
+      .from("bot_users")
+      .select("telegram_id, state")
+      .eq("platform", "telegram");
     return (users ?? [])
       .filter(
         (u) =>
           ((u.state as { country_code?: string } | null)?.country_code ?? "").toUpperCase() ===
           code,
       )
-      .map((u) => u.telegram_id as number);
+      .map((u) => u.telegram_id as number)
+      .filter(realChat);
   }
 
-  const { data: users } = await s.from("bot_users").select("telegram_id");
-  return (users ?? []).map((u) => u.telegram_id as number);
+  const { data: users } = await telegramUsers();
+  return (users ?? []).map((u) => u.telegram_id as number).filter(realChat);
 }
 
 async function buildInlineKeyboard(product_ids: string[], show_catalog: boolean) {
@@ -210,18 +254,116 @@ export async function sendBroadcastMessage(
   }
 }
 
+/**
+ * Отличить «этот человек больше недостижим» от «не получилось сейчас».
+ *
+ * Разница не косметическая: заблокировавшие считаются отдельным счётчиком и не
+ * выглядят как поломка рассылки. У WhatsApp свои коды на то же самое — номер
+ * не в WhatsApp (131021) и получатель недоступен (131026); без них такие
+ * получатели попадали бы в «ошибки», и продавец видел бы красную рассылку там,
+ * где всё отработало правильно.
+ */
 function classifyTelegramError(description?: string): "blocked" | "failed" {
   const msg = (description || "").toLowerCase();
   if (msg.includes("blocked") || msg.includes("deactivated") || msg.includes("chat not found")) {
     return "blocked";
   }
+  if (msg.includes("131021") || msg.includes("131026") || msg.includes("not a whatsapp user")) {
+    return "blocked";
+  }
   return "failed";
+}
+
+/**
+ * Получатели WhatsApp-рассылки: номер плюс синтетический ключ покупателя.
+ *
+ * Номер лежит прямо в `user_key` (`wa_<телефон>`, см. USER_KEY_PREFIX), так что
+ * отдельного справочника номеров заводить не пришлось. Аудитории те же, что и
+ * у телеграмной рассылки, только считаются по своей платформе.
+ */
+async function resolveWhatsAppAudience(
+  audience_type: AudienceType,
+  audience_filter?: { country_code?: string },
+): Promise<Array<{ telegram_id: number; phone: string }>> {
+  const s = await db();
+
+  // «Себе на пробу» у WhatsApp нет: писать некому — у продавца в этой базе
+  // нет собственной записи покупателя. Пустой список честнее, чем отправка
+  // непонятно кому.
+  if (audience_type === "test") return [];
+
+  let userKeys: string[] | null = null;
+
+  if (audience_type === "buyers" || audience_type === "non_buyers") {
+    const { data: orders } = await s
+      .from("orders")
+      .select("user_key")
+      .eq("status", "delivered")
+      .eq("platform", "whatsapp");
+    const buyers = new Set((orders ?? []).map((o) => String(o.user_key ?? "")).filter(Boolean));
+    if (audience_type === "buyers") userKeys = [...buyers];
+    else {
+      const { data: all } = await s.from("bot_users").select("user_key").eq("platform", "whatsapp");
+      userKeys = (all ?? []).map((u) => String(u.user_key)).filter((key) => !buyers.has(key));
+    }
+  }
+
+  const query = s
+    .from("bot_users")
+    .select("user_key, telegram_id, state")
+    .eq("platform", "whatsapp");
+  const { data: users } = userKeys ? await query.in("user_key", userKeys) : await query;
+
+  const code = audience_filter?.country_code?.trim().toUpperCase();
+  return (users ?? [])
+    .filter((u) => {
+      if (audience_type !== "country") return true;
+      if (!code) return false;
+      return (
+        ((u.state as { country_code?: string } | null)?.country_code ?? "").toUpperCase() === code
+      );
+    })
+    .map((u) => ({
+      telegram_id: u.telegram_id as number,
+      phone: String(u.user_key).startsWith("wa_") ? String(u.user_key).slice(3) : "",
+    }))
+    .filter((r) => r.phone.length > 0);
 }
 
 export async function createBroadcast(payload: BroadcastPayload) {
   const s = await db();
-  const telegramIds = await resolveAudienceIds(payload.audience_type, payload.audience_filter);
-  const uniqueIds = [...new Set(telegramIds)];
+  const channel = payload.channel ?? "telegram";
+
+  /**
+   * WhatsApp-рассылка обязана нести одобренный шаблон.
+   *
+   * Вне 24-часового окна Meta не пропускает свободный текст, а рассылка по
+   * базе — это ровно такой случай. Отказать здесь, до создания записи и
+   * списка получателей, честнее, чем создать рассылку, которая потом упадёт
+   * на каждом получателе по очереди.
+   */
+  if (channel === "whatsapp" && !payload.template_name) {
+    throw new Error(
+      "Для рассылки в WhatsApp нужен одобренный шаблон Meta — выберите его в списке шаблонов.",
+    );
+  }
+  if (channel === "whatsapp" && !payload.account_id) {
+    throw new Error("Не выбран аккаунт WhatsApp, от которого идёт рассылка.");
+  }
+
+  const whatsappRecipients =
+    channel === "whatsapp"
+      ? await resolveWhatsAppAudience(payload.audience_type, payload.audience_filter)
+      : [];
+  const telegramIds =
+    channel === "whatsapp"
+      ? []
+      : await resolveAudienceIds(payload.audience_type, payload.audience_filter);
+
+  const uniqueIds =
+    channel === "whatsapp"
+      ? [...new Map(whatsappRecipients.map((r) => [r.phone, r])).values()]
+      : [...new Set(telegramIds)].map((telegram_id) => ({ telegram_id, phone: "" }));
 
   if (uniqueIds.length === 0) {
     throw new Error("Не найдено получателей для выбранной аудитории.");
@@ -231,6 +373,7 @@ export async function createBroadcast(payload: BroadcastPayload) {
     .from("broadcasts")
     .select("id")
     .in("status", ["queued", "sending"])
+    .eq("channel", channel)
     .limit(1)
     .maybeSingle();
   if (active) {
@@ -241,6 +384,11 @@ export async function createBroadcast(payload: BroadcastPayload) {
     .from("broadcasts")
     .insert({
       status: "queued",
+      channel,
+      account_id: payload.account_id ?? null,
+      template_name: payload.template_name ?? null,
+      template_language: payload.template_language ?? null,
+      template_params: payload.template_params ?? [],
       message_text: payload.message_text,
       photo_paths: payload.photo_paths,
       product_ids: payload.product_ids,
@@ -254,9 +402,10 @@ export async function createBroadcast(payload: BroadcastPayload) {
 
   if (error || !broadcast) throw new Error(error?.message || "Не удалось создать рассылку");
 
-  const rows = uniqueIds.map((telegram_id) => ({
+  const rows = uniqueIds.map((recipient) => ({
     broadcast_id: broadcast.id,
-    telegram_id,
+    telegram_id: recipient.telegram_id,
+    phone: recipient.phone || null,
     status: "pending",
   }));
 
@@ -267,6 +416,37 @@ export async function createBroadcast(payload: BroadcastPayload) {
   }
 
   return broadcast;
+}
+
+/**
+ * Одно сообщение WhatsApp-рассылки.
+ *
+ * Всегда шаблоном и всегда через `POST /inbox/conversations`: этот эндпоинт
+ * работает и когда диалога с номером ещё нет, и когда он есть, но окно
+ * закрыто, — а у рассылки по базе один из этих двух случаев практически
+ * всегда. Ошибку бросаем наружу, чтобы её разобрал общий обработчик пакета и
+ * записал по получателю, как это уже делает телеграмная ветка.
+ */
+async function sendWhatsAppBroadcastMessage(
+  phone: string | null,
+  params: {
+    accountId: string;
+    templateName: string;
+    templateLanguage?: string;
+    templateParams: string[];
+  },
+) {
+  if (!phone) throw new Error("У получателя не сохранён номер WhatsApp");
+
+  const { startWhatsAppConversation } = await import("./zernio.server");
+  const result = await startWhatsAppConversation({
+    accountId: params.accountId,
+    phone,
+    templateName: params.templateName,
+    templateLanguage: params.templateLanguage,
+    templateParams: params.templateParams,
+  });
+  if (!result.ok) throw new Error(result.error || "Zernio не принял отправку");
 }
 
 export async function processBroadcastBatch() {
@@ -291,7 +471,7 @@ export async function processBroadcastBatch() {
 
   const { data: pending } = await s
     .from("broadcast_recipients")
-    .select("id, telegram_id")
+    .select("id, telegram_id, phone")
     .eq("broadcast_id", broadcast.id)
     .eq("status", "pending")
     .limit(BATCH_SIZE);
@@ -322,10 +502,21 @@ export async function processBroadcastBatch() {
   let failed = 0;
   let blocked = 0;
 
+  const isWhatsApp = broadcast.channel === "whatsapp";
+
   for (let i = 0; i < pending.length; i++) {
     const recipient = pending[i];
     try {
-      await sendBroadcastMessage(recipient.telegram_id as number, payload);
+      if (isWhatsApp) {
+        await sendWhatsAppBroadcastMessage(recipient.phone, {
+          accountId: String(broadcast.account_id ?? ""),
+          templateName: String(broadcast.template_name ?? ""),
+          templateLanguage: broadcast.template_language ?? undefined,
+          templateParams: (broadcast.template_params as string[]) ?? [],
+        });
+      } else {
+        await sendBroadcastMessage(recipient.telegram_id as number, payload);
+      }
       await s
         .from("broadcast_recipients")
         .update({ status: "sent", sent_at: new Date().toISOString(), error_message: null })

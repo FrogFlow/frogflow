@@ -684,12 +684,14 @@ export async function notifyAdminAboutDirectOrder(
   }
 }
 
-/** Короткое уведомление продавцу о вопросе, на который бот не отвечает сам. */
-export async function notifyAdminAboutQuestion(params: {
-  question: string;
-  senderName: string;
-  senderUsername: string;
-}) {
+/**
+ * Разослать сообщение всем Telegram-адресам продавца из `admin_chat_id`.
+ *
+ * Вынесено из notifyAdminAboutQuestion, когда каналов стало два: чтение
+ * настройки, разбор списка через запятую и подавление ошибки отправки
+ * одинаковы для любого уведомления, а различается только текст.
+ */
+async function notifyAdmins(text: string, tag: string): Promise<void> {
   const s = await db();
   const { data: setting } = await s
     .from("app_settings")
@@ -701,26 +703,76 @@ export async function notifyAdminAboutQuestion(params: {
   const raw = setting?.value?.trim();
   if (!raw) return;
 
-  const who = params.senderUsername ? `@${params.senderUsername}` : params.senderName;
   const { tg } = await import("./telegram.server");
   for (const chatId of raw
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean)) {
     try {
-      await tg("sendMessage", {
-        chat_id: chatId,
-        text:
-          `💬 <b>Вопрос в Instagram Direct</b>\n\n` +
-          `От: ${who}\n\n` +
-          `${params.question.slice(0, 500)}\n\n` +
-          `Ответить можно в админке, вкладка Instagram → Direct.`,
-        parse_mode: "HTML",
-      });
+      await tg("sendMessage", { chat_id: chatId, text, parse_mode: "HTML" });
     } catch (e) {
-      console.error("[direct] notify admin about question failed", e);
+      console.error(`[direct] ${tag} failed`, e);
     }
   }
+}
+
+/** Как назвать канал и вкладку админки в уведомлении продавцу. */
+const CHANNEL_NAMES: Record<ZernioPlatform, { where: string; tab: string }> = {
+  instagram: { where: "Instagram Direct", tab: "Instagram → Direct" },
+  whatsapp: { where: "WhatsApp", tab: "WhatsApp → Чаты" },
+};
+
+/** Короткое уведомление продавцу о вопросе, на который бот не отвечает сам. */
+export async function notifyAdminAboutQuestion(params: {
+  question: string;
+  senderName: string;
+  senderUsername: string;
+  platform?: ZernioPlatform;
+}) {
+  const channel = CHANNEL_NAMES[params.platform ?? "instagram"];
+  const who = params.senderUsername ? `@${params.senderUsername}` : params.senderName;
+  await notifyAdmins(
+    `💬 <b>Вопрос в ${channel.where}</b>\n\n` +
+      `От: ${who}\n\n` +
+      `${params.question.slice(0, 500)}\n\n` +
+      `Ответить можно в админке, вкладка ${channel.tab}.`,
+    "notify admin about question",
+  );
+}
+
+/**
+ * Покупатель прислал корзину из нативного каталога Meta.
+ *
+ * Оформить её нашим кодом нельзя: в ней артикулы каталога Commerce Manager, а
+ * товары у этого клиента ведутся в админке. Бот показывает свой каталог, но
+ * продавец должен знать, что человек уже выбрал и на какую сумму — иначе
+ * покупателю придётся набирать заказ заново с нуля, а он уверен, что уже его
+ * отправил.
+ */
+export async function notifyAdminAboutNativeCart(params: {
+  senderName: string;
+  senderUsername: string;
+  items: Array<{ retailerId: string; quantity: number; price: number; currency: string }>;
+  note: string;
+}) {
+  const who = params.senderUsername ? `@${params.senderUsername}` : params.senderName;
+  const lines = params.items
+    .slice(0, 20)
+    .map((item) => `• ${item.retailerId} × ${item.quantity} — ${item.price} ${item.currency}`)
+    .join("\n");
+  const total = params.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const currency = params.items[0]?.currency ?? "";
+
+  await notifyAdmins(
+    `🛒 <b>Заказ из каталога WhatsApp</b>\n\n` +
+      `От: ${who}\n\n` +
+      `${lines}\n\n` +
+      `Итого: ${total} ${currency}\n` +
+      (params.note ? `Комментарий: ${params.note.slice(0, 300)}\n\n` : "\n") +
+      `Это корзина из каталога Meta, а не из вашего каталога в админке — бот оформить её не может. ` +
+      `Ответьте покупателю в админке, вкладка WhatsApp → Чаты.`,
+    "notify admin about native cart",
+  );
 }
 
 /**

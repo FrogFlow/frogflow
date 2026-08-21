@@ -122,19 +122,23 @@ export async function deliverOrder(
   }
 
   /**
-   * Заказы из Instagram выдаются письмом, а не в переписку.
+   * Заказы из каналов Zernio выдаются не в Telegram.
    *
    * Ниже весь код отправляет файлы в Telegram по `order.telegram_id`, а у
-   * покупателя из Instagram этот идентификатор синтетический (отрицательный
-   * хеш от user_key) — чата с таким номером не существует, и подтверждение
-   * такого заказа раньше просто падало бы. Заказов из Instagram до сих пор не
-   * было ни одного, поэтому этого никто не замечал.
+   * покупателя из Instagram или WhatsApp этот идентификатор синтетический
+   * (отрицательный хеш от user_key) — чата с таким номером не существует, и
+   * подтверждение такого заказа здесь просто упало бы.
    *
-   * Почему именно почта: Instagram Direct не принимает вложениями документы,
-   * а продаются здесь PDF и ZIP. Плюс окно в 24 часа — подтверждение продавца
-   * почти всегда приходит позже, и сообщение бы уже не ушло.
+   * Дальше пути расходятся, и расходятся они по возможностям площадки:
+   *
+   *  - Instagram Direct не принимает вложениями документы (только картинки,
+   *    видео и аудио), а продаются здесь PDF и ZIP. Плюс окно в 24 часа,
+   *    открыть которое в Instagram нечем. Обе беды снимает письмо.
+   *  - WhatsApp документы принимает, до 100 МБ, и окно умеет открывать
+   *    шаблоном. Значит, материалы уходят туда же, где человек платил, —
+   *    письмо там только запасной путь.
    */
-  if (order.platform === "instagram") {
+  if (order.platform === "instagram" || order.platform === "whatsapp") {
     /**
      * Сорвалась выдача — заказ обязан вернуться в исходное состояние.
      *
@@ -149,7 +153,9 @@ export async function deliverOrder(
      * заметку заказа, чтобы её было видно в панели, а не только в логах Vercel.
      */
     try {
-      return await deliverOrderByEmail(orderId, order, items);
+      return order.platform === "whatsapp"
+        ? await deliverOrderToWhatsApp(orderId, order, items)
+        : await deliverOrderByEmail(orderId, order, items);
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       await supabaseAdmin
@@ -543,63 +549,18 @@ function downloadFileName(displayName: string, storagePath: string): string {
 }
 
 /**
- * Выдача заказа письмом — для покупателей из Instagram.
+ * Собрать подписанные ссылки на все файлы заказа.
  *
- * Материалы уходят подписанными ссылками, а не вложениями: файлы бывают до
- * 100 МБ, и почтовый сервер такое письмо просто отобьёт — причём уже после
- * того, как продавец нажал «Подтвердить», и он об этом не узнает.
+ * Вынесено из выдачи письмом, когда те же файлы понадобились WhatsApp: там
+ * материалы уходят вложением прямо в переписку, но правила сборки списка те
+ * же самые — снимок заказа, откат на текущие файлы товара, если снимок пуст,
+ * и подпись со скачиванием под человеческим именем.
  */
-async function deliverOrderByEmail(
+async function collectOrderFiles(
   orderId: number,
-  order: {
-    customer_email?: string | null;
-    order_no?: number | null;
-    display_no?: number | null;
-    user_key?: string | null;
-  },
   items: OrderItem[],
-) {
+): Promise<Array<{ name: string; url: string }>> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  const { sendOrderMaterialsEmail, isMailConfigured } = await import("./mail.server");
-
-  let email = order.customer_email?.trim();
-
-  /*
-   * Some early Direct orders retained the buyer's address only in bot_users.
-   * Do not reject a paid order merely because its order snapshot is missing it:
-   * restore the address from the same buyer profile and persist it so every
-   * subsequent delivery attempt uses the immutable order record.
-   */
-  if (!email && order.user_key) {
-    const { data: buyer, error } = await supabaseAdmin
-      .from("bot_users")
-      .select("email")
-      .eq("user_key", order.user_key)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-
-    email = buyer?.email?.trim();
-    if (email) {
-      const { error: updateError } = await supabaseAdmin
-        .from("orders")
-        .update({ customer_email: email })
-        .eq("id", orderId);
-      if (updateError) throw new Error(updateError.message);
-    }
-  }
-
-  if (!email) {
-    throw new Error(
-      "У заказа не указана почта покупателя — отправлять материалы некуда. " +
-        "Спросите адрес в переписке и впишите его в заказ.",
-    );
-  }
-  if (!isMailConfigured()) {
-    throw new Error(
-      "Отправка почты не настроена: задайте SMTP_HOST, SMTP_USER и SMTP_PASSWORD в переменных окружения.",
-    );
-  }
-
   const files: Array<{ name: string; url: string }> = [];
   for (const item of items) {
     // Материалы бывают из нескольких файлов (модуль multi_files), и у старых
@@ -666,6 +627,183 @@ async function deliverOrderByEmail(
       }
     }
   }
+
+  return files;
+}
+
+/**
+ * Выдача заказа прямо в переписку WhatsApp.
+ *
+ * Здесь снимается ограничение, из-за которого заказы из Instagram приходится
+ * отправлять письмом: WhatsApp принимает документы вложением, до 100 МБ. То
+ * есть покупатель получает файл там же, где платил, — без письма, без папки
+ * «Спам» и без просьбы продиктовать адрес.
+ *
+ * Что осталось от Meta и обойти нельзя — окно в 24 часа. Продавец подтверждает
+ * оплату когда придётся, нередко на следующий день, и к этому моменту писать
+ * свободным текстом уже нельзя. Поэтому:
+ *
+ *  - файлы уходят обычной отправкой (внутри окна она бесплатна и работает);
+ *  - если окно закрыто, `sendWhatsAppOutsideWindow` открывает его шаблоном или
+ *    служебным сообщением, и после этого файлы уходят следом;
+ *  - если не удалось и это — откатываемся на письмо, когда адрес известен.
+ *
+ * Молча «не отправить» нельзя ни в одном из вариантов: для покупателя это
+ * оплаченный и потерянный заказ.
+ */
+async function deliverOrderToWhatsApp(
+  orderId: number,
+  order: {
+    customer_email?: string | null;
+    order_no?: number | null;
+    display_no?: number | null;
+    user_key?: string | null;
+  },
+  items: OrderItem[],
+) {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { sendZernioInboxMessage } = await import("./zernio.server");
+  const { sendWhatsAppOutsideWindow } = await import("./whatsapp.server");
+
+  const { data: buyer } = await supabaseAdmin
+    .from("bot_users")
+    .select("zernio_conversation_id, zernio_account_id, user_key")
+    .eq("user_key", order.user_key || "")
+    .maybeSingle();
+
+  const conversationId = buyer?.zernio_conversation_id;
+  const accountId = buyer?.zernio_account_id;
+  if (!conversationId || !accountId) {
+    throw new Error(
+      "У покупателя не сохранён диалог WhatsApp — отправлять материалы некуда. " +
+        "Напишите ему из админки, вкладка WhatsApp → Чаты.",
+    );
+  }
+
+  const files = await collectOrderFiles(orderId, items);
+  if (files.length === 0) {
+    throw new Error("У товаров в заказе не приложены файлы — отправлять нечего.");
+  }
+
+  const displayNo = order.display_no ?? order.order_no ?? orderId;
+  // `wa_<телефон>` — номер покупателя лежит прямо в ключе (см. USER_KEY_PREFIX).
+  const phone = (buyer?.user_key || "").startsWith("wa_") ? (buyer?.user_key || "").slice(3) : null;
+
+  const opened = await sendWhatsAppOutsideWindow({
+    accountId,
+    conversationId,
+    phone,
+    text: `✅ Оплата подтверждена! Заказ №${displayNo}.\nОтправляю ваши материалы (${files.length} шт.)…`,
+  });
+  if (!opened.ok) {
+    throw new Error(
+      opened.error ||
+        "Не удалось написать покупателю в WhatsApp — окно ответа закрыто, а шаблон недоступен.",
+    );
+  }
+
+  let sent = 0;
+  for (const file of files) {
+    const result = await sendZernioInboxMessage(conversationId, accountId, "", {
+      attachmentUrl: file.url,
+      attachmentType: "file",
+      // Без имени WhatsApp выводит его из URL, а там подписанная ссылка
+      // хранилища — покупатель увидел бы «Untitled» вместо названия материала.
+      attachmentName: file.name,
+      platform: "whatsapp",
+    });
+    if (result.ok) {
+      sent += 1;
+      await supabaseAdmin.from("orders").update({ delivery_index: sent }).eq("id", orderId);
+    } else {
+      console.error(`[orders] заказ ${orderId}: файл «${file.name}» не ушёл — ${result.error}`);
+    }
+  }
+
+  if (sent === 0) {
+    /**
+     * Ни один файл не дошёл. Письмо — честный запасной путь, но только если
+     * адрес известен: выдумывать его неоткуда, а сделать вид, что материалы
+     * отправлены, нельзя.
+     */
+    if (order.customer_email?.trim()) {
+      console.warn(`[orders] заказ ${orderId}: вложения в WhatsApp не прошли, отправляю письмом`);
+      return await deliverOrderByEmail(orderId, order, items);
+    }
+    throw new Error("Материалы не удалось отправить вложением, а почты у заказа нет.");
+  }
+
+  await supabaseAdmin
+    .from("orders")
+    .update({ status: "delivered", delivery_index: items.length })
+    .eq("id", orderId);
+
+  if (sent < files.length) {
+    console.warn(`[orders] заказ ${orderId}: ушло ${sent} файлов из ${files.length}`);
+  }
+
+  return { ok: true as const, alreadyDelivered: false, pending: false, sent, total: files.length };
+}
+
+/**
+ * Выдача заказа письмом — для покупателей из Instagram.
+ *
+ * Материалы уходят подписанными ссылками, а не вложениями: файлы бывают до
+ * 100 МБ, и почтовый сервер такое письмо просто отобьёт — причём уже после
+ * того, как продавец нажал «Подтвердить», и он об этом не узнает.
+ */
+async function deliverOrderByEmail(
+  orderId: number,
+  order: {
+    customer_email?: string | null;
+    order_no?: number | null;
+    display_no?: number | null;
+    user_key?: string | null;
+  },
+  items: OrderItem[],
+) {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { sendOrderMaterialsEmail, isMailConfigured } = await import("./mail.server");
+
+  let email = order.customer_email?.trim();
+
+  /*
+   * Some early Direct orders retained the buyer's address only in bot_users.
+   * Do not reject a paid order merely because its order snapshot is missing it:
+   * restore the address from the same buyer profile and persist it so every
+   * subsequent delivery attempt uses the immutable order record.
+   */
+  if (!email && order.user_key) {
+    const { data: buyer, error } = await supabaseAdmin
+      .from("bot_users")
+      .select("email")
+      .eq("user_key", order.user_key)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+
+    email = buyer?.email?.trim();
+    if (email) {
+      const { error: updateError } = await supabaseAdmin
+        .from("orders")
+        .update({ customer_email: email })
+        .eq("id", orderId);
+      if (updateError) throw new Error(updateError.message);
+    }
+  }
+
+  if (!email) {
+    throw new Error(
+      "У заказа не указана почта покупателя — отправлять материалы некуда. " +
+        "Спросите адрес в переписке и впишите его в заказ.",
+    );
+  }
+  if (!isMailConfigured()) {
+    throw new Error(
+      "Отправка почты не настроена: задайте SMTP_HOST, SMTP_USER и SMTP_PASSWORD в переменных окружения.",
+    );
+  }
+
+  const files = await collectOrderFiles(orderId, items);
 
   if (files.length === 0) {
     throw new Error("У товаров в заказе не приложены файлы — отправлять нечего.");
@@ -765,14 +903,38 @@ export async function notifyOrderCustomer(orderId: number, text: string): Promis
     .maybeSingle();
   if (!order) return false;
 
-  if (order.platform === "instagram") {
+  if (order.platform === "instagram" || order.platform === "whatsapp") {
     const { data: buyer } = await supabaseAdmin
       .from("bot_users")
-      .select("zernio_conversation_id, zernio_account_id")
+      .select("zernio_conversation_id, zernio_account_id, user_key")
       .eq("user_key", order.user_key || "")
       .maybeSingle();
 
     if (!buyer?.zernio_conversation_id || !buyer.zernio_account_id) return false;
+
+    /**
+     * В WhatsApp у сообщения продавца есть второй шанс.
+     *
+     * Отклонение заказа и уведомления о выдаче почти всегда приходят позже
+     * суток с последнего сообщения покупателя, то есть за пределами окна Meta.
+     * В Instagram на этом всё и заканчивается — там открыть окно нечем. В
+     * WhatsApp можно: шаблоном или служебным сообщением. Разница ровно в том,
+     * узнает ли человек, что его заказ отклонили.
+     */
+    if (order.platform === "whatsapp") {
+      const { sendWhatsAppOutsideWindow } = await import("./whatsapp.server");
+      const phone = (buyer.user_key || "").startsWith("wa_")
+        ? (buyer.user_key || "").slice(3)
+        : null;
+      const result = await sendWhatsAppOutsideWindow({
+        accountId: buyer.zernio_account_id,
+        conversationId: buyer.zernio_conversation_id,
+        phone,
+        text,
+      });
+      return result.ok;
+    }
+
     const { sendZernioInboxMessage } = await import("./zernio.server");
     const result = await sendZernioInboxMessage(
       buyer.zernio_conversation_id,

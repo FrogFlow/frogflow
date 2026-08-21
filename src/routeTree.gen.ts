@@ -17,6 +17,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as OperatorLoginRouteImport } from './routes/operator.login'
 import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
 import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
+import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
 import { Route as AdminVipRouteImport } from './routes/admin.vip'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminRobokassaRouteImport } from './routes/admin.robokassa'
@@ -98,6 +99,11 @@ const LegalSlugRoute = LegalSlugRouteImport.update({
   id: '/legal/$slug',
   path: '/legal/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminWhatsappRoute = AdminWhatsappRouteImport.update({
+  id: '/whatsapp',
+  path: '/whatsapp',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminVipRoute = AdminVipRouteImport.update({
   id: '/vip',
@@ -333,6 +339,7 @@ export interface FileRoutesByFullPath {
   '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
+  '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
   '/operator/login': typeof OperatorLoginRoute
   '/admin/': typeof AdminIndexRoute
@@ -382,6 +389,7 @@ export interface FileRoutesByTo {
   '/admin/products': typeof AdminProductsRoute
   '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
+  '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
   '/operator/login': typeof OperatorLoginRoute
   '/admin': typeof AdminIndexRoute
@@ -433,6 +441,7 @@ export interface FileRoutesById {
   '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
+  '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
   '/operator/_authed': typeof OperatorAuthedRouteWithChildren
   '/operator/login': typeof OperatorLoginRoute
@@ -487,6 +496,7 @@ export interface FileRouteTypes {
     | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/vip'
+    | '/admin/whatsapp'
     | '/legal/$slug'
     | '/operator/login'
     | '/admin/'
@@ -536,6 +546,7 @@ export interface FileRouteTypes {
     | '/admin/products'
     | '/admin/robokassa'
     | '/admin/settings'
+    | '/admin/whatsapp'
     | '/legal/$slug'
     | '/operator/login'
     | '/admin'
@@ -586,6 +597,7 @@ export interface FileRouteTypes {
     | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/vip'
+    | '/admin/whatsapp'
     | '/legal/$slug'
     | '/operator/_authed'
     | '/operator/login'
@@ -708,6 +720,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/legal/$slug'
       preLoaderRoute: typeof LegalSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/whatsapp': {
+      id: '/admin/whatsapp'
+      path: '/whatsapp'
+      fullPath: '/admin/whatsapp'
+      preLoaderRoute: typeof AdminWhatsappRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/admin/vip': {
       id: '/admin/vip'
@@ -1037,6 +1056,7 @@ interface AdminRouteChildren {
   AdminRobokassaRoute: typeof AdminRobokassaRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminVipRoute: typeof AdminVipRouteWithChildren
+  AdminWhatsappRoute: typeof AdminWhatsappRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -1053,6 +1073,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminRobokassaRoute: AdminRobokassaRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminVipRoute: AdminVipRouteWithChildren,
+  AdminWhatsappRoute: AdminWhatsappRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
 

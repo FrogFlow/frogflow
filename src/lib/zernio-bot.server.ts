@@ -3,6 +3,7 @@ import {
   type ZernioDmButton,
   type ZernioWebhookMessagePayload,
 } from "./zernio.server";
+import { isZernioPlatform, PLATFORM_LABEL, type ZernioPlatform } from "./zernio-platform";
 import crypto from "node:crypto";
 import { logger, truncate } from "./logger.server";
 import { localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
@@ -14,9 +15,14 @@ async function db() {
 }
 
 // The legacy cart/order schema uses bot_users.telegram_id as its customer key.
-// Reserve negative, deterministic IDs for Instagram so a Direct customer can
-// safely use the same cart and order tables without colliding with Telegram.
-function instagramCustomerId(userKey: string): number {
+// Reserve negative, deterministic IDs for Zernio channels so a Direct or
+// WhatsApp customer can safely use the same cart and order tables without
+// colliding with Telegram.
+//
+// Хеш считается от userKey, а тот уже несёт префикс канала (`ig_` / `wa_`),
+// так что один и тот же номер в двух каналах даёт разные идентификаторы сам
+// собой — формулу под второй канал менять не пришлось.
+function zernioCustomerId(userKey: string): number {
   const hex = crypto.createHash("sha256").update(userKey).digest("hex").slice(0, 13);
   return -parseInt(hex, 16);
 }
@@ -593,12 +599,13 @@ const directCopy: Record<Locale, DirectCopy> = {
  * которых половина была дословным повтором.
  */
 async function reply(
-  user: { user_key: string },
+  user: { user_key: string; platform?: string | null },
   conversationId: string,
   accountId: string,
   text: string,
   buttons?: ZernioDmButton[],
   force = false,
+  interactive?: Json,
 ) {
   const flow = await import("./direct-purchase.server");
   return flow.sendDirectReply({
@@ -607,12 +614,92 @@ async function reply(
     userKey: user.user_key,
     text,
     buttons,
+    interactive,
+    platform: platformOf(user),
     force,
   });
 }
 
 /**
- * Создать или обновить пользователя Instagram в базе данных.
+ * Канал покупателя из его записи в `bot_users`.
+ *
+ * Читается из строки, а не передаётся отдельным параметром через полтора
+ * десятка функций сценария: запись пользователя и так есть в каждой из них, и
+ * платформа — такое же её свойство, как язык или страна. Instagram по
+ * умолчанию — так выглядят все записи, заведённые до появления WhatsApp.
+ */
+function platformOf(user: { platform?: string | null }): ZernioPlatform {
+  return isZernioPlatform(user.platform) ? user.platform : "instagram";
+}
+
+/**
+ * Префикс ключей автоответчика в `app_settings` по каналу.
+ *
+ * Инстаграмный префикс исторический и намеренно не переименован: под ним уже
+ * лежат настройки у работающих клиентов, а переименование ключа означало бы
+ * миграцию данных ради косметики — и молча сброшенные настройки у того, кто
+ * её не применил.
+ */
+const SETTINGS_PREFIX: Record<ZernioPlatform, string> = {
+  instagram: "instagram_direct_bot_",
+  whatsapp: "whatsapp_bot_",
+};
+
+/**
+ * Метка «эта строка списка — ответ на текущий шаг сценария, а не команда».
+ *
+ * Понадобилась вместе со списками WhatsApp. Нажатие строки приходит как
+ * postback с пустым текстом, а шаги сценария (язык, страна) читают именно
+ * текст — без метки выбор языка списком просто проваливался бы в разбор
+ * команд, не совпадал ни с BUY/CART/CHECKOUT/CATALOG и молча терялся.
+ *
+ * Отдельный префикс, а не «считать текстом любой нераспознанный postback»:
+ * так исключено, чтобы кнопка чужой автоматизации Zernio случайно оказалась
+ * ответом на вопрос бота.
+ */
+const STEP_PREFIX = "STEP:";
+
+/** Сообщение без завершающей пунктуации — тем же правилом, что и `plain` ниже. */
+function stripTail(value: string): string {
+  return value.trim().replace(/[.!?]+$/, "");
+}
+
+/**
+ * Список WhatsApp вместо кнопок.
+ *
+ * У Instagram Direct на сообщение максимум три кнопки — из-за этого и выбор
+ * языка, и выбор страны там сделаны нумерованным текстом («ответьте цифрой»).
+ * WhatsApp даёт списки: до 10 разделов по 10 строк, с заголовком и описанием у
+ * каждой. Выбор строки приходит обратно тем же `interactiveId`, что и нажатие
+ * кнопки, поэтому весь разбор ниже по течению остаётся общим.
+ *
+ * Meta режет длины молча, обрезаем сами: заголовок строки 24 символа,
+ * описание 72, текст кнопки 20.
+ */
+function whatsappList(params: {
+  body: string;
+  buttonLabel: string;
+  rows: Array<{ id: string; title: string; description?: string }>;
+  header?: string;
+}): Json {
+  const rows = params.rows.slice(0, 10).map((row) => ({
+    id: row.id,
+    title: row.title.slice(0, 24),
+    ...(row.description ? { description: row.description.slice(0, 72) } : {}),
+  }));
+  return {
+    type: "list",
+    ...(params.header ? { header: { type: "text", text: params.header.slice(0, 60) } } : {}),
+    body: { text: params.body.slice(0, 1024) },
+    action: {
+      button: params.buttonLabel.slice(0, 20),
+      sections: [{ title: "Выберите", rows }],
+    },
+  } as unknown as Json;
+}
+
+/**
+ * Создать или обновить покупателя из канала Zernio (Instagram или WhatsApp).
  */
 export async function upsertZernioUser(
   userKey: string,
@@ -621,6 +708,7 @@ export async function upsertZernioUser(
   username?: string,
   firstName?: string,
   metadata?: Record<string, Json>,
+  platform: ZernioPlatform = "instagram",
 ) {
   const s = await db();
   const { data: existing } = await s
@@ -656,13 +744,13 @@ export async function upsertZernioUser(
   }
 
   const newUser = {
-    telegram_id: instagramCustomerId(userKey),
+    telegram_id: zernioCustomerId(userKey),
     user_key: userKey,
-    platform: "instagram",
+    platform,
     zernio_conversation_id: conversationId,
     zernio_account_id: accountId,
     username: username || null,
-    first_name: firstName || "Инста-гость",
+    first_name: firstName || (platform === "whatsapp" ? "Гость WhatsApp" : "Инста-гость"),
     email: null,
     state: {},
     metadata: metadata || {},
@@ -695,6 +783,40 @@ type ZernioBotUser = Awaited<ReturnType<typeof upsertZernioUser>>;
 async function sendLanguagePicker(conversationId: string, accountId: string, user: ZernioBotUser) {
   const flow = await import("./direct-purchase.server");
   await flow.setDirectState(user.user_key, { mode: "awaiting_locale" });
+
+  /**
+   * В WhatsApp тот же выбор показывается списком, а не нумерованным текстом.
+   *
+   * Нумерованный текст в Instagram — вынужденная мера: там три кнопки на
+   * сообщение, а языков четыре. В WhatsApp список вмещает десять строк, так
+   * что просить человека «ответьте цифрой» больше незачем. Разбор ответа
+   * остаётся общим: выбор строки приходит тем же `interactiveId`, а
+   * `matchLocalePick` понимает и цифру, и название языка — так что даже если
+   * покупатель ответит текстом, шаг отработает как раньше.
+   */
+  if (platformOf(user) === "whatsapp") {
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      "Выберите язык / Тілді таңдаңыз / Tilni tanlang / Choose language",
+      undefined,
+      true,
+      whatsappList({
+        body: "Выберите язык / Тілді таңдаңыз / Tilni tanlang / Choose language",
+        buttonLabel: "Выбрать язык",
+        rows: SUPPORTED_LOCALES.map((locale, index) => ({
+          // STEP: — ответ на текущий шаг сценария, а не команда (см. STEP_PREFIX).
+          // Внутри номер, а не код языка: matchLocalePick разбирает именно его,
+          // так что ответ списком и ответ текстом попадают в одну ветку.
+          id: `${STEP_PREFIX}${index + 1}`,
+          title: localeNames[locale],
+        })),
+      }),
+    );
+    return;
+  }
+
   await reply(user, conversationId, accountId, languagePickerText(), undefined, true);
 }
 
@@ -707,12 +829,14 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
   const {
     conversationId,
     accountId,
+    platform,
     userKey,
     senderUsername,
     senderName,
     text,
     metadata,
     postbackPayload,
+    nativeOrder,
   } = parseZernioMessage(payload);
 
   if (!conversationId || !accountId) {
@@ -729,31 +853,59 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * приходилось три обращения к базе вместо одного. Ключи лежат в одной
    * таблице у одного арендатора, так что выбрать их сразу ничего не стоит.
    */
+  /**
+   * Ключи настроек свои у каждого канала: у клиента может быть куплен
+   * Instagram и не куплен WhatsApp, а слова-триггеры и приветствие в директе и
+   * в мессенджере — разные тексты для разной аудитории. Префикс и задаёт это
+   * разделение (`instagram_direct_bot_*` / `whatsapp_bot_*`).
+   */
+  const settingsPrefix = SETTINGS_PREFIX[platform];
+  const settingKeys = ["enabled", "features", "scope", "script", "triggers"].map(
+    (suffix) => `${settingsPrefix}${suffix}`,
+  );
+
   const { data: settingRows } = await s
     .from("app_settings")
     .select("key, value")
     .eq("bot_id", process.env.BOT_ID?.trim() || "")
-    .in("key", [
-      "instagram_direct_bot_enabled",
-      "instagram_direct_bot_features",
-      "instagram_direct_bot_scope",
-      "instagram_direct_bot_script",
-      "instagram_direct_bot_triggers",
-    ]);
+    .in("key", settingKeys);
 
-  const setting = (key: string) =>
-    (settingRows ?? []).find((row) => row.key === key)?.value?.trim() || "";
+  const setting = (suffix: string) =>
+    (settingRows ?? []).find((row) => row.key === `${settingsPrefix}${suffix}`)?.value?.trim() ||
+    "";
 
-  if (setting("instagram_direct_bot_enabled") === "false") {
-    console.log("[zernio-bot] Direct assistant is disabled; event recorded without a reply");
+  if (setting("enabled") === "false") {
+    console.log(
+      `[zernio-bot] ${PLATFORM_LABEL[platform]} assistant is disabled; event recorded without a reply`,
+    );
     return;
   }
 
   let features = { catalog: true, search: true, cart: true, checkout: true };
   try {
-    features = { ...features, ...JSON.parse(setting("instagram_direct_bot_features") || "{}") };
+    features = { ...features, ...JSON.parse(setting("features") || "{}") };
   } catch {
     /* defaults */
+  }
+
+  /**
+   * Магазин в переписке — отдельно продаваемый модуль, и тумблер обязан его
+   * выключать.
+   *
+   * До этой проверки `dm_shop` числился доступным в прайсе и в панели, но в
+   * коде не спрашивался нигде: магазин в Direct гейтился только ключом
+   * `instagram`. То есть модуль продавался, а его тумблер не делал ничего —
+   * выключенным он выглядел выключенным только в панели. Здесь это чинится
+   * сразу для обоих каналов.
+   *
+   * Выключенный модуль гасит именно торговлю: каталог, поиск, корзину и
+   * оформление. Автоответчик при этом продолжает работать — он входит в
+   * `instagram` / `whatsapp`, а не в магазин.
+   */
+  const { hasModule } = await import("./modules/modules.server");
+  const shopModule = platform === "whatsapp" ? "wa_shop" : "dm_shop";
+  if (!(await hasModule(shopModule))) {
+    features = { catalog: false, search: false, cart: false, checkout: false };
   }
 
   /**
@@ -765,7 +917,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * ник в админке и вручную искать человека в Instagram. Поэтому по обычной
    * переписке бот теперь молчит: непрочитанное остаётся непрочитанным.
    */
-  const answersEverything = setting("instagram_direct_bot_scope") === "all";
+  const answersEverything = setting("scope") === "all";
 
   // userKey — устойчивый идентификатор для корреляции, логируется как есть.
   // username и текст сообщения — PII, только усечёнными; см. политику в
@@ -784,12 +936,32 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     senderUsername,
     senderName,
     metadata,
+    platform,
   );
 
   const plainText = text.trim().toLowerCase();
   const isStartCommand = plainText === "/start";
   const startFlow = await import("./direct-purchase.server");
   const directState = startFlow.readDirectState(user.state);
+
+  const triggerWords = parseTriggerWords(setting("triggers"));
+
+  /**
+   * Чем новый покупатель будит бота.
+   *
+   * В Instagram это только `/start` — сознательное решение (коммит «require
+   * start before Direct store activation»): бот не должен вклиниваться в
+   * обычную переписку продавца. Менять это здесь нечем и незачем.
+   *
+   * В WhatsApp `/start` не напишет никто: команд там нет как явления, а
+   * покупатель приходит на рабочий номер продавца и пишет обычными словами.
+   * Оставить только `/start` значило бы, что магазин в WhatsApp не открывается
+   * вообще. Поэтому будят и слова-триггеры — тот самый список, который продавец
+   * завёл сам, чтобы его боту звонили. Тихий режим при этом сохраняется:
+   * «здравствуйте» и «сколько стоит» бота по-прежнему не поднимают.
+   */
+  const wakesNewCustomer =
+    isStartCommand || (platform === "whatsapp" && triggerWords.includes(stripTail(plainText)));
 
   /**
    * Первое сообщение от нового отправителя — раньше чего бы то ни было ещё.
@@ -803,7 +975,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * кнопка автоматизации воронки, язык важнее и должен быть выбран раньше.
    */
   if (!directState.locale && !directState.mode) {
-    if (!isStartCommand) return;
+    if (!wakesNewCustomer) return;
     await sendLanguagePicker(conversationId, accountId, user);
     return;
   }
@@ -835,11 +1007,45 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     return;
   }
 
+  /**
+   * Покупатель прислал корзину из нативного каталога WhatsApp.
+   *
+   * Свой каталог у нас собственный (товары ведутся в админке, а не в Commerce
+   * Manager у Meta), так что оформить такую корзину напрямую нечем: в ней
+   * артикулы Meta, которых в нашей базе нет. Но промолчать нельзя — человек
+   * только что нажал «Отправить заказ» и ждёт ответа. Показываем каталог и
+   * зовём продавца.
+   */
+  if (nativeOrder) {
+    console.log(
+      `[zernio-bot] нативная корзина Meta от ${userKey}: ${nativeOrder.items.length} поз., каталог ${nativeOrder.catalogId}`,
+    );
+    await sendCatalogMenu(conversationId, accountId, user);
+    await startFlow.notifyAdminAboutNativeCart({
+      senderName,
+      senderUsername,
+      items: nativeOrder.items,
+      note: nativeOrder.note,
+    });
+    return;
+  }
+
+  /**
+   * Ответ на шаг сценария, пришедший строкой списка, а не текстом.
+   *
+   * У такого события текста нет вовсе — выбор лежит в postback с меткой
+   * STEP:. Подставляем его как реплику покупателя, чтобы шаг разобрал ответ
+   * тем же кодом, что и напечатанный вручную.
+   */
+  const flowText = postbackPayload?.startsWith(STEP_PREFIX)
+    ? postbackPayload.slice(STEP_PREFIX.length)
+    : text;
+
   const handledByFlow = await handlePurchaseFlow({
     conversationId,
     accountId,
     user,
-    text,
+    text: flowText,
     attachmentUrl,
     answersEverything,
   });
@@ -856,7 +1062,10 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    */
   if (postbackPayload !== null) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
-    if (postbackPayload.startsWith("BUY:")) {
+    // «В корзину» — та же торговля, что и сама корзина, и гаснет вместе с ней.
+    // Без этой проверки выключенный магазин всё равно принимал бы товары в
+    // корзину, показать которую уже нельзя.
+    if (features.cart && postbackPayload.startsWith("BUY:")) {
       await addProductToCart(conversationId, accountId, user, postbackPayload.slice(4));
       return;
     }
@@ -924,7 +1133,6 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     return;
   }
 
-  const triggerWords = parseTriggerWords(setting("instagram_direct_bot_triggers"));
   if (triggerWords.includes(plain)) {
     await sendCatalogMenu(conversationId, accountId, user);
     return;
@@ -998,7 +1206,12 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     now - Date.parse(questionState.notified_at!) < 60 * 60 * 1000;
 
   if (!notifiedRecently) {
-    await flow.notifyAdminAboutQuestion({ question: text, senderName, senderUsername });
+    await flow.notifyAdminAboutQuestion({
+      question: text,
+      senderName,
+      senderUsername,
+      platform: platformOf(user),
+    });
   }
 
   const stamp = new Date().toISOString();
@@ -1012,9 +1225,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     user,
     conversationId,
     accountId,
-    greetedRecently
-      ? copy.greetingShort
-      : setting("instagram_direct_bot_script") || copy.greetingFull(senderName),
+    greetedRecently ? copy.greetingShort : setting("script") || copy.greetingFull(senderName),
   );
 }
 
@@ -1041,9 +1252,59 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
  */
 async function sendCatalogMenu(conversationId: string, accountId: string, user: ZernioBotUser) {
   const flow = await import("./direct-purchase.server");
-  const copy = directCopy[flow.directLocale(flow.readDirectState(user.state))];
-  const botLink = await telegramBotLink();
+  const state = flow.readDirectState(user.state);
+  const copy = directCopy[flow.directLocale(state)];
 
+  /**
+   * В WhatsApp каталог — настоящий список, а не «ответьте номером».
+   *
+   * Инстаграмная витрина текстовая по необходимости: там три кнопки на
+   * сообщение, товаров больше, и единственный способ выбрать — попросить
+   * прислать номер. В WhatsApp список показывает до десяти позиций с ценой,
+   * и покупатель кладёт товар в корзину одним касанием: строка возвращает
+   * `BUY:<id>` — тот же payload, что и кнопка «В корзину», так что дальше
+   * работает уже существующий обработчик.
+   */
+  if (platformOf(user) === "whatsapp") {
+    const s = await db();
+    const { data: products } = await s
+      .from("products")
+      .select("id, name, price, currency, country_prices, is_active")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .limit(10);
+
+    if (products?.length) {
+      const country = state.country_code ?? null;
+      const rows = [];
+      for (const product of products) {
+        const money = await flow.resolveProductPrice(product, country);
+        rows.push({
+          id: `BUY:${product.id}`,
+          title: String(product.name),
+          description: `${money.amount} ${money.currency}`,
+        });
+      }
+
+      await reply(
+        user,
+        conversationId,
+        accountId,
+        copy.catalogIntro,
+        undefined,
+        true,
+        whatsappList({
+          body: copy.catalogIntro,
+          buttonLabel: copy.btnCatalog,
+          rows,
+        }),
+      );
+      return;
+    }
+    // Товаров нет — падаем в общий текстовый путь ниже, он про это скажет.
+  }
+
+  const botLink = await telegramBotLink();
   const lines = [copy.catalogIntro, "", copy.catalogNumberHint];
 
   if (botLink) {
@@ -1269,6 +1530,7 @@ async function startInstagramCheckout(
         question: "Нажимает «Оформить заказ», но в корзине ничего нет — не может выбрать материал.",
         senderName: user.first_name || "покупатель",
         senderUsername: user.username || "",
+        platform: platformOf(user),
       });
       return;
     }
@@ -1316,12 +1578,40 @@ async function startInstagramCheckout(
    */
   await flow.setDirectState(user.user_key, { mode: "awaiting_country" });
   const shown = await flow.priceCart(cart, null);
+  const cartText = `${directCopy[locale].orderCartHeader}\n${flow.renderCart(shown.lines)}`;
+
+  /**
+   * Страна — вторая точка, где Instagram вынужден просить «ответьте номером»:
+   * стран у продавца больше трёх, а кнопок на сообщение три. В WhatsApp это
+   * список. Номер в payload, а не код страны: `matchCountry` разбирает и
+   * номер, и название, так что выбор списком и ответ текстом сходятся в одну
+   * ветку.
+   */
+  if (platformOf(user) === "whatsapp" && options.length) {
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      cartText,
+      undefined,
+      false,
+      whatsappList({
+        body: `${cartText}\n\nОткуда вы? От страны зависят реквизиты и валюта.`,
+        buttonLabel: "Выбрать страну",
+        rows: options.map((option, index) => ({
+          id: `${STEP_PREFIX}${index + 1}`,
+          title: option.name,
+        })),
+      }),
+    );
+    return;
+  }
+
   await reply(
     user,
     conversationId,
     accountId,
-    `${directCopy[locale].orderCartHeader}\n${flow.renderCart(shown.lines)}\n\n` +
-      flow.renderCountryPrompt(options, locale),
+    `${cartText}\n\n` + flow.renderCountryPrompt(options, locale),
   );
 }
 
@@ -1710,6 +2000,7 @@ async function handlePurchaseFlow(params: {
           (extra ? `\nФайл: payment-proofs/${extra.path}` : "\nФайл сохранить не удалось."),
         senderName: user.first_name || "покупатель",
         senderUsername: user.username || "",
+        platform: platformOf(user),
       });
       await say(copy.receiptProcessing);
       return true;
@@ -1887,6 +2178,7 @@ async function handlePurchaseFlow(params: {
           question: `Прислал ещё один чек к заказу №${order?.order_no ?? state.pending_order_id}. Посмотрите вложения заказа.`,
           senderName: user.first_name || "покупатель",
           senderUsername: user.username || "",
+          platform: platformOf(user),
         });
       }
       await say(copy.emailStepGotReceipt);
@@ -1992,6 +2284,7 @@ async function handlePurchaseFlow(params: {
           (stored ? `\nФайл: payment-proofs/${stored.path}` : "\nФайл сохранить не удалось."),
         senderName: user.first_name || "покупатель",
         senderUsername: user.username || "",
+        platform: platformOf(user),
       });
       await flow.setDirectState(user.user_key, { notified_at: new Date().toISOString() });
     }
