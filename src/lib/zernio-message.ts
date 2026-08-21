@@ -53,11 +53,29 @@ export type NativeOrder = {
 const FALLBACK_NAME = "друг";
 
 /**
- * Типы `interactiveType`, означающие «покупатель нажал на то, что мы прислали».
- * У Instagram это postback, у WhatsApp — кнопка и строка списка. Значение
- * нашего payload во всех случаях лежит в `interactiveId`.
+ * Значения `interactiveType`, означающие «покупатель нажал на то, что мы
+ * прислали». Это словарь WhatsApp: строка списка и кнопка. `postback` держим
+ * рядом на случай, если Zernio когда-нибудь пришлёт инстаграмное нажатие в
+ * этой же форме, — сегодня Instagram использует отдельный ключ
+ * `postbackPayload` (см. ниже).
  */
 const INTERACTIVE_TAP_TYPES = new Set(["postback", "button_reply", "list_reply"]);
+
+/**
+ * Достать метаданные нажатия оттуда, где они лежат.
+ *
+ * Настоящее место — корень события. Разбор долго читал `message.metadata`, и
+ * из-за этого не распознал ни одного нажатия: в 11 476 сохранённых событиях
+ * такого поля нет вовсе, ни на одной платформе. В WhatsApp это выглядело как
+ * «бот завис после выбора категории», в Instagram — как молчащие кнопки: 38
+ * настоящих нажатий за две недели, и ни одного ответа.
+ *
+ * `message.metadata` остаётся запасным чтением: стоит одну строку и страхует
+ * от обратной смены формы.
+ */
+function interactiveMetadata(payload: ZernioWebhookMessagePayload) {
+  return payload.metadata ?? payload.message?.metadata ?? {};
+}
 
 export function parseZernioMessage(payload: ZernioWebhookMessagePayload): ParsedZernioMessage {
   const message = payload.message ?? {};
@@ -78,10 +96,17 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   const metadata: Record<string, Json> = { ...(sender.instagramProfile ?? {}) };
   if (sender.contactId) metadata.zernioContactId = String(sender.contactId);
 
-  const interactive = message.metadata ?? {};
-  const postbackPayload = INTERACTIVE_TAP_TYPES.has(interactive.interactiveType ?? "")
-    ? interactive.interactiveId || ""
-    : null;
+  const interactive = interactiveMetadata(payload);
+  /**
+   * Instagram отдаёт нажатие отдельным ключом, WhatsApp — парой
+   * `interactiveType` + `interactiveId`. Ключ Instagram проверяем первым:
+   * он однозначен и не требует смотреть на тип.
+   */
+  const postbackPayload =
+    interactive.postbackPayload ??
+    (INTERACTIVE_TAP_TYPES.has(interactive.interactiveType ?? "")
+      ? (interactive.interactiveId ?? "")
+      : null);
 
   const order = interactive.order;
   const nativeOrder: NativeOrder | null = order

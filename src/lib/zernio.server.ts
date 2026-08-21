@@ -161,6 +161,43 @@ export type ZernioCommentAutomation = {
  * присылает вовсе: в 26 865 сохранённых событиях `data` не встречается ни
  * разу. Тип был выдумкой, и написанный по нему разбор молча читал undefined.
  */
+/**
+ * Метаданные нажатия. Имена ключей у платформ разные — это не наш выбор, а
+ * форма Zernio, снятая с настоящих событий:
+ *
+ *   Instagram — `postbackPayload` (+ `postbackTitle`, он же приходит текстом);
+ *   WhatsApp  — `interactiveId` при `interactiveType` = `list_reply` (строка
+ *               списка) или `button_reply` (кнопка).
+ */
+export type ZernioInteractiveMetadata = {
+  /** Instagram: значение нажатой кнопки. */
+  postbackPayload?: string;
+  /** Instagram: видимая подпись кнопки; дублируется в `message.text`. */
+  postbackTitle?: string;
+  /** WhatsApp: `list_reply` | `button_reply`. */
+  interactiveType?: string;
+  /** WhatsApp: значение нажатой строки или кнопки. */
+  interactiveId?: string;
+  /**
+   * Корзина из нативного каталога Meta — только WhatsApp.
+   *
+   * В отличие от двух полей выше, эта форма живым событием не подтверждена:
+   * в журнале такого пока не было. Взята из документации Zernio, поэтому при
+   * первом настоящем событии стоит свериться.
+   */
+  order?: {
+    catalog_id?: string;
+    text?: string;
+    product_items?: Array<{
+      product_retailer_id?: string;
+      quantity?: number;
+      item_price?: number;
+      currency?: string;
+    }>;
+  };
+  referredProduct?: { catalog_id?: string; product_retailer_id?: string };
+};
+
 export type ZernioWebhookMessagePayload = {
   /** Стабильный идентификатор события — он же ключ дедупликации. */
   id?: string;
@@ -189,33 +226,11 @@ export type ZernioWebhookMessagePayload = {
       };
     };
     /**
-     * Нажатие интерактивного элемента. `interactiveType` различается по
-     * платформам: Instagram присылает `postback`, WhatsApp — `button_reply`
-     * (кнопка) или `list_reply` (строка списка). Наш payload во всех трёх
-     * случаях лежит в `interactiveId`.
-     *
-     * `order` и `referredProduct` — только WhatsApp и только для нативных
-     * commerce-сообщений Meta: покупатель собрал корзину в родном каталоге
-     * WABA или ткнул «Написать о товаре». Свой каталог мы ведём сами, но
-     * событие всё равно надо распознать — иначе на такое сообщение бот
-     * промолчит, а для покупателя это выглядит как «отправил заказ, ответа
-     * нет».
+     * Запасное место для метаданных нажатия. Настоящее — в корне события
+     * (см. `metadata` ниже); здесь их Zernio не присылал ни разу за 11 476
+     * сохранённых событий. Поле оставлено на случай обратной смены формы.
      */
-    metadata?: {
-      interactiveType?: string;
-      interactiveId?: string;
-      order?: {
-        catalog_id?: string;
-        text?: string;
-        product_items?: Array<{
-          product_retailer_id?: string;
-          quantity?: number;
-          item_price?: number;
-          currency?: string;
-        }>;
-      };
-      referredProduct?: { catalog_id?: string; product_retailer_id?: string };
-    };
+    metadata?: ZernioInteractiveMetadata;
     sentAt?: string;
     isRead?: boolean;
   };
@@ -233,6 +248,14 @@ export type ZernioWebhookMessagePayload = {
     platform?: string;
     username?: string;
   };
+  /**
+   * Нажатие интерактивного элемента — здесь, в корне события.
+   *
+   * Место проверено по журналу: из 11 476 событий `metadata` встречается в
+   * корне и ни разу внутри `message`. Разбор долго читал `message.metadata` —
+   * и поэтому не распознал ни одного нажатия ни в одном канале.
+   */
+  metadata?: ZernioInteractiveMetadata;
   timestamp?: string;
 };
 

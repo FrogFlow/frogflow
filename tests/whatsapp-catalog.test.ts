@@ -58,6 +58,27 @@ describe("parseCatalogPayload", () => {
       expect(parseCatalogPayload(payload)).toBeNull();
     }
   });
+
+  it("«Назад» из категории ведёт к её родителю, а не к ней самой", () => {
+    /**
+     * Здесь была ошибка: родитель брался из `cats[0].parent_id`, а `cats` —
+     * это дети текущей категории, значит их parent_id и есть текущая. «Назад»
+     * возвращал на тот же уровень, то есть никуда.
+     *
+     * Строку навигации собирает сам sendWhatsAppCatalogLevel (ходит в базу),
+     * поэтому проверяем контракт разбора: адрес «наверх» обязан отличаться от
+     * адреса текущего уровня.
+     */
+    const current = "e37096e4-195b-4fde-9a41-effff658fe01";
+    const parent = "aa11bb22-0000-4000-8000-000000000002";
+
+    const back = parseCatalogPayload(`CAT:${parent}:0`);
+    expect(back?.parentId).toBe(parent);
+    expect(back?.parentId).not.toBe(current);
+
+    // У категории верхнего уровня родителя нет — «Назад» ведёт в корень.
+    expect(parseCatalogPayload("CAT:root:0")?.parentId).toBeNull();
+  });
 });
 
 describe("whatsappList", () => {

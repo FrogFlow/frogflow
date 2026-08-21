@@ -1126,37 +1126,26 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
   }
 
   /**
-   * Ответ на шаг сценария, пришедший строкой списка, а не текстом.
+   * Нажатие кнопки разбирается раньше шага сценария — и всегда, в любом режиме.
    *
-   * У такого события текста нет вовсе — выбор лежит в postback с меткой
-   * STEP:. Подставляем его как реплику покупателя, чтобы шаг разобрал ответ
-   * тем же кодом, что и напечатанный вручную.
-   */
-  const flowText = postbackPayload?.startsWith(STEP_PREFIX)
-    ? postbackPayload.slice(STEP_PREFIX.length)
-    : text;
-
-  const handledByFlow = await handlePurchaseFlow({
-    conversationId,
-    accountId,
-    user,
-    text: flowText,
-    attachmentUrl,
-    answersEverything,
-  });
-  if (handledByFlow) return;
-
-  /**
-   * Нажатие кнопки обрабатывается всегда, в любом режиме.
+   * Кнопка появляется в переписке только потому, что её отправили мы: в
+   * ответе бота или в автоматизации воронки. Человек по ней осознанно
+   * постучался — сигнала «хочу к боту» однозначнее не бывает.
    *
-   * Кнопка в DM появляется только потому, что её отправили мы — в
-   * автоматизации воронки или в ответе бота. Человек по ней осознанно
-   * постучался: это самый однозначный сигнал «хочу к боту», какой вообще
-   * бывает, и путать его с обычной перепиской невозможно. Раньше проверка
-   * режима стояла выше этого блока, и в тихом режиме кнопки молчали.
+   * Почему именно раньше шага. Вместе с нажатием приходит и текст — видимая
+   * подпись кнопки («Оформить заказ», «⛺ ЛАГЕРЬ И ВНЕУРОЧКА»). Пока нажатия
+   * не распознавались вовсе, порядок был безразличен. Теперь — нет: покупатель
+   * на шаге «из какой вы страны», нажав «Оформить заказ», отдал бы шагу эту
+   * подпись, она не совпала бы ни с одной страной, засчитался бы промах, а
+   * после второго промаха разговор ушёл бы продавцу (MAX_STEP_MISSES).
+   *
+   * Исключение — метка STEP:, она и есть ответ на текущий шаг и уходит в
+   * сценарий ниже.
    */
-  if (postbackPayload !== null) {
+  const isStepAnswer = postbackPayload?.startsWith(STEP_PREFIX) ?? false;
+  if (postbackPayload !== null && !isStepAnswer) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
+
     // «В корзину» — та же торговля, что и сама корзина, и гаснет вместе с ней.
     // Без этой проверки выключенный магазин всё равно принимал бы товары в
     // корзину, показать которую уже нельзя.
@@ -1176,12 +1165,6 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
       await sendCatalogMenu(conversationId, accountId, user);
       return;
     }
-    /**
-     * Строки каталога-списка. Обе ветки обязаны стоять выше общего перехвата
-     * ниже: он молча гасит любой нераспознанный postback, и без них нажатие
-     * на раздел или товар просто ничего бы не делало — ровно то, что уже
-     * случилось со STEP: при первой сборке списков.
-     */
     if (features.catalog) {
       const level = parseCatalogPayload(postbackPayload);
       if (level) {
@@ -1204,8 +1187,33 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
         return;
       }
     }
-    if (postbackPayload) return; // handled by the automation that sent the button
+
+    /**
+     * Чужая кнопка — например `ACT::…` от родной автоматизации Zernio, такие
+     * в журнале есть. Отвечает на неё та автоматизация, которая её и
+     * прислала; наше дело — не принять её подпись за реплику покупателя.
+     */
+    if (postbackPayload) return;
   }
+
+  /**
+   * Ответ на шаг сценария, пришедший строкой списка, а не текстом.
+   *
+   * У такого события текста нет вовсе — выбор лежит в postback с меткой
+   * STEP:. Подставляем его как реплику покупателя, чтобы шаг разобрал ответ
+   * тем же кодом, что и напечатанный вручную.
+   */
+  const flowText = isStepAnswer ? postbackPayload!.slice(STEP_PREFIX.length) : text;
+
+  const handledByFlow = await handlePurchaseFlow({
+    conversationId,
+    accountId,
+    user,
+    text: flowText,
+    attachmentUrl,
+    answersEverything,
+  });
+  if (handledByFlow) return;
 
   /**
    * Слово-вызов: им человек сам звонит боту.
@@ -1528,13 +1536,22 @@ async function sendWhatsAppCatalogLevel(
     });
   }
   if (parentId || offset > 0) {
-    // Наверх — к родителю текущей категории; у корневой это сам корень.
-    const parentOfCurrent = parentId
-      ? (cats[0]?.parent_id ??
-        (await s.from("categories").select("parent_id").eq("id", parentId).maybeSingle()).data
-          ?.parent_id ??
-        null)
-      : null;
+    /**
+     * Наверх — к родителю ТЕКУЩЕЙ категории, и его надо спросить отдельно.
+     *
+     * Соблазн взять `cats[0].parent_id` обманчив: `cats` — это дети текущей
+     * категории, значит их `parent_id` и есть `parentId`. «Назад» тогда ведёт
+     * на тот же самый уровень, то есть никуда.
+     */
+    let parentOfCurrent: string | null = null;
+    if (parentId) {
+      const { data: current } = await s
+        .from("categories")
+        .select("parent_id")
+        .eq("id", parentId)
+        .maybeSingle();
+      parentOfCurrent = current?.parent_id ?? null;
+    }
     navRows.push({
       id: `${CAT_PREFIX}${parentOfCurrent ?? CAT_ROOT}:0`,
       title: copy.catalogBack,

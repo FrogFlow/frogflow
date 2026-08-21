@@ -126,75 +126,138 @@ describe("parseZernioMessage", () => {
 });
 
 /**
- * WhatsApp приезжает в тот же вебхук и тем же событием `message.received`, но
- * отличается ровно там, где разбор мог бы промолчать: отправитель — номер
- * телефона, а нажатие интерактивного элемента приходит не как `postback`, а
- * как `button_reply` / `list_reply`. Промах здесь выглядел бы как «бот не
- * реагирует на кнопки в WhatsApp» — то есть магазин просто не работает.
+ * Нажатия кнопок и строк списка — с настоящих событий из `zernio_logs`.
+ *
+ * Прежняя версия этих тестов была написана по выдуманной форме: `metadata`
+ * лежал внутри `message`. Тесты зеленели, а продукт не работал — в 11 476
+ * сохранённых событиях `message.metadata` не встречается ни разу, ни на одной
+ * платформе. Zernio кладёт метаданные в корень события, и ключи у платформ
+ * разные:
+ *
+ *   Instagram — `postbackPayload`;
+ *   WhatsApp  — `interactiveId` при `interactiveType` = list_reply/button_reply.
+ *
+ * Цена ошибки: в WhatsApp бот «зависал» после выбора категории, в Instagram
+ * кнопки молчали всё время — 38 настоящих нажатий за две недели без единого
+ * ответа. Ровно то, о чём предупреждает комментарий в шапке разбора: такое
+ * ловит только тест на настоящей форме события.
+ *
+ * Формы ниже скопированы из журнала дословно, включая то, что подпись кнопки
+ * дублируется в `message.text`.
  */
-describe("parseZernioMessage — WhatsApp", () => {
-  const waEvent = {
+describe("parseZernioMessage — нажатия", () => {
+  /** Событие 2026-08-21T22:02:49Z, выбор строки списка в каталоге. */
+  const waListReply = {
     event: "message.received",
     account: {
-      accountId: "6b1f2c3d4e5f60718293a4b5",
+      id: "6a80f53e77555aae0129893e",
+      accountId: "6a80f53e77555aae0129893e",
       platform: "whatsapp",
-      username: "+77012345678",
+      username: "+7 700 510 2751",
     },
     message: {
-      conversationId: "6b1f2c3d4e5f60718293a4b6",
-      text: "Здравствуйте, хочу купить",
+      id: "6a88cb0a77555aae01248f8e",
+      text: "⛺ ЛАГЕРЬ И ВНЕУРОЧКА",
       platform: "whatsapp",
       direction: "incoming" as const,
-      sender: { id: "77012345678", name: "Екатерина" },
+      sender: { id: "77056682751", name: "Яков" },
+      conversationId: "6a80f5503d30e4d0048a4d54",
     },
-    conversation: { id: "6b1f2c3d4e5f60718293a4b6", participantId: "77012345678" },
+    metadata: {
+      interactiveId: "CAT:e37096e4-195b-4fde-9a41-effff658fe01:0",
+      interactiveType: "list_reply",
+      quotedMessageId: "wamid.HBgL…",
+    },
+    conversation: { id: "6a80f5503d30e4d0048a4d54", participantId: "77056682751" },
   };
 
-  it("ключ покупателя получает префикс wa_, а не ig_", () => {
-    const parsed = parseZernioMessage(waEvent);
+  /** Событие из журнала: нажатие «Оформить заказ» в Instagram Direct. */
+  const igPostback = {
+    event: "message.received",
+    account: { accountId: "6a698cc9df17280d93c77269", platform: "instagram" },
+    message: {
+      text: "Тапсырысты рәсімдеу",
+      sender: { id: "1564412301739124" },
+      conversationId: "6a7b1b00d0fe733d1a2ab5b0",
+    },
+    metadata: { postbackPayload: "CHECKOUT", postbackTitle: "Тапсырысты рәсімдеу" },
+  };
+
+  it("строка списка WhatsApp читается из корня события", () => {
+    const parsed = parseZernioMessage(waListReply);
     expect(parsed.platform).toBe("whatsapp");
-    expect(parsed.userKey).toBe("wa_77012345678");
-    expect(parsed.senderName).toBe("Екатерина");
+    expect(parsed.userKey).toBe("wa_77056682751");
+    expect(parsed.postbackPayload).toBe("CAT:e37096e4-195b-4fde-9a41-effff658fe01:0");
   });
 
-  it("нажатие кнопки WhatsApp читается как payload", () => {
+  it("подпись строки приходит текстом и остаётся в text, не подменяя payload", () => {
+    // Обработчик обязан различать эти два поля: подпись — не реплика
+    // покупателя, и скармливать её шагу сценария нельзя.
+    const parsed = parseZernioMessage(waListReply);
+    expect(parsed.text).toBe("⛺ ЛАГЕРЬ И ВНЕУРОЧКА");
+    expect(parsed.postbackPayload).not.toBe(parsed.text);
+  });
+
+  it("кнопка Instagram читается по своему ключу postbackPayload", () => {
+    const parsed = parseZernioMessage(igPostback);
+    expect(parsed.platform).toBe("instagram");
+    expect(parsed.postbackPayload).toBe("CHECKOUT");
+    expect(parsed.text).toBe("Тапсырысты рәсімдеу");
+  });
+
+  it("кнопка чужой автоматизации Zernio отдаётся как есть", () => {
+    // `ACT::…` присылают родные Comment-to-DM автоматизации. Их наш бот не
+    // обслуживает, но обязан узнать, чтобы не принять подпись за реплику.
     const parsed = parseZernioMessage({
-      ...waEvent,
-      message: {
-        ...waEvent.message,
-        text: null,
-        metadata: { interactiveType: "button_reply", interactiveId: "CHECKOUT" },
+      ...igPostback,
+      message: { ...igPostback.message, text: "Я подписался (ась)" },
+      metadata: {
+        postbackPayload: "ACT::cc82e5ebd3b465e3243fde66982ba8d0",
+        postbackTitle: "Я подписался (ась)",
       },
     });
-    expect(parsed.postbackPayload).toBe("CHECKOUT");
+    expect(parsed.postbackPayload).toBe("ACT::cc82e5ebd3b465e3243fde66982ba8d0");
   });
 
-  it("выбор строки списка читается как payload", () => {
+  it("кнопка WhatsApp (button_reply) читается так же, как строка списка", () => {
     const parsed = parseZernioMessage({
-      ...waEvent,
-      message: {
-        ...waEvent.message,
-        text: null,
-        metadata: { interactiveType: "list_reply", interactiveId: "BUY:42" },
-      },
+      ...waListReply,
+      message: { ...waListReply.message, text: "В корзину" },
+      metadata: { interactiveType: "button_reply", interactiveId: "BUY:42" },
     });
     expect(parsed.postbackPayload).toBe("BUY:42");
   });
 
-  it("корзина из нативного каталога Meta разбирается, а не теряется", () => {
+  it("запасное чтение из message.metadata работает, если форма вернётся", () => {
+    const { metadata, ...withoutTopLevel } = waListReply;
     const parsed = parseZernioMessage({
-      ...waEvent,
-      message: {
-        ...waEvent.message,
-        text: null,
-        metadata: {
-          order: {
-            catalog_id: "194836987003835",
-            text: "срочно",
-            product_items: [
-              { product_retailer_id: "sku-1", quantity: 2, item_price: 1500, currency: "KZT" },
-            ],
-          },
+      ...withoutTopLevel,
+      message: { ...waListReply.message, metadata },
+    });
+    expect(parsed.postbackPayload).toBe("CAT:e37096e4-195b-4fde-9a41-effff658fe01:0");
+  });
+
+  it("обычное сообщение нажатием не считается", () => {
+    const parsed = parseZernioMessage({
+      ...waListReply,
+      metadata: undefined,
+      message: { ...waListReply.message, text: "Здравствуйте" },
+    });
+    expect(parsed.postbackPayload).toBeNull();
+    expect(parsed.text).toBe("Здравствуйте");
+  });
+
+  it("нативная корзина Meta разбирается из корня события", () => {
+    const parsed = parseZernioMessage({
+      ...waListReply,
+      message: { ...waListReply.message, text: null },
+      metadata: {
+        order: {
+          catalog_id: "194836987003835",
+          text: "срочно",
+          product_items: [
+            { product_retailer_id: "sku-1", quantity: 2, item_price: 1500, currency: "KZT" },
+          ],
         },
       },
     });
@@ -203,11 +266,6 @@ describe("parseZernioMessage — WhatsApp", () => {
       note: "срочно",
       items: [{ retailerId: "sku-1", quantity: 2, price: 1500, currency: "KZT" }],
     });
-  });
-
-  it("у обычного сообщения нативного заказа нет", () => {
-    expect(parseZernioMessage(waEvent).nativeOrder).toBeNull();
-    expect(parseZernioMessage(realEvent).nativeOrder).toBeNull();
   });
 
   it("неизвестная платформа не роняет разбор и считается instagram", () => {
