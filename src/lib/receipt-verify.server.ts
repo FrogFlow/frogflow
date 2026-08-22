@@ -108,6 +108,9 @@ async function ocrWithGoogleVision(bytes: Uint8Array, mime: string): Promise<str
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    // OCR — необязательная оптимизация: при его сбое заказ всё равно должен
+    // уйти на ручную проверку, а не удерживать диалог в обработке.
+    signal: AbortSignal.timeout(15_000),
     body: JSON.stringify({
       requests: [
         {

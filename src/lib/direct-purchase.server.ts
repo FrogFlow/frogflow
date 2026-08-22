@@ -471,7 +471,9 @@ export async function storeReceipt(
   folder: string,
 ): Promise<{ path: string; bytes: Uint8Array; mime: string } | null> {
   try {
-    const response = await fetch(attachmentUrl);
+    // CDN-ссылка Instagram иногда не отвечает вовсе. Без таймаута в таком
+    // случае пользователь навсегда остаётся в техническом processing_proof.
+    const response = await fetch(attachmentUrl, { signal: AbortSignal.timeout(25_000) });
     if (!response.ok) {
       console.error("[direct] receipt download failed", response.status);
       return null;

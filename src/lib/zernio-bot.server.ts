@@ -2500,10 +2500,21 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    const order = await flow.createOrderFromCart({ user, countryCode: claim.country_code! });
-    if (!order) {
+    let order: Awaited<ReturnType<typeof flow.createOrderFromCart>>;
+    try {
+      order = await flow.createOrderFromCart({ user, countryCode: claim.country_code! });
+    } catch (error) {
+      console.error("[zernio-bot] failed to create direct order", error);
+      await flow.releaseAwaitingProof(user.user_key);
       await say(copy.orderCreateFailed);
-      await flow.clearDirectFlow(user.user_key);
+      return true;
+    }
+    if (!order) {
+      // Заказ не создался — возвращаем пользователя на шаг с чеком. До этого
+      // уже был взят атомарный lock, и без отката следующий файл выглядел бы
+      // как второй чек в вечной обработке.
+      await flow.releaseAwaitingProof(user.user_key);
+      await say(copy.orderCreateFailed);
       return true;
     }
 
@@ -2515,10 +2526,27 @@ async function handlePurchaseFlow(params: {
       .select("total, currency")
       .single();
 
-    // Корзину освобождаем только после успешного заказа — иначе при сбое
-    // человек потерял бы всё, что набрал.
-    await flow.clearCart(user);
     const displayNo = order.order_no || order.id;
+    const email = user.email;
+
+    // Техническая блокировка нужна только до создания заказа. Переводим
+    // сценарий в нормальный пользовательский шаг до OCR и уведомлений: они
+    // могут быть медленными или временно недоступными, но не должны оставлять
+    // чат в processing_proof. Вложение уже сохранено, заказ уже создан.
+    await flow.setDirectState(user.user_key, {
+      mode: "awaiting_email",
+      pending_order_id: order.id,
+      ...(email ? { email_optional: true } : {}),
+    });
+
+    // Корзину освобождаем только после успешного заказа — иначе при сбое
+    // человек потерял бы всё, что набрал. Ошибка очистки не отменяет заказ и
+    // не должна останавливать его передачу на ручную проверку.
+    try {
+      await flow.clearCart(user);
+    } catch (error) {
+      console.error("[zernio-bot] failed to clear direct cart after order creation", error);
+    }
 
     /**
      * Распознаём чек сразу, пока байты под рукой.
@@ -2540,8 +2568,6 @@ async function handlePurchaseFlow(params: {
       .from("orders")
       .update({ admin_note: `Instagram, чек: ${verdict.note}`.slice(0, 500) })
       .eq("id", order.id);
-
-    const email = user.email;
 
     // Почта известна и чек сошёлся — отдаём материалы сразу, ничего не спрашивая.
     if (email && verdict.autoDeliver) {
@@ -2568,19 +2594,10 @@ async function handlePurchaseFlow(params: {
 
     if (email) {
       await s.from("orders").update({ customer_email: email }).eq("id", order.id);
-      await flow.setDirectState(user.user_key, {
-        mode: "awaiting_email",
-        pending_order_id: order.id,
-        email_optional: true,
-      });
       await say(copy.receiptReceivedAskEmailOptional(displayNo, email));
       return true;
     }
 
-    await flow.setDirectState(user.user_key, {
-      mode: "awaiting_email",
-      pending_order_id: order.id,
-    });
     await say(copy.receiptReceivedNeedEmail(displayNo));
     return true;
   }
