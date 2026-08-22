@@ -1261,7 +1261,12 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
       }
     }
 
-    return uniquePosts.sort((a, b) => (Number(b._date) || 0) - (Number(a._date) || 0));
+    // `_date` may be an ISO string (for example, `publishedAt`). Converting it
+    // with Number() yields NaN, leaving freshly synced Reels at the end in the
+    // API's original order instead of putting the newest publication first.
+    return uniquePosts.sort(
+      (a, b) => (asDate(b._date)?.getTime() || 0) - (asDate(a._date)?.getTime() || 0),
+    );
   } catch (e) {
     console.error("[zernio] listZernioPosts error", e);
     return [];
