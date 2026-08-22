@@ -2510,8 +2510,10 @@ async function handlePurchaseFlow(params: {
     // любой из них задержится, покупатель всё равно должен увидеть ответ, а не
     // решить, что чек потерялся.
     // `force` нужен намеренно: это подтверждение текущего чека, а не повтор
-    // одинакового ответа. Если Zernio не принял сообщение, снимаем lock и
-    // бросаем ошибку — cron/retry сможет обработать исходное событие снова.
+    // одинакового ответа. Его доставка полезна, но не может быть условием
+    // создания заказа: исходящие сообщения Zernio иногда временно отвергает,
+    // тогда как сам входящий чек уже успешно дошёл до нас. Прерывание здесь
+    // оставляло покупателя без ответа и без заказа.
     const receiptAckSent = await reply(
       user,
       conversationId,
@@ -2521,8 +2523,9 @@ async function handlePurchaseFlow(params: {
       true,
     );
     if (!receiptAckSent) {
-      await flow.releaseAwaitingProof(user.user_key);
-      throw new Error("failed to send Instagram receipt acknowledgement");
+      console.error(
+        `[zernio-bot] receipt acknowledgement was not delivered for ${user.user_key}; continuing order creation`,
+      );
     }
 
     let order: Awaited<ReturnType<typeof flow.createOrderFromCart>>;
