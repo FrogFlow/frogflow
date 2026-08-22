@@ -39,6 +39,12 @@ function botId(): string {
 
 export type DirectState = {
   mode?: DirectMode;
+  /**
+   * Когда именно был взят краткоживущий lock на сохранение чека. Нужен для
+   * восстановления после оборванного serverless-вызова: технический шаг не
+   * имеет права запирать покупателя навсегда.
+   */
+  proof_processing_started_at?: string;
   product_id?: string;
   country_code?: string;
   pending_order_id?: number;
@@ -87,7 +93,14 @@ export type DirectState = {
  * Запомненную страну бот называет вслух, чтобы человек мог возразить, а сменить
  * её можно словом «отмена».
  */
-const FLOW_KEYS = ["mode", "product_id", "pending_order_id", "email_optional", "misses"] as const;
+const FLOW_KEYS = [
+  "mode",
+  "product_id",
+  "pending_order_id",
+  "email_optional",
+  "misses",
+  "proof_processing_started_at",
+] as const;
 
 /**
  * Дописывает поля в состояние, не затирая остальные.
@@ -168,7 +181,11 @@ export async function claimAwaitingProof(userKey: string): Promise<DirectState |
     column: "user_key",
     value: userKey,
     isClaimable: (raw) => readDirectState(raw).mode === "awaiting_proof",
-    claim: (raw) => ({ ...readDirectState(raw), mode: "processing_proof" }),
+    claim: (raw) => ({
+      ...readDirectState(raw),
+      mode: "processing_proof",
+      proof_processing_started_at: new Date().toISOString(),
+    }),
   });
 }
 

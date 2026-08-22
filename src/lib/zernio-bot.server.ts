@@ -2285,6 +2285,30 @@ async function handlePurchaseFlow(params: {
   const copy = directCopy[locale];
   const say = (message: string) => reply(user, conversationId, accountId, message);
 
+  // Обработчик чека работает в фоне webhook-а. Если инстанс завершился после
+  // атомарного claim, прежний код оставлял `processing_proof` навсегда, и
+  // любой повторный чек выглядел как «уже обрабатываю». Свежий lock бережём
+  // от дублей, а устаревший (и старые записи без метки времени) снимаем и
+  // сразу используем текущее вложение как повторную попытку.
+  if (state.mode === "processing_proof") {
+    const startedAt = Date.parse(state.proof_processing_started_at || "");
+    const lockIsFresh = Number.isFinite(startedAt) && Date.now() - startedAt < 45_000;
+    if (lockIsFresh) return true;
+
+    await flow.releaseAwaitingProof(user.user_key);
+    if (!attachmentUrl) {
+      await say(copy.awaitingProofHint);
+      return true;
+    }
+    return handlePurchaseFlow({
+      ...params,
+      user: {
+        ...user,
+        state: { ...state, mode: "awaiting_proof", proof_processing_started_at: undefined },
+      },
+    });
+  }
+
   /**
    * Ждём ответ на выбор языка — шаг важнее всего остального в сценарии.
    *
@@ -2467,20 +2491,10 @@ async function handlePurchaseFlow(params: {
      */
     const claim = await flow.claimAwaitingProof(user.user_key);
     if (!claim) {
-      // Забрать не вышло — значит, кто-то (скорее всего, это же событием
-      // раньше) уже обрабатывает предыдущее вложение. Чек всё равно сохраняем,
-      // чтобы он не потерялся, и зовём продавца — пусть решит на месте, если
-      // это правда два разных чека, а не дубль одного и того же.
-      const extra = await flow.storeReceipt(attachmentUrl, `${user.user_key}/concurrent`);
-      await flow.notifyAdminAboutQuestion({
-        question:
-          "Прислал ещё одно вложение, пока обрабатывалось предыдущее — возможно, второй чек." +
-          (extra ? `\nФайл: payment-proofs/${extra.path}` : "\nФайл сохранить не удалось."),
-        senderName: user.first_name || "покупатель",
-        senderUsername: user.username || "",
-        platform: platformOf(user),
-      });
-      await say(copy.receiptProcessing);
+      // Это дубль того же входящего события или второе вложение, пришедшее в
+      // тот же момент. Первый вызов уже создаёт заказ; дубль не должен
+      // отправлять пользователю ложное «обрабатываю» и запускать ещё одну
+      // сетевую загрузку.
       return true;
     }
 
