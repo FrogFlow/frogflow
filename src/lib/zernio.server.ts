@@ -243,6 +243,8 @@ export type ZernioWebhookMessagePayload = {
   };
   account?: {
     id?: string;
+    /** Некоторые ответы Zernio используют Mongo-style `_id`. */
+    _id?: string;
     /** Тот же идентификатор, что и `id`; каноническое поле для фильтрации. */
     accountId?: string;
     platform?: string;

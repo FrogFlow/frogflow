@@ -125,7 +125,7 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   return {
     conversationId: message.conversationId || conversation.id,
     // `accountId` — каноническое поле фильтрации, `id` держим как запасное.
-    accountId: account.accountId || account.id,
+    accountId: account.accountId || account.id || account._id,
     platform,
     userKey: `${USER_KEY_PREFIX[platform]}${senderId}`,
     senderUsername,

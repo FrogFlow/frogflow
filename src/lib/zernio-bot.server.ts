@@ -2293,7 +2293,14 @@ async function handlePurchaseFlow(params: {
   if (state.mode === "processing_proof") {
     const startedAt = Date.parse(state.proof_processing_started_at || "");
     const lockIsFresh = Number.isFinite(startedAt) && Date.now() - startedAt < 45_000;
-    if (lockIsFresh) return true;
+    if (lockIsFresh) {
+      // Если первый вызов ещё работает, повтор webhook всё равно получает
+      // понятное подтверждение вместо полного молчания. Обычная дедупликация
+      // не создаст второе сообщение, если первый ack уже ушёл, но повторит его
+      // после неудачной отправки (неудача не записывается как last_reply).
+      await say(copy.receiptProcessing);
+      return true;
+    }
 
     await flow.releaseAwaitingProof(user.user_key);
     if (!attachmentUrl) {
@@ -2827,9 +2834,11 @@ async function handlePurchaseFlow(params: {
       await flow.setDirectState(user.user_key, { notified_at: new Date().toISOString() });
     }
 
-    if (answersEverything) {
-      await say(copy.strayAttachmentAck);
-    }
+    // Вложение — осознанное действие покупателя, даже если состояние заказа
+    // потерялось из-за сбоя записи или пришло из старого сценария. В режиме
+    // «только покупки» обычный текст можно оставить продавцу, но картинку-чек
+    // нельзя проглатывать молча: человек должен понять, что она замечена.
+    await say(copy.strayAttachmentAck);
     return true;
   }
 

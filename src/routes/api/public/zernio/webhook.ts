@@ -57,6 +57,7 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         const accountId =
           payload.account?.accountId ||
           payload.account?.id ||
+          payload.account?._id ||
           payload.message?.accountId ||
           payload.data?.accountId;
         const eventType = payload.event || "unknown";

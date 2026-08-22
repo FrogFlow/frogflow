@@ -123,6 +123,15 @@ describe("parseZernioMessage", () => {
     });
     expect(accountId).toBe("канонический");
   });
+
+  it("использует Mongo-style _id, если accountId и id отсутствуют", () => {
+    const { accountId } = parseZernioMessage({
+      event: "message.received",
+      message: { conversationId: "c1", sender: { id: "u1" } },
+      account: { _id: "mongo-account-id" },
+    });
+    expect(accountId).toBe("mongo-account-id");
+  });
 });
 
 /**
