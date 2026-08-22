@@ -14,6 +14,7 @@ import {
   parseRemoveCommand,
   pickCartLineToRemove,
   pickReceiptAttachment,
+  pickExpectedReceiptAttachment,
 } from "../src/lib/direct-flow";
 
 /** Список стран взят из настоящих payment_methods клиента. */
@@ -370,6 +371,36 @@ describe("pickReceiptAttachment", () => {
         { url: "https://cdn/receipt.jpg", type: "image" },
       ]),
     ).toBe("https://cdn/receipt.jpg");
+  });
+});
+
+describe("pickExpectedReceiptAttachment", () => {
+  it("на платёжном шаге принимает живые Instagram и WhatsApp media-объекты", () => {
+    expect(
+      pickExpectedReceiptAttachment([
+        {
+          type: "image",
+          url: "https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1",
+          payload: { url: "https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1" },
+        },
+      ]),
+    ).toContain("ig_messaging_cdn");
+
+    expect(
+      pickExpectedReceiptAttachment([
+        {
+          type: "image",
+          url: "https://zernio.com/api/v1/whatsapp/media/1?accountId=a1",
+          payload: { mimeType: "image/jpeg" },
+        },
+      ]),
+    ).toContain("/whatsapp/media/");
+  });
+
+  it("не зависит от нового имени типа, если URL есть", () => {
+    expect(
+      pickExpectedReceiptAttachment([{ type: "future_media_type", url: "https://cdn/receipt" }]),
+    ).toBe("https://cdn/receipt");
   });
 });
 

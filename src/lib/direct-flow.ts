@@ -225,11 +225,46 @@ export function matchCountry(text: string, options: CountryOption[]): CountryOpt
  * без типа — это старые записи, где вложение всегда было фотографией чека.
  */
 export function pickReceiptAttachment(
-  attachments: Array<{ url?: string; type?: string }> | null | undefined,
+  attachments:
+    | Array<{ url?: string; type?: string; payload?: { url?: string; mimeType?: string } }>
+    | null
+    | undefined,
 ): string | null {
   for (const item of attachments ?? []) {
-    if (!item.url) continue;
-    if (!item.type || item.type === "image" || item.type === "file") return item.url;
+    const url = item.url || item.payload?.url;
+    if (!url) continue;
+    const type = item.type?.trim().toLowerCase();
+    const mime = item.payload?.mimeType?.trim().toLowerCase();
+    if (
+      !type ||
+      type === "image" ||
+      type === "photo" ||
+      type === "file" ||
+      type === "document" ||
+      mime?.startsWith("image/") ||
+      mime === "application/pdf"
+    ) {
+      return url;
+    }
+  }
+  return null;
+}
+
+/**
+ * На активном платёжном шаге вложение — ожидаемый ответ покупателя. Zernio
+ * уже несколько раз менял форму media-объекта между каналами; здесь нельзя
+ * потерять оплаченный заказ только из-за нового имени `type`. Берём первый URL,
+ * а проверка/распознавание файла дальше всё равно действует fail-safe.
+ */
+export function pickExpectedReceiptAttachment(
+  attachments:
+    | Array<{ url?: string; type?: string; payload?: { url?: string; mimeType?: string } }>
+    | null
+    | undefined,
+): string | null {
+  for (const item of attachments ?? []) {
+    const url = item.url || item.payload?.url;
+    if (url) return url;
   }
   return null;
 }

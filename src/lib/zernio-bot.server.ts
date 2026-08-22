@@ -1154,8 +1154,16 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    */
   // Чеком считаем только картинку или файл — см. pickReceiptAttachment: там же
   // и разбор того, почему голосовое сообщение чеком быть не должно.
-  const { pickReceiptAttachment } = await import("./direct-flow");
-  const attachmentUrl = pickReceiptAttachment(payload.message?.attachments) ?? undefined;
+  const { pickExpectedReceiptAttachment, pickReceiptAttachment } = await import("./direct-flow");
+  const attachments = payload.message?.attachments;
+  const expectsReceipt =
+    directState.mode === "awaiting_proof" ||
+    directState.mode === "processing_proof" ||
+    directState.mode === "awaiting_email";
+  const attachmentUrl =
+    (expectsReceipt
+      ? pickExpectedReceiptAttachment(attachments)
+      : pickReceiptAttachment(attachments)) ?? undefined;
 
   /**
    * Пустое событие — не сообщение, и отвечать на него нечем.
