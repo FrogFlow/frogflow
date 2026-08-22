@@ -276,11 +276,19 @@ export async function sendDirectReply(params: {
     return false;
   }
 
-  await sendZernioInboxMessage(params.conversationId, params.accountId, params.text, {
+  const sent = await sendZernioInboxMessage(params.conversationId, params.accountId, params.text, {
     buttons: params.buttons,
     interactive: params.interactive,
     platform: params.platform,
   });
+  if (!sent.ok) {
+    // Не фиксируем неотправленный ответ как последний: иначе следующий retry
+    // вебхука подавит тот же текст как «дубликат», хотя покупатель его не видел.
+    console.error(
+      `[direct] reply was not delivered to ${params.userKey}: ${sent.error || "unknown error"}`,
+    );
+    return false;
+  }
   await setDirectState(params.userKey, {
     last_reply: mark,
     last_reply_at: new Date().toISOString(),

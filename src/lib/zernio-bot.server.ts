@@ -2498,6 +2498,26 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
+    // Подтверждаем получение сразу после атомарного захвата. До создания заказа
+    // ещё есть несколько запросов к базе, а дальше — CDN, Storage и OCR. Если
+    // любой из них задержится, покупатель всё равно должен увидеть ответ, а не
+    // решить, что чек потерялся.
+    // `force` нужен намеренно: это подтверждение текущего чека, а не повтор
+    // одинакового ответа. Если Zernio не принял сообщение, снимаем lock и
+    // бросаем ошибку — cron/retry сможет обработать исходное событие снова.
+    const receiptAckSent = await reply(
+      user,
+      conversationId,
+      accountId,
+      copy.receiptProcessing,
+      undefined,
+      true,
+    );
+    if (!receiptAckSent) {
+      await flow.releaseAwaitingProof(user.user_key);
+      throw new Error("failed to send Instagram receipt acknowledgement");
+    }
+
     let order: Awaited<ReturnType<typeof flow.createOrderFromCart>>;
     try {
       order = await flow.createOrderFromCart({ user, countryCode: claim.country_code! });
