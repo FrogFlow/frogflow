@@ -484,6 +484,24 @@ export async function paymentInstructionsFor(
  * авторизации, и живёт она недолго. Поэтому файл нужно скачать сразу, а не
  * хранить ссылку: через сутки по ней уже ничего не будет.
  */
+export function receiptDownloadRequest(
+  attachmentUrl: string,
+  source?: { platform?: ZernioPlatform; accountId?: string },
+  apiKey?: string,
+): { url: URL; headers?: { Authorization: string } } {
+  const url = new URL(attachmentUrl);
+  if (source?.platform !== "whatsapp") return { url };
+
+  if (source.accountId && !url.searchParams.has("accountId")) {
+    url.searchParams.set("accountId", source.accountId);
+  }
+
+  return {
+    url,
+    ...(apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : {}),
+  };
+}
+
 export async function storeReceipt(
   attachmentUrl: string,
   /**
@@ -494,11 +512,26 @@ export async function storeReceipt(
    * потом заказ.
    */
   folder: string,
+  source?: { platform?: ZernioPlatform; accountId?: string },
 ): Promise<{ path: string; bytes: Uint8Array; mime: string } | null> {
   try {
     // CDN-ссылка Instagram иногда не отвечает вовсе. Без таймаута в таком
     // случае пользователь навсегда остаётся в техническом processing_proof.
-    const response = await fetch(attachmentUrl, { signal: AbortSignal.timeout(25_000) });
+    /**
+     * Instagram отдаёт прямую CDN-ссылку. WhatsApp — защищённый endpoint
+     * Zernio, которому обязательно нужен тот же Bearer-токен, что и остальному
+     * API. Без заголовка он отвечает 401, и любой WhatsApp-чек раньше молча
+     * превращался в «файл сохранить не удалось».
+     */
+    const request = receiptDownloadRequest(
+      attachmentUrl,
+      source,
+      process.env.ZERNIO_API_KEY?.trim(),
+    );
+    const response = await fetch(request.url, {
+      headers: request.headers,
+      signal: AbortSignal.timeout(25_000),
+    });
     if (!response.ok) {
       console.error("[direct] receipt download failed", response.status);
       return null;
@@ -1098,6 +1131,7 @@ export async function createOrderFromCart(params: {
   user: {
     telegram_id: number;
     user_key: string;
+    platform?: string | null;
     username: string | null;
     first_name: string | null;
   };
@@ -1112,14 +1146,18 @@ export async function createOrderFromCart(params: {
   const priced = await priceCart(lines, params.countryCode);
   const { total: amount, currency } = priced;
 
+  const platform: ZernioPlatform = params.user.platform === "whatsapp" ? "whatsapp" : "instagram";
+  const customerLabel =
+    platform === "whatsapp" ? "Покупатель из WhatsApp" : "Покупатель из Instagram";
+
   const { data: order, error } = await s
     .from("orders")
     .insert({
       telegram_id: params.user.telegram_id,
       user_key: params.user.user_key,
-      platform: "instagram",
+      platform,
       username: params.user.username,
-      display_name: params.user.first_name || params.user.username || "Покупатель из Instagram",
+      display_name: params.user.first_name || params.user.username || customerLabel,
       contact: params.user.username ? `@${params.user.username}` : null,
       total: amount,
       currency,

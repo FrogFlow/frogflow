@@ -2582,7 +2582,10 @@ async function handlePurchaseFlow(params: {
     // окна. Если CDN/Storage недоступны, фото остаётся в Direct, а заказ уже
     // создан и ждёт ручной проверки в админке.
     const proofPath = await Promise.race([
-      flow.storeReceipt(attachmentUrl, user.user_key),
+      flow.storeReceipt(attachmentUrl, user.user_key, {
+        platform: platformOf(user),
+        accountId,
+      }),
       new Promise<null>((resolve) => setTimeout(resolve, 5_000)),
     ]);
     let created: { total: number | null; currency: string | null } | null = null;
@@ -2699,7 +2702,10 @@ async function handlePurchaseFlow(params: {
      * почты — она всё ещё нужна, чтобы отправить материалы.
      */
     if (!email && attachmentUrl) {
-      const extra = await flow.storeReceipt(attachmentUrl, user.user_key);
+      const extra = await flow.storeReceipt(attachmentUrl, user.user_key, {
+        platform: platformOf(user),
+        accountId,
+      });
       const s = await db();
       if (extra && state.pending_order_id) {
         const { data: order } = await s
@@ -2825,7 +2831,10 @@ async function handlePurchaseFlow(params: {
       Boolean(state.notified_at) && Date.now() - Date.parse(state.notified_at!) < 60 * 60 * 1000;
 
     if (!notifiedRecently) {
-      const stored = await flow.storeReceipt(attachmentUrl, `${user.user_key}/unmatched`);
+      const stored = await flow.storeReceipt(attachmentUrl, `${user.user_key}/unmatched`, {
+        platform: platformOf(user),
+        accountId,
+      });
       await flow.notifyAdminAboutQuestion({
         question:
           "Прислал вложение (похоже на чек), но заказа у него нет — оплатил, минуя бота." +
