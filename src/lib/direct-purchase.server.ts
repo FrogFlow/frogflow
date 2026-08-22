@@ -10,6 +10,7 @@ import {
 } from "./direct-flow";
 import { isLocale, type Locale } from "./i18n";
 import type { Json } from "@/integrations-supabase/types";
+import { PLATFORM_LABEL } from "./zernio-platform";
 
 /**
  * Сценарий покупки в Instagram Direct: номер товара → страна → реквизиты →
@@ -647,7 +648,7 @@ export async function notifyAdminAboutDirectOrder(
   const { data: order } = await s
     .from("orders")
     .select(
-      "total, currency, username, display_name, payment_proof_path, order_items(name_snapshot, price_snapshot)",
+      "platform, total, currency, username, display_name, payment_proof_path, order_items(name_snapshot, price_snapshot)",
     )
     .eq("id", orderId)
     .maybeSingle();
@@ -655,7 +656,14 @@ export async function notifyAdminAboutDirectOrder(
   const items = ((order?.order_items ?? []) as Array<{ name_snapshot: string }>)
     .map((item) => `• ${item.name_snapshot}`)
     .join("\n");
-  const who = order?.username ? `@${order.username}` : order?.display_name || "покупатель";
+  const platform: ZernioPlatform = order?.platform === "whatsapp" ? "whatsapp" : "instagram";
+  const platformLabel = PLATFORM_LABEL[platform];
+  const deliveryTarget = platform === "whatsapp" ? "в WhatsApp" : "на почту";
+  const who = order?.username
+    ? platform === "whatsapp"
+      ? order.username
+      : `@${order.username}`
+    : order?.display_name || "покупатель";
 
   const { tg } = await import("./telegram.server");
   for (const chatId of raw
@@ -667,14 +675,14 @@ export async function notifyAdminAboutDirectOrder(
       await tg("sendMessage", {
         chat_id: chatId,
         text:
-          `📸 <b>Заказ №${displayNo} из Instagram</b>\n\n` +
+          `📸 <b>Заказ №${displayNo} из ${platformLabel}</b>\n\n` +
           `От: ${who}\n` +
           `Сумма: <b>${order?.total ?? "?"} ${order?.currency ?? ""}</b>\n\n` +
           `${items || "(состав недоступен)"}\n\n` +
           (options?.verdict ? `Чек: ${options.verdict}\n\n` : "") +
           (needsAction
-            ? "Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю на почту."
-            : "Материалы уже отправлены покупателю на почту — делать ничего не нужно."),
+            ? `Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю ${deliveryTarget}.`
+            : `Материалы уже отправлены покупателю ${deliveryTarget} — делать ничего не нужно.`),
         parse_mode: "HTML",
         /**
          * Кнопки прямо здесь, а не «зайдите в админку».
@@ -1158,7 +1166,11 @@ export async function createOrderFromCart(params: {
       platform,
       username: params.user.username,
       display_name: params.user.first_name || params.user.username || customerLabel,
-      contact: params.user.username ? `@${params.user.username}` : null,
+      contact: params.user.username
+        ? platform === "whatsapp"
+          ? params.user.username
+          : `@${params.user.username}`
+        : null,
       total: amount,
       currency,
       status: "awaiting_confirmation",

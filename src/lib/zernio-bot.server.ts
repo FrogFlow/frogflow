@@ -140,6 +140,7 @@ interface DirectCopy {
   receiptReceivedKnownEmail: (displayNo: number | string, email: string) => string;
   receiptReceivedAskEmailOptional: (displayNo: number | string, email: string) => string;
   receiptReceivedNeedEmail: (displayNo: number | string) => string;
+  receiptReceivedWhatsApp: (displayNo: number | string) => string;
   countryHint: string;
   emailStepGotReceipt: string;
   emailHint: string;
@@ -249,6 +250,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       "На какую почту прислать материалы? Instagram не умеет пересылать документы, поэтому файлы уходят письмом.\n\n" +
       "Пожалуйста, внимательно проверьте адрес перед отправкой: без лишних пробелов и ошибок. " +
       "Если адрес указан неверно, материал может не прийти.",
+    receiptReceivedWhatsApp: (displayNo) =>
+      `Чек получил, заказ №${displayNo} принят. После проверки оплаты материалы придут сюда, в WhatsApp.`,
     countryHint:
       "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\n" +
       "Чтобы выйти, напишите «отмена».",
@@ -372,6 +375,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     receiptReceivedNeedEmail: (displayNo) =>
       `Чекті алдым, №${displayNo} тапсырыс қабылданды.\n\n` +
       "Материалдарды қай поштаға жіберу керек? Instagram құжаттарды жібере алмайды, сондықтан файлдар поштамен жіберіледі.",
+    receiptReceivedWhatsApp: (displayNo) =>
+      `Чекті алдым, №${displayNo} тапсырыс қабылданды. Төлем тексерілгеннен кейін материалдар осы WhatsApp чатына жіберіледі.`,
     countryHint:
       "Елді түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Қазақстан».\n\n" +
       "Шығу үшін «/stop» деп жазыңыз.",
@@ -493,6 +498,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     receiptReceivedNeedEmail: (displayNo) =>
       `Got the receipt, order #${displayNo} is in.\n\n` +
       "Which email should we send the materials to? Instagram can't forward documents, so files go out by email.",
+    receiptReceivedWhatsApp: (displayNo) =>
+      `Got the receipt, order #${displayNo} is in. After the payment is checked, the materials will be sent here in WhatsApp.`,
     countryHint:
       'Didn\'t catch the country. Reply with the number from the list or the name — for example "1" or "Kazakhstan".\n\n' +
       'To exit, send "/stop".',
@@ -617,6 +624,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     receiptReceivedNeedEmail: (displayNo) =>
       `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi.\n\n` +
       "Materiallarni qaysi pochtaga yuborish kerak? Instagram hujjatlarni yuborolmaydi, shuning uchun fayllar pochta orqali yuboriladi.",
+    receiptReceivedWhatsApp: (displayNo) =>
+      `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. To‘lov tekshirilgach, materiallar shu WhatsApp chatiga yuboriladi.`,
     countryHint:
       "Davlatni tushunmadim. Ro‘yxatdagi raqam yoki nomi bilan javob bering — masalan, «1» yoki «Qozog‘iston».\n\n" +
       "Chiqish uchun «/stop» deb yozing.",
@@ -2557,6 +2566,8 @@ async function handlePurchaseFlow(params: {
     const s = await db();
     const displayNo = order.order_no || order.id;
     const email = user.email;
+    const platform = platformOf(user);
+    const needsEmail = platform === "instagram";
 
     // Техническая блокировка нужна только до создания заказа. Переводим
     // сценарий в нормальный пользовательский шаг до OCR и уведомлений: они
@@ -2581,7 +2592,7 @@ async function handlePurchaseFlow(params: {
     // Поэтому подтверждаем его и спрашиваем e-mail до загрузки вложения:
     // CDN Instagram или Storage могут временно подвиснуть, но не должны
     // заставлять покупателя ждать в тишине.
-    const askedForEmailImmediately = !email;
+    const askedForEmailImmediately = needsEmail && !email;
     if (askedForEmailImmediately) {
       await say(copy.receiptReceivedNeedEmail(displayNo));
     }
@@ -2626,16 +2637,16 @@ async function handlePurchaseFlow(params: {
         })
       : {
           autoDeliver: false,
-          note: "вложение не удалось быстро сохранить; проверить в Instagram Direct вручную",
+          note: `вложение не удалось быстро сохранить; проверить вручную в ${PLATFORM_LABEL[platform]}`,
         };
     await s
       .from("orders")
-      .update({ admin_note: `Instagram, чек: ${verdict.note}`.slice(0, 500) })
+      .update({ admin_note: `${PLATFORM_LABEL[platform]}, чек: ${verdict.note}`.slice(0, 500) })
       .eq("id", order.id);
 
-    // Почта известна и чек сошёлся — отдаём материалы сразу, ничего не спрашивая.
-    if (email && verdict.autoDeliver) {
-      await s.from("orders").update({ customer_email: email }).eq("id", order.id);
+    // Instagram требует почту, WhatsApp выдаёт файлы прямо в чат.
+    if (verdict.autoDeliver && (!needsEmail || email)) {
+      if (email) await s.from("orders").update({ customer_email: email }).eq("id", order.id);
       await flow.clearDirectFlow(user.user_key);
       try {
         const { deliverOrder } = await import("./orders.server");
@@ -2649,12 +2660,22 @@ async function handlePurchaseFlow(params: {
       } catch (e) {
         console.error("[zernio-bot] автовыдача не удалась, отдаём продавцу", e);
         await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
-        await say(copy.receiptReceivedKnownEmail(displayNo, email));
+        await say(
+          needsEmail && email
+            ? copy.receiptReceivedKnownEmail(displayNo, email)
+            : copy.receiptReceivedWhatsApp(displayNo),
+        );
         return true;
       }
     }
 
     await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
+
+    if (!needsEmail) {
+      await flow.clearDirectFlow(user.user_key);
+      await say(copy.receiptReceivedWhatsApp(displayNo));
+      return true;
+    }
 
     if (email) {
       await s.from("orders").update({ customer_email: email }).eq("id", order.id);

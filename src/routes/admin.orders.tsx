@@ -20,6 +20,8 @@ import { Input } from "@/components-ui/input";
 import { exportOrdersCsvFn, exportCustomersCsvFn } from "@/lib/export.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
+import { useModules } from "@/lib/modules/use-modules";
+import { orderPlatform, type OrderPlatform } from "@/lib/order-platform";
 
 // Тип чека определяется по расширению сохранённого пути.
 // Фото показываем через <img>, PDF — через <iframe>, прочее — ссылкой на скачивание.
@@ -52,6 +54,7 @@ const copy: Record<
     platformNoOrders: string;
     noOrdersYet: string;
     instagramTag: string;
+    whatsappTag: string;
     noEmail: string;
     itemLine: (name: string, qty: number, price: number, currency: string) => string;
     viewScreenshot: string;
@@ -105,6 +108,7 @@ const copy: Record<
     platformNoOrders: "В этой площадке заказов пока нет.",
     noOrdersYet: "Пока нет заказов.",
     instagramTag: "Instagram",
+    whatsappTag: "WhatsApp",
     noEmail: "почта не указана — материалы отправить некуда",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 Скриншот оплаты",
@@ -163,6 +167,7 @@ const copy: Record<
     platformNoOrders: "Бұл алаңда әзірге тапсырыс жоқ.",
     noOrdersYet: "Әзірге тапсырыстар жоқ.",
     instagramTag: "Instagram",
+    whatsappTag: "WhatsApp",
     noEmail: "пошта көрсетілмеген — материалдарды жіберетін жер жоқ",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 Төлем скриншоты",
@@ -222,6 +227,7 @@ const copy: Record<
     platformNoOrders: "No orders on this platform yet.",
     noOrdersYet: "No orders yet.",
     instagramTag: "Instagram",
+    whatsappTag: "WhatsApp",
     noEmail: "no email provided — nowhere to send the materials",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 Payment screenshot",
@@ -280,6 +286,7 @@ const copy: Record<
     platformNoOrders: "Bu platformada hali buyurtmalar yo‘q.",
     noOrdersYet: "Hozircha buyurtmalar yo‘q.",
     instagramTag: "Instagram",
+    whatsappTag: "WhatsApp",
     noEmail: "email ko‘rsatilmagan — materiallarni yuborishga joy yo‘q",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 To‘lov skrinshoti",
@@ -330,6 +337,7 @@ const copy: Record<
 
 function OrdersPage() {
   const { locale } = useAdminLocale();
+  const modules = useModules();
   const tr = copy[locale];
   const qc = useQueryClient();
   const orders = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
@@ -337,23 +345,29 @@ function OrdersPage() {
   const [busy, setBusy] = useState<number | null>(null);
 
   /**
-   * Разделение по площадке. Заказы из Telegram и из Instagram обрабатываются
-   * по-разному — первые выдаются файлами в переписку, вторые письмом на почту,
-   * — и продавцу удобнее разбирать их отдельными пачками.
+   * Разделение по площадке. Telegram и WhatsApp выдают файлы в переписку,
+   * Instagram — письмом на почту; продавцу удобнее разбирать каналы отдельно.
    *
    * Пустая площадка у старых заказов означает Telegram: колонка появилась
    * позже, чем начались продажи.
    */
-  const [platform, setPlatform] = useState<"all" | "telegram" | "instagram">("all");
-  const platformOf = (order: (typeof allOrders)[number]) =>
-    order.platform === "instagram" ? "instagram" : "telegram";
+  const [platform, setPlatform] = useState<"all" | OrderPlatform>("all");
+  const platformOf = (order: (typeof allOrders)[number]) => orderPlatform(order.platform);
   const list = platform === "all" ? allOrders : allOrders.filter((o) => platformOf(o) === platform);
 
   const counts = {
     all: allOrders.length,
     telegram: allOrders.filter((o) => platformOf(o) === "telegram").length,
     instagram: allOrders.filter((o) => platformOf(o) === "instagram").length,
+    whatsapp: allOrders.filter((o) => platformOf(o) === "whatsapp").length,
   };
+
+  const platformTabs: ReadonlyArray<readonly ["all" | OrderPlatform, string]> = [
+    ["all", tr.platformAll],
+    ["telegram", "Telegram"],
+    ...(modules.dm_shop || counts.instagram > 0 ? ([["instagram", "Instagram"]] as const) : []),
+    ...(modules.wa_shop || counts.whatsapp > 0 ? ([["whatsapp", "WhatsApp"]] as const) : []),
+  ];
 
   async function onConfirm(id: number, displayNo: number) {
     if (!(await confirmToast(tr.confirmOrderMsg(displayNo)))) return;
@@ -477,13 +491,7 @@ function OrdersPage() {
       <ExportBar />
 
       <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["all", tr.platformAll],
-            ["telegram", "Telegram"],
-            ["instagram", "Instagram"],
-          ] as const
-        ).map(([key, label]) => (
+        {platformTabs.map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -512,11 +520,15 @@ function OrdersPage() {
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">#{o.order_no ?? o.id}</span>
                   <span className={`text-xs px-2 py-0.5 rounded ${st.cls}`}>{st.label}</span>
-                  {/* Площадку показываем только у Instagram: заказов из Telegram
-                      подавляющее большинство, и метка у каждого была бы шумом. */}
+                  {/* Telegram — основной канал, поэтому метки нужны только внешним площадкам. */}
                   {platformOf(o) === "instagram" && (
                     <span className="text-xs px-2 py-0.5 rounded bg-pink-100 text-pink-900">
                       {tr.instagramTag}
+                    </span>
+                  )}
+                  {platformOf(o) === "whatsapp" && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-green-100 text-green-900">
+                      {tr.whatsappTag}
                     </span>
                   )}
                   <span className="text-xs text-muted-foreground">
@@ -541,12 +553,14 @@ function OrdersPage() {
                         href={
                           platformOf(o) === "instagram"
                             ? `https://instagram.com/${o.username}`
-                            : `https://t.me/${o.username}`
+                            : platformOf(o) === "whatsapp"
+                              ? `https://wa.me/${o.username.replace(/\D/g, "")}`
+                              : `https://t.me/${o.username}`
                         }
                         target="_blank"
                         rel="noreferrer"
                       >
-                        @{o.username}
+                        {platformOf(o) === "whatsapp" ? o.username : `@${o.username}`}
                       </a>
                       )
                     </>
