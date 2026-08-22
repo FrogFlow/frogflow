@@ -2498,22 +2498,6 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    /**
-     * Порядок важен: сначала чек, потом заказ.
-     *
-     * Раньше заказ создавался первым, продавцу тут же уходило уведомление, и
-     * только потом сохранялся чек — при сбое загрузки в базе оставался заказ
-     * без вложения, а продавец уже шёл его проверять.
-     */
-    const proofPath = await flow.storeReceipt(attachmentUrl, user.user_key);
-    if (!proofPath) {
-      // Возвращаем шаг как был — иначе повторная попытка ткнётся в
-      // «processing_proof» и решит, что чек уже кто-то обрабатывает.
-      await flow.releaseAwaitingProof(user.user_key);
-      await say(copy.receiptSaveFailed);
-      return true;
-    }
-
     let order: Awaited<ReturnType<typeof flow.createOrderFromCart>>;
     try {
       order = await flow.createOrderFromCart({ user, countryCode: claim.country_code! });
@@ -2533,13 +2517,6 @@ async function handlePurchaseFlow(params: {
     }
 
     const s = await db();
-    const { data: created } = await s
-      .from("orders")
-      .update({ payment_proof_path: proofPath.path })
-      .eq("id", order.id)
-      .select("total, currency")
-      .single();
-
     const displayNo = order.order_no || order.id;
     const email = user.email;
 
@@ -2562,6 +2539,33 @@ async function handlePurchaseFlow(params: {
       console.error("[zernio-bot] failed to clear direct cart after order creation", error);
     }
 
+    // Для ручной проверки критично не распознавание картинки, а сам заказ.
+    // Поэтому подтверждаем его и спрашиваем e-mail до загрузки вложения:
+    // CDN Instagram или Storage могут временно подвиснуть, но не должны
+    // заставлять покупателя ждать в тишине.
+    const askedForEmailImmediately = !email;
+    if (askedForEmailImmediately) {
+      await say(copy.receiptReceivedNeedEmail(displayNo));
+    }
+
+    // Файл всё равно пробуем сохранить к заказу, но лишь в пределах короткого
+    // окна. Если CDN/Storage недоступны, фото остаётся в Direct, а заказ уже
+    // создан и ждёт ручной проверки в админке.
+    const proofPath = await Promise.race([
+      flow.storeReceipt(attachmentUrl, user.user_key),
+      new Promise<null>((resolve) => setTimeout(resolve, 5_000)),
+    ]);
+    let created: { total: number | null; currency: string | null } | null = null;
+    if (proofPath) {
+      const { data } = await s
+        .from("orders")
+        .update({ payment_proof_path: proofPath.path })
+        .eq("id", order.id)
+        .select("total, currency")
+        .single();
+      created = data;
+    }
+
     /**
      * Распознаём чек сразу, пока байты под рукой.
      *
@@ -2572,12 +2576,17 @@ async function handlePurchaseFlow(params: {
      * сторону единственно верная: выдать по чужому чеку хуже, чем задержать
      * выдачу на пару часов.
      */
-    const verdict = await flow.verifyDirectReceipt({
-      bytes: proofPath.bytes,
-      mime: proofPath.mime,
-      expectedAmount: Number(created?.total ?? 0),
-      currency: String(created?.currency ?? "KZT"),
-    });
+    const verdict = proofPath
+      ? await flow.verifyDirectReceipt({
+          bytes: proofPath.bytes,
+          mime: proofPath.mime,
+          expectedAmount: Number(created?.total ?? 0),
+          currency: String(created?.currency ?? "KZT"),
+        })
+      : {
+          autoDeliver: false,
+          note: "вложение не удалось быстро сохранить; проверить в Instagram Direct вручную",
+        };
     await s
       .from("orders")
       .update({ admin_note: `Instagram, чек: ${verdict.note}`.slice(0, 500) })
@@ -2612,7 +2621,7 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    await say(copy.receiptReceivedNeedEmail(displayNo));
+    if (!askedForEmailImmediately) await say(copy.receiptReceivedNeedEmail(displayNo));
     return true;
   }
 
