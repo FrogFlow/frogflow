@@ -1098,7 +1098,12 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     platform,
   );
 
-  const plainText = text.trim().toLowerCase();
+  // A CMD button in a Zernio automation carries its command in the postback
+  // payload, while `message.text` contains the visible label (for example,
+  // «старт»). Treat a `/start` payload exactly like a manually typed command.
+  const isStartPostback = postbackPayload?.trim().toLowerCase() === "/start";
+  const effectiveText = isStartPostback ? "/start" : text;
+  const plainText = effectiveText.trim().toLowerCase();
   const isStartCommand = plainText === "/start";
   const startFlow = await import("./direct-purchase.server");
   const directState = startFlow.readDirectState(user.state);
@@ -1139,7 +1144,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     return;
   }
 
-  const lower = text.toLowerCase();
+  const lower = effectiveText.toLowerCase();
 
   /**
    * Пошаговая покупка. Стоит раньше всех прочих разборов: пока диалог на шаге
@@ -1207,7 +1212,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * сценарий ниже.
    */
   const isStepAnswer = postbackPayload?.startsWith(STEP_PREFIX) ?? false;
-  if (postbackPayload !== null && !isStepAnswer) {
+  if (postbackPayload !== null && !isStepAnswer && !isStartPostback) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
 
     // «В корзину» — та же торговля, что и сама корзина, и гаснет вместе с ней.
@@ -1267,7 +1272,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * STEP:. Подставляем его как реплику покупателя, чтобы шаг разобрал ответ
    * тем же кодом, что и напечатанный вручную.
    */
-  const flowText = isStepAnswer ? postbackPayload!.slice(STEP_PREFIX.length) : text;
+  const flowText = isStepAnswer ? postbackPayload!.slice(STEP_PREFIX.length) : effectiveText;
 
   const handledByFlow = await handlePurchaseFlow({
     conversationId,
@@ -1290,7 +1295,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    */
   const plain = lower.trim().replace(/[.!?]+$/, "");
   const { matchDirectCommand } = await import("./direct-flow");
-  const command = matchDirectCommand(text);
+  const command = matchDirectCommand(effectiveText);
 
   /**
    * Корзина, оформление и «мои заказы» отвечают в любом режиме.
