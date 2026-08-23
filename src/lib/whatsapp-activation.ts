@@ -1,6 +1,10 @@
 export const WHATSAPP_START_PROMPT =
   "Здравствуйте! Чтобы активировать бота и открыть каталог, напишите /start";
 
+export function resolveWhatsAppStartPrompt(value?: string | null): string {
+  return value?.trim() || WHATSAPP_START_PROMPT;
+}
+
 export type WhatsAppActivationAction = "continue" | "start" | "prompt" | "wait";
 
 /**

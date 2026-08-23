@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { WHATSAPP_START_PROMPT, whatsappActivationAction } from "../src/lib/whatsapp-activation";
+import {
+  WHATSAPP_START_PROMPT,
+  resolveWhatsAppStartPrompt,
+  whatsappActivationAction,
+} from "../src/lib/whatsapp-activation";
 
 describe("WhatsApp activation gate", () => {
   it.each(["здравствуйте", "https://example.com/product", "photo"])(
@@ -59,5 +63,12 @@ describe("WhatsApp activation gate", () => {
 
   it("uses the requested activation text", () => {
     expect(WHATSAPP_START_PROMPT).toContain("/start");
+  });
+
+  it("uses the configured activation text and falls back for a blank value", () => {
+    expect(resolveWhatsAppStartPrompt("  Напишите /start, чтобы начать  ")).toBe(
+      "Напишите /start, чтобы начать",
+    );
+    expect(resolveWhatsAppStartPrompt("   ")).toBe(WHATSAPP_START_PROMPT);
   });
 });

@@ -63,6 +63,7 @@ export const Route = createFileRoute("/admin/whatsapp")({
 type SettingsPatch = {
   enabled?: boolean;
   script?: string;
+  startPrompt?: string;
   scope?: "purchases" | "all";
   triggers?: string;
   features?: { catalog: boolean; search: boolean; cart: boolean; checkout: boolean };
@@ -260,6 +261,7 @@ function BotSettingsTab({
   onSave: (patch: SettingsPatch) => Promise<void>;
 }) {
   const [script, setScript] = useState<string | null>(null);
+  const [startPrompt, setStartPrompt] = useState<string | null>(null);
   const [triggers, setTriggers] = useState<string | null>(null);
 
   if (!settings) return <p className="text-sm text-muted-foreground">Загружаю настройки…</p>;
@@ -283,6 +285,26 @@ function BotSettingsTab({
             />
             Автоответчик включён
           </label>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Первое сообщение новому пользователю</Label>
+            <Textarea
+              rows={3}
+              value={startPrompt ?? settings.startPrompt}
+              onChange={(e) => setStartPrompt(e.target.value)}
+              onBlur={() => {
+                if (startPrompt !== null && startPrompt !== settings.startPrompt) {
+                  onSave({ startPrompt });
+                }
+              }}
+              placeholder="Здравствуйте! Чтобы активировать бота и открыть каталог, напишите /start"
+            />
+            <p className="text-xs text-muted-foreground">
+              Отправляется один раз в ответ на первое сообщение, ссылку, фото или файл. До команды
+              /start бот больше не отвечает. Изменение действует для новых пользователей и тех, кому
+              подсказка ещё не отправлялась.
+            </p>
+          </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">На что отвечать</Label>

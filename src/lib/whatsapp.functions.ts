@@ -112,10 +112,12 @@ async function writeSetting(suffix: string, value: string): Promise<void> {
 export const getWhatsAppBotSettingsFn = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdminWithModule();
   const { DEFAULT_TRIGGER_WORDS } = await import("./zernio-bot.server");
+  const { resolveWhatsAppStartPrompt } = await import("./whatsapp-activation");
 
-  const [enabled, script, scope, triggers, features, accountId] = await Promise.all([
+  const [enabled, script, startPrompt, scope, triggers, features, accountId] = await Promise.all([
     readSetting("enabled"),
     readSetting("script"),
+    readSetting("start_prompt"),
     readSetting("scope"),
     readSetting("triggers"),
     readSetting("features"),
@@ -134,6 +136,7 @@ export const getWhatsAppBotSettingsFn = createServerFn({ method: "GET" }).handle
     // который ничего не настраивал, бот должен работать.
     enabled: enabled !== "false",
     script,
+    startPrompt: resolveWhatsAppStartPrompt(startPrompt),
     scope: scope === "all" ? ("all" as const) : ("purchases" as const),
     triggers: triggers || DEFAULT_TRIGGER_WORDS.join(", "),
     features: parsedFeatures,
@@ -147,6 +150,12 @@ export const saveWhatsAppBotSettingsFn = createServerFn({ method: "POST" })
       .object({
         enabled: z.boolean().optional(),
         script: z.string().trim().max(1500).optional(),
+        startPrompt: z
+          .string()
+          .trim()
+          .min(1, "Первое сообщение не может быть пустым.")
+          .max(1000)
+          .optional(),
         scope: z.enum(["purchases", "all"]).optional(),
         triggers: z.string().trim().max(300).optional(),
         features: z
@@ -166,6 +175,7 @@ export const saveWhatsAppBotSettingsFn = createServerFn({ method: "POST" })
 
     if (data.enabled !== undefined) await writeSetting("enabled", data.enabled ? "true" : "false");
     if (data.script !== undefined) await writeSetting("script", data.script);
+    if (data.startPrompt !== undefined) await writeSetting("start_prompt", data.startPrompt);
     if (data.scope !== undefined) await writeSetting("scope", data.scope);
     if (data.features !== undefined) await writeSetting("features", JSON.stringify(data.features));
     if (data.accountId !== undefined) await writeSetting("account_id", data.accountId);

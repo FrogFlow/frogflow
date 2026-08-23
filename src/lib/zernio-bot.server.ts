@@ -1023,7 +1023,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * разделение (`instagram_direct_bot_*` / `whatsapp_bot_*`).
    */
   const settingsPrefix = SETTINGS_PREFIX[platform];
-  const settingKeys = ["enabled", "features", "scope", "script", "triggers"].map(
+  const settingKeys = ["enabled", "features", "scope", "script", "start_prompt", "triggers"].map(
     (suffix) => `${settingsPrefix}${suffix}`,
   );
 
@@ -1112,7 +1112,8 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
   const startFlow = await import("./direct-purchase.server");
   const directState = startFlow.readDirectState(user.state);
 
-  const { WHATSAPP_START_PROMPT, whatsappActivationAction } = await import("./whatsapp-activation");
+  const { resolveWhatsAppStartPrompt, whatsappActivationAction } =
+    await import("./whatsapp-activation");
   const hasIncomingContent = Boolean(
     text.trim() ||
     postbackPayload ||
@@ -1139,7 +1140,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
         user,
         conversationId,
         accountId,
-        WHATSAPP_START_PROMPT,
+        resolveWhatsAppStartPrompt(setting("start_prompt")),
         undefined,
         true,
       );
