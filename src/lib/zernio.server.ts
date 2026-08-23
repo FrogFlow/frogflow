@@ -33,8 +33,30 @@ function getZernioKey(): string {
   return key;
 }
 
+const DEFAULT_ZERNIO_BASE_URL = "https://zernio.com/api/v1";
+
+/**
+ * Keeps client deployments from accidentally calling Zernio's website instead
+ * of its JSON API. This is easy to misconfigure in Vercel as
+ * `https://zernio.com`: the request still succeeds with HTTP 200, but the body
+ * is an HTML page and `response.json()` then fails with `Unexpected token '<'`.
+ */
+export function normalizeZernioBaseUrl(value?: string | null): string {
+  const configured = value?.trim() || DEFAULT_ZERNIO_BASE_URL;
+
+  try {
+    const url = new URL(configured);
+    if (url.hostname === "zernio.com" && (url.pathname === "" || url.pathname === "/")) {
+      url.pathname = "/api/v1";
+    }
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return configured.replace(/\/$/, "");
+  }
+}
+
 function getZernioBaseUrl(): string {
-  return (process.env.ZERNIO_BASE_URL || "https://zernio.com/api/v1").replace(/\/$/, "");
+  return normalizeZernioBaseUrl(process.env.ZERNIO_BASE_URL);
 }
 
 export type ZernioProfile = {
@@ -295,13 +317,27 @@ async function zernioRequest<T>(
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
+  const responseText = await response.text();
+
   if (!response.ok) {
-    const text = await response.text();
-    console.error(`[zernio] API request error ${response.status} on ${endpoint}:`, text);
-    throw new Error(`Zernio API Error ${response.status}: ${text}`);
+    const detail = /^\s*</.test(responseText)
+      ? "Zernio returned an HTML page instead of an API response"
+      : responseText.slice(0, 1_000);
+    console.error(`[zernio] API request error ${response.status} on ${endpoint}:`, detail);
+    throw new Error(`Zernio API Error ${response.status}: ${detail}`);
   }
 
-  return (await response.json()) as T;
+  try {
+    return JSON.parse(responseText) as T;
+  } catch {
+    const contentType = response.headers.get("content-type") || "unknown content type";
+    console.error(
+      `[zernio] non-JSON response on ${endpoint}: status=${response.status}, content-type=${contentType}`,
+    );
+    throw new Error(
+      `Zernio вернул не JSON (${contentType}). Проверьте ZERNIO_BASE_URL: ожидается ${DEFAULT_ZERNIO_BASE_URL}`,
+    );
+  }
 }
 
 /**
