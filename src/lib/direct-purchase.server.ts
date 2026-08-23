@@ -196,6 +196,32 @@ export async function clearDirectFlow(userKey: string): Promise<void> {
 }
 
 /**
+ * Starts the store dialogue again after an explicit /start command.
+ *
+ * A normal flow reset deliberately preserves `complained_at`, because after a
+ * hand-off the seller needs a quiet conversation. An explicit /start is
+ * different: the customer is asking the bot to take over again, so both the
+ * unfinished checkout and the temporary hand-off guard must be removed.
+ */
+export async function restartDirectFlow(userKey: string): Promise<void> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("user_key", userKey)
+    .maybeSingle();
+
+  const restarted = { ...readDirectState(existing?.state) };
+  for (const key of FLOW_KEYS) delete restarted[key];
+  delete restarted.complained_at;
+
+  await s
+    .from("bot_users")
+    .update({ state: restarted as unknown as Json, updated_at: new Date().toISOString() })
+    .eq("user_key", userKey);
+}
+
+/**
  * Атомарно забирает шаг «ждём чек» в обработку — чтобы два вложения от
  * одного покупателя, пришедшие почти одновременно, не создали два заказа из
  * одной корзины.

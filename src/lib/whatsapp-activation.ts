@@ -17,10 +17,14 @@ export function whatsappActivationAction(params: {
   isStartCommand: boolean;
   hasIncomingContent: boolean;
 }): WhatsAppActivationAction {
-  if (params.platform !== "whatsapp" || params.state.locale || params.state.mode) {
-    return "continue";
-  }
+  if (params.platform !== "whatsapp") return "continue";
+
+  // /start is an explicit request to (re)activate the bot. It must win over
+  // every remembered conversation state, including an active checkout or a
+  // recent hand-off to the seller. Otherwise an already known customer sends
+  // /start and silently falls through to the old conversation guards.
   if (params.isStartCommand) return "start";
+  if (params.state.locale || params.state.mode) return "continue";
   if (!params.hasIncomingContent || params.state.start_prompted_at) return "wait";
   return "prompt";
 }

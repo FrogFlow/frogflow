@@ -1153,6 +1153,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
   });
 
   if (activationAction === "start") {
+    await startFlow.restartDirectFlow(user.user_key);
     await sendLanguagePicker(conversationId, accountId, user);
     return;
   }

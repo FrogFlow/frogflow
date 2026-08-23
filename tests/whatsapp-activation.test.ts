@@ -42,6 +42,25 @@ describe("WhatsApp activation gate", () => {
     ).toBe("start");
   });
 
+  it("restarts an activated or in-progress WhatsApp flow on /start", () => {
+    expect(
+      whatsappActivationAction({
+        platform: "whatsapp",
+        state: { locale: "ru" },
+        isStartCommand: true,
+        hasIncomingContent: true,
+      }),
+    ).toBe("start");
+    expect(
+      whatsappActivationAction({
+        platform: "whatsapp",
+        state: { locale: "ru", mode: "awaiting_proof" },
+        isStartCommand: true,
+        hasIncomingContent: true,
+      }),
+    ).toBe("start");
+  });
+
   it("does not intercept Instagram or an activated WhatsApp flow", () => {
     expect(
       whatsappActivationAction({
