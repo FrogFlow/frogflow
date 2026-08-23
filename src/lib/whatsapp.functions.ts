@@ -117,6 +117,7 @@ export const getWhatsAppBotSettingsFn = createServerFn({ method: "GET" }).handle
   const [
     enabled,
     script,
+    startPromptEnabled,
     startPrompt,
     ignoreExcludedContacts,
     excludedPhones,
@@ -127,6 +128,7 @@ export const getWhatsAppBotSettingsFn = createServerFn({ method: "GET" }).handle
   ] = await Promise.all([
     readSetting("enabled"),
     readSetting("script"),
+    readSetting("start_prompt_enabled"),
     readSetting("start_prompt"),
     readSetting("ignore_excluded_contacts"),
     readSetting("excluded_phones"),
@@ -148,6 +150,7 @@ export const getWhatsAppBotSettingsFn = createServerFn({ method: "GET" }).handle
     // который ничего не настраивал, бот должен работать.
     enabled: enabled !== "false",
     script,
+    startPromptEnabled: startPromptEnabled !== "false",
     startPrompt: resolveWhatsAppStartPrompt(startPrompt),
     ignoreExcludedContacts: ignoreExcludedContacts === "true",
     excludedPhones,
@@ -164,6 +167,7 @@ export const saveWhatsAppBotSettingsFn = createServerFn({ method: "POST" })
       .object({
         enabled: z.boolean().optional(),
         script: z.string().trim().max(1500).optional(),
+        startPromptEnabled: z.boolean().optional(),
         startPrompt: z
           .string()
           .trim()
@@ -191,6 +195,9 @@ export const saveWhatsAppBotSettingsFn = createServerFn({ method: "POST" })
 
     if (data.enabled !== undefined) await writeSetting("enabled", data.enabled ? "true" : "false");
     if (data.script !== undefined) await writeSetting("script", data.script);
+    if (data.startPromptEnabled !== undefined) {
+      await writeSetting("start_prompt_enabled", data.startPromptEnabled ? "true" : "false");
+    }
     if (data.startPrompt !== undefined) await writeSetting("start_prompt", data.startPrompt);
     if (data.ignoreExcludedContacts !== undefined) {
       await writeSetting(

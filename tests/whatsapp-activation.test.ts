@@ -15,6 +15,7 @@ describe("WhatsApp activation gate", () => {
           state: {},
           isStartCommand: false,
           hasIncomingContent: true,
+          startPromptEnabled: true,
         }),
       ).toBe("prompt");
     },
@@ -27,6 +28,7 @@ describe("WhatsApp activation gate", () => {
         state: { start_prompted_at: "2026-08-23T00:00:00.000Z" },
         isStartCommand: false,
         hasIncomingContent: true,
+        startPromptEnabled: true,
       }),
     ).toBe("wait");
   });
@@ -38,6 +40,7 @@ describe("WhatsApp activation gate", () => {
         state: { start_prompted_at: "2026-08-23T00:00:00.000Z" },
         isStartCommand: true,
         hasIncomingContent: true,
+        startPromptEnabled: true,
       }),
     ).toBe("start");
   });
@@ -49,6 +52,7 @@ describe("WhatsApp activation gate", () => {
         state: { locale: "ru" },
         isStartCommand: true,
         hasIncomingContent: true,
+        startPromptEnabled: true,
       }),
     ).toBe("start");
     expect(
@@ -57,6 +61,7 @@ describe("WhatsApp activation gate", () => {
         state: { locale: "ru", mode: "awaiting_proof" },
         isStartCommand: true,
         hasIncomingContent: true,
+        startPromptEnabled: true,
       }),
     ).toBe("start");
   });
@@ -68,6 +73,7 @@ describe("WhatsApp activation gate", () => {
         state: {},
         isStartCommand: false,
         hasIncomingContent: true,
+        startPromptEnabled: true,
       }),
     ).toBe("continue");
     expect(
@@ -76,8 +82,30 @@ describe("WhatsApp activation gate", () => {
         state: { locale: "ru" },
         isStartCommand: false,
         hasIncomingContent: true,
+        startPromptEnabled: true,
       }),
     ).toBe("continue");
+  });
+
+  it("can disable only the first auto-reply while keeping /start active", () => {
+    expect(
+      whatsappActivationAction({
+        platform: "whatsapp",
+        state: {},
+        isStartCommand: false,
+        hasIncomingContent: true,
+        startPromptEnabled: false,
+      }),
+    ).toBe("wait");
+    expect(
+      whatsappActivationAction({
+        platform: "whatsapp",
+        state: {},
+        isStartCommand: true,
+        hasIncomingContent: true,
+        startPromptEnabled: false,
+      }),
+    ).toBe("start");
   });
 
   it("uses the requested activation text", () => {

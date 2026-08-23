@@ -16,6 +16,7 @@ export function whatsappActivationAction(params: {
   state: { locale?: unknown; mode?: unknown; start_prompted_at?: unknown };
   isStartCommand: boolean;
   hasIncomingContent: boolean;
+  startPromptEnabled: boolean;
 }): WhatsAppActivationAction {
   if (params.platform !== "whatsapp") return "continue";
 
@@ -25,6 +26,8 @@ export function whatsappActivationAction(params: {
   // /start and silently falls through to the old conversation guards.
   if (params.isStartCommand) return "start";
   if (params.state.locale || params.state.mode) return "continue";
-  if (!params.hasIncomingContent || params.state.start_prompted_at) return "wait";
+  if (!params.startPromptEnabled || !params.hasIncomingContent || params.state.start_prompted_at) {
+    return "wait";
+  }
   return "prompt";
 }

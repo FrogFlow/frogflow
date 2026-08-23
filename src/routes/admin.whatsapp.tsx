@@ -63,6 +63,7 @@ export const Route = createFileRoute("/admin/whatsapp")({
 type SettingsPatch = {
   enabled?: boolean;
   script?: string;
+  startPromptEnabled?: boolean;
   startPrompt?: string;
   ignoreExcludedContacts?: boolean;
   excludedPhones?: string;
@@ -286,13 +287,25 @@ function BotSettingsTab({
               checked={settings.enabled}
               onCheckedChange={(v) => onSave({ enabled: Boolean(v) })}
             />
-            Автоответчик включён
+            WhatsApp-бот включён
           </label>
 
-          <div className="space-y-1.5">
+          <div className="space-y-2 rounded-md border p-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={settings.startPromptEnabled}
+                onCheckedChange={(v) => onSave({ startPromptEnabled: Boolean(v) })}
+              />
+              Первый автоответ включён
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Если выключить, бот не будет сам отвечать на первое сообщение, но продолжит ждать
+              команду /start и после неё запустит магазин.
+            </p>
             <Label className="text-xs">Первое сообщение новому пользователю</Label>
             <Textarea
               rows={3}
+              disabled={!settings.startPromptEnabled}
               value={startPrompt ?? settings.startPrompt}
               onChange={(e) => setStartPrompt(e.target.value)}
               onBlur={() => {

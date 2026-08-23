@@ -1032,6 +1032,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     "scope",
     "script",
     "start_prompt",
+    "start_prompt_enabled",
     "triggers",
   ].map((suffix) => `${settingsPrefix}${suffix}`);
 
@@ -1150,6 +1151,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     state: directState,
     isStartCommand,
     hasIncomingContent,
+    startPromptEnabled: setting("start_prompt_enabled") !== "false",
   });
 
   if (activationAction === "start") {
