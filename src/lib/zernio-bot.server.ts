@@ -729,11 +729,6 @@ const SETTINGS_PREFIX: Record<ZernioPlatform, string> = {
  */
 const STEP_PREFIX = "STEP:";
 
-/** Сообщение без завершающей пунктуации — тем же правилом, что и `plain` ниже. */
-function stripTail(value: string): string {
-  return value.trim().replace(/[.!?]+$/, "");
-}
-
 export type WhatsAppListRow = { id: string; title: string; description?: string };
 
 /**
@@ -1117,6 +1112,43 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
   const startFlow = await import("./direct-purchase.server");
   const directState = startFlow.readDirectState(user.state);
 
+  const { WHATSAPP_START_PROMPT, whatsappActivationAction } = await import("./whatsapp-activation");
+  const hasIncomingContent = Boolean(
+    text.trim() ||
+    postbackPayload ||
+    nativeOrder ||
+    payload.message?.attachments?.some(
+      (attachment) =>
+        attachment.type !== "template" && Boolean(attachment.url || attachment.payload),
+    ),
+  );
+  const activationAction = whatsappActivationAction({
+    platform,
+    state: directState,
+    isStartCommand,
+    hasIncomingContent,
+  });
+
+  if (activationAction === "start") {
+    await sendLanguagePicker(conversationId, accountId, user);
+    return;
+  }
+  if (activationAction === "prompt") {
+    if (await startFlow.claimWhatsAppStartPrompt(user.user_key)) {
+      const sent = await reply(
+        user,
+        conversationId,
+        accountId,
+        WHATSAPP_START_PROMPT,
+        undefined,
+        true,
+      );
+      if (!sent) await startFlow.releaseWhatsAppStartPrompt(user.user_key);
+    }
+    return;
+  }
+  if (activationAction === "wait") return;
+
   const triggerWords = parseTriggerWords(setting("triggers"));
 
   /**
@@ -1126,15 +1158,11 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * start before Direct store activation»): бот не должен вклиниваться в
    * обычную переписку продавца. Менять это здесь нечем и незачем.
    *
-   * В WhatsApp `/start` не напишет никто: команд там нет как явления, а
-   * покупатель приходит на рабочий номер продавца и пишет обычными словами.
-   * Оставить только `/start` значило бы, что магазин в WhatsApp не открывается
-   * вообще. Поэтому будят и слова-триггеры — тот самый список, который продавец
-   * завёл сам, чтобы его боту звонили. Тихий режим при этом сохраняется:
-   * «здравствуйте» и «сколько стоит» бота по-прежнему не поднимают.
+   * WhatsApp до этого места доходит только после отдельного activation gate
+   * выше: первое произвольное сообщение получает одну подсказку, а `/start`
+   * сразу переводит диалог на выбор языка.
    */
-  const wakesNewCustomer =
-    isStartCommand || (platform === "whatsapp" && triggerWords.includes(stripTail(plainText)));
+  const wakesNewCustomer = isStartCommand;
 
   /**
    * Первое сообщение от нового отправителя — раньше чего бы то ни было ещё.

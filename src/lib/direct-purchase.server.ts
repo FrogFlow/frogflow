@@ -59,6 +59,8 @@ export type DirectState = {
    * `awaiting_locale`, и бот отвечает по-русски, как отвечал всегда.
    */
   locale?: Locale;
+  /** Одноразовая подсказка WhatsApp о команде /start уже отправлена. */
+  start_prompted_at?: string;
   /** Когда поздоровались — чтобы не делать это заново на каждую реплику. */
   greeted_at?: string;
   /** Когда в последний раз дёргали продавца — чтобы не звать его на каждое слово. */
@@ -125,6 +127,47 @@ export async function setDirectState(userKey: string, patch: DirectState): Promi
   await s
     .from("bot_users")
     .update({ state: merged as unknown as Json, updated_at: new Date().toISOString() })
+    .eq("user_key", userKey);
+}
+
+/**
+ * Атомарно забирает право отправить одноразовую подсказку WhatsApp о /start.
+ * CAS защищает от двух одинаковых ответов, если Zernio одновременно повторил webhook.
+ */
+export async function claimWhatsAppStartPrompt(userKey: string): Promise<boolean> {
+  const { claimBotUserState } = await import("./bot-user-claim.server");
+  const s = await db();
+  const claimed = await claimBotUserState<DirectState>({
+    db: s,
+    column: "user_key",
+    value: userKey,
+    isClaimable: (raw) => {
+      const state = readDirectState(raw);
+      return !state.locale && !state.mode && !state.start_prompted_at;
+    },
+    claim: (raw) => ({
+      ...readDirectState(raw),
+      start_prompted_at: new Date().toISOString(),
+    }),
+  });
+
+  return claimed !== null;
+}
+
+/** Разрешить повторную попытку, если Zernio не доставил подсказку после claim. */
+export async function releaseWhatsAppStartPrompt(userKey: string): Promise<void> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("user_key", userKey)
+    .maybeSingle();
+
+  const state = { ...readDirectState(existing?.state) };
+  delete state.start_prompted_at;
+  await s
+    .from("bot_users")
+    .update({ state: state as unknown as Json, updated_at: new Date().toISOString() })
     .eq("user_key", userKey);
 }
 
