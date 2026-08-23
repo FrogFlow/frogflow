@@ -996,6 +996,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     userKey,
     senderUsername,
     senderName,
+    senderPhone,
     text,
     metadata,
     postbackPayload,
@@ -1023,9 +1024,16 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * разделение (`instagram_direct_bot_*` / `whatsapp_bot_*`).
    */
   const settingsPrefix = SETTINGS_PREFIX[platform];
-  const settingKeys = ["enabled", "features", "scope", "script", "start_prompt", "triggers"].map(
-    (suffix) => `${settingsPrefix}${suffix}`,
-  );
+  const settingKeys = [
+    "enabled",
+    "excluded_phones",
+    "features",
+    "ignore_excluded_contacts",
+    "scope",
+    "script",
+    "start_prompt",
+    "triggers",
+  ].map((suffix) => `${settingsPrefix}${suffix}`);
 
   const { data: settingRows } = await s
     .from("app_settings")
@@ -1042,6 +1050,20 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
       `[zernio-bot] ${PLATFORM_LABEL[platform]} assistant is disabled; event recorded without a reply`,
     );
     return;
+  }
+
+  if (platform === "whatsapp" && setting("ignore_excluded_contacts") === "true") {
+    const { isExcludedWhatsAppSender } = await import("./whatsapp-contact-exclusions");
+    if (
+      isExcludedWhatsAppSender({
+        senderPhone,
+        senderId: payload.message?.sender?.id,
+        excludedPhones: setting("excluded_phones"),
+      })
+    ) {
+      logger.info("zernio.whatsapp_excluded_contact", { userKey });
+      return;
+    }
   }
 
   let features = { catalog: true, search: true, cart: true, checkout: true };

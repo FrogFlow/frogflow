@@ -196,6 +196,7 @@ describe("parseZernioMessage — нажатия", () => {
     const parsed = parseZernioMessage(waListReply);
     expect(parsed.platform).toBe("whatsapp");
     expect(parsed.userKey).toBe("wa_77056682751");
+    expect(parsed.senderPhone).toBe("77056682751");
     expect(parsed.postbackPayload).toBe("CAT:e37096e4-195b-4fde-9a41-effff658fe01:0");
   });
 

@@ -30,6 +30,8 @@ export type ParsedZernioMessage = {
   userKey: string;
   senderUsername: string;
   senderName: string;
+  /** WhatsApp phone number when available; empty for Instagram and username-only WhatsApp users. */
+  senderPhone: string;
   text: string;
   /** Профиль отправителя плюс идентификатор его карточки в CRM Zernio. */
   metadata: Record<string, Json>;
@@ -92,6 +94,8 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   const senderId = sender.id || sender.username || conversation.participantId || "unknown";
   const senderUsername = sender.username || conversation.participantUsername || "";
   const senderName = sender.name || conversation.participantName || senderUsername || FALLBACK_NAME;
+  const senderPhone =
+    sender.phoneNumber || (/^\+?\d{10,15}$/.test(sender.id ?? "") ? (sender.id ?? "") : "");
 
   const metadata: Record<string, Json> = { ...(sender.instagramProfile ?? {}) };
   if (sender.contactId) metadata.zernioContactId = String(sender.contactId);
@@ -130,6 +134,7 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
     userKey: `${USER_KEY_PREFIX[platform]}${senderId}`,
     senderUsername,
     senderName,
+    senderPhone,
     // text приходит null у сообщений с одним вложением — это не отсутствие поля.
     text: (message.text ?? "").trim(),
     metadata,

@@ -240,6 +240,8 @@ export type ZernioWebhookMessagePayload = {
       name?: string;
       username?: string;
       picture?: string;
+      /** WhatsApp only: E.164 phone number when Meta exposes it. */
+      phoneNumber?: string | null;
       instagramProfile?: {
         isFollower?: boolean | null;
         isFollowing?: boolean | null;

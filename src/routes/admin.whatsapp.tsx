@@ -64,6 +64,8 @@ type SettingsPatch = {
   enabled?: boolean;
   script?: string;
   startPrompt?: string;
+  ignoreExcludedContacts?: boolean;
+  excludedPhones?: string;
   scope?: "purchases" | "all";
   triggers?: string;
   features?: { catalog: boolean; search: boolean; cart: boolean; checkout: boolean };
@@ -262,6 +264,7 @@ function BotSettingsTab({
 }) {
   const [script, setScript] = useState<string | null>(null);
   const [startPrompt, setStartPrompt] = useState<string | null>(null);
+  const [excludedPhones, setExcludedPhones] = useState<string | null>(null);
   const [triggers, setTriggers] = useState<string | null>(null);
 
   if (!settings) return <p className="text-sm text-muted-foreground">Загружаю настройки…</p>;
@@ -303,6 +306,32 @@ function BotSettingsTab({
               Отправляется один раз в ответ на первое сообщение, ссылку, фото или файл. До команды
               /start бот больше не отвечает. Изменение действует для новых пользователей и тех, кому
               подсказка ещё не отправлялась.
+            </p>
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={settings.ignoreExcludedContacts}
+                onCheckedChange={(v) => onSave({ ignoreExcludedContacts: Boolean(v) })}
+              />
+              Не отвечать контактам из списка исключений
+            </label>
+            <Textarea
+              rows={5}
+              value={excludedPhones ?? settings.excludedPhones}
+              onChange={(e) => setExcludedPhones(e.target.value)}
+              onBlur={() => {
+                if (excludedPhones !== null && excludedPhones !== settings.excludedPhones) {
+                  onSave({ excludedPhones });
+                }
+              }}
+              placeholder={"+7 705 123 45 67\n+7 777 123 45 67"}
+            />
+            <p className="text-xs text-muted-foreground">
+              Один номер на строку. Эти номера бот полностью игнорирует, включая команду /start.
+              Контакты из телефона нужно добавить сюда вручную — WhatsApp не передаёт телефонную
+              книгу через API.
             </p>
           </div>
 

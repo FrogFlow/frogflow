@@ -114,10 +114,22 @@ export const getWhatsAppBotSettingsFn = createServerFn({ method: "GET" }).handle
   const { DEFAULT_TRIGGER_WORDS } = await import("./zernio-bot.server");
   const { resolveWhatsAppStartPrompt } = await import("./whatsapp-activation");
 
-  const [enabled, script, startPrompt, scope, triggers, features, accountId] = await Promise.all([
+  const [
+    enabled,
+    script,
+    startPrompt,
+    ignoreExcludedContacts,
+    excludedPhones,
+    scope,
+    triggers,
+    features,
+    accountId,
+  ] = await Promise.all([
     readSetting("enabled"),
     readSetting("script"),
     readSetting("start_prompt"),
+    readSetting("ignore_excluded_contacts"),
+    readSetting("excluded_phones"),
     readSetting("scope"),
     readSetting("triggers"),
     readSetting("features"),
@@ -137,6 +149,8 @@ export const getWhatsAppBotSettingsFn = createServerFn({ method: "GET" }).handle
     enabled: enabled !== "false",
     script,
     startPrompt: resolveWhatsAppStartPrompt(startPrompt),
+    ignoreExcludedContacts: ignoreExcludedContacts === "true",
+    excludedPhones,
     scope: scope === "all" ? ("all" as const) : ("purchases" as const),
     triggers: triggers || DEFAULT_TRIGGER_WORDS.join(", "),
     features: parsedFeatures,
@@ -156,6 +170,8 @@ export const saveWhatsAppBotSettingsFn = createServerFn({ method: "POST" })
           .min(1, "Первое сообщение не может быть пустым.")
           .max(1000)
           .optional(),
+        ignoreExcludedContacts: z.boolean().optional(),
+        excludedPhones: z.string().trim().max(20_000).optional(),
         scope: z.enum(["purchases", "all"]).optional(),
         triggers: z.string().trim().max(300).optional(),
         features: z
@@ -176,6 +192,19 @@ export const saveWhatsAppBotSettingsFn = createServerFn({ method: "POST" })
     if (data.enabled !== undefined) await writeSetting("enabled", data.enabled ? "true" : "false");
     if (data.script !== undefined) await writeSetting("script", data.script);
     if (data.startPrompt !== undefined) await writeSetting("start_prompt", data.startPrompt);
+    if (data.ignoreExcludedContacts !== undefined) {
+      await writeSetting(
+        "ignore_excluded_contacts",
+        data.ignoreExcludedContacts ? "true" : "false",
+      );
+    }
+    if (data.excludedPhones !== undefined) {
+      const { normalizeExcludedWhatsAppPhones } = await import("./whatsapp-contact-exclusions");
+      await writeSetting(
+        "excluded_phones",
+        normalizeExcludedWhatsAppPhones(data.excludedPhones).join("\n"),
+      );
+    }
     if (data.scope !== undefined) await writeSetting("scope", data.scope);
     if (data.features !== undefined) await writeSetting("features", JSON.stringify(data.features));
     if (data.accountId !== undefined) await writeSetting("account_id", data.accountId);
