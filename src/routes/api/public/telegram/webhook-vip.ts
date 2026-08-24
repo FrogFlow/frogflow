@@ -25,8 +25,13 @@ export const Route = createFileRoute("/api/public/telegram/webhook-vip")({
         //
         // Отвечаем 200, а не ошибкой: для Telegram ошибка — повод повторить
         // доставку, и очередь апдейтов росла бы, пока модуль выключен.
-        const { hasModule } = await import("@/lib/modules/modules.server");
+        const { hasModule, botStatus } = await import("@/lib/modules/modules.server");
         if (!(await hasModule("vip"))) return new Response("ok");
+
+        // Приостановка за неоплату (bots.status <> active) гасит и VIP-бота —
+        // иначе основной бот вежливо молчит, а второй канал платного доступа
+        // продолжает работать в обход паузы. См. replyIfPaused в bot.server.ts.
+        if ((await botStatus()) !== "active") return new Response("ok");
 
         const { handleVipUpdate } = await import("@/lib/vip-bot.server");
         // Граница доверия: тело запроса проверено секретом заголовка выше,

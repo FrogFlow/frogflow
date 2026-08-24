@@ -112,13 +112,18 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
          * один из каналов: это уведомление об отвалившемся аккаунте, и молчать
          * о нём — тот самый случай, ради которого событие и подписано.
          */
-        const { hasModule } = await import("@/lib/modules/modules.server");
+        const { hasModule, botStatus } = await import("@/lib/modules/modules.server");
         const moduleForPlatform = { instagram: "instagram", whatsapp: "whatsapp" } as const;
         if (platform) {
           if (!(await hasModule(moduleForPlatform[platform]))) return new Response("ok");
         } else if (!(await hasModule("instagram")) && !(await hasModule("whatsapp"))) {
           return new Response("ok");
         }
+
+        // Приостановка за неоплату (bots.status <> active) гасит и Direct/WhatsApp —
+        // иначе основной Telegram-бот вежливо молчит, а эти каналы продолжают
+        // принимать заказы в обход паузы. См. replyIfPaused в bot.server.ts.
+        if ((await botStatus()) !== "active") return new Response("ok");
 
         const eventId =
           payload.id ||
