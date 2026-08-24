@@ -27,9 +27,11 @@ import {
   sendTestBroadcastFn,
   startBroadcastFn,
 } from "@/lib/broadcast.functions";
+import { getWhatsAppAccountsFn, getWhatsAppTemplatesFn } from "@/lib/whatsapp.functions";
 import { listPaymentMethods } from "@/lib/payment-methods.functions";
 import { listProducts } from "@/lib/products.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { useModules } from "@/lib/modules/use-modules";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/broadcast")({
@@ -37,6 +39,7 @@ export const Route = createFileRoute("/admin/broadcast")({
 });
 
 type AudienceType = "all" | "country" | "buyers" | "non_buyers" | "test";
+type BroadcastChannel = "telegram" | "whatsapp";
 
 const dateLocales: Record<Locale, string> = {
   ru: "ru-RU",
@@ -82,6 +85,19 @@ const copy: Record<
     testSent: string;
     startConfirm: (n: string) => string;
     uploadFailed: (name: string) => string;
+    channelLabel: string;
+    channelTelegram: string;
+    channelWhatsapp: string;
+    waAccountLabel: string;
+    waAccountPlaceholder: string;
+    waNoAccounts: string;
+    waTemplateLabel: string;
+    waTemplatePlaceholder: string;
+    waNoApprovedTemplates: string;
+    waParamsLabel: string;
+    waParamsHint: string;
+    waTestUnavailable: string;
+    waSelectAccountAndTemplate: string;
   }
 > = {
   ru: {
@@ -132,6 +148,22 @@ const copy: Record<
     testSent: "Тестовое сообщение отправлено на admin Telegram ID.",
     startConfirm: (n) => `Запустить рассылку для ~${n} получателей?`,
     uploadFailed: (name) => `Не удалось загрузить ${name}`,
+    channelLabel: "Канал",
+    channelTelegram: "Telegram",
+    channelWhatsapp: "WhatsApp",
+    waAccountLabel: "Аккаунт WhatsApp",
+    waAccountPlaceholder: "Выберите аккаунт",
+    waNoAccounts: "Нет подключённого аккаунта WhatsApp — подключите его на вкладке «WhatsApp».",
+    waTemplateLabel: "Шаблон Meta (одобренный)",
+    waTemplatePlaceholder: "Выберите шаблон",
+    waNoApprovedTemplates:
+      "Нет одобренных шаблонов для этого аккаунта — создайте и дождитесь одобрения Meta на вкладке «WhatsApp».",
+    waParamsLabel: "Значения переменных шаблона ({{1}}, {{2}}…), через запятую",
+    waParamsHint:
+      "Если в тексте шаблона есть {{1}}, {{2}} и т.д. — впишите значения по порядку через запятую. Если переменных нет, оставьте пустым.",
+    waTestUnavailable:
+      "Для WhatsApp нет тестовой отправки себе — у продавца нет своего номера в базе.",
+    waSelectAccountAndTemplate: "Выберите аккаунт WhatsApp и одобренный шаблон.",
   },
   kk: {
     audienceLabels: {
@@ -181,6 +213,21 @@ const copy: Record<
     testSent: "Тест хабары admin Telegram ID-іне жіберілді.",
     startConfirm: (n) => `~${n} алушыға хабарламаны бастау керек пе?`,
     uploadFailed: (name) => `${name} жүктелмеді`,
+    channelLabel: "Арна",
+    channelTelegram: "Telegram",
+    channelWhatsapp: "WhatsApp",
+    waAccountLabel: "WhatsApp аккаунты",
+    waAccountPlaceholder: "Аккаунтты таңдаңыз",
+    waNoAccounts: "Қосылған WhatsApp аккаунты жоқ — «WhatsApp» бөлімінде қосыңыз.",
+    waTemplateLabel: "Meta үлгісі (мақұлданған)",
+    waTemplatePlaceholder: "Үлгіні таңдаңыз",
+    waNoApprovedTemplates:
+      "Бұл аккаунт үшін мақұлданған үлгі жоқ — «WhatsApp» бөлімінде жасап, Meta мақұлдауын күтіңіз.",
+    waParamsLabel: "Үлгі айнымалыларының мәні ({{1}}, {{2}}…), үтірмен бөліп",
+    waParamsHint:
+      "Үлгі мәтінінде {{1}}, {{2}} т.б. болса — мәндерін ретімен үтірмен бөліп жазыңыз. Айнымалы жоқ болса, бос қалдырыңыз.",
+    waTestUnavailable: "WhatsApp үшін өзіңізге тест жіберу жоқ — сатушының базада өз нөмірі жоқ.",
+    waSelectAccountAndTemplate: "WhatsApp аккаунты мен мақұлданған үлгіні таңдаңыз.",
   },
   en: {
     audienceLabels: {
@@ -230,6 +277,22 @@ const copy: Record<
     testSent: "Test message sent to the admin Telegram ID.",
     startConfirm: (n) => `Start the broadcast for ~${n} recipients?`,
     uploadFailed: (name) => `Failed to upload ${name}`,
+    channelLabel: "Channel",
+    channelTelegram: "Telegram",
+    channelWhatsapp: "WhatsApp",
+    waAccountLabel: "WhatsApp account",
+    waAccountPlaceholder: "Choose an account",
+    waNoAccounts: 'No WhatsApp account connected — connect one on the "WhatsApp" tab.',
+    waTemplateLabel: "Meta template (approved)",
+    waTemplatePlaceholder: "Choose a template",
+    waNoApprovedTemplates:
+      'No approved templates for this account — create one and wait for Meta\'s approval on the "WhatsApp" tab.',
+    waParamsLabel: "Template variable values ({{1}}, {{2}}…), comma-separated",
+    waParamsHint:
+      "If the template text has {{1}}, {{2}}, etc. — enter the values in order, separated by commas. Leave empty if there are no variables.",
+    waTestUnavailable:
+      "There's no self-test send for WhatsApp — the seller has no own number in the database.",
+    waSelectAccountAndTemplate: "Choose a WhatsApp account and an approved template.",
   },
   uz: {
     audienceLabels: {
@@ -280,6 +343,22 @@ const copy: Record<
     testSent: "Test xabari admin Telegram ID’ga yuborildi.",
     startConfirm: (n) => `~${n} qabul qiluvchiga xabar yuborishni boshlaysizmi?`,
     uploadFailed: (name) => `${name} yuklanmadi`,
+    channelLabel: "Kanal",
+    channelTelegram: "Telegram",
+    channelWhatsapp: "WhatsApp",
+    waAccountLabel: "WhatsApp akkaunti",
+    waAccountPlaceholder: "Akkauntni tanlang",
+    waNoAccounts: "Ulangan WhatsApp akkaunti yo‘q — «WhatsApp» bo‘limida ulang.",
+    waTemplateLabel: "Meta shabloni (tasdiqlangan)",
+    waTemplatePlaceholder: "Shablonni tanlang",
+    waNoApprovedTemplates:
+      "Bu akkaunt uchun tasdiqlangan shablon yo‘q — «WhatsApp» bo‘limida yarating va Meta tasdiqlashini kuting.",
+    waParamsLabel: "Shablon o‘zgaruvchilari qiymati ({{1}}, {{2}}…), vergul bilan",
+    waParamsHint:
+      "Shablon matnida {{1}}, {{2}} va h.k. bo‘lsa — qiymatlarni tartib bilan vergul bilan kiriting. O‘zgaruvchi bo‘lmasa, bo‘sh qoldiring.",
+    waTestUnavailable:
+      "WhatsApp uchun o‘zingizga test yuborish yo‘q — sotuvchining bazada o‘z raqami yo‘q.",
+    waSelectAccountAndTemplate: "WhatsApp akkauntini va tasdiqlangan shablonni tanlang.",
   },
 };
 
@@ -287,6 +366,7 @@ function BroadcastPage() {
   const { locale } = useAdminLocale();
   const tr = copy[locale];
   const qc = useQueryClient();
+  const modules = useModules();
   const products = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
   const paymentMethods = useQuery({
     queryKey: ["payment-methods"],
@@ -305,6 +385,38 @@ function BroadcastPage() {
   const [uploading, setUploading] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+
+  // wa_broadcasts: рассылка по WhatsApp идёт одобренным Meta-шаблоном, а не
+  // произвольным текстом — окно ответа у базы подписчиков почти всегда
+  // закрыто. См. createBroadcast() в broadcast.server.ts.
+  const [channel, setChannel] = useState<BroadcastChannel>("telegram");
+  const [waAccountId, setWaAccountId] = useState<string>("");
+  const [waTemplateName, setWaTemplateName] = useState<string>("");
+  const [waTemplateLanguage, setWaTemplateLanguage] = useState<string>("");
+  const [waParamsText, setWaParamsText] = useState<string>("");
+
+  const waAccounts = useQuery({
+    queryKey: ["wa-broadcast-accounts"],
+    queryFn: () => getWhatsAppAccountsFn(),
+    enabled: channel === "whatsapp" && Boolean(modules.wa_broadcasts),
+  });
+  const waAccountList = waAccounts.data?.accounts ?? [];
+
+  useEffect(() => {
+    if (channel === "whatsapp" && !waAccountId && waAccountList.length > 0) {
+      setWaAccountId(waAccountList[0]._id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel, waAccountList.length]);
+
+  const waTemplates = useQuery({
+    queryKey: ["wa-broadcast-templates", waAccountId],
+    queryFn: () => getWhatsAppTemplatesFn({ data: { accountId: waAccountId } }),
+    enabled: channel === "whatsapp" && Boolean(waAccountId),
+  });
+  const waApprovedTemplates = (waTemplates.data?.templates ?? []).filter(
+    (t) => t.status === "APPROVED",
+  );
 
   function insertEmoji(emoji: string) {
     const el = messageRef.current;
@@ -334,14 +446,37 @@ function BroadcastPage() {
   const payload = useMemo(
     () => ({
       message_text: messageText,
-      photo_paths: photoPaths,
-      product_ids: selectedProducts,
-      show_catalog: showCatalog,
+      photo_paths: channel === "whatsapp" ? [] : photoPaths,
+      product_ids: channel === "whatsapp" ? [] : selectedProducts,
+      show_catalog: channel === "whatsapp" ? false : showCatalog,
       audience_type: audienceType,
       audience_filter:
         audienceType === "country" ? { country_code: countryCode.trim().toUpperCase() } : undefined,
+      channel,
+      account_id: channel === "whatsapp" ? waAccountId || undefined : undefined,
+      template_name: channel === "whatsapp" ? waTemplateName || undefined : undefined,
+      template_language: channel === "whatsapp" ? waTemplateLanguage || undefined : undefined,
+      template_params:
+        channel === "whatsapp"
+          ? waParamsText
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : undefined,
     }),
-    [messageText, photoPaths, selectedProducts, showCatalog, audienceType, countryCode],
+    [
+      messageText,
+      photoPaths,
+      selectedProducts,
+      showCatalog,
+      audienceType,
+      countryCode,
+      channel,
+      waAccountId,
+      waTemplateName,
+      waTemplateLanguage,
+      waParamsText,
+    ],
   );
 
   useEffect(() => {
@@ -407,6 +542,9 @@ function BroadcastPage() {
 
   async function onStart() {
     if (!messageText.trim()) return toast.warning(tr.enterText);
+    if (channel === "whatsapp" && (!waAccountId || !waTemplateName)) {
+      return toast.warning(tr.waSelectAccountAndTemplate);
+    }
     if (
       audienceType !== "test" &&
       !(await confirmToast(tr.startConfirm(String(audienceCount ?? "?"))))
@@ -451,6 +589,100 @@ function BroadcastPage() {
       <h1 className="text-2xl font-semibold">{tr.title}</h1>
 
       <div className="bg-card border rounded-lg p-4 space-y-4">
+        {modules.wa_broadcasts && (
+          <div className="space-y-2">
+            <Label>{tr.channelLabel}</Label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="channel"
+                  checked={channel === "telegram"}
+                  onChange={() => setChannel("telegram")}
+                />
+                {tr.channelTelegram}
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="channel"
+                  checked={channel === "whatsapp"}
+                  onChange={() => setChannel("whatsapp")}
+                />
+                {tr.channelWhatsapp}
+              </label>
+            </div>
+          </div>
+        )}
+
+        {channel === "whatsapp" && (
+          <div className="space-y-4 border rounded-md p-3">
+            <div className="space-y-2">
+              <Label>{tr.waAccountLabel}</Label>
+              {waAccountList.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{tr.waNoAccounts}</p>
+              ) : (
+                <Select value={waAccountId} onValueChange={setWaAccountId}>
+                  <SelectTrigger className="max-w-xs">
+                    <SelectValue placeholder={tr.waAccountPlaceholder} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {waAccountList.map((a) => (
+                      <SelectItem key={a._id} value={a._id}>
+                        {a.name || a.username || a._id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {waAccountId && (
+              <div className="space-y-2">
+                <Label>{tr.waTemplateLabel}</Label>
+                {waApprovedTemplates.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{tr.waNoApprovedTemplates}</p>
+                ) : (
+                  <Select
+                    value={waTemplateName ? `${waTemplateName}__${waTemplateLanguage}` : ""}
+                    onValueChange={(v) => {
+                      const [name, lang] = v.split("__");
+                      setWaTemplateName(name);
+                      setWaTemplateLanguage(lang);
+                    }}
+                  >
+                    <SelectTrigger className="max-w-xs">
+                      <SelectValue placeholder={tr.waTemplatePlaceholder} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {waApprovedTemplates.map((t) => (
+                        <SelectItem
+                          key={`${t.name}__${t.language}`}
+                          value={`${t.name}__${t.language}`}
+                        >
+                          {t.name} ({t.language})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+            )}
+
+            {waTemplateName && (
+              <div className="space-y-1">
+                <Label>{tr.waParamsLabel}</Label>
+                <Input
+                  value={waParamsText}
+                  onChange={(e) => setWaParamsText(e.target.value)}
+                  placeholder="Мария, 25%"
+                />
+                <p className="text-xs text-muted-foreground">{tr.waParamsHint}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label>{tr.audienceLabel}</Label>
           <div className="grid gap-2">
@@ -502,75 +734,83 @@ function BroadcastPage() {
           <EmojiInsertBar onInsert={insertEmoji} />
         </div>
 
-        <div className="space-y-2">
-          <Label>{tr.photosLabel}</Label>
-          <Input
-            type="file"
-            accept="image/*"
-            multiple
-            disabled={uploading || photoPaths.length >= 10}
-            onChange={(e) => onUploadPhotos(e.target.files)}
-          />
-          {uploading && <p className="text-sm text-muted-foreground">{tr.uploading}</p>}
-          {photoPaths.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex flex-wrap gap-3">
-                {photoPaths.map((p) => (
-                  <div key={p} className="relative group">
-                    <img
-                      src={broadcastPhotoUrl(p)}
-                      alt={p}
-                      className="h-20 w-20 object-cover rounded-md border"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(p)}
-                      className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs leading-none opacity-90 hover:opacity-100"
-                      title={tr.deleteTitle}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+        {channel !== "whatsapp" && (
+          <div className="space-y-2">
+            <Label>{tr.photosLabel}</Label>
+            <Input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={uploading || photoPaths.length >= 10}
+              onChange={(e) => onUploadPhotos(e.target.files)}
+            />
+            {uploading && <p className="text-sm text-muted-foreground">{tr.uploading}</p>}
+            {photoPaths.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-3">
+                  {photoPaths.map((p) => (
+                    <div key={p} className="relative group">
+                      <img
+                        src={broadcastPhotoUrl(p)}
+                        alt={p}
+                        className="h-20 w-20 object-cover rounded-md border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(p)}
+                        className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs leading-none opacity-90 hover:opacity-100"
+                        title={tr.deleteTitle}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setPhotoPaths([])}>
+                  {tr.clearAll}
+                </Button>
               </div>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setPhotoPaths([])}>
-                {tr.clearAll}
-              </Button>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label>{tr.buttonsLabel}</Label>
-          <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-2">
-            {productList.map((p) => {
-              const checked = selectedProducts.includes(p.id);
-              return (
-                <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(c) => {
-                      setSelectedProducts((prev) => {
-                        if (c) return prev.length >= 8 ? prev : [...prev, p.id];
-                        return prev.filter((id) => id !== p.id);
-                      });
-                    }}
-                  />
-                  {p.name}
-                </label>
-              );
-            })}
+            )}
           </div>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <Checkbox checked={showCatalog} onCheckedChange={(c) => setShowCatalog(Boolean(c))} />
-            {tr.addCatalogButton}
-          </label>
-        </div>
+        )}
 
-        <div className="flex flex-wrap gap-2 pt-2">
-          <Button variant="outline" onClick={onTestSend} disabled={busy || uploading}>
-            {tr.sendTestBtn}
-          </Button>
+        {channel !== "whatsapp" && (
+          <div className="space-y-2">
+            <Label>{tr.buttonsLabel}</Label>
+            <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-2">
+              {productList.map((p) => {
+                const checked = selectedProducts.includes(p.id);
+                return (
+                  <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(c) => {
+                        setSelectedProducts((prev) => {
+                          if (c) return prev.length >= 8 ? prev : [...prev, p.id];
+                          return prev.filter((id) => id !== p.id);
+                        });
+                      }}
+                    />
+                    {p.name}
+                  </label>
+                );
+              })}
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox checked={showCatalog} onCheckedChange={(c) => setShowCatalog(Boolean(c))} />
+              {tr.addCatalogButton}
+            </label>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 pt-2">
+          {channel === "whatsapp" ? (
+            <p className="text-xs text-muted-foreground">{tr.waTestUnavailable}</p>
+          ) : (
+            <Button variant="outline" onClick={onTestSend} disabled={busy || uploading}>
+              {tr.sendTestBtn}
+            </Button>
+          )}
           <Button onClick={onStart} disabled={busy || uploading || audienceType === "test"}>
             {tr.startBtn}
           </Button>

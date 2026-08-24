@@ -8,6 +8,15 @@ const payloadSchema = z.object({
   show_catalog: z.boolean().default(true),
   audience_type: z.enum(["all", "country", "buyers", "non_buyers", "test"]),
   audience_filter: z.object({ country_code: z.string().optional() }).optional(),
+  // Раньше этих пяти полей здесь не было вовсе: zod срезал их до того, как
+  // createBroadcast успевал их увидеть, поэтому wa_broadcasts был физически
+  // недостижим, хотя вся серверная логика под него уже существовала (см.
+  // broadcast.server.ts) — единственная причина, почему модуль не работал.
+  channel: z.enum(["telegram", "whatsapp"]).optional(),
+  account_id: z.string().min(1).optional(),
+  template_name: z.string().min(1).optional(),
+  template_language: z.string().min(1).optional(),
+  template_params: z.array(z.string()).max(20).optional(),
 });
 
 export const previewBroadcastAudience = createServerFn({ method: "GET" })
