@@ -11,10 +11,8 @@ import { requireAppOrigin } from "./app-origin.server";
  * функцию по-прежнему можно вызвать напрямую.
  */
 async function requireAdminWithModule() {
-  const { requireAdmin } = await import("./admin-session.server");
-  const { requireModule } = await import("./modules/require-module.server");
-  await requireAdmin();
-  await requireModule("whatsapp");
+  const { requireAdminWithModule: check } = await import("./modules/require-module.server");
+  await check("whatsapp");
 }
 
 async function db() {

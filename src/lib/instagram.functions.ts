@@ -8,10 +8,8 @@ import { requireAppOrigin } from "./app-origin.server";
  * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
  */
 async function requireAdminWithModule() {
-  const { requireAdmin } = await import("./admin-session.server");
-  const { requireModule } = await import("./modules/require-module.server");
-  await requireAdmin();
-  await requireModule("instagram");
+  const { requireAdminWithModule: check } = await import("./modules/require-module.server");
+  await check("instagram");
 }
 
 async function db() {

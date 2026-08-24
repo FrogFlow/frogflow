@@ -8,10 +8,8 @@ import type { TablesInsert, TablesUpdate } from "@/integrations-supabase/types";
  * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
  */
 async function requireAdminWithModule() {
-  const { requireAdmin } = await import("./admin-session.server");
-  const { requireModule } = await import("./modules/require-module.server");
-  await requireAdmin();
-  await requireModule("vip");
+  const { requireAdminWithModule: check } = await import("./modules/require-module.server");
+  await check("vip");
 }
 
 async function db() {

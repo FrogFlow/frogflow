@@ -4,9 +4,10 @@ import { requireAppOrigin } from "./app-origin.server";
 import { imageUrl } from "./public-image";
 import { replyIfBlocked } from "./blocked-users.server";
 import { handleManagerChatInbound, handleManagerChatCallback } from "./manager-chat.server";
-import { botStatus, pausedMessage } from "./modules/modules.server";
+import { botStatus, pausedMessage, hasModule } from "./modules/modules.server";
 import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
+import type { ReceiptVerifyResult } from "./receipt-verify.server";
 import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
@@ -2051,7 +2052,10 @@ async function loadRobokassaSettings() {
   const s = await db();
   const { data: allSettings } = await s.from("app_settings").select("key, value");
   const getSetting = (key: string) => allSettings?.find((r) => r.key === key)?.value;
-  const enabled = getSetting("robokassa_enabled") === "true";
+  // Setting alone used to be the whole story — a client who cancelled the
+  // paid Robokassa module kept card payments working as long as the toggle
+  // itself was still on, since only the admin UI route checked the module.
+  const enabled = getSetting("robokassa_enabled") === "true" && (await hasModule("robokassa"));
   const testMode = getSetting("robokassa_test_mode") === "true";
   const login = getSetting("robokassa_login")?.trim() || "";
   const pass1 =
@@ -3032,13 +3036,20 @@ export async function handleUpdate(update: TelegramUpdate) {
           return;
         }
 
+        // Same gate as verifyDirectReceipt (direct-purchase.server.ts) — this
+        // was the one auto-delivery path that spent the paid Vision quota
+        // and ran OCR regardless of whether the client's tariff still
+        // includes receipt_ocr. Falls into the same "manual review" branch
+        // the module's own ocr_unavailable case already handles.
         const { verifyPaymentReceipt } = await import("./receipt-verify.server");
-        const verify = await verifyPaymentReceipt({
-          bytes: dl.bytes,
-          mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
-          expectedAmount: Number(orderRow.total),
-          currency: (orderRow.currency as string) || undefined,
-        });
+        const verify: ReceiptVerifyResult = (await hasModule("receipt_ocr"))
+          ? await verifyPaymentReceipt({
+              bytes: dl.bytes,
+              mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
+              expectedAmount: Number(orderRow.total),
+              currency: (orderRow.currency as string) || undefined,
+            })
+          : { ok: false, reason: "ocr_unavailable", detail: "модуль receipt_ocr не подключён" };
 
         if (!verify.ok && verify.reason === "not_receipt") {
           // Keep order open; ask for a real receipt

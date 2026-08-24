@@ -7,10 +7,8 @@ import { z } from "zod";
  * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
  */
 async function requireAdminWithModule() {
-  const { requireAdmin } = await import("./admin-session.server");
-  const { requireModule } = await import("./modules/require-module.server");
-  await requireAdmin();
-  await requireModule("blocked");
+  const { requireAdminWithModule: check } = await import("./modules/require-module.server");
+  await check("blocked");
 }
 
 export const listBlockedUsersFn = createServerFn({ method: "GET" }).handler(async () => {

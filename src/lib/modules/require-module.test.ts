@@ -12,7 +12,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const hasModule = vi.fn<(key: string) => Promise<boolean>>();
 vi.mock("./modules.server", () => ({ hasModule: (k: string) => hasModule(k) }));
 
-const { requireModule } = await import("./require-module.server");
+const requireAdmin = vi.fn<() => Promise<unknown>>();
+vi.mock("../admin-session.server", () => ({ requireAdmin: () => requireAdmin() }));
+
+const { requireModule, requireAdminWithModule } = await import("./require-module.server");
 
 beforeEach(() => {
   // Тело в скобках обязательно. Короткая форма вернула бы результат
@@ -20,6 +23,8 @@ beforeEach(() => {
   // beforeEach, обработчиком очистки и вызывает её после каждого теста. Мок
   // вызывался бы лишний раз, и в тесте, где он бросает, это ломало прогон.
   hasModule.mockReset();
+  requireAdmin.mockReset();
+  requireAdmin.mockResolvedValue(undefined);
 });
 
 describe("requireModule", () => {
@@ -58,5 +63,29 @@ describe("requireModule", () => {
   it("ошибка чтения не открывает доступ", async () => {
     hasModule.mockImplementation(() => Promise.reject(new Error("база недоступна")));
     await expect(requireModule("vip")).rejects.toThrow(/база недоступна/);
+  });
+});
+
+/**
+ * requireAdmin() + requireModule(key) в одном месте — раньше copy-paste в 7
+ * файлах (одинаковое тело, разный ключ модуля в строке).
+ */
+describe("requireAdminWithModule", () => {
+  it("админ и модуль подключён — пропускает", async () => {
+    hasModule.mockResolvedValue(true);
+    await expect(requireAdminWithModule("vip")).resolves.toBeUndefined();
+    expect(requireAdmin).toHaveBeenCalledTimes(1);
+    expect(hasModule).toHaveBeenCalledWith("vip");
+  });
+
+  it("не админ — отказывает до проверки модуля", async () => {
+    requireAdmin.mockRejectedValue(new Error("Unauthorized"));
+    await expect(requireAdminWithModule("vip")).rejects.toThrow(/Unauthorized/);
+    expect(hasModule).not.toHaveBeenCalled();
+  });
+
+  it("админ, но модуль не подключён — отказывает", async () => {
+    hasModule.mockResolvedValue(false);
+    await expect(requireAdminWithModule("blocked")).rejects.toThrow(/не подключ[её]н/i);
   });
 });
