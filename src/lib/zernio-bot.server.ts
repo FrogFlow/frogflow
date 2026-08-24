@@ -374,7 +374,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Басқа мекенжай керек болса — осында жазыңыз. Басқа сұрақтарға сатушы жауап береді.",
     receiptReceivedNeedEmail: (displayNo) =>
       `Чекті алдым, №${displayNo} тапсырыс қабылданды.\n\n` +
-      "Материалдарды қай поштаға жіберу керек? Instagram құжаттарды жібере алмайды, сондықтан файлдар поштамен жіберіледі.",
+      "Материалдарды қай поштаға жіберу керек? Instagram құжаттарды жібере алмайды, сондықтан файлдар поштамен жіберіледі.\n\n" +
+      "Жібермес бұрын e-mail мекенжайын мұқият тексеріңіз: артық бос орынсыз және қатесіз жазыңыз. " +
+      "Мекенжай қате болса, материал келмеуі мүмкін.",
     receiptReceivedWhatsApp: (displayNo) =>
       `Чекті алдым, №${displayNo} тапсырыс қабылданды. Төлем тексерілгеннен кейін материалдар осы WhatsApp чатына жіберіледі.`,
     countryHint:
@@ -497,7 +499,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       "If you need a different address, send it here. For anything else, the seller will reply.",
     receiptReceivedNeedEmail: (displayNo) =>
       `Got the receipt, order #${displayNo} is in.\n\n` +
-      "Which email should we send the materials to? Instagram can't forward documents, so files go out by email.",
+      "Which email should we send the materials to? Instagram can't forward documents, so files go out by email.\n\n" +
+      "Please check the address carefully before sending: no extra spaces or typos. " +
+      "If the address is incorrect, the materials may not arrive.",
     receiptReceivedWhatsApp: (displayNo) =>
       `Got the receipt, order #${displayNo} is in. After the payment is checked, the materials will be sent here in WhatsApp.`,
     countryHint:
@@ -623,7 +627,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Boshqa manzil kerak bo‘lsa — shu yerga yozing. Boshqa savollarga sotuvchi javob beradi.",
     receiptReceivedNeedEmail: (displayNo) =>
       `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi.\n\n` +
-      "Materiallarni qaysi pochtaga yuborish kerak? Instagram hujjatlarni yuborolmaydi, shuning uchun fayllar pochta orqali yuboriladi.",
+      "Materiallarni qaysi pochtaga yuborish kerak? Instagram hujjatlarni yuborolmaydi, shuning uchun fayllar pochta orqali yuboriladi.\n\n" +
+      "Yuborishdan oldin e-mail manzilini diqqat bilan tekshiring: ortiqcha bo‘sh joysiz va xatosiz kiriting. " +
+      "Manzil noto‘g‘ri bo‘lsa, material yetib kelmasligi mumkin.",
     receiptReceivedWhatsApp: (displayNo) =>
       `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. To‘lov tekshirilgach, materiallar shu WhatsApp chatiga yuboriladi.`,
     countryHint:
