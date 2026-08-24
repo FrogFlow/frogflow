@@ -38,6 +38,8 @@ export type TelegramMessage = {
   chat: { id: number; type?: string };
   from?: TelegramUser;
   text?: string;
+  /** Подпись к фото/документу — Telegram кладёт её сюда, а не в `text`. */
+  caption?: string;
   contact?: { phone_number: string };
   document?: { file_id: string; file_name?: string; mime_type?: string };
   photo?: Array<{ file_id: string }>;
@@ -2832,7 +2834,47 @@ export async function handleUpdate(update: TelegramUpdate) {
     const from = msg.from;
     if (!from) return;
     if (await replyIfBlocked(chat_id, from.id)) return;
-    if (await handleManagerChatInbound(from.id, msg.text)) return;
+
+    // Фото/документ приходят с `caption`, а не `text` — раньше перехват
+    // логировал такое сообщение как "[без текста]", и оператор не видел ни
+    // подписи, ни того, что это вообще вложение.
+    const attachmentLabel = msg.photo ? "📷 Фото" : msg.document ? "📎 Документ" : undefined;
+    const managerLogText = msg.text || msg.caption || attachmentLabel;
+    const managerIntercepted = await handleManagerChatInbound(from.id, managerLogText);
+
+    // Чек по заказу не должен потеряться только из-за того, что менеджер
+    // взял диалог на себя (Блок 2.1): раньше `return` здесь выполнялся
+    // безусловно, и вложение, отправленное во время перехвата, вообще не
+    // доходило до кода приёма чека ниже — заказ оставался неоплаченным, а
+    // покупатель думал, что чек отправлен. Условие то же самое, что и у
+    // обычной ветки приёма чека дальше по файлу: mode ожидания чека с
+    // привязанным заказом, либо любой открытый awaiting_payment заказ.
+    let interceptedButAwaitingProof = false;
+    if (managerIntercepted && (msg.photo || msg.document)) {
+      const s = await db();
+      const { data: buyer } = await s
+        .from("bot_users")
+        .select("state")
+        .eq("telegram_id", from.id)
+        .maybeSingle();
+      const state = buyer?.state as BotUser["state"] | undefined;
+      const proofModes = new Set(["awaiting_proof", "awaiting_payment"]);
+      if (state?.mode && proofModes.has(String(state.mode)) && state.pending_order_id) {
+        interceptedButAwaitingProof = true;
+      } else {
+        const { data: openOrder } = await s
+          .from("orders")
+          .select("id")
+          .eq("telegram_id", from.id)
+          .eq("status", "awaiting_payment")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        interceptedButAwaitingProof = Boolean(openOrder?.id);
+      }
+    }
+
+    if (managerIntercepted && !interceptedButAwaitingProof) return;
     if (await replyIfPaused(chat_id)) return;
     const user = await upsertUser(from);
     if (!user) return;
