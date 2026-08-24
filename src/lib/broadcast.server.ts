@@ -378,13 +378,19 @@ export async function createBroadcast(payload: BroadcastPayload) {
     throw new Error("Не найдено получателей для выбранной аудитории.");
   }
 
-  const active = await s
+  // Деструктуризация здесь обязательна: `await` над построителем PostgREST
+  // отдаёт конверт `{data, error, …}`, а он истинный всегда — даже когда
+  // ничего не нашлось. Без неё условие срабатывало на каждом вызове, и
+  // createBroadcast бросал «Уже идёт другая рассылка» при пустой очереди,
+  // то есть рассылку нельзя было создать вообще ни разу.
+  const { data: active, error: activeError } = await s
     .from("broadcasts")
     .select("id")
     .in("status", ["queued", "sending"])
     .eq("channel", channel)
     .limit(1)
     .maybeSingle();
+  if (activeError) throw new Error(`Не удалось проверить очередь рассылок: ${activeError.message}`);
   if (active) {
     throw new Error("Уже идёт другая рассылка. Дождитесь завершения.");
   }

@@ -5,6 +5,7 @@ import { imageUrl } from "./public-image";
 import { replyIfBlocked } from "./blocked-users.server";
 import { handleManagerChatInbound, handleManagerChatCallback } from "./manager-chat.server";
 import { botStatus, pausedMessage, hasModule } from "./modules/modules.server";
+import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
 import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
 import type { ReceiptVerifyResult } from "./receipt-verify.server";
@@ -2082,6 +2083,53 @@ async function sendKzPaymentChoice(params: {
   });
 }
 
+/**
+ * Кнопки «Подтвердить и выдать» / «Отклонить» может нажимать только продавец.
+ *
+ * До этой проверки её не было вовсе, хотя комментарий над ветками гласил
+ * «Admin actions»: `callback_data` приходит от клиента, Telegram не сверяет
+ * его с реально отправленной кнопкой, а внутренний id заказа покупатель
+ * получает на руки в кнопке оплаты (`pay:rk:<id>`). То есть любой покупатель
+ * мог прислать `confirm:<своего заказа>` и получить оплаченные материалы, не
+ * заплатив, — `claimOrderForDelivery` выдаёт и заказы в статусе
+ * `awaiting_payment`. А перебором id — отменить чужие заказы через `reject:`.
+ *
+ * Отдельно закрывает и сценарий без всякого эксплойта: если продавец вписал
+ * в список получателей уведомлений id группы, кнопки приходят в группу, и
+ * нажать их мог любой её участник.
+ *
+ * Слепок с `requireVipAdmin` (vip-bot.server.ts) — там та же операция была
+ * закрыта с самого начала, разошлись только эти две ветки.
+ */
+async function requireShopAdmin(from_id: number, chat_id: number): Promise<boolean> {
+  const s = await db();
+  const { data } = await s.from("app_settings").select("key, value");
+  const settings: Record<string, string> = {};
+  for (const row of data ?? []) settings[row.key as string] = (row.value as string) ?? "";
+
+  const adminIds = parseNotifyAdminIds(settings);
+  if (adminIds.length === 0) {
+    // Пустой список — не повод пускать всех: без известного администратора
+    // подтверждать заказ из Telegram нельзя (в панели кнопка остаётся).
+    console.error("[bot] confirm/reject: не настроен admin_chat_id — действие отклонено");
+    await tg("sendMessage", {
+      chat_id,
+      text: "Ошибка: не настроен admin_chat_id. Подтверждение заказов из Telegram отключено — воспользуйтесь панелью.",
+    });
+    return false;
+  }
+
+  if (!isTelegramAdmin(from_id, adminIds)) {
+    console.warn(`[bot] confirm/reject отклонён: ${from_id} не администратор`);
+    await tg("sendMessage", {
+      chat_id,
+      text: "⛔ Только продавец может подтверждать и отклонять заказы.",
+    });
+    return false;
+  }
+  return true;
+}
+
 async function loadRobokassaSettings() {
   const s = await db();
   const { data: allSettings } = await s.from("app_settings").select("key, value");
@@ -2759,6 +2807,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
       // Admin actions
       if (data.startsWith("confirm:")) {
+        if (!(await requireShopAdmin(from_id, chat_id))) return;
         const orderId = Number(data.slice(8));
         if (cq.message?.message_id) {
           await tg("editMessageReplyMarkup", {
@@ -2804,6 +2853,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         return;
       }
       if (data.startsWith("reject:")) {
+        if (!(await requireShopAdmin(from_id, chat_id))) return;
         const orderId = Number(data.slice(7));
         const s = await db();
         const { data: order } = await s
