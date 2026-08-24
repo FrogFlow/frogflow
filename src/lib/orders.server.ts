@@ -15,6 +15,14 @@ const MAX_FILE_BYTES =
 
 const DELIVERABLE_STATUSES = ["awaiting_confirmation", "awaiting_payment"] as const;
 
+/**
+ * Сколько раз подряд подождать 2-минутную аренду и попробовать снова, прежде
+ * чем сдаться и отдать материал продавцу вручную. Без потолка застрявшая
+ * выдача (например, покупатель заблокировал бота) крутится в кроне вечно —
+ * см. Блок 1.7.
+ */
+const MAX_DELIVERY_RETRIES = 5;
+
 export type OrderItem = {
   id?: string;
   /** Нужен, чтобы достать файлы товара, когда снимок заказа оказался пустым. */
@@ -48,12 +56,42 @@ export function legacyAsMaterials(
   return [];
 }
 
+/**
+ * Написать всем Telegram-адресам продавца из `admin_chat_id`, что заказ
+ * требует внимания — файл нужно выслать вручную или что-то не доставилось
+ * молча. Тот же паттерн, что уже есть в bot.server.ts/direct-purchase.server.ts,
+ * но именно для сбоев выдачи ни один из них раньше не вызывался: продавец
+ * узнавал о проблеме только по логам Vercel, если вообще узнавал.
+ */
+async function notifyAdminsAboutDeliveryIssue(text: string): Promise<void> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data: setting } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", "admin_chat_id")
+    .maybeSingle();
+
+  const raw = setting?.value?.trim();
+  if (!raw) return;
+
+  for (const chatId of raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
+    try {
+      await tg("sendMessage", { chat_id: chatId, text, parse_mode: "HTML" });
+    } catch (e) {
+      console.error("[orders] notifyAdminsAboutDeliveryIssue failed", e);
+    }
+  }
+}
+
 async function claimOrderForDelivery(orderId: number) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
 
   const { data: order, error } = await supabaseAdmin
     .from("orders")
-    .update({ status: "delivering", delivery_index: 0 })
+    .update({ status: "delivering", delivery_index: 0, delivery_retry_count: 0 })
     .eq("id", orderId)
     .in("status", [...DELIVERABLE_STATUSES])
     .select("*, order_items(*)")
@@ -91,7 +129,10 @@ export async function deliverOrder(
 
   if (options?.force) {
     const patch: TablesUpdate<"orders"> = { status: "delivering" };
-    if (isFullRedeliver) patch.delivery_index = 0;
+    if (isFullRedeliver) {
+      patch.delivery_index = 0;
+      patch.delivery_retry_count = 0;
+    }
 
     const { data, error } = await supabaseAdmin
       .from("orders")
@@ -103,7 +144,7 @@ export async function deliverOrder(
     order = data;
   } else {
     const claimed = await claimOrderForDelivery(orderId);
-    if (!claimed) return { ok: true as const, alreadyDelivered: true };
+    if (!claimed) return { ok: true as const, alreadyDelivered: true, manualRequired: false };
     order = claimed;
   }
 
@@ -118,7 +159,7 @@ export async function deliverOrder(
       .from("orders")
       .update({ status: "delivered", delivery_index: 0 })
       .eq("id", orderId);
-    return { ok: true as const, pending: false, sent: 0, total: 0 };
+    return { ok: true as const, pending: false, sent: 0, total: 0, manualRequired: false };
   }
 
   /**
@@ -172,19 +213,28 @@ export async function deliverOrder(
   }
 
   let sent = 0;
+  let manualRequired = false;
   let announcedContinue = false;
 
   try {
     for (let n = 0; n < BATCH_SIZE; n++) {
       const { data: fresh, error: readErr } = await supabaseAdmin
         .from("orders")
-        .select("status, delivery_index, telegram_id, order_no, display_no")
+        .select(
+          "status, delivery_index, delivery_retry_count, admin_note, telegram_id, order_no, display_no",
+        )
         .eq("id", orderId)
         .single();
       if (readErr || !fresh) throw new Error(readErr?.message || "Order not found");
 
       if (fresh.status !== "delivering") {
-        return { ok: true as const, alreadyDelivered: true, sent, total: items.length };
+        return {
+          ok: true as const,
+          alreadyDelivered: true,
+          sent,
+          total: items.length,
+          manualRequired,
+        };
       }
 
       const idx = Math.max(0, Number(fresh.delivery_index) || 0);
@@ -243,13 +293,18 @@ export async function deliverOrder(
         break;
       }
 
-      let itemOk = true;
+      // "sent" — фактически ушло покупателю; "failed_retry" — стоит попробовать
+      // ещё раз (сеть моргнула, Telegram на секунду отклонил запрос);
+      // "failed_manual" — повторять бессмысленно (файл пуст, слишком велик,
+      // хранилище не отдаёт), это работа для продавца, а не для крона.
+      let itemOutcome: "sent" | "failed_retry" | "failed_manual" = "sent";
+      let failReason: string | undefined;
       try {
         if (materialsRu.length === 0 && materialsKz.length === 0) {
           // Нет файла — ничего не отправляем
-          itemOk = true;
+          itemOutcome = "sent";
         } else if (materialsRu.length > 0 && materialsKz.length > 0) {
-          await tg("sendMessage", {
+          const pickRes = await tg("sendMessage", {
             chat_id: fresh.telegram_id,
             text: `📚 Материал «<b>${item.name_snapshot}</b>»\nВыберите язык, на котором хотите получить файл:`,
             parse_mode: "HTML",
@@ -262,24 +317,98 @@ export async function deliverOrder(
               ],
             },
           });
-          itemOk = true;
+          if (!pickRes?.ok) {
+            itemOutcome = "failed_retry";
+            console.error("[orders] language-pick message failed", pickRes);
+          }
         } else {
           const materials = materialsRu.length > 0 ? materialsRu : materialsKz;
           // Always 1 copy — quantity is for cart price, not file copies
-          itemOk = await sendMaterials(fresh.telegram_id, materials, item.name_snapshot, 1);
+          const result = await sendMaterials(fresh.telegram_id, materials, item.name_snapshot, 1);
+          itemOutcome = result.outcome;
+          failReason = result.reason;
         }
       } catch (e) {
-        itemOk = false;
+        itemOutcome = "failed_retry";
         console.error(`[orders] deliver item ${idx} of order #${orderId} failed`, e);
       }
 
-      if (!itemOk) {
-        // Откат (Rollback) CAS лока с обязательным обновлением updated_at,
-        // чтобы cron подождал 2 минуты до следующей попытки и не спамил
-        await supabaseAdmin
+      if (itemOutcome === "sent") {
+        sent++;
+        // Индекс уже сдвинут на idx+1 выше — сбрасываем счётчик попыток, чтобы
+        // он не переносился со сбоя прошлого материала на следующий.
+        if (fresh.delivery_retry_count) {
+          await supabaseAdmin.from("orders").update({ delivery_retry_count: 0 }).eq("id", orderId);
+        }
+        if (n + 1 < BATCH_SIZE && idx + 1 < items.length) await sleep(ITEM_DELAY_MS);
+        continue;
+      }
+
+      if (itemOutcome === "failed_retry") {
+        const retryCount = (Number(fresh.delivery_retry_count) || 0) + 1;
+
+        if (retryCount > MAX_DELIVERY_RETRIES) {
+          // Сдаёмся автоматически повторять — дальше это работа продавца.
+          manualRequired = true;
+          const note =
+            `Не удалось выдать «${item.name_snapshot}» после ${MAX_DELIVERY_RETRIES} попыток — вышлите вручную.`.slice(
+              0,
+              500,
+            );
+          await supabaseAdmin
+            .from("orders")
+            .update({
+              delivery_retry_count: 0,
+              admin_note: note,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", orderId);
+          await notifyAdminsAboutDeliveryIssue(`⚠️ Заказ #${displayNo}: ${note}`);
+          await tg("sendMessage", {
+            chat_id: fresh.telegram_id,
+            text: `⚠️ Не удалось отправить «${item.name_snapshot}» — продавец вышлет вручную.`,
+          });
+          sent++;
+          if (n + 1 < BATCH_SIZE && idx + 1 < items.length) await sleep(ITEM_DELAY_MS);
+          continue;
+        }
+
+        // Откат CAS лока с обязательным обновлением updated_at, чтобы cron
+        // подождал 2 минуты до следующей попытки и не спамил. Счётчик попыток
+        // растёт вместе с откатом — это и есть потолок Блока 1.7.
+        //
+        // Условие `.eq("delivery_index", idx + 1)` — сам откат тоже CAS
+        // (Блок 1.5): аренда на выдачу живёт 2 минуты, а одна большая
+        // загрузка может пережить этот срок. Тогда cron уже мог поднять
+        // второго воркера, который ушёл вперёд с той же позиции. Безусловная
+        // запись откатила бы его прогресс назад, и уже отправленные позиции
+        // ушли бы покупателю повторно.
+        const { data: rolledBack } = await supabaseAdmin
           .from("orders")
-          .update({ delivery_index: idx, updated_at: new Date().toISOString() })
-          .eq("id", orderId);
+          .update({
+            delivery_index: idx,
+            delivery_retry_count: retryCount,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", orderId)
+          .eq("status", "delivering")
+          .eq("delivery_index", idx + 1)
+          .select("id")
+          .maybeSingle();
+
+        if (!rolledBack) {
+          // Другой воркер уже продвинул выдачу дальше нашего отката — он
+          // устарел бы и заставил повторно отправить уже доставленные
+          // позиции. Оставляем прогресс как есть, помечаем на ручную проверку.
+          manualRequired = true;
+          const note =
+            `Не удалось отправить «${item.name_snapshot}», но выдачу уже продолжил другой процесс — проверьте вручную.`.slice(
+              0,
+              500,
+            );
+          await notifyAdminsAboutDeliveryIssue(`⚠️ Заказ #${displayNo}: ${note}`);
+          break;
+        }
 
         await tg("sendMessage", {
           chat_id: fresh.telegram_id,
@@ -288,17 +417,31 @@ export async function deliverOrder(
         break;
       }
 
+      // itemOutcome === "failed_manual" — повторять нет смысла, индекс уже
+      // сдвинут, просто фиксируем и идём дальше.
+      manualRequired = true;
+      const note =
+        `Материал «${item.name_snapshot}» требует ручной отправки${failReason ? `: ${failReason}` : ""}.`.slice(
+          0,
+          500,
+        );
+      await supabaseAdmin
+        .from("orders")
+        .update({ delivery_retry_count: 0, admin_note: note, updated_at: new Date().toISOString() })
+        .eq("id", orderId);
+      await notifyAdminsAboutDeliveryIssue(`⚠️ Заказ #${displayNo}: ${note}`);
       sent++;
       if (n + 1 < BATCH_SIZE && idx + 1 < items.length) await sleep(ITEM_DELAY_MS);
     }
 
     const { data: after } = await supabaseAdmin
       .from("orders")
-      .select("delivery_index, status, telegram_id")
+      .select("delivery_index, status, telegram_id, admin_note")
       .eq("id", orderId)
       .single();
 
     const doneIdx = Number(after?.delivery_index) || 0;
+    const everManualRequired = manualRequired || Boolean(after?.admin_note?.trim());
     if (after?.status === "delivering" && doneIdx >= items.length) {
       const { data: finished } = await supabaseAdmin
         .from("orders")
@@ -310,12 +453,18 @@ export async function deliverOrder(
         .maybeSingle();
 
       if (finished) {
-        await tg("sendMessage", {
-          chat_id: after.telegram_id,
-          text: `🙏 Спасибо за покупку! Заказ #${orderId} выдан (${items.length} материалов). Если что-то не так — напишите продавцу.`,
-        });
+        const text = everManualRequired
+          ? `🙏 Оплата по заказу #${orderId} подтверждена. Часть материалов продавец вышлет вручную — ожидайте, пожалуйста.`
+          : `🙏 Спасибо за покупку! Заказ #${orderId} выдан (${items.length} материалов). Если что-то не так — напишите продавцу.`;
+        await tg("sendMessage", { chat_id: after.telegram_id, text });
       }
-      return { ok: true as const, pending: false, sent, total: items.length };
+      return {
+        ok: true as const,
+        pending: false,
+        sent,
+        total: items.length,
+        manualRequired: everManualRequired,
+      };
     }
 
     return {
@@ -324,6 +473,7 @@ export async function deliverOrder(
       sent,
       next: doneIdx,
       total: items.length,
+      manualRequired: everManualRequired,
     };
   } catch (e) {
     console.error(`[orders] deliverOrder #${orderId} interrupted`, e);
@@ -360,18 +510,27 @@ export async function processPendingDeliveries(limit = 3) {
   return { processed: rows.length, continued, finished };
 }
 
+export type SendMaterialsResult = {
+  outcome: "sent" | "failed_retry" | "failed_manual";
+  reason?: string;
+};
+
 // Sends every material for one order item — the deliverable can be a single
 // file or a set of photos (e.g. several worksheet pages), each sent in turn.
-// Returns true only if every file in the set reached Telegram: the caller's
-// CAS lock treats the item as one unit and retries the whole set on failure,
-// so a partial send (2 of 3 photos) is not tracked separately.
+// Aggregates to "sent" only if every file in the set reached Telegram: the
+// caller's CAS lock treats the item as one unit and retries/gives up on the
+// whole set, so a partial send (2 of 3 photos) is not tracked separately.
+// A single "failed_retry" material makes the whole set "failed_retry" (worth
+// a full re-attempt); otherwise a "failed_manual" material makes the whole
+// set "failed_manual".
 export async function sendMaterials(
   chat_id: number,
   materials: MaterialFile[],
   caption: string,
   quantity: number,
-): Promise<boolean> {
-  let allOk = true;
+): Promise<SendMaterialsResult> {
+  let worst: SendMaterialsResult["outcome"] = "sent";
+  let reason: string | undefined;
   // With several photos for one material, repeating the product name on
   // every single one reads as spam — caption only the first file. A plain
   // for-loop (not forEach) so each send is awaited before the next starts.
@@ -379,29 +538,53 @@ export async function sendMaterials(
     const m = materials[idx];
     const itemCaption = idx === 0 ? caption : "";
     if (m.url) {
-      await tg("sendMessage", {
+      const res = await tg("sendMessage", {
         chat_id,
         text: itemCaption
           ? `📁 <b>${itemCaption}</b>\n\n📥 <a href="${m.url}">Нажмите здесь, чтобы скачать файл</a>`
           : `📥 <a href="${m.url}">Нажмите здесь, чтобы скачать файл</a>`,
         parse_mode: "HTML",
       });
+      if (!res?.ok) {
+        console.error("[orders] sendMessage (url material) failed", res);
+        if (worst !== "failed_retry") {
+          worst = "failed_retry";
+          reason = "не удалось отправить ссылку в Telegram";
+        }
+      }
     } else if (m.path) {
-      const ok = await sendFileToUser(chat_id, m.path, m.name || "file.bin", itemCaption, quantity);
-      if (!ok) allOk = false;
+      const result = await sendFileToUser(
+        chat_id,
+        m.path,
+        m.name || "file.bin",
+        itemCaption,
+        quantity,
+      );
+      if (!result.delivered) {
+        if (result.retry) {
+          worst = "failed_retry";
+          reason = result.reason ?? reason;
+        } else if (worst !== "failed_retry") {
+          worst = "failed_manual";
+          reason = result.reason ?? reason;
+        }
+      }
     }
   }
-  return allOk;
+  return { outcome: worst, reason };
 }
 
-/** Returns true if the document reached Telegram. */
+export type SendFileResult =
+  { delivered: true } | { delivered: false; retry: boolean; reason?: string };
+
+/** Sends one document to Telegram, reporting whether it actually reached the chat. */
 export async function sendFileToUser(
   chat_id: number,
   path: string,
   downloadName: string,
   caption: string,
   quantity: number,
-): Promise<boolean> {
+): Promise<SendFileResult> {
   void quantity;
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const filename = downloadName || "file.bin";
@@ -450,20 +633,21 @@ export async function sendFileToUser(
 
   // Prefer URL for pdf/zip/gif — Telegram downloads itself, no heavy Vercel upload
   if (telegramUrlTypes.has(ext)) {
-    if (await sendViaTelegramUrl()) return true;
+    if (await sendViaTelegramUrl()) return { delivered: true };
   }
 
   const { data: dl, error: dlErr } = await supabaseAdmin.storage
     .from("product-files")
     .download(path);
   if (dlErr || !dl) {
-    if (await sendViaTelegramUrl()) return true;
+    if (await sendViaTelegramUrl()) return { delivered: true };
     console.error("[orders] storage download failed", path, dlErr);
     await tg("sendMessage", {
       chat_id,
       text: `⚠️ Не удалось получить файл «${caption}» из хранилища. Продавец вышлет вручную.`,
     });
-    return true; // permanent — don't spin cron forever
+    // Хранилище не отдаёт файл — повтор ничего не изменит, это ручная выдача.
+    return { delivered: false, retry: false, reason: "хранилище не отдало файл" };
   }
 
   // Прокидываем Blob напрямую в FormData через обновленный tgSendMultipart
@@ -476,17 +660,17 @@ export async function sendFileToUser(
       chat_id,
       text: `⚠️ Файл «${caption}» пустой. Продавец вышлет вручную.`,
     });
-    return true;
+    return { delivered: false, retry: false, reason: "файл пустой" };
   }
 
   if (dl.size > TG_MAX) {
-    if (await sendViaTelegramUrl()) return true;
+    if (await sendViaTelegramUrl()) return { delivered: true };
     await tg("sendMessage", {
       chat_id,
       text: `⚠️ Файл «${caption}» слишком большой (${Math.round(dl.size / (1024 * 1024))} МБ, лимит ${Math.round(TG_MAX / (1024 * 1024))} МБ). Продавец вышлет вручную.`,
     });
-    // Permanent size problem — treat as handled so we don't infinite-retry
-    return true;
+    // Постоянная проблема размера — повтор её не решит.
+    return { delivered: false, retry: false, reason: "файл больше лимита" };
   }
 
   // Telegram renders sendPhoto inline in the chat — what the client asked
@@ -499,7 +683,7 @@ export async function sendFileToUser(
       { chat_id, caption },
       { field: "photo", filename, blob: dl, contentType: mime },
     );
-    if (photoRes?.ok) return true;
+    if (photoRes?.ok) return { delivered: true };
     console.error("[orders] sendPhoto multipart failed, falling back to sendDocument", photoRes);
   }
 
@@ -509,20 +693,23 @@ export async function sendFileToUser(
     { field: "document", filename, blob: dl, contentType: mime },
   );
 
-  if (res?.ok) return true;
+  if (res?.ok) return { delivered: true };
 
   console.error("[orders] sendDocument multipart failed", res);
-  if (await sendViaTelegramUrl()) return true;
+  if (await sendViaTelegramUrl()) return { delivered: true };
 
   if (dl.size > CLOUD_TG_MAX) {
     await tg("sendMessage", {
       chat_id,
       text: `⚠️ Файл «${caption}» (${Math.round(dl.size / (1024 * 1024))} МБ) не проходит через облачный Telegram API (лимит ~50 МБ). Нужен Local Bot API или ручная выдача.`,
     });
-    return true; // don't spin forever without Local API
+    // Без Local Bot API повтор не поможет.
+    return { delivered: false, retry: false, reason: "нужен Local Bot API" };
   }
 
-  return false;
+  // Отправка не прошла, но причина может быть временной (сеть, троттлинг) —
+  // стоит попробовать ещё раз.
+  return { delivered: false, retry: true, reason: "Telegram отклонил отправку" };
 }
 
 /** Сколько живут ссылки в письме. То же значение, что у выдачи в Telegram. */
@@ -536,7 +723,7 @@ const EMAIL_LINK_DAYS = 7;
  * расширение из настоящего пути. Символы, запрещённые в именах файлов,
  * заменяем, иначе часть систем сохранит файл под случайным именем.
  */
-function downloadFileName(displayName: string, storagePath: string): string {
+export function downloadFileName(displayName: string, storagePath: string): string {
   const extension = storagePath.includes(".") ? storagePath.split(".").pop()!.toLowerCase() : "";
   const base = displayName
     .replace(/[\\/:*?"<>|]+/g, " ")
@@ -555,13 +742,19 @@ function downloadFileName(displayName: string, storagePath: string): string {
  * материалы уходят вложением прямо в переписку, но правила сборки списка те
  * же самые — снимок заказа, откат на текущие файлы товара, если снимок пуст,
  * и подпись со скачиванием под человеческим именем.
+ *
+ * `missing` — имена материалов, для которых не удалось подписать ссылку
+ * (`createSignedUrl` вернул ошибку). Раньше такой материал просто выпадал из
+ * `files` без следа, и покупатель, оплативший 5 материалов, получал письмо
+ * с 3 ссылками, а заказ всё равно закрывался как «выдан» — см. Блок 1.3.
  */
 async function collectOrderFiles(
   orderId: number,
   items: OrderItem[],
-): Promise<Array<{ name: string; url: string }>> {
+): Promise<{ files: Array<{ name: string; url: string }>; missing: string[] }> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const files: Array<{ name: string; url: string }> = [];
+  const missing: string[] = [];
   for (const item of items) {
     // Материалы бывают из нескольких файлов (модуль multi_files), и у старых
     // заказов заполнены только одиночные *_snapshot — разворачиваем оба вида
@@ -617,18 +810,24 @@ async function collectOrderFiles(
        * передали: покупатель видит «Пазлы БУКВЫ.pdf», а не `1782643012614-ni1xub.pdf`.
        */
       const displayName = material.name || item.name_snapshot || "Материал";
-      const { data: signed } = await supabaseAdmin.storage
+      const { data: signed, error: signErr } = await supabaseAdmin.storage
         .from("product-files")
         .createSignedUrl(material.path, EMAIL_LINK_DAYS * 24 * 60 * 60, {
           download: downloadFileName(displayName, material.path),
         });
       if (signed?.signedUrl) {
         files.push({ name: displayName, url: signed.signedUrl });
+      } else {
+        console.error(
+          `[orders] заказ ${orderId}: не удалось подписать ссылку для «${displayName}»`,
+          signErr,
+        );
+        missing.push(displayName);
       }
     }
   }
 
-  return files;
+  return { files, missing };
 }
 
 /**
@@ -649,7 +848,10 @@ async function collectOrderFiles(
  *  - если не удалось и это — откатываемся на письмо, когда адрес известен.
  *
  * Молча «не отправить» нельзя ни в одном из вариантов: для покупателя это
- * оплаченный и потерянный заказ.
+ * оплаченный и потерянный заказ. По той же причине заказ помечается
+ * `delivered` только если реально ушли все файлы — если часть застряла,
+ * статус остаётся «на подтверждении», продавец получает уведомление
+ * (см. Блок 1.2), и повторное «Подтвердить» можно нажать снова.
  */
 async function deliverOrderToWhatsApp(
   orderId: number,
@@ -680,7 +882,7 @@ async function deliverOrderToWhatsApp(
     );
   }
 
-  const files = await collectOrderFiles(orderId, items);
+  const { files, missing } = await collectOrderFiles(orderId, items);
   if (files.length === 0) {
     throw new Error("У товаров в заказе не приложены файлы — отправлять нечего.");
   }
@@ -714,7 +916,6 @@ async function deliverOrderToWhatsApp(
     });
     if (result.ok) {
       sent += 1;
-      await supabaseAdmin.from("orders").update({ delivery_index: sent }).eq("id", orderId);
     } else {
       console.error(`[orders] заказ ${orderId}: файл «${file.name}» не ушёл — ${result.error}`);
     }
@@ -733,16 +934,52 @@ async function deliverOrderToWhatsApp(
     throw new Error("Материалы не удалось отправить вложением, а почты у заказа нет.");
   }
 
-  await supabaseAdmin
-    .from("orders")
-    .update({ status: "delivered", delivery_index: items.length })
-    .eq("id", orderId);
+  const totalExpected = files.length + missing.length;
+  const fullyDelivered = sent === files.length && missing.length === 0;
 
-  if (sent < files.length) {
-    console.warn(`[orders] заказ ${orderId}: ушло ${sent} файлов из ${files.length}`);
+  if (fullyDelivered) {
+    await supabaseAdmin
+      .from("orders")
+      .update({ status: "delivered", delivery_index: items.length })
+      .eq("id", orderId);
+  } else {
+    const parts: string[] = [];
+    if (sent < files.length) parts.push(`ушло ${sent} из ${files.length} вложений`);
+    if (missing.length) parts.push(`не удалось подготовить: ${missing.join(", ")}`);
+    const note = `WhatsApp: ${parts.join("; ")}. Остальное вышлите вручную.`.slice(0, 500);
+
+    await supabaseAdmin
+      .from("orders")
+      .update({
+        status: "awaiting_confirmation",
+        admin_note: note,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", orderId)
+      .eq("status", "delivering");
+
+    await notifyAdminsAboutDeliveryIssue(`⚠️ Заказ #${displayNo}: ${note}`);
+
+    try {
+      await sendZernioInboxMessage(
+        conversationId,
+        accountId,
+        `⚠️ Отправили ${sent} из ${totalExpected} материалов. Остальное вышлет продавец вручную — доступ уже оплачен, не переживайте.`,
+        { platform: "whatsapp" },
+      );
+    } catch (e) {
+      console.error(`[orders] заказ ${orderId}: не удалось предупредить о частичной выдаче`, e);
+    }
   }
 
-  return { ok: true as const, alreadyDelivered: false, pending: false, sent, total: files.length };
+  return {
+    ok: true as const,
+    alreadyDelivered: false,
+    pending: !fullyDelivered,
+    sent,
+    total: totalExpected,
+    manualRequired: !fullyDelivered,
+  };
 }
 
 /**
@@ -803,7 +1040,7 @@ async function deliverOrderByEmail(
     );
   }
 
-  const files = await collectOrderFiles(orderId, items);
+  const { files, missing } = await collectOrderFiles(orderId, items);
 
   if (files.length === 0) {
     throw new Error("У товаров в заказе не приложены файлы — отправлять нечего.");
@@ -825,6 +1062,20 @@ async function deliverOrderByEmail(
 
   if (!result.ok) {
     throw new Error(`Письмо не отправилось: ${result.error}`);
+  }
+
+  const displayNo = order.display_no ?? order.order_no ?? orderId;
+
+  // Часть материалов не попала в письмо — сказать продавцу прямо, а не
+  // полагаться на то, что кто-то заметит меньшее число вложений (Блок 1.3).
+  if (missing.length > 0) {
+    const note =
+      `Письмо отправлено, но не удалось приложить: ${missing.join(", ")}. Отправьте вручную.`.slice(
+        0,
+        500,
+      );
+    await supabaseAdmin.from("orders").update({ admin_note: note }).eq("id", orderId);
+    await notifyAdminsAboutDeliveryIssue(`⚠️ Заказ #${displayNo}: ${note}`);
   }
 
   /**
@@ -851,7 +1102,7 @@ async function deliverOrderByEmail(
       await sendZernioInboxMessage(
         buyer.zernio_conversation_id,
         buyer.zernio_account_id,
-        `Оплата подтверждена — материалы по заказу №${order.display_no ?? order.order_no ?? orderId} отправлены на ${email}.\n\n` +
+        `Оплата подтверждена — материалы по заказу №${displayNo} отправлены на ${email}.\n\n` +
           `Ссылки в письме действуют ${EMAIL_LINK_DAYS} дней, лучше скачать файлы сразу.\n\n` +
           "Если письма нет — проверьте папку «Спам» и напишите сюда, поможем.",
       );
@@ -872,8 +1123,9 @@ async function deliverOrderByEmail(
     alreadyDelivered: false,
     pending: false,
     sent: files.length,
-    total: items.length,
+    total: files.length + missing.length,
     email,
+    manualRequired: missing.length > 0,
   };
 }
 

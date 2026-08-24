@@ -76,6 +76,7 @@ const copy: Record<
     continueConfirm: (n: number) => string;
     batchSent: (sent: number) => string;
     orderDelivered: (n: number) => string;
+    manualRequired: (n: number) => string;
     rejectReasonPrompt: string;
     rejectNotNotified: string;
     remindConfirm: (n: number) => string;
@@ -132,6 +133,8 @@ const copy: Record<
     batchSent: (sent) =>
       `Отправлена порция файлов (${sent}). Ещё осталось — нажмите «Продолжить» снова или дождитесь cron.`,
     orderDelivered: (n) => `Заказ #${n} выдан полностью.`,
+    manualRequired: (n) =>
+      `Заказ #${n} обработан, но часть материалов не ушла автоматически — проверьте заметку заказа и вышлите вручную.`,
     rejectReasonPrompt: "Причина отказа (необязательно):",
     rejectNotNotified:
       "Заказ отклонён, но сообщить покупателю не удалось — напишите ему сами.\n\nInstagram не даёт писать позже 24 часов с последнего сообщения человека.",
@@ -192,6 +195,8 @@ const copy: Record<
     batchSent: (sent) =>
       `Файлдардың порциясы жіберілді (${sent}). Тағы қалды — «Жалғастыру» қайта басыңыз немесе cron-ды күтіңіз.`,
     orderDelivered: (n) => `#${n} тапсырысы толығымен берілді.`,
+    manualRequired: (n) =>
+      `#${n} тапсырысы өңделді, бірақ кейбір материалдар автоматты жіберілмеді — тапсырыс жазбасын тексеріп, қолмен жіберіңіз.`,
     rejectReasonPrompt: "Қабылдамау себебі (міндетті емес):",
     rejectNotNotified:
       "Тапсырыс қабылданбады, бірақ сатып алушыға хабарлау мүмкін болмады — өзіңіз жазыңыз.\n\nInstagram адамның соңғы хабарынан 24 сағаттан кейін жазуға рұқсат бермейді.",
@@ -251,6 +256,8 @@ const copy: Record<
     batchSent: (sent) =>
       `A batch of files was sent (${sent}). More remain — click "Continue" again or wait for cron.`,
     orderDelivered: (n) => `Order #${n} has been fully delivered.`,
+    manualRequired: (n) =>
+      `Order #${n} was processed, but some materials did not go out automatically — check the order note and send them manually.`,
     rejectReasonPrompt: "Rejection reason (optional):",
     rejectNotNotified:
       "The order was rejected, but the customer couldn't be notified — message them yourself.\n\nInstagram doesn't allow messaging more than 24 hours after the person's last message.",
@@ -311,6 +318,8 @@ const copy: Record<
     batchSent: (sent) =>
       `Fayllar qismi yuborildi (${sent}). Yana qoldi — «Davom ettirish»ni qayta bosing yoki cron’ni kuting.`,
     orderDelivered: (n) => `#${n} buyurtma to‘liq berildi.`,
+    manualRequired: (n) =>
+      `#${n} buyurtma qayta ishlandi, lekin ba'zi materiallar avtomatik yuborilmadi — buyurtma izohini tekshirib, qo‘lda yuboring.`,
     rejectReasonPrompt: "Rad etish sababi (ixtiyoriy):",
     rejectNotNotified:
       "Buyurtma rad etildi, lekin xaridorga xabar berib bo‘lmadi — o‘zingiz yozing.\n\nInstagram odamning oxirgi xabaridan 24 soatdan keyin yozishga ruxsat bermaydi.",
@@ -377,6 +386,10 @@ function OrdersPage() {
       qc.invalidateQueries({ queryKey: ["orders"] });
       if (result.alreadyDelivered) {
         toast.success(tr.alreadyDelivered(displayNo));
+      } else if ("pending" in result && result.pending) {
+        toast.success(tr.batchSent(result.sent));
+      } else if (result.manualRequired) {
+        toast.warning(tr.manualRequired(displayNo));
       }
     } catch (e: unknown) {
       toast.error(errorMessage(e));
@@ -404,6 +417,8 @@ function OrdersPage() {
       qc.invalidateQueries({ queryKey: ["orders"] });
       if ("pending" in res && res.pending) {
         toast.success(tr.batchSent(res.sent));
+      } else if (res.manualRequired) {
+        toast.warning(tr.manualRequired(displayNo));
       } else {
         toast.success(tr.orderDelivered(displayNo));
       }

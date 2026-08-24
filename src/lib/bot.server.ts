@@ -2692,13 +2692,21 @@ export async function handleUpdate(update: TelegramUpdate) {
                   item.file_url_kz_snapshot,
                 );
 
+        let materialOk = true;
         if (materials.length) {
           await tg("sendMessage", {
             chat_id,
             text: m.loadingMaterials(lang === "ru" ? "Русский" : "Қазақша"),
           });
           // Always 1 copy — quantity is cart price, not file copies
-          await sendMaterials(order.telegram_id, materials, item.name_snapshot, 1);
+          const result = await sendMaterials(order.telegram_id, materials, item.name_snapshot, 1);
+          materialOk = result.outcome === "sent";
+          if (!materialOk) {
+            await tg("sendMessage", {
+              chat_id,
+              text: `⚠️ Не удалось отправить материал (${lang === "ru" ? "Русский" : "Қазақша"}) — продавец вышлет вручную.`,
+            });
+          }
         } else {
           await tg("sendMessage", {
             chat_id,
@@ -2706,12 +2714,16 @@ export async function handleUpdate(update: TelegramUpdate) {
           });
         }
 
-        // Update delivered_language tracking
-        const newDeliveredLang = item.delivered_language ? "both" : lang;
-        await s
-          .from("order_items")
-          .update({ delivered_language: newDeliveredLang })
-          .eq("id", item.id);
+        // Update delivered_language tracking — only on an actual send, so a
+        // failed attempt can still be retried by tapping the language button
+        // again instead of being silently marked done.
+        if (materialOk) {
+          const newDeliveredLang = item.delivered_language ? "both" : lang;
+          await s
+            .from("order_items")
+            .update({ delivered_language: newDeliveredLang })
+            .eq("id", item.id);
+        }
 
         // Edit the message to remove buttons
         if (cq.message?.message_id) {
@@ -2752,6 +2764,16 @@ export async function handleUpdate(update: TelegramUpdate) {
             await tg("sendMessage", {
               chat_id,
               text: `ℹ️ Заказ #${shownNo} уже выдаётся или выдан.`,
+            });
+          } else if ("pending" in result && result.pending) {
+            await tg("sendMessage", {
+              chat_id,
+              text: `📤 Заказ #${shownNo}: отправлено ${result.sent} из ${result.total}. Продолжаю рассылку — нажмите «Продолжить выдачу» в панели или подождите крон.`,
+            });
+          } else if (result.manualRequired) {
+            await tg("sendMessage", {
+              chat_id,
+              text: `⚠️ Заказ #${shownNo} обработан, но часть материалов нужно выслать вручную — проверьте панель.`,
             });
           } else {
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} выдан.` });

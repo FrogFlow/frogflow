@@ -44,8 +44,14 @@ async function handleRobokassaResult(request: Request) {
   }
 
   const testMode = getSetting("robokassa_test_mode") === "true";
+  // Пароль для проверки подписи выбирается ТОЛЬКО по настройке продавца
+  // (robokassa_test_mode), а не по полю IsTest из тела запроса — иначе
+  // приславший IsTest=1 проверялся бы тестовым паролем, а тестовый пароль —
+  // секрет низкой ценности. Раньше `isTest === "1"` само по себе переключало
+  // пароль, то есть подделать подпись было можно тестовым паролем даже на
+  // проде (Блок 1.6b).
   const pass2 = (
-    isTest === "1" || testMode ? getSetting("robokassa_pass2_test") : getSetting("robokassa_pass2")
+    testMode ? getSetting("robokassa_pass2_test") : getSetting("robokassa_pass2")
   )?.trim();
 
   if (!pass2) {
@@ -66,7 +72,11 @@ async function handleRobokassaResult(request: Request) {
   });
 
   if (!ok) {
-    logger.error("robokassa.signature_mismatch", { out_sum: outSum, inv_id: invId });
+    logger.error("robokassa.signature_mismatch", {
+      out_sum: outSum,
+      inv_id: invId,
+      is_test: isTest,
+    });
     return new Response("bad sign", { status: 400 });
   }
 
@@ -81,8 +91,11 @@ async function handleRobokassaResult(request: Request) {
     return new Response("order not found", { status: 404 });
   }
 
-  // Защита от подделки суммы
-  if (Math.abs(Number(outSum) - Number(order.total)) > 0.01) {
+  // Защита от подделки суммы. `Number()` от нечислового OutSum даёт NaN, а
+  // `NaN > 0.01` — false, то есть без явной проверки на конечность подмена
+  // OutSum мусором тихо проходила бы мимо этой защиты (Блок 4).
+  const outSumNum = Number(outSum);
+  if (!Number.isFinite(outSumNum) || Math.abs(outSumNum - Number(order.total)) > 0.01) {
     logger.error("robokassa.amount_mismatch", {
       order_id: orderId,
       out_sum: outSum,
@@ -92,24 +105,47 @@ async function handleRobokassaResult(request: Request) {
   }
 
   // Выдавать только если заказ ожидает оплаты или подтверждения (защита от выдачи отклонённых)
-  if (["awaiting_payment", "awaiting_confirmation"].includes(order.status)) {
-    try {
-      if (order.platform === "instagram") {
-        const { deliverInstagramOrder } = await import("@/lib/zernio-bot.server");
-        await deliverInstagramOrder(orderId);
-      } else {
-        await deliverOrder(orderId);
-      }
-      await s
-        .from("orders")
-        .update({
-          payment_proof_path: "robokassa",
-          admin_note: `Paid via Robokassa. Amount: ${outSum}`,
-        })
-        .eq("id", orderId);
-    } catch (e) {
-      logger.error("robokassa.deliver_failed", { order_id: orderId, err: e });
+  if (!["awaiting_payment", "awaiting_confirmation"].includes(order.status)) {
+    // Не тихое "ничего не делаем": повторный или запоздалый колбэк на заказ
+    // в неожиданном статусе стоит видеть в логах, а не терять молча.
+    logger.warn("robokassa.unexpected_order_status", { order_id: orderId, status: order.status });
+    return new Response(`OK${invId}`);
+  }
+
+  /**
+   * Факт получения денег фиксируется ДО попытки выдачи, а не после (Блок 1.6).
+   *
+   * Раньше запись `payment_proof_path`/`admin_note` шла после deliverOrder() —
+   * если выдача падала, catch ниже глушил ошибку в лог, а ответ всё равно
+   * был "OK", то есть Robokassa не повторяла колбэк. Деньги списаны, а от
+   * этого в базе не оставалось никакого следа: заказ так и стоял
+   * awaiting_payment, будто оплаты не было вовсе.
+   *
+   * Если саму запись не удалось сохранить — отвечаем не "OK", чтобы
+   * Robokassa повторила колбэк, а не решила, что всё прошло.
+   */
+  const { error: recordErr } = await s
+    .from("orders")
+    .update({
+      payment_proof_path: "robokassa",
+      admin_note: `Paid via Robokassa. Amount: ${outSum}`,
+    })
+    .eq("id", orderId);
+
+  if (recordErr) {
+    logger.error("robokassa.payment_record_failed", { order_id: orderId, err: recordErr.message });
+    return new Response("db error", { status: 500 });
+  }
+
+  try {
+    if (order.platform === "instagram") {
+      const { deliverInstagramOrder } = await import("@/lib/zernio-bot.server");
+      await deliverInstagramOrder(orderId);
+    } else {
+      await deliverOrder(orderId);
     }
+  } catch (e) {
+    logger.error("robokassa.deliver_failed", { order_id: orderId, err: e });
   }
 
   return new Response(`OK${invId}`);

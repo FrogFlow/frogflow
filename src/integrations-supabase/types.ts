@@ -1175,6 +1175,10 @@ export type Database = {
           user_key: string | null;
           platform: string;
           delivery_index: number;
+          // MIGRATION-33. Сколько раз подряд откатывалась выдача текущей
+          // позиции заказа — потолок автоматических повторов (Блок 1.7).
+          // Тот же ручной патч, что и у display_no выше.
+          delivery_retry_count: number;
           admin_note: string | null;
           contact: string | null;
           country_code: string | null;
@@ -1199,6 +1203,7 @@ export type Database = {
           user_key?: string | null;
           platform?: string;
           delivery_index?: number;
+          delivery_retry_count?: number;
           admin_note?: string | null;
           contact?: string | null;
           country_code?: string | null;
@@ -1223,6 +1228,7 @@ export type Database = {
           user_key?: string | null;
           platform?: string;
           delivery_index?: number;
+          delivery_retry_count?: number;
           admin_note?: string | null;
           contact?: string | null;
           country_code?: string | null;
