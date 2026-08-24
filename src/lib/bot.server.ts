@@ -1083,6 +1083,38 @@ async function askLanguage(chat_id: number) {
   });
 }
 
+/**
+ * Применить выбор языка и провести дальше по сценарию — welcome, оферта,
+ * страна, главное меню. Вынесено из обработчика `locale:` (см. handleUpdate),
+ * чтобы тем же путём можно было провести покупателя автоматически, когда
+ * модуль multi_language выключен (см. вызов ниже, в ветке "/start"): тогда
+ * выбор языка не показывается вовсе, а сразу подставляется locale по
+ * умолчанию — ровно то же самое действие, которое иначе делает нажатие
+ * кнопки.
+ */
+async function applyLocaleSelection(
+  chat_id: number,
+  from_id: number,
+  locale: Locale,
+  user: BotUser,
+) {
+  const nextState = { ...user.state, locale, mode: "idle" as const };
+  await setState(from_id, nextState);
+  await tg("sendMessage", { chat_id, text: botCopy[locale].languageSaved });
+  const base = originFromState();
+  const needCountry = !nextState.country_code;
+  await tg("sendMessage", {
+    chat_id,
+    text: welcomeStartHtml(user.first_name, needCountry, locale),
+    parse_mode: "HTML",
+    reply_markup: legalInlineKeyboard(base, locale),
+    disable_web_page_preview: true,
+  });
+  await sendMain(chat_id, undefined, undefined, locale);
+  if (!nextState.country_code) await askCountry(chat_id, from_id, false, locale);
+  void syncBotPublicDescription();
+}
+
 function legalInlineKeyboard(base: string, locale: Locale = "ru") {
   const m = copy[locale];
   return {
@@ -2461,21 +2493,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (data.startsWith("locale:")) {
         const locale = data.slice("locale:".length);
         if (!isLocale(locale)) return;
-        const nextState = { ...user.state, locale, mode: "idle" as const };
-        await setState(from_id, nextState);
-        await tg("sendMessage", { chat_id, text: botCopy[locale].languageSaved });
-        const base = originFromState();
-        const needCountry = !nextState.country_code;
-        await tg("sendMessage", {
-          chat_id,
-          text: welcomeStartHtml(user.first_name, needCountry, locale),
-          parse_mode: "HTML",
-          reply_markup: legalInlineKeyboard(base, locale),
-          disable_web_page_preview: true,
-        });
-        await sendMain(chat_id, undefined, undefined, locale);
-        if (!nextState.country_code) await askCountry(chat_id, from_id, false, locale);
-        void syncBotPublicDescription();
+        await applyLocaleSelection(chat_id, from_id, locale, user);
         return;
       }
 
@@ -2906,7 +2924,16 @@ export async function handleUpdate(update: TelegramUpdate) {
       // /start is also the language-change entry point. Never infer this from
       // Telegram's device setting: the customer explicitly selects every time.
       // Дальше — в обработчике locale: (welcome, оферта, страна, sendMain).
-      await askLanguage(chat_id);
+      //
+      // Без модуля multi_language выбор языка не показывается вовсе — сразу
+      // подставляется locale по умолчанию (см. applyLocaleSelection), чтобы
+      // покупатель не выбирал то, чего продавец не оплатил.
+      const { hasModule } = await import("./modules/modules.server");
+      if (await hasModule("multi_language")) {
+        await askLanguage(chat_id);
+      } else {
+        await applyLocaleSelection(chat_id, from.id, "ru", user);
+      }
       return;
     }
     if (msg.text === "/id") {

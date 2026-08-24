@@ -216,6 +216,13 @@ export async function deliverOrder(
   let manualRequired = false;
   let announcedContinue = false;
 
+  // multi_language выключен → без выбора языка и без казахских материалов,
+  // даже если они когда-то были заведены в товаре: снимок заказа хранит обе
+  // версии всегда (см. bot.server.ts placeOrder), а какую отдавать — решает
+  // модуль, а не наличие файла.
+  const { hasModule } = await import("./modules/modules.server");
+  const multiLanguageOn = await hasModule("multi_language");
+
   try {
     for (let n = 0; n < BATCH_SIZE; n++) {
       const { data: fresh, error: readErr } = await supabaseAdmin
@@ -270,13 +277,15 @@ export async function deliverOrder(
             item.file_name_snapshot,
             item.file_url_snapshot,
           );
-      const materialsKz = item.material_files_kz_snapshot?.length
-        ? item.material_files_kz_snapshot
-        : legacyAsMaterials(
-            item.file_path_kz_snapshot,
-            item.file_name_kz_snapshot,
-            item.file_url_kz_snapshot,
-          );
+      const materialsKz = multiLanguageOn
+        ? item.material_files_kz_snapshot?.length
+          ? item.material_files_kz_snapshot
+          : legacyAsMaterials(
+              item.file_path_kz_snapshot,
+              item.file_name_kz_snapshot,
+              item.file_url_kz_snapshot,
+            )
+        : [];
 
       // 1. Продвигаем индекс вперёд с помощью CAS ДО отправки файла
       const { data: updated } = await supabaseAdmin

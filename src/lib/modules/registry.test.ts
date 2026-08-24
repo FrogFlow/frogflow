@@ -54,13 +54,16 @@ function isGatedSomewhere(key: string): boolean {
 }
 
 /**
- * Known, tracked gaps — not oversights. Both need a product decision (what a
- * shop looks like with the module off: fall back to base currency? force
- * `ru`?), not just a code change, so they're excluded here rather than left
- * to fail CI on every commit until someone picks that up. Remove a key from
- * this list the moment it gets a real gate.
+ * Known, tracked gaps — not oversights. Each needs a product decision (what a
+ * shop looks like with the module off), not just a code change, so it's
+ * excluded here rather than left to fail CI on every commit until someone
+ * picks that up. Remove a key from this list the moment it gets a real gate.
+ *
+ * multi_currency/multi_language were here until Block 3.3 (see
+ * pricing.server.ts resolvePrice and orders.server.ts deliverOrder): off now
+ * means base price/base currency and Russian-only materials.
  */
-const KNOWN_UNGATED: string[] = ["multi_currency", "multi_language"];
+const KNOWN_UNGATED: string[] = [];
 
 describe("module registry — every sold module has a server-side gate", () => {
   const paidAvailable = MODULE_KEYS.filter((key) => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { manualCountryPrice, resolvePrice, resetPricingCache } from "../src/lib/pricing.server";
+import { hasModule } from "../src/lib/modules/modules.server";
 
 /**
  * Числа взяты из настоящего каталога и из объяснения продавца: в основном поле
@@ -39,7 +40,16 @@ vi.mock("../src/lib/currency.server", () => ({
     Promise.resolve(from === "KZT" && to === "RUB" ? Math.round(amount * 0.16) : amount),
 }));
 
-beforeEach(() => resetPricingCache());
+// По умолчанию модуль включён — большинство тестов ниже писались для тенанта
+// с multi_currency, а "выключено" проверяется отдельно (см. describe ниже).
+vi.mock("../src/lib/modules/modules.server", () => ({
+  hasModule: vi.fn().mockResolvedValue(true),
+}));
+
+beforeEach(() => {
+  resetPricingCache();
+  vi.mocked(hasModule).mockResolvedValue(true);
+});
 
 describe("manualCountryPrice", () => {
   it("читает плоскую карту, которую пишет админка", () => {
@@ -89,5 +99,23 @@ describe("resolvePrice", () => {
   it("страна без реквизитов не роняет расчёт", async () => {
     // Валюты для такой страны нет — остаётся валюта товара, сумма не выдумывается.
     expect(await resolvePrice(product, "DE")).toEqual({ amount: 1000, currency: "KZT" });
+  });
+});
+
+/**
+ * Блок 3.3 плана работ: без модуля multi_currency покупатель всегда видит
+ * базовую цену в базовой валюте товара — ни ручные цены по странам, ни
+ * конвертация по курсу больше не участвуют, независимо от страны.
+ */
+describe("resolvePrice — модуль multi_currency выключен", () => {
+  beforeEach(() => {
+    vi.mocked(hasModule).mockResolvedValue(false);
+  });
+
+  it("игнорирует ручную цену страны и конвертацию — всегда база", async () => {
+    expect(await resolvePrice(product, "KZ")).toEqual({ amount: 1000, currency: "KZT" });
+    expect(await resolvePrice(product, "RU")).toEqual({ amount: 1000, currency: "KZT" });
+    expect(await resolvePrice(product, "DE")).toEqual({ amount: 1000, currency: "KZT" });
+    expect(await resolvePrice(product, null)).toEqual({ amount: 1000, currency: "KZT" });
   });
 });

@@ -119,6 +119,14 @@ export async function resolvePrice(
   const base = Number(product.price) || 0;
   const baseCurrency = String(product.currency || "KZT").toUpperCase();
 
+  // multi_currency выключен → всегда базовая цена в базовой валюте, без учёта
+  // страны покупателя и без ручных цен по странам. Тем, у кого модуль уже
+  // включён, эта проверка ничего не меняет — hasModule для них вернёт true.
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("multi_currency"))) {
+    return { amount: Math.round(base), currency: baseCurrency };
+  }
+
   const code = (countryCode || (await defaultCountryCode()) || "").toUpperCase();
   if (!code) return { amount: Math.round(base), currency: baseCurrency };
 
