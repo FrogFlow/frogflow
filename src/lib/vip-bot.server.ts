@@ -137,11 +137,15 @@ async function getVipSettings() {
  */
 async function getVipLocaleRaw(telegram_id: number): Promise<Locale | null> {
   const s = await db();
-  const { data } = await s
+  const { data, error } = await s
     .from("vip_member_profiles")
     .select("locale")
     .eq("telegram_id", telegram_id)
     .maybeSingle();
+  // PK is (bot_id, telegram_id) — ambiguity isn't reachable here, but a
+  // genuine query error would otherwise read the same as "no locale chosen
+  // yet" and silently re-ask a customer who already picked one.
+  if (error) console.error("[vip-bot] getVipLocaleRaw failed", error);
   return isLocale(data?.locale) ? (data!.locale as Locale) : null;
 }
 
@@ -231,7 +235,8 @@ type VipCopyKey =
   | "proofReceived"
   | "sendScreenshotAsPhoto"
   | "alreadyPendingPublic"
-  | "sendProofIfNotYet";
+  | "sendProofIfNotYet"
+  | "tempError";
 
 /** All customer-facing VIP bot copy. Admin-only replies stay hardcoded Russian below. */
 const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
@@ -262,6 +267,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     myIdUsername: "Username:",
     myIdHint: "Этот ID нужен для ручного добавления в VIP-админке.",
     tariffsLoadError: "Не удалось загрузить тарифы. Попробуйте позже.",
+    tempError: "Не удалось выполнить запрос. Попробуйте ещё раз через минуту.",
     tariffsEmptyRenew:
       "Нет публичных тарифов для продления. Используйте вашу персональную ссылку на тариф или напишите администратору.",
     tariffsEmptyDefault: "В данный момент нет доступных тарифов.",
@@ -338,6 +344,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     myIdUsername: "Username:",
     myIdHint: "Бұл ID VIP-әкімшілікте қолмен қосу үшін керек.",
     tariffsLoadError: "Тарифтерді жүктеу мүмкін болмады. Кейінірек қайталап көріңіз.",
+    tempError: "Сұранысты орындау мүмкін болмады. Бір минуттан кейін қайталап көріңіз.",
     tariffsEmptyRenew:
       "Ұзарту үшін жария тарифтер жоқ. Жеке тариф сілтемеңізді пайдаланыңыз немесе әкімшіге жазыңыз.",
     tariffsEmptyDefault: "Қазіргі уақытта қолжетімді тарифтер жоқ.",
@@ -416,6 +423,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     myIdUsername: "Username:",
     myIdHint: "This ID is needed to add you manually in the VIP admin panel.",
     tariffsLoadError: "Couldn't load plans. Please try again later.",
+    tempError: "Couldn't complete the request. Please try again in a minute.",
     tariffsEmptyRenew: "No public renewal plans. Use your personal plan link or contact the admin.",
     tariffsEmptyDefault: "No plans are available right now.",
     tariffsIntroInGroup:
@@ -494,6 +502,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     myIdUsername: "Username:",
     myIdHint: "Bu ID VIP-adminpanelda qo‘lda qo‘shish uchun kerak.",
     tariffsLoadError: "Tariflarni yuklab bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
+    tempError: "So‘rovni bajarib bo‘lmadi. Bir daqiqadan so‘ng qayta urinib ko‘ring.",
     tariffsEmptyRenew:
       "Uzaytirish uchun ommaviy tariflar yo‘q. Shaxsiy tarif havolangizdan foydalaning yoki administratorga yozing.",
     tariffsEmptyDefault: "Hozirda mavjud tariflar yo‘q.",
@@ -602,7 +611,7 @@ async function showStatus(chat_id: number, telegram_id: number, locale: Locale =
   const c = vipCopy[locale];
   const s = await db();
   const now = new Date();
-  const { data: active } = await s
+  const { data: active, error: activeError } = await s
     .from("vip_subscriptions")
     .select("expires_at, status, vip_tariffs(name, price, currency)")
     .eq("telegram_id", telegram_id)
@@ -611,6 +620,12 @@ async function showStatus(chat_id: number, telegram_id: number, locale: Locale =
     .order("expires_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (activeError) {
+    console.error("[vip-bot] showStatus: active lookup failed", activeError);
+    await tgVip("sendMessage", { chat_id, text: c.tempError });
+    return;
+  }
 
   if (active) {
     const tariff = active.vip_tariffs as {
@@ -632,12 +647,18 @@ async function showStatus(chat_id: number, telegram_id: number, locale: Locale =
     return;
   }
 
-  const { data: pending } = await s
+  const { data: pending, error: pendingError } = await s
     .from("vip_subscriptions")
     .select("id, vip_tariffs(name, price, currency)")
     .eq("telegram_id", telegram_id)
     .eq("status", "pending_payment")
     .maybeSingle();
+
+  if (pendingError) {
+    console.error("[vip-bot] showStatus: pending lookup failed", pendingError);
+    await tgVip("sendMessage", { chat_id, text: c.tempError });
+    return;
+  }
 
   if (pending) {
     const tariff = pending.vip_tariffs as {
@@ -808,15 +829,23 @@ async function sendPaymentInstructions(
 async function showEntryOffer(chat_id: number, from: TelegramUser, locale: Locale = "ru") {
   const c = vipCopy[locale];
   const s = await db();
-  const { data: entry } = await s
+  const { data: entry, error } = await s
     .from("vip_tariffs")
     .select("*")
     .eq("is_entry", true)
     .eq("is_active", true)
     .maybeSingle();
 
+  if (error) {
+    // Two concurrently-saved entry tariffs would land here too (the
+    // uniqueness is only enforced by a read-modify-write in
+    // vip-tariffs.functions.ts, not a DB constraint) — falling back to the
+    // renewal list is still a safe, working flow either way.
+    console.error("[vip-bot] showEntryOffer: ambiguous or failed entry lookup", error);
+  }
+
   if (!entry) {
-    // Entry disabled / missing — fall back to renewal list
+    // Entry disabled / missing (or the error case above) — fall back to renewal list
     await showTariffs(chat_id, locale);
     return;
   }
@@ -855,12 +884,16 @@ async function handleTariffDeepLink(
 ) {
   const c = vipCopy[locale];
   const s = await db();
-  const { data: tariff } = await s
+  // id is the table's PK — a matching-row ambiguity can't happen here, only
+  // a genuine query error, which is worth logging even though the existing
+  // "tariff not found" fallback is still a reasonable response to it.
+  const { data: tariff, error } = await s
     .from("vip_tariffs")
     .select("*")
     .eq("id", tariffId)
     .eq("is_active", true)
     .maybeSingle();
+  if (error) console.error("[vip-bot] handleTariffDeepLink lookup failed", error);
 
   if (!tariff) {
     await tgVip("sendMessage", { chat_id, text: c.tariffLinkNotFound });
@@ -886,12 +919,19 @@ async function showStartFlow(
   const s = await db();
 
   // Уже ждёт подтверждения оплаты — не предлагаем новый тариф / «первый вход»
-  const { data: pending } = await s
+  const { data: pending, error: pendingError } = await s
     .from("vip_subscriptions")
     .select("id, vip_tariffs(name, price, currency)")
     .eq("telegram_id", from.id)
     .eq("status", "pending_payment")
     .maybeSingle();
+
+  // Falls through to the normal /start flow on error — degraded (a customer
+  // with a real pending payment would see the tariff picker instead of
+  // their pending status) but not stuck, unlike handlePhoto's equivalent.
+  if (pendingError) {
+    console.error("[vip-bot] showStartFlow: pending lookup failed", pendingError);
+  }
 
   if (pending) {
     const tariff = pending.vip_tariffs as {
@@ -1131,12 +1171,22 @@ async function handlePhoto(
 ) {
   const c = vipCopy[locale];
   const s = await db();
-  const { data: pendingSub } = await s
+  const { data: pendingSub, error: pendingSubError } = await s
     .from("vip_subscriptions")
     .select("id, tariff_id, payment_proof_path, updated_at, vip_tariffs(name, price, currency)")
     .eq("telegram_id", from_id)
     .eq("status", "pending_payment")
     .maybeSingle();
+
+  // .maybeSingle() reports PGRST116 (data: null) on more than one matching
+  // row, indistinguishable from "no row" unless the error is checked — this
+  // is the exact failure mode that used to lose a customer's receipt: they
+  // pay, send a screenshot, and silently hear "you have nothing pending".
+  if (pendingSubError) {
+    console.error("[vip-bot] handlePhoto: ambiguous or failed pending lookup", pendingSubError);
+    await tgVip("sendMessage", { chat_id, text: c.tempError });
+    return;
+  }
 
   if (!pendingSub) {
     await tgVip("sendMessage", { chat_id, text: c.noPendingTariff });
@@ -1368,12 +1418,18 @@ export async function handleVipUpdate(update: TelegramUpdate) {
       if (data === "buy_renew_public") {
         const c = vipCopy[locale];
         const s = await db();
-        const { data: pending } = await s
+        const { data: pending, error: pendingError } = await s
           .from("vip_subscriptions")
           .select("id, vip_tariffs(name)")
           .eq("telegram_id", from_id)
           .eq("status", "pending_payment")
           .maybeSingle();
+        // Falls through to the tariff list on error, same trade-off as
+        // showStartFlow's identical query — logged, not silently retried as
+        // "successfully confirmed no pending row".
+        if (pendingError) {
+          console.error("[vip-bot] buy_renew_public: pending lookup failed", pendingError);
+        }
         if (pending) {
           const tariff = pending.vip_tariffs as { name?: string } | null;
           await sendWithMenu(

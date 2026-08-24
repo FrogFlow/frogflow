@@ -1,5 +1,6 @@
 import { hasModule } from "./modules.server";
 import { moduleDef, type ModuleKey } from "./registry";
+import { requireAdmin } from "../admin-session.server";
 
 /**
  * Проверка «модуль оплачен» на стороне сервера.
@@ -24,4 +25,19 @@ export async function requireModule(key: ModuleKey): Promise<void> {
     `Модуль «${moduleDef(key).title}» не подключён к вашему тарифу. ` +
       `Чтобы активировать — свяжитесь с администратором.`,
   );
+}
+
+/**
+ * `requireAdmin() + requireModule(key)` — the pair every server function in
+ * a paid module needs at its top. Used to be copy-pasted verbatim (same two
+ * lines, different key literal) into 7 separate *.functions.ts files; kept
+ * here as the one place that actually does the check. Callers still import
+ * it dynamically (`await import("./modules/require-module.server")`) from
+ * their own thin per-module wrapper — a *.functions.ts file is a client/server
+ * boundary, and a static top-level import of a .server.ts module from there
+ * risks pulling server-only code into the client bundle.
+ */
+export async function requireAdminWithModule(key: ModuleKey): Promise<void> {
+  await requireAdmin();
+  await requireModule(key);
 }

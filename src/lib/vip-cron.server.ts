@@ -150,10 +150,14 @@ export async function runVipCronJob(): Promise<VipCronResult> {
 
       if ((otherActive ?? 0) > 0) {
         await revokeVipInvite(groupId, sub.group_invite_link as string | null);
-        await s
+        const { error: updateError } = await s
           .from("vip_subscriptions")
           .update({ status: "expired", group_invite_link: null })
           .eq("id", sub.id);
+        if (updateError) {
+          result.errors.push(`expire-write ${sub.telegram_id}: ${updateError.message}`);
+          continue;
+        }
         result.expired++;
         continue;
       }
@@ -165,10 +169,14 @@ export async function runVipCronJob(): Promise<VipCronResult> {
       const memberStatus = (memberRes.result as { status?: string } | undefined)?.status;
       if (memberStatus && memberStatusExemptFromSubscription(memberStatus)) {
         await revokeVipInvite(groupId, sub.group_invite_link as string | null);
-        await s
+        const { error: updateError } = await s
           .from("vip_subscriptions")
           .update({ status: "expired", group_invite_link: null })
           .eq("id", sub.id);
+        if (updateError) {
+          result.errors.push(`expire-write ${sub.telegram_id}: ${updateError.message}`);
+          continue;
+        }
         result.expired++;
         continue;
       }
@@ -193,16 +201,25 @@ export async function runVipCronJob(): Promise<VipCronResult> {
 
       await revokeVipInvite(groupId, sub.group_invite_link as string | null);
 
+      // Write before notify: if this update fails, the row stays "active"
+      // with a past expires_at, so the next tick re-selects and retries it —
+      // instead of a customer who's already been banned getting "istekla"
+      // every tick forever while nothing ever records that it happened.
+      const { error: updateError } = await s
+        .from("vip_subscriptions")
+        .update({ status: "expired", group_invite_link: null })
+        .eq("id", sub.id);
+      if (updateError) {
+        result.errors.push(`expire-write ${sub.telegram_id}: ${updateError.message}`);
+        continue;
+      }
+
       await tgVip("sendMessage", {
         chat_id: sub.telegram_id,
         text: `❌ <b>Ваша VIP подписка истекла!</b>\n\nВы были исключены из VIP группы. Чтобы вернуться, оформите новую подписку в боте.`,
         parse_mode: "HTML",
       });
 
-      await s
-        .from("vip_subscriptions")
-        .update({ status: "expired", group_invite_link: null })
-        .eq("id", sub.id);
       result.expired++;
     } catch (err) {
       result.errors.push(`expire ${sub.telegram_id}: ${(err as Error).message}`);

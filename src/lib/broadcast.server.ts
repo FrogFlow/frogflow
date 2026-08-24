@@ -350,6 +350,15 @@ export async function createBroadcast(payload: BroadcastPayload) {
   if (channel === "whatsapp" && !payload.account_id) {
     throw new Error("Не выбран аккаунт WhatsApp, от которого идёт рассылка.");
   }
+  if (channel === "whatsapp") {
+    // wa_broadcasts был отдельным пунктом прайса без единой проверки в коде —
+    // тумблер в панели ничего не решал, WhatsApp-рассылка создавалась при
+    // любом статусе модуля, пока по нему был настроен шаблон и аккаунт.
+    const { hasModule } = await import("./modules/modules.server");
+    if (!(await hasModule("wa_broadcasts"))) {
+      throw new Error("Модуль «Рассылки в WhatsApp» не подключён к вашему тарифу.");
+    }
+  }
 
   const whatsappRecipients =
     channel === "whatsapp"

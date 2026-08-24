@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/admin-session.server";
-import { requireModule } from "./require-module.server";
+import { requireAdminWithModule } from "./require-module.server";
 import {
   connect,
   disconnect,
@@ -13,8 +12,7 @@ import {
 } from "@/lib/manager-chat.server";
 
 async function guard() {
-  await requireAdmin();
-  await requireModule("manager_chat");
+  await requireAdminWithModule("manager_chat");
 }
 
 export const listManagerChatConversationsFn = createServerFn({ method: "GET" }).handler(
