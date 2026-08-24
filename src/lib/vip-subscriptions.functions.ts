@@ -72,6 +72,18 @@ async function getLatestActiveExpiry(
   return new Date(data.expires_at as string);
 }
 
+const INVITE_MIN_WINDOW_MS = 10 * 60_000;
+const INVITE_MEMBER_LIMIT = 2;
+
+/**
+ * Invite must stay valid long enough to actually be clicked — a subscription
+ * expiring sooner than that (test mode, a very short tariff) would otherwise
+ * hand out a link that's already dead on arrival.
+ */
+function inviteExpireDate(expiresAt: Date): number {
+  return Math.floor(Math.max(expiresAt.getTime(), Date.now() + INVITE_MIN_WINDOW_MS) / 1000);
+}
+
 function addTariffDuration(
   base: Date,
   tariff: { duration_minutes?: number | null; duration_days?: number | null } | null,
@@ -110,9 +122,9 @@ async function grantVipAccessAfterManual(
   if (!alreadyInGroup) {
     const inviteLinkData = await tgVip("createChatInviteLink", {
       chat_id: opts.groupId,
-      member_limit: 1,
+      member_limit: INVITE_MEMBER_LIMIT,
       name: `vip-man-${opts.subscriptionId.slice(0, 8)}`,
-      expire_date: Math.floor(opts.expiresAt.getTime() / 1000),
+      expire_date: inviteExpireDate(opts.expiresAt),
     });
 
     if (!inviteLinkData.ok) {
@@ -301,9 +313,9 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
     // Create one-time invite BEFORE marking active — avoids stuck "active" without link
     const inviteLinkData = await tgVip("createChatInviteLink", {
       chat_id: groupId,
-      member_limit: 1,
+      member_limit: INVITE_MEMBER_LIMIT,
       name: `vip-${id.slice(0, 8)}`,
-      expire_date: Math.floor(expiresAt.getTime() / 1000),
+      expire_date: inviteExpireDate(expiresAt),
     });
 
     if (!inviteLinkData.ok) {
@@ -712,9 +724,9 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
         await revokeVipInvite(groupId, inviteLink);
         const invite = await tgVip("createChatInviteLink", {
           chat_id: groupId,
-          member_limit: 1,
+          member_limit: INVITE_MEMBER_LIMIT,
           name: `vip-ext-${data.id.slice(0, 8)}`,
-          expire_date: Math.floor(baseSafe.getTime() / 1000),
+          expire_date: inviteExpireDate(baseSafe),
         });
         if (!invite.ok) {
           throw new Error(
