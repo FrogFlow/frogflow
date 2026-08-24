@@ -41,3 +41,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_TENANT_KEY: ${{ secrets.SUPABASE_TENANT_KEY }}
           SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          # tests/tenant-isolation.test.ts требует ещё и этот ключ отдельно от
+          # четырёх выше — без него самый важный тест (изоляция арендаторов)
+          # тихо пропускал себя даже при настроенных остальных секретах.
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
