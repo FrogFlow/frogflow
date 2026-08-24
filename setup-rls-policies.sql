@@ -7,12 +7,14 @@ ON storage.objects FOR SELECT
 TO public
 USING (bucket_id = 'product-images');
 
--- Политики для product-files (публичный доступ на чтение)
+-- product-files НЕ публичный: это платный контент, а не превью, и продавец
+-- не должен раздавать его всем желающим по одной угаданной ссылке. Доступ
+-- идёт только через подписанные ссылки под service_role (см.
+-- orders.server.ts), которым эта политика не нужна — service_role видит
+-- objects независимо от RLS. Публичной политики здесь нарочно нет: тот же
+-- скрипт, прогнанный повторно на проде, раньше молча отменял MIGRATION-20
+-- и открывал бакет заново. См. MIGRATION-33.
 DROP POLICY IF EXISTS "Public Read product-files" ON storage.objects;
-CREATE POLICY "Public Read product-files"
-ON storage.objects FOR SELECT
-TO public
-USING (bucket_id = 'product-files');
 
 -- Политики для payment-proofs (только сервисный роль)
 DROP POLICY IF EXISTS "Service Role All payment-proofs" ON storage.objects;

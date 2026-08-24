@@ -222,11 +222,13 @@ VALUES (
 ) ON CONFLICT (id) DO NOTHING;
 
 -- Создание bucket для файлов товаров
+-- public: false — платный контент, доступ только через подписанные ссылки
+-- (см. orders.server.ts). См. MIGRATION-33.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'product-files',
   'product-files',
-  true,
+  false,
   52428800, -- 50MB limit
   ARRAY['application/pdf', 'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 ) ON CONFLICT (id) DO NOTHING;
@@ -262,12 +264,9 @@ ON storage.objects FOR SELECT
 TO public
 USING (bucket_id = 'product-images');
 
--- Политики для product-files (публичный доступ на чтение)
+-- product-files НЕ публичный — платный контент, доступ только через
+-- подписанные ссылки под service_role. См. MIGRATION-33.
 DROP POLICY IF EXISTS "Public Read product-files" ON storage.objects;
-CREATE POLICY "Public Read product-files"
-ON storage.objects FOR SELECT
-TO public
-USING (bucket_id = 'product-files');
 
 -- Политики для payment-proofs (только сервисный роль)
 DROP POLICY IF EXISTS "Service Role All payment-proofs" ON storage.objects;
