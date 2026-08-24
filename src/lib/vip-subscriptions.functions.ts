@@ -20,12 +20,14 @@ import {
  * Раздел платный: мало быть админом своего бота — модуль должен быть
  * подключён. Без второй проверки тумблер в панели оператора прячет только
  * пункт меню, а серверную функцию по-прежнему можно вызвать напрямую.
+ *
+ * Дальше — только динамический импорт: этот файл пересекает границу
+ * клиент/сервер (createServerFn), а require-module.server.ts — чистый
+ * .server.ts; статический импорт затянул бы его в клиентский бандл.
  */
 async function requireAdminWithModule() {
-  const { requireAdmin } = await import("./admin-session.server");
-  const { requireModule } = await import("./modules/require-module.server");
-  await requireAdmin();
-  await requireModule("vip");
+  const { requireAdminWithModule: check } = await import("./modules/require-module.server");
+  await check("vip");
 }
 
 async function db() {
@@ -803,19 +805,21 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
       return { ok: true as const, expired: true as const };
     }
 
-    // Re-issue invite if user was expired/cancelled AND not currently in the group
+    // Re-issue invite if user was expired/cancelled AND not currently in the group.
+    // Telegram side effects (revoke/create the invite) happen here — they
+    // don't persist any state this row's own row could disagree with, so
+    // their order relative to the write below doesn't matter. The customer
+    // *message* is different: it says "продлена", so it must not go out
+    // until the write below actually lands.
+    let notifyText: string;
     if (wasInactive && groupId) {
       const inGroup = await isVipGroupMember(groupId, sub.telegram_id as number);
       if (inGroup) {
         if (inviteLink) await revokeVipInvite(groupId, inviteLink);
         inviteLink = null;
-        await tgVip("sendMessage", {
-          chat_id: sub.telegram_id,
-          text:
-            `✅ Подписка продлена до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>\n\n` +
-            `Вы уже в VIP-группе — новая ссылка не нужна.`,
-          parse_mode: "HTML",
-        });
+        notifyText =
+          `✅ Подписка продлена до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>\n\n` +
+          `Вы уже в VIP-группе — новая ссылка не нужна.`;
       } else {
         await revokeVipInvite(groupId, inviteLink);
         const invite = await tgVip("createChatInviteLink", {
@@ -831,21 +835,13 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
         }
         inviteLink = (invite.result as { invite_link?: string } | undefined)?.invite_link ?? null;
 
-        await tgVip("sendMessage", {
-          chat_id: sub.telegram_id,
-          text:
-            `✅ Подписка продлена до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>\n\n` +
-            `Одноразовая ссылка для вступления:\n${inviteLink}`,
-          parse_mode: "HTML",
-        });
+        notifyText =
+          `✅ Подписка продлена до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>\n\n` +
+          `Одноразовая ссылка для вступления:\n${inviteLink}`;
       }
     } else {
       const verb = data.days > 0 ? "продлена" : "изменена";
-      await tgVip("sendMessage", {
-        chat_id: sub.telegram_id,
-        text: `✅ Ваша VIP подписка ${verb} до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>.`,
-        parse_mode: "HTML",
-      });
+      notifyText = `✅ Ваша VIP подписка ${verb} до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>.`;
     }
 
     // wasInactive means this row is transitioning into "active" — close out
@@ -867,6 +863,13 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
       .eq("id", data.id);
 
     if (error) throw new Error(error.message);
+
+    await tgVip("sendMessage", {
+      chat_id: sub.telegram_id,
+      text: notifyText,
+      parse_mode: "HTML",
+    });
+
     return { ok: true as const, expired: false as const };
   });
 
