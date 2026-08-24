@@ -10,6 +10,7 @@ import {
 import { memberStatusExemptFromSubscription } from "@/lib/vip-group-members.server";
 import { formatDateTimeRu } from "@/lib/datetime";
 import { isCronAuthorized } from "@/lib/cron-auth.server";
+import { addWarnOffset, pickLatestPerUser, resolveWarnWindows } from "@/lib/vip-flow";
 
 export type VipCronResult = {
   warned: number;
@@ -18,13 +19,6 @@ export type VipCronResult = {
   kickFailed: number;
   errors: string[];
 };
-
-function addWarnOffset(base: Date, amount: number, isTest: boolean): Date {
-  const d = new Date(base);
-  if (isTest) d.setMinutes(d.getMinutes() + amount);
-  else d.setDate(d.getDate() + amount);
-  return d;
-}
 
 async function sendWarn(
   telegramId: number,
@@ -76,12 +70,10 @@ export async function runVipCronJob(): Promise<VipCronResult> {
   for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
 
   const isTest = settings.vip_test_mode === "true";
-  let warnDays = parseInt(settings.vip_warn_days || "3", 10);
-  let warnDays2 = parseInt(settings.vip_warn_days_2 || "1", 10);
-  if (!Number.isFinite(warnDays) || warnDays < 1) warnDays = 3;
-  if (!Number.isFinite(warnDays2) || warnDays2 < 1) warnDays2 = 1;
-  // Ensure stage-2 window is strictly closer than stage-1
-  if (warnDays2 >= warnDays) warnDays2 = Math.max(1, warnDays - 1);
+  const { warnDays, warnDays2 } = resolveWarnWindows(
+    settings.vip_warn_days,
+    settings.vip_warn_days_2,
+  );
 
   const groupId = settings.vip_group_id;
 
@@ -103,20 +95,6 @@ export async function runVipCronJob(): Promise<VipCronResult> {
     .is("admin_note", null);
 
   // Prefer warning the latest-expiring active per user (avoid spam if duplicates slipped in)
-  const pickLatestPerUser = <T extends { telegram_id: number | null; expires_at: string | null }>(
-    rows: T[] | null,
-  ): T[] => {
-    const best = new Map<number, T>();
-    for (const sub of rows ?? []) {
-      const tid = sub.telegram_id as number;
-      const prev = best.get(tid);
-      if (!prev || new Date(sub.expires_at as string) > new Date(prev.expires_at as string)) {
-        best.set(tid, sub);
-      }
-    }
-    return [...best.values()];
-  };
-
   for (const sub of pickLatestPerUser(stage1)) {
     try {
       const sent = await sendWarn(sub.telegram_id as number, sub.expires_at as string, 1);

@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { getVipSubscriptions } from "@/lib/vip-subscriptions.functions";
-import { getSettings } from "@/lib/settings.functions";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components-ui/card";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
@@ -10,7 +9,6 @@ const copy: Record<
   Locale,
   {
     title: string;
-    testMode: string;
     loadError: (msg: string) => string;
     unknownError: string;
     active: string;
@@ -20,7 +18,6 @@ const copy: Record<
 > = {
   ru: {
     title: "Дашборд VIP-группы",
-    testMode: "🧪 Тест-режим активен (время в минутах)",
     loadError: (msg) => `Не удалось загрузить подписки: ${msg}`,
     unknownError: "неизвестная ошибка",
     active: "Активных подписок",
@@ -29,7 +26,6 @@ const copy: Record<
   },
   kk: {
     title: "VIP-топ тақтасы",
-    testMode: "🧪 Тест режимі белсенді (уақыт минутпен)",
     loadError: (msg) => `Жазылымдарды жүктеу мүмкін болмады: ${msg}`,
     unknownError: "белгісіз қате",
     active: "Белсенді жазылымдар",
@@ -38,7 +34,6 @@ const copy: Record<
   },
   en: {
     title: "VIP group dashboard",
-    testMode: "🧪 Test mode is active (time in minutes)",
     loadError: (msg) => `Failed to load subscriptions: ${msg}`,
     unknownError: "unknown error",
     active: "Active subscriptions",
@@ -47,7 +42,6 @@ const copy: Record<
   },
   uz: {
     title: "VIP-guruh boshqaruv paneli",
-    testMode: "🧪 Test rejimi faol (vaqt daqiqalarda)",
     loadError: (msg) => `Obunalarni yuklab bo‘lmadi: ${msg}`,
     unknownError: "noma’lum xato",
     active: "Faol obunalar",
@@ -69,10 +63,6 @@ function AdminVipDashboard() {
     refetchOnWindowFocus: true,
     staleTime: 0,
   });
-  const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
-
-  const isTest = settings.data?.vip_test_mode === "true";
-
   const allSubs = subs.data ?? [];
   const activeSubs = allSubs.filter((s) => s.status === "active");
   const pendingSubs = allSubs.filter((s) => s.status === "pending_payment");
@@ -82,11 +72,6 @@ function AdminVipDashboard() {
     <div className="space-y-6 max-w-4xl">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{c.title}</h1>
-        {isTest && (
-          <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded font-medium border border-yellow-200">
-            {c.testMode}
-          </span>
-        )}
       </div>
 
       {subs.isError && (

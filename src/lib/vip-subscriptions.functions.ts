@@ -9,6 +9,12 @@ import {
   tgVip,
 } from "./vip-bot.server";
 import { assignMemberTariff } from "./vip-member.server";
+import {
+  addTariffDuration,
+  inviteExpireDate,
+  resolveVipExtension,
+  TEST_MODE_DEFAULT_MINUTES,
+} from "./vip-flow";
 
 /**
  * Раздел платный: мало быть админом своего бота — модуль должен быть
@@ -27,30 +33,37 @@ async function db() {
   return supabaseAdmin;
 }
 
+/**
+ * `keepId` omitted means "activating a brand-new row that doesn't exist yet
+ * as a DB id" (addVipSubscriptionManual, before its INSERT) — there's
+ * nothing to exclude, every currently-active row for this user is stale.
+ */
 async function expireOtherActivesAndRevokeInvites(
   s: Awaited<ReturnType<typeof db>>,
   telegramId: number,
-  keepId: string,
+  keepId: string | undefined,
   groupId: string,
 ) {
-  const { data: others } = await s
+  let query = s
     .from("vip_subscriptions")
     .select("id, group_invite_link")
     .eq("telegram_id", telegramId)
-    .eq("status", "active")
-    .neq("id", keepId);
+    .eq("status", "active");
+  if (keepId) query = query.neq("id", keepId);
+  const { data: others } = await query;
 
   for (const other of others ?? []) {
     await revokeVipInvite(groupId, other.group_invite_link as string | null);
   }
 
   if ((others ?? []).length > 0) {
-    await s
+    let update = s
       .from("vip_subscriptions")
       .update({ status: "expired", group_invite_link: null })
       .eq("telegram_id", telegramId)
-      .eq("status", "active")
-      .neq("id", keepId);
+      .eq("status", "active");
+    if (keepId) update = update.neq("id", keepId);
+    await update;
   }
 }
 
@@ -72,31 +85,7 @@ async function getLatestActiveExpiry(
   return new Date(data.expires_at as string);
 }
 
-const INVITE_MIN_WINDOW_MS = 10 * 60_000;
-const INVITE_MEMBER_LIMIT = 2;
-
-/**
- * Invite must stay valid long enough to actually be clicked — a subscription
- * expiring sooner than that (test mode, a very short tariff) would otherwise
- * hand out a link that's already dead on arrival.
- */
-function inviteExpireDate(expiresAt: Date): number {
-  return Math.floor(Math.max(expiresAt.getTime(), Date.now() + INVITE_MIN_WINDOW_MS) / 1000);
-}
-
-function addTariffDuration(
-  base: Date,
-  tariff: { duration_minutes?: number | null; duration_days?: number | null } | null,
-  isTest: boolean,
-): Date {
-  const expiresAt = new Date(base);
-  if (isTest) {
-    expiresAt.setMinutes(expiresAt.getMinutes() + (tariff?.duration_minutes || 1));
-  } else {
-    expiresAt.setDate(expiresAt.getDate() + (tariff?.duration_days || 30));
-  }
-  return expiresAt;
-}
+const INVITE_MEMBER_LIMIT = 1;
 
 type MemberUserFields = {
   username?: string | null;
@@ -115,7 +104,7 @@ async function grantVipAccessAfterManual(
     settings: Record<string, string>;
     user: MemberUserFields;
   },
-): Promise<{ inGroup: boolean; inviteSent: boolean }> {
+): Promise<{ inGroup: boolean; inviteSent: boolean; deliveryFailed: boolean }> {
   const alreadyInGroup = await isVipGroupMember(opts.groupId, opts.telegramId);
   let link: string | null = null;
 
@@ -147,8 +136,15 @@ async function grantVipAccessAfterManual(
   const welcomeMsg = escapeHtml(opts.settings.vip_welcome_message || "Ваша VIP подписка активна!");
   const until = escapeHtml(formatDateTimeRu(opts.expiresAt));
 
+  // tgVip never throws on a failed Telegram call — checking `.ok` here is the
+  // only way to notice that the subscription went active but the customer
+  // never actually received a way in. Without this the admin panel reports
+  // success either way (see the прод-инцидент this whole module traces back
+  // to: a confirmed payment with no delivered invite, discovered only when
+  // the customer complained).
+  let deliveryFailed = false;
   if (alreadyInGroup) {
-    await tgVip("sendMessage", {
+    const sent = await tgVip("sendMessage", {
       chat_id: opts.telegramId,
       text:
         `✅ ${welcomeMsg}\n\n` +
@@ -156,8 +152,9 @@ async function grantVipAccessAfterManual(
         `Вы уже в VIP-группе — новая ссылка не нужна.`,
       parse_mode: "HTML",
     });
+    deliveryFailed = !sent.ok;
   } else if (link) {
-    await tgVip("sendMessage", {
+    const sent = await tgVip("sendMessage", {
       chat_id: opts.telegramId,
       text:
         `✅ ${welcomeMsg}\n\n` +
@@ -165,9 +162,10 @@ async function grantVipAccessAfterManual(
         `Ваша персональная одноразовая ссылка для вступления:\n${link}`,
       parse_mode: "HTML",
     });
+    deliveryFailed = !sent.ok;
   }
 
-  return { inGroup: alreadyInGroup, inviteSent: !!link };
+  return { inGroup: alreadyInGroup, inviteSent: !!link, deliveryFailed };
 }
 
 // Test function to check Supabase connection (real totals, not limit(1))
@@ -325,6 +323,13 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
     link = (inviteLinkData.result as { invite_link?: string } | undefined)?.invite_link ?? null;
   }
 
+  // Close other actives + revoke their invites BEFORE marking this one active
+  // (user stays in group under new period). Order matters now: a partial
+  // UNIQUE (bot_id, telegram_id) WHERE status='active' on vip_subscriptions
+  // rejects two simultaneously-active rows, so the old one must already be
+  // closed by the time the update below runs, not after.
+  await expireOtherActivesAndRevokeInvites(s, sub.telegram_id as number, id, groupId);
+
   const { data: updated, error: updateError } = await s
     .from("vip_subscriptions")
     .update({
@@ -349,12 +354,13 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
     throw new Error("Заявка уже обработана другим администратором");
   }
 
-  // Close other actives + revoke their invites (user stays in group under new period)
-  await expireOtherActivesAndRevokeInvites(s, sub.telegram_id as number, id, groupId);
-
   const welcomeMsg = escapeHtml(settings.vip_welcome_message || "Ваша VIP подписка активна!");
   const until = escapeHtml(formatDateTimeRu(expiresAt));
 
+  // See grantVipAccessAfterManual for why `.ok` is checked here: tgVip never
+  // throws, so an unreachable customer would otherwise report success while
+  // holding an active paid subscription and no way into the group.
+  let deliveryFailed = false;
   if (!needsInvite) {
     await tgVip("sendMessage", {
       chat_id: sub.telegram_id,
@@ -365,7 +371,7 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
       parse_mode: "HTML",
     });
   } else if (isStackedRenewal) {
-    await tgVip("sendMessage", {
+    const sent = await tgVip("sendMessage", {
       chat_id: sub.telegram_id,
       text:
         `✅ ${welcomeMsg}\n\n` +
@@ -373,8 +379,9 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
         `Вас нет в группе — одноразовая ссылка для возврата:\n${link}`,
       parse_mode: "HTML",
     });
+    deliveryFailed = !sent.ok;
   } else {
-    await tgVip("sendMessage", {
+    const sent = await tgVip("sendMessage", {
       chat_id: sub.telegram_id,
       text:
         `✅ ${welcomeMsg}\n\n` +
@@ -382,6 +389,7 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
         `Ваша персональная одноразовая ссылка для вступления:\n${link}`,
       parse_mode: "HTML",
     });
+    deliveryFailed = !sent.ok;
   }
 
   if (tariff?.is_public === false && !tariff?.is_entry) {
@@ -399,7 +407,7 @@ export const activateVipSubscription = createServerOnlyFn(async (id: string) => 
   }
 
   console.log("[confirmVipSubscription] COMPLETE - Confirmation successful");
-  return { ok: true as const };
+  return { ok: true as const, deliveryFailed };
 });
 
 export const getVipMemberProfiles = createServerFn({ method: "GET" }).handler(async () => {
@@ -434,6 +442,88 @@ export const confirmVipSubscription = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdminWithModule();
     return await activateVipSubscription(data.id);
+  });
+
+const ResendInviteInput = z.object({ id: z.string().uuid() });
+
+/**
+ * Recovery path for a confirmed subscription whose invite never actually
+ * reached the customer (tgVip's `.ok` check above catches this, it doesn't
+ * fix it). Re-issues a fresh link and resends it — the only other route to
+ * the same end state was "extend by a day, then extend back", which quietly
+ * changes the paid period as a side effect.
+ */
+export const resendVipInvite = createServerFn({ method: "POST" })
+  .validator((d: unknown) => ResendInviteInput.parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { data: sub } = await s
+      .from("vip_subscriptions")
+      .select("*")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (!sub) throw new Error("Подписка не найдена");
+    if (sub.status !== "active") {
+      throw new Error("Переотправить ссылку можно только для активной подписки");
+    }
+
+    const { data: settingsData } = await s.from("app_settings").select("*");
+    const settings: Record<string, string> = {};
+    for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
+    const groupId = (settings.vip_group_id || "").trim();
+    if (!groupId) throw new Error("vip_group_id не настроен в /admin/vip/settings");
+
+    const telegramId = sub.telegram_id as number;
+    const expiresAt = new Date(sub.expires_at as string);
+
+    const inGroup = await isVipGroupMember(groupId, telegramId);
+    if (inGroup) {
+      throw new Error("Пользователь уже состоит в VIP-группе — ссылка не нужна");
+    }
+
+    if (sub.group_invite_link) {
+      await revokeVipInvite(groupId, sub.group_invite_link as string);
+    }
+
+    const invite = await tgVip("createChatInviteLink", {
+      chat_id: groupId,
+      member_limit: INVITE_MEMBER_LIMIT,
+      name: `vip-resend-${data.id.slice(0, 8)}`,
+      expire_date: inviteExpireDate(expiresAt),
+    });
+    if (!invite.ok) {
+      throw new Error("Не удалось создать ссылку-приглашение. Убедитесь что бот админ в группе.");
+    }
+    const link = (invite.result as { invite_link?: string } | undefined)?.invite_link ?? null;
+
+    const { error: updateError } = await s
+      .from("vip_subscriptions")
+      .update({ group_invite_link: link })
+      .eq("id", data.id);
+    if (updateError) {
+      if (link) await revokeVipInvite(groupId, link);
+      throw new Error("Ошибка сохранения ссылки: " + updateError.message);
+    }
+
+    const until = escapeHtml(formatDateTimeRu(expiresAt));
+    const sent = await tgVip("sendMessage", {
+      chat_id: telegramId,
+      text:
+        `🔁 Ссылка для вступления в VIP-группу переотправлена администратором.\n\n` +
+        `Срок действия подписки до: <b>${until}</b>\n\n` +
+        `Одноразовая ссылка:\n${link}`,
+      parse_mode: "HTML",
+    });
+
+    if (!sent.ok) {
+      throw new Error(
+        "Ссылка создана и сохранена, но сообщение пользователю не доставлено — возможно, заблокировал бота." +
+          (sent.description ? ` (${sent.description})` : ""),
+      );
+    }
+
+    return { ok: true as const };
   });
 
 /** Shared reject: Telegram callbacks and admin panel. Notifies user only if row was updated. */
@@ -533,7 +623,7 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
     const now = new Date();
     const expiresAt = new Date(now);
     if (isTest) {
-      const mins = tariff?.duration_minutes ?? 5;
+      const mins = tariff?.duration_minutes || TEST_MODE_DEFAULT_MINUTES;
       expiresAt.setMinutes(expiresAt.getMinutes() + mins);
     } else {
       const days = data.days ?? tariff?.duration_days ?? 30;
@@ -558,6 +648,23 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
       }
     }
 
+    // Avoid duplicate concurrent actives for the same user — must run BEFORE
+    // the insert below, not after: a partial UNIQUE (bot_id, telegram_id)
+    // WHERE status='active' rejects the insert itself if another active row
+    // for this user already exists. No keepId yet — the new row doesn't have
+    // an id until the insert succeeds, so every currently-active row is stale.
+    if (data.status === "active") {
+      if (groupId) {
+        await expireOtherActivesAndRevokeInvites(s, telegramId, undefined, groupId);
+      } else {
+        await s
+          .from("vip_subscriptions")
+          .update({ status: "expired" })
+          .eq("telegram_id", telegramId)
+          .eq("status", "active");
+      }
+    }
+
     const { data: inserted, error } = await s
       .from("vip_subscriptions")
       .insert({
@@ -576,19 +683,7 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
 
-    // Avoid duplicate concurrent actives for the same user
-    if (data.status === "active" && inserted?.id && groupId) {
-      await expireOtherActivesAndRevokeInvites(s, telegramId, inserted.id, groupId);
-    } else if (data.status === "active" && inserted?.id) {
-      await s
-        .from("vip_subscriptions")
-        .update({ status: "expired" })
-        .eq("telegram_id", telegramId)
-        .eq("status", "active")
-        .neq("id", inserted.id);
-    }
-
-    let accessInfo: { inGroup: boolean; inviteSent: boolean } | undefined;
+    let accessInfo: { inGroup: boolean; inviteSent: boolean; deliveryFailed: boolean } | undefined;
     if (data.status === "active" && inserted?.id && groupId) {
       accessInfo = await grantVipAccessAfterManual(s, {
         subscriptionId: inserted.id,
@@ -598,6 +693,11 @@ export const addVipSubscriptionManual = createServerFn({ method: "POST" })
         settings,
         user: userFields,
       });
+      if (accessInfo.deliveryFailed) {
+        memberWarning =
+          (memberWarning ? memberWarning + " " : "") +
+          "Не удалось отправить сообщение пользователю в Telegram (заблокировал бота или ещё не писал ему). Ссылка сохранена в базе — используйте «Переотправить».";
+      }
     } else if (data.status === "active" && inserted?.id && !groupId) {
       memberWarning =
         (memberWarning ? memberWarning + " " : "") +
@@ -638,9 +738,10 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
     for (const r of settingsData ?? []) settings[r.key as string] = (r.value as string) ?? "";
     const groupId = (settings.vip_group_id || "").trim();
 
-    const pastDue =
-      sub.status === "active" && new Date(sub.expires_at as string).getTime() <= Date.now();
-    const wasInactive = sub.status !== "active" || pastDue;
+    const { wasInactive, baseSafe, shortenedPast } = resolveVipExtension(
+      { status: sub.status as string, expires_at: sub.expires_at as string },
+      data.days,
+    );
 
     if (data.days < 0 && wasInactive) {
       throw new Error(
@@ -648,11 +749,6 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
       );
     }
 
-    const base = wasInactive ? new Date() : new Date(sub.expires_at as string);
-    const baseSafe = base.getTime() < Date.now() && data.days > 0 ? new Date() : new Date(base);
-    baseSafe.setDate(baseSafe.getDate() + data.days);
-
-    const shortenedPast = data.days < 0 && baseSafe.getTime() <= Date.now();
     let inviteLink = sub.group_invite_link as string | null;
 
     // Shrink past now → expire this subscription (+ kick if no other active remains)
@@ -750,6 +846,14 @@ export const extendVipSubscription = createServerFn({ method: "POST" })
         text: `✅ Ваша VIP подписка ${verb} до <b>${escapeHtml(formatDateTimeRu(baseSafe))}</b>.`,
         parse_mode: "HTML",
       });
+    }
+
+    // wasInactive means this row is transitioning into "active" — close out
+    // any other active row for the same user first, same reasoning as in
+    // activateVipSubscription: a partial UNIQUE (bot_id, telegram_id) WHERE
+    // status='active' rejects the update below otherwise.
+    if (wasInactive) {
+      await expireOtherActivesAndRevokeInvites(s, sub.telegram_id as number, data.id, groupId);
     }
 
     const { error } = await s

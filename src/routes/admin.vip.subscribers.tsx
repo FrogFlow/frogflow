@@ -13,7 +13,9 @@ import {
   confirmVipSubscription,
   rejectVipSubscription,
   excludeVipFromCommunity,
+  resendVipInvite,
 } from "@/lib/vip-subscriptions.functions";
+import { getSettings } from "@/lib/settings.functions";
 import { blockTelegramUserFn } from "@/lib/blocked-users.functions";
 import { searchTelegramUsersFn, type TelegramUserHit } from "@/lib/users-search.functions";
 import { lookupVipGroupMemberFn } from "@/lib/vip-group-members.functions";
@@ -105,6 +107,13 @@ const copy: Record<
     rejectBtn: string;
     extendBtn: string;
     excludeBtn: string;
+    resendBtn: string;
+    resendConfirm: string;
+    resendSuccess: string;
+    copyLinkBtn: string;
+    copyLinkSuccess: string;
+    copyLinkFailed: string;
+    confirmDeliveryFailedWarning: string;
     blockBtn: string;
     deleteBtn: string;
     nothingFound: string;
@@ -119,6 +128,8 @@ const copy: Record<
     memberAdded: string;
     memberAddedInvite: string;
     confirmPaymentPrompt: string;
+    testModeConfirmWarning: string;
+    manualTestModeConfirm: string;
     rejectPaymentPrompt: string;
     extendPrompt: string;
     extendInvalid: string;
@@ -170,6 +181,15 @@ const copy: Record<
     rejectBtn: "Отклонить",
     extendBtn: "Срок ±",
     excludeBtn: "Исключить",
+    resendBtn: "Переотправить ссылку",
+    resendConfirm:
+      "Отозвать старую ссылку и отправить пользователю новую? Используйте, если он сообщил, что ссылка не работает или бот не доставил сообщение.",
+    resendSuccess: "Новая ссылка отправлена пользователю.",
+    copyLinkBtn: "Скопировать ссылку",
+    copyLinkSuccess: "Ссылка скопирована.",
+    copyLinkFailed: "Не удалось скопировать — скопируйте вручную из адресной строки браузера.",
+    confirmDeliveryFailedWarning:
+      "⚠️ Подписка подтверждена, но сообщение со ссылкой не доставлено пользователю (заблокировал бота?). Используйте «Переотправить ссылку».",
     blockBtn: "Заблокировать",
     deleteBtn: "Удалить",
     nothingFound: "Ничего не найдено.",
@@ -184,6 +204,9 @@ const copy: Record<
     memberAdded: "Подписчик добавлен. Смотрите вкладку «Активные».",
     memberAddedInvite: "Пользователю отправлена ссылка для вступления.",
     confirmPaymentPrompt: "Подтвердить оплату и выдать доступ?",
+    testModeConfirmWarning: "🧪 Включён тестовый режим — срок отсчитается в минутах, а не в днях.",
+    manualTestModeConfirm:
+      "🧪 Включён тестовый режим — введённое число дней будет проигнорировано, доступ дадут на несколько минут. Всё равно добавить?",
     rejectPaymentPrompt: "Отклонить оплату? Пользователь получит уведомление в VIP-боте.",
     extendPrompt:
       "Изменить срок (дни):\n+ число — продлить (например 2)\n− число — уменьшить (например -3)",
@@ -239,6 +262,15 @@ const copy: Record<
     rejectBtn: "Қабылдамау",
     extendBtn: "Мерзімі ±",
     excludeBtn: "Шығару",
+    resendBtn: "Сілтемені қайта жіберу",
+    resendConfirm:
+      "Ескі сілтемені қайтарып, пайдаланушыға жаңасын жіберу керек пе? Сілтеме жұмыс істемейді немесе бот хабарламаны жеткізбеді десе қолданыңыз.",
+    resendSuccess: "Жаңа сілтеме пайдаланушыға жіберілді.",
+    copyLinkBtn: "Сілтемені көшіру",
+    copyLinkSuccess: "Сілтеме көшірілді.",
+    copyLinkFailed: "Көшіру мүмкін болмады — браузердің мекенжай жолынан қолмен көшіріңіз.",
+    confirmDeliveryFailedWarning:
+      "⚠️ Жазылым расталды, бірақ сілтемесі бар хабарлама пайдаланушыға жеткізілмеді (ботты бұғаттады ма?). «Сілтемені қайта жіберу» түймесін қолданыңыз.",
     blockBtn: "Бұғаттау",
     deleteBtn: "Жою",
     nothingFound: "Ештеңе табылмады.",
@@ -253,6 +285,9 @@ const copy: Record<
     memberAdded: "Жазылушы қосылды. «Белсенді» бөлімін қараңыз.",
     memberAddedInvite: "Пайдаланушыға кіру сілтемесі жіберілді.",
     confirmPaymentPrompt: "Төлемді растап, қолжетімділік беру керек пе?",
+    testModeConfirmWarning: "🧪 Тест режимі қосулы — мерзім күнмен емес, минутпен есептеледі.",
+    manualTestModeConfirm:
+      "🧪 Тест режимі қосулы — енгізілген күндер саны еленбейді, қолжетімділік бірнеше минутқа беріледі. Бәрібір қосу керек пе?",
     rejectPaymentPrompt: "Төлемді қабылдамау керек пе? Пайдаланушы VIP-ботта хабарлама алады.",
     extendPrompt:
       "Мерзімді өзгерту (күн):\n+ сан — ұзарту (мысалы 2)\n− сан — қысқарту (мысалы -3)",
@@ -308,6 +343,15 @@ const copy: Record<
     rejectBtn: "Reject",
     extendBtn: "Duration ±",
     excludeBtn: "Exclude",
+    resendBtn: "Resend link",
+    resendConfirm:
+      "Revoke the old link and send the user a new one? Use this if they say the link doesn't work or the bot failed to deliver the message.",
+    resendSuccess: "A new link was sent to the user.",
+    copyLinkBtn: "Copy link",
+    copyLinkSuccess: "Link copied.",
+    copyLinkFailed: "Couldn't copy — copy it manually from the browser address bar.",
+    confirmDeliveryFailedWarning:
+      '⚠️ Subscription confirmed, but the message with the link wasn\'t delivered (did they block the bot?). Use "Resend link".',
     blockBtn: "Block",
     deleteBtn: "Delete",
     nothingFound: "Nothing found.",
@@ -322,6 +366,9 @@ const copy: Record<
     memberAdded: 'Subscriber added. See the "Active" tab.',
     memberAddedInvite: "An invite link was sent to the user.",
     confirmPaymentPrompt: "Confirm payment and grant access?",
+    testModeConfirmWarning: "🧪 Test mode is on — the period will be counted in minutes, not days.",
+    manualTestModeConfirm:
+      "🧪 Test mode is on — the days you entered will be ignored, access will last a few minutes. Add anyway?",
     rejectPaymentPrompt: "Reject the payment? The user will be notified in the VIP bot.",
     extendPrompt:
       "Change the duration (days):\n+ number — extend (e.g. 2)\n− number — shorten (e.g. -3)",
@@ -377,6 +424,15 @@ const copy: Record<
     rejectBtn: "Rad etish",
     extendBtn: "Muddat ±",
     excludeBtn: "Chiqarish",
+    resendBtn: "Havolani qayta yuborish",
+    resendConfirm:
+      "Eski havolani bekor qilib, foydalanuvchiga yangisini yuborish kerakmi? Havola ishlamayapti yoki bot xabarni yetkazmadi deyilsa ishlating.",
+    resendSuccess: "Foydalanuvchiga yangi havola yuborildi.",
+    copyLinkBtn: "Havolani nusxalash",
+    copyLinkSuccess: "Havola nusxalandi.",
+    copyLinkFailed: "Nusxalab bo‘lmadi — brauzer manzil satridan qo‘lda nusxalang.",
+    confirmDeliveryFailedWarning:
+      "⚠️ Obuna tasdiqlandi, lekin havolali xabar foydalanuvchiga yetkazilmadi (botni bloklaganmi?). «Havolani qayta yuborish»ni ishlating.",
     blockBtn: "Bloklash",
     deleteBtn: "O‘chirish",
     nothingFound: "Hech narsa topilmadi.",
@@ -391,6 +447,10 @@ const copy: Record<
     memberAdded: "Obunachi qo‘shildi. «Faol» bo‘limini qarang.",
     memberAddedInvite: "Foydalanuvchiga kirish havolasi yuborildi.",
     confirmPaymentPrompt: "To‘lovni tasdiqlab, kirishni berasizmi?",
+    testModeConfirmWarning:
+      "🧪 Test rejimi yoqilgan — muddat kunlarda emas, daqiqalarda hisoblanadi.",
+    manualTestModeConfirm:
+      "🧪 Test rejimi yoqilgan — kiritilgan kunlar soni e'tiborga olinmaydi, kirish bir necha daqiqaga beriladi. Baribir qo‘shilsinmi?",
     rejectPaymentPrompt: "To‘lovni rad etasizmi? Foydalanuvchi VIP-botda xabar oladi.",
     extendPrompt:
       "Muddatni o‘zgartirish (kun):\n+ son — uzaytirish (masalan 2)\n− son — qisqartirish (masalan -3)",
@@ -422,6 +482,8 @@ function AdminVipSubscribers() {
   });
   const profiles = useQuery({ queryKey: ["vip_profiles"], queryFn: () => getVipMemberProfiles() });
   const tariffs = useQuery({ queryKey: ["vip_tariffs"], queryFn: () => getVipTariffs() });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
+  const isTestMode = settings.data?.vip_test_mode === "true";
 
   const profileByTelegram = new Map((profiles.data ?? []).map((p) => [String(p.telegram_id), p]));
 
@@ -490,6 +552,9 @@ function AdminVipSubscribers() {
 
   const handleAddManual = async () => {
     if (!manualData.telegram_id || !manualData.tariff_id) return toast.warning(tr.fillIdAndTariff);
+    if (manualData.status === "active" && isTestMode) {
+      if (!(await confirmToast(tr.manualTestModeConfirm))) return;
+    }
     const days = Number.isFinite(manualData.days) && manualData.days >= 1 ? manualData.days : 30;
     try {
       const res = await addVipSubscriptionManual({
@@ -513,10 +578,16 @@ function AdminVipSubscribers() {
   };
 
   const handleConfirm = async (id: string) => {
-    if (!(await confirmToast(tr.confirmPaymentPrompt))) return;
+    const prompt = isTestMode
+      ? `${tr.confirmPaymentPrompt}\n\n${tr.testModeConfirmWarning}`
+      : tr.confirmPaymentPrompt;
+    if (!(await confirmToast(prompt))) return;
     try {
-      await confirmVipSubscription({ data: { id } });
+      const result = await confirmVipSubscription({ data: { id } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
+      if (result.deliveryFailed) {
+        toast.warning(tr.confirmDeliveryFailedWarning);
+      }
     } catch (e: unknown) {
       toast.error(tr.genericError(errorMessage(e)));
     }
@@ -558,6 +629,26 @@ function AdminVipSubscribers() {
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
       toast.error(tr.genericError(errorMessage(e)));
+    }
+  };
+
+  const handleResendInvite = async (id: string) => {
+    if (!(await confirmToast(tr.resendConfirm))) return;
+    try {
+      await resendVipInvite({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["vip_subs"] });
+      toast.success(tr.resendSuccess);
+    } catch (e: unknown) {
+      toast.error(tr.genericError(errorMessage(e)));
+    }
+  };
+
+  const handleCopyInviteLink = async (link: string) => {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success(tr.copyLinkSuccess);
+    } catch {
+      toast.error(tr.copyLinkFailed);
     }
   };
 
@@ -841,6 +932,25 @@ function AdminVipSubscribers() {
                       {s.status !== "pending_payment" && (
                         <Button variant="outline" size="sm" onClick={() => handleExtend(s.id)}>
                           {tr.extendBtn}
+                        </Button>
+                      )}
+                      {s.status === "active" && s.group_invite_link && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          title={s.group_invite_link as string}
+                          onClick={() => handleCopyInviteLink(s.group_invite_link as string)}
+                        >
+                          {tr.copyLinkBtn}
+                        </Button>
+                      )}
+                      {s.status === "active" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResendInvite(s.id)}
+                        >
+                          {tr.resendBtn}
                         </Button>
                       )}
                       {s.status === "active" && (

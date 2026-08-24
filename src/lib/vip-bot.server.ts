@@ -1398,8 +1398,13 @@ export async function handleVipUpdate(update: TelegramUpdate) {
         const subId = data.slice(12);
         const { activateVipSubscription } = await import("./vip-subscriptions.functions");
         try {
-          await activateVipSubscription(subId);
-          await tgVip("sendMessage", { chat_id, text: `✅ Подписка подтверждена.` });
+          const result = await activateVipSubscription(subId);
+          await tgVip("sendMessage", {
+            chat_id,
+            text: result.deliveryFailed
+              ? `✅ Подписка подтверждена.\n\n⚠️ Ссылку не удалось отправить пользователю в Telegram (заблокировал бота?). Используйте «Переотправить» в /admin/vip/subscribers.`
+              : `✅ Подписка подтверждена.`,
+          });
           if (cq.message?.message_id) {
             await tgVip("editMessageReplyMarkup", {
               chat_id,
