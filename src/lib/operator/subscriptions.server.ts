@@ -166,12 +166,24 @@ export async function addPayment(botId: string, p: NewPayment, actor: string) {
  */
 async function reactivateIfPaidOff(botId: string, actor: string) {
   const s = await db();
-  const { data: bot } = await s
+  const { data: bot, error: readErr } = await s
     .from("bots")
     .select("status, subscription_expires_at, settings")
     .eq("id", botId)
     .single();
-  if (!bot || bot.status !== "suspended") return;
+  if (readErr || !bot) {
+    // Платёж уже записан к этому моменту — не роняем addPayment/updatePayment
+    // из-за сбоя реактивации, но и не даём ему пройти незамеченным: раньше
+    // ошибка чтения тут неотличима от «бот не suspended», и клиент, только
+    // что оплативший счёт, оставался приостановленным без единого следа
+    // причины в логах.
+    console.error(
+      `[operator] не удалось прочитать бота ${botId} для реактивации после платежа:`,
+      readErr?.message,
+    );
+    return;
+  }
+  if (bot.status !== "suspended") return;
 
   const state = computeState(bot.subscription_expires_at, readPolicy(bot.settings), true);
   if (state.state === "overdue" || state.state === "grace_over" || state.state === "no_data")

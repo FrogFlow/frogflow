@@ -55,7 +55,10 @@ export async function listBots(includeArchived = false): Promise<BotListItem[]> 
 
   // Одним запросом: у кого вообще есть платежи. Без этого дата, доставшаяся от
   // заведения строки, выглядела бы как подтверждённая оплата.
-  const { data: paid } = await s.from("subscription_payments").select("bot_id");
+  const { data: paid, error: paidErr } = await s.from("subscription_payments").select("bot_id");
+  if (paidErr) {
+    console.error("[operator] не удалось получить платежи для списка клиентов:", paidErr.message);
+  }
   const withPayments = new Set((paid ?? []).map((r) => r.bot_id));
 
   return (data ?? []).map((b) => {
@@ -184,8 +187,15 @@ export async function setModule(botId: string, key: ModuleKey, enabled: boolean,
  */
 async function nudgeDeployment(botId: string) {
   const s = await db();
-  const { data } = await s.from("bots").select("app_url, internal_secret").eq("id", botId).single();
-  if (!data) return;
+  const { data, error } = await s
+    .from("bots")
+    .select("app_url, internal_secret")
+    .eq("id", botId)
+    .single();
+  if (error || !data) {
+    console.warn(`[operator] сброс кеша ${botId}: не удалось прочитать клиента`, error?.message);
+    return;
+  }
 
   const res = await callInternal(data, "/api/internal/reload", {});
   if (!res.ok) {
@@ -546,12 +556,15 @@ export async function listOwnerCandidates(botId: string): Promise<OwnerCandidate
   await requireOperator();
   const s = await db();
 
-  const { data: setting } = await s
+  const { data: setting, error: settingErr } = await s
     .from("app_settings")
     .select("value")
     .eq("bot_id", botId)
     .eq("key", "admin_chat_id")
     .maybeSingle();
+  if (settingErr) {
+    console.error(`[operator] не удалось получить admin_chat_id для ${botId}:`, settingErr.message);
+  }
 
   // Поле хранит список получателей, а не одно число: в админке клиента их
   // может быть несколько.
@@ -560,12 +573,15 @@ export async function listOwnerCandidates(botId: string): Promise<OwnerCandidate
     .map((x) => Number(x))
     .filter((n) => Number.isFinite(n) && n > 0);
 
-  const { data: users } = await s
+  const { data: users, error: usersErr } = await s
     .from("bot_users")
     .select("telegram_id, first_name, last_name, username, created_at")
     .eq("bot_id", botId)
     .order("created_at", { ascending: true })
     .limit(50);
+  if (usersErr) {
+    console.error(`[operator] не удалось получить пользователей бота ${botId}:`, usersErr.message);
+  }
 
   const byId = new Map<
     number,
@@ -628,7 +644,10 @@ export async function listFeed(filter: FeedFilter = {}): Promise<FeedEvent[]> {
   const { data, error } = await query;
   if (error) throw new Error(`Не удалось получить журнал: ${error.message}`);
 
-  const { data: bots } = await s.from("bots").select("id, bot_name");
+  const { data: bots, error: botsErr } = await s.from("bots").select("id, bot_name");
+  if (botsErr) {
+    console.error("[operator] не удалось получить имена клиентов для журнала:", botsErr.message);
+  }
   const names = new Map((bots ?? []).map((b) => [b.id, b.bot_name]));
 
   return (data ?? []).map((e) => ({
@@ -645,7 +664,12 @@ export async function listFeed(filter: FeedFilter = {}): Promise<FeedEvent[]> {
 export async function checkReadinessAll(): Promise<Record<string, Readiness>> {
   await requireOperator();
   const s = await db();
-  const { data } = await s.from("bots").select("id").is("archived_at", null);
+  const { data, error } = await s.from("bots").select("id").is("archived_at", null);
+  // Раньше сбой этого чтения давал `data === undefined` → `(data ?? [])` пустой
+  // массив → функция тихо возвращала {} — панель показала бы «клиентов нет»
+  // или пустую таблицу готовности вместо ошибки, и оператор принял бы отказ
+  // запроса за «у всех всё хорошо».
+  if (error) throw new Error(`Не удалось получить список клиентов: ${error.message}`);
   const rows = await Promise.all(
     (data ?? []).map(async (b) => {
       try {

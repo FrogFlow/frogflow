@@ -54,8 +54,20 @@ export async function sweepSubscriptions(now = new Date()): Promise<SweepEntry[]
 
     const shouldSuspend = sub.state === "grace_over" && policy.on_overdue === "suspend";
     const kind = shouldSuspend ? "suspend" : "warn";
-    // Ключ периода: одно действие на один оплаченный срок.
-    const marker = `${kind}:${bot.subscription_expires_at}`;
+    /**
+     * Ключ периода И дня — не только периода.
+     *
+     * Раньше маркер не включал дату прохода, хотя комментарий к функции прямо
+     * обещает «повторный запуск в тот же день молчит»: и «expiring», и
+     * «overdue» дают одинаковый kind = "warn", то есть один и тот же маркер
+     * на весь срок. Из-за этого предупреждение уходило один раз в первый же
+     * день "expiring" — а дальше все дни "overdue" тот же маркер уже
+     * "сделан", и клиент получал тишину до самого отключения на grace_over.
+     * С датой в ключе warn шлётся каждый день, пока подписка не оплачена или
+     * не наступит grace_over.
+     */
+    const dayKey = now.toISOString().slice(0, 10);
+    const marker = `${kind}:${bot.subscription_expires_at}:${dayKey}`;
 
     if (await alreadyDone(bot.id, marker)) {
       results.push({ ...base, action: "skipped", detail: "уже сделано для этого периода" });
@@ -102,12 +114,25 @@ export async function sweepSubscriptions(now = new Date()): Promise<SweepEntry[]
 
 async function alreadyDone(botId: string, marker: string): Promise<boolean> {
   const s = await db();
-  const { data } = await s
+  const { data, error } = await s
     .from("bot_events")
     .select("id")
     .eq("bot_id", botId)
     .eq("payload->>sweep_marker", marker)
     .limit(1);
+  if (error) {
+    // Раньше ошибка чтения отбрасывалась молча, и data?.length всегда читался
+    // как "ничего не найдено" → "ещё не сделано" → обход шёл действовать. На
+    // сбое одного запроса это рассылало повторные предупреждения (или
+    // пыталось повторно приостановить) всем клиентам разом. Отказ проверки —
+    // не повод действовать: лучше пропустить клиента на этом проходе и
+    // попробовать на следующем, чем разослать дубль.
+    console.error(
+      `[operator] не удалось проверить идемпотентность обхода для ${botId}:`,
+      error.message,
+    );
+    return true;
+  }
   return (data?.length ?? 0) > 0;
 }
 
