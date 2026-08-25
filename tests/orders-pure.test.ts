@@ -7,19 +7,19 @@ import { legacyAsMaterials, downloadFileName } from "../src/lib/orders.server";
 describe("legacyAsMaterials", () => {
   it("оборачивает внешнюю ссылку", () => {
     expect(legacyAsMaterials(null, null, "https://cdn/x.pdf")).toEqual([
-      { url: "https://cdn/x.pdf" },
+      { path: null, name: null, url: "https://cdn/x.pdf" },
     ]);
   });
 
   it("оборачивает путь+имя, когда ссылки нет", () => {
     expect(legacyAsMaterials("path/x.pdf", "Материал", null)).toEqual([
-      { path: "path/x.pdf", name: "Материал" },
+      { path: "path/x.pdf", name: "Материал", url: null },
     ]);
   });
 
   it("ссылка приоритетнее пути, если заданы оба", () => {
     expect(legacyAsMaterials("path/x.pdf", "Материал", "https://cdn/x.pdf")).toEqual([
-      { url: "https://cdn/x.pdf" },
+      { path: null, name: null, url: "https://cdn/x.pdf" },
     ]);
   });
 

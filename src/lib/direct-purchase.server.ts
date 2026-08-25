@@ -1290,7 +1290,7 @@ export async function createOrderFromCart(params: {
    * застрял в статусе «выдаётся», а покупательница осталась без материалов.
    * Таких товаров в каталоге 21 из 493.
    */
-  const { materialsForProduct } = await import("./product-materials");
+  const { materialsForProduct, availableMaterialLanguages } = await import("./product-materials");
   const { data: products } = await s
     .from("products")
     .select(
@@ -1321,7 +1321,10 @@ export async function createOrderFromCart(params: {
         file_name_kz_snapshot: p?.file_name_kz ?? null,
         file_url_kz_snapshot: p?.file_url_kz ?? null,
         material_files_snapshot: materialsForProduct(p, "ru"),
-        material_files_kz_snapshot: materialsForProduct(p, "kz"),
+        material_files_kz_snapshot: materialsForProduct(p, "kk"),
+        material_files_by_lang: Object.fromEntries(
+          availableMaterialLanguages(p).map((lang) => [lang, materialsForProduct(p, lang)]),
+        ),
       };
     }),
   );

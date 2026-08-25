@@ -9,7 +9,7 @@ import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server"
 import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
 import type { ReceiptVerifyResult } from "./receipt-verify.server";
-import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
+import { isLocale, localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "./i18n";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
 type ProductCard = {
@@ -1757,7 +1757,13 @@ async function askCountry(
 // Логика переехала в product-materials.ts и стала общей с заказами из
 // Instagram: две копии этого разбора уже разошлись один раз и стоили клиенту
 // оплаченного, но не выданного заказа (см. комментарий в том файле).
-import { materialsForProduct } from "./product-materials";
+import {
+  materialsForProduct,
+  availableMaterialLanguages,
+  materialsForOrderItem,
+  parseDeliveredLanguages,
+  addDeliveredLanguage,
+} from "./product-materials";
 
 /**
  * Атомарно помечает начало оформления заказа. Кнопка выбора страны — обычный
@@ -1950,8 +1956,12 @@ async function placeOrderInner(
       // разойтись они не должны.
       const displayPrice = priced.get(String(it.products?.id)) ?? Number(it.products?.price ?? 0);
 
-      const materialsRu = materialsForProduct(it.products, "ru");
-      const materialsKz = materialsForProduct(it.products, "kz");
+      // Снимаем ВСЕ языки, какие у товара реально заведены (было только
+      // ru/kk) — иначе купленный материал на en/uz долетит до выдачи пустым.
+      const byLang: Record<string, ReturnType<typeof materialsForProduct>> = {};
+      for (const lang of availableMaterialLanguages(it.products)) {
+        byLang[lang] = materialsForProduct(it.products, lang);
+      }
 
       return {
         order_id: order.id,
@@ -1960,17 +1970,19 @@ async function placeOrderInner(
         price_snapshot: displayPrice,
         quantity: it.quantity,
         // Legacy single-file columns kept for older order rows/tooling; the
-        // JSONB arrays below are what delivery actually reads from now on.
+        // JSONB below is what delivery actually reads from now on.
         file_path_snapshot: it.products?.file_path ?? null,
         file_name_snapshot: it.products?.file_name ?? null,
         file_path_kz_snapshot: it.products?.file_path_kz ?? null,
         file_name_kz_snapshot: it.products?.file_name_kz ?? null,
         file_url_snapshot: it.products?.file_url ?? null,
         file_url_kz_snapshot: it.products?.file_url_kz ?? null,
-        // Общий помощник уже отдаёт нужный вид {path, name, url} — раскладывать
-        // повторно нечего.
-        material_files_snapshot: materialsRu,
-        material_files_kz_snapshot: materialsKz,
+        // Тоже кладём ru/kk сюда для инструментов, которые ещё читают эти две
+        // старые колонки напрямую — но источником истины для выдачи теперь
+        // служит material_files_by_lang ниже.
+        material_files_snapshot: byLang.ru ?? [],
+        material_files_kz_snapshot: byLang.kk ?? [],
+        material_files_by_lang: byLang,
       };
     }),
   );
@@ -2685,8 +2697,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         data !== "clear" &&
         !data.startsWith("rem:") &&
         !data.startsWith("add:") &&
-        !data.startsWith("lang_ru:") &&
-        !data.startsWith("lang_kz:") &&
+        !data.startsWith("lang_") &&
         !data.startsWith("locale:") &&
         !data.startsWith("searchmore:") &&
         !data.startsWith("prod:")
@@ -2863,9 +2874,9 @@ export async function handleUpdate(update: TelegramUpdate) {
         return;
       }
 
-      if (data.startsWith("lang_ru:") || data.startsWith("lang_kz:")) {
+      if (data.startsWith("lang_") && isLocale(data.slice(5).split(":")[0])) {
         const parts = data.split(":");
-        const lang = parts[0] === "lang_ru" ? "ru" : "kz";
+        const lang = parts[0].slice(5) as Locale;
         const orderId = Number(parts[1]);
         const idx = Number(parts[2]);
         const s = await db();
@@ -2896,34 +2907,20 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (!item?.id) return;
 
         // Check if this language was already delivered
-        if (item.delivered_language === lang || item.delivered_language === "both") {
+        if (parseDeliveredLanguages(item.delivered_language).has(lang)) {
           await tg("sendMessage", { chat_id, text: m.fileAlreadySent });
           return;
         }
 
-        const { sendMaterials, legacyAsMaterials } = await import("./orders.server");
-        const materials =
-          lang === "ru"
-            ? item.material_files_snapshot?.length
-              ? item.material_files_snapshot
-              : legacyAsMaterials(
-                  item.file_path_snapshot,
-                  item.file_name_snapshot,
-                  item.file_url_snapshot,
-                )
-            : item.material_files_kz_snapshot?.length
-              ? item.material_files_kz_snapshot
-              : legacyAsMaterials(
-                  item.file_path_kz_snapshot,
-                  item.file_name_kz_snapshot,
-                  item.file_url_kz_snapshot,
-                );
+        const { sendMaterials } = await import("./orders.server");
+        const materials = materialsForOrderItem(item, lang);
+        const langLabel = `${localeFlags[lang]} ${localeNames[lang]}`;
 
         let materialOk = true;
         if (materials.length) {
           await tg("sendMessage", {
             chat_id,
-            text: m.loadingMaterials(lang === "ru" ? "Русский" : "Қазақша"),
+            text: m.loadingMaterials(langLabel),
           });
           // Always 1 copy — quantity is cart price, not file copies
           const result = await sendMaterials(order.telegram_id, materials, item.name_snapshot, 1);
@@ -2931,13 +2928,13 @@ export async function handleUpdate(update: TelegramUpdate) {
           if (!materialOk) {
             await tg("sendMessage", {
               chat_id,
-              text: `⚠️ Не удалось отправить материал (${lang === "ru" ? "Русский" : "Қазақша"}) — продавец вышлет вручную.`,
+              text: `⚠️ Не удалось отправить материал (${langLabel}) — продавец вышлет вручную.`,
             });
           }
         } else {
           await tg("sendMessage", {
             chat_id,
-            text: m.materialNotConfigured(lang === "ru" ? "Русский" : "Қазақша"),
+            text: m.materialNotConfigured(langLabel),
           });
         }
 
@@ -2945,10 +2942,9 @@ export async function handleUpdate(update: TelegramUpdate) {
         // failed attempt can still be retried by tapping the language button
         // again instead of being silently marked done.
         if (materialOk) {
-          const newDeliveredLang = item.delivered_language ? "both" : lang;
           await s
             .from("order_items")
-            .update({ delivered_language: newDeliveredLang })
+            .update({ delivered_language: addDeliveredLanguage(item.delivered_language, lang) })
             .eq("id", item.id);
         }
 

@@ -1089,6 +1089,12 @@ export type Database = {
       };
       order_items: {
         Row: {
+          // MIGRATION-37. Снимок материалов по всем языкам разом (ru/kk/en/uz),
+          // заменяет собой пару material_files_snapshot/material_files_kz_snapshot
+          // для новых заказов — те остаются для старых строк и инструментов,
+          // которые их ещё читают. Тот же ручной патч, что и у остальных
+          // полей этого файла.
+          material_files_by_lang: Json;
           material_files_kz_snapshot: Json;
           material_files_snapshot: Json;
           file_url_kz_snapshot: string | null;
@@ -1107,6 +1113,7 @@ export type Database = {
           quantity: number;
         };
         Insert: {
+          material_files_by_lang?: Json;
           material_files_kz_snapshot?: Json;
           material_files_snapshot?: Json;
           file_url_kz_snapshot?: string | null;
@@ -1125,6 +1132,7 @@ export type Database = {
           quantity?: number;
         };
         Update: {
+          material_files_by_lang?: Json;
           material_files_kz_snapshot?: Json;
           material_files_snapshot?: Json;
           file_url_kz_snapshot?: string | null;

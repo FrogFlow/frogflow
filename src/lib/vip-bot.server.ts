@@ -1173,7 +1173,9 @@ async function handlePhoto(
   const s = await db();
   const { data: pendingSub, error: pendingSubError } = await s
     .from("vip_subscriptions")
-    .select("id, tariff_id, payment_proof_path, updated_at, vip_tariffs(name, price, currency)")
+    .select(
+      "id, tariff_id, payment_proof_path, updated_at, username, first_name, last_name, vip_tariffs(name, price, currency)",
+    )
     .eq("telegram_id", from_id)
     .eq("status", "pending_payment")
     .maybeSingle();
@@ -1210,9 +1212,16 @@ async function handlePhoto(
 
   // Admin-facing notification stays Russian — the admin panel/notify chat is Russian-only.
   const tariff = pendingSub.vip_tariffs;
+  // Имя/юзернейм уже лежат в самой строке подписки (записаны на шаге выбора
+  // тарифа) — админ раньше видел только голый ID и должен был открывать
+  // ссылку, чтобы понять, кто заплатил.
+  const buyerName =
+    [pendingSub.first_name, pendingSub.last_name].filter(Boolean).join(" ").trim() ||
+    (pendingSub.username ? `@${pendingSub.username}` : "");
+  const buyerLabel = buyerName ? `${escapeHtml(buyerName)} (ID ${from_id})` : `ID ${from_id}`;
   const adminText =
     `🆕 <b>Оплата VIP-подписки${isResubmit ? " (повторный чек)" : ""}</b>\n\n` +
-    `Пользователь: <a href="tg://user?id=${from_id}">ID ${from_id}</a>\n` +
+    `Пользователь: <a href="tg://user?id=${from_id}">${buyerLabel}</a>\n` +
     `Тариф: <b>${escapeHtml(String(tariff?.name ?? ""))}</b>\n` +
     `Сумма: <b>${escapeHtml(String(tariff?.price ?? ""))} ${escapeHtml(String(tariff?.currency ?? ""))}</b>\n\n` +
     `Проверьте чек и подтвердите подписку.`;

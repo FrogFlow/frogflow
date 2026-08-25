@@ -18,7 +18,7 @@ import {
 import { listPaymentMethods } from "@/lib/payment-methods.functions";
 import { filterCategoriesByQuery, getCategoryPath, sortCategoriesTree } from "@/lib/category-tree";
 import { useAdminLocale } from "@/lib/admin-locale";
-import type { Locale } from "@/lib/i18n";
+import { localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/products")({
   component: ProductsPage,
@@ -49,9 +49,12 @@ type Product = {
   file_url?: string | null;
   file_url_kz?: string | null;
   product_images?: Img[];
-  product_material_files?: (MaterialFile & { language: "ru" | "kz" })[];
+  product_material_files?: (MaterialFile & { language: string })[];
   country_prices?: Record<string, number>;
 };
+
+type MaterialsByLang = Record<Locale, MaterialFile[]>;
+const emptyMaterialsByLang: MaterialsByLang = { ru: [], kk: [], en: [], uz: [] };
 
 const empty: Product = {
   category_id: null,
@@ -179,13 +182,13 @@ const copy: Record<
     countryPricesTitle: string;
     countryPricesHint: string;
     autoPlaceholder: string;
-    materialRuLabel: string;
-    materialKzLabel: string;
-    externalLinkRu: string;
-    externalLinkKz: string;
+    materialLabel: (langName: string) => string;
+    addLanguageBtn: string;
+    removeLanguageBtn: string;
+    externalLink: (langName: string) => string;
     externalLinkHint: string;
     externalLinkPlaceholder: string;
-    onlyRuHint: string;
+    onlyOneLangHint: string;
     showInBot: string;
     save: string;
     saving: string;
@@ -202,8 +205,7 @@ const copy: Record<
     editShort: string;
     deleteShort: string;
     uploadPhotoError: (msg: string) => string;
-    uploadFileError: (kzSuffix: string, msg: string) => string;
-    kzSuffix: string;
+    uploadFileError: (langName: string, msg: string) => string;
     saveError: (msg: string) => string;
     deleteError: (msg: string) => string;
     unknownError: string;
@@ -236,14 +238,14 @@ const copy: Record<
     countryPricesHint:
       "Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.",
     autoPlaceholder: "Авто (по курсу)",
-    materialRuLabel: "📄 Материал (Русский) — можно несколько файлов/фото",
-    materialKzLabel: "📄 Материал (Қазақша) — можно несколько файлов/фото",
-    externalLinkRu: "Или внешняя ссылка на файл (Русский)",
-    externalLinkKz: "Или внешняя ссылка на файл (Қазақша)",
+    materialLabel: (langName) => `📄 Материал (${langName}) — можно несколько файлов/фото`,
+    addLanguageBtn: "+ Добавить язык",
+    removeLanguageBtn: "Убрать язык",
+    externalLink: (langName) => `Или внешняя ссылка на файл (${langName})`,
     externalLinkHint: "Ссылка используется, только если выше не загружено ни одного файла.",
     externalLinkPlaceholder: "https://drive.google.com/...",
-    onlyRuHint:
-      "Если загрузить материал только на русском, бот не будет спрашивать язык при выдаче заказа.",
+    onlyOneLangHint:
+      "Если загрузить материал только на одном языке, бот не будет спрашивать язык при выдаче заказа.",
     showInBot: "Показывать в боте",
     save: "Сохранить",
     saving: "Сохранение...",
@@ -260,8 +262,7 @@ const copy: Record<
     editShort: "Изм.",
     deleteShort: "Удал.",
     uploadPhotoError: (msg) => `Ошибка загрузки фото: ${msg}`,
-    uploadFileError: (kzSuffix, msg) => `Ошибка загрузки файла${kzSuffix}: ${msg}`,
-    kzSuffix: " (KZ)",
+    uploadFileError: (langName, msg) => `Ошибка загрузки файла (${langName}): ${msg}`,
     saveError: (msg) => `Ошибка сохранения: ${msg}`,
     deleteError: (msg) => `Ошибка удаления: ${msg}`,
     unknownError: "Неизвестная ошибка",
@@ -292,13 +293,13 @@ const copy: Record<
     countryPricesTitle: "Түрлі елдерге бағалар (қолмен)",
     countryPricesHint: "Өрісті бос қалдырсаңыз — негізгі бағаның автоматты айырбасы жұмыс істейді.",
     autoPlaceholder: "Авто (курс бойынша)",
-    materialRuLabel: "📄 Материал (Орысша) — бірнеше файл/фото болуы мүмкін",
-    materialKzLabel: "📄 Материал (Қазақша) — бірнеше файл/фото болуы мүмкін",
-    externalLinkRu: "Немесе файлға сыртқы сілтеме (Орысша)",
-    externalLinkKz: "Немесе файлға сыртқы сілтеме (Қазақша)",
+    materialLabel: (langName) => `📄 Материал (${langName}) — бірнеше файл/фото болуы мүмкін`,
+    addLanguageBtn: "+ Тіл қосу",
+    removeLanguageBtn: "Тілді алып тастау",
+    externalLink: (langName) => `Немесе файлға сыртқы сілтеме (${langName})`,
     externalLinkHint: "Сілтеме тек жоғарыда бірде-бір файл жүктелмеген жағдайда қолданылады.",
     externalLinkPlaceholder: "https://drive.google.com/...",
-    onlyRuHint: "Материал тек орыс тілінде жүктелсе, бот тапсырысты берген кезде тіл сұрамайды.",
+    onlyOneLangHint: "Материал тек бір тілде жүктелсе, бот тапсырысты берген кезде тіл сұрамайды.",
     showInBot: "Ботта көрсету",
     save: "Сақтау",
     saving: "Сақталуда...",
@@ -315,8 +316,7 @@ const copy: Record<
     editShort: "Өзг.",
     deleteShort: "Жою",
     uploadPhotoError: (msg) => `Фото жүктеу қатесі: ${msg}`,
-    uploadFileError: (kzSuffix, msg) => `Файл жүктеу қатесі${kzSuffix}: ${msg}`,
-    kzSuffix: " (KZ)",
+    uploadFileError: (langName, msg) => `Файл жүктеу қатесі (${langName}): ${msg}`,
     saveError: (msg) => `Сақтау қатесі: ${msg}`,
     deleteError: (msg) => `Жою қатесі: ${msg}`,
     unknownError: "Белгісіз қате",
@@ -347,14 +347,14 @@ const copy: Record<
     countryPricesTitle: "Prices by country (manual)",
     countryPricesHint: "Leave a field empty to use automatic conversion from the base price.",
     autoPlaceholder: "Auto (by rate)",
-    materialRuLabel: "📄 Material (Russian) — multiple files/photos allowed",
-    materialKzLabel: "📄 Material (Kazakh) — multiple files/photos allowed",
-    externalLinkRu: "Or an external file link (Russian)",
-    externalLinkKz: "Or an external file link (Kazakh)",
+    materialLabel: (langName) => `📄 Material (${langName}) — multiple files/photos allowed`,
+    addLanguageBtn: "+ Add language",
+    removeLanguageBtn: "Remove language",
+    externalLink: (langName) => `Or an external file link (${langName})`,
     externalLinkHint: "The link is used only if no file has been uploaded above.",
     externalLinkPlaceholder: "https://drive.google.com/...",
-    onlyRuHint:
-      "If the material is only uploaded in Russian, the bot won't ask which language to deliver.",
+    onlyOneLangHint:
+      "If the material is only uploaded in one language, the bot won't ask which language to deliver.",
     showInBot: "Show in the bot",
     save: "Save",
     saving: "Saving...",
@@ -371,8 +371,7 @@ const copy: Record<
     editShort: "Edit",
     deleteShort: "Delete",
     uploadPhotoError: (msg) => `Failed to upload photo: ${msg}`,
-    uploadFileError: (kzSuffix, msg) => `Failed to upload file${kzSuffix}: ${msg}`,
-    kzSuffix: " (KZ)",
+    uploadFileError: (langName, msg) => `Failed to upload file (${langName}): ${msg}`,
     saveError: (msg) => `Save error: ${msg}`,
     deleteError: (msg) => `Delete error: ${msg}`,
     unknownError: "Unknown error",
@@ -404,13 +403,14 @@ const copy: Record<
     countryPricesHint:
       "Maydonni bo‘sh qoldirsangiz — asosiy narxning avtomatik konvertatsiyasi ishlaydi.",
     autoPlaceholder: "Avto (kurs bo‘yicha)",
-    materialRuLabel: "📄 Material (Ruscha) — bir nechta fayl/foto mumkin",
-    materialKzLabel: "📄 Material (Qozoqcha) — bir nechta fayl/foto mumkin",
-    externalLinkRu: "Yoki faylga tashqi havola (Ruscha)",
-    externalLinkKz: "Yoki faylga tashqi havola (Qozoqcha)",
+    materialLabel: (langName) => `📄 Material (${langName}) — bir nechta fayl/foto mumkin`,
+    addLanguageBtn: "+ Til qo‘shish",
+    removeLanguageBtn: "Tilni olib tashlash",
+    externalLink: (langName) => `Yoki faylga tashqi havola (${langName})`,
     externalLinkHint: "Havola faqat yuqorida birorta fayl yuklanmagan bo‘lsa ishlatiladi.",
     externalLinkPlaceholder: "https://drive.google.com/...",
-    onlyRuHint: "Material faqat ruscha yuklansa, bot buyurtmani berishda tilni so‘ramaydi.",
+    onlyOneLangHint:
+      "Material faqat bitta tilda yuklansa, bot buyurtmani berishda tilni so‘ramaydi.",
     showInBot: "Botda ko‘rsatish",
     save: "Saqlash",
     saving: "Saqlanmoqda...",
@@ -427,8 +427,7 @@ const copy: Record<
     editShort: "Tahr.",
     deleteShort: "O‘chir.",
     uploadPhotoError: (msg) => `Fotoni yuklashda xato: ${msg}`,
-    uploadFileError: (kzSuffix, msg) => `Faylni yuklashda xato${kzSuffix}: ${msg}`,
-    kzSuffix: " (KZ)",
+    uploadFileError: (langName, msg) => `Faylni yuklashda xato (${langName}): ${msg}`,
     saveError: (msg) => `Saqlash xatosi: ${msg}`,
     deleteError: (msg) => `O‘chirish xatosi: ${msg}`,
     unknownError: "Noma’lum xato",
@@ -510,11 +509,14 @@ function ProductsPage() {
   const [catQuery, setCatQuery] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);
   const [images, setImages] = useState<Img[]>([]);
-  const [materialFilesRu, setMaterialFilesRu] = useState<MaterialFile[]>([]);
-  const [materialFilesKz, setMaterialFilesKz] = useState<MaterialFile[]>([]);
+  // Какие языковые слоты сейчас показаны в форме, и файлы/загрузка для
+  // каждого — было два фиксированных поля (RU/KZ), теперь любые из 4 языков.
+  const [materialLangs, setMaterialLangs] = useState<Locale[]>(["ru", "kk"]);
+  const [materialFiles, setMaterialFiles] = useState<MaterialsByLang>({ ...emptyMaterialsByLang });
   const [imagesUpload, setImagesUpload] = useState<UploadStatus | null>(null);
-  const [materialsRuUpload, setMaterialsRuUpload] = useState<UploadStatus | null>(null);
-  const [materialsKzUpload, setMaterialsKzUpload] = useState<UploadStatus | null>(null);
+  const [materialsUpload, setMaterialsUpload] = useState<
+    Partial<Record<Locale, UploadStatus | null>>
+  >({});
   const [saving, setSaving] = useState(false);
 
   const catsTree = useMemo(() => sortCategoriesTree(cats.data ?? []), [cats.data]);
@@ -537,8 +539,8 @@ function ProductsPage() {
   function startNew() {
     setEditing({ ...empty });
     setImages([]);
-    setMaterialFilesRu([]);
-    setMaterialFilesKz([]);
+    setMaterialLangs(["ru", "kk"]);
+    setMaterialFiles({ ...emptyMaterialsByLang });
   }
   function startEdit(p: (typeof list)[number]) {
     setEditing({
@@ -566,31 +568,32 @@ function ProductsPage() {
     setImages(imgs);
 
     const materialRows = (p.product_material_files ?? []) as (MaterialFile & {
-      language: "ru" | "kz";
+      language: string;
     })[];
-    const ru = materialRows
-      .filter((f) => f.language === "ru")
-      .sort((a, b) => a.sort_order - b.sort_order);
-    const kz = materialRows
-      .filter((f) => f.language === "kz")
-      .sort((a, b) => a.sort_order - b.sort_order);
+    const byLang: MaterialsByLang = { ...emptyMaterialsByLang };
+    for (const lang of SUPPORTED_LOCALES) {
+      byLang[lang] = materialRows
+        .filter((f) => f.language === lang)
+        .sort((a, b) => a.sort_order - b.sort_order);
+    }
     // Products saved before multi-file materials existed only have the
-    // single legacy file_path column — show that as one item so it stays
-    // visible/editable instead of silently disappearing from the list.
-    setMaterialFilesRu(
-      ru.length
-        ? ru
-        : p.file_path
-          ? [{ file_path: p.file_path, file_name: p.file_name, sort_order: 0 }]
-          : [],
+    // single legacy file_path/file_path_kz columns (ru/kk) — show those as
+    // one item each so they stay visible/editable instead of silently
+    // disappearing from the list.
+    if (byLang.ru.length === 0 && p.file_path) {
+      byLang.ru = [{ file_path: p.file_path, file_name: p.file_name, sort_order: 0 }];
+    }
+    if (byLang.kk.length === 0 && p.file_path_kz) {
+      byLang.kk = [{ file_path: p.file_path_kz, file_name: p.file_name_kz, sort_order: 0 }];
+    }
+    setMaterialFiles(byLang);
+    const activeLangs = SUPPORTED_LOCALES.filter(
+      (lang) =>
+        byLang[lang].length > 0 ||
+        (lang === "ru" && p.file_url) ||
+        (lang === "kk" && p.file_url_kz),
     );
-    setMaterialFilesKz(
-      kz.length
-        ? kz
-        : p.file_path_kz
-          ? [{ file_path: p.file_path_kz, file_name: p.file_name_kz, sort_order: 0 }]
-          : [],
-    );
+    setMaterialLangs(activeLangs.length > 0 ? activeLangs : ["ru", "kk"]);
   }
 
   async function onImagesChange(files: FileList | null) {
@@ -606,33 +609,50 @@ function ProductsPage() {
     }
   }
 
-  async function onMaterialFilesChange(files: FileList | null, lang: "ru" | "kz") {
+  async function onMaterialFilesChange(files: FileList | null, lang: Locale) {
     if (!files) return;
-    const setList = lang === "ru" ? setMaterialFilesRu : setMaterialFilesKz;
-    const current = lang === "ru" ? materialFilesRu : materialFilesKz;
-    const setStatus = lang === "ru" ? setMaterialsRuUpload : setMaterialsKzUpload;
+    const current = materialFiles[lang];
+    const setStatus = (s: UploadStatus | null) =>
+      setMaterialsUpload((prev) => ({ ...prev, [lang]: s }));
     try {
       const uploaded = await uploadManyWithProgress(files, "product-files", setStatus);
-      setList([
-        ...current,
-        ...uploaded.map((r, i) => ({
-          file_path: r.path,
-          file_name: r.name,
-          sort_order: current.length + i,
-        })),
-      ]);
+      setMaterialFiles({
+        ...materialFiles,
+        [lang]: [
+          ...current,
+          ...uploaded.map((r, i) => ({
+            file_path: r.path,
+            file_name: r.name,
+            sort_order: current.length + i,
+          })),
+        ],
+      });
     } catch (e: unknown) {
-      toast.error(tr.uploadFileError(lang === "kz" ? tr.kzSuffix : "", errorMessage(e)));
+      toast.error(tr.uploadFileError(localeNames[lang], errorMessage(e)));
     }
   }
 
+  function addMaterialLang() {
+    const next = SUPPORTED_LOCALES.find((l) => !materialLangs.includes(l));
+    if (next) setMaterialLangs([...materialLangs, next]);
+  }
+  function changeMaterialLang(idx: number, lang: Locale) {
+    setMaterialLangs(materialLangs.map((l, i) => (i === idx ? lang : l)));
+  }
+  function removeMaterialLangSlot(idx: number) {
+    const lang = materialLangs[idx];
+    setMaterialLangs(materialLangs.filter((_, i) => i !== idx));
+    setMaterialFiles({ ...materialFiles, [lang]: [] });
+  }
+  const anyMaterialUploading = Object.values(materialsUpload).some(Boolean);
+
   async function onSave() {
     if (!editing) return;
-    // Файл ещё грузится — state images/materialFilesRu/materialFilesKz ниже
-    // не содержит его путь, пока апload не завершится. Сохранить сейчас
-    // значит унести товар без только что выбранного файла, хотя продавец
-    // уверен, что он уже приложен (Блок 4.8).
-    if (imagesUpload || materialsRuUpload || materialsKzUpload) return;
+    // Файл ещё грузится — state images/materialFiles ниже не содержит его
+    // путь, пока апload не завершится. Сохранить сейчас значит унести товар
+    // без только что выбранного файла, хотя продавец уверен, что он уже
+    // приложен (Блок 4.8).
+    if (imagesUpload || anyMaterialUploading) return;
     setSaving(true);
     try {
       await saveProduct({
@@ -656,21 +676,19 @@ function ProductsPage() {
           file_url: editing.file_url,
           file_url_kz: editing.file_url_kz,
           image_paths: images.map((i) => i.image_path),
-          material_files_ru: materialFilesRu.map((f) => ({
-            file_path: f.file_path,
-            file_name: f.file_name,
-          })),
-          material_files_kz: materialFilesKz.map((f) => ({
-            file_path: f.file_path,
-            file_name: f.file_name,
-          })),
+          material_files: Object.fromEntries(
+            SUPPORTED_LOCALES.map((lang) => [
+              lang,
+              materialFiles[lang].map((f) => ({ file_path: f.file_path, file_name: f.file_name })),
+            ]),
+          ),
           country_prices: editing.country_prices,
         },
       });
       setEditing(null);
       setImages([]);
-      setMaterialFilesRu([]);
-      setMaterialFilesKz([]);
+      setMaterialLangs(["ru", "kk"]);
+      setMaterialFiles({ ...emptyMaterialsByLang });
       qc.invalidateQueries({ queryKey: ["products"] });
     } catch (e: unknown) {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
@@ -856,57 +874,77 @@ function ProductsPage() {
             </div>
           )}
 
-          <div className="space-y-2 pt-4 border-t">
-            <Label htmlFor="file-ru">{tr.materialRuLabel}</Label>
-            <Input
-              id="file-ru"
-              type="file"
-              multiple
-              disabled={!!materialsRuUpload}
-              onChange={(e) => onMaterialFilesChange(e.target.files, "ru")}
-            />
-            <UploadProgressBar status={materialsRuUpload} tr={tr} />
-            <MaterialFilesList
-              files={materialFilesRu}
-              onRemove={(idx) => setMaterialFilesRu(materialFilesRu.filter((_, i) => i !== idx))}
-              removeLabel={tr.removeBtn}
-            />
-            <div className="pt-2">
-              <Label>{tr.externalLinkRu}</Label>
+          {materialLangs.map((lang, idx) => (
+            <div className="space-y-2 pt-4 border-t" key={idx}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Label>{tr.materialLabel(`${localeFlags[lang]} ${localeNames[lang]}`)}</Label>
+                  <select
+                    className="border rounded-md h-8 px-2 text-sm bg-background"
+                    value={lang}
+                    onChange={(e) => changeMaterialLang(idx, e.target.value as Locale)}
+                  >
+                    {SUPPORTED_LOCALES.map((l) => (
+                      <option key={l} value={l} disabled={l !== lang && materialLangs.includes(l)}>
+                        {localeFlags[l]} {localeNames[l]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {materialLangs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeMaterialLangSlot(idx)}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    {tr.removeLanguageBtn}
+                  </button>
+                )}
+              </div>
               <Input
-                value={editing.file_url || ""}
-                onChange={(e) => setEditing({ ...editing, file_url: e.target.value || null })}
-                placeholder={tr.externalLinkPlaceholder}
+                type="file"
+                multiple
+                disabled={!!materialsUpload[lang]}
+                onChange={(e) => onMaterialFilesChange(e.target.files, lang)}
               />
-              <p className="text-xs text-muted-foreground mt-1">{tr.externalLinkHint}</p>
-            </div>
-          </div>
-
-          <div className="space-y-2 pt-4 border-t">
-            <Label htmlFor="file-kz">{tr.materialKzLabel}</Label>
-            <Input
-              id="file-kz"
-              type="file"
-              multiple
-              disabled={!!materialsKzUpload}
-              onChange={(e) => onMaterialFilesChange(e.target.files, "kz")}
-            />
-            <UploadProgressBar status={materialsKzUpload} tr={tr} />
-            <MaterialFilesList
-              files={materialFilesKz}
-              onRemove={(idx) => setMaterialFilesKz(materialFilesKz.filter((_, i) => i !== idx))}
-              removeLabel={tr.removeBtn}
-            />
-            <div className="pt-2">
-              <Label>{tr.externalLinkKz}</Label>
-              <Input
-                value={editing.file_url_kz || ""}
-                onChange={(e) => setEditing({ ...editing, file_url_kz: e.target.value || null })}
-                placeholder={tr.externalLinkPlaceholder}
+              <UploadProgressBar status={materialsUpload[lang] ?? null} tr={tr} />
+              <MaterialFilesList
+                files={materialFiles[lang]}
+                onRemove={(i) =>
+                  setMaterialFiles({
+                    ...materialFiles,
+                    [lang]: materialFiles[lang].filter((_, fi) => fi !== i),
+                  })
+                }
+                removeLabel={tr.removeBtn}
               />
+              {(lang === "ru" || lang === "kk") && (
+                <div className="pt-2">
+                  <Label>{tr.externalLink(localeNames[lang])}</Label>
+                  <Input
+                    value={(lang === "ru" ? editing.file_url : editing.file_url_kz) || ""}
+                    onChange={(e) =>
+                      setEditing(
+                        lang === "ru"
+                          ? { ...editing, file_url: e.target.value || null }
+                          : { ...editing, file_url_kz: e.target.value || null },
+                      )
+                    }
+                    placeholder={tr.externalLinkPlaceholder}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">{tr.externalLinkHint}</p>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-muted-foreground mt-2">{tr.onlyRuHint}</p>
-          </div>
+          ))}
+          {materialLangs.length < SUPPORTED_LOCALES.length && (
+            <Button type="button" variant="outline" size="sm" onClick={addMaterialLang}>
+              {tr.addLanguageBtn}
+            </Button>
+          )}
+          {materialLangs.length === 1 && (
+            <p className="text-xs text-muted-foreground">{tr.onlyOneLangHint}</p>
+          )}
 
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -918,10 +956,7 @@ function ProductsPage() {
           </label>
 
           <div className="flex gap-2">
-            <Button
-              onClick={onSave}
-              disabled={saving || !!imagesUpload || !!materialsRuUpload || !!materialsKzUpload}
-            >
+            <Button onClick={onSave} disabled={saving || !!imagesUpload || anyMaterialUploading}>
               {saving ? tr.saving : tr.save}
             </Button>
             <Button variant="outline" onClick={() => setEditing(null)}>
@@ -981,20 +1016,25 @@ function ProductsPage() {
                       : p.categories?.name || tr.noCategory}{" "}
                     · {p.price} {p.currency}
                     {(() => {
-                      const materials = (p.product_material_files ?? []) as {
-                        language: "ru" | "kz";
-                      }[];
-                      const hasRu =
-                        materials.some((f) => f.language === "ru") || !!p.file_path || !!p.file_url;
-                      const hasKz =
-                        materials.some((f) => f.language === "kz") ||
-                        !!p.file_path_kz ||
-                        !!p.file_url_kz;
-                      if (!hasRu && !hasKz)
+                      const materials = (p.product_material_files ?? []) as { language: string }[];
+                      const langsWithFiles = SUPPORTED_LOCALES.filter(
+                        (lang) =>
+                          materials.some((f) => f.language === lang) ||
+                          (lang === "ru" && (p.file_path || p.file_url)) ||
+                          (lang === "kk" && (p.file_path_kz || p.file_url_kz)),
+                      );
+                      if (langsWithFiles.length === 0)
                         return <span className="text-destructive">{tr.noFile}</span>;
-                      if (hasRu && hasKz) return <span className="text-green-500"> · 🇷🇺🇰🇿</span>;
-                      if (hasRu) return <span className="text-muted-foreground"> · 🇷🇺</span>;
-                      return <span className="text-muted-foreground"> · 🇰🇿</span>;
+                      return (
+                        <span
+                          className={
+                            langsWithFiles.length > 1 ? "text-green-500" : "text-muted-foreground"
+                          }
+                        >
+                          {" "}
+                          · {langsWithFiles.map((l) => localeFlags[l]).join("")}
+                        </span>
+                      );
                     })()}
                   </div>
                 </div>

@@ -1,5 +1,16 @@
 import { tg, tgSendMultipart } from "./telegram.server";
 import type { TablesUpdate } from "@/integrations-supabase/types";
+import type { Locale } from "./i18n";
+import { localeNames, localeFlags } from "./i18n";
+import {
+  MATERIAL_LANGUAGES,
+  legacyAsMaterials,
+  materialsForOrderItem,
+  materialsForOrderItemAnyLang,
+  type MaterialSnapshot,
+} from "./product-materials";
+
+export { legacyAsMaterials, materialsForOrderItem, materialsForOrderItemAnyLang };
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,25 +47,14 @@ export type OrderItem = {
   file_url_kz_snapshot?: string | null;
   material_files_snapshot?: MaterialFile[] | null;
   material_files_kz_snapshot?: MaterialFile[] | null;
-  /** Какой язык уже отправлен покупателю — только для материалов, где заведены оба (RU и KZ). */
+  /** Снимок по всем языкам сразу — пишется для заказов после MIGRATION-37. */
+  material_files_by_lang?: Record<string, MaterialFile[]> | null;
+  /** Какой язык уже отправлен покупателю — "both" означает «все доступные». */
   delivered_language?: string | null;
   quantity: number;
 };
 
-export type MaterialFile = { path?: string | null; name?: string | null; url?: string | null };
-
-// Orders placed before multi-file materials existed only have the single
-// *_snapshot columns — wrap that into the same array shape so delivery code
-// has one path to follow.
-export function legacyAsMaterials(
-  path?: string | null,
-  name?: string | null,
-  url?: string | null,
-): MaterialFile[] {
-  if (url) return [{ url }];
-  if (path) return [{ path, name }];
-  return [];
-}
+export type MaterialFile = MaterialSnapshot;
 
 /**
  * Написать всем Telegram-адресам продавца из `admin_chat_id`, что заказ
@@ -299,25 +299,13 @@ export async function deliverOrder(
       }
 
       const item = items[idx];
-      // Orders placed before multi-file materials existed only have the
-      // single *_snapshot columns — fall back to those when the new arrays
-      // are empty.
-      const materialsRu = item.material_files_snapshot?.length
-        ? item.material_files_snapshot
-        : legacyAsMaterials(
-            item.file_path_snapshot,
-            item.file_name_snapshot,
-            item.file_url_snapshot,
-          );
-      const materialsKz = multiLanguageOn
-        ? item.material_files_kz_snapshot?.length
-          ? item.material_files_kz_snapshot
-          : legacyAsMaterials(
-              item.file_path_kz_snapshot,
-              item.file_name_kz_snapshot,
-              item.file_url_kz_snapshot,
-            )
-        : [];
+      // multi_language выключен → только ru, как и раньше, независимо от
+      // того, сколько языков реально заведено у товара.
+      const availableLangs: Locale[] = multiLanguageOn
+        ? MATERIAL_LANGUAGES.filter((lang) => materialsForOrderItem(item, lang).length > 0)
+        : materialsForOrderItem(item, "ru").length > 0
+          ? ["ru"]
+          : [];
 
       // 1. Продвигаем индекс вперёд с помощью CAS ДО отправки файла
       const { data: updated } = await supabaseAdmin
@@ -341,20 +329,20 @@ export async function deliverOrder(
       let itemOutcome: "sent" | "failed_retry" | "failed_manual" = "sent";
       let failReason: string | undefined;
       try {
-        if (materialsRu.length === 0 && materialsKz.length === 0) {
+        if (availableLangs.length === 0) {
           // Нет файла — ничего не отправляем
           itemOutcome = "sent";
-        } else if (materialsRu.length > 0 && materialsKz.length > 0) {
+        } else if (availableLangs.length > 1) {
           const pickRes = await tg("sendMessage", {
             chat_id: fresh.telegram_id,
             text: `📚 Материал «<b>${item.name_snapshot}</b>»\nВыберите язык, на котором хотите получить файл:`,
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [
-                [
-                  { text: "🇷🇺 Русский", callback_data: `lang_ru:${orderId}:${idx}` },
-                  { text: "🇰🇿 Қазақша", callback_data: `lang_kz:${orderId}:${idx}` },
-                ],
+                availableLangs.map((lang) => ({
+                  text: `${localeFlags[lang]} ${localeNames[lang]}`,
+                  callback_data: `lang_${lang}:${orderId}:${idx}`,
+                })),
               ],
             },
           });
@@ -363,7 +351,7 @@ export async function deliverOrder(
             console.error("[orders] language-pick message failed", pickRes);
           }
         } else {
-          const materials = materialsRu.length > 0 ? materialsRu : materialsKz;
+          const materials = materialsForOrderItem(item, availableLangs[0]);
           // Always 1 copy — quantity is for cart price, not file copies
           const result = await sendMaterials(fresh.telegram_id, materials, item.name_snapshot, 1);
           itemOutcome = result.outcome;
@@ -801,9 +789,7 @@ async function collectOrderFiles(
     // заказов заполнены только одиночные *_snapshot — разворачиваем оба вида
     // тем же помощником, что и выдача в Telegram, иначе часть файлов пропала
     // бы молча.
-    let materials: MaterialFile[] = item.material_files_snapshot?.length
-      ? item.material_files_snapshot
-      : legacyAsMaterials(item.file_path_snapshot, item.file_name_snapshot, item.file_url_snapshot);
+    let materials: MaterialFile[] = materialsForOrderItemAnyLang(item);
 
     /**
      * Снимок пуст — берём файлы товара как они есть сейчас.
@@ -823,8 +809,10 @@ async function collectOrderFiles(
         )
         .eq("id", item.product_id)
         .maybeSingle();
-      materials = materialsForProduct(product, "ru");
-      if (materials.length === 0) materials = materialsForProduct(product, "kz");
+      for (const lang of MATERIAL_LANGUAGES) {
+        materials = materialsForProduct(product, lang);
+        if (materials.length > 0) break;
+      }
       if (materials.length > 0) {
         console.warn(
           `[orders] заказ ${orderId}: снимок файлов пуст, отправляю текущие файлы товара ${item.product_id}`,

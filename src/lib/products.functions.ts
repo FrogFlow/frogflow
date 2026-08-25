@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
 import { fetchAll } from "./csv";
+import { MATERIAL_LANGUAGES } from "./product-materials";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -81,13 +82,17 @@ const SaveInput = z.object({
   image_paths: z.array(z.string()).default([]),
   // A material can be several files/photos (e.g. worksheet pages), not just
   // the single file_path/file_url above — those stay for older products that
-  // predate multi-file support.
-  material_files_ru: z
-    .array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() }))
-    .default([]),
-  material_files_kz: z
-    .array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() }))
-    .default([]),
+  // predate multi-file support. Keyed by language (ru/kk/en/uz, see
+  // product-materials.ts MATERIAL_LANGUAGES) — was a fixed ru/kz pair.
+  material_files: z
+    .object({
+      ru: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
+      kk: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
+      en: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
+      uz: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
+    })
+    .partial()
+    .default({}),
   country_prices: z.record(z.number()).optional().default({}),
 });
 
@@ -180,22 +185,15 @@ export const saveProduct = createServerFn({ method: "POST" })
       .from("product_material_files")
       .select("id")
       .eq("product_id", productId);
-    const materialRows = [
-      ...data.material_files_ru.map((f, idx) => ({
+    const materialRows = MATERIAL_LANGUAGES.flatMap((lang) =>
+      (data.material_files[lang] ?? []).map((f, idx) => ({
         product_id: productId!,
-        language: "ru" as const,
+        language: lang,
         file_path: f.file_path,
         file_name: f.file_name ?? null,
         sort_order: idx,
       })),
-      ...data.material_files_kz.map((f, idx) => ({
-        product_id: productId!,
-        language: "kz" as const,
-        file_path: f.file_path,
-        file_name: f.file_name ?? null,
-        sort_order: idx,
-      })),
-    ];
+    );
     if (materialRows.length) {
       const { error } = await s.from("product_material_files").insert(materialRows);
       if (error) throw new Error(error.message);
