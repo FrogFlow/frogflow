@@ -1758,6 +1758,14 @@ export type Database = {
           storage_bytes: number;
         }[];
       };
+      operator_storage_usage: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          bot_id: string | null;
+          storage_kind: string;
+          storage_bytes: number;
+        }[];
+      };
       // Добавлено вручную по той же причине, что и operator_bot_stats.
       // PATCH-BROADCASTS. Атомарный инкремент счётчиков рассылки: без него
       // параллельные воркеры затирают счёт друг друга (read-then-write).
