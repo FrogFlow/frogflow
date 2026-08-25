@@ -22,13 +22,6 @@
 
 import type { Locale } from "./i18n";
 
-/**
- * Languages in which a product may be delivered.  They deliberately do not
- * have to match the bot UI locales: Kyrgyz files can be sold while the bot
- * itself still speaks one of the fully translated interface languages.
- */
-export type MaterialLanguage = Locale | "ky";
-
 export type MaterialSnapshot = {
   path: string | null;
   name: string | null;
@@ -64,23 +57,7 @@ type ProductWithFiles = {
  */
 
 /** Языки материалов — те же 4 кода, что у Locale бота. Порядок — как в UI. */
-export const MATERIAL_LANGUAGES: readonly MaterialLanguage[] = ["ru", "kk", "en", "uz", "ky"];
-
-export const materialLanguageNames: Record<MaterialLanguage, string> = {
-  ru: "Русский",
-  kk: "Қазақша",
-  en: "English",
-  uz: "O‘zbekcha",
-  ky: "Кыргызча",
-};
-
-export const materialLanguageFlags: Record<MaterialLanguage, string> = {
-  ru: "🇷🇺",
-  kk: "🇰🇿",
-  en: "🇬🇧",
-  uz: "🇺🇿",
-  ky: "🇰🇬",
-};
+export const MATERIAL_LANGUAGES: readonly Locale[] = ["ru", "kk", "en", "uz"];
 
 /**
  * Файлы материала на нужном языке.
@@ -91,7 +68,7 @@ export const materialLanguageFlags: Record<MaterialLanguage, string> = {
  */
 export function materialsForProduct(
   product: ProductWithFiles | null | undefined,
-  lang: MaterialLanguage,
+  lang: Locale,
 ): MaterialSnapshot[] {
   const rows = (product?.product_material_files ?? [])
     .filter((file) => (file.language ?? "ru") === lang && file.file_path)
@@ -128,9 +105,7 @@ export function hasAnyMaterial(product: ProductWithFiles | null | undefined): bo
  * (сохранить все имеющиеся, а не только ru/kk), и для выбора языка при
  * выдаче/оформлении (показать кнопку только на то, что действительно есть).
  */
-export function availableMaterialLanguages(
-  product: ProductWithFiles | null | undefined,
-): MaterialLanguage[] {
+export function availableMaterialLanguages(product: ProductWithFiles | null | undefined): Locale[] {
   return MATERIAL_LANGUAGES.filter((lang) => materialsForProduct(product, lang).length > 0);
 }
 
@@ -170,7 +145,7 @@ type OrderItemWithMaterials = {
  */
 export function materialsForOrderItem(
   item: OrderItemWithMaterials | null | undefined,
-  lang: MaterialLanguage,
+  lang: Locale,
 ): MaterialSnapshot[] {
   const fromMap = item?.material_files_by_lang?.[lang];
   if (fromMap?.length) return fromMap;
@@ -197,7 +172,7 @@ export function materialsForOrderItem(
 /** Какие языки реально есть в снимке этой позиции заказа. */
 export function availableOrderItemLanguages(
   item: OrderItemWithMaterials | null | undefined,
-): MaterialLanguage[] {
+): Locale[] {
   return MATERIAL_LANGUAGES.filter((lang) => materialsForOrderItem(item, lang).length > 0);
 }
 
@@ -223,23 +198,23 @@ export function materialsForOrderItemAnyLang(
  * на 2 языка. Теперь их до 4, и колонка хранит список кодов через запятую;
  * "both" остаётся как понятный старым заказам синоним «ru и kk».
  */
-export function parseDeliveredLanguages(raw: string | null | undefined): Set<MaterialLanguage> {
+export function parseDeliveredLanguages(raw: string | null | undefined): Set<Locale> {
   if (!raw) return new Set();
   if (raw === "both") return new Set(["ru", "kk"]);
   return new Set(
     raw
       .split(",")
       .map((s) => s.trim())
-      .filter(isMaterialLanguage),
+      .filter(isLocaleLike),
   );
 }
 
-export function isMaterialLanguage(value: string): value is MaterialLanguage {
+function isLocaleLike(value: string): value is Locale {
   return (MATERIAL_LANGUAGES as readonly string[]).includes(value);
 }
 
 /** Добавить язык к уже отправленным и вернуть новое значение колонки. */
-export function addDeliveredLanguage(raw: string | null | undefined, lang: MaterialLanguage): string {
+export function addDeliveredLanguage(raw: string | null | undefined, lang: Locale): string {
   const set = parseDeliveredLanguages(raw);
   set.add(lang);
   return MATERIAL_LANGUAGES.filter((l) => set.has(l)).join(",");

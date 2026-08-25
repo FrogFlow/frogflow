@@ -1763,9 +1763,6 @@ import {
   materialsForOrderItem,
   parseDeliveredLanguages,
   addDeliveredLanguage,
-  isMaterialLanguage,
-  materialLanguageFlags,
-  materialLanguageNames,
 } from "./product-materials";
 
 /**
@@ -2877,12 +2874,9 @@ export async function handleUpdate(update: TelegramUpdate) {
         return;
       }
 
-      const selectedMaterialLanguage = data.startsWith("lang_")
-        ? data.slice(5).split(":")[0]
-        : null;
-      if (selectedMaterialLanguage && isMaterialLanguage(selectedMaterialLanguage)) {
+      if (data.startsWith("lang_") && isLocale(data.slice(5).split(":")[0])) {
         const parts = data.split(":");
-        const lang = selectedMaterialLanguage;
+        const lang = parts[0].slice(5) as Locale;
         const orderId = Number(parts[1]);
         const idx = Number(parts[2]);
         const s = await db();
@@ -2920,7 +2914,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         const { sendMaterials } = await import("./orders.server");
         const materials = materialsForOrderItem(item, lang);
-        const langLabel = `${materialLanguageFlags[lang]} ${materialLanguageNames[lang]}`;
+        const langLabel = `${localeFlags[lang]} ${localeNames[lang]}`;
 
         let materialOk = true;
         if (materials.length) {

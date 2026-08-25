@@ -704,12 +704,6 @@ export type BotStats = {
   storage_bytes: number;
 };
 
-export type StorageUsage = {
-  bot_id: string | null;
-  storage_kind: string;
-  storage_bytes: number;
-};
-
 /**
  * Сводка по всем клиентам одним вызовом (MIGRATION-10). Только агрегаты —
  * счётчики, даты, байты. Содержимого чужих магазинов панель не читает: это
@@ -733,17 +727,4 @@ export async function loadStats(): Promise<Map<string, BotStats>> {
     });
   }
   return map;
-}
-
-/** Exact object sizes grouped by tenant and file kind for the storage donuts. */
-export async function loadStorageUsage(): Promise<StorageUsage[]> {
-  await requireOperator();
-  const s = await db();
-  const { data, error } = await s.rpc("operator_storage_usage");
-  if (error) throw new Error(`Не удалось получить использование хранилища: ${error.message}`);
-  return (data ?? []).map((row) => ({
-    bot_id: row.bot_id,
-    storage_kind: row.storage_kind,
-    storage_bytes: Number(row.storage_bytes),
-  }));
 }

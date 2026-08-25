@@ -12,7 +12,6 @@ import {
   checkBotHealth,
   requestWebhookSetup,
   loadStats,
-  loadStorageUsage,
   loadHealthAll,
   setArchived,
   checkReadiness,
@@ -189,11 +188,6 @@ export const listHealthFn = createServerFn({ method: "GET" }).handler(async () =
 export const listStatsFn = createServerFn({ method: "GET" }).handler(async () => {
   await requireOperator();
   return Object.fromEntries(await loadStats());
-});
-
-export const listStorageUsageFn = createServerFn({ method: "GET" }).handler(async () => {
-  await requireOperator();
-  return loadStorageUsage();
 });
 
 /**

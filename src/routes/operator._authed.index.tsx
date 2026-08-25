@@ -7,7 +7,6 @@ import {
   listStatsFn,
   listHealthFn,
   checkReadinessAllFn,
-  listStorageUsageFn,
 } from "@/lib/operator/bots.functions";
 import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
 import { Button } from "@/components-ui/button";
@@ -62,10 +61,6 @@ function OperatorClientsPage() {
   // Отдельным запросом: сводка тяжелее списка (считает место в хранилище), и
   // таблица не должна ждать её, чтобы отрисоваться.
   const stats = useQuery({ queryKey: ["operator_stats"], queryFn: () => listStatsFn() });
-  const storageUsage = useQuery({
-    queryKey: ["operator_storage_usage"],
-    queryFn: () => listStorageUsageFn(),
-  });
   // Здоровье — тоже отдельно: обход всех деплоев занимает секунды, а таблица
   // должна появиться сразу. Обновляем раз в минуту, чтобы упавший бот не ждал
   // перезагрузки страницы.
@@ -275,181 +270,7 @@ function OperatorClientsPage() {
           </Table>
         </div>
       )}
-
-      <StorageAnalytics
-        bots={list}
-        usage={storageUsage.data ?? []}
-        loading={storageUsage.isLoading}
-      />
     </div>
-  );
-}
-
-// Supabase plan limits are expressed in decimal GB, not binary GiB.
-const STORAGE_LIMIT_BYTES = 100 * 1000 * 1000 * 1000;
-const STORAGE_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#d97706", "#059669", "#64748b"];
-
-type StorageRow = Awaited<ReturnType<typeof listStorageUsageFn>>[number];
-
-function Donut({
-  segments,
-  center,
-  size = "h-36 w-36",
-}: {
-  segments: { label: string; bytes: number; color: string }[];
-  center: React.ReactNode;
-  size?: string;
-}) {
-  const total = segments.reduce((sum, item) => sum + item.bytes, 0);
-  let at = 0;
-  const stops = segments
-    .filter((item) => item.bytes > 0)
-    .map((item) => {
-      const start = at;
-      at += (item.bytes / Math.max(total, 1)) * 100;
-      return `${item.color} ${start}% ${at}%`;
-    });
-  return (
-    <div
-      className={`${size} rounded-full shrink-0 grid place-items-center`}
-      style={{ background: stops.length ? `conic-gradient(${stops.join(", ")})` : "var(--muted)" }}
-      role="img"
-      aria-label={segments.map((s) => `${s.label}: ${formatBytes(s.bytes)}`).join(", ")}
-    >
-      <div className="h-[70%] w-[70%] rounded-full bg-card grid place-items-center text-center text-xs px-2">
-        {center}
-      </div>
-    </div>
-  );
-}
-
-function StorageAnalytics({
-  bots,
-  usage,
-  loading,
-}: {
-  bots: { id: string; bot_name: string }[];
-  usage: StorageRow[];
-  loading: boolean;
-}) {
-  const assigned = usage.filter((row) => row.bot_id !== null);
-  const unassigned = usage
-    .filter((row) => row.bot_id === null)
-    .reduce((sum, row) => sum + row.storage_bytes, 0);
-  const byBot = new Map<string, StorageRow[]>();
-  for (const row of assigned) {
-    const rows = byBot.get(row.bot_id!) ?? [];
-    rows.push(row);
-    byBot.set(row.bot_id!, rows);
-  }
-  const totalUsed = usage.reduce((sum, row) => sum + row.storage_bytes, 0);
-  const overview = bots
-    .map((bot, index) => ({
-      label: bot.bot_name,
-      bytes: (byBot.get(bot.id) ?? []).reduce((sum, row) => sum + row.storage_bytes, 0),
-      color: STORAGE_COLORS[index % STORAGE_COLORS.length],
-    }))
-    .filter((item) => item.bytes > 0);
-  const free = Math.max(0, STORAGE_LIMIT_BYTES - totalUsed);
-
-  return (
-    <section className="space-y-4 pt-2">
-      <div>
-        <h2 className="text-lg font-semibold">Хранилище</h2>
-        <p className="text-sm text-muted-foreground">
-          Лимит Supabase: 100 GB. Размер считается по фактическим объектам в Storage.
-        </p>
-      </div>
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Считаю использование хранилища…</p>
-      ) : (
-        <>
-          <div className="flex flex-wrap gap-6 items-center border rounded-lg p-4">
-            <Donut
-              segments={[
-                ...overview,
-                ...(unassigned
-                  ? [{ label: "Нераспределённые файлы", bytes: unassigned, color: "#64748b" }]
-                  : []),
-                { label: "Свободно", bytes: free, color: "#e2e8f0" },
-              ]}
-              center={
-                <>
-                  <span className="font-medium">{formatBytes(totalUsed)}</span>
-                  <span className="text-muted-foreground">занято</span>
-                </>
-              }
-            />
-            <div className="space-y-1 text-sm">
-              {[
-                ...overview,
-                ...(unassigned
-                  ? [{ label: "Нераспределённые файлы", bytes: unassigned, color: "#64748b" }]
-                  : []),
-                { label: "Свободно", bytes: free, color: "#e2e8f0" },
-              ].map((item) => (
-                <div className="flex items-center gap-2" key={item.label}>
-                  <span className="h-3 w-3 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span>{item.label}</span>
-                  <span className="text-muted-foreground">{formatBytes(item.bytes)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {bots.map((bot, botIndex) => {
-              const rows = byBot.get(bot.id) ?? [];
-              const total = rows.reduce((sum, row) => sum + row.storage_bytes, 0);
-              return (
-                <div key={bot.id} className="border rounded-lg p-4 flex gap-4 items-center">
-                  <Donut
-                    size="h-24 w-24"
-                    segments={rows.map((row, i) => ({
-                      label: row.storage_kind,
-                      bytes: row.storage_bytes,
-                      color: STORAGE_COLORS[(botIndex + i) % STORAGE_COLORS.length],
-                    }))}
-                    center={
-                      <>
-                        <span className="font-medium">{formatBytes(total)}</span>
-                        <span className="text-muted-foreground">всего</span>
-                      </>
-                    }
-                  />
-                  <div className="min-w-0 text-sm space-y-1">
-                    <Link
-                      to="/operator/$botId"
-                      params={{ botId: bot.id }}
-                      className="font-medium hover:underline block truncate"
-                    >
-                      {bot.bot_name}
-                    </Link>
-                    {rows.length ? (
-                      rows.map((row, i) => (
-                        <div className="flex gap-1" key={row.storage_kind}>
-                          <span
-                            style={{
-                              color: STORAGE_COLORS[(botIndex + i) % STORAGE_COLORS.length],
-                            }}
-                          >
-                            ●
-                          </span>
-                          <span>
-                            {row.storage_kind}: {formatBytes(row.storage_bytes)}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <span className="text-muted-foreground">Файлов пока нет</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </section>
   );
 }
 
