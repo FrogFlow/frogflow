@@ -285,7 +285,8 @@ function OperatorClientsPage() {
   );
 }
 
-const STORAGE_LIMIT_BYTES = 100 * 1024 * 1024 * 1024;
+// Supabase plan limits are expressed in decimal GB, not binary GiB.
+const STORAGE_LIMIT_BYTES = 100 * 1000 * 1000 * 1000;
 const STORAGE_COLORS = ["#2563eb", "#7c3aed", "#db2777", "#d97706", "#059669", "#64748b"];
 
 type StorageRow = Awaited<ReturnType<typeof listStorageUsageFn>>[number];
