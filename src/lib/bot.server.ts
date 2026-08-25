@@ -529,6 +529,7 @@ type Msg = {
   shownOf: (shown: number, total: number) => string;
   searchSessionExpired: string;
   addedToCart: string;
+  productUnavailable: string;
   cartCleared: string;
   countrySaved: (countryName: string) => string;
   noOrdersYet: string;
@@ -624,6 +625,7 @@ const copy: Record<Locale, Msg> = {
     shownOf: (s, t) => `Показано ${s} из ${t}`,
     searchSessionExpired: "Сессия поиска устарела. Повторите поиск.",
     addedToCart: "✅ Добавлено в корзину.",
+    productUnavailable: "⚠️ Этот материал сейчас недоступен. Выберите другой в каталоге.",
     cartCleared: "🗑 Корзина очищена.",
     countrySaved: (c) => `✅ Ваша страна сохранена: ${c}\nТеперь вы видите корректные цены!`,
     noOrdersYet: "У вас пока нет заказов.",
@@ -731,6 +733,7 @@ const copy: Record<Locale, Msg> = {
     shownOf: (s, t) => `Көрсетілді ${s} / ${t}`,
     searchSessionExpired: "Іздеу сессиясы ескірді. Іздеуді қайталаңыз.",
     addedToCart: "✅ Себетке қосылды.",
+    productUnavailable: "⚠️ Бұл материал қазір қолжетімді емес. Каталогтан басқасын таңдаңыз.",
     cartCleared: "🗑 Себет тазартылды.",
     countrySaved: (c) => `✅ Еліңіз сақталды: ${c}\nЕнді сіз дұрыс бағаларды көресіз!`,
     noOrdersYet: "Сізде әзірге тапсырыс жоқ.",
@@ -841,6 +844,8 @@ const copy: Record<Locale, Msg> = {
     shownOf: (s, t) => `Showing ${s} of ${t}`,
     searchSessionExpired: "Your search session has expired. Please search again.",
     addedToCart: "✅ Added to cart.",
+    productUnavailable:
+      "⚠️ This material is currently unavailable. Please pick another one from the catalog.",
     cartCleared: "🗑 Cart cleared.",
     countrySaved: (c) => `✅ Your country is saved: ${c}\nNow you’ll see the correct prices!`,
     noOrdersYet: "You don’t have any orders yet.",
@@ -955,6 +960,7 @@ const copy: Record<Locale, Msg> = {
     shownOf: (s, t) => `Ko‘rsatildi ${s} / ${t}`,
     searchSessionExpired: "Qidiruv sessiyasi eskirdi. Qayta qidiring.",
     addedToCart: "✅ Savatga qo‘shildi.",
+    productUnavailable: "⚠️ Bu material hozir mavjud emas. Katalogdan boshqasini tanlang.",
     cartCleared: "🗑 Savat tozalandi.",
     countrySaved: (c) => `✅ Mamlakatingiz saqlandi: ${c}\nEndi to‘g‘ri narxlarni ko‘rasiz!`,
     noOrdersYet: "Sizda hali buyurtmalar yo‘q.",
@@ -1460,6 +1466,12 @@ async function saveContactAndContinueCheckout(chat_id: number, user: BotUser, ph
 const TELEGRAM_MEDIA_GROUP_MAX = 10;
 const TELEGRAM_MESSAGE_MAX = 4000;
 
+/**
+ * Насколько свежим должен быть заказ, чтобы присланное фото засчиталось чеком
+ * по нему без явного шага сценария. См. запасной путь в handleUpdate.
+ */
+const PROOF_FALLBACK_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1527,22 +1539,62 @@ async function sendCoverPreviews(adminChatId: string, displayNo: number, coverUr
   }
 }
 
-async function addToCart(telegram_id: number, product_id: string) {
+/**
+ * Положить товар в корзину.
+ *
+ * `product_id` приходит из `callback_data`, то есть от клиента: старая кнопка
+ * из переписки месячной давности работает ровно так же, как свежая. Поэтому
+ * товар проверяется здесь, а не только при показе каталога — иначе снятая
+ * продавцом галочка «показывать в боте» не мешала покупке, а удалённый товар
+ * ронял вставку по внешнему ключу.
+ *
+ * Direct-ветка делает ровно это и объясняет причину (zernio-bot.server.ts:
+ * «Материал без файла продавать нельзя: заказ дошёл бы до подтверждения и
+ * упёрся бы там — уже после того, как человек заплатил»). Телеграмная ветка
+ * этих проверок не имела.
+ *
+ * Возвращает false, когда добавить не удалось: раньше покупатель видел
+ * «✅ Добавлено в корзину» независимо от исхода, включая сбой вставки.
+ */
+async function addToCart(telegram_id: number, product_id: string): Promise<boolean> {
   const s = await db();
+
+  const { data: product, error: productError } = await s
+    .from("products")
+    .select("id, is_active")
+    .eq("id", product_id)
+    .maybeSingle();
+  if (productError) {
+    console.error("[bot] addToCart: не удалось прочитать товар", product_id, productError);
+    return false;
+  }
+  if (!product?.is_active) return false;
+
   const { data: existing } = await s
     .from("cart_items")
     .select("id, quantity")
     .eq("telegram_id", telegram_id)
     .eq("product_id", product_id)
     .maybeSingle();
+
   if (existing) {
-    await s
+    const { error } = await s
       .from("cart_items")
       .update({ quantity: (existing.quantity as number) + 1 })
       .eq("id", existing.id);
-  } else {
-    await s.from("cart_items").insert({ telegram_id, product_id, quantity: 1 });
+    if (error) {
+      console.error("[bot] addToCart: не удалось увеличить количество", error);
+      return false;
+    }
+    return true;
   }
+
+  const { error } = await s.from("cart_items").insert({ telegram_id, product_id, quantity: 1 });
+  if (error) {
+    console.error("[bot] addToCart: не удалось добавить позицию", error);
+    return false;
+  }
+  return true;
 }
 
 async function showCart(chat_id: number, user: BotUser) {
@@ -1828,8 +1880,29 @@ async function placeOrderInner(
     return;
   }
 
+  /**
+   * Строки без товара отсеиваем так же, как их отсеивает расчёт цены выше
+   * (`if (!it.products) continue`).
+   *
+   * Позиция корзины может остаться без товара — товар удалили, пока корзина
+   * лежала. Без этого фильтра в снимок уходило `name_snapshot: undefined`
+   * против NOT NULL, и падала вся пачка целиком: заказ уже создан, а позиций
+   * в нём ноль.
+   */
+  const withProduct = items.filter((it) => it.products);
+
+  if (withProduct.length === 0) {
+    // Платить не за что: заказ без позиций выдать нельзя, а покупателю нужен
+    // понятный ответ, а не «оплатите 0 ₸».
+    await s.from("orders").delete().eq("id", order.id);
+    await s.from("cart_items").delete().eq("telegram_id", telegram_id);
+    await tg("sendMessage", { chat_id, text: m.cartEmpty });
+    await releaseOrderPlacement(telegram_id, user.state);
+    return;
+  }
+
   const rows = await Promise.all(
-    items.map(async (it) => {
+    withProduct.map(async (it) => {
       // Ту же цену, что вошла в итог заказа: считать её второй раз незачем, а
       // разойтись они не должны.
       const displayPrice = priced.get(String(it.products?.id)) ?? Number(it.products?.price ?? 0);
@@ -1858,7 +1931,28 @@ async function placeOrderInner(
       };
     }),
   );
-  await s.from("order_items").insert(rows);
+  /**
+   * Позиции — обязательная часть заказа, а не побочная запись.
+   *
+   * Раньше результат вставки не проверялся, и следующей же строкой чистилась
+   * корзина. При сбое покупатель получал заказ с суммой и реквизитами, платил,
+   * а выдавать было нечего: `claimOrderForDelivery` читает `order_items(*)` и
+   * находил пусто. Заодно исчезал и единственный след того, что человек
+   * покупал, — корзина уже стёрта.
+   *
+   * Откатываем заказ так же, как это делает близнец в Direct
+   * (direct-purchase.server.ts createOrderFromCart), и корзину НЕ трогаем:
+   * пусть покупатель повторит оформление, не набирая всё заново.
+   */
+  const { error: itemsError } = await s.from("order_items").insert(rows);
+  if (itemsError) {
+    console.error(`[bot] order_items insert failed for order ${order.id}`, itemsError);
+    await s.from("orders").delete().eq("id", order.id);
+    await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
+    await releaseOrderPlacement(telegram_id, user.state);
+    return;
+  }
+
   await s.from("cart_items").delete().eq("telegram_id", telegram_id);
 
   const rk = await loadRobokassaSettings();
@@ -2654,8 +2748,8 @@ export async function handleUpdate(update: TelegramUpdate) {
         return showSearch(chat_id, user, query, offset);
       }
       if (data.startsWith("add:")) {
-        await addToCart(from_id, data.slice(4));
-        await tg("sendMessage", { chat_id, text: m.addedToCart });
+        const added = await addToCart(from_id, data.slice(4));
+        await tg("sendMessage", { chat_id, text: added ? m.addedToCart : m.productUnavailable });
         return;
       }
       if (data.startsWith("rem:")) {
@@ -2930,11 +3024,16 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (state?.mode && proofModes.has(String(state.mode)) && state.pending_order_id) {
         interceptedButAwaitingProof = true;
       } else {
+        // То же окно, что и у запасного пути приёма чека ниже: иначе перехват
+        // пропускал бы дальше вложения по заказам, которые тот путь всё равно
+        // уже не примет.
+        const since = new Date(Date.now() - PROOF_FALLBACK_WINDOW_MS).toISOString();
         const { data: openOrder } = await s
           .from("orders")
           .select("id")
           .eq("telegram_id", from.id)
           .eq("status", "awaiting_payment")
+          .gte("created_at", since)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -3034,13 +3133,30 @@ export async function handleUpdate(update: TelegramUpdate) {
         ? Number(user.state.pending_order_id)
         : undefined;
 
+    /**
+     * Запасной путь: состояние потерялось, но заказ ждёт оплаты.
+     *
+     * Ветка нужна — состояние живёт в `bot_users.state`, и запись могла не
+     * пройти; без неё настоящий чек пропадал бы молча. Но она не привязана к
+     * шагу сценария, и до этого ограничения ловила **любое** фото от человека
+     * с открытым заказом: покупатель, бросивший заказ три недели назад и
+     * приславший сегодня скриншот с вопросом, переводил мёртвый заказ в
+     * «ждёт подтверждения», и продавцу прилетала кнопка «выдать».
+     *
+     * Окно в сутки разделяет эти случаи: чек присылают вскоре после оплаты,
+     * а вопрос со скриншотом приходит когда угодно. Заказы старше суток
+     * по-прежнему можно оплатить — но чек к ним привяжется только когда бот
+     * сам его попросил (mode = awaiting_proof/awaiting_payment выше).
+     */
     if (!proofOrderId && (msg.photo || msg.document)) {
       const s = await db();
+      const since = new Date(Date.now() - PROOF_FALLBACK_WINDOW_MS).toISOString();
       const { data: openOrder } = await s
         .from("orders")
         .select("id")
         .eq("telegram_id", from.id)
         .eq("status", "awaiting_payment")
+        .gte("created_at", since)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
