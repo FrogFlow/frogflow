@@ -29,6 +29,12 @@ const messages: Dictionary = {
   orders: { ru: "Заказы", kk: "Тапсырыстар", en: "Orders", uz: "Buyurtmalar" },
   broadcast: { ru: "Рассылка", kk: "Хабарлама", en: "Broadcast", uz: "Xabar yuborish" },
   promoCodes: { ru: "Промокоды", kk: "Промокодтар", en: "Promo codes", uz: "Promokodlar" },
+  giftCertificates: {
+    ru: "Сертификаты",
+    kk: "Сертификаттар",
+    en: "Certificates",
+    uz: "Sertifikatlar",
+  },
   payments: {
     ru: "Реквизиты",
     kk: "Төлем деректері",

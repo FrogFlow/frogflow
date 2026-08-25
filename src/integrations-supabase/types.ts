@@ -1237,6 +1237,63 @@ export type Database = {
           },
         ];
       };
+      gift_certificates: {
+        Row: {
+          id: string;
+          bot_id: string;
+          code: string;
+          amount: number;
+          currency: string;
+          note: string | null;
+          status: string;
+          redeemed_by_telegram_id: number | null;
+          redeemed_order_id: number | null;
+          created_at: string;
+          redeemed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          code: string;
+          amount: number;
+          currency?: string;
+          note?: string | null;
+          status?: string;
+          redeemed_by_telegram_id?: number | null;
+          redeemed_order_id?: number | null;
+          created_at?: string;
+          redeemed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          code?: string;
+          amount?: number;
+          currency?: string;
+          note?: string | null;
+          status?: string;
+          redeemed_by_telegram_id?: number | null;
+          redeemed_order_id?: number | null;
+          created_at?: string;
+          redeemed_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "gift_certificates_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "gift_certificates_redeemed_order_id_fkey";
+            columns: ["redeemed_order_id"];
+            isOneToOne: false;
+            referencedRelation: "orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       order_items: {
         Row: {
           // MIGRATION-37. Снимок материалов по всем языкам разом (ru/kk/en/uz),
@@ -1361,6 +1418,10 @@ export type Database = {
           // ручной патч, что и у остальных полей этого файла.
           points_used: number;
           points_earned: number;
+          // MIGRATION-45. Применённый подарочный сертификат и скидка по нему —
+          // тот же ручной патч, что и у остальных полей этого файла.
+          gift_certificate_code: string | null;
+          gift_certificate_discount: number;
           status: string;
           telegram_id: number;
           total: number;
@@ -1392,6 +1453,8 @@ export type Database = {
           discount_amount?: number;
           points_used?: number;
           points_earned?: number;
+          gift_certificate_code?: string | null;
+          gift_certificate_discount?: number;
           status?: string;
           telegram_id: number;
           total?: number;
@@ -1423,6 +1486,8 @@ export type Database = {
           discount_amount?: number;
           points_used?: number;
           points_earned?: number;
+          gift_certificate_code?: string | null;
+          gift_certificate_discount?: number;
           status?: string;
           telegram_id?: number;
           total?: number;

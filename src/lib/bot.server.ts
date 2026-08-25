@@ -101,11 +101,13 @@ type BotUser = {
       | "awaiting_proof"
       | "choose_pay"
       | "awaiting_promo_code"
-      | "awaiting_review_comment";
+      | "awaiting_review_comment"
+      | "awaiting_gift_certificate_code";
     /** Списать баллы при оформлении — переключатель, не текстовый ввод. */
     use_points?: boolean;
     /** Товар, для которого только что поставлена оценка и ждём комментарий. */
     review_product_id?: string;
+    gift_certificate_code?: string;
     pending_order_id?: number;
     /**
      * Номер заказа, замороженный один раз (orders.display_no, MIGRATION-28) —
@@ -530,6 +532,12 @@ type Msg = {
   usePointsBtn: string;
   removePointsBtn: string;
   pointsDiscountLine: (amount: string) => string;
+  giftCertificateBtn: string;
+  removeGiftCertificateBtn: string;
+  giftCertificateCodePrompt: string;
+  giftCertificateInvalid: string;
+  giftCertificateRemoved: string;
+  giftCertificateDiscountLine: (amount: string) => string;
   phonePromptHtml: string;
   shareContactBtn: string;
   paymentNotConfigured: string;
@@ -649,6 +657,12 @@ const copy: Record<Locale, Msg> = {
     usePointsBtn: "🏆 Списать баллы",
     removePointsBtn: "❌ Не списывать баллы",
     pointsDiscountLine: (amount) => `Списано баллами: −${amount}\n`,
+    giftCertificateBtn: "🎫 Ввести сертификат",
+    removeGiftCertificateBtn: "❌ Убрать сертификат",
+    giftCertificateCodePrompt: "Введите код подарочного сертификата:",
+    giftCertificateInvalid: "⚠️ Сертификат недействителен или уже использован.",
+    giftCertificateRemoved: "Сертификат убран.",
+    giftCertificateDiscountLine: (amount) => `Скидка по сертификату: −${amount}\n`,
     phonePromptHtml:
       "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
     shareContactBtn: "📱 Поделиться контактом",
@@ -784,6 +798,12 @@ const copy: Record<Locale, Msg> = {
     usePointsBtn: "🏆 Баллдарды жұмсау",
     removePointsBtn: "❌ Баллдарды жұмсамау",
     pointsDiscountLine: (amount) => `Баллдармен есептен шығарылды: −${amount}\n`,
+    giftCertificateBtn: "🎫 Сертификат енгізу",
+    removeGiftCertificateBtn: "❌ Сертификатты алып тастау",
+    giftCertificateCodePrompt: "Сыйлық сертификатының кодын енгізіңіз:",
+    giftCertificateInvalid: "⚠️ Сертификат жарамсыз немесе бұрын пайдаланылған.",
+    giftCertificateRemoved: "Сертификат алынып тасталды.",
+    giftCertificateDiscountLine: (amount) => `Сертификат бойынша жеңілдік: −${amount}\n`,
     phonePromptHtml:
       "Тапсырысты рәсімдеу үшін телефон нөміріңізді көрсетіңіз — <b>оны осы чатқа жазыңыз</b>, мысалы:\n<code>+7 900 123-45-67</code>\n\nНемесе контактіні автоматты түрде бөлісу үшін төмендегі батырманы басыңыз.",
     shareContactBtn: "📱 Контактімен бөлісу",
@@ -921,6 +941,12 @@ const copy: Record<Locale, Msg> = {
     usePointsBtn: "🏆 Use points",
     removePointsBtn: "❌ Don't use points",
     pointsDiscountLine: (amount) => `Points discount: −${amount}\n`,
+    giftCertificateBtn: "🎫 Enter certificate code",
+    removeGiftCertificateBtn: "❌ Remove certificate",
+    giftCertificateCodePrompt: "Enter your gift certificate code:",
+    giftCertificateInvalid: "⚠️ This certificate is invalid or already used.",
+    giftCertificateRemoved: "Certificate removed.",
+    giftCertificateDiscountLine: (amount) => `Certificate discount: −${amount}\n`,
     phonePromptHtml:
       "To place your order, share your phone number — <b>just type it in this chat</b>, for example:\n<code>+7 900 123-45-67</code>\n\nOr tap the button below to share your contact automatically.",
     shareContactBtn: "📱 Share contact",
@@ -1062,6 +1088,12 @@ const copy: Record<Locale, Msg> = {
     usePointsBtn: "🏆 Ballarni sarflash",
     removePointsBtn: "❌ Ballarni sarflamaslik",
     pointsDiscountLine: (amount) => `Ballar bilan hisobdan chiqarildi: −${amount}\n`,
+    giftCertificateBtn: "🎫 Sertifikat kodini kiritish",
+    removeGiftCertificateBtn: "❌ Sertifikatni olib tashlash",
+    giftCertificateCodePrompt: "Sovg‘a sertifikati kodini kiriting:",
+    giftCertificateInvalid: "⚠️ Sertifikat amal qilmaydi yoki allaqachon ishlatilgan.",
+    giftCertificateRemoved: "Sertifikat olib tashlandi.",
+    giftCertificateDiscountLine: (amount) => `Sertifikat bo‘yicha chegirma: −${amount}\n`,
     phonePromptHtml:
       "Buyurtma berish uchun telefon raqamingizni kiriting — <b>uni shu chatga yozing</b>, masalan:\n<code>+7 900 123-45-67</code>\n\nYoki kontaktni avtomatik ulashish uchun quyidagi tugmani bosing.",
     shareContactBtn: "📱 Kontaktni ulashish",
@@ -1829,7 +1861,21 @@ async function showCart(chat_id: number, user: BotUser) {
       if (pointsDiscount > 0) text += m.pointsDiscountLine(formatMoney(pointsDiscount, currency));
     }
   }
-  text += m.total(formatMoney(total - discount - pointsDiscount, currency));
+  const giftCertificateCode = user.state?.gift_certificate_code;
+  let giftCertificateDiscount = 0;
+  if (giftCertificateCode) {
+    const found = await findValidGiftCertificate(giftCertificateCode);
+    if (found.ok) {
+      giftCertificateDiscount = computeGiftCertificateDiscount(
+        total - discount - pointsDiscount,
+        found.certificate.amount,
+      );
+      text += m.giftCertificateDiscountLine(formatMoney(giftCertificateDiscount, currency));
+    }
+  }
+  text += m.total(
+    formatMoney(total - discount - pointsDiscount - giftCertificateDiscount, currency),
+  );
   buttons.push([
     { text: m.checkoutBtn, callback_data: "checkout" },
     { text: m.clearBtn, callback_data: "clear" },
@@ -1846,6 +1892,11 @@ async function showCart(chat_id: number, user: BotUser) {
         : { text: m.usePointsBtn, callback_data: "points:use" },
     ]);
   }
+  buttons.push([
+    giftCertificateCode
+      ? { text: m.removeGiftCertificateBtn, callback_data: "giftcert:clear" }
+      : { text: m.giftCertificateBtn, callback_data: "giftcert:enter" },
+  ]);
   // Большая корзина легко превышает лимит Telegram в 4096 символов — tg()
   // не бросает на отказе, и покупатель молча не получал вообще ничего
   // (Блок 4.4).
@@ -1955,6 +2006,7 @@ import {
 import { normalizePromoCode, computePromoDiscount, type PromoDiscountType } from "./promo-codes";
 import { computePointsDiscount } from "./loyalty";
 import { formatRatingSummary, isValidRating } from "./reviews";
+import { normalizeGiftCertificateCode, computeGiftCertificateDiscount } from "./gift-certificates";
 
 /**
  * Атомарно помечает начало оформления заказа. Кнопка выбора страны — обычный
@@ -2140,6 +2192,52 @@ async function redeemPromoCode(
   return { ok: true, discount };
 }
 
+type GiftCertificateLookup =
+  { ok: true; certificate: { id: string; amount: number } } | { ok: false };
+
+async function findValidGiftCertificate(rawCode: string): Promise<GiftCertificateLookup> {
+  const s = await db();
+  const code = normalizeGiftCertificateCode(rawCode);
+  const { data: cert } = await s
+    .from("gift_certificates")
+    .select("id, amount, status")
+    .eq("code", code)
+    .maybeSingle();
+  if (!cert || cert.status !== "active") return { ok: false };
+  return { ok: true, certificate: { id: cert.id, amount: Number(cert.amount) } };
+}
+
+/**
+ * Списывает сертификат атомарно (CAS по status — тот же приём, что и
+ * used_count у промокода). Заказ на этот момент ещё не создан (см.
+ * placeOrderInner), поэтому redeemed_order_id проставляется отдельным
+ * запросом сразу после успешной вставки заказа — best-effort, как и у
+ * промокода: если оформление сорвётся ниже, списание не откатывается.
+ */
+async function redeemGiftCertificate(
+  rawCode: string,
+  subtotal: number,
+  telegram_id: number,
+): Promise<{ ok: true; discount: number; certificateId: string } | { ok: false }> {
+  const found = await findValidGiftCertificate(rawCode);
+  if (!found.ok) return { ok: false };
+  const discount = computeGiftCertificateDiscount(subtotal, found.certificate.amount);
+  const s = await db();
+  const { data: updated } = await s
+    .from("gift_certificates")
+    .update({
+      status: "redeemed",
+      redeemed_by_telegram_id: telegram_id,
+      redeemed_at: new Date().toISOString(),
+    })
+    .eq("id", found.certificate.id)
+    .eq("status", "active")
+    .select("id")
+    .maybeSingle();
+  if (!updated) return { ok: false };
+  return { ok: true, discount, certificateId: found.certificate.id };
+}
+
 async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
   const locale: Locale = user.state?.locale ?? "ru";
   const m = copy[locale];
@@ -2203,6 +2301,12 @@ async function placeOrderInner(
   const usePointsInput = user.state?.use_points === true;
   if (user.state?.use_points !== undefined) {
     const { use_points: _use_points, ...rest } = user.state;
+    user = { ...user, state: rest };
+  }
+  // И для подарочного сертификата — тот же приём.
+  const giftCertificateInput = user.state?.gift_certificate_code ?? null;
+  if (user.state?.gift_certificate_code !== undefined) {
+    const { gift_certificate_code: _gift_certificate_code, ...rest } = user.state;
     user = { ...user, state: rest };
   }
 
@@ -2298,6 +2402,26 @@ async function placeOrderInner(
     total -= pointsUsed;
   }
 
+  // Сертификат — поверх промокода и баллов, на остаток суммы. Как и
+  // промокод, гонка с другим покупателем блокирует заказ: цена уже не та,
+  // что видел покупатель, а сертификат — реальные деньги продавца.
+  let giftCertificateCode: string | null = null;
+  let giftCertificateDiscountAmount = 0;
+  let giftCertificateId: string | null = null;
+  if (giftCertificateInput) {
+    const redeemed = await redeemGiftCertificate(giftCertificateInput, total, telegram_id);
+    if (redeemed.ok) {
+      giftCertificateCode = normalizeGiftCertificateCode(giftCertificateInput);
+      giftCertificateDiscountAmount = redeemed.discount;
+      giftCertificateId = redeemed.certificateId;
+      total -= giftCertificateDiscountAmount;
+    } else {
+      await releaseOrderPlacement(telegram_id, user.state);
+      await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
+      return;
+    }
+  }
+
   const display =
     [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() ||
     (user?.username ? `@${user.username}` : `id${telegram_id}`);
@@ -2318,6 +2442,8 @@ async function placeOrderInner(
       promo_code: promoCode,
       discount_amount: discountAmount,
       points_used: pointsUsed,
+      gift_certificate_code: giftCertificateCode,
+      gift_certificate_discount: giftCertificateDiscountAmount,
     })
     .select("*")
     .single();
@@ -2325,6 +2451,16 @@ async function placeOrderInner(
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
     await releaseOrderPlacement(telegram_id, user.state);
     return;
+  }
+  if (giftCertificateId) {
+    // Best-effort: если этот запрос не выполнится, сертификат всё равно уже
+    // списан (status=redeemed) — теряется только обратная ссылка на заказ,
+    // не сама скидка и не деньги продавца.
+    const { error: linkError } = await s
+      .from("gift_certificates")
+      .update({ redeemed_order_id: order.id })
+      .eq("id", giftCertificateId);
+    if (linkError) console.error("[bot] gift certificate redeemed_order_id link failed", linkError);
   }
 
   /**
@@ -3267,6 +3403,17 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", { chat_id, text: m.promoCodeRemoved });
         return showCart(chat_id, { ...user, state: rest });
       }
+      if (data === "giftcert:enter") {
+        await setState(from_id, { ...user.state, mode: "awaiting_gift_certificate_code" });
+        await tg("sendMessage", { chat_id, text: m.giftCertificateCodePrompt });
+        return;
+      }
+      if (data === "giftcert:clear") {
+        const { gift_certificate_code: _gift_certificate_code, ...rest } = user.state ?? {};
+        await setState(from_id, rest);
+        await tg("sendMessage", { chat_id, text: m.giftCertificateRemoved });
+        return showCart(chat_id, { ...user, state: rest });
+      }
       if (data === "points:use") {
         const nextState = { ...user.state, use_points: true };
         await setState(from_id, nextState);
@@ -4093,6 +4240,27 @@ export async function handleUpdate(update: TelegramUpdate) {
         const withPromo = { ...idleState, promo_code: normalizePromoCode(msg.text) };
         await setState(from.id, withPromo);
         return showCart(chat_id, { ...user, state: withPromo });
+      }
+    }
+
+    if (user.state?.mode === "awaiting_gift_certificate_code" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const idleState = { ...user.state, mode: "idle" as const };
+        const found = await findValidGiftCertificate(msg.text);
+        if (!found.ok) {
+          await setState(from.id, idleState);
+          await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
+          return showCart(chat_id, { ...user, state: idleState });
+        }
+        const withCert = {
+          ...idleState,
+          gift_certificate_code: normalizeGiftCertificateCode(msg.text),
+        };
+        await setState(from.id, withCert);
+        return showCart(chat_id, { ...user, state: withCert });
       }
     }
 

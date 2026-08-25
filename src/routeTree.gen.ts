@@ -28,6 +28,7 @@ import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
 import { Route as AdminModulesRouteImport } from './routes/admin.modules'
 import { Route as AdminManagerChatRouteImport } from './routes/admin.manager-chat'
 import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
+import { Route as AdminGiftCertificatesRouteImport } from './routes/admin.gift-certificates'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
 import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
 import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
@@ -158,6 +159,11 @@ const AdminManagerChatRoute = AdminManagerChatRouteImport.update({
 const AdminInstagramRoute = AdminInstagramRouteImport.update({
   id: '/instagram',
   path: '/instagram',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminGiftCertificatesRoute = AdminGiftCertificatesRouteImport.update({
+  id: '/gift-certificates',
+  path: '/gift-certificates',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
@@ -361,6 +367,7 @@ export interface FileRoutesByFullPath {
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
   '/admin/instagram': typeof AdminInstagramRoute
   '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
@@ -417,6 +424,7 @@ export interface FileRoutesByTo {
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
   '/admin/instagram': typeof AdminInstagramRoute
   '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
@@ -473,6 +481,7 @@ export interface FileRoutesById {
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
   '/admin/instagram': typeof AdminInstagramRoute
   '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
@@ -533,6 +542,7 @@ export interface FileRouteTypes {
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/gift-certificates'
     | '/admin/instagram'
     | '/admin/manager-chat'
     | '/admin/modules'
@@ -589,6 +599,7 @@ export interface FileRouteTypes {
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/gift-certificates'
     | '/admin/instagram'
     | '/admin/manager-chat'
     | '/admin/modules'
@@ -644,6 +655,7 @@ export interface FileRouteTypes {
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/gift-certificates'
     | '/admin/instagram'
     | '/admin/manager-chat'
     | '/admin/modules'
@@ -861,6 +873,13 @@ declare module '@tanstack/react-router' {
       path: '/instagram'
       fullPath: '/admin/instagram'
       preLoaderRoute: typeof AdminInstagramRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/gift-certificates': {
+      id: '/admin/gift-certificates'
+      path: '/gift-certificates'
+      fullPath: '/admin/gift-certificates'
+      preLoaderRoute: typeof AdminGiftCertificatesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/categories': {
@@ -1147,6 +1166,7 @@ interface AdminRouteChildren {
   AdminBlockedRoute: typeof AdminBlockedRoute
   AdminBroadcastRoute: typeof AdminBroadcastRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
+  AdminGiftCertificatesRoute: typeof AdminGiftCertificatesRoute
   AdminInstagramRoute: typeof AdminInstagramRoute
   AdminManagerChatRoute: typeof AdminManagerChatRoute
   AdminModulesRoute: typeof AdminModulesRoute
@@ -1165,6 +1185,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBlockedRoute: AdminBlockedRoute,
   AdminBroadcastRoute: AdminBroadcastRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
+  AdminGiftCertificatesRoute: AdminGiftCertificatesRoute,
   AdminInstagramRoute: AdminInstagramRoute,
   AdminManagerChatRoute: AdminManagerChatRoute,
   AdminModulesRoute: AdminModulesRoute,
