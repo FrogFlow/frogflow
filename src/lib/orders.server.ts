@@ -1,12 +1,13 @@
 import { tg, tgSendMultipart } from "./telegram.server";
 import type { TablesUpdate } from "@/integrations-supabase/types";
-import type { Locale } from "./i18n";
-import { localeNames, localeFlags } from "./i18n";
 import {
   MATERIAL_LANGUAGES,
   legacyAsMaterials,
+  materialLanguageFlags,
+  materialLanguageNames,
   materialsForOrderItem,
   materialsForOrderItemAnyLang,
+  type MaterialLanguage,
   type MaterialSnapshot,
 } from "./product-materials";
 
@@ -301,7 +302,7 @@ export async function deliverOrder(
       const item = items[idx];
       // multi_language выключен → только ru, как и раньше, независимо от
       // того, сколько языков реально заведено у товара.
-      const availableLangs: Locale[] = multiLanguageOn
+      const availableLangs: MaterialLanguage[] = multiLanguageOn
         ? MATERIAL_LANGUAGES.filter((lang) => materialsForOrderItem(item, lang).length > 0)
         : materialsForOrderItem(item, "ru").length > 0
           ? ["ru"]
@@ -340,7 +341,7 @@ export async function deliverOrder(
             reply_markup: {
               inline_keyboard: [
                 availableLangs.map((lang) => ({
-                  text: `${localeFlags[lang]} ${localeNames[lang]}`,
+                  text: `${materialLanguageFlags[lang]} ${materialLanguageNames[lang]}`,
                   callback_data: `lang_${lang}:${orderId}:${idx}`,
                 })),
               ],

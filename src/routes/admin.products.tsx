@@ -18,7 +18,13 @@ import {
 import { listPaymentMethods } from "@/lib/payment-methods.functions";
 import { filterCategoriesByQuery, getCategoryPath, sortCategoriesTree } from "@/lib/category-tree";
 import { useAdminLocale } from "@/lib/admin-locale";
-import { localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "@/lib/i18n";
+import { type Locale } from "@/lib/i18n";
+import {
+  MATERIAL_LANGUAGES,
+  materialLanguageFlags,
+  materialLanguageNames,
+  type MaterialLanguage,
+} from "@/lib/product-materials";
 
 export const Route = createFileRoute("/admin/products")({
   component: ProductsPage,
@@ -53,8 +59,8 @@ type Product = {
   country_prices?: Record<string, number>;
 };
 
-type MaterialsByLang = Record<Locale, MaterialFile[]>;
-const emptyMaterialsByLang: MaterialsByLang = { ru: [], kk: [], en: [], uz: [] };
+type MaterialsByLang = Record<MaterialLanguage, MaterialFile[]>;
+const emptyMaterialsByLang: MaterialsByLang = { ru: [], kk: [], en: [], uz: [], ky: [] };
 
 const empty: Product = {
   category_id: null,
@@ -511,11 +517,11 @@ function ProductsPage() {
   const [images, setImages] = useState<Img[]>([]);
   // Какие языковые слоты сейчас показаны в форме, и файлы/загрузка для
   // каждого — было два фиксированных поля (RU/KZ), теперь любые из 4 языков.
-  const [materialLangs, setMaterialLangs] = useState<Locale[]>(["ru", "kk"]);
+  const [materialLangs, setMaterialLangs] = useState<MaterialLanguage[]>(["ru", "kk"]);
   const [materialFiles, setMaterialFiles] = useState<MaterialsByLang>({ ...emptyMaterialsByLang });
   const [imagesUpload, setImagesUpload] = useState<UploadStatus | null>(null);
   const [materialsUpload, setMaterialsUpload] = useState<
-    Partial<Record<Locale, UploadStatus | null>>
+    Partial<Record<MaterialLanguage, UploadStatus | null>>
   >({});
   const [saving, setSaving] = useState(false);
 
@@ -571,7 +577,7 @@ function ProductsPage() {
       language: string;
     })[];
     const byLang: MaterialsByLang = { ...emptyMaterialsByLang };
-    for (const lang of SUPPORTED_LOCALES) {
+    for (const lang of MATERIAL_LANGUAGES) {
       byLang[lang] = materialRows
         .filter((f) => f.language === lang)
         .sort((a, b) => a.sort_order - b.sort_order);
@@ -587,7 +593,7 @@ function ProductsPage() {
       byLang.kk = [{ file_path: p.file_path_kz, file_name: p.file_name_kz, sort_order: 0 }];
     }
     setMaterialFiles(byLang);
-    const activeLangs = SUPPORTED_LOCALES.filter(
+    const activeLangs = MATERIAL_LANGUAGES.filter(
       (lang) =>
         byLang[lang].length > 0 ||
         (lang === "ru" && p.file_url) ||
@@ -609,7 +615,7 @@ function ProductsPage() {
     }
   }
 
-  async function onMaterialFilesChange(files: FileList | null, lang: Locale) {
+  async function onMaterialFilesChange(files: FileList | null, lang: MaterialLanguage) {
     if (!files) return;
     const current = materialFiles[lang];
     const setStatus = (s: UploadStatus | null) =>
@@ -628,15 +634,15 @@ function ProductsPage() {
         ],
       });
     } catch (e: unknown) {
-      toast.error(tr.uploadFileError(localeNames[lang], errorMessage(e)));
+      toast.error(tr.uploadFileError(materialLanguageNames[lang], errorMessage(e)));
     }
   }
 
   function addMaterialLang() {
-    const next = SUPPORTED_LOCALES.find((l) => !materialLangs.includes(l));
+    const next = MATERIAL_LANGUAGES.find((l) => !materialLangs.includes(l));
     if (next) setMaterialLangs([...materialLangs, next]);
   }
-  function changeMaterialLang(idx: number, lang: Locale) {
+  function changeMaterialLang(idx: number, lang: MaterialLanguage) {
     setMaterialLangs(materialLangs.map((l, i) => (i === idx ? lang : l)));
   }
   function removeMaterialLangSlot(idx: number) {
@@ -677,7 +683,7 @@ function ProductsPage() {
           file_url_kz: editing.file_url_kz,
           image_paths: images.map((i) => i.image_path),
           material_files: Object.fromEntries(
-            SUPPORTED_LOCALES.map((lang) => [
+            MATERIAL_LANGUAGES.map((lang) => [
               lang,
               materialFiles[lang].map((f) => ({ file_path: f.file_path, file_name: f.file_name })),
             ]),
@@ -878,15 +884,17 @@ function ProductsPage() {
             <div className="space-y-2 pt-4 border-t" key={idx}>
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <Label>{tr.materialLabel(`${localeFlags[lang]} ${localeNames[lang]}`)}</Label>
+                  <Label>
+                    {tr.materialLabel(`${materialLanguageFlags[lang]} ${materialLanguageNames[lang]}`)}
+                  </Label>
                   <select
                     className="border rounded-md h-8 px-2 text-sm bg-background"
                     value={lang}
-                    onChange={(e) => changeMaterialLang(idx, e.target.value as Locale)}
+                    onChange={(e) => changeMaterialLang(idx, e.target.value as MaterialLanguage)}
                   >
-                    {SUPPORTED_LOCALES.map((l) => (
+                    {MATERIAL_LANGUAGES.map((l) => (
                       <option key={l} value={l} disabled={l !== lang && materialLangs.includes(l)}>
-                        {localeFlags[l]} {localeNames[l]}
+                        {materialLanguageFlags[l]} {materialLanguageNames[l]}
                       </option>
                     ))}
                   </select>
@@ -920,7 +928,7 @@ function ProductsPage() {
               />
               {(lang === "ru" || lang === "kk") && (
                 <div className="pt-2">
-                  <Label>{tr.externalLink(localeNames[lang])}</Label>
+                  <Label>{tr.externalLink(materialLanguageNames[lang])}</Label>
                   <Input
                     value={(lang === "ru" ? editing.file_url : editing.file_url_kz) || ""}
                     onChange={(e) =>
@@ -937,7 +945,7 @@ function ProductsPage() {
               )}
             </div>
           ))}
-          {materialLangs.length < SUPPORTED_LOCALES.length && (
+          {materialLangs.length < MATERIAL_LANGUAGES.length && (
             <Button type="button" variant="outline" size="sm" onClick={addMaterialLang}>
               {tr.addLanguageBtn}
             </Button>
@@ -1017,7 +1025,7 @@ function ProductsPage() {
                     · {p.price} {p.currency}
                     {(() => {
                       const materials = (p.product_material_files ?? []) as { language: string }[];
-                      const langsWithFiles = SUPPORTED_LOCALES.filter(
+                      const langsWithFiles = MATERIAL_LANGUAGES.filter(
                         (lang) =>
                           materials.some((f) => f.language === lang) ||
                           (lang === "ru" && (p.file_path || p.file_url)) ||
@@ -1032,7 +1040,7 @@ function ProductsPage() {
                           }
                         >
                           {" "}
-                          · {langsWithFiles.map((l) => localeFlags[l]).join("")}
+                          · {langsWithFiles.map((l) => materialLanguageFlags[l]).join("")}
                         </span>
                       );
                     })()}

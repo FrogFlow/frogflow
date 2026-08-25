@@ -90,6 +90,7 @@ const SaveInput = z.object({
       kk: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
       en: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
       uz: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
+      ky: z.array(z.object({ file_path: z.string(), file_name: z.string().nullable().optional() })),
     })
     .partial()
     .default({}),

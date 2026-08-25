@@ -118,6 +118,14 @@ describe("availableMaterialLanguages", () => {
     };
     expect(availableMaterialLanguages(product)).toEqual(["ru", "kk", "en"]);
   });
+
+  it("supports Kyrgyz as a material language without requiring a Kyrgyz bot UI", () => {
+    const product = { product_material_files: [{ language: "ky", file_path: "kg.pdf" }] };
+    expect(availableMaterialLanguages(product)).toEqual(["ky"]);
+    expect(materialsForProduct(product, "ky")).toEqual([
+      { path: "kg.pdf", name: null, url: null },
+    ]);
+  });
 });
 
 /**
@@ -188,5 +196,6 @@ describe("parseDeliveredLanguages / addDeliveredLanguage", () => {
     expect(addDeliveredLanguage("ru", "kk")).toBe("ru,kk");
     // Уже отмеченный язык не дублируется.
     expect(addDeliveredLanguage("ru,kk", "ru")).toBe("ru,kk");
+    expect(addDeliveredLanguage("ru,kk", "ky")).toBe("ru,kk,ky");
   });
 });
