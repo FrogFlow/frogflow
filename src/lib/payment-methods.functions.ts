@@ -1,10 +1,46 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
+import { fetchAll } from "./csv";
+import type { Json } from "@/integrations-supabase/types";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
+}
+
+type DbClient = Awaited<ReturnType<typeof db>>;
+
+/**
+ * `products.country_prices` — плоская карта `{"<country_code>": цена}`
+ * (см. pricing.server.ts). Ключи набираются вручную и не связаны с
+ * `payment_methods.country_code` внешним ключом — переименование страны
+ * здесь раньше не трогало их вообще: `resolvePrice` переставал находить
+ * ручную цену под новым кодом и молча съезжал на автоконвертацию от базовой
+ * цены (которая у части клиентов намеренно завышена, см. pricing.server.ts)
+ * без единого предупреждения в интерфейсе (Блок 2.5).
+ */
+async function migrateCountryPricesKey(s: DbClient, oldCode: string, newCode: string) {
+  const rows = await fetchAll(
+    (from, to) => s.from("products").select("id, country_prices").range(from, to),
+    "товары для переноса цен по стране",
+  );
+  for (const row of rows) {
+    const cp = row.country_prices;
+    if (!cp || typeof cp !== "object" || Array.isArray(cp)) continue;
+    const table = cp as Record<string, Json>;
+    if (!(oldCode in table)) continue;
+    const next = { ...table };
+    const value = next[oldCode];
+    delete next[oldCode];
+    // Не затираем цену, если под новым кодом уже что-то стоит вручную.
+    if (!(newCode in next)) next[newCode] = value;
+    const { error } = await s
+      .from("products")
+      .update({ country_prices: next })
+      .eq("id", row.id as string);
+    if (error) throw new Error(error.message);
+  }
 }
 
 export const listPaymentMethods = createServerFn({ method: "GET" }).handler(async () => {
@@ -32,6 +68,13 @@ export const savePaymentMethod = createServerFn({ method: "POST" })
     await requireAdmin();
     const s = await db();
     if (data.id) {
+      const { data: existing, error: existingError } = await s
+        .from("payment_methods")
+        .select("country_code")
+        .eq("id", data.id)
+        .maybeSingle();
+      if (existingError) throw new Error(existingError.message);
+
       const { error } = await s
         .from("payment_methods")
         .update({
@@ -45,6 +88,10 @@ export const savePaymentMethod = createServerFn({ method: "POST" })
         })
         .eq("id", data.id);
       if (error) throw new Error(error.message);
+
+      if (existing?.country_code && existing.country_code !== data.country_code) {
+        await migrateCountryPricesKey(s, existing.country_code, data.country_code);
+      }
     } else {
       const { error } = await s.from("payment_methods").insert({
         country_code: data.country_code,

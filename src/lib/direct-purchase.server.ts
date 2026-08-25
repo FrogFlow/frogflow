@@ -86,6 +86,18 @@ export type DirectState = {
    * зовём продавца и уходим с дороги.
    */
   misses?: number;
+  /**
+   * Цена корзины, зафиксированная в момент показа реквизитов
+   * (sendDirectPaymentDetails) — та самая сумма, которую видел покупатель и
+   * по которой платил. `createOrderFromCart` использует её вместо того,
+   * чтобы пересчитывать заново на шаге с чеком: между показом суммы и
+   * присланным чеком может пройти час, и если курс валюты или ручная цена
+   * товара за это время изменятся, распознавание чека сравнило бы честный
+   * платёж с уже другой суммой и пометило бы его как расхождение (Блок 2.6).
+   * Живёт только до создания заказа — очищается сразу после использования,
+   * как и остальные поля FLOW_KEYS.
+   */
+  frozen_cart?: PricedCart;
 };
 
 /**
@@ -103,6 +115,7 @@ const FLOW_KEYS = [
   "email_optional",
   "misses",
   "proof_processing_started_at",
+  "frozen_cart",
 ] as const;
 
 /**
@@ -1213,14 +1226,22 @@ export async function createOrderFromCart(params: {
     first_name: string | null;
   };
   countryCode: string;
+  /**
+   * Цена, зафиксированная на шаге показа реквизитов (state.frozen_cart) —
+   * та же сумма, что видел и по которой платил покупатель. Передана — значит
+   * используем её как есть, без повторного похода в pricing.server (Блок
+   * 2.6). Не передана (заказы, оформленные до этой правки, либо путь без
+   * заморозки) — считаем как раньше, живым запросом.
+   */
+  frozenPriced?: PricedCart;
 }): Promise<{ id: number; order_no: number | null } | null> {
   const s = await db();
-  const lines = await readCart(params.user);
-  if (lines.length === 0) return null;
 
   // Считаем в валюте покупателя: по этой сумме он платит, её же сверяет
   // распознавание чека, и она же попадает в письмо и в панель продавца.
-  const priced = await priceCart(lines, params.countryCode);
+  const priced =
+    params.frozenPriced ?? (await priceCart(await readCart(params.user), params.countryCode));
+  if (priced.lines.length === 0) return null;
   const { total: amount, currency } = priced;
 
   const platform: ZernioPlatform = params.user.platform === "whatsapp" ? "whatsapp" : "instagram";
@@ -1271,7 +1292,7 @@ export async function createOrderFromCart(params: {
     )
     .in(
       "id",
-      lines.map((line) => line.productId),
+      priced.lines.map((line) => line.productId),
     );
 
   const byId = new Map((products ?? []).map((p) => [p.id, p]));

@@ -2217,6 +2217,11 @@ async function sendDirectPaymentDetails(params: {
   await flow.setDirectState(user.user_key, {
     mode: "awaiting_proof",
     country_code: country.code,
+    // Замораживаем именно эту сумму — по ней покупатель платит, и по ней же
+    // потом сверяет чек OCR (Блок 2.6). См. DirectState.frozen_cart.
+    // mixedCurrency всегда false здесь: раньше по коду уже отбит ранний
+    // выход на true.
+    frozen_cart: { lines: pricedLines, total: amount, currency, mixedCurrency: false },
   });
 
   await say(
@@ -2623,7 +2628,11 @@ async function handlePurchaseFlow(params: {
 
     let order: Awaited<ReturnType<typeof flow.createOrderFromCart>>;
     try {
-      order = await flow.createOrderFromCart({ user, countryCode: claim.country_code! });
+      order = await flow.createOrderFromCart({
+        user,
+        countryCode: claim.country_code!,
+        frozenPriced: claim.frozen_cart,
+      });
     } catch (error) {
       console.error("[zernio-bot] failed to create direct order", error);
       await flow.releaseAwaitingProof(user.user_key);
@@ -2652,6 +2661,9 @@ async function handlePurchaseFlow(params: {
     await flow.setDirectState(user.user_key, {
       mode: "awaiting_email",
       pending_order_id: order.id,
+      // Заказ уже создан из этой заморозки — дальше она не нужна и не должна
+      // случайно попасть в следующую покупку того же покупателя.
+      frozen_cart: undefined,
       ...(email ? { email_optional: true } : {}),
     });
 

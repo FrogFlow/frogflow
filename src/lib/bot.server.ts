@@ -501,6 +501,7 @@ type Msg = {
   shareContactBtn: string;
   paymentNotConfigured: string;
   chooseCountry: string;
+  countryNoLongerAvailable: string;
   orderCreateFailed: string;
   defaultInstructions: string;
   kzTitleNew: (displayNo: number | string) => string;
@@ -594,6 +595,8 @@ const copy: Record<Locale, Msg> = {
     shareContactBtn: "📱 Поделиться контактом",
     paymentNotConfigured: "Способы оплаты ещё не настроены. Свяжитесь с продавцом.",
     chooseCountry: "Пожалуйста, выберите вашу страну (для отображения цен и реквизитов):",
+    countryNoLongerAvailable:
+      "Ваша страна больше не обслуживается — выберите её заново, пожалуйста.",
     orderCreateFailed: "Не удалось создать заказ. Попробуйте позже.",
     defaultInstructions: "Свяжитесь с продавцом для уточнения реквизитов.",
     kzTitleNew: (n) => `🧾 <b>Заказ #${n}</b> создан.`,
@@ -701,6 +704,7 @@ const copy: Record<Locale, Msg> = {
     shareContactBtn: "📱 Контактімен бөлісу",
     paymentNotConfigured: "Төлем әдістері әлі теңшелмеген. Сатушымен байланысыңыз.",
     chooseCountry: "Еліңізді таңдаңыз (бағалар мен деректемелерді көрсету үшін):",
+    countryNoLongerAvailable: "Сіздің еліңіз енді қызмет көрсетілмейді — қайта таңдаңыз.",
     orderCreateFailed: "Тапсырысты жасау мүмкін болмады. Кейінірек қайталап көріңіз.",
     defaultInstructions: "Деректемелерді нақтылау үшін сатушымен байланысыңыз.",
     kzTitleNew: (n) => `🧾 <b>Тапсырыс #${n}</b> жасалды.`,
@@ -811,6 +815,7 @@ const copy: Record<Locale, Msg> = {
     shareContactBtn: "📱 Share contact",
     paymentNotConfigured: "Payment methods are not configured yet. Please contact the seller.",
     chooseCountry: "Please choose your country (to show correct prices and payment details):",
+    countryNoLongerAvailable: "Your country is no longer served — please choose it again.",
     orderCreateFailed: "Couldn’t create the order. Please try again later.",
     defaultInstructions: "Contact the seller for payment details.",
     kzTitleNew: (n) => `🧾 <b>Order #${n}</b> created.`,
@@ -926,6 +931,7 @@ const copy: Record<Locale, Msg> = {
     paymentNotConfigured: "To‘lov usullari hali sozlanmagan. Sotuvchi bilan bog‘laning.",
     chooseCountry:
       "Iltimos, mamlakatingizni tanlang (narxlar va to‘lov ma’lumotlarini ko‘rsatish uchun):",
+    countryNoLongerAvailable: "Mamlakatingizga endi xizmat ko‘rsatilmaydi — qayta tanlang.",
     orderCreateFailed: "Buyurtmani yaratib bo‘lmadi. Birozdan so‘ng qayta urinib ko‘ring.",
     defaultInstructions: "To‘lov ma’lumotlarini aniqlash uchun sotuvchi bilan bog‘laning.",
     kzTitleNew: (n) => `🧾 <b>Buyurtma #${n}</b> yaratildi.`,
@@ -1843,7 +1849,24 @@ async function placeOrderInner(
     .from("payment_methods")
     .select("*")
     .eq("country_code", country_code)
-    .single();
+    .maybeSingle();
+
+  if (!method) {
+    // Сохранённая страна покупателя (state.country_code переживает сессии,
+    // см. setState) больше не соответствует ни одному способу оплаты —
+    // продавец мог удалить её (payment-methods.functions.ts: удаление без
+    // проверки зависимостей). Раньше это тихо проглатывалось: `method`
+    // становился null, и заказ всё равно создавался — с заглушкой
+    // `defaultInstructions` вместо реальных реквизитов, которую заплатить
+    // было нельзя (Блок 2.4). Просим выбрать страну заново вместо того,
+    // чтобы плодить безнадёжный заказ.
+    await releaseOrderPlacement(telegram_id, user.state);
+    await setState(telegram_id, { ...user.state, country_code: undefined });
+    await tg("sendMessage", { chat_id, text: m.countryNoLongerAvailable });
+    await askCountry(chat_id, telegram_id, true, locale);
+    return;
+  }
+
   const { data: items } = await s
     .from("cart_items")
     .select(

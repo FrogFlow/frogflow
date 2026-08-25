@@ -14,7 +14,8 @@ import crypto from "node:crypto";
 
 const URL_ = process.env.SUPABASE_URL;
 const SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ready = Boolean(URL_ && SERVICE);
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+const ready = Boolean(URL_ && SERVICE && JWT_SECRET);
 
 const TAG = `op-test-${Date.now().toString(36)}`;
 const TELEGRAM_ID = -(Date.now() % 1_000_000_000) - 2;
@@ -22,6 +23,30 @@ const TELEGRAM_ID = -(Date.now() % 1_000_000_000) - 2;
 async function client() {
   const { createClient } = await import("@supabase/supabase-js");
   return createClient(URL_!, SERVICE!, { auth: { persistSession: false } });
+}
+
+const b64url = (buf: Buffer | string) =>
+  Buffer.from(buf as never)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+/** Тот же алгоритм, что в панели, tests/direct-purchase.test.ts и scripts/mint-tenant-key.mjs. */
+function mintTenantKey(botId: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const body = b64url(
+    JSON.stringify({
+      role: "tenant_bot",
+      bot_id: botId,
+      iss: "supabase",
+      iat: now,
+      exp: now + 3600,
+    }),
+  );
+  const sig = b64url(crypto.createHmac("sha256", JWT_SECRET!).update(`${head}.${body}`).digest());
+  return `${head}.${body}.${sig}`;
 }
 
 describe.skipIf(!ready)("claimOrderPlacement/releaseOrderPlacement (нужна настоящая база)", () => {
@@ -37,6 +62,12 @@ describe.skipIf(!ready)("claimOrderPlacement/releaseOrderPlacement (нужна �
     if (botErr || !bot)
       throw new Error(`не удалось создать тестового арендатора: ${botErr?.message}`);
     botId = bot.id;
+    // claimOrderPlacement/releaseOrderPlacement (bot.server.ts) читают
+    // process.env.BOT_ID напрямую, а db() отказывается подключаться под
+    // BOT_ID без SUPABASE_TENANT_KEY (см. client.server.ts) — без обоих
+    // claim_order_placement получал бы пустой p_bot_id и падал на NOT NULL.
+    process.env.BOT_ID = botId;
+    process.env.SUPABASE_TENANT_KEY = mintTenantKey(botId);
 
     const { error: userErr } = await s.from("bot_users").insert({
       bot_id: botId,
@@ -53,6 +84,8 @@ describe.skipIf(!ready)("claimOrderPlacement/releaseOrderPlacement (нужна �
     const s = await client();
     await s.from("bot_users").delete().eq("telegram_id", TELEGRAM_ID);
     if (botId) await s.from("bots").delete().eq("id", botId);
+    delete process.env.BOT_ID;
+    delete process.env.SUPABASE_TENANT_KEY;
   });
 
   async function setState(state: Record<string, unknown>) {
