@@ -49,6 +49,7 @@ import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/ze
 import { Route as ApiCronMiscRetentionRouteImport } from './routes/api/cron/misc-retention'
 import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/manager-chat-prune'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
+import { Route as ApiCronCartReminderRouteImport } from './routes/api/cron/cart-reminder'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
 import { Route as AdminVipTariffsRouteImport } from './routes/admin.vip.tariffs'
@@ -266,6 +267,11 @@ const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
   path: '/api/cron/ensure-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronCartReminderRoute = ApiCronCartReminderRouteImport.update({
+  id: '/api/cron/cart-reminder',
+  path: '/api/cron/cart-reminder',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronBroadcastRoute = ApiCronBroadcastRouteImport.update({
   id: '/api/cron/broadcast',
   path: '/api/cron/broadcast',
@@ -374,6 +380,7 @@ export interface FileRoutesByFullPath {
   '/admin/vip/tariffs': typeof AdminVipTariffsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
+  '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
@@ -428,6 +435,7 @@ export interface FileRoutesByTo {
   '/admin/vip/tariffs': typeof AdminVipTariffsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
+  '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
@@ -485,6 +493,7 @@ export interface FileRoutesById {
   '/admin/vip/tariffs': typeof AdminVipTariffsRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
+  '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
@@ -543,6 +552,7 @@ export interface FileRouteTypes {
     | '/admin/vip/tariffs'
     | '/api/admin/upload'
     | '/api/cron/broadcast'
+    | '/api/cron/cart-reminder'
     | '/api/cron/ensure-webhook'
     | '/api/cron/manager-chat-prune'
     | '/api/cron/misc-retention'
@@ -597,6 +607,7 @@ export interface FileRouteTypes {
     | '/admin/vip/tariffs'
     | '/api/admin/upload'
     | '/api/cron/broadcast'
+    | '/api/cron/cart-reminder'
     | '/api/cron/ensure-webhook'
     | '/api/cron/manager-chat-prune'
     | '/api/cron/misc-retention'
@@ -653,6 +664,7 @@ export interface FileRouteTypes {
     | '/admin/vip/tariffs'
     | '/api/admin/upload'
     | '/api/cron/broadcast'
+    | '/api/cron/cart-reminder'
     | '/api/cron/ensure-webhook'
     | '/api/cron/manager-chat-prune'
     | '/api/cron/misc-retention'
@@ -691,6 +703,7 @@ export interface RootRouteChildren {
   LegalSlugRoute: typeof LegalSlugRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
+  ApiCronCartReminderRoute: typeof ApiCronCartReminderRoute
   ApiCronEnsureWebhookRoute: typeof ApiCronEnsureWebhookRoute
   ApiCronManagerChatPruneRoute: typeof ApiCronManagerChatPruneRoute
   ApiCronMiscRetentionRoute: typeof ApiCronMiscRetentionRoute
@@ -997,6 +1010,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronEnsureWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/cart-reminder': {
+      id: '/api/cron/cart-reminder'
+      path: '/api/cron/cart-reminder'
+      fullPath: '/api/cron/cart-reminder'
+      preLoaderRoute: typeof ApiCronCartReminderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/broadcast': {
       id: '/api/cron/broadcast'
       path: '/api/cron/broadcast'
@@ -1203,6 +1223,7 @@ const rootRouteChildren: RootRouteChildren = {
   LegalSlugRoute: LegalSlugRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
+  ApiCronCartReminderRoute: ApiCronCartReminderRoute,
   ApiCronEnsureWebhookRoute: ApiCronEnsureWebhookRoute,
   ApiCronManagerChatPruneRoute: ApiCronManagerChatPruneRoute,
   ApiCronMiscRetentionRoute: ApiCronMiscRetentionRoute,

@@ -958,6 +958,9 @@ export type Database = {
           language_code: string | null;
           last_name: string | null;
           loyalty_points: number;
+          // MIGRATION-44. Когда последний раз слали напоминание о брошенной
+          // корзине — тот же ручной патч, что и у остальных полей этого файла.
+          cart_reminder_sent_at: string | null;
           state: Json;
           telegram_id: number;
           updated_at: string;
@@ -979,6 +982,7 @@ export type Database = {
           language_code?: string | null;
           last_name?: string | null;
           loyalty_points?: number;
+          cart_reminder_sent_at?: string | null;
           state?: Json;
           telegram_id: number;
           updated_at?: string;
@@ -1000,6 +1004,7 @@ export type Database = {
           language_code?: string | null;
           last_name?: string | null;
           loyalty_points?: number;
+          cart_reminder_sent_at?: string | null;
           state?: Json;
           telegram_id?: number;
           updated_at?: string;

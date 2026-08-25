@@ -47,6 +47,9 @@ const copy: Record<
     loyaltyTitle: string;
     loyaltyHint: string;
     loyaltyEarnPercentLabel: string;
+    cartReminderTitle: string;
+    cartReminderHint: string;
+    cartReminderHoursLabel: string;
     instructionTitle: string;
     instructionHint: string;
     uploading: string;
@@ -102,6 +105,10 @@ const copy: Record<
     loyaltyHint:
       "После того как заказ выдан, покупателю начисляются баллы — процент от суммы заказа. 1 балл = 1 единица валюты. В следующей покупке баллы можно списать в счёт оплаты прямо из корзины.",
     loyaltyEarnPercentLabel: "Процент от суммы заказа в баллы (%)",
+    cartReminderTitle: "Напоминание о брошенной корзине",
+    cartReminderHint:
+      "Если покупатель добавил товар в корзину и надолго замолчал, бот сам напомнит ему через указанное число часов, с кнопкой «Открыть корзину». 0 — напоминания выключены.",
+    cartReminderHoursLabel: "Через сколько часов напоминать",
     instructionTitle: "Инструкция для покупателей",
     instructionHint:
       "Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до 50 МБ (лимит Telegram), формат MP4.",
@@ -160,6 +167,10 @@ const copy: Record<
     loyaltyHint:
       "Тапсырыс берілгеннен кейін сатып алушыға баллдар есептеледі — тапсырыс сомасының пайызы. 1 балл = 1 валюта бірлігі. Келесі сатып алуда баллдарды тікелей себеттен төлемге есептеп шығаруға болады.",
     loyaltyEarnPercentLabel: "Тапсырыс сомасынан баллдарға пайыз (%)",
+    cartReminderTitle: "Тасталған себет туралы еске салу",
+    cartReminderHint:
+      "Сатып алушы себетке тауар қосып, ұзақ үнсіз қалса, бот көрсетілген сағат саны өткен соң «Себетті ашу» түймесімен өзі еске салады. 0 — еске салулар өшірулі.",
+    cartReminderHoursLabel: "Неше сағаттан кейін еске салу",
     instructionTitle: "Сатып алушыларға арналған нұсқаулық",
     instructionHint:
       "Бот мәзіріндегі «📖 Нұсқаулық» түймесі. Видео 50 МБ-тан аспағаны жөн (Telegram шегі), MP4 форматы.",
@@ -218,6 +229,10 @@ const copy: Record<
     loyaltyHint:
       "Once an order is delivered, the buyer is credited points — a percentage of the order total. 1 point = 1 currency unit. On the next purchase, points can be redeemed toward payment right from the cart.",
     loyaltyEarnPercentLabel: "Percent of order total credited as points (%)",
+    cartReminderTitle: "Abandoned cart reminder",
+    cartReminderHint:
+      "If a buyer adds items to the cart and goes quiet, the bot reminds them after the configured number of hours, with an Open cart button. 0 disables reminders.",
+    cartReminderHoursLabel: "Remind after this many hours",
     instructionTitle: "Buyer instructions",
     instructionHint:
       'The "📖 Guide" button in the bot\'s main menu. Video under 50 MB works best (Telegram limit), MP4 format.',
@@ -277,6 +292,10 @@ const copy: Record<
     loyaltyHint:
       "Buyurtma yetkazilgandan so‘ng xaridorga ballar hisoblanadi — buyurtma summasidan foiz. 1 ball = 1 valyuta birligi. Keyingi xaridda ballarni to‘g‘ridan-to‘g‘ri savatdan to‘lovga hisobdan chiqarish mumkin.",
     loyaltyEarnPercentLabel: "Buyurtma summasidan ballarga foiz (%)",
+    cartReminderTitle: "Tashlab ketilgan savat haqida eslatma",
+    cartReminderHint:
+      "Agar xaridor savatga mahsulot qo‘shib, uzoq vaqt jim qolsa, bot ko‘rsatilgan soatdan keyin «Savatni ochish» tugmasi bilan o‘zi eslatadi. 0 — eslatmalar o‘chirilgan.",
+    cartReminderHoursLabel: "Necha soatdan keyin eslatish",
     instructionTitle: "Xaridorlar uchun yo‘riqnoma",
     instructionHint:
       "Botning asosiy menyusidagi «📖 Yo‘riqnoma» tugmasi. Video 50 MB dan kichik bo‘lgani ma’qul (Telegram cheklovi), MP4 formatida.",
@@ -330,6 +349,10 @@ function SettingsPage() {
   const [loyaltySaving, setLoyaltySaving] = useState(false);
   const [loyaltySaved, setLoyaltySaved] = useState(false);
 
+  const [cartReminderHours, setCartReminderHours] = useState("6");
+  const [cartReminderSaving, setCartReminderSaving] = useState(false);
+  const [cartReminderSaved, setCartReminderSaved] = useState(false);
+
   const [instructionCaption, setInstructionCaption] = useState("");
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
   const [instructionUploading, setInstructionUploading] = useState(false);
@@ -343,6 +366,7 @@ function SettingsPage() {
     setDeliveryLangTiming(settings.data?.delivery_lang_timing === "before" ? "before" : "after");
     setReferralPercent(settings.data?.referral_discount_percent ?? "10");
     setLoyaltyEarnPercent(settings.data?.loyalty_earn_percent ?? "5");
+    setCartReminderHours(settings.data?.cart_reminder_hours ?? "6");
   }, [settings.data]);
 
   async function onSave() {
@@ -409,6 +433,23 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setLoyaltySaving(false);
+    }
+  }
+
+  async function onSaveCartReminderHours() {
+    if (settings.isLoading) return;
+    setCartReminderSaving(true);
+    try {
+      await saveSetting({
+        data: { key: "cart_reminder_hours", value: cartReminderHours.trim() },
+      });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setCartReminderSaved(true);
+      setTimeout(() => setCartReminderSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setCartReminderSaving(false);
     }
   }
 
@@ -610,6 +651,31 @@ function SettingsPage() {
             {tr.save}
           </Button>
           {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+        </div>
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.cartReminderTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.cartReminderHint}</p>
+        <div className="flex items-end gap-2">
+          <div className="space-y-2">
+            <Label>{tr.cartReminderHoursLabel}</Label>
+            <Input
+              type="number"
+              min={0}
+              max={168}
+              value={cartReminderHours}
+              onChange={(e) => setCartReminderHours(e.target.value)}
+              className="w-32"
+            />
+          </div>
+          <Button
+            onClick={onSaveCartReminderHours}
+            disabled={cartReminderSaving || settings.isLoading}
+          >
+            {tr.save}
+          </Button>
+          {cartReminderSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
         </div>
       </div>
 

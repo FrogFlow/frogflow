@@ -3366,6 +3366,11 @@ export async function handleUpdate(update: TelegramUpdate) {
         await setState(from_id, rest);
         return;
       }
+      // Кнопка из напоминания о брошенной корзине (Кейс 3, №6) — просто
+      // открывает корзину, как и текстовая кнопка "🛒 Корзина" меню.
+      if (data === "cart:show") {
+        return showCart(chat_id, user);
+      }
       if (data === "checkout") {
         try {
           return await startCheckout(chat_id, user);
