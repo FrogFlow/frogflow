@@ -13,6 +13,7 @@ import {
   checkBotHealthFn,
   requestWebhookSetupFn,
   listStatsFn,
+  listStorageByKindFn,
   buildEnvBlockFn,
   panelSelfCheckFn,
   setArchivedFn,
@@ -40,6 +41,7 @@ import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
 import { Switch } from "@/components-ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
+import { StorageDonut, DonutLegendRow, buildDonutSegments } from "@/components-ui/storage-donut";
 
 export const Route = createFileRoute("/operator/_authed/$botId")({
   head: () => ({ meta: [{ title: "Клиент — панель оператора" }] }),
@@ -868,6 +870,10 @@ function SubscriptionSection({ botId }: { botId: string }) {
 /** Сводка по клиенту. Только агрегаты — см. MIGRATION-10: содержимое чужого магазина панель не читает. */
 function StatsSection({ botId }: { botId: string }) {
   const stats = useQuery({ queryKey: ["operator_stats"], queryFn: () => listStatsFn() });
+  const storageByKind = useQuery({
+    queryKey: ["operator_storage_by_kind"],
+    queryFn: () => listStorageByKindFn(),
+  });
   const s = stats.data?.[botId];
 
   if (stats.isLoading) {
@@ -901,6 +907,18 @@ function StatsSection({ botId }: { botId: string }) {
     ["Место в хранилище", formatBytes(s.storage_bytes)],
   ];
 
+  const kindRows = storageByKind.data?.[botId] ?? [];
+  const kindSegments = buildDonutSegments(
+    kindRows,
+    (r) => r.kind,
+    (r) => r.kind,
+    (r) => r.bytes,
+  );
+  // Сумма самих секторов, а не s.storage_bytes из отдельного запроса
+  // (operator_bot_stats) — иначе рассинхрон между двумя RPC-вызовами мог бы
+  // показать в центре кольца число, не совпадающее с суммой его секторов.
+  const kindTotal = kindSegments.reduce((sum, seg) => sum + seg.bytes, 0);
+
   return (
     <section className="bg-card border rounded-lg p-4 space-y-3">
       <h2 className="font-medium">Показатели</h2>
@@ -912,6 +930,21 @@ function StatsSection({ botId }: { botId: string }) {
           </div>
         ))}
       </dl>
+      {!storageByKind.isLoading && kindSegments.length > 0 && (
+        <div className="pt-2 border-t flex flex-wrap items-center gap-4">
+          <StorageDonut
+            segments={kindSegments}
+            centerLabel={formatBytes(kindTotal)}
+            size={112}
+            formatValue={formatBytes}
+          />
+          <div className="flex-1 min-w-[12rem] space-y-1">
+            {kindSegments.map((seg) => (
+              <DonutLegendRow key={seg.key} segment={seg} valueLabel={formatBytes(seg.bytes)} />
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

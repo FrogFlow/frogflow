@@ -728,3 +728,26 @@ export async function loadStats(): Promise<Map<string, BotStats>> {
   }
   return map;
 }
+
+export type StorageByKind = { kind: string; bytes: number };
+
+/**
+ * Разбивка занятого места по видам файлов на клиента (MIGRATION-39) — для
+ * донат-чартов на главной странице панели и на карточке клиента. Считает
+ * теми же ссылками, что и operator_bot_stats(), так что сумма по видам для
+ * одного bot_id совпадает с его storage_bytes оттуда.
+ */
+export async function loadStorageByKind(): Promise<Map<string, StorageByKind[]>> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s.rpc("operator_storage_by_kind");
+  if (error) throw new Error(`Не удалось получить разбивку хранилища: ${error.message}`);
+
+  const map = new Map<string, StorageByKind[]>();
+  for (const row of data ?? []) {
+    const rows = map.get(row.bot_id) ?? [];
+    rows.push({ kind: row.storage_kind, bytes: Number(row.storage_bytes) });
+    map.set(row.bot_id, rows);
+  }
+  return map;
+}

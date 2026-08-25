@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   listBotsFn,
   listStatsFn,
+  listStorageByKindFn,
   listHealthFn,
   checkReadinessAllFn,
 } from "@/lib/operator/bots.functions";
@@ -14,6 +15,7 @@ import { Input } from "@/components-ui/input";
 import { moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
+import { StorageDonut, DonutLegendRow, buildDonutSegments } from "@/components-ui/storage-donut";
 import {
   Table,
   TableBody,
@@ -72,6 +74,12 @@ function OperatorClientsPage() {
   const moduleRequests = useQuery({
     queryKey: ["operator_module_requests"],
     queryFn: () => listPendingModuleRequestsFn(),
+  });
+  // Тоже отдельным запросом — та же причина, что у stats выше: считает
+  // размеры объектов в Storage, тяжелее списка.
+  const storageByKind = useQuery({
+    queryKey: ["operator_storage_by_kind"],
+    queryFn: () => listStorageByKindFn(),
   });
   const list = bots.data ?? [];
   const troubled = Object.values(health.data ?? {}).filter((h) => !h.ok).length;
@@ -270,7 +278,84 @@ function OperatorClientsPage() {
           </Table>
         </div>
       )}
+
+      <StorageOverview bots={list} byKind={storageByKind.data} loading={storageByKind.isLoading} />
     </div>
+  );
+}
+
+// Диск Supabase Pro на момент внедрения (см. переписку с клиентом) — 100 GB
+// в десятичных гигабайтах, как у Supabase в тарифах, не гибибайты.
+const STORAGE_LIMIT_BYTES = 100 * 1000 * 1000 * 1000;
+
+/**
+ * Донат «сколько места занял каждый клиент» + свободный остаток от лимита
+ * тарифа. Данные — из operator_storage_by_kind() (MIGRATION-39), просуммированные
+ * по клиенту: тот же источник, что и у разбивки на карточке клиента, поэтому
+ * сумма секторов здесь не может разойтись с суммой секторов там.
+ */
+function StorageOverview({
+  bots,
+  byKind,
+  loading,
+}: {
+  bots: { id: string; bot_name: string }[];
+  byKind?: Record<string, { kind: string; bytes: number }[]>;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <section className="space-y-3 pt-2">
+        <h2 className="text-lg font-semibold">Хранилище</h2>
+        <p className="text-sm text-muted-foreground">Считаю занятое место…</p>
+      </section>
+    );
+  }
+  if (!byKind) return null;
+
+  const totalsByBot = bots.map((bot) => ({
+    id: bot.id,
+    bot_name: bot.bot_name,
+    bytes: (byKind[bot.id] ?? []).reduce((sum, row) => sum + row.bytes, 0),
+  }));
+  const totalUsed = totalsByBot.reduce((sum, b) => sum + b.bytes, 0);
+  const free = Math.max(0, STORAGE_LIMIT_BYTES - totalUsed);
+
+  const segments = buildDonutSegments(
+    totalsByBot.filter((b) => b.bytes > 0),
+    (b) => b.id,
+    (b) => b.bot_name,
+    (b) => b.bytes,
+  );
+  segments.push({ key: "__free__", label: "Свободно", bytes: free, color: "var(--muted)" });
+
+  return (
+    <section className="space-y-3 pt-2">
+      <div>
+        <h2 className="text-lg font-semibold">Хранилище</h2>
+        <p className="text-sm text-muted-foreground">
+          {formatBytes(totalUsed)} занято из {formatBytes(STORAGE_LIMIT_BYTES)} (лимит тарифа
+          Supabase)
+        </p>
+      </div>
+      <div className="bg-card border rounded-lg p-4 flex flex-wrap items-center gap-6">
+        <StorageDonut
+          segments={segments}
+          centerLabel={formatBytes(totalUsed)}
+          centerSublabel="занято"
+          formatValue={formatBytes}
+        />
+        <div className="flex-1 min-w-[14rem] space-y-1.5">
+          {segments.map((s) => (
+            <DonutLegendRow
+              key={s.key}
+              segment={s}
+              valueLabel={`${formatBytes(s.bytes)} · ${totalUsed + free > 0 ? Math.round((s.bytes / (totalUsed + free)) * 100) : 0}%`}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 

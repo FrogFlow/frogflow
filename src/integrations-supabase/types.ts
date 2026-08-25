@@ -1765,6 +1765,18 @@ export type Database = {
         }[];
       };
       // Добавлено вручную по той же причине, что и operator_bot_stats.
+      // MIGRATION-39. Разбивка storage_bytes по видам файлов (для
+      // донат-чартов панели оператора) — та же методика подсчёта, что и у
+      // operator_bot_stats, просто без схлопывания в один total.
+      operator_storage_by_kind: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          bot_id: string;
+          storage_kind: string;
+          storage_bytes: number;
+        }[];
+      };
+      // Добавлено вручную по той же причине, что и operator_bot_stats.
       // PATCH-BROADCASTS. Атомарный инкремент счётчиков рассылки: без него
       // параллельные воркеры затирают счёт друг друга (read-then-write).
       // Все три p_* в базе имеют DEFAULT 0, но broadcast.server.ts всегда
