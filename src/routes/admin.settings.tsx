@@ -50,6 +50,9 @@ const copy: Record<
     cartReminderTitle: string;
     cartReminderHint: string;
     cartReminderHoursLabel: string;
+    smartSearchTitle: string;
+    smartSearchHint: string;
+    smartSearchEnableLabel: string;
     instructionTitle: string;
     instructionHint: string;
     uploading: string;
@@ -109,6 +112,10 @@ const copy: Record<
     cartReminderHint:
       "Если покупатель добавил товар в корзину и надолго замолчал, бот сам напомнит ему через указанное число часов, с кнопкой «Открыть корзину». 0 — напоминания выключены.",
     cartReminderHoursLabel: "Через сколько часов напоминать",
+    smartSearchTitle: "Умный поиск по каталогу (LLM)",
+    smartSearchHint:
+      "Если обычный поиск ничего не нашёл, бот пробует понять запрос по смыслу через ИИ (например, «что-то на день рождения пятилетке»). Требует настроенный ANTHROPIC_API_KEY у деплоя — каждый такой запрос стоит денег, поэтому выключено по умолчанию.",
+    smartSearchEnableLabel: "Включить умный поиск",
     instructionTitle: "Инструкция для покупателей",
     instructionHint:
       "Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до 50 МБ (лимит Telegram), формат MP4.",
@@ -171,6 +178,10 @@ const copy: Record<
     cartReminderHint:
       "Сатып алушы себетке тауар қосып, ұзақ үнсіз қалса, бот көрсетілген сағат саны өткен соң «Себетті ашу» түймесімен өзі еске салады. 0 — еске салулар өшірулі.",
     cartReminderHoursLabel: "Неше сағаттан кейін еске салу",
+    smartSearchTitle: "Каталог бойынша ақылды іздеу (LLM)",
+    smartSearchHint:
+      "Әдеттегі іздеу ештеңе таппаса, бот сұранысты мағынасы бойынша ЖИ арқылы түсінуге тырысады (мысалы, «бес жасар балаға туған күнге бір нәрсе»). Деплойда ANTHROPIC_API_KEY бапталған болуы керек — әрбір осындай сұраныс ақылы, сондықтан әдепкі бойынша өшірулі.",
+    smartSearchEnableLabel: "Ақылды іздеуді қосу",
     instructionTitle: "Сатып алушыларға арналған нұсқаулық",
     instructionHint:
       "Бот мәзіріндегі «📖 Нұсқаулық» түймесі. Видео 50 МБ-тан аспағаны жөн (Telegram шегі), MP4 форматы.",
@@ -233,6 +244,10 @@ const copy: Record<
     cartReminderHint:
       "If a buyer adds items to the cart and goes quiet, the bot reminds them after the configured number of hours, with an Open cart button. 0 disables reminders.",
     cartReminderHoursLabel: "Remind after this many hours",
+    smartSearchTitle: "Smart catalog search (LLM)",
+    smartSearchHint:
+      "If regular search finds nothing, the bot tries to understand the query by meaning via AI (e.g. a birthday gift for a five-year-old). Requires ANTHROPIC_API_KEY configured on the deployment — each such query costs money, so it is off by default.",
+    smartSearchEnableLabel: "Enable smart search",
     instructionTitle: "Buyer instructions",
     instructionHint:
       'The "📖 Guide" button in the bot\'s main menu. Video under 50 MB works best (Telegram limit), MP4 format.',
@@ -296,6 +311,10 @@ const copy: Record<
     cartReminderHint:
       "Agar xaridor savatga mahsulot qo‘shib, uzoq vaqt jim qolsa, bot ko‘rsatilgan soatdan keyin «Savatni ochish» tugmasi bilan o‘zi eslatadi. 0 — eslatmalar o‘chirilgan.",
     cartReminderHoursLabel: "Necha soatdan keyin eslatish",
+    smartSearchTitle: "Katalog bo‘yicha aqlli qidiruv (LLM)",
+    smartSearchHint:
+      "Agar oddiy qidiruv hech narsa topmasa, bot so‘rovni mazmuni bo‘yicha AI orqali tushunishga harakat qiladi (masalan, «besh yoshli bola uchun tug‘ilgan kunga narsa»). Deployda ANTHROPIC_API_KEY sozlangan bo‘lishi kerak — har bir bunday so‘rov pul talab qiladi, shuning uchun standart bo‘yicha o‘chirilgan.",
+    smartSearchEnableLabel: "Aqlli qidiruvni yoqish",
     instructionTitle: "Xaridorlar uchun yo‘riqnoma",
     instructionHint:
       "Botning asosiy menyusidagi «📖 Yo‘riqnoma» tugmasi. Video 50 MB dan kichik bo‘lgani ma’qul (Telegram cheklovi), MP4 formatida.",
@@ -353,6 +372,10 @@ function SettingsPage() {
   const [cartReminderSaving, setCartReminderSaving] = useState(false);
   const [cartReminderSaved, setCartReminderSaved] = useState(false);
 
+  const [smartSearchEnabled, setSmartSearchEnabled] = useState(false);
+  const [smartSearchSaving, setSmartSearchSaving] = useState(false);
+  const [smartSearchSaved, setSmartSearchSaved] = useState(false);
+
   const [instructionCaption, setInstructionCaption] = useState("");
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
   const [instructionUploading, setInstructionUploading] = useState(false);
@@ -367,6 +390,7 @@ function SettingsPage() {
     setReferralPercent(settings.data?.referral_discount_percent ?? "10");
     setLoyaltyEarnPercent(settings.data?.loyalty_earn_percent ?? "5");
     setCartReminderHours(settings.data?.cart_reminder_hours ?? "6");
+    setSmartSearchEnabled(settings.data?.smart_search_enabled === "true");
   }, [settings.data]);
 
   async function onSave() {
@@ -450,6 +474,21 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setCartReminderSaving(false);
+    }
+  }
+
+  async function onSaveSmartSearchEnabled(value: boolean) {
+    setSmartSearchEnabled(value);
+    setSmartSearchSaving(true);
+    try {
+      await saveSetting({ data: { key: "smart_search_enabled", value: value ? "true" : "false" } });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setSmartSearchSaved(true);
+      setTimeout(() => setSmartSearchSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setSmartSearchSaving(false);
     }
   }
 
@@ -677,6 +716,21 @@ function SettingsPage() {
           </Button>
           {cartReminderSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
         </div>
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.smartSearchTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.smartSearchHint}</p>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={smartSearchEnabled}
+            disabled={smartSearchSaving}
+            onChange={(e) => onSaveSmartSearchEnabled(e.target.checked)}
+          />
+          {tr.smartSearchEnableLabel}
+        </label>
+        {smartSearchSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-4">

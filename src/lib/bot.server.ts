@@ -3128,18 +3128,51 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   // корень каталога, их это не касается.
   const { data: hiddenCats } = await s.from("categories").select("id").eq("is_visible", false);
   const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
-  const visible = (data ?? []).filter((p) => {
-    const catIds = (p.category_ids as string[] | null) ?? [];
-    return catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
-  });
+  const visibleOf = (rows: typeof data) =>
+    (rows ?? []).filter((p) => {
+      const catIds = (p.category_ids as string[] | null) ?? [];
+      return catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
+    });
+  let visible = visibleOf(data);
 
   // Запоминаем запрос для пагинации (callback_data ограничена 64 байтами,
   // поэтому сам запрос в payload не кладём, а храним в state).
   await setState(telegram_id, { ...user.state, mode: "idle", last_search: query });
 
   if (!visible.length) {
-    await tg("sendMessage", { chat_id, text: m.searchNothingFound });
-    return;
+    // Умный поиск (Кейс 3, №9) — фолбэк для запросов, которые точный
+    // ILIKE-поиск не понял (нет пересечения по словам), но модель может
+    // сопоставить по смыслу. Включается отдельно от наличия ключа API (см.
+    // isSmartSearchEnabled) — стоимость за вызов реальная, продавец должен
+    // включить это сознательно.
+    const { isSmartSearchEnabled, smartSearchProductIds } = await import("./smart-search.server");
+    if (await isSmartSearchEnabled()) {
+      const { data: allActive } = await s
+        .from("products")
+        .select("*, product_images(image_path, sort_order)")
+        .eq("is_active", true)
+        .limit(300);
+      const candidates = visibleOf(allActive ?? []);
+      const ids = await smartSearchProductIds(
+        query,
+        candidates.map((p) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          keywords: p.keywords,
+        })),
+      );
+      if (ids?.length) {
+        const byId = new Map(candidates.map((p) => [p.id, p]));
+        visible = ids
+          .map((id) => byId.get(id))
+          .filter((p): p is NonNullable<typeof p> => Boolean(p));
+      }
+    }
+    if (!visible.length) {
+      await tg("sendMessage", { chat_id, text: m.searchNothingFound });
+      return;
+    }
   }
 
   const all = visible;
