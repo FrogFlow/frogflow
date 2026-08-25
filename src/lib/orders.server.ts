@@ -525,6 +525,10 @@ export async function deliverOrder(
         await rewardReferralIfFirstDelivery(after.telegram_id).catch((e) =>
           console.error("[orders] rewardReferralIfFirstDelivery failed", e),
         );
+        const { awardPointsForDelivery } = await import("./loyalty.server");
+        await awardPointsForDelivery(orderId, after.telegram_id).catch((e) =>
+          console.error("[orders] awardPointsForDelivery failed", e),
+        );
       }
       return {
         ok: true as const,

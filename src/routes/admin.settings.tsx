@@ -44,6 +44,9 @@ const copy: Record<
     referralTitle: string;
     referralHint: string;
     referralPercentLabel: string;
+    loyaltyTitle: string;
+    loyaltyHint: string;
+    loyaltyEarnPercentLabel: string;
     instructionTitle: string;
     instructionHint: string;
     uploading: string;
@@ -95,6 +98,10 @@ const copy: Record<
     referralHint:
       "Покупатель делится персональной ссылкой из раздела «ℹ️ Информация». Новый пользователь по ссылке сразу получает одноразовый промокод; когда он получает первую покупку — такой же промокод получает пригласивший.",
     referralPercentLabel: "Размер скидки в промокоде (%)",
+    loyaltyTitle: "Баллы за покупки",
+    loyaltyHint:
+      "После того как заказ выдан, покупателю начисляются баллы — процент от суммы заказа. 1 балл = 1 единица валюты. В следующей покупке баллы можно списать в счёт оплаты прямо из корзины.",
+    loyaltyEarnPercentLabel: "Процент от суммы заказа в баллы (%)",
     instructionTitle: "Инструкция для покупателей",
     instructionHint:
       "Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до 50 МБ (лимит Telegram), формат MP4.",
@@ -149,6 +156,10 @@ const copy: Record<
     referralHint:
       "Сатып алушы «ℹ️ Ақпарат» бөлімінен жеке сілтемесімен бөліседі. Сілтеме бойынша жаңа пайдаланушы бірден бір реттік промокод алады; ол алғаш рет сатып алғанда — шақырған адам да сондай промокод алады.",
     referralPercentLabel: "Промокодтағы жеңілдік мөлшері (%)",
+    loyaltyTitle: "Сатып алу үшін баллдар",
+    loyaltyHint:
+      "Тапсырыс берілгеннен кейін сатып алушыға баллдар есептеледі — тапсырыс сомасының пайызы. 1 балл = 1 валюта бірлігі. Келесі сатып алуда баллдарды тікелей себеттен төлемге есептеп шығаруға болады.",
+    loyaltyEarnPercentLabel: "Тапсырыс сомасынан баллдарға пайыз (%)",
     instructionTitle: "Сатып алушыларға арналған нұсқаулық",
     instructionHint:
       "Бот мәзіріндегі «📖 Нұсқаулық» түймесі. Видео 50 МБ-тан аспағаны жөн (Telegram шегі), MP4 форматы.",
@@ -203,6 +214,10 @@ const copy: Record<
     referralHint:
       'The buyer shares their personal link from the "ℹ️ Info" section. A new user gets a one-time promo code right away; when they get their first purchase, the referrer gets the same kind of promo code.',
     referralPercentLabel: "Discount in the promo code (%)",
+    loyaltyTitle: "Purchase points",
+    loyaltyHint:
+      "Once an order is delivered, the buyer is credited points — a percentage of the order total. 1 point = 1 currency unit. On the next purchase, points can be redeemed toward payment right from the cart.",
+    loyaltyEarnPercentLabel: "Percent of order total credited as points (%)",
     instructionTitle: "Buyer instructions",
     instructionHint:
       'The "📖 Guide" button in the bot\'s main menu. Video under 50 MB works best (Telegram limit), MP4 format.',
@@ -258,6 +273,10 @@ const copy: Record<
     referralHint:
       "Xaridor «ℹ️ Ma’lumot» bo‘limidan shaxsiy havolasini ulashadi. Havola bo‘yicha yangi foydalanuvchi darhol bir martalik promokod oladi; u birinchi xaridni amalga oshirganda — taklif qilgan kishi ham xuddi shunday promokod oladi.",
     referralPercentLabel: "Promokoddagi chegirma (%)",
+    loyaltyTitle: "Xaridlar uchun ballar",
+    loyaltyHint:
+      "Buyurtma yetkazilgandan so‘ng xaridorga ballar hisoblanadi — buyurtma summasidan foiz. 1 ball = 1 valyuta birligi. Keyingi xaridda ballarni to‘g‘ridan-to‘g‘ri savatdan to‘lovga hisobdan chiqarish mumkin.",
+    loyaltyEarnPercentLabel: "Buyurtma summasidan ballarga foiz (%)",
     instructionTitle: "Xaridorlar uchun yo‘riqnoma",
     instructionHint:
       "Botning asosiy menyusidagi «📖 Yo‘riqnoma» tugmasi. Video 50 MB dan kichik bo‘lgani ma’qul (Telegram cheklovi), MP4 formatida.",
@@ -307,6 +326,10 @@ function SettingsPage() {
   const [referralSaving, setReferralSaving] = useState(false);
   const [referralSaved, setReferralSaved] = useState(false);
 
+  const [loyaltyEarnPercent, setLoyaltyEarnPercent] = useState("5");
+  const [loyaltySaving, setLoyaltySaving] = useState(false);
+  const [loyaltySaved, setLoyaltySaved] = useState(false);
+
   const [instructionCaption, setInstructionCaption] = useState("");
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
   const [instructionUploading, setInstructionUploading] = useState(false);
@@ -319,6 +342,7 @@ function SettingsPage() {
     setInstructionVideoPath(settings.data?.instruction_video_path ?? "");
     setDeliveryLangTiming(settings.data?.delivery_lang_timing === "before" ? "before" : "after");
     setReferralPercent(settings.data?.referral_discount_percent ?? "10");
+    setLoyaltyEarnPercent(settings.data?.loyalty_earn_percent ?? "5");
   }, [settings.data]);
 
   async function onSave() {
@@ -368,6 +392,23 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setReferralSaving(false);
+    }
+  }
+
+  async function onSaveLoyaltyEarnPercent() {
+    if (settings.isLoading) return;
+    setLoyaltySaving(true);
+    try {
+      await saveSetting({
+        data: { key: "loyalty_earn_percent", value: loyaltyEarnPercent.trim() },
+      });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setLoyaltySaved(true);
+      setTimeout(() => setLoyaltySaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setLoyaltySaving(false);
     }
   }
 
@@ -547,6 +588,28 @@ function SettingsPage() {
             {tr.save}
           </Button>
           {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+        </div>
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.loyaltyTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.loyaltyHint}</p>
+        <div className="flex items-end gap-2">
+          <div className="space-y-2">
+            <Label>{tr.loyaltyEarnPercentLabel}</Label>
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={loyaltyEarnPercent}
+              onChange={(e) => setLoyaltyEarnPercent(e.target.value)}
+              className="w-32"
+            />
+          </div>
+          <Button onClick={onSaveLoyaltyEarnPercent} disabled={loyaltySaving || settings.isLoading}>
+            {tr.save}
+          </Button>
+          {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
         </div>
       </div>
 

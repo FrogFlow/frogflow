@@ -957,6 +957,7 @@ export type Database = {
           first_name: string | null;
           language_code: string | null;
           last_name: string | null;
+          loyalty_points: number;
           state: Json;
           telegram_id: number;
           updated_at: string;
@@ -977,6 +978,7 @@ export type Database = {
           first_name?: string | null;
           language_code?: string | null;
           last_name?: string | null;
+          loyalty_points?: number;
           state?: Json;
           telegram_id: number;
           updated_at?: string;
@@ -997,6 +999,7 @@ export type Database = {
           first_name?: string | null;
           language_code?: string | null;
           last_name?: string | null;
+          loyalty_points?: number;
           state?: Json;
           telegram_id?: number;
           updated_at?: string;
@@ -1301,6 +1304,10 @@ export type Database = {
           // посчитан с её учётом, эти два поля только для истории/чека.
           promo_code: string | null;
           discount_amount: number;
+          // MIGRATION-42. Баллы, списанные и начисленные по заказу — тот же
+          // ручной патч, что и у остальных полей этого файла.
+          points_used: number;
+          points_earned: number;
           status: string;
           telegram_id: number;
           total: number;
@@ -1330,6 +1337,8 @@ export type Database = {
           delivery_lang_choice?: string | null;
           promo_code?: string | null;
           discount_amount?: number;
+          points_used?: number;
+          points_earned?: number;
           status?: string;
           telegram_id: number;
           total?: number;
@@ -1359,6 +1368,8 @@ export type Database = {
           delivery_lang_choice?: string | null;
           promo_code?: string | null;
           discount_amount?: number;
+          points_used?: number;
+          points_earned?: number;
           status?: string;
           telegram_id?: number;
           total?: number;

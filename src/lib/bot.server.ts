@@ -83,6 +83,7 @@ type BotUser = {
   last_name: string | null;
   language_code: string | null;
   contact_phone: string | null;
+  loyalty_points?: number;
   state: {
     /**
      * Не полноценная машина состояний — просто типизированный набор
@@ -98,6 +99,8 @@ type BotUser = {
       | "awaiting_proof"
       | "choose_pay"
       | "awaiting_promo_code";
+    /** Списать баллы при оформлении — переключатель, не текстовый ввод. */
+    use_points?: boolean;
     pending_order_id?: number;
     /**
      * Номер заказа, замороженный один раз (orders.display_no, MIGRATION-28) —
@@ -518,6 +521,10 @@ type Msg = {
   promoCodeInvalid: string;
   promoCodeRemoved: string;
   discountLine: (amount: string) => string;
+  pointsBalanceLine: (points: number) => string;
+  usePointsBtn: string;
+  removePointsBtn: string;
+  pointsDiscountLine: (amount: string) => string;
   phonePromptHtml: string;
   shareContactBtn: string;
   paymentNotConfigured: string;
@@ -621,6 +628,10 @@ const copy: Record<Locale, Msg> = {
     promoCodeInvalid: "⚠️ Промокод недействителен или больше не работает.",
     promoCodeRemoved: "Промокод убран.",
     discountLine: (amount) => `Скидка по промокоду: −${amount}\n`,
+    pointsBalanceLine: (points) => `🏆 Ваши баллы: ${points}\n`,
+    usePointsBtn: "🏆 Списать баллы",
+    removePointsBtn: "❌ Не списывать баллы",
+    pointsDiscountLine: (amount) => `Списано баллами: −${amount}\n`,
     phonePromptHtml:
       "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
     shareContactBtn: "📱 Поделиться контактом",
@@ -740,6 +751,10 @@ const copy: Record<Locale, Msg> = {
     promoCodeInvalid: "⚠️ Промокод жарамсыз немесе енді жұмыс істемейді.",
     promoCodeRemoved: "Промокод алынып тасталды.",
     discountLine: (amount) => `Промокод бойынша жеңілдік: −${amount}\n`,
+    pointsBalanceLine: (points) => `🏆 Сіздің баллдарыңыз: ${points}\n`,
+    usePointsBtn: "🏆 Баллдарды жұмсау",
+    removePointsBtn: "❌ Баллдарды жұмсамау",
+    pointsDiscountLine: (amount) => `Баллдармен есептен шығарылды: −${amount}\n`,
     phonePromptHtml:
       "Тапсырысты рәсімдеу үшін телефон нөміріңізді көрсетіңіз — <b>оны осы чатқа жазыңыз</b>, мысалы:\n<code>+7 900 123-45-67</code>\n\nНемесе контактіні автоматты түрде бөлісу үшін төмендегі батырманы басыңыз.",
     shareContactBtn: "📱 Контактімен бөлісу",
@@ -861,6 +876,10 @@ const copy: Record<Locale, Msg> = {
     promoCodeInvalid: "⚠️ This promo code is invalid or no longer works.",
     promoCodeRemoved: "Promo code removed.",
     discountLine: (amount) => `Promo discount: −${amount}\n`,
+    pointsBalanceLine: (points) => `🏆 Your points: ${points}\n`,
+    usePointsBtn: "🏆 Use points",
+    removePointsBtn: "❌ Don't use points",
+    pointsDiscountLine: (amount) => `Points discount: −${amount}\n`,
     phonePromptHtml:
       "To place your order, share your phone number — <b>just type it in this chat</b>, for example:\n<code>+7 900 123-45-67</code>\n\nOr tap the button below to share your contact automatically.",
     shareContactBtn: "📱 Share contact",
@@ -986,6 +1005,10 @@ const copy: Record<Locale, Msg> = {
     promoCodeInvalid: "⚠️ Promokod amal qilmaydi yoki endi ishlamaydi.",
     promoCodeRemoved: "Promokod olib tashlandi.",
     discountLine: (amount) => `Promokod bo‘yicha chegirma: −${amount}\n`,
+    pointsBalanceLine: (points) => `🏆 Sizning ballaringiz: ${points}\n`,
+    usePointsBtn: "🏆 Ballarni sarflash",
+    removePointsBtn: "❌ Ballarni sarflamaslik",
+    pointsDiscountLine: (amount) => `Ballar bilan hisobdan chiqarildi: −${amount}\n`,
     phonePromptHtml:
       "Buyurtma berish uchun telefon raqamingizni kiriting — <b>uni shu chatga yozing</b>, masalan:\n<code>+7 900 123-45-67</code>\n\nYoki kontaktni avtomatik ulashish uchun quyidagi tugmani bosing.",
     shareContactBtn: "📱 Kontaktni ulashish",
@@ -1730,7 +1753,17 @@ async function showCart(chat_id: number, user: BotUser) {
       text += m.discountLine(formatMoney(discount, currency));
     }
   }
-  text += m.total(formatMoney(total - discount, currency));
+  const pointsBalance = user.loyalty_points ?? 0;
+  const usePoints = Boolean(user.state?.use_points);
+  let pointsDiscount = 0;
+  if (pointsBalance > 0) {
+    text += m.pointsBalanceLine(pointsBalance);
+    if (usePoints) {
+      pointsDiscount = computePointsDiscount(total - discount, pointsBalance);
+      if (pointsDiscount > 0) text += m.pointsDiscountLine(formatMoney(pointsDiscount, currency));
+    }
+  }
+  text += m.total(formatMoney(total - discount - pointsDiscount, currency));
   buttons.push([
     { text: m.checkoutBtn, callback_data: "checkout" },
     { text: m.clearBtn, callback_data: "clear" },
@@ -1740,6 +1773,13 @@ async function showCart(chat_id: number, user: BotUser) {
       ? { text: m.removePromoBtn, callback_data: "promo:clear" }
       : { text: m.promoCodeBtn, callback_data: "promo:enter" },
   ]);
+  if (pointsBalance > 0) {
+    buttons.push([
+      usePoints
+        ? { text: m.removePointsBtn, callback_data: "points:clear" }
+        : { text: m.usePointsBtn, callback_data: "points:use" },
+    ]);
+  }
   // Большая корзина легко превышает лимит Telegram в 4096 символов — tg()
   // не бросает на отказе, и покупатель молча не получал вообще ничего
   // (Блок 4.4).
@@ -1847,6 +1887,7 @@ import {
   type DeliveryLangChoice,
 } from "./product-materials";
 import { normalizePromoCode, computePromoDiscount, type PromoDiscountType } from "./promo-codes";
+import { computePointsDiscount } from "./loyalty";
 
 /**
  * Атомарно помечает начало оформления заказа. Кнопка выбора страны — обычный
@@ -2090,6 +2131,13 @@ async function placeOrderInner(
     const { promo_code: _promo_code, ...rest } = user.state;
     user = { ...user, state: rest };
   }
+  // Тот же приём для баллов: снимаем переключатель здесь же, чтобы он не
+  // прилип к следующему заказу, если этот сорвётся.
+  const usePointsInput = user.state?.use_points === true;
+  if (user.state?.use_points !== undefined) {
+    const { use_points: _use_points, ...rest } = user.state;
+    user = { ...user, state: rest };
+  }
 
   const s = await db();
   const { data: method } = await s
@@ -2173,6 +2221,16 @@ async function placeOrderInner(
     }
   }
 
+  // Баллы — поверх промокода, на остаток суммы. В отличие от промокода гонка
+  // тут не блокирует заказ (см. redeemPointsForOrder): просто спишется 0.
+  let pointsUsed = 0;
+  if (usePointsInput) {
+    const { redeemPointsForOrder } = await import("./loyalty.server");
+    const redeemed = await redeemPointsForOrder(telegram_id, total);
+    pointsUsed = redeemed.discount;
+    total -= pointsUsed;
+  }
+
   const display =
     [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() ||
     (user?.username ? `@${user.username}` : `id${telegram_id}`);
@@ -2192,6 +2250,7 @@ async function placeOrderInner(
       delivery_lang_choice: deliveryLangChoice,
       promo_code: promoCode,
       discount_amount: discountAmount,
+      points_used: pointsUsed,
     })
     .select("*")
     .single();
@@ -3120,6 +3179,16 @@ export async function handleUpdate(update: TelegramUpdate) {
         const { promo_code: _promo_code, ...rest } = user.state ?? {};
         await setState(from_id, rest);
         await tg("sendMessage", { chat_id, text: m.promoCodeRemoved });
+        return showCart(chat_id, { ...user, state: rest });
+      }
+      if (data === "points:use") {
+        const nextState = { ...user.state, use_points: true };
+        await setState(from_id, nextState);
+        return showCart(chat_id, { ...user, state: nextState });
+      }
+      if (data === "points:clear") {
+        const { use_points: _use_points, ...rest } = user.state ?? {};
+        await setState(from_id, rest);
         return showCart(chat_id, { ...user, state: rest });
       }
       if (data === "checkout") {
