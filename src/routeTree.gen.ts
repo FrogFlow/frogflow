@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ShopRouteImport } from './routes/shop'
 import { Route as OperatorRouteImport } from './routes/operator'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -67,6 +68,11 @@ import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
 import { Route as ApiAdminFileSplatRouteImport } from './routes/api/admin/file/$'
 
+const ShopRoute = ShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OperatorRoute = OperatorRouteImport.update({
   id: '/operator',
   path: '/operator',
@@ -364,6 +370,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/operator': typeof OperatorRouteWithChildren
+  '/shop': typeof ShopRoute
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -421,6 +428,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/operator': typeof OperatorAuthedIndexRoute
+  '/shop': typeof ShopRoute
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -478,6 +486,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
   '/operator': typeof OperatorRouteWithChildren
+  '/shop': typeof ShopRoute
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -539,6 +548,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/operator'
+    | '/shop'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -596,6 +606,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/operator'
+    | '/shop'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -652,6 +663,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/operator'
+    | '/shop'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -712,6 +724,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
   OperatorRoute: typeof OperatorRouteWithChildren
+  ShopRoute: typeof ShopRoute
   LegalSlugRoute: typeof LegalSlugRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
@@ -742,6 +755,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/shop': {
+      id: '/shop'
+      path: '/shop'
+      fullPath: '/shop'
+      preLoaderRoute: typeof ShopRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/operator': {
       id: '/operator'
       path: '/operator'
@@ -1241,6 +1261,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
   OperatorRoute: OperatorRouteWithChildren,
+  ShopRoute: ShopRoute,
   LegalSlugRoute: LegalSlugRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
