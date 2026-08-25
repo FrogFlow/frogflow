@@ -27,6 +27,7 @@ const messages: Dictionary = {
   categories: { ru: "Категории", kk: "Санаттар", en: "Categories", uz: "Kategoriyalar" },
   products: { ru: "Товары", kk: "Тауарлар", en: "Products", uz: "Mahsulotlar" },
   orders: { ru: "Заказы", kk: "Тапсырыстар", en: "Orders", uz: "Buyurtmalar" },
+  analytics: { ru: "Аналитика", kk: "Аналитика", en: "Analytics", uz: "Tahlil" },
   broadcast: { ru: "Рассылка", kk: "Хабарлама", en: "Broadcast", uz: "Xabar yuborish" },
   promoCodes: { ru: "Промокоды", kk: "Промокодтар", en: "Promo codes", uz: "Promokodlar" },
   giftCertificates: {

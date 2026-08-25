@@ -87,6 +87,8 @@ function AdminLayout() {
 
               <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
 
+              <NavLink to="/admin/analytics">{t("analytics", locale)}</NavLink>
+
               <GroupNav
                 label={t("paymentGroup", locale)}
                 active={

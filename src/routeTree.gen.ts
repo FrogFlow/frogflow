@@ -33,6 +33,7 @@ import { Route as AdminGiftCertificatesRouteImport } from './routes/admin.gift-c
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
 import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
 import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
+import { Route as AdminAnalyticsRouteImport } from './routes/admin.analytics'
 import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
 import { Route as AdminVipIndexRouteImport } from './routes/admin.vip.index'
 import { Route as OperatorAuthedOnboardRouteImport } from './routes/operator._authed.onboard'
@@ -185,6 +186,11 @@ const AdminBroadcastRoute = AdminBroadcastRouteImport.update({
 const AdminBlockedRoute = AdminBlockedRouteImport.update({
   id: '/blocked',
   path: '/blocked',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AdminRoute,
 } as any)
 const OperatorAuthedIndexRoute = OperatorAuthedIndexRouteImport.update({
@@ -371,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/operator': typeof OperatorRouteWithChildren
   '/shop': typeof ShopRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -429,6 +436,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/operator': typeof OperatorAuthedIndexRoute
   '/shop': typeof ShopRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -487,6 +495,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/operator': typeof OperatorRouteWithChildren
   '/shop': typeof ShopRoute
+  '/admin/analytics': typeof AdminAnalyticsRoute
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
@@ -549,6 +558,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/operator'
     | '/shop'
+    | '/admin/analytics'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -607,6 +617,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/operator'
     | '/shop'
+    | '/admin/analytics'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -664,6 +675,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/operator'
     | '/shop'
+    | '/admin/analytics'
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
@@ -921,6 +933,13 @@ declare module '@tanstack/react-router' {
       path: '/blocked'
       fullPath: '/admin/blocked'
       preLoaderRoute: typeof AdminBlockedRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/analytics': {
+      id: '/admin/analytics'
+      path: '/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/operator/_authed/': {
@@ -1183,6 +1202,7 @@ const AdminVipRouteWithChildren = AdminVipRoute._addFileChildren(
 )
 
 interface AdminRouteChildren {
+  AdminAnalyticsRoute: typeof AdminAnalyticsRoute
   AdminBlockedRoute: typeof AdminBlockedRoute
   AdminBroadcastRoute: typeof AdminBroadcastRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
@@ -1202,6 +1222,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAnalyticsRoute: AdminAnalyticsRoute,
   AdminBlockedRoute: AdminBlockedRoute,
   AdminBroadcastRoute: AdminBroadcastRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
