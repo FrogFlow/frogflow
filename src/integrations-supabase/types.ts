@@ -1199,6 +1199,10 @@ export type Database = {
           // MIGRATION-36. Хеш картинки чека — сверка на повтор (Блок A.4).
           // Тот же ручной патч, что и у остальных полей этого файла.
           payment_proof_hash: string | null;
+          // MIGRATION-38. Язык доставки, выбранный ДО оформления
+          // (delivery_lang_timing = "before"): код языка или "all". Тот же
+          // ручной патч, что и у остальных полей этого файла.
+          delivery_lang_choice: string | null;
           status: string;
           telegram_id: number;
           total: number;
@@ -1225,6 +1229,7 @@ export type Database = {
           id?: number;
           payment_proof_path?: string | null;
           payment_proof_hash?: string | null;
+          delivery_lang_choice?: string | null;
           status?: string;
           telegram_id: number;
           total?: number;
@@ -1251,6 +1256,7 @@ export type Database = {
           id?: number;
           payment_proof_path?: string | null;
           payment_proof_hash?: string | null;
+          delivery_lang_choice?: string | null;
           status?: string;
           telegram_id?: number;
           total?: number;

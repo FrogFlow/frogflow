@@ -20,7 +20,7 @@
  * (историческая пара, которую они и обслуживали изначально).
  */
 
-import type { Locale } from "./i18n";
+import { isLocale, type Locale } from "./i18n";
 
 export type MaterialSnapshot = {
   path: string | null;
@@ -205,12 +205,8 @@ export function parseDeliveredLanguages(raw: string | null | undefined): Set<Loc
     raw
       .split(",")
       .map((s) => s.trim())
-      .filter(isLocaleLike),
+      .filter(isLocale),
   );
-}
-
-function isLocaleLike(value: string): value is Locale {
-  return (MATERIAL_LANGUAGES as readonly string[]).includes(value);
 }
 
 /** Добавить язык к уже отправленным и вернуть новое значение колонки. */
@@ -218,4 +214,32 @@ export function addDeliveredLanguage(raw: string | null | undefined, lang: Local
   const set = parseDeliveredLanguages(raw);
   set.add(lang);
   return MATERIAL_LANGUAGES.filter((l) => set.has(l)).join(",");
+}
+
+/**
+ * Выбор языка ДО оформления заказа (настройка `delivery_lang_timing` =
+ * "before") — либо конкретный язык, либо «все доступные» (`"all"`),
+ * который ставит цену позиции ×N по числу реально заведённых у товара
+ * языков — как за N комплектов, а не один.
+ */
+export type DeliveryLangChoice = Locale | "all";
+
+export function isDeliveryLangChoice(value: unknown): value is DeliveryLangChoice {
+  return value === "all" || (typeof value === "string" && isLocale(value));
+}
+
+/**
+ * Во сколько раз должна вырасти цена позиции для этого выбора.
+ *
+ * Только "all" умножает — и на число языков, которые у ЭТОГО товара
+ * реально есть (`availableLangsCount`), а не на общее число языков в
+ * системе: товар с одним языком не должен внезапно стоить 4x только
+ * потому, что покупатель попросил «все».
+ */
+export function deliveryPriceMultiplier(
+  choice: DeliveryLangChoice | null | undefined,
+  availableLangsCount: number,
+): number {
+  if (choice !== "all") return 1;
+  return Math.max(1, availableLangsCount);
 }

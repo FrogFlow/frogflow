@@ -110,6 +110,12 @@ type BotUser = {
     proof_auto?: boolean;
     /** Транзиентный флаг claimOrderPlacement — оформление заказа уже идёт. */
     placing_order?: boolean;
+    /**
+     * Язык доставки, выбранный ДО оформления (настройка delivery_lang_timing
+     * = "before") — снят сразу же, как только placeOrderInner его прочитал,
+     * тем же путём, что и placing_order.
+     */
+    checkout_lang_choice?: DeliveryLangChoice;
   } | null;
 };
 
@@ -569,6 +575,8 @@ type Msg = {
   loadingMaterials: (lang: string) => string;
   materialNotConfigured: (lang: string) => string;
   paymentReminder: (orderNo: number | string, amount: string) => string;
+  chooseDeliveryLanguage: string;
+  allLanguagesBtn: string;
 };
 
 const copy: Record<Locale, Msg> = {
@@ -680,6 +688,8 @@ const copy: Record<Locale, Msg> = {
       `🔔 <b>Напоминание по заказу #${orderNo}</b>\n\n` +
       `Заказ ещё ожидает оплаты (${amount}).\n` +
       `Ниже — актуальный способ оплаты. Если уже платили — пришлите чек в этот чат.`,
+    chooseDeliveryLanguage: "🌐 На каком языке вы хотите получить материалы?",
+    allLanguagesBtn: "🌐 Все языки (цена ×N)",
   },
   kk: {
     back: "« Артқа",
@@ -791,6 +801,8 @@ const copy: Record<Locale, Msg> = {
       `🔔 <b>Тапсырыс #${orderNo} бойынша ескерту</b>\n\n` +
       `Тапсырыс әлі төлемді күтуде (${amount}).\n` +
       `Төменде — өзекті төлем әдісі. Егер төлеп қойған болсаңыз — чекті осы чатқа жіберіңіз.`,
+    chooseDeliveryLanguage: "🌐 Материалдарды қай тілде алғыңыз келеді?",
+    allLanguagesBtn: "🌐 Барлық тілдер (баға ×N)",
   },
   en: {
     back: "« Back",
@@ -906,6 +918,8 @@ const copy: Record<Locale, Msg> = {
       `🔔 <b>Reminder for order #${orderNo}</b>\n\n` +
       `The order is still awaiting payment (${amount}).\n` +
       `Below is the current payment method. If you already paid, please send the receipt in this chat.`,
+    chooseDeliveryLanguage: "🌐 Which language would you like the materials in?",
+    allLanguagesBtn: "🌐 All languages (price ×N)",
   },
   uz: {
     back: "« Orqaga",
@@ -1021,6 +1035,8 @@ const copy: Record<Locale, Msg> = {
       `🔔 <b>#${orderNo} buyurtma bo‘yicha eslatma</b>\n\n` +
       `Buyurtma hali to‘lovni kutmoqda (${amount}).\n` +
       `Quyida — joriy to‘lov usuli. Agar allaqachon to‘lagan bo‘lsangiz, chekni shu chatga yuboring.`,
+    chooseDeliveryLanguage: "🌐 Materiallarni qaysi tilda olishni xohlaysiz?",
+    allLanguagesBtn: "🌐 Barcha tillar (narx ×N)",
   },
 };
 
@@ -1712,8 +1728,8 @@ async function startCheckout(chat_id: number, user: BotUser) {
   // placeOrder (тем же приёмом, что checkout через кнопку страны) — здесь
   // раньше стоял свой, отдельный и неатомарный guard "прочитал mode, потом
   // записал", ровно тот паттерн гонки, который claimOrderPlacement и чинит.
-  // user has contact and country, proceed directly to placeOrder
-  await placeOrder(chat_id, user, user.state.country_code);
+  // user has contact and country, proceed to language choice or straight to placeOrder
+  await proceedToLanguageOrPlace(chat_id, user, user.state.country_code);
 }
 
 async function askCountry(
@@ -1758,11 +1774,15 @@ async function askCountry(
 // Instagram: две копии этого разбора уже разошлись один раз и стоили клиенту
 // оплаченного, но не выданного заказа (см. комментарий в том файле).
 import {
+  MATERIAL_LANGUAGES,
   materialsForProduct,
   availableMaterialLanguages,
   materialsForOrderItem,
   parseDeliveredLanguages,
   addDeliveredLanguage,
+  isDeliveryLangChoice,
+  deliveryPriceMultiplier,
+  type DeliveryLangChoice,
 } from "./product-materials";
 
 /**
@@ -1804,8 +1824,78 @@ export async function claimOrderPlacement(telegram_id: number): Promise<boolean>
 }
 
 export async function releaseOrderPlacement(telegram_id: number, state: BotUser["state"]) {
-  const { placing_order: _placing_order, ...rest } = (state ?? {}) as NonNullable<BotUser["state"]>;
+  const {
+    placing_order: _placing_order,
+    checkout_lang_choice: _checkout_lang_choice,
+    ...rest
+  } = (state ?? {}) as NonNullable<BotUser["state"]>;
   await setState(telegram_id, rest);
+}
+
+/**
+ * Между выбором страны и оформлением: если настройка delivery_lang_timing
+ * = "before" и у товаров в корзине больше одного языка на выбор, спросить
+ * язык доставки ДО заказа (см. product-materials.ts DeliveryLangChoice) —
+ * иначе сразу оформлять как раньше.
+ */
+async function proceedToLanguageOrPlace(chat_id: number, user: BotUser, country_code: string) {
+  const telegram_id = user.telegram_id;
+  const locale: Locale = user.state?.locale ?? "ru";
+
+  if (await shouldAskDeliveryLangBeforeOrder()) {
+    const langs = await deliveryLangChoicesForCart(telegram_id);
+    if (langs.length > 1) {
+      const nextState = { ...user.state, country_code };
+      await setState(telegram_id, nextState);
+      await askDeliveryLanguage(chat_id, langs, locale);
+      return;
+    }
+  }
+  await placeOrder(chat_id, user, country_code);
+}
+
+async function shouldAskDeliveryLangBeforeOrder(): Promise<boolean> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("multi_language"))) return false;
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", "delivery_lang_timing")
+    .maybeSingle();
+  return (data?.value ?? "after") === "before";
+}
+
+/** Языки, реально доступные хоть у одного товара в корзине — те, что стоит предлагать выбрать. */
+async function deliveryLangChoicesForCart(telegram_id: number): Promise<Locale[]> {
+  const s = await db();
+  const { data: items } = await s
+    .from("cart_items")
+    .select(
+      "products(file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order))",
+    )
+    .eq("telegram_id", telegram_id);
+  const set = new Set<Locale>();
+  for (const it of items ?? []) {
+    for (const lang of availableMaterialLanguages(it.products)) set.add(lang);
+  }
+  return MATERIAL_LANGUAGES.filter((l) => set.has(l));
+}
+
+async function askDeliveryLanguage(chat_id: number, langs: Locale[], locale: Locale) {
+  const m = copy[locale];
+  await tg("sendMessage", {
+    chat_id,
+    text: m.chooseDeliveryLanguage,
+    reply_markup: {
+      inline_keyboard: [
+        ...langs.map((l) => [
+          { text: `${localeFlags[l]} ${localeNames[l]}`, callback_data: `checkoutlang:${l}` },
+        ]),
+        [{ text: m.allLanguagesBtn, callback_data: "checkoutlang:all" }],
+      ],
+    },
+  });
 }
 
 async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
@@ -1850,6 +1940,16 @@ async function placeOrderInner(
   locale: Locale,
   m: (typeof copy)["ru"],
 ) {
+  // Разовый выбор языка ДО оформления (см. proceedToLanguageOrPlace) — снят
+  // сразу же, чтобы не протух в состоянии и не повлиял на следующий заказ:
+  // все сообщения ниже (startManualProofPath и т.д.) берут за основу именно
+  // user.state.
+  const deliveryLangChoice: DeliveryLangChoice | null = user.state?.checkout_lang_choice ?? null;
+  if (user.state?.checkout_lang_choice !== undefined) {
+    const { checkout_lang_choice: _checkout_lang_choice, ...rest } = user.state;
+    user = { ...user, state: rest };
+  }
+
   const s = await db();
   const { data: method } = await s
     .from("payment_methods")
@@ -1899,9 +1999,16 @@ async function placeOrderInner(
   for (const it of items) {
     if (!it.products) continue;
     const money = await resolvePrice(it.products, country_code);
+    // "Все языки" — цена за позицию ×N, где N — сколько языков реально есть
+    // у ЭТОГО товара (product-materials.ts deliveryPriceMultiplier).
+    const multiplier = deliveryPriceMultiplier(
+      deliveryLangChoice,
+      availableMaterialLanguages(it.products).length,
+    );
+    const amount = money.amount * multiplier;
     currency = money.currency;
-    priced.set(String(it.products.id), money.amount);
-    total += money.amount * Number(it.quantity);
+    priced.set(String(it.products.id), amount);
+    total += amount * Number(it.quantity);
   }
 
   const display =
@@ -1920,6 +2027,7 @@ async function placeOrderInner(
       total,
       currency,
       status: "awaiting_payment",
+      delivery_lang_choice: deliveryLangChoice,
     })
     .select("*")
     .single();
@@ -2851,7 +2959,8 @@ export async function handleUpdate(update: TelegramUpdate) {
           return;
         }
       }
-      if (data.startsWith("country:")) return placeOrder(chat_id, user, data.slice(8));
+      if (data.startsWith("country:"))
+        return proceedToLanguageOrPlace(chat_id, user, data.slice(8));
 
       if (data.startsWith("setcountry:")) {
         const code = data.slice(11);
@@ -2871,6 +2980,31 @@ export async function handleUpdate(update: TelegramUpdate) {
           text: m.countrySaved(countryMethod?.country_name as string),
         });
         await sendMain(chat_id, undefined, undefined, locale);
+        return;
+      }
+
+      if (data.startsWith("checkoutlang:")) {
+        const choice = data.slice("checkoutlang:".length);
+        if (!isDeliveryLangChoice(choice)) return;
+
+        const countryCode = user.state?.country_code;
+        if (!countryCode) {
+          // Состояние потерялось между сообщениями (например, сессия
+          // истекла) — переспрашиваем страну, а не падаем молча.
+          await askCountry(chat_id, from_id, true, locale);
+          return;
+        }
+
+        const nextState = { ...user.state, checkout_lang_choice: choice };
+        await setState(from_id, nextState);
+        if (cq.message?.message_id) {
+          await tg("editMessageReplyMarkup", {
+            chat_id,
+            message_id: cq.message.message_id,
+            reply_markup: { inline_keyboard: [] },
+          }).catch(() => {});
+        }
+        await placeOrder(chat_id, { ...user, state: nextState }, countryCode);
         return;
       }
 

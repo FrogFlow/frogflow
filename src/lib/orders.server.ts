@@ -8,6 +8,7 @@ import {
   materialsForOrderItem,
   materialsForOrderItemAnyLang,
   type MaterialSnapshot,
+  type DeliveryLangChoice,
 } from "./product-materials";
 
 export { legacyAsMaterials, materialsForOrderItem, materialsForOrderItemAnyLang };
@@ -260,7 +261,7 @@ export async function deliverOrder(
       const { data: fresh, error: readErr } = await supabaseAdmin
         .from("orders")
         .select(
-          "status, delivery_index, delivery_retry_count, admin_note, telegram_id, order_no, display_no",
+          "status, delivery_index, delivery_retry_count, admin_note, telegram_id, order_no, display_no, delivery_lang_choice",
         )
         .eq("id", orderId)
         .single();
@@ -306,6 +307,12 @@ export async function deliverOrder(
         : materialsForOrderItem(item, "ru").length > 0
           ? ["ru"]
           : [];
+      // Язык уже выбран ДО оформления (delivery_lang_timing = "before",
+      // см. bot.server.ts proceedToLanguageOrPlace) — тогда после оплаты
+      // никаких вопросов, сразу отправляем.
+      const langChoice = multiLanguageOn
+        ? (fresh.delivery_lang_choice as DeliveryLangChoice | null)
+        : null;
 
       // 1. Продвигаем индекс вперёд с помощью CAS ДО отправки файла
       const { data: updated } = await supabaseAdmin
@@ -332,6 +339,34 @@ export async function deliverOrder(
         if (availableLangs.length === 0) {
           // Нет файла — ничего не отправляем
           itemOutcome = "sent";
+        } else if (langChoice === "all") {
+          // «Все языки» — цена уже учла множитель при оформлении, здесь
+          // просто отправляем каждый доступный для этой позиции язык.
+          let allOk = true;
+          for (const lang of availableLangs) {
+            const materials = materialsForOrderItem(item, lang);
+            const result = await sendMaterials(
+              fresh.telegram_id,
+              materials,
+              `${item.name_snapshot} (${localeNames[lang]})`,
+              1,
+            );
+            if (result.outcome !== "sent") {
+              allOk = false;
+              failReason = result.reason;
+            }
+          }
+          itemOutcome = allOk ? "sent" : "failed_retry";
+        } else if (langChoice) {
+          // Конкретный язык выбран заранее — если у этой позиции его нет
+          // (у другой позиции корзины он был), берём любой доступный вместо
+          // того, чтобы переспрашивать после оплаты.
+          const materials = availableLangs.includes(langChoice)
+            ? materialsForOrderItem(item, langChoice)
+            : materialsForOrderItemAnyLang(item);
+          const result = await sendMaterials(fresh.telegram_id, materials, item.name_snapshot, 1);
+          itemOutcome = result.outcome;
+          failReason = result.reason;
         } else if (availableLangs.length > 1) {
           const pickRes = await tg("sendMessage", {
             chat_id: fresh.telegram_id,

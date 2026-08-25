@@ -8,6 +8,8 @@ import {
   availableOrderItemLanguages,
   parseDeliveredLanguages,
   addDeliveredLanguage,
+  isDeliveryLangChoice,
+  deliveryPriceMultiplier,
 } from "../src/lib/product-materials";
 
 /**
@@ -188,5 +190,27 @@ describe("parseDeliveredLanguages / addDeliveredLanguage", () => {
     expect(addDeliveredLanguage("ru", "kk")).toBe("ru,kk");
     // Уже отмеченный язык не дублируется.
     expect(addDeliveredLanguage("ru,kk", "ru")).toBe("ru,kk");
+  });
+});
+
+describe("isDeliveryLangChoice / deliveryPriceMultiplier", () => {
+  it("признаёт конкретный язык и «all», отвергает мусор", () => {
+    expect(isDeliveryLangChoice("ru")).toBe(true);
+    expect(isDeliveryLangChoice("all")).toBe(true);
+    expect(isDeliveryLangChoice("kz")).toBe(false);
+    expect(isDeliveryLangChoice(null)).toBe(false);
+    expect(isDeliveryLangChoice(undefined)).toBe(false);
+  });
+
+  it("конкретный язык — цена не меняется", () => {
+    expect(deliveryPriceMultiplier("ru", 4)).toBe(1);
+    expect(deliveryPriceMultiplier(null, 4)).toBe(1);
+  });
+
+  it("«все языки» — множитель равен числу ИМЕННО ЭТОГО товара, не общему числу языков системы", () => {
+    expect(deliveryPriceMultiplier("all", 2)).toBe(2);
+    expect(deliveryPriceMultiplier("all", 4)).toBe(4);
+    // Товар вообще без файлов — множитель не может быть меньше 1.
+    expect(deliveryPriceMultiplier("all", 0)).toBe(1);
   });
 });

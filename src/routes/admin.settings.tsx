@@ -37,6 +37,10 @@ const copy: Record<
     contactHint: string;
     save: string;
     savedLabel: string;
+    deliveryLangTimingTitle: string;
+    deliveryLangTimingHint: string;
+    deliveryLangTimingBefore: string;
+    deliveryLangTimingAfter: string;
     instructionTitle: string;
     instructionHint: string;
     uploading: string;
@@ -79,6 +83,11 @@ const copy: Record<
       "Эта ссылка или текст будет показываться пользователям при нажатии на кнопку «💬 Связаться с автором».",
     save: "Сохранить",
     savedLabel: "Сохранено ✓",
+    deliveryLangTimingTitle: "Когда спрашивать язык материалов",
+    deliveryLangTimingHint:
+      "Актуально, только если у товаров заведено больше одного языка (модуль «Мультиязычность»). «После оплаты» — как раньше: кнопка выбора языка приходит вместе с файлами. «До оформления» — покупатель выбирает язык перед заказом и может выбрать «все языки» (цена ×N по числу языков товара).",
+    deliveryLangTimingAfter: "После оплаты (как сейчас)",
+    deliveryLangTimingBefore: "До оформления заказа",
     instructionTitle: "Инструкция для покупателей",
     instructionHint:
       "Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до 50 МБ (лимит Telegram), формат MP4.",
@@ -124,6 +133,11 @@ const copy: Record<
       "«💬 Автормен байланысу» түймесін басқанда пайдаланушыларға осы сілтеме немесе мәтін көрсетіледі.",
     save: "Сақтау",
     savedLabel: "Сақталды ✓",
+    deliveryLangTimingTitle: "Материал тілін қашан сұрау керек",
+    deliveryLangTimingHint:
+      "Тек тауарда бірнеше тіл болса маңызды («Көптілділік» модулі). «Төлемнен кейін» — бұрынғыдай: тіл таңдау түймесі файлдармен бірге келеді. «Ресімдеуден бұрын» — сатып алушы тапсырыс алдында тілді таңдайды, «барлық тілдер» опциясы да бар (баға тауар тілдерінің санына ×N).",
+    deliveryLangTimingAfter: "Төлемнен кейін (қазіргідей)",
+    deliveryLangTimingBefore: "Тапсырысты ресімдеуден бұрын",
     instructionTitle: "Сатып алушыларға арналған нұсқаулық",
     instructionHint:
       "Бот мәзіріндегі «📖 Нұсқаулық» түймесі. Видео 50 МБ-тан аспағаны жөн (Telegram шегі), MP4 форматы.",
@@ -169,6 +183,11 @@ const copy: Record<
     contactHint: 'This link or text is shown to users when they tap "💬 Contact the author".',
     save: "Save",
     savedLabel: "Saved ✓",
+    deliveryLangTimingTitle: "When to ask for material language",
+    deliveryLangTimingHint:
+      'Only matters if a product has more than one language (Multi-language module). "After payment" — as now: the language-choice button arrives with the files. "Before checkout" — the buyer picks a language before ordering and can choose "all languages" (price ×N by that product\'s language count).',
+    deliveryLangTimingAfter: "After payment (current)",
+    deliveryLangTimingBefore: "Before placing the order",
     instructionTitle: "Buyer instructions",
     instructionHint:
       'The "📖 Guide" button in the bot\'s main menu. Video under 50 MB works best (Telegram limit), MP4 format.',
@@ -215,6 +234,11 @@ const copy: Record<
       "«💬 Muallif bilan bog‘lanish» tugmasi bosilganda foydalanuvchilarga shu havola yoki matn ko‘rsatiladi.",
     save: "Saqlash",
     savedLabel: "Saqlandi ✓",
+    deliveryLangTimingTitle: "Material tilini qachon so‘rash kerak",
+    deliveryLangTimingHint:
+      'Faqat mahsulotda bir nechta til bo‘lsa dolzarb ("Ko‘p tillilik" moduli). "To‘lovdan keyin" — hozirgidek: til tanlash tugmasi fayllar bilan birga keladi. "Buyurtma berishdan oldin" — xaridor buyurtmadan oldin tilni tanlaydi, "barcha tillar" varianti ham bor (narx mahsulot tillari soniga ×N).',
+    deliveryLangTimingAfter: "To‘lovdan keyin (hozirgidek)",
+    deliveryLangTimingBefore: "Buyurtma berishdan oldin",
     instructionTitle: "Xaridorlar uchun yo‘riqnoma",
     instructionHint:
       "Botning asosiy menyusidagi «📖 Yo‘riqnoma» tugmasi. Video 50 MB dan kichik bo‘lgani ma’qul (Telegram cheklovi), MP4 formatida.",
@@ -256,6 +280,10 @@ function SettingsPage() {
   const [adminContactLink, setAdminContactLink] = useState("");
   const [saved, setSaved] = useState(false);
 
+  const [deliveryLangTiming, setDeliveryLangTiming] = useState<"before" | "after">("after");
+  const [deliveryLangTimingSaving, setDeliveryLangTimingSaving] = useState(false);
+  const [deliveryLangTimingSaved, setDeliveryLangTimingSaved] = useState(false);
+
   const [instructionCaption, setInstructionCaption] = useState("");
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
   const [instructionUploading, setInstructionUploading] = useState(false);
@@ -266,6 +294,7 @@ function SettingsPage() {
     setAdminContactLink(settings.data?.admin_contact_link ?? "");
     setInstructionCaption(settings.data?.instruction_caption ?? "");
     setInstructionVideoPath(settings.data?.instruction_video_path ?? "");
+    setDeliveryLangTiming(settings.data?.delivery_lang_timing === "before" ? "before" : "after");
   }, [settings.data]);
 
   async function onSave() {
@@ -283,6 +312,21 @@ function SettingsPage() {
       setTimeout(() => setSaved(false), 2000);
     } catch (e: unknown) {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    }
+  }
+
+  async function onSaveDeliveryLangTiming(value: "before" | "after") {
+    setDeliveryLangTiming(value);
+    setDeliveryLangTimingSaving(true);
+    try {
+      await saveSetting({ data: { key: "delivery_lang_timing", value } });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setDeliveryLangTimingSaved(true);
+      setTimeout(() => setDeliveryLangTimingSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setDeliveryLangTimingSaving(false);
     }
   }
 
@@ -413,6 +457,34 @@ function SettingsPage() {
           </Button>
           {saved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
         </div>
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name="delivery-lang-timing"
+              checked={deliveryLangTiming === "after"}
+              disabled={deliveryLangTimingSaving}
+              onChange={() => onSaveDeliveryLangTiming("after")}
+            />
+            {tr.deliveryLangTimingAfter}
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name="delivery-lang-timing"
+              checked={deliveryLangTiming === "before"}
+              disabled={deliveryLangTimingSaving}
+              onChange={() => onSaveDeliveryLangTiming("before")}
+            />
+            {tr.deliveryLangTimingBefore}
+          </label>
+        </div>
+        {deliveryLangTimingSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-4">
