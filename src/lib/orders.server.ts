@@ -939,15 +939,41 @@ async function deliverOrderToWhatsApp(
     text: `✅ Оплата подтверждена! Заказ №${displayNo}.\nОтправляю ваши материалы (${files.length} шт.)…`,
   });
   if (!opened.ok) {
+    /**
+     * Открыть окно не вышло — обычный случай для WABA без доступа к Direct
+     * Send: продавец подтверждает оплату часто на следующий день, окно
+     * закрыто, а одобренный шаблон для заказов никто не настраивал (Блок
+     * B.1, кейс 2, раунд 2). Комментарий выше по функции всегда обещал
+     * откат на письмо здесь же — раньше он был реализован только для
+     * случая «окно открылось, но файлы не прошли» (ниже), не для этого.
+     */
+    if (order.customer_email?.trim()) {
+      console.warn(
+        `[orders] заказ ${orderId}: не удалось открыть окно WhatsApp (${opened.error}), отправляю письмом`,
+      );
+      return await deliverOrderByEmail(orderId, order, items);
+    }
     throw new Error(
       opened.error ||
         "Не удалось написать покупателю в WhatsApp — окно ответа закрыто, а шаблон недоступен.",
     );
   }
 
+  // Открытие окна шаблоном/Direct Send шло по телефону, а не по старому
+  // диалогу, и Zernio мог вернуть другой id (Блок B.2) — используем его для
+  // вложений ниже и запоминаем на будущее, иначе следующее сообщение снова
+  // уйдёт по устаревшему id.
+  const activeConversationId = opened.conversationId || conversationId;
+  if (activeConversationId !== conversationId) {
+    await supabaseAdmin
+      .from("bot_users")
+      .update({ zernio_conversation_id: activeConversationId })
+      .eq("user_key", order.user_key || "");
+  }
+
   let sent = 0;
   for (const file of files) {
-    const result = await sendZernioInboxMessage(conversationId, accountId, "", {
+    const result = await sendZernioInboxMessage(activeConversationId, accountId, "", {
       attachmentUrl: file.url,
       attachmentType: "file",
       // Без имени WhatsApp выводит его из URL, а там подписанная ссылка
@@ -1225,6 +1251,14 @@ export async function notifyOrderCustomer(orderId: number, text: string): Promis
         phone,
         text,
       });
+      // Открытие окна могло вернуть другой id диалога (Блок B.2) — сохраняем
+      // его, иначе следующее сообщение этому покупателю уйдёт по старому.
+      if (result.conversationId && result.conversationId !== buyer.zernio_conversation_id) {
+        await supabaseAdmin
+          .from("bot_users")
+          .update({ zernio_conversation_id: result.conversationId })
+          .eq("user_key", buyer.user_key || order.user_key || "");
+      }
       return result.ok;
     }
 

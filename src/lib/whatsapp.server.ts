@@ -158,7 +158,7 @@ export async function sendWhatsAppOutsideWindow(params: {
   templateName?: string;
   templateLanguage?: string;
   templateParams?: string[];
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<{ ok: boolean; error?: string; conversationId?: string }> {
   const { sendZernioInboxMessage } = await import("./zernio.server");
 
   if (params.conversationId) {
@@ -168,7 +168,7 @@ export async function sendWhatsAppOutsideWindow(params: {
       params.text,
       { platform: "whatsapp" },
     );
-    if (direct.ok) return { ok: true };
+    if (direct.ok) return { ok: true, conversationId: params.conversationId };
   }
 
   if (!params.phone) {
@@ -178,6 +178,17 @@ export async function sendWhatsAppOutsideWindow(params: {
     };
   }
 
+  /**
+   * Открытие окна шаблоном/Direct Send идёт по номеру телефона, а не по
+   * старому conversationId (он мог быть закрыт вместе с окном) — Zernio в
+   * ответ может отдать другой, новый id диалога. Раньше он терялся здесь:
+   * вызывающий код (deliverOrderToWhatsApp) продолжал слать вложения по
+   * старому id из bot_users, и если Zernio не переиспользует его тот же
+   * автоматически, каждое сообщение после первого уходило в никуда молча
+   * (Блок B.2, кейс 2, раунд 2). Теперь актуальный id возвращается наружу,
+   * и вызывающая сторона обязана и использовать его для следующих
+   * сообщений, и сохранить в bot_users на будущее.
+   */
   if (params.templateName) {
     const viaTemplate = await startWhatsAppConversation({
       accountId: params.accountId,
@@ -186,7 +197,12 @@ export async function sendWhatsAppOutsideWindow(params: {
       templateLanguage: params.templateLanguage,
       templateParams: params.templateParams,
     });
-    if (viaTemplate.ok) return { ok: true };
+    if (viaTemplate.ok) {
+      return {
+        ok: true,
+        conversationId: viaTemplate.conversationId || params.conversationId || undefined,
+      };
+    }
   }
 
   const viaUtility = await startWhatsAppConversation({
@@ -194,5 +210,7 @@ export async function sendWhatsAppOutsideWindow(params: {
     phone: params.phone,
     message: params.text,
   });
-  return viaUtility.ok ? { ok: true } : { ok: false, error: viaUtility.error };
+  return viaUtility.ok
+    ? { ok: true, conversationId: viaUtility.conversationId || params.conversationId || undefined }
+    : { ok: false, error: viaUtility.error };
 }

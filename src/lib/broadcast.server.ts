@@ -1,6 +1,7 @@
 import { tg, tgSendMultipart, tgSendMultipartMany } from "./telegram.server";
 import { errorMessage } from "@/lib/error-message";
 import { fetchAll } from "./csv";
+import { isExcludedWhatsAppSender } from "./whatsapp-contact-exclusions";
 
 const BATCH_SIZE = 25;
 const SEND_DELAY_MS = 80;
@@ -299,7 +300,7 @@ function classifyTelegramError(description?: string): "blocked" | "failed" {
  * отдельного справочника номеров заводить не пришлось. Аудитории те же, что и
  * у телеграмной рассылки, только считаются по своей платформе.
  */
-async function resolveWhatsAppAudience(
+export async function resolveWhatsAppAudience(
   audience_type: AudienceType,
   audience_filter?: { country_code?: string },
 ): Promise<Array<{ telegram_id: number; phone: string }>> {
@@ -313,27 +314,71 @@ async function resolveWhatsAppAudience(
   let userKeys: string[] | null = null;
 
   if (audience_type === "buyers" || audience_type === "non_buyers") {
-    const { data: orders } = await s
-      .from("orders")
-      .select("user_key")
-      .eq("status", "delivered")
-      .eq("platform", "whatsapp");
-    const buyers = new Set((orders ?? []).map((o) => String(o.user_key ?? "")).filter(Boolean));
+    // Постранично — тот же потолок PostgREST в 1000 строк, что уже чинили
+    // для telegramUsers/buyers выше (Блок 3.3): без него «всем» ушло бы
+    // только первой тысяче, а non_buyers перепутал бы обрезанных покупателей
+    // с теми, кто ничего не покупал.
+    const orders = await fetchAll(
+      (from, to) =>
+        s
+          .from("orders")
+          .select("user_key")
+          .eq("status", "delivered")
+          .eq("platform", "whatsapp")
+          .range(from, to),
+      "покупатели WhatsApp для рассылки",
+    );
+    const buyers = new Set(orders.map((o) => String(o.user_key ?? "")).filter(Boolean));
     if (audience_type === "buyers") userKeys = [...buyers];
     else {
-      const { data: all } = await s.from("bot_users").select("user_key").eq("platform", "whatsapp");
-      userKeys = (all ?? []).map((u) => String(u.user_key)).filter((key) => !buyers.has(key));
+      const all = await fetchAll(
+        (from, to) =>
+          s.from("bot_users").select("user_key").eq("platform", "whatsapp").range(from, to),
+        "получатели WhatsApp для рассылки",
+      );
+      userKeys = all.map((u) => String(u.user_key)).filter((key) => !buyers.has(key));
     }
   }
 
-  const query = s
-    .from("bot_users")
-    .select("user_key, telegram_id, state")
-    .eq("platform", "whatsapp");
-  const { data: users } = userKeys ? await query.in("user_key", userKeys) : await query;
+  const users = userKeys
+    ? await fetchAll(
+        (from, to) =>
+          s
+            .from("bot_users")
+            .select("user_key, telegram_id, state")
+            .eq("platform", "whatsapp")
+            .in("user_key", userKeys!)
+            .range(from, to),
+        "получатели WhatsApp для рассылки",
+      )
+    : await fetchAll(
+        (from, to) =>
+          s
+            .from("bot_users")
+            .select("user_key, telegram_id, state")
+            .eq("platform", "whatsapp")
+            .range(from, to),
+        "получатели WhatsApp для рассылки",
+      );
+
+  /**
+   * Список исключённых номеров (Блок B.3, кейс 2, раунд 2) — раньше
+   * рассылка его не читала вовсе, только живой автоответчик
+   * (zernio-bot.server.ts). Продавец добавляет номер сюда, когда клиент
+   * попросил не писать; рассылка — это тоже «написать», причём без повода,
+   * и именно такое сообщение WhatsApp Business считает жалобой при подсчёте
+   * рейтинга качества номера.
+   */
+  const { data: excludedRow } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("key", "whatsapp_bot_excluded_phones")
+    .maybeSingle();
+  const excludedPhones = excludedRow?.value?.trim() || "";
 
   const code = audience_filter?.country_code?.trim().toUpperCase();
-  return (users ?? [])
+  return users
     .filter((u) => {
       if (audience_type !== "country") return true;
       if (!code) return false;
@@ -345,7 +390,11 @@ async function resolveWhatsAppAudience(
       telegram_id: u.telegram_id as number,
       phone: String(u.user_key).startsWith("wa_") ? String(u.user_key).slice(3) : "",
     }))
-    .filter((r) => r.phone.length > 0);
+    .filter((r) => r.phone.length > 0)
+    .filter((r) => {
+      if (!excludedPhones) return true;
+      return !isExcludedWhatsAppSender({ senderPhone: r.phone, excludedPhones });
+    });
 }
 
 export async function createBroadcast(payload: BroadcastPayload) {
