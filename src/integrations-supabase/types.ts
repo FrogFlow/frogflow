@@ -1138,6 +1138,49 @@ export type Database = {
           },
         ];
       };
+      // Заведена MIGRATION-41-referrals.sql — добавлена вручную по тому же
+      // поводу, что и promo_codes/остальные ручные таблицы этого файла.
+      referrals: {
+        Row: {
+          id: string;
+          bot_id: string;
+          referrer_telegram_id: number;
+          referred_telegram_id: number;
+          status: string;
+          reward_promo_code: string | null;
+          created_at: string;
+          rewarded_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          referrer_telegram_id: number;
+          referred_telegram_id: number;
+          status?: string;
+          reward_promo_code?: string | null;
+          created_at?: string;
+          rewarded_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          referrer_telegram_id?: number;
+          referred_telegram_id?: number;
+          status?: string;
+          reward_promo_code?: string | null;
+          created_at?: string;
+          rewarded_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "referrals_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       order_items: {
         Row: {
           // MIGRATION-37. Снимок материалов по всем языкам разом (ru/kk/en/uz),

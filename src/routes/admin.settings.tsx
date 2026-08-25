@@ -41,6 +41,9 @@ const copy: Record<
     deliveryLangTimingHint: string;
     deliveryLangTimingBefore: string;
     deliveryLangTimingAfter: string;
+    referralTitle: string;
+    referralHint: string;
+    referralPercentLabel: string;
     instructionTitle: string;
     instructionHint: string;
     uploading: string;
@@ -88,6 +91,10 @@ const copy: Record<
       "Актуально, только если у товаров заведено больше одного языка (модуль «Мультиязычность»). «После оплаты» — как раньше: кнопка выбора языка приходит вместе с файлами. «До оформления» — покупатель выбирает язык перед заказом и может выбрать «все языки» (цена ×N по числу языков товара).",
     deliveryLangTimingAfter: "После оплаты (как сейчас)",
     deliveryLangTimingBefore: "До оформления заказа",
+    referralTitle: "Реферальная программа",
+    referralHint:
+      "Покупатель делится персональной ссылкой из раздела «ℹ️ Информация». Новый пользователь по ссылке сразу получает одноразовый промокод; когда он получает первую покупку — такой же промокод получает пригласивший.",
+    referralPercentLabel: "Размер скидки в промокоде (%)",
     instructionTitle: "Инструкция для покупателей",
     instructionHint:
       "Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до 50 МБ (лимит Telegram), формат MP4.",
@@ -138,6 +145,10 @@ const copy: Record<
       "Тек тауарда бірнеше тіл болса маңызды («Көптілділік» модулі). «Төлемнен кейін» — бұрынғыдай: тіл таңдау түймесі файлдармен бірге келеді. «Ресімдеуден бұрын» — сатып алушы тапсырыс алдында тілді таңдайды, «барлық тілдер» опциясы да бар (баға тауар тілдерінің санына ×N).",
     deliveryLangTimingAfter: "Төлемнен кейін (қазіргідей)",
     deliveryLangTimingBefore: "Тапсырысты ресімдеуден бұрын",
+    referralTitle: "Реферал бағдарламасы",
+    referralHint:
+      "Сатып алушы «ℹ️ Ақпарат» бөлімінен жеке сілтемесімен бөліседі. Сілтеме бойынша жаңа пайдаланушы бірден бір реттік промокод алады; ол алғаш рет сатып алғанда — шақырған адам да сондай промокод алады.",
+    referralPercentLabel: "Промокодтағы жеңілдік мөлшері (%)",
     instructionTitle: "Сатып алушыларға арналған нұсқаулық",
     instructionHint:
       "Бот мәзіріндегі «📖 Нұсқаулық» түймесі. Видео 50 МБ-тан аспағаны жөн (Telegram шегі), MP4 форматы.",
@@ -188,6 +199,10 @@ const copy: Record<
       'Only matters if a product has more than one language (Multi-language module). "After payment" — as now: the language-choice button arrives with the files. "Before checkout" — the buyer picks a language before ordering and can choose "all languages" (price ×N by that product\'s language count).',
     deliveryLangTimingAfter: "After payment (current)",
     deliveryLangTimingBefore: "Before placing the order",
+    referralTitle: "Referral program",
+    referralHint:
+      'The buyer shares their personal link from the "ℹ️ Info" section. A new user gets a one-time promo code right away; when they get their first purchase, the referrer gets the same kind of promo code.',
+    referralPercentLabel: "Discount in the promo code (%)",
     instructionTitle: "Buyer instructions",
     instructionHint:
       'The "📖 Guide" button in the bot\'s main menu. Video under 50 MB works best (Telegram limit), MP4 format.',
@@ -239,6 +254,10 @@ const copy: Record<
       'Faqat mahsulotda bir nechta til bo‘lsa dolzarb ("Ko‘p tillilik" moduli). "To‘lovdan keyin" — hozirgidek: til tanlash tugmasi fayllar bilan birga keladi. "Buyurtma berishdan oldin" — xaridor buyurtmadan oldin tilni tanlaydi, "barcha tillar" varianti ham bor (narx mahsulot tillari soniga ×N).',
     deliveryLangTimingAfter: "To‘lovdan keyin (hozirgidek)",
     deliveryLangTimingBefore: "Buyurtma berishdan oldin",
+    referralTitle: "Referal dasturi",
+    referralHint:
+      "Xaridor «ℹ️ Ma’lumot» bo‘limidan shaxsiy havolasini ulashadi. Havola bo‘yicha yangi foydalanuvchi darhol bir martalik promokod oladi; u birinchi xaridni amalga oshirganda — taklif qilgan kishi ham xuddi shunday promokod oladi.",
+    referralPercentLabel: "Promokoddagi chegirma (%)",
     instructionTitle: "Xaridorlar uchun yo‘riqnoma",
     instructionHint:
       "Botning asosiy menyusidagi «📖 Yo‘riqnoma» tugmasi. Video 50 MB dan kichik bo‘lgani ma’qul (Telegram cheklovi), MP4 formatida.",
@@ -284,6 +303,10 @@ function SettingsPage() {
   const [deliveryLangTimingSaving, setDeliveryLangTimingSaving] = useState(false);
   const [deliveryLangTimingSaved, setDeliveryLangTimingSaved] = useState(false);
 
+  const [referralPercent, setReferralPercent] = useState("10");
+  const [referralSaving, setReferralSaving] = useState(false);
+  const [referralSaved, setReferralSaved] = useState(false);
+
   const [instructionCaption, setInstructionCaption] = useState("");
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
   const [instructionUploading, setInstructionUploading] = useState(false);
@@ -295,6 +318,7 @@ function SettingsPage() {
     setInstructionCaption(settings.data?.instruction_caption ?? "");
     setInstructionVideoPath(settings.data?.instruction_video_path ?? "");
     setDeliveryLangTiming(settings.data?.delivery_lang_timing === "before" ? "before" : "after");
+    setReferralPercent(settings.data?.referral_discount_percent ?? "10");
   }, [settings.data]);
 
   async function onSave() {
@@ -327,6 +351,23 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setDeliveryLangTimingSaving(false);
+    }
+  }
+
+  async function onSaveReferralPercent() {
+    if (settings.isLoading) return;
+    setReferralSaving(true);
+    try {
+      await saveSetting({
+        data: { key: "referral_discount_percent", value: referralPercent.trim() },
+      });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setReferralSaved(true);
+      setTimeout(() => setReferralSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setReferralSaving(false);
     }
   }
 
@@ -485,6 +526,28 @@ function SettingsPage() {
           </label>
         </div>
         {deliveryLangTimingSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.referralTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.referralHint}</p>
+        <div className="flex items-end gap-2">
+          <div className="space-y-2">
+            <Label>{tr.referralPercentLabel}</Label>
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={referralPercent}
+              onChange={(e) => setReferralPercent(e.target.value)}
+              className="w-32"
+            />
+          </div>
+          <Button onClick={onSaveReferralPercent} disabled={referralSaving || settings.isLoading}>
+            {tr.save}
+          </Button>
+          {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+        </div>
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-4">

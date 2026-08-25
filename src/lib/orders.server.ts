@@ -521,6 +521,10 @@ export async function deliverOrder(
           ? `🙏 Оплата по заказу #${orderId} подтверждена. Часть материалов продавец вышлет вручную — ожидайте, пожалуйста.`
           : `🙏 Спасибо за покупку! Заказ #${orderId} выдан (${items.length} материалов). Если что-то не так — напишите продавцу.`;
         await tg("sendMessage", { chat_id: after.telegram_id, text });
+        const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
+        await rewardReferralIfFirstDelivery(after.telegram_id).catch((e) =>
+          console.error("[orders] rewardReferralIfFirstDelivery failed", e),
+        );
       }
       return {
         ok: true as const,

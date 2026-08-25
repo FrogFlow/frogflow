@@ -577,6 +577,7 @@ type Msg = {
   privacyBtn: string;
   requisitesBtn: string;
   aboutBtn: string;
+  inviteFriendBtn: string;
   contactsNotSet: string;
   contactUsePrefix: (link: string) => string;
   instructionComingSoon: string;
@@ -692,6 +693,7 @@ const copy: Record<Locale, Msg> = {
     privacyBtn: "🔒 Политика конфиденциальности",
     requisitesBtn: "🏦 Реквизиты",
     aboutBtn: "👤 О продавце",
+    inviteFriendBtn: "🎁 Пригласить друга",
     contactsNotSet: "Контакты автора пока не указаны.",
     contactUsePrefix: (l) => `Для связи с автором используйте следующие контакты:\n${l}`,
     instructionComingSoon:
@@ -811,6 +813,7 @@ const copy: Record<Locale, Msg> = {
     privacyBtn: "🔒 Құпиялылық саясаты",
     requisitesBtn: "🏦 Деректемелер",
     aboutBtn: "👤 Сатушы туралы",
+    inviteFriendBtn: "🎁 Досты шақыру",
     contactsNotSet: "Автордың байланыс деректері әлі көрсетілмеген.",
     contactUsePrefix: (l) => `Автормен байланысу үшін мына деректерді пайдаланыңыз:\n${l}`,
     instructionComingSoon:
@@ -934,6 +937,7 @@ const copy: Record<Locale, Msg> = {
     privacyBtn: "🔒 Privacy Policy",
     requisitesBtn: "🏦 Payment details",
     aboutBtn: "👤 About the seller",
+    inviteFriendBtn: "🎁 Invite a friend",
     contactsNotSet: "The author’s contact details haven’t been set yet.",
     contactUsePrefix: (l) => `To contact the author, use the following details:\n${l}`,
     instructionComingSoon:
@@ -1058,6 +1062,7 @@ const copy: Record<Locale, Msg> = {
     privacyBtn: "🔒 Maxfiylik siyosati",
     requisitesBtn: "🏦 To‘lov ma’lumotlari",
     aboutBtn: "👤 Sotuvchi haqida",
+    inviteFriendBtn: "🎁 Do‘stni taklif qilish",
     contactsNotSet: "Muallifning aloqa ma’lumotlari hali ko‘rsatilmagan.",
     contactUsePrefix: (l) =>
       `Muallif bilan bog‘lanish uchun quyidagi ma’lumotlardan foydalaning:\n${l}`,
@@ -3418,7 +3423,14 @@ export async function handleUpdate(update: TelegramUpdate) {
     const m = copy[locale];
 
     // /start - special: also detect if sender is the admin and offer to bind
-    if (msg.text === "/start") {
+    if (msg.text === "/start" || msg.text?.startsWith("/start ")) {
+      const startPayload = msg.text.slice("/start".length).trim();
+      if (startPayload.startsWith("ref_")) {
+        const { registerReferral } = await import("./referrals.server");
+        await registerReferral(from.id, startPayload.slice(4)).catch((e) =>
+          console.error("[bot] registerReferral failed", e),
+        );
+      }
       await setState(from.id, { ...user.state, mode: "idle" });
 
       // Разовая настройка бота, не имеет отношения к языку покупателя —
@@ -3877,6 +3889,8 @@ export async function handleUpdate(update: TelegramUpdate) {
         return sendInstruction(chat_id, locale);
       case "ℹ️ Информация": {
         const base = originFromState();
+        const { getCachedBotUrl } = await import("./bot-url.server");
+        const botUrl = await getCachedBotUrl();
         await tg("sendMessage", {
           chat_id,
           text: m.infoHeader + m.infoRequiredDocs + legalConsentHtml(base, locale),
@@ -3887,6 +3901,9 @@ export async function handleUpdate(update: TelegramUpdate) {
               [{ text: m.privacyBtn, url: `${base}/legal/privacy` }],
               [{ text: m.requisitesBtn, url: `${base}/legal/requisites` }],
               [{ text: m.aboutBtn, url: `${base}/legal/about` }],
+              ...(botUrl
+                ? [[{ text: m.inviteFriendBtn, url: `${botUrl}?start=ref_${from.id}` }]]
+                : []),
             ],
           },
           disable_web_page_preview: true,
