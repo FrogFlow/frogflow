@@ -53,6 +53,8 @@ function ManagerChatPage() {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const threadRef = useRef<HTMLDivElement | null>(null);
 
   const conversations = useQuery({
@@ -84,7 +86,8 @@ function ManagerChatPage() {
   const selected = (conversations.data ?? []).find((c) => c.telegram_id === selectedId) ?? null;
 
   async function onToggleConnect() {
-    if (selectedId === null || !selected) return;
+    if (selectedId === null || !selected || toggling) return;
+    setToggling(true);
     try {
       if (selected.active) {
         await disconnectManagerChatFn({ data: { telegramId: selectedId } });
@@ -94,11 +97,16 @@ function ManagerChatPage() {
       await qc.invalidateQueries({ queryKey: ["manager_chat_conversations"] });
     } catch (e: unknown) {
       toast.error(errorMessage(e));
+    } finally {
+      setToggling(false);
     }
   }
 
   async function onSend() {
-    if (selectedId === null || !reply.trim()) return;
+    // Без busy-гейта быстрый двойной клик успевал отправить одну реплику
+    // дважды, пока первый запрос ещё не вернулся (Блок C.12).
+    if (selectedId === null || !reply.trim() || sending) return;
+    setSending(true);
     try {
       await sendManagerChatReplyFn({ data: { telegramId: selectedId, text: reply.trim() } });
       setReply("");
@@ -106,6 +114,8 @@ function ManagerChatPage() {
       await qc.invalidateQueries({ queryKey: ["manager_chat_conversations"] });
     } catch (e: unknown) {
       toast.error(errorMessage(e));
+    } finally {
+      setSending(false);
     }
   }
 
@@ -152,9 +162,16 @@ function ManagerChatPage() {
                 </p>
               </button>
             ))}
-            {!conversations.isLoading && (conversations.data ?? []).length === 0 && (
-              <p className="text-sm text-muted-foreground">Диалогов пока нет.</p>
+            {conversations.isError && (
+              <p className="text-sm text-destructive">
+                Не удалось загрузить диалоги: {errorMessage(conversations.error)}
+              </p>
             )}
+            {!conversations.isLoading &&
+              !conversations.isError &&
+              (conversations.data ?? []).length === 0 && (
+                <p className="text-sm text-muted-foreground">Диалогов пока нет.</p>
+              )}
           </div>
 
           <div className={`${CHAT_HEIGHT} flex flex-col gap-3`}>
@@ -170,6 +187,7 @@ function ManagerChatPage() {
                     size="sm"
                     variant={selected?.active ? "destructive" : "default"}
                     onClick={onToggleConnect}
+                    disabled={toggling}
                   >
                     {selected?.active ? "Завершить диалог" : "Подключиться к диалогу"}
                   </Button>
@@ -201,7 +219,7 @@ function ManagerChatPage() {
                     placeholder="Напишите ответ клиенту…"
                     rows={2}
                   />
-                  <Button onClick={onSend} disabled={!reply.trim()}>
+                  <Button onClick={onSend} disabled={!reply.trim() || sending}>
                     Отправить
                   </Button>
                 </div>

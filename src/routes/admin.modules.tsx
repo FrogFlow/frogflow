@@ -24,6 +24,7 @@ const copy: Record<
     subtitle: string;
     priceOneTime: (n: number) => string;
     requires: (title: string) => string;
+    pendingLoadError: (msg: string) => string;
   }
 > = {
   ru: {
@@ -32,6 +33,7 @@ const copy: Record<
       "Каталог готовых модулей для вашего магазина — уже подключённые и доступные к заказу.",
     priceOneTime: (n) => `${n.toLocaleString("ru-RU")} ₸ разово`,
     requires: (title) => `Требует: ${title}`,
+    pendingLoadError: (msg) => `Не удалось проверить уже отправленные заявки: ${msg}`,
   },
   kk: {
     title: "Модульдер",
@@ -39,12 +41,14 @@ const copy: Record<
       "Дүкеніңіз үшін дайын модульдер каталогы — қосылғандары және тапсырысқа қолжетімдісі.",
     priceOneTime: (n) => `${n.toLocaleString("ru-RU")} ₸ бір реттік`,
     requires: (title) => `Талап етеді: ${title}`,
+    pendingLoadError: (msg) => `Жіберілген өтінімдерді тексеру мүмкін болмады: ${msg}`,
   },
   en: {
     title: "Modules",
     subtitle: "Catalog of ready modules for your shop — what's connected and what you can request.",
     priceOneTime: (n) => `${n.toLocaleString("en-US")} ₸ one-time`,
     requires: (title) => `Requires: ${title}`,
+    pendingLoadError: (msg) => `Couldn't check already-sent requests: ${msg}`,
   },
   uz: {
     title: "Modullar",
@@ -52,6 +56,7 @@ const copy: Record<
       "Do‘koningiz uchun tayyor modullar katalogi — ulanganlari va buyurtma qilish mumkinlari.",
     priceOneTime: (n) => `${n.toLocaleString("ru-RU")} ₸ bir martalik`,
     requires: (title) => `Talab qiladi: ${title}`,
+    pendingLoadError: (msg) => `Yuborilgan so‘rovlarni tekshirib bo‘lmadi: ${msg}`,
   },
 };
 
@@ -89,6 +94,11 @@ function ModulesPage() {
       <div>
         <h1 className="text-2xl font-semibold">{c.title}</h1>
         <p className="text-sm text-muted-foreground mt-1">{c.subtitle}</p>
+        {pending.isError && (
+          <p className="text-sm text-destructive mt-1">
+            {c.pendingLoadError(errorMessage(pending.error))}
+          </p>
+        )}
       </div>
 
       {[...groups.entries()].map(([group, keys]) => (
@@ -122,7 +132,9 @@ function ModulesPage() {
                     <Button
                       size="sm"
                       variant={isPending ? "secondary" : "default"}
-                      disabled={isPending || request.isPending}
+                      disabled={
+                        isPending || request.isPending || pending.isLoading || pending.isError
+                      }
                       onClick={() => request.mutate(key)}
                     >
                       {isPending ? t("alreadyRequested", locale) : t("requestConnection", locale)}

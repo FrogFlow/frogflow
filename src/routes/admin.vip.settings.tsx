@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -226,16 +227,25 @@ function AdminVipSettings() {
   }, [settings.data]);
 
   const onSave = async () => {
-    await saveSetting({ data: { key: "vip_group_id", value: groupId } });
-    await saveSetting({ data: { key: "vip_warn_days", value: warnDays } });
-    await saveSetting({ data: { key: "vip_warn_days_2", value: warnDays2 } });
-    await saveSetting({ data: { key: "vip_test_mode", value: testMode ? "true" : "false" } });
-    await saveSetting({ data: { key: "vip_payment_instructions", value: instructions } });
-    await saveSetting({ data: { key: "vip_welcome_message", value: welcomeMsg } });
-
-    qc.invalidateQueries({ queryKey: ["settings"] });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    // Раньше без try/catch: обрыв посередине шести последовательных записей
+    // оставлял часть настроек сохранённой, часть нет, без единого сигнала
+    // какая (Блок C.7, кейс 2, раунд 2). Promise.all — тот же приём, что и
+    // на соседних страницах настроек.
+    try {
+      await Promise.all([
+        saveSetting({ data: { key: "vip_group_id", value: groupId } }),
+        saveSetting({ data: { key: "vip_warn_days", value: warnDays } }),
+        saveSetting({ data: { key: "vip_warn_days_2", value: warnDays2 } }),
+        saveSetting({ data: { key: "vip_test_mode", value: testMode ? "true" : "false" } }),
+        saveSetting({ data: { key: "vip_payment_instructions", value: instructions } }),
+        saveSetting({ data: { key: "vip_welcome_message", value: welcomeMsg } }),
+      ]);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    }
   };
 
   const onRunCron = async () => {

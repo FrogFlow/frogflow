@@ -269,6 +269,10 @@ function RobokassaPage() {
     typeof window !== "undefined" ? window.location.origin : "https://your-app.vercel.app";
 
   async function onSaveRobokassa() {
+    // Значения ещё не пришли из settings.data (useEffect выше их подставит) —
+    // сохранить сейчас значит записать пустые поля поверх боевых реквизитов
+    // Robokassa (тот же баг, что Блок 4.7 уже чинил на admin.settings.tsx).
+    if (settings.isLoading) return;
     try {
       // Promise.all гарантирует, что все настройки сохранятся атомарно (или ни одна не сохранится)
       await Promise.all([
@@ -289,6 +293,7 @@ function RobokassaPage() {
   }
 
   async function onSaveLegal() {
+    if (settings.isLoading) return;
     try {
       await Promise.all([
         saveSetting({ data: { key: "legal_seller_details", value: legalSeller } }),
@@ -445,7 +450,9 @@ function RobokassaPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={onSaveLegal}>{tr.saveDocsBtn}</Button>
+          <Button onClick={onSaveLegal} disabled={settings.isLoading}>
+            {tr.saveDocsBtn}
+          </Button>
           {legalSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
         </div>
       </div>
@@ -517,7 +524,9 @@ function RobokassaPage() {
         )}
 
         <div className="flex items-center gap-2 pt-2">
-          <Button onClick={onSaveRobokassa}>{tr.saveRobokassaBtn}</Button>
+          <Button onClick={onSaveRobokassa} disabled={settings.isLoading}>
+            {tr.saveRobokassaBtn}
+          </Button>
           {rkSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
         </div>
       </div>

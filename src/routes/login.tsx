@@ -2,6 +2,7 @@ import { createFileRoute, useRouter, notFound } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { adminLogin } from "@/lib/admin.functions";
+import { errorMessage } from "@/lib/error-message";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
@@ -110,6 +111,12 @@ function LoginPage() {
       } else {
         setError(c.wrongCredentials);
       }
+    } catch (e: unknown) {
+      // adminLogin бросает настоящую ошибку на блокировку после подбора
+      // пароля («слишком много попыток, через N минут») и на сбой окружения
+      // — раньше это было не поймать, и после нескольких неверных попыток
+      // спиннер просто останавливался без единого слова объяснения.
+      setError(errorMessage(e) || c.wrongCredentials);
     } finally {
       setLoading(false);
     }

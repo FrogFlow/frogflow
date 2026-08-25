@@ -1453,8 +1453,14 @@ function AdminInstagramPage() {
       cart: true,
       checkout: true,
     };
-    await saveInstagramDirectBotFeaturesFn({ data: { ...current, [key]: value } });
-    qc.invalidateQueries({ queryKey: ["ig_direct_bot_features"] });
+    try {
+      await saveInstagramDirectBotFeaturesFn({ data: { ...current, [key]: value } });
+      qc.invalidateQueries({ queryKey: ["ig_direct_bot_features"] });
+    } catch (e: unknown) {
+      // Раньше сбой сохранения был не видно вовсе — чекбокс просто откатывался
+      // на следующей перерисовке без единого объяснения (Блок C.10).
+      toast.error(errorMessage(e));
+    }
   };
 
   const handlePostAction = async (postId: string, action: "cancel" | "retry") => {
@@ -2408,7 +2414,15 @@ function AdminInstagramPage() {
                 <h3 className="font-bold text-lg">Активные правила ({automations.length})</h3>
               </div>
 
-              {automations.length === 0 ? (
+              {automationsQuery.isLoading ? (
+                <div className="border-2 border-dashed rounded-xl p-12 text-center text-sm text-muted-foreground bg-muted/10">
+                  Загрузка…
+                </div>
+              ) : automationsQuery.isError ? (
+                <div className="border-2 border-dashed rounded-xl p-12 text-center text-sm text-destructive bg-muted/10">
+                  Не удалось загрузить автоматизации: {errorMessage(automationsQuery.error)}
+                </div>
+              ) : automations.length === 0 ? (
                 <div className="border-2 border-dashed rounded-xl p-12 text-center space-y-3 bg-muted/10">
                   <div className="bg-muted w-12 h-12 rounded-full flex items-center justify-center mx-auto">
                     <Zap className="w-6 h-6 text-muted-foreground" />
@@ -2957,7 +2971,19 @@ function AdminInstagramPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {logs.length === 0 ? (
+                    {logsQuery.isLoading ? (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-muted-foreground">
+                          Загрузка…
+                        </td>
+                      </tr>
+                    ) : logsQuery.isError ? (
+                      <tr>
+                        <td colSpan={4} className="p-8 text-center text-destructive">
+                          Не удалось загрузить логи: {errorMessage(logsQuery.error)}
+                        </td>
+                      </tr>
+                    ) : logs.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="p-8 text-center text-muted-foreground">
                           Логов пока нет
@@ -3025,7 +3051,17 @@ function AdminInstagramPage() {
         {/* ACCOUNTS TAB */}
         <TabsContent value="accounts">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {Array.isArray(accounts) && accounts.length > 0 ? (
+            {accountsQuery.isLoading ? (
+              <div className="col-span-2 text-center py-12 border-2 border-dashed rounded-xl bg-muted/10">
+                <p className="text-muted-foreground">Загрузка…</p>
+              </div>
+            ) : accountsQuery.isError ? (
+              <div className="col-span-2 text-center py-12 border-2 border-dashed rounded-xl bg-muted/10">
+                <p className="text-destructive">
+                  Не удалось загрузить аккаунты: {errorMessage(accountsQuery.error)}
+                </p>
+              </div>
+            ) : Array.isArray(accounts) && accounts.length > 0 ? (
               accounts.map((account) => (
                 <Card key={account._id || Math.random().toString()}>
                   <CardHeader>

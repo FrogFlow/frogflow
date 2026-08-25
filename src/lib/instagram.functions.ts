@@ -573,10 +573,11 @@ export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(asyn
     .order("created_at", { ascending: false })
     .limit(30);
 
-  if (error) {
-    console.error("[instagram.functions] getInstagramLogs error:", error);
-    return { logs: [] };
-  }
+  // Раньше сбой БД проглатывался здесь и наружу уходил {logs: []} — с точки
+  // зрения фронта неотличимо от «логов правда нет», и правка isLoading/
+  // isError в admin.instagram.tsx ничего бы не решила: сама серверная
+  // функция никогда не сигналила об ошибке (Блок C.3, кейс 2, раунд 2).
+  if (error) throw new Error(error.message);
 
   return { logs: data || [] };
 });

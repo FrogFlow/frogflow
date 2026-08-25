@@ -117,6 +117,8 @@ const copy: Record<
     blockBtn: string;
     deleteBtn: string;
     nothingFound: string;
+    loading: string;
+    loadError: (msg: string) => string;
     receiptModalTitle: string;
     unsupportedFormat: string;
     downloadReceipt: string;
@@ -193,6 +195,8 @@ const copy: Record<
     blockBtn: "Заблокировать",
     deleteBtn: "Удалить",
     nothingFound: "Ничего не найдено.",
+    loading: "Загрузка…",
+    loadError: (msg) => `Не удалось загрузить подписчиков: ${msg}`,
     receiptModalTitle: "Чек оплаты VIP",
     unsupportedFormat: "Формат не поддерживается для предпросмотра.",
     downloadReceipt: "Скачать чек",
@@ -274,6 +278,8 @@ const copy: Record<
     blockBtn: "Бұғаттау",
     deleteBtn: "Жою",
     nothingFound: "Ештеңе табылмады.",
+    loading: "Жүктелуде…",
+    loadError: (msg) => `Жазылушыларды жүктеу мүмкін болмады: ${msg}`,
     receiptModalTitle: "VIP төлем чегі",
     unsupportedFormat: "Алдын ала қарау үшін формат қолдау таппайды.",
     downloadReceipt: "Чекті жүктеп алу",
@@ -355,6 +361,8 @@ const copy: Record<
     blockBtn: "Block",
     deleteBtn: "Delete",
     nothingFound: "Nothing found.",
+    loading: "Loading…",
+    loadError: (msg) => `Failed to load subscribers: ${msg}`,
     receiptModalTitle: "VIP payment receipt",
     unsupportedFormat: "This format can't be previewed.",
     downloadReceipt: "Download receipt",
@@ -436,6 +444,8 @@ const copy: Record<
     blockBtn: "Bloklash",
     deleteBtn: "O‘chirish",
     nothingFound: "Hech narsa topilmadi.",
+    loading: "Yuklanmoqda…",
+    loadError: (msg) => `Obunachilarni yuklab bo‘lmadi: ${msg}`,
     receiptModalTitle: "VIP to‘lov cheki",
     unsupportedFormat: "Bu format oldindan ko‘rish uchun qo‘llab-quvvatlanmaydi.",
     downloadReceipt: "Chekni yuklab olish",
@@ -675,9 +685,13 @@ function AdminVipSubscribers() {
 
   const handleDelete = async (id: string) => {
     if (!(await confirmToast(tr.deleteConfirm))) return;
-    await deleteVipSubscription({ data: { id } });
-    qc.invalidateQueries({ queryKey: ["vip_subs"] });
-    qc.invalidateQueries({ queryKey: ["vip_profiles"] });
+    try {
+      await deleteVipSubscription({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["vip_subs"] });
+      qc.invalidateQueries({ queryKey: ["vip_profiles"] });
+    } catch (e: unknown) {
+      toast.error(tr.genericError(errorMessage(e)));
+    }
   };
 
   return (
@@ -986,8 +1000,15 @@ function AdminVipSubscribers() {
             })}
             {filteredSubs.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-4 text-center text-muted-foreground">
-                  {tr.nothingFound}
+                <td
+                  colSpan={5}
+                  className={`p-4 text-center ${subs.isError ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  {subs.isLoading
+                    ? tr.loading
+                    : subs.isError
+                      ? tr.loadError(errorMessage(subs.error))
+                      : tr.nothingFound}
                 </td>
               </tr>
             )}

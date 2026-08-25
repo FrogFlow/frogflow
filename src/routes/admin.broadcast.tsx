@@ -80,6 +80,8 @@ const copy: Record<
     cancelConfirm: string;
     historyTitle: string;
     noHistory: string;
+    historyLoading: string;
+    historyLoadError: (msg: string) => string;
     statusMap: Record<string, string>;
     enterText: string;
     testSent: string;
@@ -137,6 +139,8 @@ const copy: Record<
     cancelConfirm: "Отменить рассылку? Неотправленные получатели будут пропущены.",
     historyTitle: "История",
     noHistory: "Рассылок пока не было.",
+    historyLoading: "Загрузка…",
+    historyLoadError: (msg) => `Не удалось загрузить историю рассылок: ${msg}`,
     statusMap: {
       queued: "⏳ В очереди",
       sending: "📤 Отправляется",
@@ -202,6 +206,8 @@ const copy: Record<
     cancelConfirm: "Хабарламаны болдырмау керек пе? Жіберілмеген алушылар өткізіп жіберіледі.",
     historyTitle: "Тарих",
     noHistory: "Әзірге хабарламалар болған жоқ.",
+    historyLoading: "Жүктелуде…",
+    historyLoadError: (msg) => `Рассылка тарихын жүктеу мүмкін болмады: ${msg}`,
     statusMap: {
       queued: "⏳ Кезекте",
       sending: "📤 Жіберілуде",
@@ -266,6 +272,8 @@ const copy: Record<
     cancelConfirm: "Cancel the broadcast? Recipients not yet sent to will be skipped.",
     historyTitle: "History",
     noHistory: "No broadcasts yet.",
+    historyLoading: "Loading…",
+    historyLoadError: (msg) => `Failed to load broadcast history: ${msg}`,
     statusMap: {
       queued: "⏳ Queued",
       sending: "📤 Sending",
@@ -332,6 +340,8 @@ const copy: Record<
       "Xabar yuborishni bekor qilasizmi? Yuborilmagan qabul qiluvchilar o‘tkazib yuboriladi.",
     historyTitle: "Tarix",
     noHistory: "Hozircha xabar yuborilmagan.",
+    historyLoading: "Yuklanmoqda…",
+    historyLoadError: (msg) => `Xabarlar tarixini yuklab bo‘lmadi: ${msg}`,
     statusMap: {
       queued: "⏳ Navbatda",
       sending: "📤 Yuborilmoqda",
@@ -506,8 +516,11 @@ function BroadcastPage() {
   async function onUploadPhotos(files: FileList | null) {
     if (!files?.length) return;
     setUploading(true);
+    // Фиксируем каждую удачную загрузку сразу, а не одним setPhotoPaths после
+    // всего цикла: раньше сбой на файле 3 из 5 откатывал весь набор целиком —
+    // 1 и 2 уже лежали в хранилище, а из состояния экрана пропадали (Блок C.9).
+    const next = [...photoPaths];
     try {
-      const next = [...photoPaths];
       for (const file of Array.from(files)) {
         if (next.length >= 10) break;
         const { path, signedUrl } = await getBroadcastUploadUrl({ data: { filename: file.name } });
@@ -518,8 +531,8 @@ function BroadcastPage() {
         });
         if (!res.ok) throw new Error(tr.uploadFailed(file.name));
         next.push(path);
+        setPhotoPaths([...next]);
       }
-      setPhotoPaths(next);
     } catch (e: unknown) {
       toast.error(errorMessage(e));
     } finally {
@@ -568,6 +581,10 @@ function BroadcastPage() {
       await processBroadcastBatchFn();
       await qc.invalidateQueries({ queryKey: ["broadcasts"] });
       if (activeId) await qc.invalidateQueries({ queryKey: ["broadcast", activeId] });
+    } catch (e: unknown) {
+      // Раньше без catch: сбой обработки порции проходил незамеченным — кнопка
+      // просто переставала быть занятой, будто всё в порядке (Блок C.8).
+      toast.error(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -871,7 +888,15 @@ function BroadcastPage() {
             ↻
           </Button>
         </div>
-        {(broadcasts.data ?? []).length === 0 && (
+        {broadcasts.isLoading && (
+          <p className="text-sm text-muted-foreground">{tr.historyLoading}</p>
+        )}
+        {broadcasts.isError && (
+          <p className="text-sm text-destructive">
+            {tr.historyLoadError(errorMessage(broadcasts.error))}
+          </p>
+        )}
+        {!broadcasts.isLoading && !broadcasts.isError && (broadcasts.data ?? []).length === 0 && (
           <p className="text-sm text-muted-foreground">{tr.noHistory}</p>
         )}
         {broadcasts.data?.map((b) => {

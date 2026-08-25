@@ -49,6 +49,8 @@ const copy: Record<
     blockBtn: string;
     blockedTitle: (n: number) => string;
     empty: string;
+    loading: string;
+    loadError: (msg: string) => string;
     reason: string;
     unblock: string;
     unblockConfirm: (id: number) => string;
@@ -73,6 +75,8 @@ const copy: Record<
     blockBtn: "Заблокировать",
     blockedTitle: (n) => `Заблокированные (${n})`,
     empty: "Список пуст.",
+    loading: "Загрузка…",
+    loadError: (msg) => `Не удалось загрузить список: ${msg}`,
     reason: "Причина:",
     unblock: "Разблокировать",
     unblockConfirm: (id) => `Разблокировать пользователя ${id}?`,
@@ -97,6 +101,8 @@ const copy: Record<
     blockBtn: "Бұғаттау",
     blockedTitle: (n) => `Бұғатталғандар (${n})`,
     empty: "Тізім бос.",
+    loading: "Жүктелуде…",
+    loadError: (msg) => `Тізімді жүктеу мүмкін болмады: ${msg}`,
     reason: "Себеп:",
     unblock: "Бұғаттан шығару",
     unblockConfirm: (id) => `${id} пайдаланушысын бұғаттан шығару керек пе?`,
@@ -121,6 +127,8 @@ const copy: Record<
     blockBtn: "Block",
     blockedTitle: (n) => `Blocked (${n})`,
     empty: "The list is empty.",
+    loading: "Loading…",
+    loadError: (msg) => `Failed to load the list: ${msg}`,
     reason: "Reason:",
     unblock: "Unblock",
     unblockConfirm: (id) => `Unblock user ${id}?`,
@@ -145,6 +153,8 @@ const copy: Record<
     blockBtn: "Bloklash",
     blockedTitle: (n) => `Bloklanganlar (${n})`,
     empty: "Ro‘yxat bo‘sh.",
+    loading: "Yuklanmoqda…",
+    loadError: (msg) => `Ro‘yxatni yuklab bo‘lmadi: ${msg}`,
     reason: "Sabab:",
     unblock: "Blokdan chiqarish",
     unblockConfirm: (id) => `${id} foydalanuvchisini blokdan chiqarasizmi?`,
@@ -319,7 +329,13 @@ function BlockedUsersPage() {
 
       <div className="space-y-3">
         <h2 className="font-medium">{tr.blockedTitle(list.length)}</h2>
-        {list.length === 0 && <p className="text-sm text-muted-foreground">{tr.empty}</p>}
+        {blocked.isLoading && <p className="text-sm text-muted-foreground">{tr.loading}</p>}
+        {blocked.isError && (
+          <p className="text-sm text-destructive">{tr.loadError(errorMessage(blocked.error))}</p>
+        )}
+        {!blocked.isLoading && !blocked.isError && list.length === 0 && (
+          <p className="text-sm text-muted-foreground">{tr.empty}</p>
+        )}
         {list.map((u) => (
           <div
             key={u.telegram_id}

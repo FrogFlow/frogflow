@@ -366,9 +366,16 @@ function AdminVipTariffs() {
 
   const handleSave = async () => {
     if (!editing?.name || Number(editing.price) < 0) return toast.warning(tr.validateFields);
-    await saveVipTariff({ data: { ...editing, is_entry: false } });
-    setEditing(null);
-    qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
+    try {
+      await saveVipTariff({ data: { ...editing, is_entry: false } });
+      setEditing(null);
+      qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
+    } catch (e: unknown) {
+      // Раньше сбой сохранения был не виден вовсе: форма не закрывалась и
+      // не объясняла почему — единственный сигнал был «ничего не произошло»
+      // (Блок C.5, кейс 2, раунд 2).
+      toast.error(errorMessage(e));
+    }
   };
 
   const handleSaveEntry = async () => {
@@ -376,24 +383,28 @@ function AdminVipTariffs() {
     if (entry._needsSchema) {
       return toast.warning(tr.schemaAlert);
     }
-    await saveVipTariff({
-      data: {
-        id: entry.id || undefined,
-        name: entry.name,
-        price: Number(entry.price),
-        currency: entry.currency || "KZT",
-        duration_days: Number(entry.duration_days) || 30,
-        duration_minutes: Number(entry.duration_minutes) || 5,
-        is_active: !!entry.is_active,
-        is_public: false,
-        is_entry: true,
-        sort_order: -100,
-      },
-    });
-    setEntrySaved(true);
-    setTimeout(() => setEntrySaved(false), 2000);
-    qc.invalidateQueries({ queryKey: ["vip_entry"] });
-    qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
+    try {
+      await saveVipTariff({
+        data: {
+          id: entry.id || undefined,
+          name: entry.name,
+          price: Number(entry.price),
+          currency: entry.currency || "KZT",
+          duration_days: Number(entry.duration_days) || 30,
+          duration_minutes: Number(entry.duration_minutes) || 5,
+          is_active: !!entry.is_active,
+          is_public: false,
+          is_entry: true,
+          sort_order: -100,
+        },
+      });
+      setEntrySaved(true);
+      setTimeout(() => setEntrySaved(false), 2000);
+      qc.invalidateQueries({ queryKey: ["vip_entry"] });
+      qc.invalidateQueries({ queryKey: ["vip_tariffs"] });
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    }
   };
 
   const handleDelete = async (id: string) => {
