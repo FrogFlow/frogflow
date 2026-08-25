@@ -560,6 +560,9 @@ type Msg = {
   noOrdersYet: string;
   orderNotFound: string;
   myOrdersHeader: (list: string) => string;
+  resendBtn: (orderNo: number | string) => string;
+  resendSent: string;
+  resendFailed: string;
   statusAwaitingPayment: string;
   statusAwaitingConfirmation: string;
   statusDelivering: string;
@@ -672,6 +675,9 @@ const copy: Record<Locale, Msg> = {
     noOrdersYet: "У вас пока нет заказов.",
     orderNotFound: "Заказ не найден.",
     myOrdersHeader: (l) => `📋 Ваши заказы:\n\n${l}`,
+    resendBtn: (orderNo) => `📥 Скачать снова (#${orderNo})`,
+    resendSent: "📤 Отправляю файлы заказа ещё раз…",
+    resendFailed: "⚠️ Не удалось найти файлы этого заказа. Напишите продавцу.",
     statusAwaitingPayment: "⏳ ожидает оплаты",
     statusAwaitingConfirmation: "🔎 проверяется",
     statusDelivering: "📤 выдаётся",
@@ -795,6 +801,9 @@ const copy: Record<Locale, Msg> = {
     noOrdersYet: "Сізде әзірге тапсырыс жоқ.",
     orderNotFound: "Тапсырыс табылмады.",
     myOrdersHeader: (l) => `📋 Сіздің тапсырыстарыңыз:\n\n${l}`,
+    resendBtn: (orderNo) => `📥 Қайта жүктеу (#${orderNo})`,
+    resendSent: "📤 Тапсырыс файлдарын қайта жіберемін…",
+    resendFailed: "⚠️ Бұл тапсырыстың файлдары табылмады. Сатушыға жазыңыз.",
     statusAwaitingPayment: "⏳ төлем күтілуде",
     statusAwaitingConfirmation: "🔎 тексерілуде",
     statusDelivering: "📤 жіберілуде",
@@ -922,6 +931,9 @@ const copy: Record<Locale, Msg> = {
     noOrdersYet: "You don’t have any orders yet.",
     orderNotFound: "Order not found.",
     myOrdersHeader: (l) => `📋 Your orders:\n\n${l}`,
+    resendBtn: (orderNo) => `📥 Download again (#${orderNo})`,
+    resendSent: "📤 Sending your order files again…",
+    resendFailed: "⚠️ Couldn't find files for this order. Please contact the seller.",
     statusAwaitingPayment: "⏳ awaiting payment",
     statusAwaitingConfirmation: "🔎 under review",
     statusDelivering: "📤 delivering",
@@ -1052,6 +1064,9 @@ const copy: Record<Locale, Msg> = {
     noOrdersYet: "Sizda hali buyurtmalar yo‘q.",
     orderNotFound: "Buyurtma topilmadi.",
     myOrdersHeader: (l) => `📋 Sizning buyurtmalaringiz:\n\n${l}`,
+    resendBtn: (orderNo) => `📥 Qayta yuklab olish (#${orderNo})`,
+    resendSent: "📤 Buyurtma fayllarini qayta yuboryapman…",
+    resendFailed: "⚠️ Bu buyurtmaning fayllari topilmadi. Sotuvchiga yozing.",
     statusAwaitingPayment: "⏳ to‘lov kutilmoqda",
     statusAwaitingConfirmation: "🔎 tekshirilmoqda",
     statusDelivering: "📤 yetkazilmoqda",
@@ -2968,7 +2983,7 @@ async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale
   const s = await db();
   const { data } = await s
     .from("orders")
-    .select("id, order_no, status, total, currency, created_at")
+    .select("id, order_no, display_no, status, total, currency, created_at")
     .eq("telegram_id", telegram_id)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -2986,10 +3001,21 @@ async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale
   const text = data
     .map(
       (o) =>
-        `#${o.order_no ?? o.id} — ${o.total} ${o.currency} — ${statusMap[o.status as string] || o.status}`,
+        `#${o.display_no ?? o.order_no ?? o.id} — ${o.total} ${o.currency} — ${statusMap[o.status as string] || o.status}`,
     )
     .join("\n");
-  await tg("sendMessage", { chat_id, text: m.myOrdersHeader(text) });
+  // «Скачать снова» — по кнопке на каждый уже выданный заказ (Кейс 3, №4):
+  // самообслуживание без обращения к продавцу за повторной отправкой файлов.
+  const buttons = data
+    .filter((o) => o.status === "delivered")
+    .map((o) => [
+      { text: m.resendBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `resend:${o.id}` },
+    ]);
+  await tg("sendMessage", {
+    chat_id,
+    text: m.myOrdersHeader(text),
+    ...(buttons.length ? { reply_markup: { inline_keyboard: buttons } } : {}),
+  });
 }
 
 export async function handleUpdate(update: TelegramUpdate) {
@@ -3190,6 +3216,19 @@ export async function handleUpdate(update: TelegramUpdate) {
         const { use_points: _use_points, ...rest } = user.state ?? {};
         await setState(from_id, rest);
         return showCart(chat_id, { ...user, state: rest });
+      }
+      if (data.startsWith("resend:")) {
+        const orderId = Number(data.slice(7));
+        await tg("sendMessage", { chat_id, text: m.resendSent });
+        const { resendOrderFiles } = await import("./orders.server");
+        const result = await resendOrderFiles(orderId, from_id).catch((e) => {
+          console.error(`[bot] resendOrderFiles failed for order ${orderId}`, e);
+          return { ok: false as const, reason: "not_found" as const };
+        });
+        if (!result.ok || result.sent === 0) {
+          await tg("sendMessage", { chat_id, text: m.resendFailed });
+        }
+        return;
       }
       if (data === "checkout") {
         try {

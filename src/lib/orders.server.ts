@@ -582,6 +582,60 @@ export async function processPendingDeliveries(limit = 3) {
   return { processed: rows.length, continued, finished };
 }
 
+/**
+ * Кейс 3, №4 — самообслуживание «Мои покупки»: повторная отправка уже
+ * выданных файлов заказа по запросу самого покупателя. В отличие от
+ * deliverOrder({force:true}) не трогает статус/delivery_index заказа вообще
+ * — просто ещё раз шлёт то, что один раз уже ушло покупателю, без побочных
+ * эффектов на выдачу (и без повторных наград за баллы/рефералов — те
+ * привязаны к самому событию deliverOrder, а не к этой функции).
+ */
+export async function resendOrderFiles(
+  orderId: number,
+  telegramId: number,
+): Promise<{ ok: true; sent: number } | { ok: false; reason: "not_found" | "not_delivered" }> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data: order } = await supabaseAdmin
+    .from("orders")
+    .select("id, status, telegram_id, delivery_lang_choice, order_items(*)")
+    .eq("id", orderId)
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+  if (!order) return { ok: false, reason: "not_found" };
+  if (order.status !== "delivered") return { ok: false, reason: "not_delivered" };
+
+  const items = (order.order_items as OrderItem[]) || [];
+  const langChoice = order.delivery_lang_choice as DeliveryLangChoice | null;
+  let sent = 0;
+  for (const item of items) {
+    if (langChoice === "all") {
+      const langs = MATERIAL_LANGUAGES.filter(
+        (lang) => materialsForOrderItem(item, lang).length > 0,
+      );
+      for (const lang of langs) {
+        const materials = materialsForOrderItem(item, lang);
+        if (materials.length === 0) continue;
+        await sendMaterials(
+          telegramId,
+          materials,
+          `${item.name_snapshot} (${localeNames[lang]})`,
+          1,
+        );
+      }
+      if (langs.length > 0) sent++;
+      continue;
+    }
+    const materials =
+      langChoice && materialsForOrderItem(item, langChoice).length > 0
+        ? materialsForOrderItem(item, langChoice)
+        : materialsForOrderItemAnyLang(item);
+    if (materials.length === 0) continue;
+    await sendMaterials(telegramId, materials, item.name_snapshot, 1);
+    sent++;
+  }
+  return { ok: true, sent };
+}
+
 export type SendMaterialsResult = {
   outcome: "sent" | "failed_retry" | "failed_manual";
   reason?: string;
