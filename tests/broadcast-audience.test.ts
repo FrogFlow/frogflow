@@ -51,6 +51,12 @@ function makeQuery(table: keyof typeof tables) {
       eq.push([`${column}:in`, values]);
       return builder;
     },
+    // fetchAll (csv.ts) always calls .range() to paginate past PostgREST's
+    // 1000-row cap; the fixtures here are far smaller than a page, so a
+    // no-op is enough to keep the double a drop-in for the real builder.
+    range() {
+      return builder;
+    },
     maybeSingle() {
       return Promise.resolve({ data: null });
     },

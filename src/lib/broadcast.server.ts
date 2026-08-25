@@ -1,5 +1,6 @@
 import { tg, tgSendMultipart, tgSendMultipartMany } from "./telegram.server";
 import { errorMessage } from "@/lib/error-message";
+import { fetchAll } from "./csv";
 
 const BATCH_SIZE = 25;
 const SEND_DELAY_MS = 80;
@@ -94,24 +95,40 @@ export async function resolveAudienceIds(
       .filter((id) => Number.isFinite(id) && id > 0);
   }
 
-  /** Телеграмные получатели: реальный чат, а не синтетический ключ другого канала. */
-  const telegramUsers = () => s.from("bot_users").select("telegram_id").eq("platform", "telegram");
+  /**
+   * Телеграмные получатели: реальный чат, а не синтетический ключ другого
+   * канала. Постранично — PostgREST молча обрывает любой select на 1000
+   * строках, и без этого «всем» уходило бы только первой тысяче клиентов, а
+   * non_buyers ниже путал бы обрезанных покупателей с теми, кто ничего не
+   * покупал, и слал бы им «новинки» повторно (Блок 3.3).
+   */
+  const telegramUsers = () =>
+    fetchAll(
+      (from, to) =>
+        s.from("bot_users").select("telegram_id").eq("platform", "telegram").range(from, to),
+      "получатели рассылки",
+    );
   const realChat = (id: number) => Number.isFinite(id) && id > 0;
 
   if (audience_type === "buyers") {
-    const { data: orders } = await s
-      .from("orders")
-      .select("telegram_id")
-      .eq("status", "delivered")
-      .eq("platform", "telegram");
-    return [...new Set((orders ?? []).map((o) => o.telegram_id as number))].filter(realChat);
+    const orders = await fetchAll(
+      (from, to) =>
+        s
+          .from("orders")
+          .select("telegram_id")
+          .eq("status", "delivered")
+          .eq("platform", "telegram")
+          .range(from, to),
+      "покупатели для рассылки",
+    );
+    return [...new Set(orders.map((o) => o.telegram_id as number))].filter(realChat);
   }
 
   if (audience_type === "non_buyers") {
     const buyerIds = await resolveAudienceIds("buyers");
     const buyerSet = new Set(buyerIds);
-    const { data: users } = await telegramUsers();
-    return (users ?? [])
+    const users = await telegramUsers();
+    return users
       .map((u) => u.telegram_id as number)
       .filter((id) => realChat(id) && !buyerSet.has(id));
   }
@@ -119,11 +136,12 @@ export async function resolveAudienceIds(
   if (audience_type === "country") {
     const code = audience_filter?.country_code?.trim().toUpperCase();
     if (!code) return [];
-    const { data: users } = await s
-      .from("bot_users")
-      .select("telegram_id, state")
-      .eq("platform", "telegram");
-    return (users ?? [])
+    const users = await fetchAll(
+      (from, to) =>
+        s.from("bot_users").select("telegram_id, state").eq("platform", "telegram").range(from, to),
+      "получатели рассылки по стране",
+    );
+    return users
       .filter(
         (u) =>
           ((u.state as { country_code?: string } | null)?.country_code ?? "").toUpperCase() ===
@@ -133,8 +151,8 @@ export async function resolveAudienceIds(
       .filter(realChat);
   }
 
-  const { data: users } = await telegramUsers();
-  return (users ?? []).map((u) => u.telegram_id as number).filter(realChat);
+  const users = await telegramUsers();
+  return users.map((u) => u.telegram_id as number).filter(realChat);
 }
 
 async function buildInlineKeyboard(product_ids: string[], show_catalog: boolean) {

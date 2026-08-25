@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
+import { fetchAll } from "./csv";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -10,14 +11,20 @@ async function db() {
 export const listProducts = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdmin();
   const s = await db();
-  const { data, error } = await s
-    .from("products")
-    .select(
-      "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order), categories(name)",
-    )
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  // PostgREST молча обрывает на 1000 строках — 524 товара сегодня, но без
+  // постраничного чтения каталог однажды исчезнет из админки наполовину
+  // (Блок 3.3).
+  return fetchAll(
+    (from, to) =>
+      s
+        .from("products")
+        .select(
+          "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order), categories(name)",
+        )
+        .order("created_at", { ascending: false })
+        .range(from, to),
+    "товары",
+  );
 });
 
 export const getSignedUploadUrl = createServerFn({ method: "POST" })

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAppOrigin } from "./app-origin.server";
+import { fetchAll } from "./csv";
 
 /**
  * Раздел платный: мало быть админом своего бота — модуль должен быть
@@ -283,14 +284,33 @@ export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler
   const since = new Date();
   since.setDate(since.getDate() - 30);
   const sinceIso = since.toISOString();
-  const [automations, logsResult, ordersResult] = await Promise.all([
+  // Считаем в базе, а не по загруженным строкам: zernio_logs за 30 дней —
+  // десятки тысяч строк, PostgREST молча режет любой select на 1000, и до
+  // этой правки счётчики дашборда были верны только пока лога было меньше
+  // тысячи (Блок 3.3 — по факту уже сломано на живой базе).
+  const countLogs = async (eq: { column: string; value: string }) => {
+    const { count, error } = await s
+      .from("zernio_logs")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", sinceIso)
+      .eq(eq.column, eq.value);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
+  const [automations, incoming, errors, ordersResult] = await Promise.all([
     listCommentAutomations(),
-    s.from("zernio_logs").select("event_type, status, created_at").gte("created_at", sinceIso),
-    s
-      .from("orders")
-      .select("total, status, created_at")
-      .eq("platform", "instagram")
-      .gte("created_at", sinceIso),
+    countLogs({ column: "event_type", value: "message.received" }),
+    countLogs({ column: "status", value: "error" }),
+    fetchAll(
+      (from, to) =>
+        s
+          .from("orders")
+          .select("total, status, created_at")
+          .eq("platform", "instagram")
+          .gte("created_at", sinceIso)
+          .range(from, to),
+      "заказы Instagram за 30 дней",
+    ),
   ]);
   const rules = automations.automations || [];
   const totals = rules.reduce(
@@ -301,15 +321,11 @@ export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler
     }),
     { triggered: 0, dms: 0, clicks: 0 },
   );
-  const orders = ordersResult.data || [];
+  const orders = ordersResult;
   return {
     periodDays: 30,
     automation: { rules: rules.length, ...totals },
-    direct: {
-      incoming: (logsResult.data || []).filter((log) => log.event_type === "message.received")
-        .length,
-      errors: (logsResult.data || []).filter((log) => log.status === "error").length,
-    },
+    direct: { incoming, errors },
     orders: {
       total: orders.length,
       paid: orders.filter((order) => ["paid", "delivered"].includes(order.status)).length,

@@ -44,6 +44,7 @@ import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/hea
 import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
 import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio-retry'
 import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
+import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/manager-chat-prune'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
 import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
@@ -236,6 +237,11 @@ const ApiCronZernioLogsPruneRoute = ApiCronZernioLogsPruneRouteImport.update({
   path: '/api/cron/zernio-logs-prune',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronManagerChatPruneRoute = ApiCronManagerChatPruneRouteImport.update({
+  id: '/api/cron/manager-chat-prune',
+  path: '/api/cron/manager-chat-prune',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
   id: '/api/cron/ensure-webhook',
   path: '/api/cron/ensure-webhook',
@@ -349,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
@@ -399,6 +406,7 @@ export interface FileRoutesByTo {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
@@ -452,6 +460,7 @@ export interface FileRoutesById {
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
@@ -506,6 +515,7 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/manager-chat-prune'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
@@ -556,6 +566,7 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/manager-chat-prune'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
@@ -608,6 +619,7 @@ export interface FileRouteTypes {
     | '/api/admin/upload'
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/manager-chat-prune'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
@@ -643,6 +655,7 @@ export interface RootRouteChildren {
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronEnsureWebhookRoute: typeof ApiCronEnsureWebhookRoute
+  ApiCronManagerChatPruneRoute: typeof ApiCronManagerChatPruneRoute
   ApiCronZernioLogsPruneRoute: typeof ApiCronZernioLogsPruneRoute
   ApiCronZernioRetryRoute: typeof ApiCronZernioRetryRoute
   ApiInternalDiagnosticsRoute: typeof ApiInternalDiagnosticsRoute
@@ -910,6 +923,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronZernioLogsPruneRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/manager-chat-prune': {
+      id: '/api/cron/manager-chat-prune'
+      path: '/api/cron/manager-chat-prune'
+      fullPath: '/api/cron/manager-chat-prune'
+      preLoaderRoute: typeof ApiCronManagerChatPruneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/ensure-webhook': {
       id: '/api/cron/ensure-webhook'
       path: '/api/cron/ensure-webhook'
@@ -1122,6 +1142,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronEnsureWebhookRoute: ApiCronEnsureWebhookRoute,
+  ApiCronManagerChatPruneRoute: ApiCronManagerChatPruneRoute,
   ApiCronZernioLogsPruneRoute: ApiCronZernioLogsPruneRoute,
   ApiCronZernioRetryRoute: ApiCronZernioRetryRoute,
   ApiInternalDiagnosticsRoute: ApiInternalDiagnosticsRoute,

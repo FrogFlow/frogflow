@@ -1,5 +1,6 @@
 import { tg } from "./telegram.server";
 import { hasModule } from "./modules/modules.server";
+import { fetchAll } from "./csv";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -145,12 +146,13 @@ export async function markRead(telegramId: number): Promise<void> {
 
 /**
  * Ответ менеджера из панели — тот же tg("sendMessage"), что и у автоответов
- * бота, поэтому клиент не видит разницы. skipChatLog: true, потому что
- * иначе центральное логирование в tg() записало бы эту же реплику ещё раз
- * под sender: "bot" — здесь она логируется явно под "manager".
+ * бота, поэтому клиент не видит разницы. Логируется здесь явно под
+ * sender: "manager" — tg() больше не логирует исходящие сообщения сам
+ * (Блок 3.1: автоответы бота в manager_chat_messages были 10 700+ строк из
+ * 14 742 за 5 дней и не несли пользы — реального ответа оператора).
  */
 export async function sendManagerReply(telegramId: number, text: string): Promise<void> {
-  const res = await tg("sendMessage", { chat_id: telegramId, text }, { skipChatLog: true });
+  const res = await tg("sendMessage", { chat_id: telegramId, text });
   if (!res.ok) throw new Error(res.description || "Не удалось отправить сообщение в Telegram");
   await recordMessage({ telegramId, direction: "out", sender: "manager", text });
 }
@@ -214,7 +216,11 @@ export async function listMessages(telegramId: number): Promise<ManagerChatMessa
 
 export async function totalUnread(): Promise<number> {
   const s = await db();
-  const { data, error } = await s.from("manager_chat_state").select("unread_count");
-  if (error) throw new Error(error.message);
-  return (data ?? []).reduce((sum, r) => sum + (r.unread_count ?? 0), 0);
+  // Постранично — PostgREST молча обрывает select на 1000 строках, и при
+  // 1000+ диалогах сумма непрочитанного тихо занижалась бы (Блок 3.3).
+  const rows = await fetchAll(
+    (from, to) => s.from("manager_chat_state").select("unread_count").range(from, to),
+    "непрочитанные диалоги",
+  );
+  return rows.reduce((sum, r) => sum + (r.unread_count ?? 0), 0);
 }

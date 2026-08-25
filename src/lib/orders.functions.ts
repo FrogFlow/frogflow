@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { fetchAll } from "./csv";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -13,12 +14,19 @@ export const listOrders = createServerFn({ method: "GET" }).handler(async () => 
   // Без потолка: он резал историю до 200 заказов, и всё, что старше, просто
   // пропадало из админки — а заказы тут живут годами и нужны для разбора
   // обращений. Выборка идёт под ключом арендатора, то есть только свои строки.
-  const { data, error } = await s
-    .from("orders")
-    .select("*, order_items(id, name_snapshot, price_snapshot, quantity)")
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  //
+  // PostgREST сам молча обрывает любой единичный select на 1000 строках —
+  // при 497 заказах это ещё не било, но это вопрос времени; fetchAll читает
+  // страницами, пока страница приходит полной (Блок 3.3).
+  return fetchAll(
+    (from, to) =>
+      s
+        .from("orders")
+        .select("*, order_items(id, name_snapshot, price_snapshot, quantity)")
+        .order("created_at", { ascending: false })
+        .range(from, to),
+    "заказы",
+  );
 });
 
 /** Точные счётчики для дашборда: считаются в базе, а не по загруженному списку. */

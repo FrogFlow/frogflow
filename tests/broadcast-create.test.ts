@@ -55,6 +55,9 @@ function makeQuery(table: keyof typeof tables) {
       return builder;
     },
     limit: () => builder,
+    // fetchAll (csv.ts) paginates past PostgREST's 1000-row cap via .range();
+    // fixtures here stay far below a page, so a no-op keeps this a drop-in.
+    range: () => builder,
     insert(payload: Record<string, unknown> | Array<Record<string, unknown>>) {
       const list = Array.isArray(payload) ? payload : [payload];
       for (const row of list) {
