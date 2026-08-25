@@ -15,10 +15,22 @@
 --    primary source for delivery going forward; those two columns are left
 --    in place (still populated for ru/kk) for older tooling and are also
 --    backfilled into the new column here for every existing order.
+-- 4. product_material_files.language carries a live CHECK constraint left
+--    over from the original ru/kz-only implementation. It must be widened
+--    before the "kz" → "kk" rename below, or step 1 is rejected outright.
+--    Drop+recreate (not just drop) so the column stays constrained to the
+--    4 languages the bot actually supports today.
 
 BEGIN;
 
+ALTER TABLE public.product_material_files
+  DROP CONSTRAINT IF EXISTS product_material_files_language_check;
+
 UPDATE public.product_material_files SET language = 'kk' WHERE language = 'kz';
+
+ALTER TABLE public.product_material_files
+  ADD CONSTRAINT product_material_files_language_check
+  CHECK (language IN ('ru', 'kk', 'en', 'uz'));
 
 UPDATE public.order_items SET delivered_language = 'kk' WHERE delivered_language = 'kz';
 
