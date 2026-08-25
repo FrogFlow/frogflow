@@ -2722,6 +2722,7 @@ async function handlePurchaseFlow(params: {
           mime: proofPath.mime,
           expectedAmount: Number(created?.total ?? 0),
           currency: String(created?.currency ?? "KZT"),
+          orderId: order.id,
         })
       : {
           autoDeliver: false,
@@ -2729,7 +2730,10 @@ async function handlePurchaseFlow(params: {
         };
     await s
       .from("orders")
-      .update({ admin_note: `${PLATFORM_LABEL[platform]}, чек: ${verdict.note}`.slice(0, 500) })
+      .update({
+        admin_note: `${PLATFORM_LABEL[platform]}, чек: ${verdict.note}`.slice(0, 500),
+        ...(verdict.proofHash ? { payment_proof_hash: verdict.proofHash } : {}),
+      })
       .eq("id", order.id);
 
     // Instagram требует почту, WhatsApp выдаёт файлы прямо в чат.

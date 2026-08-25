@@ -3374,6 +3374,7 @@ export async function handleUpdate(update: TelegramUpdate) {
               mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
               expectedAmount: Number(orderRow.total),
               currency: (orderRow.currency as string) || undefined,
+              orderId,
             })
           : { ok: false, reason: "ocr_unavailable", detail: "модуль receipt_ocr не подключён" };
 
@@ -3442,6 +3443,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           .update({
             status: "awaiting_payment",
             admin_note: `proof_auto; OCR ok amount=${verify.matchedAmount}`,
+            payment_proof_hash: verify.proofHash,
             ...(proofPath ? { payment_proof_path: proofPath } : {}),
           })
           .eq("id", orderId);

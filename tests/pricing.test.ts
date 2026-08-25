@@ -35,9 +35,12 @@ vi.mock("../src/integrations-supabase/client.server", () => ({
 }));
 
 // Курс — фиксированный, чтобы проверять правило, а не сегодняшнюю цифру.
+// vi.fn(), а не голая функция — Блок A.2 нужен mockResolvedValueOnce, чтобы
+// проверить откат resolvePrice на null от настоящей реализации.
 vi.mock("../src/lib/currency.server", () => ({
-  convertAmount: (amount: number, from: string, to: string) =>
+  convertAmount: vi.fn((amount: number, from: string, to: string) =>
     Promise.resolve(from === "KZT" && to === "RUB" ? Math.round(amount * 0.16) : amount),
+  ),
 }));
 
 // По умолчанию модуль включён — большинство тестов ниже писались для тенанта
@@ -99,6 +102,18 @@ describe("resolvePrice", () => {
   it("страна без реквизитов не роняет расчёт", async () => {
     // Валюты для такой страны нет — остаётся валюта товара, сумма не выдумывается.
     expect(await resolvePrice(product, "DE")).toEqual({ amount: 1000, currency: "KZT" });
+  });
+
+  /**
+   * Блок A.2 (кейс 2, раунд 2): convertAmount вернул null (курс недоступен) —
+   * resolvePrice обязан откатиться на честную базовую цену в своей валюте, а
+   * не пропустить null дальше как будто это число.
+   */
+  it("курс недоступен (convertAmount вернул null) — откатывается на базовую цену", async () => {
+    const { convertAmount } = await import("../src/lib/currency.server");
+    vi.mocked(convertAmount).mockResolvedValueOnce(null);
+    const plain = { price: 1000, currency: "KZT", country_prices: null };
+    expect(await resolvePrice(plain, "RU")).toEqual({ amount: 1000, currency: "KZT" });
   });
 });
 

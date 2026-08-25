@@ -138,5 +138,10 @@ export async function resolvePrice(
   if (currency === baseCurrency) return { amount: Math.round(base), currency };
 
   const { convertAmount } = await import("./currency.server");
-  return { amount: await convertAmount(base, baseCurrency, currency), currency };
+  const converted = await convertAmount(base, baseCurrency, currency);
+  // Курс недоступен (сбой API, ни разу ещё не кэшировался, или валюта не
+  // поддерживается источником) — не изобретаем число: честная базовая цена
+  // в своей валюте безопаснее, чем чужая цифра под чужим ярлыком (Блок A.2).
+  if (converted === null) return { amount: Math.round(base), currency: baseCurrency };
+  return { amount: converted, currency };
 }

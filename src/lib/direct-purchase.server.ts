@@ -674,7 +674,8 @@ export async function verifyDirectReceipt(params: {
   mime: string;
   expectedAmount: number;
   currency: string;
-}): Promise<{ autoDeliver: boolean; note: string }> {
+  orderId: number;
+}): Promise<{ autoDeliver: boolean; note: string; proofHash?: string }> {
   const { hasModule } = await import("./modules/modules.server");
   if (!(await hasModule("receipt_ocr"))) {
     return { autoDeliver: false, note: "распознавание чека не подключено" };
@@ -686,10 +687,15 @@ export async function verifyDirectReceipt(params: {
     mime: params.mime,
     expectedAmount: params.expectedAmount,
     currency: params.currency,
+    orderId: params.orderId,
   });
 
   if (result.ok) {
-    return { autoDeliver: true, note: `чек распознан, сумма ${result.matchedAmount} сходится` };
+    return {
+      autoDeliver: true,
+      note: `чек распознан, сумма ${result.matchedAmount} сходится`,
+      proofHash: result.proofHash,
+    };
   }
   return { autoDeliver: false, note: result.detail };
 }

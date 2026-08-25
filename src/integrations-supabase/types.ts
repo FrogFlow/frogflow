@@ -1188,6 +1188,9 @@ export type Database = {
           display_name: string | null;
           id: number;
           payment_proof_path: string | null;
+          // MIGRATION-36. Хеш картинки чека — сверка на повтор (Блок A.4).
+          // Тот же ручной патч, что и у остальных полей этого файла.
+          payment_proof_hash: string | null;
           status: string;
           telegram_id: number;
           total: number;
@@ -1213,6 +1216,7 @@ export type Database = {
           display_name?: string | null;
           id?: number;
           payment_proof_path?: string | null;
+          payment_proof_hash?: string | null;
           status?: string;
           telegram_id: number;
           total?: number;
@@ -1238,6 +1242,7 @@ export type Database = {
           display_name?: string | null;
           id?: number;
           payment_proof_path?: string | null;
+          payment_proof_hash?: string | null;
           status?: string;
           telegram_id?: number;
           total?: number;
