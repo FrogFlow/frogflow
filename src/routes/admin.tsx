@@ -108,11 +108,15 @@ function AdminLayout() {
                   pathname.startsWith("/admin/broadcast") ||
                   pathname.startsWith("/admin/instagram") ||
                   pathname.startsWith("/admin/whatsapp") ||
-                  pathname.startsWith("/admin/manager-chat")
+                  pathname.startsWith("/admin/manager-chat") ||
+                  pathname.startsWith("/admin/promo-codes")
                 }
               >
                 <GroupLink to="/admin/broadcast" locale={locale}>
                   {t("broadcast", locale)}
+                </GroupLink>
+                <GroupLink to="/admin/promo-codes" locale={locale}>
+                  {t("promoCodes", locale)}
                 </GroupLink>
                 <GroupLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
                   Instagram

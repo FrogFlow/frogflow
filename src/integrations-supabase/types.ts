@@ -1087,6 +1087,57 @@ export type Database = {
           },
         ];
       };
+      // Заведена MIGRATION-40-promo-codes.sql — добавлена вручную по тому же
+      // поводу, что и остальные ручные таблицы этого файла: миграция готова,
+      // но применяется отдельным шагом, а scripts/sync-db-types.mjs не
+      // заводит новые таблицы сам.
+      promo_codes: {
+        Row: {
+          id: string;
+          bot_id: string;
+          code: string;
+          discount_type: string;
+          discount_value: number;
+          max_uses: number | null;
+          used_count: number;
+          valid_until: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          code: string;
+          discount_type: string;
+          discount_value: number;
+          max_uses?: number | null;
+          used_count?: number;
+          valid_until?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          code?: string;
+          discount_type?: string;
+          discount_value?: number;
+          max_uses?: number | null;
+          used_count?: number;
+          valid_until?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "promo_codes_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       order_items: {
         Row: {
           // MIGRATION-37. Снимок материалов по всем языкам разом (ru/kk/en/uz),
@@ -1203,6 +1254,10 @@ export type Database = {
           // (delivery_lang_timing = "before"): код языка или "all". Тот же
           // ручной патч, что и у остальных полей этого файла.
           delivery_lang_choice: string | null;
+          // MIGRATION-40. Применённый промокод и итоговая скидка — total уже
+          // посчитан с её учётом, эти два поля только для истории/чека.
+          promo_code: string | null;
+          discount_amount: number;
           status: string;
           telegram_id: number;
           total: number;
@@ -1230,6 +1285,8 @@ export type Database = {
           payment_proof_path?: string | null;
           payment_proof_hash?: string | null;
           delivery_lang_choice?: string | null;
+          promo_code?: string | null;
+          discount_amount?: number;
           status?: string;
           telegram_id: number;
           total?: number;
@@ -1257,6 +1314,8 @@ export type Database = {
           payment_proof_path?: string | null;
           payment_proof_hash?: string | null;
           delivery_lang_choice?: string | null;
+          promo_code?: string | null;
+          discount_amount?: number;
           status?: string;
           telegram_id?: number;
           total?: number;

@@ -91,7 +91,13 @@ type BotUser = {
      * handleUpdate. Список — по факту использования в этом файле.
      */
     mode?:
-      "idle" | "search" | "awaiting_contact" | "awaiting_payment" | "awaiting_proof" | "choose_pay";
+      | "idle"
+      | "search"
+      | "awaiting_contact"
+      | "awaiting_payment"
+      | "awaiting_proof"
+      | "choose_pay"
+      | "awaiting_promo_code";
     pending_order_id?: number;
     /**
      * Номер заказа, замороженный один раз (orders.display_no, MIGRATION-28) —
@@ -116,6 +122,8 @@ type BotUser = {
      * тем же путём, что и placing_order.
      */
     checkout_lang_choice?: DeliveryLangChoice;
+    /** Промокод, применённый в корзине — считывается и снимается в placeOrderInner. */
+    promo_code?: string;
   } | null;
 };
 
@@ -503,6 +511,13 @@ type Msg = {
   total: (amount: string) => string;
   checkoutBtn: string;
   clearBtn: string;
+  promoCodeBtn: string;
+  removePromoBtn: string;
+  promoCodePrompt: string;
+  promoCodeApplied: (amount: string) => string;
+  promoCodeInvalid: string;
+  promoCodeRemoved: string;
+  discountLine: (amount: string) => string;
   phonePromptHtml: string;
   shareContactBtn: string;
   paymentNotConfigured: string;
@@ -598,6 +613,13 @@ const copy: Record<Locale, Msg> = {
     total: (amount) => `\n<b>Итого: ${amount}</b>`,
     checkoutBtn: "💳 Оформить заказ",
     clearBtn: "🗑 Очистить",
+    promoCodeBtn: "🎟 Ввести промокод",
+    removePromoBtn: "❌ Убрать промокод",
+    promoCodePrompt: "Введите промокод:",
+    promoCodeApplied: (amount) => `✅ Промокод применён. Скидка: ${amount}`,
+    promoCodeInvalid: "⚠️ Промокод недействителен или больше не работает.",
+    promoCodeRemoved: "Промокод убран.",
+    discountLine: (amount) => `Скидка по промокоду: −${amount}\n`,
     phonePromptHtml:
       "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
     shareContactBtn: "📱 Поделиться контактом",
@@ -709,6 +731,13 @@ const copy: Record<Locale, Msg> = {
     total: (amount) => `\n<b>Барлығы: ${amount}</b>`,
     checkoutBtn: "💳 Тапсырыс беру",
     clearBtn: "🗑 Тазарту",
+    promoCodeBtn: "🎟 Промокод енгізу",
+    removePromoBtn: "❌ Промокодты алып тастау",
+    promoCodePrompt: "Промокодты енгізіңіз:",
+    promoCodeApplied: (amount) => `✅ Промокод қолданылды. Жеңілдік: ${amount}`,
+    promoCodeInvalid: "⚠️ Промокод жарамсыз немесе енді жұмыс істемейді.",
+    promoCodeRemoved: "Промокод алынып тасталды.",
+    discountLine: (amount) => `Промокод бойынша жеңілдік: −${amount}\n`,
     phonePromptHtml:
       "Тапсырысты рәсімдеу үшін телефон нөміріңізді көрсетіңіз — <b>оны осы чатқа жазыңыз</b>, мысалы:\n<code>+7 900 123-45-67</code>\n\nНемесе контактіні автоматты түрде бөлісу үшін төмендегі батырманы басыңыз.",
     shareContactBtn: "📱 Контактімен бөлісу",
@@ -822,6 +851,13 @@ const copy: Record<Locale, Msg> = {
     total: (amount) => `\n<b>Total: ${amount}</b>`,
     checkoutBtn: "💳 Checkout",
     clearBtn: "🗑 Clear",
+    promoCodeBtn: "🎟 Enter promo code",
+    removePromoBtn: "❌ Remove promo code",
+    promoCodePrompt: "Enter your promo code:",
+    promoCodeApplied: (amount) => `✅ Promo code applied. Discount: ${amount}`,
+    promoCodeInvalid: "⚠️ This promo code is invalid or no longer works.",
+    promoCodeRemoved: "Promo code removed.",
+    discountLine: (amount) => `Promo discount: −${amount}\n`,
     phonePromptHtml:
       "To place your order, share your phone number — <b>just type it in this chat</b>, for example:\n<code>+7 900 123-45-67</code>\n\nOr tap the button below to share your contact automatically.",
     shareContactBtn: "📱 Share contact",
@@ -939,6 +975,13 @@ const copy: Record<Locale, Msg> = {
     total: (amount) => `\n<b>Jami: ${amount}</b>`,
     checkoutBtn: "💳 Buyurtma berish",
     clearBtn: "🗑 Tozalash",
+    promoCodeBtn: "🎟 Promokod kiritish",
+    removePromoBtn: "❌ Promokodni olib tashlash",
+    promoCodePrompt: "Promokodni kiriting:",
+    promoCodeApplied: (amount) => `✅ Promokod qo‘llandi. Chegirma: ${amount}`,
+    promoCodeInvalid: "⚠️ Promokod amal qilmaydi yoki endi ishlamaydi.",
+    promoCodeRemoved: "Promokod olib tashlandi.",
+    discountLine: (amount) => `Promokod bo‘yicha chegirma: −${amount}\n`,
     phonePromptHtml:
       "Buyurtma berish uchun telefon raqamingizni kiriting — <b>uni shu chatga yozing</b>, masalan:\n<code>+7 900 123-45-67</code>\n\nYoki kontaktni avtomatik ulashish uchun quyidagi tugmani bosing.",
     shareContactBtn: "📱 Kontaktni ulashish",
@@ -1673,10 +1716,24 @@ async function showCart(chat_id: number, user: BotUser) {
     text += `• ${escapeHtml(p.name)} × ${it.quantity} — ${formatMoney(line, currency)}\n`;
     buttons.push([{ text: m.removeItem(p.name), callback_data: `rem:${it.id}` }]);
   }
-  text += m.total(formatMoney(total, currency));
+  const promoCode = user.state?.promo_code;
+  let discount = 0;
+  if (promoCode) {
+    const found = await findValidPromoCode(promoCode);
+    if (found.ok) {
+      discount = computePromoDiscount(total, found.promo);
+      text += m.discountLine(formatMoney(discount, currency));
+    }
+  }
+  text += m.total(formatMoney(total - discount, currency));
   buttons.push([
     { text: m.checkoutBtn, callback_data: "checkout" },
     { text: m.clearBtn, callback_data: "clear" },
+  ]);
+  buttons.push([
+    promoCode
+      ? { text: m.removePromoBtn, callback_data: "promo:clear" }
+      : { text: m.promoCodeBtn, callback_data: "promo:enter" },
   ]);
   // Большая корзина легко превышает лимит Telegram в 4096 символов — tg()
   // не бросает на отказе, и покупатель молча не получал вообще ничего
@@ -1784,6 +1841,7 @@ import {
   deliveryPriceMultiplier,
   type DeliveryLangChoice,
 } from "./product-materials";
+import { normalizePromoCode, computePromoDiscount, type PromoDiscountType } from "./promo-codes";
 
 /**
  * Атомарно помечает начало оформления заказа. Кнопка выбора страны — обычный
@@ -1898,6 +1956,77 @@ async function askDeliveryLanguage(chat_id: number, langs: Locale[], locale: Loc
   });
 }
 
+type PromoLookup =
+  | {
+      ok: true;
+      promo: {
+        id: string;
+        used_count: number;
+        discount_type: PromoDiscountType;
+        discount_value: number;
+      };
+    }
+  | { ok: false; reason: "not_found" | "inactive" | "expired" | "exhausted" };
+
+/**
+ * Проверка кода без списания использования — для предпоказа скидки в
+ * корзине. Списание (used_count += 1) происходит только один раз, в
+ * redeemPromoCode при оформлении, чтобы код не сгорал от одной попытки
+ * ввода без реальной покупки.
+ */
+async function findValidPromoCode(rawCode: string): Promise<PromoLookup> {
+  const s = await db();
+  const code = normalizePromoCode(rawCode);
+  const { data: promo } = await s
+    .from("promo_codes")
+    .select("id, used_count, discount_type, discount_value, max_uses, valid_until, is_active")
+    .eq("code", code)
+    .maybeSingle();
+  if (!promo) return { ok: false, reason: "not_found" };
+  if (!promo.is_active) return { ok: false, reason: "inactive" };
+  if (promo.valid_until && new Date(promo.valid_until).getTime() < Date.now()) {
+    return { ok: false, reason: "expired" };
+  }
+  if (promo.max_uses !== null && promo.used_count >= promo.max_uses) {
+    return { ok: false, reason: "exhausted" };
+  }
+  return {
+    ok: true,
+    promo: {
+      id: promo.id,
+      used_count: promo.used_count,
+      discount_type: promo.discount_type as PromoDiscountType,
+      discount_value: Number(promo.discount_value),
+    },
+  };
+}
+
+/**
+ * Списывает использование промокода атомарно (CAS по used_count — тот же
+ * приём, что и delivery_index в orders.server.ts): два покупателя, оба
+ * читающие последнее доступное использование лимитированного кода
+ * одновременно, не смогут оба его получить — второй получит "race" и код
+ * будет считаться недоступным, а не перерасходованным.
+ */
+async function redeemPromoCode(
+  rawCode: string,
+  subtotal: number,
+): Promise<{ ok: true; discount: number } | { ok: false }> {
+  const found = await findValidPromoCode(rawCode);
+  if (!found.ok) return { ok: false };
+  const discount = computePromoDiscount(subtotal, found.promo);
+  const s = await db();
+  const { data: updated } = await s
+    .from("promo_codes")
+    .update({ used_count: found.promo.used_count + 1 })
+    .eq("id", found.promo.id)
+    .eq("used_count", found.promo.used_count)
+    .select("id")
+    .maybeSingle();
+  if (!updated) return { ok: false };
+  return { ok: true, discount };
+}
+
 async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
   const locale: Locale = user.state?.locale ?? "ru";
   const m = copy[locale];
@@ -1947,6 +2076,13 @@ async function placeOrderInner(
   const deliveryLangChoice: DeliveryLangChoice | null = user.state?.checkout_lang_choice ?? null;
   if (user.state?.checkout_lang_choice !== undefined) {
     const { checkout_lang_choice: _checkout_lang_choice, ...rest } = user.state;
+    user = { ...user, state: rest };
+  }
+  // Промокод — тот же приём: читаем один раз здесь и сразу снимаем из
+  // состояния, чтобы код не липнул к следующему заказу, если этот сорвётся.
+  const promoCodeInput = user.state?.promo_code ?? null;
+  if (user.state?.promo_code !== undefined) {
+    const { promo_code: _promo_code, ...rest } = user.state;
     user = { ...user, state: rest };
   }
 
@@ -2011,6 +2147,27 @@ async function placeOrderInner(
     total += amount * Number(it.quantity);
   }
 
+  // Промокод — на всю сумму заказа, списывается атомарно прямо здесь (не
+  // раньше): если оформление сорвётся ниже, использование не сгорит зря,
+  // ведь до этой строки мы его ещё не трогали.
+  let promoCode: string | null = null;
+  let discountAmount = 0;
+  if (promoCodeInput) {
+    const redeemed = await redeemPromoCode(promoCodeInput, total);
+    if (redeemed.ok) {
+      promoCode = normalizePromoCode(promoCodeInput);
+      discountAmount = redeemed.discount;
+      total -= discountAmount;
+    } else {
+      // Код стал недоступен между вводом в корзине и оформлением (истёк,
+      // исчерпан, гонка с другим покупателем) — не создаём заказ по неверной
+      // цене, просим повторить без него.
+      await releaseOrderPlacement(telegram_id, user.state);
+      await tg("sendMessage", { chat_id, text: m.promoCodeInvalid });
+      return;
+    }
+  }
+
   const display =
     [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim() ||
     (user?.username ? `@${user.username}` : `id${telegram_id}`);
@@ -2028,6 +2185,8 @@ async function placeOrderInner(
       currency,
       status: "awaiting_payment",
       delivery_lang_choice: deliveryLangChoice,
+      promo_code: promoCode,
+      discount_amount: discountAmount,
     })
     .select("*")
     .single();
@@ -2947,6 +3106,17 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", { chat_id, text: m.cartCleared });
         return;
       }
+      if (data === "promo:enter") {
+        await setState(from_id, { ...user.state, mode: "awaiting_promo_code" });
+        await tg("sendMessage", { chat_id, text: m.promoCodePrompt });
+        return;
+      }
+      if (data === "promo:clear") {
+        const { promo_code: _promo_code, ...rest } = user.state ?? {};
+        await setState(from_id, rest);
+        await tg("sendMessage", { chat_id, text: m.promoCodeRemoved });
+        return showCart(chat_id, { ...user, state: rest });
+      }
       if (data === "checkout") {
         try {
           return await startCheckout(chat_id, user);
@@ -3643,6 +3813,26 @@ export async function handleUpdate(update: TelegramUpdate) {
         await notifyAdminNewOrder(orderId, null, null);
       }
       return;
+    }
+
+    // Ввод промокода — тот же escape hatch, что у search/awaiting_contact:
+    // нажатие пункта меню не должно уйти в проверку кода буквально.
+    if (user.state?.mode === "awaiting_promo_code" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const idleState = { ...user.state, mode: "idle" as const };
+        const found = await findValidPromoCode(msg.text);
+        if (!found.ok) {
+          await setState(from.id, idleState);
+          await tg("sendMessage", { chat_id, text: m.promoCodeInvalid });
+          return showCart(chat_id, { ...user, state: idleState });
+        }
+        const withPromo = { ...idleState, promo_code: normalizePromoCode(msg.text) };
+        await setState(from.id, withPromo);
+        return showCart(chat_id, { ...user, state: withPromo });
+      }
     }
 
     // Search text input — same escape hatch as awaiting_contact above: a

@@ -21,6 +21,7 @@ import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
 import { Route as AdminVipRouteImport } from './routes/admin.vip'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminRobokassaRouteImport } from './routes/admin.robokassa'
+import { Route as AdminPromoCodesRouteImport } from './routes/admin.promo-codes'
 import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
 import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
@@ -121,6 +122,11 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
 const AdminRobokassaRoute = AdminRobokassaRouteImport.update({
   id: '/robokassa',
   path: '/robokassa',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPromoCodesRoute = AdminPromoCodesRouteImport.update({
+  id: '/promo-codes',
+  path: '/promo-codes',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminProductsRoute = AdminProductsRouteImport.update({
@@ -355,6 +361,7 @@ export interface FileRoutesByFullPath {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/promo-codes': typeof AdminPromoCodesRoute
   '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
@@ -409,6 +416,7 @@ export interface FileRoutesByTo {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/promo-codes': typeof AdminPromoCodesRoute
   '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
@@ -463,6 +471,7 @@ export interface FileRoutesById {
   '/admin/orders': typeof AdminOrdersRoute
   '/admin/payment-methods': typeof AdminPaymentMethodsRoute
   '/admin/products': typeof AdminProductsRoute
+  '/admin/promo-codes': typeof AdminPromoCodesRoute
   '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
@@ -521,6 +530,7 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
+    | '/admin/promo-codes'
     | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/vip'
@@ -575,6 +585,7 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
+    | '/admin/promo-codes'
     | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/whatsapp'
@@ -628,6 +639,7 @@ export interface FileRouteTypes {
     | '/admin/orders'
     | '/admin/payment-methods'
     | '/admin/products'
+    | '/admin/promo-codes'
     | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/vip'
@@ -787,6 +799,13 @@ declare module '@tanstack/react-router' {
       path: '/robokassa'
       fullPath: '/admin/robokassa'
       preLoaderRoute: typeof AdminRobokassaRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/promo-codes': {
+      id: '/admin/promo-codes'
+      path: '/promo-codes'
+      fullPath: '/admin/promo-codes'
+      preLoaderRoute: typeof AdminPromoCodesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/products': {
@@ -1114,6 +1133,7 @@ interface AdminRouteChildren {
   AdminOrdersRoute: typeof AdminOrdersRoute
   AdminPaymentMethodsRoute: typeof AdminPaymentMethodsRoute
   AdminProductsRoute: typeof AdminProductsRoute
+  AdminPromoCodesRoute: typeof AdminPromoCodesRoute
   AdminRobokassaRoute: typeof AdminRobokassaRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminVipRoute: typeof AdminVipRouteWithChildren
@@ -1131,6 +1151,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminOrdersRoute: AdminOrdersRoute,
   AdminPaymentMethodsRoute: AdminPaymentMethodsRoute,
   AdminProductsRoute: AdminProductsRoute,
+  AdminPromoCodesRoute: AdminPromoCodesRoute,
   AdminRobokassaRoute: AdminRobokassaRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminVipRoute: AdminVipRouteWithChildren,
