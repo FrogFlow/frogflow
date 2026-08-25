@@ -1,4 +1,4 @@
--- MIGRATION-37: multi-language product materials (en/ru/kk/uz) instead of
+-- MIGRATION-37: multi-language product materials (en/ru/kk/uz/ky) instead of
 -- the hardcoded ru/kz pair.
 --
 -- 1. product_material_files.language used the literal string "kz" for
@@ -18,7 +18,17 @@
 
 BEGIN;
 
+-- The original RU/KZ implementation constrained this column to `ru`/`kz`.
+-- It must be widened before the historical `kz` → canonical Locale `kk`
+-- conversion below; otherwise PostgreSQL correctly rejects the update.
+ALTER TABLE public.product_material_files
+  DROP CONSTRAINT IF EXISTS product_material_files_language_check;
+
 UPDATE public.product_material_files SET language = 'kk' WHERE language = 'kz';
+
+ALTER TABLE public.product_material_files
+  ADD CONSTRAINT product_material_files_language_check
+  CHECK (language IN ('ru', 'kk', 'en', 'uz', 'ky'));
 
 UPDATE public.order_items SET delivered_language = 'kk' WHERE delivered_language = 'kz';
 
