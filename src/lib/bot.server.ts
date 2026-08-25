@@ -20,6 +20,8 @@ type ProductCard = {
   currency: string | null;
   country_prices: Json | null;
   product_images: Array<{ image_path: string; sort_order: number }> | null;
+  rating_avg?: number | null;
+  rating_count?: number | null;
 };
 
 /**
@@ -98,9 +100,12 @@ type BotUser = {
       | "awaiting_payment"
       | "awaiting_proof"
       | "choose_pay"
-      | "awaiting_promo_code";
+      | "awaiting_promo_code"
+      | "awaiting_review_comment";
     /** Списать баллы при оформлении — переключатель, не текстовый ввод. */
     use_points?: boolean;
+    /** Товар, для которого только что поставлена оценка и ждём комментарий. */
+    review_product_id?: string;
     pending_order_id?: number;
     /**
      * Номер заказа, замороженный один раз (orders.display_no, MIGRATION-28) —
@@ -563,6 +568,15 @@ type Msg = {
   resendBtn: (orderNo: number | string) => string;
   resendSent: string;
   resendFailed: string;
+  rateBtn: (orderNo: number | string) => string;
+  chooseProductToRate: string;
+  chooseRatingPrompt: (productName: string) => string;
+  reviewSaved: string;
+  reviewCommentPrompt: string;
+  reviewSkipBtn: string;
+  reviewCommentSaved: string;
+  reviewNotAllowed: string;
+  noReviewableProducts: string;
   statusAwaitingPayment: string;
   statusAwaitingConfirmation: string;
   statusDelivering: string;
@@ -678,6 +692,15 @@ const copy: Record<Locale, Msg> = {
     resendBtn: (orderNo) => `📥 Скачать снова (#${orderNo})`,
     resendSent: "📤 Отправляю файлы заказа ещё раз…",
     resendFailed: "⚠️ Не удалось найти файлы этого заказа. Напишите продавцу.",
+    rateBtn: (orderNo) => `⭐ Оценить (#${orderNo})`,
+    chooseProductToRate: "Какой товар из этого заказа оцениваете?",
+    chooseRatingPrompt: (name) => `Оцените «${name}»:`,
+    reviewSaved: "✅ Спасибо за оценку! Хотите добавить комментарий — просто напишите его.",
+    reviewCommentPrompt: "Напишите комментарий или нажмите «Пропустить».",
+    reviewSkipBtn: "Пропустить",
+    reviewCommentSaved: "✅ Комментарий сохранён. Спасибо за отзыв!",
+    reviewNotAllowed: "⚠️ Оценить можно только то, что вы реально купили и получили.",
+    noReviewableProducts: "В этом заказе нет товаров, которые можно оценить.",
     statusAwaitingPayment: "⏳ ожидает оплаты",
     statusAwaitingConfirmation: "🔎 проверяется",
     statusDelivering: "📤 выдаётся",
@@ -804,6 +827,15 @@ const copy: Record<Locale, Msg> = {
     resendBtn: (orderNo) => `📥 Қайта жүктеу (#${orderNo})`,
     resendSent: "📤 Тапсырыс файлдарын қайта жіберемін…",
     resendFailed: "⚠️ Бұл тапсырыстың файлдары табылмады. Сатушыға жазыңыз.",
+    rateBtn: (orderNo) => `⭐ Бағалау (#${orderNo})`,
+    chooseProductToRate: "Осы тапсырыстан қай тауарды бағалайсыз?",
+    chooseRatingPrompt: (name) => `«${name}» тауарын бағалаңыз:`,
+    reviewSaved: "✅ Бағалағаныңыз үшін рақмет! Пікір қосқыңыз келсе — жай ғана жазыңыз.",
+    reviewCommentPrompt: "Пікір жазыңыз немесе «Өткізіп жіберу» түймесін басыңыз.",
+    reviewSkipBtn: "Өткізіп жіберу",
+    reviewCommentSaved: "✅ Пікір сақталды. Пікіріңіз үшін рақмет!",
+    reviewNotAllowed: "⚠️ Тек нақты сатып алып, алған тауарды ғана бағалауға болады.",
+    noReviewableProducts: "Бұл тапсырыста бағалауға болатын тауар жоқ.",
     statusAwaitingPayment: "⏳ төлем күтілуде",
     statusAwaitingConfirmation: "🔎 тексерілуде",
     statusDelivering: "📤 жіберілуде",
@@ -934,6 +966,15 @@ const copy: Record<Locale, Msg> = {
     resendBtn: (orderNo) => `📥 Download again (#${orderNo})`,
     resendSent: "📤 Sending your order files again…",
     resendFailed: "⚠️ Couldn't find files for this order. Please contact the seller.",
+    rateBtn: (orderNo) => `⭐ Rate (#${orderNo})`,
+    chooseProductToRate: "Which product from this order are you rating?",
+    chooseRatingPrompt: (name) => `Rate "${name}":`,
+    reviewSaved: "✅ Thanks for the rating! Want to add a comment — just type it.",
+    reviewCommentPrompt: "Type a comment or tap the Skip button.",
+    reviewSkipBtn: "Skip",
+    reviewCommentSaved: "✅ Comment saved. Thanks for the review!",
+    reviewNotAllowed: "⚠️ You can only rate something you actually bought and received.",
+    noReviewableProducts: "This order has no products you can rate.",
     statusAwaitingPayment: "⏳ awaiting payment",
     statusAwaitingConfirmation: "🔎 under review",
     statusDelivering: "📤 delivering",
@@ -1067,6 +1108,15 @@ const copy: Record<Locale, Msg> = {
     resendBtn: (orderNo) => `📥 Qayta yuklab olish (#${orderNo})`,
     resendSent: "📤 Buyurtma fayllarini qayta yuboryapman…",
     resendFailed: "⚠️ Bu buyurtmaning fayllari topilmadi. Sotuvchiga yozing.",
+    rateBtn: (orderNo) => `⭐ Baholash (#${orderNo})`,
+    chooseProductToRate: "Ushbu buyurtmadan qaysi mahsulotni baholaysiz?",
+    chooseRatingPrompt: (name) => `«${name}» mahsulotini baholang:`,
+    reviewSaved: "✅ Baholaganingiz uchun rahmat! Izoh qo‘shmoqchi bo‘lsangiz — shunchaki yozing.",
+    reviewCommentPrompt: "Izoh yozing yoki «O‘tkazib yuborish» tugmasini bosing.",
+    reviewSkipBtn: "O‘tkazib yuborish",
+    reviewCommentSaved: "✅ Izoh saqlandi. Sharh uchun rahmat!",
+    reviewNotAllowed: "⚠️ Faqat haqiqatan sotib olgan va olgan mahsulotingizni baholay olasiz.",
+    noReviewableProducts: "Bu buyurtmada baholash mumkin bo‘lgan mahsulot yo‘q.",
     statusAwaitingPayment: "⏳ to‘lov kutilmoqda",
     statusAwaitingConfirmation: "🔎 tekshirilmoqda",
     statusDelivering: "📤 yetkazilmoqda",
@@ -1481,7 +1531,8 @@ async function sendProductCard(
   const displayCurrency = money.currency;
 
   const desc = p.description ? `\n\n${escapeHtml(p.description)}` : `\n\n<i>${m.descPending}</i>`;
-  const caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>`;
+  const ratingLine = formatRatingSummary(p.rating_avg ?? null, p.rating_count ?? 0);
+  const caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>${ratingLine ? `\n${ratingLine}` : ""}`;
   const reply_markup = {
     inline_keyboard: [[{ text: m.addToCartBtn, callback_data: `add:${p.id}` }]],
   };
@@ -1903,6 +1954,7 @@ import {
 } from "./product-materials";
 import { normalizePromoCode, computePromoDiscount, type PromoDiscountType } from "./promo-codes";
 import { computePointsDiscount } from "./loyalty";
+import { formatRatingSummary, isValidRating } from "./reviews";
 
 /**
  * Атомарно помечает начало оформления заказа. Кнопка выбора страны — обычный
@@ -2978,6 +3030,13 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   }
 }
 
+function starButtons(productId: string): Array<{ text: string; callback_data: string }> {
+  return [1, 2, 3, 4, 5].map((n) => ({
+    text: "⭐".repeat(n),
+    callback_data: `stars:${productId}:${n}`,
+  }));
+}
+
 async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale = "ru") {
   const m = copy[locale];
   const s = await db();
@@ -3004,12 +3063,13 @@ async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale
         `#${o.display_no ?? o.order_no ?? o.id} — ${o.total} ${o.currency} — ${statusMap[o.status as string] || o.status}`,
     )
     .join("\n");
-  // «Скачать снова» — по кнопке на каждый уже выданный заказ (Кейс 3, №4):
-  // самообслуживание без обращения к продавцу за повторной отправкой файлов.
+  // «Скачать снова» и «Оценить» — по кнопке на каждый уже выданный заказ
+  // (Кейс 3, №4 и №5): самообслуживание без обращения к продавцу.
   const buttons = data
     .filter((o) => o.status === "delivered")
     .map((o) => [
       { text: m.resendBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `resend:${o.id}` },
+      { text: m.rateBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `rate:${o.id}` },
     ]);
   await tg("sendMessage", {
     chat_id,
@@ -3228,6 +3288,82 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (!result.ok || result.sent === 0) {
           await tg("sendMessage", { chat_id, text: m.resendFailed });
         }
+        return;
+      }
+      if (data.startsWith("rate:")) {
+        const orderId = Number(data.slice(5));
+        const { reviewableProductsForOrder } = await import("./reviews.server");
+        const products = await reviewableProductsForOrder(orderId, from_id);
+        if (products.length === 0) {
+          await tg("sendMessage", { chat_id, text: m.noReviewableProducts });
+          return;
+        }
+        if (products.length === 1) {
+          await tg("sendMessage", {
+            chat_id,
+            text: m.chooseRatingPrompt(products[0].name),
+            reply_markup: { inline_keyboard: [starButtons(products[0].product_id)] },
+          });
+          return;
+        }
+        await tg("sendMessage", {
+          chat_id,
+          text: m.chooseProductToRate,
+          reply_markup: {
+            inline_keyboard: products.map((p) => [
+              { text: p.name, callback_data: `rateproduct:${p.product_id}` },
+            ]),
+          },
+        });
+        return;
+      }
+      if (data.startsWith("rateproduct:")) {
+        const productId = data.slice(12);
+        const { hasDeliveredPurchase } = await import("./reviews.server");
+        if (!(await hasDeliveredPurchase(from_id, productId))) {
+          await tg("sendMessage", { chat_id, text: m.reviewNotAllowed });
+          return;
+        }
+        const s = await db();
+        const { data: product } = await s
+          .from("products")
+          .select("name")
+          .eq("id", productId)
+          .maybeSingle();
+        await tg("sendMessage", {
+          chat_id,
+          text: m.chooseRatingPrompt(product?.name ?? ""),
+          reply_markup: { inline_keyboard: [starButtons(productId)] },
+        });
+        return;
+      }
+      if (data.startsWith("stars:")) {
+        const [, productId, ratingRaw] = data.split(":");
+        const rating = Number(ratingRaw);
+        if (!isValidRating(rating)) return;
+        const { hasDeliveredPurchase, upsertReview } = await import("./reviews.server");
+        if (!(await hasDeliveredPurchase(from_id, productId))) {
+          await tg("sendMessage", { chat_id, text: m.reviewNotAllowed });
+          return;
+        }
+        await upsertReview(from_id, productId, rating, null);
+        await setState(from_id, {
+          ...user.state,
+          mode: "awaiting_review_comment",
+          review_product_id: productId,
+        });
+        await tg("sendMessage", {
+          chat_id,
+          text: m.reviewSaved,
+          reply_markup: {
+            inline_keyboard: [[{ text: m.reviewSkipBtn, callback_data: "reviewskip" }]],
+          },
+        });
+        return;
+      }
+      if (data === "reviewskip") {
+        const { mode: _mode, review_product_id: _rpid, ...rest } = user.state ?? {};
+        await setState(from_id, rest);
         return;
       }
       if (data === "checkout") {
@@ -3952,6 +4088,23 @@ export async function handleUpdate(update: TelegramUpdate) {
         const withPromo = { ...idleState, promo_code: normalizePromoCode(msg.text) };
         await setState(from.id, withPromo);
         return showCart(chat_id, { ...user, state: withPromo });
+      }
+    }
+
+    if (user.state?.mode === "awaiting_review_comment" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const productId = user.state.review_product_id;
+        const { mode: _mode, review_product_id: _rpid, ...rest } = user.state;
+        await setState(from.id, rest);
+        if (productId) {
+          const { updateReviewComment } = await import("./reviews.server");
+          await updateReviewComment(from.id, productId, msg.text).catch(() => {});
+        }
+        await tg("sendMessage", { chat_id, text: m.reviewCommentSaved });
+        return;
       }
     }
 

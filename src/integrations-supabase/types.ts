@@ -1184,6 +1184,54 @@ export type Database = {
           },
         ];
       };
+      product_reviews: {
+        Row: {
+          id: string;
+          bot_id: string;
+          product_id: string;
+          telegram_id: number;
+          rating: number;
+          comment: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          product_id: string;
+          telegram_id: number;
+          rating: number;
+          comment?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          product_id?: string;
+          telegram_id?: number;
+          rating?: number;
+          comment?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_reviews_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "product_reviews_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       order_items: {
         Row: {
           // MIGRATION-37. Снимок материалов по всем языкам разом (ru/kk/en/uz),
@@ -1803,6 +1851,11 @@ export type Database = {
           keywords: string;
           name: string;
           price: number;
+          // MIGRATION-43. Кэш агрегата product_reviews, пересчитывается
+          // триггером на самой таблице отзывов — не источник истины. Тот же
+          // ручной патч, что и у остальных полей этого файла.
+          rating_avg: number | null;
+          rating_count: number;
           sort_order: number;
         };
         Insert: {
@@ -1824,6 +1877,8 @@ export type Database = {
           keywords?: string;
           name: string;
           price?: number;
+          rating_avg?: number | null;
+          rating_count?: number;
           sort_order?: number;
         };
         Update: {
@@ -1845,6 +1900,8 @@ export type Database = {
           keywords?: string;
           name?: string;
           price?: number;
+          rating_avg?: number | null;
+          rating_count?: number;
           sort_order?: number;
         };
         Relationships: [
