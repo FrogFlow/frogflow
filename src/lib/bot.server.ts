@@ -1479,23 +1479,49 @@ function sleep(ms: number) {
 // chat_id — number | string, как и у самого Telegram: идентификаторы админов
 // читаются из app_settings строкой ("123,456" через запятую) и по пути к отправке
 // в число не переводятся. Соседний sendCoverPreviews принимает их так же.
-async function sendLongHtmlMessage(chat_id: number | string, text: string) {
+/**
+ * `replyMarkup`, when given, is attached only to the last chunk — Telegram
+ * rejects anything over TELEGRAM_MESSAGE_MAX outright, `tg()` doesn't throw
+ * on that, and a caller that skips this helper for its keyboard (as showCart
+ * used to) gets a silent no-op instead of a cart the buyer can act on
+ * (Блок 4.4).
+ */
+async function sendLongHtmlMessage(
+  chat_id: number | string,
+  text: string,
+  replyMarkup?: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> },
+) {
   if (text.length <= TELEGRAM_MESSAGE_MAX) {
-    await tg("sendMessage", { chat_id, text, parse_mode: "HTML" });
+    await tg("sendMessage", {
+      chat_id,
+      text,
+      parse_mode: "HTML",
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
     return;
   }
   const lines = text.split("\n");
+  const chunks: string[] = [];
   let chunk = "";
   for (const line of lines) {
     const next = chunk ? `${chunk}\n${line}` : line;
     if (next.length > TELEGRAM_MESSAGE_MAX) {
-      if (chunk) await tg("sendMessage", { chat_id, text: chunk, parse_mode: "HTML" });
+      if (chunk) chunks.push(chunk);
       chunk = line;
     } else {
       chunk = next;
     }
   }
-  if (chunk) await tg("sendMessage", { chat_id, text: chunk, parse_mode: "HTML" });
+  if (chunk) chunks.push(chunk);
+  for (let i = 0; i < chunks.length; i++) {
+    const isLast = i === chunks.length - 1;
+    await tg("sendMessage", {
+      chat_id,
+      text: chunks[i],
+      parse_mode: "HTML",
+      ...(isLast && replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
+  }
 }
 
 /**
@@ -1634,12 +1660,10 @@ async function showCart(chat_id: number, user: BotUser) {
     { text: m.checkoutBtn, callback_data: "checkout" },
     { text: m.clearBtn, callback_data: "clear" },
   ]);
-  await tg("sendMessage", {
-    chat_id,
-    text,
-    parse_mode: "HTML",
-    reply_markup: { inline_keyboard: buttons },
-  });
+  // Большая корзина легко превышает лимит Telegram в 4096 символов — tg()
+  // не бросает на отказе, и покупатель молча не получал вообще ничего
+  // (Блок 4.4).
+  await sendLongHtmlMessage(chat_id, text, { inline_keyboard: buttons });
 }
 
 async function startCheckout(chat_id: number, user: BotUser) {
@@ -2513,8 +2537,12 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   const m = copy[locale];
   const telegram_id = user.telegram_id;
   const s = await db();
-  const term = `%${query.replace(/[%_]/g, "")}%`;
-  const { data } = await s
+  // Запятая — разделитель условий в PostgREST .or(), а не только спецсимвол
+  // ILIKE: "математика, 5 класс" рвал фильтр на лишние условия, PostgREST
+  // отвечал ошибкой на весь запрос, а она проглатывалась ниже и выглядела
+  // как честное «ничего не найдено» (Блок 4.2).
+  const term = `%${query.replace(/[%_,]/g, "")}%`;
+  const { data, error } = await s
     .from("products")
     .select("*, product_images(image_path, sort_order)")
     .eq("is_active", true)
@@ -2522,16 +2550,34 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     .order("name")
     .limit(30);
 
-  // Запоминаем запрос для пагинации (callback_data ограничена 64 байтами,
-  // поэтому сам запрос в payload не кладём, а храним в state).
-  await setState(telegram_id, { ...user.state, mode: "idle", last_search: query });
-
-  if (!data?.length) {
+  if (error) {
+    console.error("[bot] showSearch failed", error);
     await tg("sendMessage", { chat_id, text: m.searchNothingFound });
     return;
   }
 
-  const all = data;
+  // showCategories() уже прячет товары скрытой категории — там до них просто
+  // некому дойти, кнопки самой категории нет. Поиск же шёл в обход: смотрел
+  // только на products.is_active и находил товары, чья единственная папка
+  // скрыта продавцом (Блок 4.5). Товары без категорий (category_ids=[]) —
+  // корень каталога, их это не касается.
+  const { data: hiddenCats } = await s.from("categories").select("id").eq("is_visible", false);
+  const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
+  const visible = (data ?? []).filter((p) => {
+    const catIds = (p.category_ids as string[] | null) ?? [];
+    return catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
+  });
+
+  // Запоминаем запрос для пагинации (callback_data ограничена 64 байтами,
+  // поэтому сам запрос в payload не кладём, а храним в state).
+  await setState(telegram_id, { ...user.state, mode: "idle", last_search: query });
+
+  if (!visible.length) {
+    await tg("sendMessage", { chat_id, text: m.searchNothingFound });
+    return;
+  }
+
+  const all = visible;
   const page = all.slice(offset, offset + 5);
 
   if (offset === 0) {
@@ -3448,9 +3494,17 @@ export async function handleUpdate(update: TelegramUpdate) {
       return;
     }
 
-    // Search text input
+    // Search text input — same escape hatch as awaiting_contact above: a
+    // menu button pressed while still in search mode used to be searched
+    // for literally ("📚 Каталог" → "ничего не найдено") instead of acting
+    // on it (Блок 4.3).
     if (user.state?.mode === "search" && msg.text) {
-      return showSearch(chat_id, user, msg.text);
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        return showSearch(chat_id, user, msg.text);
+      }
     }
 
     const menuAction = canonicalMenuAction(msg.text);

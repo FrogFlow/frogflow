@@ -146,8 +146,15 @@ export const saveProduct = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       productId = inserted!.id as string;
     }
-    // Replace images
-    await s.from("product_images").delete().eq("product_id", productId);
+    // Replace images. Insert the new rows FIRST, delete the old ones only
+    // after that succeeds — the old order (delete, unchecked, then insert)
+    // meant an insert failure left the product live with no images and no
+    // material files at all, and the uploaded file paths were already gone
+    // from the DB by then (Блок 4.8).
+    const { data: oldImages } = await s
+      .from("product_images")
+      .select("id")
+      .eq("product_id", productId);
     if (data.image_paths.length) {
       const rows = data.image_paths.map((p, idx) => ({
         product_id: productId!,
@@ -157,9 +164,22 @@ export const saveProduct = createServerFn({ method: "POST" })
       const { error } = await s.from("product_images").insert(rows);
       if (error) throw new Error(error.message);
     }
+    if (oldImages?.length) {
+      const { error } = await s
+        .from("product_images")
+        .delete()
+        .in(
+          "id",
+          oldImages.map((r) => r.id),
+        );
+      if (error) throw new Error(error.message);
+    }
 
     // Replace material files (the deliverable itself — can be one file or many photos)
-    await s.from("product_material_files").delete().eq("product_id", productId);
+    const { data: oldMaterials } = await s
+      .from("product_material_files")
+      .select("id")
+      .eq("product_id", productId);
     const materialRows = [
       ...data.material_files_ru.map((f, idx) => ({
         product_id: productId!,
@@ -178,6 +198,16 @@ export const saveProduct = createServerFn({ method: "POST" })
     ];
     if (materialRows.length) {
       const { error } = await s.from("product_material_files").insert(materialRows);
+      if (error) throw new Error(error.message);
+    }
+    if (oldMaterials?.length) {
+      const { error } = await s
+        .from("product_material_files")
+        .delete()
+        .in(
+          "id",
+          oldMaterials.map((r) => r.id),
+        );
       if (error) throw new Error(error.message);
     }
     return { ok: true as const, id: productId };

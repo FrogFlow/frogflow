@@ -194,6 +194,8 @@ const copy: Record<
     searchPlaceholder: string;
     foundCount: (found: number, total: number) => string;
     noProductsYet: string;
+    loading: string;
+    loadError: (msg: string) => string;
     hidden: string;
     noCategory: string;
     noFile: string;
@@ -250,6 +252,8 @@ const copy: Record<
     searchPlaceholder: "Название, ключевое слово или описание…",
     foundCount: (found, total) => `Найдено: ${found} из ${total}`,
     noProductsYet: "Пока нет товаров.",
+    loading: "Загрузка…",
+    loadError: (msg) => `Не удалось загрузить товары: ${msg}`,
     hidden: "(скрыт)",
     noCategory: "без категории",
     noFile: " · нет файла",
@@ -303,6 +307,8 @@ const copy: Record<
     searchPlaceholder: "Атауы, кілт сөз немесе сипаттама…",
     foundCount: (found, total) => `Табылды: ${found} / ${total}`,
     noProductsYet: "Әзірге тауарлар жоқ.",
+    loading: "Жүктелуде…",
+    loadError: (msg) => `Тауарларды жүктеу мүмкін болмады: ${msg}`,
     hidden: "(жасырын)",
     noCategory: "санатсыз",
     noFile: " · файл жоқ",
@@ -357,6 +363,8 @@ const copy: Record<
     searchPlaceholder: "Name, keyword, or description…",
     foundCount: (found, total) => `Found: ${found} of ${total}`,
     noProductsYet: "No products yet.",
+    loading: "Loading…",
+    loadError: (msg) => `Failed to load products: ${msg}`,
     hidden: "(hidden)",
     noCategory: "no category",
     noFile: " · no file",
@@ -411,6 +419,8 @@ const copy: Record<
     searchPlaceholder: "Nomi, kalit so‘z yoki tavsif…",
     foundCount: (found, total) => `Topildi: ${found} / ${total}`,
     noProductsYet: "Hozircha mahsulotlar yo‘q.",
+    loading: "Yuklanmoqda…",
+    loadError: (msg) => `Mahsulotlarni yuklab bo‘lmadi: ${msg}`,
     hidden: "(yashirin)",
     noCategory: "kategoriyasiz",
     noFile: " · fayl yo‘q",
@@ -618,6 +628,11 @@ function ProductsPage() {
 
   async function onSave() {
     if (!editing) return;
+    // Файл ещё грузится — state images/materialFilesRu/materialFilesKz ниже
+    // не содержит его путь, пока апload не завершится. Сохранить сейчас
+    // значит унести товар без только что выбранного файла, хотя продавец
+    // уверен, что он уже приложен (Блок 4.8).
+    if (imagesUpload || materialsRuUpload || materialsKzUpload) return;
     setSaving(true);
     try {
       await saveProduct({
@@ -903,7 +918,10 @@ function ProductsPage() {
           </label>
 
           <div className="flex gap-2">
-            <Button onClick={onSave} disabled={saving}>
+            <Button
+              onClick={onSave}
+              disabled={saving || !!imagesUpload || !!materialsRuUpload || !!materialsKzUpload}
+            >
               {saving ? tr.saving : tr.save}
             </Button>
             <Button variant="outline" onClick={() => setEditing(null)}>
@@ -927,7 +945,13 @@ function ProductsPage() {
           <div className="bg-card border rounded-lg divide-y">
             {filtered.length === 0 && (
               <div className="p-4 text-sm text-muted-foreground">
-                {list.length === 0 ? tr.noProductsYet : tr.nothingFound}
+                {products.isLoading
+                  ? tr.loading
+                  : products.isError
+                    ? tr.loadError(errorMessage(products.error) || tr.unknownError)
+                    : list.length === 0
+                      ? tr.noProductsYet
+                      : tr.nothingFound}
               </div>
             )}
             {filtered.map((p) => (

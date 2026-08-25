@@ -1331,7 +1331,12 @@ const stepMissGiveUpCopy: Record<Locale, string> = {
 };
 
 export async function handleStepMiss(params: {
-  user: { user_key: string; first_name: string | null; username: string | null };
+  user: {
+    user_key: string;
+    telegram_id: number;
+    first_name: string | null;
+    username: string | null;
+  };
   state: DirectState;
   text: string;
   hint: string;
@@ -1346,7 +1351,12 @@ export async function handleStepMiss(params: {
     return;
   }
 
+  // Явная отмена (см. clearCart рядом с clearDirectFlow в других ветках)
+  // чистит и корзину — здесь её раньше не трогали, и брошенный набор из
+  // нескольких позиций всплывал в следующем заказе покупателя как есть
+  // (Блок 4.9).
   await clearDirectFlow(params.user.user_key);
+  await clearCart(params.user);
   await params.say(stepMissGiveUpCopy[params.locale ?? directLocale(params.state)]);
   await notifyAdminAboutQuestion({
     question: `Не смог довести до конца оформление. Последнее сообщение: «${params.text}»`,

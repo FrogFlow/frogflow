@@ -16,6 +16,8 @@ import { confirmToast } from "@/lib/confirm-toast";
 import { EmojiInsertBar, insertAtCursor } from "@/components-ui/emoji-insert-bar";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
+import { toast } from "sonner";
+import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/admin/categories")({
   component: CategoriesPage,
@@ -40,12 +42,17 @@ const copy: Record<
     cancel: string;
     listTitle: string;
     empty: string;
+    loading: string;
+    loadError: (msg: string) => string;
     hiddenBadge: string;
     show: string;
     hide: string;
     editShort: string;
     deleteShort: string;
     confirmDelete: string;
+    saveError: (msg: string) => string;
+    deleteError: (msg: string) => string;
+    toggleError: (msg: string) => string;
   }
 > = {
   ru: {
@@ -66,6 +73,8 @@ const copy: Record<
     cancel: "Отмена",
     listTitle: "Список (дерево)",
     empty: "Пока пусто.",
+    loading: "Загрузка…",
+    loadError: (msg) => `Не удалось загрузить категории: ${msg}`,
     hiddenBadge: "скрыта",
     show: "Показать",
     hide: "Скрыть",
@@ -73,6 +82,9 @@ const copy: Record<
     deleteShort: "Удал.",
     confirmDelete:
       "Удалить категорию? Подкатегории тоже удалятся. Товары и файлы останутся; связь с этой папкой снимется.",
+    saveError: (msg) => `Не удалось сохранить категорию: ${msg}`,
+    deleteError: (msg) => `Не удалось удалить категорию: ${msg}`,
+    toggleError: (msg) => `Не удалось изменить видимость: ${msg}`,
   },
   kk: {
     title: "Санаттар",
@@ -92,6 +104,8 @@ const copy: Record<
     cancel: "Бас тарту",
     listTitle: "Тізім (ағаш)",
     empty: "Әзірге бос.",
+    loading: "Жүктелуде…",
+    loadError: (msg) => `Санаттарды жүктеу мүмкін болмады: ${msg}`,
     hiddenBadge: "жасырын",
     show: "Көрсету",
     hide: "Жасыру",
@@ -99,6 +113,9 @@ const copy: Record<
     deleteShort: "Жою",
     confirmDelete:
       "Санатты жою керек пе? Ішкі санаттар да жойылады. Тауарлар мен файлдар сақталады; бұл қалтамен байланыс алынады.",
+    saveError: (msg) => `Санатты сақтау мүмкін болмады: ${msg}`,
+    deleteError: (msg) => `Санатты жою мүмкін болмады: ${msg}`,
+    toggleError: (msg) => `Көріну параметрін өзгерту мүмкін болмады: ${msg}`,
   },
   en: {
     title: "Categories",
@@ -118,6 +135,8 @@ const copy: Record<
     cancel: "Cancel",
     listTitle: "List (tree)",
     empty: "Nothing here yet.",
+    loading: "Loading…",
+    loadError: (msg) => `Failed to load categories: ${msg}`,
     hiddenBadge: "hidden",
     show: "Show",
     hide: "Hide",
@@ -125,6 +144,9 @@ const copy: Record<
     deleteShort: "Delete",
     confirmDelete:
       "Delete this category? Subcategories will be deleted too. Products and files are kept; their link to this folder is removed.",
+    saveError: (msg) => `Failed to save the category: ${msg}`,
+    deleteError: (msg) => `Failed to delete the category: ${msg}`,
+    toggleError: (msg) => `Failed to change visibility: ${msg}`,
   },
   uz: {
     title: "Kategoriyalar",
@@ -144,6 +166,8 @@ const copy: Record<
     cancel: "Bekor qilish",
     listTitle: "Ro‘yxat (daraxt)",
     empty: "Hozircha bo‘sh.",
+    loading: "Yuklanmoqda…",
+    loadError: (msg) => `Kategoriyalarni yuklab bo‘lmadi: ${msg}`,
     hiddenBadge: "yashirin",
     show: "Ko‘rsatish",
     hide: "Yashirish",
@@ -151,6 +175,9 @@ const copy: Record<
     deleteShort: "O‘chir.",
     confirmDelete:
       "Kategoriyani o‘chirasizmi? Quyi kategoriyalar ham o‘chadi. Mahsulot va fayllar saqlanadi; ular bu papka bilan bog‘lanishdan chiqadi.",
+    saveError: (msg) => `Kategoriyani saqlab bo‘lmadi: ${msg}`,
+    deleteError: (msg) => `Kategoriyani o‘chirib bo‘lmadi: ${msg}`,
+    toggleError: (msg) => `Ko‘rinishni o‘zgartirib bo‘lmadi: ${msg}`,
   },
 };
 
@@ -173,6 +200,25 @@ function CategoriesPage() {
   const [parentId, setParentId] = useState<string>("");
   const [isVisible, setIsVisible] = useState(true);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  // Не только сама категория, но и все её потомки — иначе выбор родителя из
+  // одной из них создаёт цикл в дереве (Блок 4.6, дублирует серверную
+  // проверку в updateCategory ради того, чтобы такой вариант вообще не
+  // показывался в списке).
+  const editingDescendantIds = useMemo(() => {
+    if (!editing) return new Set<string>();
+    const ids = new Set<string>([editing.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const c of list) {
+        if (c.parent_id && ids.has(c.parent_id) && !ids.has(c.id)) {
+          ids.add(c.id);
+          grew = true;
+        }
+      }
+    }
+    return ids;
+  }, [editing, list]);
 
   function insertEmoji(emoji: string) {
     const el = nameInputRef.current;
@@ -198,35 +244,47 @@ function CategoriesPage() {
 
   async function onSave() {
     if (!name.trim()) return;
-    if (editing) {
-      await updateCategory({
-        data: {
-          id: editing.id,
-          name,
-          parent_id: parentId || null,
-          is_visible: isVisible,
-        },
-      });
-    } else {
-      await createCategory({
-        data: { name, parent_id: parentId || null, is_visible: isVisible },
-      });
+    try {
+      if (editing) {
+        await updateCategory({
+          data: {
+            id: editing.id,
+            name,
+            parent_id: parentId || null,
+            is_visible: isVisible,
+          },
+        });
+      } else {
+        await createCategory({
+          data: { name, parent_id: parentId || null, is_visible: isVisible },
+        });
+      }
+      reset();
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e)));
     }
-    reset();
-    qc.invalidateQueries({ queryKey: ["categories"] });
   }
 
   async function onDelete(id: string) {
     if (!(await confirmToast(tr.confirmDelete))) return;
-    await deleteCategory({ data: { id } });
-    qc.invalidateQueries({ queryKey: ["categories"] });
-    qc.invalidateQueries({ queryKey: ["products"] });
+    try {
+      await deleteCategory({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+    } catch (e: unknown) {
+      toast.error(tr.deleteError(errorMessage(e)));
+    }
   }
 
   async function onToggleVisible(c: Cat) {
     const next = !(c.is_visible !== false);
-    await setCategoryVisible({ data: { id: c.id, is_visible: next } });
-    qc.invalidateQueries({ queryKey: ["categories"] });
+    try {
+      await setCategoryVisible({ data: { id: c.id, is_visible: next } });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    } catch (e: unknown) {
+      toast.error(tr.toggleError(errorMessage(e)));
+    }
   }
 
   function depthPrefix(c: Cat): string {
@@ -268,7 +326,7 @@ function CategoriesPage() {
             >
               <option value="">{tr.rootOption}</option>
               {list
-                .filter((c) => c.id !== editing?.id)
+                .filter((c) => !editingDescendantIds.has(c.id))
                 .map((c) => (
                   <option key={c.id} value={c.id}>
                     {depthPrefix(c)}
@@ -298,7 +356,15 @@ function CategoriesPage() {
 
         <div className="bg-card border rounded-lg p-4">
           <h2 className="font-medium mb-3">{tr.listTitle}</h2>
-          {list.length === 0 && <p className="text-sm text-muted-foreground">{tr.empty}</p>}
+          {list.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              {cats.isLoading
+                ? tr.loading
+                : cats.isError
+                  ? tr.loadError(errorMessage(cats.error))
+                  : tr.empty}
+            </p>
+          )}
           <ul className="divide-y">
             {list.map((c) => {
               const hidden = c.is_visible === false;

@@ -269,6 +269,10 @@ function SettingsPage() {
   }, [settings.data]);
 
   async function onSave() {
+    // Значения ещё не пришли из settings.data (useEffect ниже их подставит) —
+    // сохранить сейчас значит записать пустые поля поверх настоящих
+    // (Блок 4.7: admin_chat_id="" отключал уведомления о заказах).
+    if (settings.isLoading) return;
     try {
       await Promise.all([
         saveSetting({ data: { key: "admin_chat_id", value: adminChatId.trim() } }),
@@ -283,10 +287,14 @@ function SettingsPage() {
   }
 
   async function onSaveInstruction() {
-    await saveSetting({ data: { key: "instruction_caption", value: instructionCaption } });
-    qc.invalidateQueries({ queryKey: ["settings"] });
-    setInstructionSaved(true);
-    setTimeout(() => setInstructionSaved(false), 2000);
+    try {
+      await saveSetting({ data: { key: "instruction_caption", value: instructionCaption } });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setInstructionSaved(true);
+      setTimeout(() => setInstructionSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    }
   }
 
   async function onUploadInstruction(file: File | null) {
@@ -340,6 +348,10 @@ function SettingsPage() {
       await qc.invalidateQueries();
       setResetDone(true);
       setTimeout(() => setResetDone(false), 3000);
+    } catch (e: unknown) {
+      // Самое разрушительное действие на этом экране — молчание при сбое
+      // маскировало бы то, что данные не тронуты (или тронуты частично).
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setResetting(false);
     }
@@ -396,7 +408,9 @@ function SettingsPage() {
           <p className="text-xs text-muted-foreground">{tr.contactHint}</p>
         </div>
         <div className="flex items-center gap-2 pt-2">
-          <Button onClick={onSave}>{tr.save}</Button>
+          <Button onClick={onSave} disabled={settings.isLoading}>
+            {tr.save}
+          </Button>
           {saved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
         </div>
       </div>

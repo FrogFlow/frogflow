@@ -40,12 +40,15 @@ const copy: Record<
     save: string;
     cancel: string;
     empty: string;
+    loading: string;
+    loadError: (msg: string) => string;
     hidden: string;
     editShort: string;
     deleteShort: string;
     confirmDelete: string;
     qrUploadError: (msg: string) => string;
     saveError: (msg: string) => string;
+    deleteError: (msg: string) => string;
   }
 > = {
   ru: {
@@ -65,12 +68,15 @@ const copy: Record<
     save: "Сохранить",
     cancel: "Отмена",
     empty: "Нет способов оплаты.",
+    loading: "Загрузка…",
+    loadError: (msg) => `Не удалось загрузить способы оплаты: ${msg}`,
     hidden: " · скрыт",
     editShort: "Изм.",
     deleteShort: "Удал.",
     confirmDelete: "Удалить способ оплаты?",
     qrUploadError: (msg) => `Ошибка загрузки QR-кода: ${msg}`,
     saveError: (msg) => `Ошибка при сохранении: ${msg}`,
+    deleteError: (msg) => `Не удалось удалить способ оплаты: ${msg}`,
   },
   kk: {
     title: "Елдер бойынша төлем деректері",
@@ -89,12 +95,15 @@ const copy: Record<
     save: "Сақтау",
     cancel: "Бас тарту",
     empty: "Төлем әдістері жоқ.",
+    loading: "Жүктелуде…",
+    loadError: (msg) => `Төлем әдістерін жүктеу мүмкін болмады: ${msg}`,
     hidden: " · жасырын",
     editShort: "Өзг.",
     deleteShort: "Жою",
     confirmDelete: "Төлем әдісін жою керек пе?",
     qrUploadError: (msg) => `QR-кодты жүктеу қатесі: ${msg}`,
     saveError: (msg) => `Сақтау кезінде қате: ${msg}`,
+    deleteError: (msg) => `Төлем әдісін жою мүмкін болмады: ${msg}`,
   },
   en: {
     title: "Payment details by country",
@@ -113,12 +122,15 @@ const copy: Record<
     save: "Save",
     cancel: "Cancel",
     empty: "No payment methods yet.",
+    loading: "Loading…",
+    loadError: (msg) => `Failed to load payment methods: ${msg}`,
     hidden: " · hidden",
     editShort: "Edit",
     deleteShort: "Delete",
     confirmDelete: "Delete this payment method?",
     qrUploadError: (msg) => `Failed to upload the QR code: ${msg}`,
     saveError: (msg) => `Failed to save: ${msg}`,
+    deleteError: (msg) => `Failed to delete the payment method: ${msg}`,
   },
   uz: {
     title: "Mamlakatlar bo‘yicha to‘lov ma’lumotlari",
@@ -137,12 +149,15 @@ const copy: Record<
     save: "Saqlash",
     cancel: "Bekor qilish",
     empty: "To‘lov usullari yo‘q.",
+    loading: "Yuklanmoqda…",
+    loadError: (msg) => `To‘lov usullarini yuklab bo‘lmadi: ${msg}`,
     hidden: " · yashirin",
     editShort: "Tahr.",
     deleteShort: "O‘chir.",
     confirmDelete: "To‘lov usulini o‘chirasizmi?",
     qrUploadError: (msg) => `QR-kodni yuklashda xato: ${msg}`,
     saveError: (msg) => `Saqlashda xato: ${msg}`,
+    deleteError: (msg) => `To‘lov usulini o‘chirib bo‘lmadi: ${msg}`,
   },
 };
 
@@ -211,8 +226,12 @@ function PaymentMethodsPage() {
   }
   async function onDelete(id: string) {
     if (!(await confirmToast(tr.confirmDelete))) return;
-    await deletePaymentMethod({ data: { id } });
-    qc.invalidateQueries({ queryKey: ["payment-methods"] });
+    try {
+      await deletePaymentMethod({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["payment-methods"] });
+    } catch (e: unknown) {
+      toast.error(tr.deleteError(errorMessage(e)));
+    }
   }
 
   return (
@@ -313,7 +332,15 @@ function PaymentMethodsPage() {
       )}
 
       <div className="bg-card border rounded-lg divide-y">
-        {list.length === 0 && <div className="p-4 text-sm text-muted-foreground">{tr.empty}</div>}
+        {list.length === 0 && (
+          <div className="p-4 text-sm text-muted-foreground">
+            {methods.isLoading
+              ? tr.loading
+              : methods.isError
+                ? tr.loadError(errorMessage(methods.error))
+                : tr.empty}
+          </div>
+        )}
         {list.map((m) => (
           <div key={m.id} className="p-3 flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">

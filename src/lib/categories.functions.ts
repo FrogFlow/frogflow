@@ -55,9 +55,37 @@ export const updateCategory = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
+
+    // Цикл в дереве (категория становится потомком самой себя) не проверялся
+    // нигде: ни здесь, ни клиентским <select> в admin.categories.tsx, который
+    // исключал только саму категорию, а не её потомков. sortCategoriesTree
+    // обходит дерево от корня, и участники цикла молча выпадают из всех
+    // списков — почему исправить такое из интерфейса уже нельзя (Блок 4.6).
+    const newParentId = data.parent_id ?? null;
+    if (newParentId) {
+      if (newParentId === data.id) {
+        throw new Error("Категория не может быть родителем самой себя");
+      }
+      const { data: allCats, error: catsErr } = await s.from("categories").select("id, parent_id");
+      if (catsErr) throw new Error(catsErr.message);
+      const parentOf = new Map(
+        (allCats ?? []).map((c) => [c.id as string, c.parent_id as string | null]),
+      );
+      let cursor: string | null = newParentId;
+      const seen = new Set<string>();
+      while (cursor) {
+        if (cursor === data.id) {
+          throw new Error("Нельзя переносить категорию в одну из её собственных подкатегорий");
+        }
+        if (seen.has(cursor)) break; // существующий цикл где-то выше — не наша забота здесь
+        seen.add(cursor);
+        cursor = parentOf.get(cursor) ?? null;
+      }
+    }
+
     const patch: TablesUpdate<"categories"> = {
       name: data.name,
-      parent_id: data.parent_id ?? null,
+      parent_id: newParentId,
       sort_order: data.sort_order ?? 0,
     };
     if (typeof data.is_visible === "boolean") patch.is_visible = data.is_visible;
@@ -99,6 +127,17 @@ export const deleteCategory = createServerFn({ method: "POST" })
       }
     }
 
+    // Куда переезжают товары удалённой папки: к её родителю, а не в корень
+    // каталога — showCategories(null) считает корнем ровно category_ids=[]
+    // (Блок 4.5), и продавец, удаливший старую сезонную подпапку, не ждёт,
+    // что её товары всплывут на самый верх каталога.
+    const { data: targetCat } = await s
+      .from("categories")
+      .select("parent_id")
+      .eq("id", data.id)
+      .maybeSingle();
+    const survivingParent = targetCat?.parent_id ?? null;
+
     // Strip removed ids from products.category_ids (JSON array is not FK-managed)
     const { data: products } = await s.from("products").select("id, category_ids, category_id");
     const productUpdates: Array<{
@@ -108,10 +147,15 @@ export const deleteCategory = createServerFn({ method: "POST" })
     }> = [];
     for (const p of products ?? []) {
       const ids = Array.isArray(p.category_ids) ? (p.category_ids as string[]) : [];
-      const next = ids.filter((id) => !toRemove.has(id));
+      const kept = ids.filter((id) => !toRemove.has(id));
+      const lostAny = kept.length !== ids.length;
+      const next =
+        lostAny && survivingParent && !kept.includes(survivingParent)
+          ? [...kept, survivingParent]
+          : kept;
       const primary =
         p.category_id && toRemove.has(p.category_id) ? (next[0] ?? null) : p.category_id;
-      if (next.length !== ids.length || primary !== p.category_id) {
+      if (lostAny || primary !== p.category_id) {
         productUpdates.push({ id: p.id, category_ids: next, category_id: primary ?? null });
       }
     }

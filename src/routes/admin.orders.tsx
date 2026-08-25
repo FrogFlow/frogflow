@@ -53,6 +53,8 @@ const copy: Record<
     platformAll: string;
     platformNoOrders: string;
     noOrdersYet: string;
+    loading: string;
+    loadError: (msg: string) => string;
     instagramTag: string;
     whatsappTag: string;
     noEmail: string;
@@ -78,6 +80,7 @@ const copy: Record<
     orderDelivered: (n: number) => string;
     manualRequired: (n: number) => string;
     rejectReasonPrompt: string;
+    rejectConfirm: (n: number) => string;
     rejectNotNotified: string;
     remindConfirm: (n: number) => string;
     remindSent: (n: number) => string;
@@ -108,6 +111,8 @@ const copy: Record<
     platformAll: "Все",
     platformNoOrders: "В этой площадке заказов пока нет.",
     noOrdersYet: "Пока нет заказов.",
+    loading: "Загрузка…",
+    loadError: (msg) => `Не удалось загрузить заказы: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
     noEmail: "почта не указана — материалы отправить некуда",
@@ -136,6 +141,7 @@ const copy: Record<
     manualRequired: (n) =>
       `Заказ #${n} обработан, но часть материалов не ушла автоматически — проверьте заметку заказа и вышлите вручную.`,
     rejectReasonPrompt: "Причина отказа (необязательно):",
+    rejectConfirm: (n) => `Отклонить заказ #${n}? Покупатель получит уведомление.`,
     rejectNotNotified:
       "Заказ отклонён, но сообщить покупателю не удалось — напишите ему сами.\n\nInstagram не даёт писать позже 24 часов с последнего сообщения человека.",
     remindConfirm: (n) =>
@@ -169,6 +175,8 @@ const copy: Record<
     platformAll: "Барлығы",
     platformNoOrders: "Бұл алаңда әзірге тапсырыс жоқ.",
     noOrdersYet: "Әзірге тапсырыстар жоқ.",
+    loading: "Жүктелуде…",
+    loadError: (msg) => `Тапсырыстарды жүктеу мүмкін болмады: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
     noEmail: "пошта көрсетілмеген — материалдарды жіберетін жер жоқ",
@@ -198,6 +206,7 @@ const copy: Record<
     manualRequired: (n) =>
       `#${n} тапсырысы өңделді, бірақ кейбір материалдар автоматты жіберілмеді — тапсырыс жазбасын тексеріп, қолмен жіберіңіз.`,
     rejectReasonPrompt: "Қабылдамау себебі (міндетті емес):",
+    rejectConfirm: (n) => `#${n} тапсырысын қабылдамайсыз ба? Сатып алушыға хабарланады.`,
     rejectNotNotified:
       "Тапсырыс қабылданбады, бірақ сатып алушыға хабарлау мүмкін болмады — өзіңіз жазыңыз.\n\nInstagram адамның соңғы хабарынан 24 сағаттан кейін жазуға рұқсат бермейді.",
     remindConfirm: (n) =>
@@ -231,6 +240,8 @@ const copy: Record<
     platformAll: "All",
     platformNoOrders: "No orders on this platform yet.",
     noOrdersYet: "No orders yet.",
+    loading: "Loading…",
+    loadError: (msg) => `Failed to load orders: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
     noEmail: "no email provided — nowhere to send the materials",
@@ -259,6 +270,7 @@ const copy: Record<
     manualRequired: (n) =>
       `Order #${n} was processed, but some materials did not go out automatically — check the order note and send them manually.`,
     rejectReasonPrompt: "Rejection reason (optional):",
+    rejectConfirm: (n) => `Reject order #${n}? The customer will be notified.`,
     rejectNotNotified:
       "The order was rejected, but the customer couldn't be notified — message them yourself.\n\nInstagram doesn't allow messaging more than 24 hours after the person's last message.",
     remindConfirm: (n) =>
@@ -292,6 +304,8 @@ const copy: Record<
     platformAll: "Barchasi",
     platformNoOrders: "Bu platformada hali buyurtmalar yo‘q.",
     noOrdersYet: "Hozircha buyurtmalar yo‘q.",
+    loading: "Yuklanmoqda…",
+    loadError: (msg) => `Buyurtmalarni yuklab bo‘lmadi: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
     noEmail: "email ko‘rsatilmagan — materiallarni yuborishga joy yo‘q",
@@ -321,6 +335,7 @@ const copy: Record<
     manualRequired: (n) =>
       `#${n} buyurtma qayta ishlandi, lekin ba'zi materiallar avtomatik yuborilmadi — buyurtma izohini tekshirib, qo‘lda yuboring.`,
     rejectReasonPrompt: "Rad etish sababi (ixtiyoriy):",
+    rejectConfirm: (n) => `#${n} buyurtmani rad etasizmi? Xaridorga xabar beriladi.`,
     rejectNotNotified:
       "Buyurtma rad etildi, lekin xaridorga xabar berib bo‘lmadi — o‘zingiz yozing.\n\nInstagram odamning oxirgi xabaridan 24 soatdan keyin yozishga ruxsat bermaydi.",
     remindConfirm: (n) =>
@@ -428,8 +443,14 @@ function OrdersPage() {
       setBusy(null);
     }
   }
-  async function onReject(id: number) {
-    const note = prompt(tr.rejectReasonPrompt) || undefined;
+  async function onReject(id: number, displayNo: number) {
+    // prompt() returns null on Cancel/Esc — `null || undefined` used to
+    // collapse that into the same "no reason given" value as an empty
+    // confirm, so cancelling the dialog still rejected the order.
+    const raw = prompt(tr.rejectReasonPrompt);
+    if (raw === null) return;
+    const note = raw.trim() || undefined;
+    if (!(await confirmToast(tr.rejectConfirm(displayNo)))) return;
     setBusy(id);
     try {
       const result = await rejectOrder({ data: { id, note } });
@@ -440,6 +461,8 @@ function OrdersPage() {
       if (!result.customerNotified) {
         toast.warning(tr.rejectNotNotified);
       }
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -523,7 +546,13 @@ function OrdersPage() {
 
       {list.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          {allOrders.length === 0 ? tr.noOrdersYet : tr.platformNoOrders}
+          {orders.isLoading
+            ? tr.loading
+            : orders.isError
+              ? tr.loadError(errorMessage(orders.error))
+              : allOrders.length === 0
+                ? tr.noOrdersYet
+                : tr.platformNoOrders}
         </p>
       )}
       <div className="space-y-3">
@@ -646,7 +675,7 @@ function OrdersPage() {
                   </Button>
                   <Button
                     variant="destructive"
-                    onClick={() => onReject(o.id)}
+                    onClick={() => onReject(o.id, o.order_no ?? o.id)}
                     disabled={busy === o.id}
                   >
                     {tr.reject}
