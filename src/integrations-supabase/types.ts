@@ -1175,7 +1175,7 @@ export type Database = {
           user_key: string | null;
           platform: string;
           delivery_index: number;
-          // MIGRATION-33. Сколько раз подряд откатывалась выдача текущей
+          // MIGRATION-32. Сколько раз подряд откатывалась выдача текущей
           // позиции заказа — потолок автоматических повторов (Блок 1.7).
           // Тот же ручной патч, что и у display_no выше.
           delivery_retry_count: number;

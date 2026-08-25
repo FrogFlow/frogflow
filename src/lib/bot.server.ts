@@ -322,9 +322,6 @@ async function upsertUser(from: {
       .single();
 
     if (error) console.error("[bot] updateUser error", error);
-    console.log(
-      `[bot] upsertUser(tg_${from.id}): state in DB is ${JSON.stringify(existing.state)}`,
-    );
     return (updated || existing) as BotUser;
   }
 
@@ -386,7 +383,6 @@ async function setState(telegram_id: number, state: BotUser["state"]) {
     }
   }
 
-  console.log(`[bot] setState(tg_${telegram_id}): saving state ${JSON.stringify(state)}`);
   // Обновляем по user_key если он существует, иначе по telegram_id (обратная совместимость)
   const userKey = `tg_${telegram_id}`;
   const { data: byKey } = await s
