@@ -37,6 +37,7 @@ import { Route as OperatorAuthedJournalRouteImport } from './routes/operator._au
 import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._authed.broadcast'
 import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
 import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
+import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
 import { Route as ApiInternalSetWebhookRouteImport } from './routes/api/internal/set-webhook'
 import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/reload'
 import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
@@ -44,6 +45,7 @@ import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/hea
 import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
 import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio-retry'
 import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
+import { Route as ApiCronMiscRetentionRouteImport } from './routes/api/cron/misc-retention'
 import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/manager-chat-prune'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
@@ -202,6 +204,12 @@ const ApiOperatorCronSubscriptionsRoute =
     path: '/api/operator-cron/subscriptions',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOperatorCronRetentionRoute =
+  ApiOperatorCronRetentionRouteImport.update({
+    id: '/api/operator-cron/retention',
+    path: '/api/operator-cron/retention',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiInternalSetWebhookRoute = ApiInternalSetWebhookRouteImport.update({
   id: '/api/internal/set-webhook',
   path: '/api/internal/set-webhook',
@@ -235,6 +243,11 @@ const ApiCronZernioRetryRoute = ApiCronZernioRetryRouteImport.update({
 const ApiCronZernioLogsPruneRoute = ApiCronZernioLogsPruneRouteImport.update({
   id: '/api/cron/zernio-logs-prune',
   path: '/api/cron/zernio-logs-prune',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCronMiscRetentionRoute = ApiCronMiscRetentionRouteImport.update({
+  id: '/api/cron/misc-retention',
+  path: '/api/cron/misc-retention',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCronManagerChatPruneRoute = ApiCronManagerChatPruneRouteImport.update({
@@ -356,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
+  '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
@@ -363,6 +377,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
+  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
@@ -407,6 +422,7 @@ export interface FileRoutesByTo {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
+  '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
@@ -414,6 +430,7 @@ export interface FileRoutesByTo {
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
+  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
@@ -461,6 +478,7 @@ export interface FileRoutesById {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
+  '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
@@ -468,6 +486,7 @@ export interface FileRoutesById {
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
+  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/_authed/broadcast': typeof OperatorAuthedBroadcastRoute
@@ -516,6 +535,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
     | '/api/cron/manager-chat-prune'
+    | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
@@ -523,6 +543,7 @@ export interface FileRouteTypes {
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
+    | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
     | '/operator/$botId'
     | '/operator/broadcast'
@@ -567,6 +588,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
     | '/api/cron/manager-chat-prune'
+    | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
@@ -574,6 +596,7 @@ export interface FileRouteTypes {
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
+    | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
     | '/operator/$botId'
     | '/operator/broadcast'
@@ -620,6 +643,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/ensure-webhook'
     | '/api/cron/manager-chat-prune'
+    | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/diagnostics'
@@ -627,6 +651,7 @@ export interface FileRouteTypes {
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
+    | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
     | '/operator/_authed/$botId'
     | '/operator/_authed/broadcast'
@@ -656,6 +681,7 @@ export interface RootRouteChildren {
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronEnsureWebhookRoute: typeof ApiCronEnsureWebhookRoute
   ApiCronManagerChatPruneRoute: typeof ApiCronManagerChatPruneRoute
+  ApiCronMiscRetentionRoute: typeof ApiCronMiscRetentionRoute
   ApiCronZernioLogsPruneRoute: typeof ApiCronZernioLogsPruneRoute
   ApiCronZernioRetryRoute: typeof ApiCronZernioRetryRoute
   ApiInternalDiagnosticsRoute: typeof ApiInternalDiagnosticsRoute
@@ -663,6 +689,7 @@ export interface RootRouteChildren {
   ApiInternalNotifyOwnerRoute: typeof ApiInternalNotifyOwnerRoute
   ApiInternalReloadRoute: typeof ApiInternalReloadRoute
   ApiInternalSetWebhookRoute: typeof ApiInternalSetWebhookRoute
+  ApiOperatorCronRetentionRoute: typeof ApiOperatorCronRetentionRoute
   ApiOperatorCronSubscriptionsRoute: typeof ApiOperatorCronSubscriptionsRoute
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
@@ -874,6 +901,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOperatorCronSubscriptionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/operator-cron/retention': {
+      id: '/api/operator-cron/retention'
+      path: '/api/operator-cron/retention'
+      fullPath: '/api/operator-cron/retention'
+      preLoaderRoute: typeof ApiOperatorCronRetentionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/set-webhook': {
       id: '/api/internal/set-webhook'
       path: '/api/internal/set-webhook'
@@ -921,6 +955,13 @@ declare module '@tanstack/react-router' {
       path: '/api/cron/zernio-logs-prune'
       fullPath: '/api/cron/zernio-logs-prune'
       preLoaderRoute: typeof ApiCronZernioLogsPruneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/misc-retention': {
+      id: '/api/cron/misc-retention'
+      path: '/api/cron/misc-retention'
+      fullPath: '/api/cron/misc-retention'
+      preLoaderRoute: typeof ApiCronMiscRetentionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/cron/manager-chat-prune': {
@@ -1143,6 +1184,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronEnsureWebhookRoute: ApiCronEnsureWebhookRoute,
   ApiCronManagerChatPruneRoute: ApiCronManagerChatPruneRoute,
+  ApiCronMiscRetentionRoute: ApiCronMiscRetentionRoute,
   ApiCronZernioLogsPruneRoute: ApiCronZernioLogsPruneRoute,
   ApiCronZernioRetryRoute: ApiCronZernioRetryRoute,
   ApiInternalDiagnosticsRoute: ApiInternalDiagnosticsRoute,
@@ -1150,6 +1192,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalNotifyOwnerRoute: ApiInternalNotifyOwnerRoute,
   ApiInternalReloadRoute: ApiInternalReloadRoute,
   ApiInternalSetWebhookRoute: ApiInternalSetWebhookRoute,
+  ApiOperatorCronRetentionRoute: ApiOperatorCronRetentionRoute,
   ApiOperatorCronSubscriptionsRoute: ApiOperatorCronSubscriptionsRoute,
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,

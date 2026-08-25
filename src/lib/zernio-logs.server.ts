@@ -7,9 +7,13 @@
  * За год это ~610 тыс. строк и больше гигабайта на логах, которые нужны
  * ровно до тех пор, пока разбирается конкретная доставка.
  *
- * Удаляются только `processed` старше 30 дней. `error` и `pending`
- * остаются: первое — единственный след того, что событие не отработало,
- * второе — незавершённая обработка, и удалять её значит потерять хвост.
+ * Удаляются `processed` старше 30 дней. `error` и `pending` живут дольше
+ * (по умолчанию 180 дней, ZERNIO_LOG_STALE_RETENTION_DAYS) — первое
+ * единственный след того, что событие не отработало, второе незавершённая
+ * обработка, терять её раньше времени нельзя. Но «никогда» — это тоже дырка
+ * в ретеншне (Блок 3.2, кейс 2): pending, зависший с 12 августа, никакая
+ * повторная обработка уже не подхватит, а он лежит вечно. Долгое окно
+ * оставляет время на разбор, не отменяя сам ретеншн.
  *
  * Живёт не отдельным кроном, а внутри уже работающего `/api/cron/broadcast`:
  * на тарифе Vercel Hobby свой cron нельзя (см. DEPLOYMENT.md), расписание
@@ -28,6 +32,12 @@ const RETENTION_DAYS = Math.min(
   Math.max(1, Number(process.env.ZERNIO_LOG_RETENTION_DAYS) || 30),
 );
 
+/** Сколько дней держим зависшие error/pending. Переопределяется ZERNIO_LOG_STALE_RETENTION_DAYS (1–365). */
+const STALE_RETENTION_DAYS = Math.min(
+  365,
+  Math.max(RETENTION_DAYS, Number(process.env.ZERNIO_LOG_STALE_RETENTION_DAYS) || 180),
+);
+
 /**
  * Потолок на один проход. Крон здесь serverless, и «удалить всё разом» на
  * накопленном хвосте упёрлось бы в таймаут, не удалив ничего: удаление идёт
@@ -44,10 +54,13 @@ export async function pruneZernioLogs(): Promise<{
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
 
   const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const staleCutoff = new Date(
+    Date.now() - STALE_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
 
   // Сначала выбираем идентификаторы: PostgREST не умеет LIMIT в DELETE, а без
   // ограничения проход снова стал бы «всё разом».
-  const { data: doomed, error: selectError } = await supabaseAdmin
+  const { data: doomedProcessed, error: selectError } = await supabaseAdmin
     .from("zernio_logs")
     .select("id")
     .eq("status", "processed")
@@ -55,24 +68,36 @@ export async function pruneZernioLogs(): Promise<{
     .limit(BATCH);
 
   if (selectError) throw new Error(selectError.message);
-  if (!doomed || doomed.length === 0) {
+
+  const ids = (doomedProcessed ?? []).map((row) => row.id);
+
+  // Остаток порции — под error/pending старше долгого окна. Обычная разница
+  // между 30 и 180 днями означает, что processed почти всегда выбирает всю
+  // BATCH сама, и до второго запроса дело не доходит на растущей таблице —
+  // это ожидаемо, застрявших error/pending на порядки меньше.
+  if (ids.length < BATCH) {
+    const { data: doomedStale, error: staleError } = await supabaseAdmin
+      .from("zernio_logs")
+      .select("id")
+      .in("status", ["error", "pending"])
+      .lt("created_at", staleCutoff)
+      .limit(BATCH - ids.length);
+    if (staleError) throw new Error(staleError.message);
+    ids.push(...(doomedStale ?? []).map((row) => row.id));
+  }
+
+  if (ids.length === 0) {
     return { deleted: 0, done: true, retentionDays: RETENTION_DAYS };
   }
 
-  const { error: deleteError } = await supabaseAdmin
-    .from("zernio_logs")
-    .delete()
-    .in(
-      "id",
-      doomed.map((row) => row.id),
-    );
+  const { error: deleteError } = await supabaseAdmin.from("zernio_logs").delete().in("id", ids);
 
   if (deleteError) throw new Error(deleteError.message);
 
   return {
-    deleted: doomed.length,
+    deleted: ids.length,
     // Набрали полную порцию — значит, скорее всего, осталось ещё.
-    done: doomed.length < BATCH,
+    done: ids.length < BATCH,
     retentionDays: RETENTION_DAYS,
   };
 }

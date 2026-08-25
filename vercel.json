@@ -10,8 +10,10 @@
     { "path": "/api/cron/zernio-retry", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/zernio-logs-prune", "schedule": "0 3 * * *" },
     { "path": "/api/cron/manager-chat-prune", "schedule": "15 3 * * *" },
+    { "path": "/api/cron/misc-retention", "schedule": "30 3 * * *" },
     { "path": "/api/cron/ensure-webhook", "schedule": "0 * * * *" },
     { "path": "/api/public/vip/cron", "schedule": "30 * * * *" },
-    { "path": "/api/operator-cron/subscriptions", "schedule": "0 4 * * *" }
+    { "path": "/api/operator-cron/subscriptions", "schedule": "0 4 * * *" },
+    { "path": "/api/operator-cron/retention", "schedule": "45 3 * * *" }
   ]
 }

@@ -25,6 +25,8 @@ const TAG = `retention-test-${Date.now()}`;
 const OLD_ID = `${TAG}-old`;
 const FRESH_ID = `${TAG}-fresh`;
 const ERROR_ID = `${TAG}-error`;
+const STALE_ERROR_ID = `${TAG}-stale-error`;
+const STALE_PENDING_ID = `${TAG}-stale-pending`;
 
 const days = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
 
@@ -38,8 +40,13 @@ async function client() {
  * разным порогом кеш модулей надо сбрасывать — иначе второй вызов молча
  * отработает с первым значением.
  */
-async function prune(retentionDays: number) {
+async function prune(retentionDays: number, staleRetentionDays?: number) {
   process.env.ZERNIO_LOG_RETENTION_DAYS = String(retentionDays);
+  if (staleRetentionDays !== undefined) {
+    process.env.ZERNIO_LOG_STALE_RETENTION_DAYS = String(staleRetentionDays);
+  } else {
+    delete process.env.ZERNIO_LOG_STALE_RETENTION_DAYS;
+  }
   vi.resetModules();
   const { pruneZernioLogs } = await import("../src/lib/zernio-logs.server");
   return pruneZernioLogs();
@@ -65,7 +72,9 @@ describe.skipIf(!ready)("pruneZernioLogs", () => {
         payload: {},
         created_at: days(1),
       },
-      // Старое, но со следом ошибки — его удалять нельзя ни при каком возрасте.
+      // Старое, но со следом ошибки — при обычном (коротком) окне ретеншна
+      // удалять нельзя ни при каком возрасте, только когда истечёт долгое
+      // "зависшее" окно (STALE_RETENTION_DAYS, Блок 3.2).
       {
         event_id: ERROR_ID,
         event_type: "test",
@@ -73,17 +82,39 @@ describe.skipIf(!ready)("pruneZernioLogs", () => {
         payload: {},
         created_at: days(90),
       },
+      // Действительно зависшее — старше и долгого окна тоже.
+      {
+        event_id: STALE_ERROR_ID,
+        event_type: "test",
+        status: "error",
+        payload: {},
+        created_at: days(400),
+      },
+      {
+        event_id: STALE_PENDING_ID,
+        event_type: "test",
+        status: "pending",
+        payload: {},
+        created_at: days(400),
+      },
     ]);
     if (error) throw new Error(`не удалось подготовить строки: ${error.message}`);
   });
 
   afterAll(async () => {
     const s = await client();
-    await s.from("zernio_logs").delete().in("event_id", [OLD_ID, FRESH_ID, ERROR_ID]);
+    await s
+      .from("zernio_logs")
+      .delete()
+      .in("event_id", [OLD_ID, FRESH_ID, ERROR_ID, STALE_ERROR_ID, STALE_PENDING_ID]);
     delete process.env.ZERNIO_LOG_RETENTION_DAYS;
+    delete process.env.ZERNIO_LOG_STALE_RETENTION_DAYS;
   });
 
-  it("удаляет отработанное старше порога и не трогает свежее и ошибки", async () => {
+  it("удаляет отработанное старше порога и не трогает свежее и недавние ошибки", async () => {
+    // Долгое окно (STALE_RETENTION_DAYS) не задано — берёт умолчание в 180
+    // дней (Блок 3.2): 90-дневная ошибка младше него и выживает, 400-дневные
+    // error/pending — нет.
     const result = await prune(30);
     expect(result.retentionDays).toBe(30);
     expect(result.deleted).toBeGreaterThan(0);
@@ -92,12 +123,14 @@ describe.skipIf(!ready)("pruneZernioLogs", () => {
     const { data } = await s
       .from("zernio_logs")
       .select("event_id")
-      .in("event_id", [OLD_ID, FRESH_ID, ERROR_ID]);
+      .in("event_id", [OLD_ID, FRESH_ID, ERROR_ID, STALE_ERROR_ID, STALE_PENDING_ID]);
 
     const survivors = (data ?? []).map((r) => r.event_id);
     expect(survivors).not.toContain(OLD_ID);
     expect(survivors).toContain(FRESH_ID);
     expect(survivors).toContain(ERROR_ID);
+    expect(survivors).not.toContain(STALE_ERROR_ID);
+    expect(survivors).not.toContain(STALE_PENDING_ID);
   });
 
   it("сообщает done, когда удалять нечего", async () => {
