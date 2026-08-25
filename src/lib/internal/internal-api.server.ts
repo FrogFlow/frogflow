@@ -34,6 +34,32 @@ function secretsMatch(a: string, b: string): boolean {
 
 export type InternalAuthResult = { ok: true } | { ok: false; status: number; message: string };
 
+// Спамить этот эндпоинт мусорным x-internal-secret ничего не стоит: заголовок
+// проверяется только через хеш, а настоящее значение лежит в базе, поэтому
+// каждый запрос без кэша означал бы отдельный поход в БД ДО того, как секрет
+// вообще сравнивается (Блок 1.5). TTL короткий — ротация секрета в панели
+// отражается почти сразу, но повторные невалидные попытки не долбят базу.
+const SECRET_CACHE_TTL_MS = 60 * 1000;
+let secretCache: { botId: string; value: string | null; expiresAt: number } | null = null;
+
+async function fetchInternalSecret(botId: string): Promise<string | null> {
+  if (secretCache && secretCache.botId === botId && secretCache.expiresAt > Date.now()) {
+    return secretCache.value;
+  }
+  const s = await db();
+  const { data, error } = await s.from("bots").select("internal_secret").eq("id", botId).single();
+
+  if (error || !data) {
+    console.error("[internal] не удалось прочитать internal_secret:", error?.message);
+    // Ошибку чтения не кэшируем — иначе временный сбой БД запирал бы вход на
+    // весь TTL вместо того, чтобы попробовать снова на следующем запросе.
+    return null;
+  }
+  const value = data.internal_secret || null;
+  secretCache = { botId, value, expiresAt: Date.now() + SECRET_CACHE_TTL_MS };
+  return value;
+}
+
 /**
  * Проверяет заголовок x-internal-secret против bots.internal_secret своей же
  * строки. Деплой ходит под ключом арендатора, которому RLS оставляет ровно
@@ -45,22 +71,15 @@ export async function authenticateInternalRequest(request: Request): Promise<Int
     return { ok: false, status: 401, message: "Missing x-internal-secret" };
   }
 
-  const s = await db();
-  const { data, error } = await s
-    .from("bots")
-    .select("internal_secret")
-    .eq("id", requireBotId())
-    .single();
-
-  if (error || !data) {
-    console.error("[internal] не удалось прочитать internal_secret:", error?.message);
+  const expected = await fetchInternalSecret(requireBotId());
+  if (expected === null) {
     return { ok: false, status: 500, message: "Internal secret unavailable" };
   }
   // Пустой секрет в базе не должен превращаться в «пускаем всех».
-  if (!data.internal_secret) {
+  if (!expected) {
     return { ok: false, status: 503, message: "Internal secret is not configured for this bot" };
   }
-  if (!secretsMatch(provided, data.internal_secret)) {
+  if (!secretsMatch(provided, expected)) {
     return { ok: false, status: 403, message: "Invalid secret" };
   }
   return { ok: true };

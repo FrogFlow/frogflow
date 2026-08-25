@@ -1,15 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { tg } from "@/lib/telegram.server";
-
-async function getBotUrl(): Promise<string | null> {
-  try {
-    const res = await tg("getMe", {});
-    const username = (res?.result as { username?: string })?.username;
-    return username ? `https://t.me/${username}` : null;
-  } catch {
-    return null;
-  }
-}
+import { getCachedBotUrl } from "@/lib/bot-url.server";
 
 function htmlPage(title: string, message: string, botUrl: string | null) {
   const redirectScript = botUrl
@@ -114,7 +104,7 @@ function htmlPage(title: string, message: string, botUrl: string | null) {
 }
 
 async function handleSuccess() {
-  const botUrl = await getBotUrl();
+  const botUrl = await getCachedBotUrl();
   const html = htmlPage(
     "Оплата прошла успешно!",
     "Спасибо! Платёж принят. Файлы уже отправлены в ваш Telegram-бот.",

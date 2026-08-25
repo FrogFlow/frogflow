@@ -101,16 +101,16 @@ export const rejectOrder = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
-    const { notifyOrderCustomer } = await import("./orders.server");
+    const { notifyOrderCustomer, rejectOrderSafely } = await import("./orders.server");
     await requireAdmin();
-    const s = await db();
-    const { data: order, error } = await s
-      .from("orders")
-      .update({ status: "rejected", admin_note: data.note ?? null })
-      .eq("id", data.id)
-      .select("order_no")
-      .single();
-    if (error) throw new Error(error.message);
+    // Only touch admin_note when the admin actually typed one — it also
+    // carries the `proof_auto` OCR marker, which an unconditional write
+    // here used to erase on every reject.
+    const claim = await rejectOrderSafely(data.id, data.note);
+    if (!claim.ok) {
+      throw new Error(`Заказ #${data.id} нельзя отклонить: статус уже «${claim.status}».`);
+    }
+    const order = claim.order;
 
     /**
      * Пишем туда, откуда пришёл заказ.

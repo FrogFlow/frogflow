@@ -2,12 +2,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { errorMessage } from "@/lib/error-message";
 import { isAdminAuthed } from "@/lib/admin-session.server";
 import { isOwnTenantStorageKey } from "@/lib/tenant-storage-key.server";
+import { isControlPlane } from "@/lib/control-plane.server";
 
 export const Route = createFileRoute("/api/admin/file/$")({
   server: {
     handlers: {
       GET: async ({ params, request }) => {
         try {
+          // Панель оператора (CONTROL_PLANE=1) не арендатор: isOwnTenantStorageKey
+          // пропускает непрефиксованные ключи без проверки BOT_ID, поэтому
+          // без этой проверки роут отдал бы чужой файл (см. control-plane.server.ts).
+          if (isControlPlane()) return new Response("Not found", { status: 404 });
           if (!(await isAdminAuthed())) return new Response("Unauthorized", { status: 401 });
           const splat = params._splat;
           if (!splat) return new Response("Not found (no splat)", { status: 404 });

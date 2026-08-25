@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { deliverOrder } from "@/lib/orders.server";
 import { verifyRobokassaResultSignature } from "@/lib/robokassa.server";
 import { logger } from "@/lib/logger.server";
+import { isControlPlane } from "@/lib/control-plane.server";
 
 export const Route = createFileRoute("/api/public/robokassa/result")({
   server: {
@@ -18,6 +19,13 @@ async function db() {
 }
 
 async function handleRobokassaResult(request: Request) {
+  // Панель оператора (CONTROL_PLANE=1) не арендатор: её service_role-подключение
+  // обходит RLS, а app_settings/orders ниже читаются без фильтра по bot_id —
+  // на клиентском деплое от этого спасает RLS, на панели нет (см.
+  // control-plane.server.ts).
+  if (isControlPlane()) {
+    return new Response("Not found", { status: 404 });
+  }
   let body: URLSearchParams;
   if (request.method === "POST") {
     const text = await request.text();

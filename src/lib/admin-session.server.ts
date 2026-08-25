@@ -1,8 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { useSession } from "@tanstack/react-start/server";
 import { assertTenantDeployment } from "./control-plane.server";
+import { passwordFingerprint } from "./password-fingerprint.server";
 
-export type AdminSession = { authed?: boolean };
+export type AdminSession = { authed?: boolean; passFp?: string };
+
+/** Fingerprint of the ADMIN_PASSWORD currently in effect — see password-fingerprint.server.ts. */
+export function adminPasswordFingerprint(): string {
+  return passwordFingerprint(process.env.ADMIN_PASSWORD);
+}
 
 /**
  * Секрет подписи cookie админки магазина.
@@ -44,16 +50,17 @@ export async function getAdminSession() {
 
 export async function isAdminAuthed(): Promise<boolean> {
   const s = await getAdminSession();
-  return s.data.authed === true;
+  // Сравниваем с текущим ADMIN_PASSWORD, а не только с флагом authed —
+  // иначе смена пароля в Vercel не отзывает уже выданные cookie (Блок 1.4).
+  return s.data.authed === true && s.data.passFp === adminPasswordFingerprint();
 }
 
 export async function requireAdmin() {
   // Панель — не арендатор: её подключение к базе идёт под service_role,
   // и клиентская админка там видела бы данные всех клиентов сразу.
   assertTenantDeployment();
-  const s = await getAdminSession();
-  if (s.data.authed !== true) {
+  if (!(await isAdminAuthed())) {
     throw new Error("Unauthorized");
   }
-  return s;
+  return getAdminSession();
 }

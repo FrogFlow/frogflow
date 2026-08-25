@@ -1,5 +1,19 @@
 /** Shared Telegram webhook / admin-id helpers (server-only). */
 
+import { createHash, timingSafeEqual } from "node:crypto";
+
+/**
+ * Сравнение без утечки по времени — через хеши одинаковой длины. Все
+ * остальные секреты в проекте (админский вход, internal_secret) уже
+ * сравниваются так; вебхуки Telegram раньше были единственным исключением
+ * (Блок 1.5).
+ */
+export function timingSafeSecretEqual(a: string, b: string): boolean {
+  const ha = createHash("sha256").update(a).digest();
+  const hb = createHash("sha256").update(b).digest();
+  return timingSafeEqual(ha, hb);
+}
+
 export function verifyTelegramWebhookSecret(request: Request, envNames: string[]): boolean {
   const expected = envNames.map((n) => process.env[n]).find((v) => v && v.length > 0);
   if (!expected) {
@@ -11,7 +25,8 @@ export function verifyTelegramWebhookSecret(request: Request, envNames: string[]
     return false;
   }
   const header = request.headers.get("x-telegram-bot-api-secret-token");
-  return header === expected;
+  if (!header) return false;
+  return timingSafeSecretEqual(header, expected);
 }
 
 /** Collect unique admin Telegram IDs from app_settings keys. */

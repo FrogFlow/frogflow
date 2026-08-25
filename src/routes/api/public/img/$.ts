@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isOwnTenantStorageKey } from "@/lib/tenant-storage-key.server";
+import { isControlPlane } from "@/lib/control-plane.server";
 
 function resolveBucketAndKey(splat: string): { bucket: string; key: string } {
   if (splat.startsWith("broadcast-images/")) {
@@ -15,6 +16,13 @@ export const Route = createFileRoute("/api/public/img/$")({
   server: {
     handlers: {
       GET: async ({ params }) => {
+        // Панель оператора (CONTROL_PLANE=1) не арендатор: isOwnTenantStorageKey
+        // пропускает непрефиксованные (доисторические) ключи без проверки
+        // BOT_ID вовсе, поэтому на панели этот роут отдавал бы любой такой
+        // файл любого клиента без проверки.
+        if (isControlPlane()) {
+          return new Response("Not found", { status: 404 });
+        }
         const splat = params._splat;
         if (!splat) return new Response("Not found", { status: 404 });
         const { bucket, key } = resolveBucketAndKey(splat);

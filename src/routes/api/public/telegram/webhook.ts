@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { timingSafeSecretEqual } from "@/lib/telegram-webhook.server";
 
 async function runInBackground(task: () => Promise<void>) {
   try {
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/api/public/telegram/webhook")({
           return new Response("misconfigured", { status: 503 });
         }
         const secret = request.headers.get("x-telegram-bot-api-secret-token");
-        if (secret !== expectedSecret) {
+        if (!secret || !timingSafeSecretEqual(secret, expectedSecret)) {
           return new Response("forbidden", { status: 403 });
         }
 

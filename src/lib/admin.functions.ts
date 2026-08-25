@@ -1,6 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { adminSessionSecretReady, getAdminSession, isAdminAuthed } from "./admin-session.server";
+import {
+  adminPasswordFingerprint,
+  adminSessionSecretReady,
+  getAdminSession,
+  isAdminAuthed,
+} from "./admin-session.server";
 import { assertTenantDeployment } from "./control-plane.server";
 
 const LoginInput = z.object({ username: z.string().min(1), password: z.string().min(1) });
@@ -46,7 +51,7 @@ export const adminLogin = createServerFn({ method: "POST" })
 
     await recordAttempt(ip, true);
     const s = await getAdminSession();
-    await s.update({ authed: true });
+    await s.update({ authed: true, passFp: adminPasswordFingerprint() });
     return { ok: true as const };
   });
 

@@ -1,11 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
 import { isAdminAuthed } from "@/lib/admin-session.server";
+import { isControlPlane } from "@/lib/control-plane.server";
 
 export const Route = createFileRoute("/api/admin/upload")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        // Панель оператора (CONTROL_PLANE=1) не арендатор — у неё нет BOT_ID,
+        // и isAdminAuthed() сам по себе этого не проверяет (см.
+        // control-plane.server.ts).
+        if (isControlPlane()) {
+          return new Response("Not found", { status: 404 });
+        }
         if (!(await isAdminAuthed())) {
           return new Response("Unauthorized", { status: 401 });
         }

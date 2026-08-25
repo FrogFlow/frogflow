@@ -114,6 +114,38 @@ async function claimOrderForDelivery(orderId: number) {
 }
 
 /**
+ * Reject an order with the same compare-and-swap guard deliverOrder uses:
+ * a stray reject: tap or a stale button in the admin chat must not stomp a
+ * status that already left the awaiting-* set (delivered, delivering,
+ * already rejected). `note` is only written when the caller actually passed
+ * one — the admin_note column also carries the `proof_auto` OCR marker, and
+ * an unconditional write here used to erase it on every reject.
+ */
+export async function rejectOrderSafely(orderId: number, note?: string | null) {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+
+  const { data: order, error } = await supabaseAdmin
+    .from("orders")
+    .update({ status: "rejected", ...(note !== undefined ? { admin_note: note } : {}) })
+    .eq("id", orderId)
+    .in("status", [...DELIVERABLE_STATUSES])
+    .select("order_no, display_no, telegram_id")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (order) return { ok: true as const, order };
+
+  const { data: existing, error: readErr } = await supabaseAdmin
+    .from("orders")
+    .select("status")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (readErr) throw new Error(readErr.message);
+  if (!existing) throw new Error("Order not found");
+  return { ok: false as const, status: existing.status };
+}
+
+/**
  * Deliver product files as Telegram documents in batches.
  * Each item is claimed with compare-and-swap so parallel cron/admin cannot double-send.
  * Digital goods: always 1 file copy (quantity is for price only).

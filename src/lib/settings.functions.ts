@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
+import { isOwnTenantStorageKey } from "./tenant-storage-key.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -43,7 +44,11 @@ export const getLegalDocUploadUrl = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const ext = (data.filename.split(".").pop() || "pdf").toLowerCase().slice(0, 10);
-    const key = `${data.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    // legal-docs — бакет общий на все деплои (Storage не проходит через RLS);
+    // префикс BOT_ID — та же изоляция, что у product-images/product-files/
+    // broadcast-images (см. tenant-storage-key.server.ts).
+    const botId = process.env.BOT_ID?.trim() || "unknown";
+    const key = `${botId}/${data.kind}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const s = await db();
     const { data: signed, error } = await s.storage.from("legal-docs").createSignedUploadUrl(key);
     if (error || !signed) throw new Error(error?.message || "Upload error");
@@ -63,6 +68,13 @@ export const commitLegalDocFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     await requireAdmin();
+    // legal-docs — общий бакет; без этой проверки арендатор мог передать
+    // чужой (чужого bot_id) path — он бы сохранился как свой указатель и
+    // при следующей загрузке удалился бы вместо настоящего старого файла
+    // этого клиента (см. remove(oldPath) ниже).
+    if (!isOwnTenantStorageKey(data.path)) {
+      throw new Error("Invalid path");
+    }
     const s = await db();
     const pathKey = data.kind === "offer" ? "legal_offer_file" : "legal_privacy_file";
     const nameKey = data.kind === "offer" ? "legal_offer_filename" : "legal_privacy_filename";
@@ -122,7 +134,8 @@ export const getInstructionVideoUploadUrl = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const ext = (data.filename.split(".").pop() || "mp4").toLowerCase().slice(0, 10);
-    const key = `instruction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const botId = process.env.BOT_ID?.trim() || "unknown";
+    const key = `${botId}/instruction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const s = await db();
     try {
       const { data: buckets } = await s.storage.listBuckets();
@@ -146,6 +159,10 @@ export const commitInstructionVideoFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ path: z.string().min(1) }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
+    // Same cross-tenant path-confusion risk as commitLegalDocFn above.
+    if (!isOwnTenantStorageKey(data.path)) {
+      throw new Error("Invalid path");
+    }
     const s = await db();
     const { data: row } = await s
       .from("app_settings")

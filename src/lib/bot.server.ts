@@ -2950,12 +2950,16 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (!(await requireShopAdmin(from_id, chat_id))) return;
         const orderId = Number(data.slice(7));
         const s = await db();
-        const { data: order } = await s
-          .from("orders")
-          .update({ status: "rejected" })
-          .eq("id", orderId)
-          .select("order_no, display_no, telegram_id")
-          .single();
+        const { rejectOrderSafely } = await import("./orders.server");
+        const claim = await rejectOrderSafely(orderId);
+        if (!claim.ok) {
+          await tg("sendMessage", {
+            chat_id,
+            text: `⚠️ Заказ #${orderId} нельзя отклонить: статус уже «${claim.status}».`,
+          });
+          return;
+        }
+        const order = claim.order;
 
         // Пишем туда, откуда пришёл заказ: у покупателя из Instagram
         // telegram_id синтетический, и прямая отправка улетала в пустоту —

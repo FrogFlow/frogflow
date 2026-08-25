@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { useSession } from "@tanstack/react-start/server";
+import { passwordFingerprint } from "../password-fingerprint.server";
+
+/** Fingerprint of the OPERATOR_PASSWORD currently in effect — see password-fingerprint.server.ts. */
+export function operatorPasswordFingerprint(): string {
+  return passwordFingerprint(process.env.OPERATOR_PASSWORD);
+}
 
 /**
  * Секрет подписи cookie оператора.
@@ -36,7 +42,7 @@ function operatorSessionPassword(): string {
  *      вызываются по HTTP напрямую, beforeLoad их не прикрывает.
  */
 
-export type OperatorSession = { authed?: boolean; username?: string };
+export type OperatorSession = { authed?: boolean; username?: string; passFp?: string };
 
 const operatorSessionConfig = {
   password: operatorSessionPassword(),
@@ -64,7 +70,10 @@ export async function requireOperator(): Promise<Awaited<ReturnType<typeof getOp
     throw new Error("Not found");
   }
   const s = await getOperatorSession();
-  if (s.data.authed !== true) {
+  // Сравниваем с текущим OPERATOR_PASSWORD, а не только с флагом authed —
+  // иначе смена пароля в Vercel не отзывает уже выданные cookie (тот же
+  // Блок 1.4, что и у admin-session.server.ts).
+  if (s.data.authed !== true || s.data.passFp !== operatorPasswordFingerprint()) {
     throw new Error("Unauthorized");
   }
   return s;
@@ -80,5 +89,6 @@ export async function operatorRouteStatus(): Promise<
 > {
   if (process.env.CONTROL_PLANE !== "1") return "not_this_deployment";
   const s = await getOperatorSession();
-  return s.data.authed === true ? "authenticated" : "unauthenticated";
+  const authed = s.data.authed === true && s.data.passFp === operatorPasswordFingerprint();
+  return authed ? "authenticated" : "unauthenticated";
 }

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import {
   getOperatorSession,
+  operatorPasswordFingerprint,
   operatorRouteStatus,
   operatorSessionSecretReady,
 } from "./guard.server";
@@ -62,7 +63,11 @@ export const operatorLoginFn = createServerFn({ method: "POST" })
 
     await recordAttempt(data.username, ip, true);
     const s = await getOperatorSession();
-    await s.update({ authed: true, username: data.username });
+    await s.update({
+      authed: true,
+      username: data.username,
+      passFp: operatorPasswordFingerprint(),
+    });
     return { ok: true as const };
   });
 
