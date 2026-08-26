@@ -61,6 +61,8 @@ async function issuePersonalPromoCode(prefix: string, percent: number): Promise<
  * при каждом /start, а не только у по-настоящему новых пользователей.
  */
 export async function registerReferral(referredId: number, referrerIdRaw: string): Promise<void> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("referral"))) return;
   const referrerId = Number(referrerIdRaw);
   if (!Number.isFinite(referrerId) || referrerId <= 0 || referrerId === referredId) return;
 

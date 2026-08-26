@@ -3511,6 +3511,11 @@ export async function handleUpdate(update: TelegramUpdate) {
         return;
       }
       if (data.startsWith("rate:")) {
+        // hasModule — не только на кнопке в showMyOrders: старое сообщение с
+        // кнопкой «⭐ Оценить» остаётся рабочим в Telegram даже после того,
+        // как продавец отключил модуль. Проверяем здесь же, на самом
+        // действии, тем же приёмом, что и в awardPointsForDelivery.
+        if (!(await hasModule("review_request"))) return;
         const orderId = Number(data.slice(5));
         const { reviewableProductsForOrder } = await import("./reviews.server");
         const products = await reviewableProductsForOrder(orderId, from_id);
@@ -3538,6 +3543,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         return;
       }
       if (data.startsWith("rateproduct:")) {
+        if (!(await hasModule("review_request"))) return;
         const productId = data.slice(12);
         const { hasDeliveredPurchase } = await import("./reviews.server");
         if (!(await hasDeliveredPurchase(from_id, productId))) {
@@ -3558,6 +3564,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         return;
       }
       if (data.startsWith("stars:")) {
+        if (!(await hasModule("review_request"))) return;
         const [, productId, ratingRaw] = data.split(":");
         const rating = Number(ratingRaw);
         if (!isValidRating(rating)) return;
