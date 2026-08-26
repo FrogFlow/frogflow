@@ -110,6 +110,7 @@ function OperatorClientCard() {
     app_url: "",
     notes: "",
     paused_message: "",
+    tags: "",
   });
 
   useEffect(() => {
@@ -124,6 +125,7 @@ function OperatorClientCard() {
       app_url: b.app_url ?? "",
       notes: b.notes ?? "",
       paused_message: b.paused_message ?? "",
+      tags: b.tags.join(", "),
     });
   }, [botQuery.data]);
 
@@ -193,6 +195,10 @@ function OperatorClientCard() {
           app_url: meta.app_url.trim() || null,
           notes: meta.notes.trim() || null,
           paused_message: meta.paused_message.trim() || null,
+          tags: meta.tags
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
         },
       });
       await refetchBot();
@@ -235,6 +241,11 @@ function OperatorClientCard() {
           <h1 className="text-2xl font-semibold">{bot.bot_name}</h1>
           <Badge variant={st.variant}>{st.text}</Badge>
           {bot.archived_at && <Badge variant="outline">в архиве</Badge>}
+          {bot.tags.map((tag) => (
+            <Badge key={tag} variant="secondary">
+              {tag}
+            </Badge>
+          ))}
           <ArchiveButton botId={botId} archived={Boolean(bot.archived_at)} onDone={refetchBot} />
         </div>
       </div>
@@ -420,6 +431,17 @@ function OperatorClientCard() {
                   rows={2}
                   placeholder="Бот временно недоступен. Загляните чуть позже — мы уже разбираемся."
                 />
+              </div>
+              <div className="space-y-1">
+                <Label>Теги</Label>
+                <Input
+                  value={meta.tags}
+                  onChange={(e) => setMeta((m) => ({ ...m, tags: e.target.value }))}
+                  placeholder="Например: VIP, риск оттока"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Через запятую — свои метки для фильтра в списке клиентов.
+                </p>
               </div>
               <div className="space-y-1">
                 <Label>Заметки</Label>

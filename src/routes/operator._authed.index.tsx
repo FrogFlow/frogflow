@@ -72,6 +72,7 @@ function OperatorClientsPage() {
   const [filterSub, setFilterSub] = useState("all");
   const [filterHealth, setFilterHealth] = useState("all");
   const [filterModule, setFilterModule] = useState("all");
+  const [filterTag, setFilterTag] = useState("all");
   // Реал-тайм в этой панели — не вебсокеты (7 клиентов, один оператор, не
   // стоит того), а частый опрос: та же идея, что уже была у health ниже,
   // просто применена ко всем запросам страницы. Разная частота — по цене
@@ -121,7 +122,8 @@ function OperatorClientsPage() {
   // поиск и фильтры сужают только таблицу, чтобы не спрятать проблему у
   // клиента, которого не искали и не выбрали в фильтре.
   const q = search.trim().toLowerCase();
-  const filtersActive = filterSub !== "all" || filterHealth !== "all" || filterModule !== "all";
+  const filtersActive =
+    filterSub !== "all" || filterHealth !== "all" || filterModule !== "all" || filterTag !== "all";
   const filteredList = list.filter((b) => {
     if (q && !`${b.bot_name} ${b.owner_name ?? ""}`.toLowerCase().includes(q)) return false;
     if (filterSub !== "all" && b.subscription_state !== filterSub) return false;
@@ -132,8 +134,12 @@ function OperatorClientsPage() {
       if (filterHealth === "down" && !(h && !h.ok)) return false;
     }
     if (filterModule !== "all" && !b.modules.includes(filterModule as ModuleKey)) return false;
+    if (filterTag !== "all" && !b.tags.includes(filterTag)) return false;
     return true;
   });
+  // Список тегов для фильтра — только те, что реально кто-то проставил, а не
+  // выдуманный заранее справочник: тегов пока нет нигде, кроме карточки клиента.
+  const allTags = [...new Set(list.flatMap((b) => b.tags))].sort((a, b) => a.localeCompare(b));
 
   /**
    * Что требует внимания — одной строкой сверху. Состояние и так рассыпано по
@@ -261,6 +267,21 @@ function OperatorClientsPage() {
             ))}
           </SelectContent>
         </Select>
+        {allTags.length > 0 && (
+          <Select value={filterTag} onValueChange={setFilterTag}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Все теги" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Тег: все</SelectItem>
+              {allTags.map((tag) => (
+                <SelectItem key={tag} value={tag}>
+                  {tag}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         {filtersActive && (
           <Button
             size="sm"
@@ -269,6 +290,7 @@ function OperatorClientsPage() {
               setFilterSub("all");
               setFilterHealth("all");
               setFilterModule("all");
+              setFilterTag("all");
             }}
           >
             Сбросить фильтры
@@ -357,6 +379,15 @@ function OperatorClientsPage() {
                         <Badge variant="outline" className="ml-2">
                           в архиве
                         </Badge>
+                      )}
+                      {bot.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {bot.tags.map((tag) => (
+                            <Badge key={tag} variant="secondary" className="text-xs font-normal">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
                       )}
                     </TableCell>
                     <TableCell>

@@ -92,6 +92,7 @@ const BotMetaInput = z.object({
   app_url: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   paused_message: z.string().nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
 
 export const updateBotMetaFn = createServerFn({ method: "POST" })

@@ -23,6 +23,8 @@ type BotBase = {
   notes: string | null;
   subscription_plan: string | null;
   subscription_expires_at: string | null;
+  /** Метки оператора для фильтрации в панели (MIGRATION-47) — не видны клиенту. */
+  tags: string[];
 };
 
 /**
@@ -47,7 +49,7 @@ export async function listBots(includeArchived = false): Promise<BotListItem[]> 
   let query = s
     .from("bots")
     .select(
-      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings, archived_at, modules, owner_telegram_id",
+      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings, archived_at, modules, owner_telegram_id, tags",
     )
     .order("bot_name", { ascending: true });
   if (!includeArchived) query = query.is("archived_at", null);
@@ -77,6 +79,7 @@ export async function listBots(includeArchived = false): Promise<BotListItem[]> 
       notes: b.notes,
       subscription_plan: b.subscription_plan,
       subscription_expires_at: b.subscription_expires_at,
+      tags: b.tags ?? [],
       subscription_state: sub.state,
       subscription_days_left: sub.daysLeft,
       archived_at: b.archived_at,
@@ -115,7 +118,7 @@ export async function getBot(botId: string): Promise<BotDetail> {
     // Одной строкой, а не конкатенацией: PostgREST выводит типы строки только
     // из строкового литерала — склейка превращает результат в GenericStringError.
     .select(
-      "id, bot_name, owner_id, status, owner_name, owner_contact, owner_telegram_id, app_url, notes, paused_message, subscription_plan, subscription_expires_at, modules, internal_secret, archived_at",
+      "id, bot_name, owner_id, status, owner_name, owner_contact, owner_telegram_id, app_url, notes, paused_message, subscription_plan, subscription_expires_at, modules, internal_secret, archived_at, tags",
     )
     .eq("id", botId)
     .single();
@@ -140,6 +143,7 @@ export async function getBot(botId: string): Promise<BotDetail> {
     archived_at: data.archived_at,
     subscription_plan: data.subscription_plan,
     subscription_expires_at: data.subscription_expires_at,
+    tags: data.tags ?? [],
     modules,
   };
 }
@@ -230,6 +234,7 @@ export type BotMetaPatch = Partial<{
   app_url: string | null;
   notes: string | null;
   paused_message: string | null;
+  tags: string[];
 }>;
 
 export async function updateBotMeta(botId: string, patch: BotMetaPatch, actor: string) {
@@ -777,6 +782,7 @@ export async function exportClientsCsv(): Promise<{ csv: string; count: number }
       "Оплачено всего",
       "Валюта",
       "В архиве",
+      "Теги",
     ],
     bots.map((b) => {
       const rev = revenueByBot.get(b.id);
@@ -793,6 +799,7 @@ export async function exportClientsCsv(): Promise<{ csv: string; count: number }
         rev?.total ?? 0,
         rev ? (rev.mixed ? `${rev.currency} + др.` : rev.currency) : "",
         b.archived_at ? "да" : "нет",
+        b.tags.join(", "),
       ];
     }),
   );

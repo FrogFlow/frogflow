@@ -387,6 +387,8 @@ export type Database = {
           subscription_expires_at: string | null;
           created_at: string | null;
           updated_at: string | null;
+          // MIGRATION-47. Теги оператора для фильтрации в панели.
+          tags: string[];
         };
         Insert: {
           notes?: string | null;
@@ -408,6 +410,7 @@ export type Database = {
           subscription_expires_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
+          tags?: string[];
         };
         Update: {
           notes?: string | null;
@@ -429,6 +432,7 @@ export type Database = {
           subscription_expires_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
+          tags?: string[];
         };
         Relationships: [];
       };
