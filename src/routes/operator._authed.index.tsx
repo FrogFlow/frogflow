@@ -295,6 +295,15 @@ function OperatorClientsPage() {
   const wantsModule = list.filter((b) => requestedBotIds.has(b.id));
   if (wantsModule.length)
     attention.push({ text: "заказал подключение модуля", who: who(wantsModule) });
+  // Молчание бота — тот же сигнал, что уже красит ячейку «Заказы за 30 дн»
+  // амброй при 14+ днях; здесь порог жёстче (30) и клиент назван по имени,
+  // а не просто подсвечен цветом в таблице.
+  const noOrders = list.filter((b) => {
+    if (b.archived_at || !stats.data?.[b.id]) return false;
+    const days = daysSince(stats.data[b.id].last_order_at);
+    return days === null || days > 30;
+  });
+  if (noOrders.length) attention.push({ text: "нет заказов 30+ дней", who: who(noOrders) });
 
   async function onExport() {
     setExporting(true);
