@@ -247,6 +247,9 @@ function OperatorClientCard() {
               {tag}
             </Badge>
           ))}
+          {bot.owner_telegram_id != null && (
+            <OwnerTelegramLink telegramId={bot.owner_telegram_id} />
+          )}
           <ArchiveButton botId={botId} archived={Boolean(bot.archived_at)} onDone={refetchBot} />
         </div>
       </div>
@@ -1303,6 +1306,41 @@ function EnvBlockSection({
  * платежей должны переживать уход: их спрашивают и через год. Поэтому архив —
  * это дата в карточке, а строка остаётся на месте.
  */
+/**
+ * Раньше это был просто голый номер в форме — чтобы написать владельцу,
+ * приходилось копировать его вручную и искать в Telegram. tg://user?id=
+ * открывает чат напрямую в приложении, если оно у оператора установлено и
+ * этот пользователь ему знаком (писал раньше в каком-то общем чате/боту);
+ * если нет — работает кнопка «Скопировать» рядом как надёжный запасной путь.
+ */
+function OwnerTelegramLink({ telegramId }: { telegramId: number }) {
+  const [copied, setCopied] = useState(false);
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(String(telegramId));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <a
+        href={`tg://user?id=${telegramId}`}
+        className="inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-sm hover:bg-accent"
+      >
+        Написать в Telegram
+      </a>
+      <Button size="sm" variant="ghost" onClick={onCopy}>
+        {copied ? "Скопировано" : `ID: ${telegramId}`}
+      </Button>
+    </span>
+  );
+}
+
 function ArchiveButton({
   botId,
   archived,
