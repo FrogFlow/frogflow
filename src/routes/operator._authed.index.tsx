@@ -14,6 +14,7 @@ import {
   listFeedFn,
 } from "@/lib/operator/bots.functions";
 import { toast } from "sonner";
+import { Star } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import {
   ChartContainer,
@@ -120,6 +121,31 @@ function OperatorClientsPage() {
   const [filterTag, setFilterTag] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("bot_name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  // Закреплённые клиенты — личное предпочтение оператора, не данные для
+  // аудита или синхронизации между устройствами, поэтому localStorage, как и
+  // у дайджеста «с прошлого захода» выше по этому же файлу.
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("operator_pinned_bots");
+      if (raw) setPinnedIds(new Set(JSON.parse(raw)));
+    } catch {
+      // localStorage недоступен — просто ничего не закреплено, не критично.
+    }
+  }, []);
+  function togglePin(id: string) {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      try {
+        localStorage.setItem("operator_pinned_bots", JSON.stringify([...next]));
+      } catch {
+        // см. комментарий выше
+      }
+      return next;
+    });
+  }
   // Реал-тайм в этой панели — не вебсокеты (7 клиентов, один оператор, не
   // стоит того), а частый опрос: та же идея, что уже была у health ниже,
   // просто применена ко всем запросам страницы. Разная частота — по цене
@@ -215,6 +241,11 @@ function OperatorClientsPage() {
     }
   }
   const sortedList = [...filteredList].sort((a, b) => {
+    // Закреплённые — всегда наверху, вне зависимости от выбранной колонки
+    // сортировки; порядок сортировки применяется только внутри каждой
+    // группы (закреплённые/остальные).
+    const pinDiff = Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id));
+    if (pinDiff !== 0) return pinDiff;
     const va = sortValue(a);
     const vb = sortValue(b);
     const cmp =
@@ -624,6 +655,21 @@ function OperatorClientsPage() {
                       />
                     </TableCell>
                     <TableCell>
+                      <button
+                        type="button"
+                        onClick={() => togglePin(bot.id)}
+                        className="inline-flex items-center align-text-bottom mr-1"
+                        aria-label={pinnedIds.has(bot.id) ? "Открепить" : "Закрепить"}
+                        title={pinnedIds.has(bot.id) ? "Открепить" : "Закрепить наверху"}
+                      >
+                        <Star
+                          className={`h-3.5 w-3.5 ${
+                            pinnedIds.has(bot.id)
+                              ? "fill-amber-400 text-amber-500"
+                              : "text-muted-foreground/40 hover:text-muted-foreground"
+                          }`}
+                        />
+                      </button>
                       <Link
                         to="/operator/$botId"
                         params={{ botId: bot.id }}
