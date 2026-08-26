@@ -677,6 +677,35 @@ function SubscriptionSection({ botId }: { botId: string }) {
     setForm(emptyForm);
   }
 
+  /**
+   * Заполняет форму на N месяцев вперёд вместо ручного ввода дат каждый
+   * платёж — период считается от текущей даты окончания, если она ещё не
+   * прошла, иначе от сегодня (чтобы продление после просрочки не оставляло
+   * дыру). Сумма — по последней записи, если она есть: обычно не меняется
+   * от платежа к платежу. Не отправляет сама — оператор проверяет и жмёт
+   * «Записать», как при ручном вводе.
+   */
+  function onQuickExtend(months: number) {
+    const now = new Date();
+    const currentExpiry = sub.data?.expiresAt ? new Date(sub.data.expiresAt) : null;
+    const start =
+      currentExpiry && currentExpiry.getTime() > now.getTime()
+        ? new Date(currentExpiry.getTime() + 86_400_000)
+        : now;
+    const end = new Date(start);
+    end.setUTCMonth(end.getUTCMonth() + months);
+    end.setUTCDate(end.getUTCDate() - 1);
+
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    setEditingId(null);
+    setForm({
+      period_start: iso(start),
+      period_end: iso(end),
+      amount: list[0] ? String(list[0].amount) : emptyForm.amount,
+      note: "",
+    });
+  }
+
   async function onSubmitPayment(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -789,9 +818,21 @@ function SubscriptionSection({ botId }: { botId: string }) {
       </div>
 
       <form onSubmit={onSubmitPayment} className="space-y-3 border-t pt-3">
-        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
-          {editingId ? "Изменить платёж" : "Записать платёж"}
-        </h3>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+            {editingId ? "Изменить платёж" : "Записать платёж"}
+          </h3>
+          {!editingId && (
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="outline" onClick={() => onQuickExtend(1)}>
+                +1 мес
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => onQuickExtend(3)}>
+                +3 мес
+              </Button>
+            </div>
+          )}
+        </div>
         <div className="grid sm:grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label>Период с</Label>
