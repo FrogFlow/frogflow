@@ -21,6 +21,7 @@ import {
   listOwnerCandidatesFn,
   getHealthHistoryFn,
   exportHealthHistoryCsvFn,
+  listBotsFn,
 } from "@/lib/operator/bots.functions";
 import {
   listPendingModuleRequestsFn,
@@ -89,6 +90,13 @@ function OperatorClientCard() {
     queryKey: ["operator_bot_events", botId],
     queryFn: () => listBotEventsFn({ data: { botId } }),
     refetchInterval: 20_000,
+  });
+  // Лёгкий список для «← Пред. / След. →»: тот же порядок (по имени), что
+  // на главной странице по умолчанию — так переход предсказуем, даже если
+  // сюда пришли по прямой ссылке или после сортировки на списке.
+  const botsListQuery = useQuery({
+    queryKey: ["operator_bots_nav"],
+    queryFn: () => listBotsFn(),
   });
   // botQuery намеренно без опроса: его данные заполняют форму «Клиент» через
   // useEffect ниже, и тихий рефетч посреди правки затёр бы то, что оператор
@@ -224,6 +232,11 @@ function OperatorClientCard() {
   const bot = botQuery.data;
   const st = STATUS_LABEL[bot.status] ?? { text: bot.status, variant: "outline" as const };
 
+  const navList = botsListQuery.data ?? [];
+  const navIndex = navList.findIndex((b) => b.id === botId);
+  const prevBot = navIndex > 0 ? navList[navIndex - 1] : null;
+  const nextBot = navIndex >= 0 && navIndex < navList.length - 1 ? navList[navIndex + 1] : null;
+
   const groups = new Map<string, ModuleKey[]>();
   for (const key of MODULE_KEYS) {
     const g = moduleDef(key).group;
@@ -237,9 +250,31 @@ function OperatorClientCard() {
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <Link to="/operator" className="text-sm text-muted-foreground hover:underline">
-          ← Все клиенты
-        </Link>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link to="/operator" className="text-sm text-muted-foreground hover:underline">
+            ← Все клиенты
+          </Link>
+          {prevBot && (
+            <Link
+              to="/operator/$botId"
+              params={{ botId: prevBot.id }}
+              className="text-sm text-muted-foreground hover:underline"
+              title={prevBot.bot_name}
+            >
+              ← Пред.
+            </Link>
+          )}
+          {nextBot && (
+            <Link
+              to="/operator/$botId"
+              params={{ botId: nextBot.id }}
+              className="text-sm text-muted-foreground hover:underline"
+              title={nextBot.bot_name}
+            >
+              След. →
+            </Link>
+          )}
+        </div>
         <div className="flex items-center gap-3 mt-1 flex-wrap">
           <h1 className="text-2xl font-semibold">{bot.bot_name}</h1>
           <Badge variant={st.variant}>{st.text}</Badge>
