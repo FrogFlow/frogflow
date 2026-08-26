@@ -48,11 +48,32 @@ const PAGE_SIZE = 50;
 
 type FeedRow = Awaited<ReturnType<typeof listFeedFn>>[number];
 
+const RANGE_LABEL: Record<string, string> = {
+  today: "Сегодня",
+  "7d": "7 дней",
+  "30d": "30 дней",
+  all: "Всё время",
+};
+
+/** null — «всё время», без нижней границы. */
+function rangeSince(range: string): string | undefined {
+  const now = new Date();
+  if (range === "today") {
+    return new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    ).toISOString();
+  }
+  if (range === "7d") return new Date(now.getTime() - 7 * 86_400_000).toISOString();
+  if (range === "30d") return new Date(now.getTime() - 30 * 86_400_000).toISOString();
+  return undefined;
+}
+
 function JournalPage() {
   const bots = useQuery({ queryKey: ["operator_bots"], queryFn: () => listBotsFn() });
 
   const [botId, setBotId] = useState("all");
   const [kind, setKind] = useState("all");
+  const [range, setRange] = useState("all");
   const [rows, setRows] = useState<FeedRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -71,6 +92,7 @@ function JournalPage() {
         data: {
           botId: botId === "all" ? undefined : botId,
           kind: kind === "all" ? undefined : kind,
+          since: rangeSince(range),
           before,
         },
       });
@@ -89,7 +111,7 @@ function JournalPage() {
   useEffect(() => {
     load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [botId, kind]);
+  }, [botId, kind, range]);
 
   return (
     <div className="space-y-4">
@@ -121,6 +143,18 @@ function JournalPage() {
           <SelectContent>
             <SelectItem value="all">Все действия</SelectItem>
             {Object.entries(KIND_LABEL).map(([k, label]) => (
+              <SelectItem key={k} value={k}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={range} onValueChange={setRange}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Всё время" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(RANGE_LABEL).map(([k, label]) => (
               <SelectItem key={k} value={k}>
                 {label}
               </SelectItem>

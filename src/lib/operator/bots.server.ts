@@ -689,6 +689,8 @@ export type FeedFilter = {
   limit?: number;
   /** Строго раньше этой отметки времени — для подгрузки следующей страницы. */
   before?: string;
+  /** Не раньше этой отметки — для диапазона «сегодня/7 дней/30 дней» в Журнале. */
+  since?: string;
   botId?: string;
   kind?: string;
 };
@@ -702,6 +704,7 @@ export async function listFeed(filter: FeedFilter = {}): Promise<FeedEvent[]> {
     .order("at", { ascending: false })
     .limit(filter.limit ?? 50);
   if (filter.before) query = query.lt("at", filter.before);
+  if (filter.since) query = query.gte("at", filter.since);
   if (filter.botId) query = query.eq("bot_id", filter.botId);
   if (filter.kind) query = query.eq("kind", filter.kind);
 

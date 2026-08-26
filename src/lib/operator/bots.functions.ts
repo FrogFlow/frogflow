@@ -144,6 +144,7 @@ export const listFeedFn = createServerFn({ method: "GET" })
     z
       .object({
         before: z.string().optional(),
+        since: z.string().optional(),
         botId: z.string().uuid().optional(),
         kind: z.string().optional(),
       })
