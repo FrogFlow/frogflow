@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { listFeedFn, listBotsFn, exportFeedCsvFn } from "@/lib/operator/bots.functions";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
+import { Input } from "@/components-ui/input";
 import {
   Select,
   SelectContent,
@@ -81,6 +82,9 @@ function JournalPage() {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [exporting, setExporting] = useState(false);
+  // Клиентский, поверх уже загруженной страницы — как и другой поиск в
+  // панели: сужает то, что видно, не трогает «Показать ещё».
+  const [searchText, setSearchText] = useState("");
 
   async function onExport() {
     setExporting(true);
@@ -138,6 +142,13 @@ function JournalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [botId, kind, range]);
 
+  const q = searchText.trim().toLowerCase();
+  const filteredRows = q
+    ? rows.filter((e) =>
+        `${e.bot_name} ${e.actor} ${summarize(e.payload)}`.toLowerCase().includes(q),
+      )
+    : rows;
+
   return (
     <div className="space-y-4">
       <div>
@@ -186,6 +197,12 @@ function JournalPage() {
             ))}
           </SelectContent>
         </Select>
+        <Input
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Поиск по деталям…"
+          className="w-56"
+        />
         <Button size="sm" variant="outline" onClick={onExport} disabled={exporting}>
           {exporting ? "Выгружаю…" : "Скачать CSV"}
         </Button>
@@ -196,10 +213,16 @@ function JournalPage() {
       {!loading && !error && rows.length === 0 && (
         <p className="text-sm text-muted-foreground">Пока пусто.</p>
       )}
+      {!loading && !error && rows.length > 0 && filteredRows.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Ничего не найдено по «{searchText}» среди загруженного — попробуйте «Показать ещё» или
+          сузить период.
+        </p>
+      )}
 
-      {rows.length > 0 && (
+      {filteredRows.length > 0 && (
         <div className="bg-card border rounded-lg divide-y">
-          {rows.map((e) => (
+          {filteredRows.map((e) => (
             <div key={e.id} className="p-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
               <span className="text-muted-foreground tabular-nums shrink-0">
                 {new Date(e.at).toLocaleString("ru-RU")}
