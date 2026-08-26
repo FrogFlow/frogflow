@@ -87,7 +87,9 @@ function AdminLayout() {
 
               <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
 
-              <NavLink to="/admin/analytics">{t("analytics", locale)}</NavLink>
+              <NavLink to="/admin/analytics" locked={!modules.dashboard} locale={locale}>
+                {t("analytics", locale)}
+              </NavLink>
 
               <GroupNav
                 label={t("paymentGroup", locale)}
@@ -121,7 +123,11 @@ function AdminLayout() {
                 <GroupLink to="/admin/promo-codes" locked={!modules.coupons} locale={locale}>
                   {t("promoCodes", locale)}
                 </GroupLink>
-                <GroupLink to="/admin/gift-certificates" locale={locale}>
+                <GroupLink
+                  to="/admin/gift-certificates"
+                  locked={!modules.gift_certificates}
+                  locale={locale}
+                >
                   {t("giftCertificates", locale)}
                 </GroupLink>
                 <GroupLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
@@ -186,7 +192,31 @@ function AdminLayout() {
   );
 }
 
-function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+function NavLink({
+  to,
+  locked,
+  locale,
+  children,
+}: {
+  to: string;
+  locked?: boolean;
+  locale?: Locale;
+  children: React.ReactNode;
+}) {
+  if (locked) {
+    // Тот же приём, что у GroupLink: не disabled — клик всё равно должен
+    // объяснить, почему пункт недоступен, а не просто ничего не делать.
+    return (
+      <button
+        type="button"
+        title={locale ? t("moduleLocked", locale) : undefined}
+        className="px-2.5 py-1.5 rounded-md text-sm shrink-0 text-muted-foreground/60"
+        onClick={() => locale && toast(t("moduleLockedAlert", locale))}
+      >
+        {children} <span aria-hidden="true">🔒</span>
+      </button>
+    );
+  }
   return (
     <Link
       to={to}

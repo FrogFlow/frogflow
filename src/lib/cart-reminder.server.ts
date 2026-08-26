@@ -44,6 +44,8 @@ const VIEW_CART_BTN: Record<Locale, string> = {
 };
 
 export async function sendAbandonedCartReminders(): Promise<{ checked: number; sent: number }> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("cart_reminder"))) return { checked: 0, sent: 0 };
   const { tg } = await import("./telegram.server");
   const hours = await cartReminderHours();
   if (hours <= 0) return { checked: 0, sent: 0 };

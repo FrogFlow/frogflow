@@ -1867,7 +1867,8 @@ async function showCart(chat_id: number, user: BotUser) {
       if (pointsDiscount > 0) text += m.pointsDiscountLine(formatMoney(pointsDiscount, currency));
     }
   }
-  const giftCertificateCode = user.state?.gift_certificate_code;
+  const giftCertificatesOn = await hasModule("gift_certificates");
+  const giftCertificateCode = giftCertificatesOn ? user.state?.gift_certificate_code : undefined;
   let giftCertificateDiscount = 0;
   if (giftCertificateCode) {
     const found = await findValidGiftCertificate(giftCertificateCode);
@@ -1900,11 +1901,13 @@ async function showCart(chat_id: number, user: BotUser) {
         : { text: m.usePointsBtn, callback_data: "points:use" },
     ]);
   }
-  buttons.push([
-    giftCertificateCode
-      ? { text: m.removeGiftCertificateBtn, callback_data: "giftcert:clear" }
-      : { text: m.giftCertificateBtn, callback_data: "giftcert:enter" },
-  ]);
+  if (giftCertificatesOn) {
+    buttons.push([
+      giftCertificateCode
+        ? { text: m.removeGiftCertificateBtn, callback_data: "giftcert:clear" }
+        : { text: m.giftCertificateBtn, callback_data: "giftcert:enter" },
+    ]);
+  }
   // Большая корзина легко превышает лимит Telegram в 4096 символов — tg()
   // не бросает на отказе, и покупатель молча не получал вообще ничего
   // (Блок 4.4).
@@ -2315,7 +2318,9 @@ async function placeOrderInner(
     user = { ...user, state: rest };
   }
   // И для подарочного сертификата — тот же приём.
-  const giftCertificateInput = user.state?.gift_certificate_code ?? null;
+  const giftCertificateInput = (await hasModule("gift_certificates"))
+    ? (user.state?.gift_certificate_code ?? null)
+    : null;
   if (user.state?.gift_certificate_code !== undefined) {
     const { gift_certificate_code: _gift_certificate_code, ...rest } = user.state;
     user = { ...user, state: rest };

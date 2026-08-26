@@ -4,7 +4,7 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "tanstack-start",
-  "regions": ["fra1"],
+  "regions": ["icn1"],
   "crons": [
     { "path": "/api/cron/broadcast", "schedule": "*/1 * * * *" },
     { "path": "/api/cron/zernio-retry", "schedule": "*/2 * * * *" },

@@ -13,6 +13,7 @@
  * замена быстрому точному поиску.
  */
 import { parseSmartSearchIds } from "./smart-search";
+import { hasModule } from "./modules/modules.server";
 
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_CANDIDATES = 200;
@@ -39,6 +40,7 @@ export type SmartSearchCandidate = {
 
 export async function isSmartSearchEnabled(): Promise<boolean> {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) return false;
+  if (!(await hasModule("smart_search"))) return false;
   const s = await db();
   const { data } = await s
     .from("app_settings")

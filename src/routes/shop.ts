@@ -78,6 +78,10 @@ export const Route = createFileRoute("/shop")({
         if (isControlPlane()) {
           return new Response("Not found", { status: 404 });
         }
+        const { hasModule } = await import("@/lib/modules/modules.server");
+        if (!(await hasModule("web_storefront"))) {
+          return new Response("Not found", { status: 404 });
+        }
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const { resolvePrice } = await import("@/lib/pricing.server");
