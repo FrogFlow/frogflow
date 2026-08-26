@@ -1,5 +1,6 @@
 import { requireOperator } from "./guard.server";
 import { logEvent } from "./events.server";
+import { toCsv, isoDate } from "@/lib/csv";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -101,6 +102,37 @@ export async function listPayments(botId: string): Promise<Payment[]> {
     .order("period_end", { ascending: false });
   if (error) throw new Error(`Не удалось получить платежи: ${error.message}`);
   return (data ?? []) as Payment[];
+}
+
+/**
+ * Платежи одного клиента в CSV — та же вкладка «Подписка», для бухгалтерии
+ * вне панели. Тот же приём (BOM/«;»/toCsv), что у экспорта клиентов и
+ * Журнала.
+ */
+export async function exportPaymentsCsv(botId: string): Promise<{ csv: string; count: number }> {
+  await requireOperator();
+  const s = await db();
+  const { data: bot, error: botErr } = await s
+    .from("bots")
+    .select("bot_name")
+    .eq("id", botId)
+    .single();
+  if (botErr || !bot) throw new Error(`Клиент не найден: ${botErr?.message ?? botId}`);
+
+  const payments = await listPayments(botId);
+  const csv = toCsv(
+    ["Клиент", "Период с", "Период по", "Сумма", "Валюта", "Оплачено", "Примечание"],
+    payments.map((p) => [
+      bot.bot_name,
+      p.period_start,
+      p.period_end,
+      p.amount,
+      p.currency,
+      isoDate(p.paid_at),
+      p.note ?? "",
+    ]),
+  );
+  return { csv, count: payments.length };
 }
 
 export async function getSubscription(botId: string): Promise<SubscriptionStatus> {

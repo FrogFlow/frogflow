@@ -32,6 +32,7 @@ import {
   updatePaymentFn,
   deletePaymentFn,
   setPolicyFn,
+  exportPaymentsCsvFn,
 } from "@/lib/operator/subscriptions.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { formatBytes, daysSince } from "@/lib/operator/format";
@@ -640,6 +641,24 @@ function SubscriptionSection({ botId }: { botId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [policyBusy, setPolicyBusy] = useState(false);
+  const [exportingPayments, setExportingPayments] = useState(false);
+
+  async function onExportPayments() {
+    setExportingPayments(true);
+    try {
+      const res = await exportPaymentsCsvFn({ data: { botId } });
+      const url = URL.createObjectURL(new Blob([res.csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `payments-${botId}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) || "Не удалось выгрузить");
+    } finally {
+      setExportingPayments(false);
+    }
+  }
   const [policy, setPolicyState] = useState({
     on_overdue: "warn" as "warn" | "suspend",
     warn_days_before: 5,
@@ -786,9 +805,21 @@ function SubscriptionSection({ botId }: { botId: string }) {
       )}
 
       <div className="space-y-2">
-        <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
-          Платежи ({list.length})
-        </h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs uppercase tracking-wider text-muted-foreground">
+            Платежи ({list.length})
+          </h3>
+          {list.length > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onExportPayments}
+              disabled={exportingPayments}
+            >
+              {exportingPayments ? "Выгружаю…" : "Скачать CSV"}
+            </Button>
+          )}
+        </div>
         {list.length === 0 ? (
           <p className="text-sm text-muted-foreground">Пока ни одного.</p>
         ) : (

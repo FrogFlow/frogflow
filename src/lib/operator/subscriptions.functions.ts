@@ -10,6 +10,7 @@ import {
   setPolicy,
   getRevenueSummary,
   getRevenueByMonth,
+  exportPaymentsCsv,
 } from "./subscriptions.server";
 
 async function actor(): Promise<string> {
@@ -31,6 +32,14 @@ export const getRevenueByMonthFn = createServerFn({ method: "GET" }).handler(asy
   await requireOperator();
   return getRevenueByMonth();
 });
+
+/** Платежи клиента одним CSV — вкладка «Подписка» карточки. */
+export const exportPaymentsCsvFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return exportPaymentsCsv(data.botId);
+  });
 
 export const getSubscriptionFn = createServerFn({ method: "GET" })
   .validator((data: unknown) => BotIdInput.parse(data))
