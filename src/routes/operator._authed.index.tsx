@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   listBotsFn,
   listStatsFn,
@@ -11,6 +11,7 @@ import {
   exportClientsCsvFn,
   setModuleFn,
   updateBotMetaFn,
+  listFeedFn,
 } from "@/lib/operator/bots.functions";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
@@ -134,6 +135,14 @@ function OperatorClientsPage() {
     queryKey: ["operator_revenue_by_month"],
     queryFn: () => getRevenueByMonthFn(),
     refetchInterval: 15_000,
+  });
+  // Последние 50 записей журнала по всем клиентам — источник для дайджеста
+  // «что изменилось с прошлого захода» ниже. Того же эндпоинта, что у
+  // страницы «Журнал», лимит по умолчанию.
+  const feed = useQuery({
+    queryKey: ["operator_feed_recent"],
+    queryFn: () => listFeedFn({ data: {} }),
+    refetchInterval: 30_000,
   });
   const list = bots.data ?? [];
   const troubled = Object.values(health.data ?? {}).filter((h) => !h.ok).length;
@@ -318,6 +327,8 @@ function OperatorClientsPage() {
           </Link>
         </div>
       </div>
+
+      <SinceLastVisit feed={feed.data} moduleRequests={moduleRequests.data} />
 
       <div className="flex flex-wrap items-center gap-2">
         <Select value={filterSub} onValueChange={setFilterSub}>
@@ -954,6 +965,108 @@ function ModulesCell({ modules }: { modules: ModuleKey[] }) {
  * клиента (ссылкой на карточку) и все пункты, что не в порядке, тем же
  * текстом, что и в разделе «Готовность» самой карточки.
  */
+const LAST_SEEN_KEY = "operator_last_seen_at";
+
+// Совпадает с подписями в разделе «Журнал» — тот же журнал, просто по всем
+// клиентам сразу и за окно с прошлого захода вместо ленты за всё время.
+const KIND_LABEL: Record<string, string> = {
+  module_on: "модуль включён",
+  module_off: "модуль выключен",
+  pause: "пауза",
+  resume: "снят с паузы",
+  suspend: "приостановлен",
+  onboard: "подключение",
+  webhook: "вебхук",
+  env_block: "выдан блок переменных",
+  meta: "правка карточки",
+  payment: "платёж",
+  policy: "политика неоплаты",
+  message: "сообщение владельцу",
+};
+
+/**
+ * «Что изменилось с прошлого захода» — отметка времени живёт в localStorage
+ * браузера оператора, не на сервере: панель на одного оператора, синхронизация
+ * между устройствами не нужна, а серверная сессия и так недолгая. Момент
+ * сдвигается только по кнопке «Понятно», не при каждой перезагрузке страницы,
+ * иначе баннер не успевали бы прочитать.
+ */
+function SinceLastVisit({
+  feed,
+  moduleRequests,
+}: {
+  feed?: { at: string; kind: string }[];
+  moduleRequests?: { module_title: string; requested_at: string }[];
+}) {
+  // undefined — ещё не читали localStorage (первый рендер/гидратация),
+  // null — прочитали, но это первый заход вообще, сравнивать не с чем.
+  const [lastSeenAt, setLastSeenAt] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(LAST_SEEN_KEY);
+      if (v === null) localStorage.setItem(LAST_SEEN_KEY, new Date().toISOString());
+      setLastSeenAt(v);
+    } catch {
+      setLastSeenAt(null);
+    }
+  }, []);
+
+  if (!lastSeenAt || !feed || !moduleRequests) return null;
+
+  const newEvents = feed.filter((e) => e.at > lastSeenAt);
+  const newRequests = moduleRequests.filter((r) => r.requested_at > lastSeenAt);
+  if (newEvents.length === 0 && newRequests.length === 0) return null;
+
+  const counts = new Map<string, number>();
+  for (const e of newEvents) counts.set(e.kind, (counts.get(e.kind) ?? 0) + 1);
+  // Ограничение по умолчанию в listFeed() — если ленту забило под завязку,
+  // за длинный перерыв часть событий могла не влезть в выборку.
+  const maybeMore = newEvents.length >= 50;
+
+  function dismiss() {
+    const now = new Date().toISOString();
+    try {
+      localStorage.setItem(LAST_SEEN_KEY, now);
+    } catch {
+      // localStorage недоступен (приватный режим и т.п.) — баннер просто
+      // покажется снова при следующей загрузке, не критично.
+    }
+    setLastSeenAt(now);
+  }
+
+  return (
+    <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-900 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-medium text-sm text-blue-900 dark:text-blue-200">
+          С прошлого захода ({new Date(lastSeenAt).toLocaleString("ru-RU")})
+        </p>
+        <Button size="sm" variant="ghost" onClick={dismiss}>
+          Понятно
+        </Button>
+      </div>
+      <div className="text-sm text-blue-900 dark:text-blue-200/90 space-y-1">
+        {newRequests.length > 0 && (
+          <p>
+            Новых заявок на модуль: {newRequests.length} —{" "}
+            {newRequests.map((r) => r.module_title).join(", ")}
+          </p>
+        )}
+        {[...counts.entries()].map(([kind, n]) => (
+          <p key={kind}>
+            {KIND_LABEL[kind] ?? kind}: {n}
+          </p>
+        ))}
+        {maybeMore && (
+          <p className="text-xs text-blue-900/70 dark:text-blue-200/70">
+            Событий может быть больше — полная лента в разделе «Журнал».
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ReadinessAll({ bots }: { bots: { id: string; bot_name: string }[] }) {
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<Awaited<ReturnType<typeof checkReadinessAllFn>> | null>(null);
