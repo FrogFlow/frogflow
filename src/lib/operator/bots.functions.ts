@@ -21,6 +21,7 @@ import {
   checkReadinessAll,
   exportClientsCsv,
   getHealthHistory,
+  exportFeedCsv,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -254,6 +255,23 @@ export const getHealthHistoryFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireOperator();
     return getHealthHistory(data.botId);
+  });
+
+/** Журнал (с текущими фильтрами страницы) одним CSV. */
+export const exportFeedCsvFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        botId: z.string().uuid().optional(),
+        kind: z.string().optional(),
+        since: z.string().optional(),
+      })
+      .catch({})
+      .parse(data ?? {}),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return exportFeedCsv(data);
   });
 
 /** Чего не хватает самой панели. Пустые значения в блоке иначе всплывают уже на упавшем деплое клиента. */

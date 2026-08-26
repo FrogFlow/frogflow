@@ -5,7 +5,7 @@ import { logEvent } from "./events.server";
 import type { Json } from "@/integrations-supabase/types";
 import { computeState, readPolicy, type SubscriptionState } from "./subscriptions.server";
 import { errorMessage } from "@/lib/error-message";
-import { toCsv, isoDate } from "@/lib/csv";
+import { toCsv, isoDate, fetchAll } from "@/lib/csv";
 
 type BotStatus = "active" | "paused" | "suspended";
 
@@ -725,6 +725,71 @@ export async function listFeed(filter: FeedFilter = {}): Promise<FeedEvent[]> {
     payload: e.payload as Json,
     bot_name: names.get(e.bot_id) ?? "—",
   }));
+}
+
+/** Совпадает с подписями на странице «Журнал» — тот же справочник, отдельная копия ради независимости от клиентского файла. */
+const FEED_KIND_LABEL: Record<string, string> = {
+  module_on: "модуль включён",
+  module_off: "модуль выключен",
+  pause: "пауза",
+  resume: "снят с паузы",
+  suspend: "приостановлен",
+  onboard: "подключение",
+  webhook: "вебхук",
+  env_block: "выдан блок переменных",
+  meta: "правка карточки",
+  payment: "платёж",
+  policy: "политика неоплаты",
+  message: "сообщение владельцу",
+};
+
+function summarizeFeedPayload(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  return Object.entries(payload as Record<string, unknown>)
+    .filter(([k]) => k !== "sweep_marker")
+    .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
+    .join(" · ");
+}
+
+/**
+ * Журнал в CSV — тот же приём (BOM/«;»/toCsv), что и у экспорта клиентов,
+ * для разбора инцидентов задним числом вне панели. Без ограничения на
+ * количество строк — fetchAll() читает всё, что подпадает под фильтр,
+ * страницами по PAGE.
+ */
+export async function exportFeedCsv(
+  filter: Pick<FeedFilter, "botId" | "kind" | "since"> = {},
+): Promise<{ csv: string; count: number }> {
+  await requireOperator();
+  const s = await db();
+
+  const { data: bots, error: botsErr } = await s.from("bots").select("id, bot_name");
+  if (botsErr) throw new Error(`Не удалось получить клиентов: ${botsErr.message}`);
+  const names = new Map((bots ?? []).map((b) => [b.id, b.bot_name]));
+
+  const rows = await fetchAll((from, to) => {
+    let query = s
+      .from("bot_events")
+      .select("bot_id, at, actor, kind, payload")
+      .order("at", { ascending: false })
+      .range(from, to);
+    if (filter.since) query = query.gte("at", filter.since);
+    if (filter.botId) query = query.eq("bot_id", filter.botId);
+    if (filter.kind) query = query.eq("kind", filter.kind);
+    return query;
+  }, "журнал");
+
+  const csv = toCsv(
+    ["Дата", "Клиент", "Вид", "Оператор", "Детали"],
+    rows.map((e) => [
+      isoDate(e.at),
+      names.get(e.bot_id) ?? "—",
+      FEED_KIND_LABEL[e.kind] ?? e.kind,
+      e.actor,
+      summarizeFeedPayload(e.payload),
+    ]),
+  );
+  return { csv, count: rows.length };
 }
 
 /** Проверка готовности сразу по всем — после общего обновления кода удобнее, чем по одному. */

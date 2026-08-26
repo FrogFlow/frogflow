@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { errorMessage } from "@/lib/error-message";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { listFeedFn, listBotsFn } from "@/lib/operator/bots.functions";
+import { toast } from "sonner";
+import { listFeedFn, listBotsFn, exportFeedCsvFn } from "@/lib/operator/bots.functions";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
 import {
@@ -79,6 +80,30 @@ function JournalPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [exporting, setExporting] = useState(false);
+
+  async function onExport() {
+    setExporting(true);
+    try {
+      const res = await exportFeedCsvFn({
+        data: {
+          botId: botId === "all" ? undefined : botId,
+          kind: kind === "all" ? undefined : kind,
+          since: rangeSince(range),
+        },
+      });
+      const url = URL.createObjectURL(new Blob([res.csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `journal-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) || "Не удалось выгрузить");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function load(reset: boolean, before?: string) {
     if (reset) {
@@ -161,6 +186,9 @@ function JournalPage() {
             ))}
           </SelectContent>
         </Select>
+        <Button size="sm" variant="outline" onClick={onExport} disabled={exporting}>
+          {exporting ? "Выгружаю…" : "Скачать CSV"}
+        </Button>
       </div>
 
       {loading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
