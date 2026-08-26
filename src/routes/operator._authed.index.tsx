@@ -15,7 +15,14 @@ import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.func
 import { getRevenueSummaryFn } from "@/lib/operator/subscriptions.functions";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
-import { moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components-ui/select";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
 import { StorageDonut, DonutLegendRow, buildDonutSegments } from "@/components-ui/storage-donut";
@@ -60,6 +67,11 @@ function OperatorClientsPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
+  // Фильтры сверх текстового поиска — тоже клиентские: подписка и здоровье
+  // уже приходят в списке/health, модуль — по факту наличия в bot.modules.
+  const [filterSub, setFilterSub] = useState("all");
+  const [filterHealth, setFilterHealth] = useState("all");
+  const [filterModule, setFilterModule] = useState("all");
   // Реал-тайм в этой панели — не вебсокеты (7 клиентов, один оператор, не
   // стоит того), а частый опрос: та же идея, что уже была у health ниже,
   // просто применена ко всем запросам страницы. Разная частота — по цене
@@ -106,12 +118,22 @@ function OperatorClientsPage() {
 
   // Клиентская фильтрация: клиентов немного, бэкенд-поиск не нужен.
   // «Требует внимания» и счётчик неотвечающих считаются по полному списку —
-  // поиск сужает только таблицу, чтобы не спрятать проблему у клиента,
-  // которого не искали.
+  // поиск и фильтры сужают только таблицу, чтобы не спрятать проблему у
+  // клиента, которого не искали и не выбрали в фильтре.
   const q = search.trim().toLowerCase();
-  const filteredList = q
-    ? list.filter((b) => `${b.bot_name} ${b.owner_name ?? ""}`.toLowerCase().includes(q))
-    : list;
+  const filtersActive = filterSub !== "all" || filterHealth !== "all" || filterModule !== "all";
+  const filteredList = list.filter((b) => {
+    if (q && !`${b.bot_name} ${b.owner_name ?? ""}`.toLowerCase().includes(q)) return false;
+    if (filterSub !== "all" && b.subscription_state !== filterSub) return false;
+    if (filterHealth !== "all") {
+      const h = health.data?.[b.id];
+      const isOk = h?.ok === true;
+      if (filterHealth === "ok" && !isOk) return false;
+      if (filterHealth === "down" && !(h && !h.ok)) return false;
+    }
+    if (filterModule !== "all" && !b.modules.includes(filterModule as ModuleKey)) return false;
+    return true;
+  });
 
   /**
    * Что требует внимания — одной строкой сверху. Состояние и так рассыпано по
@@ -202,6 +224,58 @@ function OperatorClientsPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Select value={filterSub} onValueChange={setFilterSub}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Все подписки" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Подписка: все</SelectItem>
+            {Object.entries(SUB_LABEL).map(([k, label]) => (
+              <SelectItem key={k} value={k}>
+                {label.text}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={filterHealth} onValueChange={setFilterHealth}>
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="Все боты" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Здоровье: все</SelectItem>
+            <SelectItem value="ok">Отвечает</SelectItem>
+            <SelectItem value="down">Не отвечает</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={filterModule} onValueChange={setFilterModule}>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Все модули" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Модуль: все</SelectItem>
+            {MODULE_KEYS.map((k) => (
+              <SelectItem key={k} value={k}>
+                {moduleDef(k).title}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {filtersActive && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setFilterSub("all");
+              setFilterHealth("all");
+              setFilterModule("all");
+            }}
+          >
+            Сбросить фильтры
+          </Button>
+        )}
+      </div>
+
       <MoneySummary
         revenue={revenue.data}
         loading={revenue.isLoading}
@@ -242,7 +316,9 @@ function OperatorClientsPage() {
       )}
 
       {list.length > 0 && filteredList.length === 0 && (
-        <p className="text-sm text-muted-foreground">Ничего не найдено по «{search}».</p>
+        <p className="text-sm text-muted-foreground">
+          {q ? `Ничего не найдено по «${search}».` : "Под фильтр не попал ни один клиент."}
+        </p>
       )}
 
       {filteredList.length > 0 && (
