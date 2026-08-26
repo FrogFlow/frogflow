@@ -70,6 +70,34 @@ const SUB_LABEL: Record<
   grace_over: { text: "отсрочка кончилась", variant: "destructive" },
 };
 
+type SortKey = "bot_name" | "modules" | "subscription" | "orders" | "storage";
+
+function SortableHead({
+  label,
+  sortKey,
+  active,
+  dir,
+  onClick,
+}: {
+  label: string;
+  sortKey: SortKey;
+  active: SortKey;
+  dir: "asc" | "desc";
+  onClick: (key: SortKey) => void;
+}) {
+  const isActive = active === sortKey;
+  return (
+    <TableHead className="cursor-pointer select-none" onClick={() => onClick(sortKey)}>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className={`text-xs ${isActive ? "" : "opacity-0"}`}>
+          {isActive && dir === "asc" ? "▲" : "▼"}
+        </span>
+      </span>
+    </TableHead>
+  );
+}
+
 function OperatorClientsPage() {
   const qc = useQueryClient();
   // Архивные по умолчанию скрыты, но должны быть доступны: иначе убранный
@@ -90,6 +118,8 @@ function OperatorClientsPage() {
   const [filterHealth, setFilterHealth] = useState("all");
   const [filterModule, setFilterModule] = useState("all");
   const [filterTag, setFilterTag] = useState("all");
+  const [sortKey, setSortKey] = useState<SortKey>("bot_name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   // Реал-тайм в этой панели — не вебсокеты (7 клиентов, один оператор, не
   // стоит того), а частый опрос: та же идея, что уже была у health ниже,
   // просто применена ко всем запросам страницы. Разная частота — по цене
@@ -167,6 +197,40 @@ function OperatorClientsPage() {
     if (filterTag !== "all" && !b.tags.includes(filterTag)) return false;
     return true;
   });
+
+  // Сортировка по клику на заголовок. Клиентская, как и всё остальное на
+  // этой странице — сравнивать 7 клиентов не то, ради чего заводить бэкенд.
+  function sortValue(b: (typeof list)[number]): number | string {
+    switch (sortKey) {
+      case "bot_name":
+        return b.bot_name.toLowerCase();
+      case "modules":
+        return b.modules.length;
+      case "subscription":
+        return b.subscription_days_left ?? Infinity;
+      case "orders":
+        return stats.data?.[b.id]?.orders_30d ?? -1;
+      case "storage":
+        return stats.data?.[b.id]?.storage_bytes ?? -1;
+    }
+  }
+  const sortedList = [...filteredList].sort((a, b) => {
+    const va = sortValue(a);
+    const vb = sortValue(b);
+    const cmp =
+      typeof va === "string" && typeof vb === "string"
+        ? va.localeCompare(vb)
+        : Number(va) - Number(vb);
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "bot_name" ? "asc" : "desc");
+    }
+  }
   // Список тегов для фильтра — только те, что реально кто-то проставил, а не
   // выдуманный заранее справочник: тегов пока нет нигде, кроме карточки клиента.
   const allTags = [...new Set(list.flatMap((b) => b.tags))].sort((a, b) => a.localeCompare(b));
@@ -501,19 +565,49 @@ function OperatorClientsPage() {
                     aria-label="Выбрать всех"
                   />
                 </TableHead>
-                <TableHead>Клиент</TableHead>
+                <SortableHead
+                  label="Клиент"
+                  sortKey="bot_name"
+                  active={sortKey}
+                  dir={sortDir}
+                  onClick={toggleSort}
+                />
                 <TableHead>Бот</TableHead>
                 <TableHead>Статус</TableHead>
                 <TableHead>Владелец</TableHead>
-                <TableHead>Модули</TableHead>
-                <TableHead>Подписка</TableHead>
-                <TableHead>Заказы за 30 дн</TableHead>
-                <TableHead>Место</TableHead>
+                <SortableHead
+                  label="Модули"
+                  sortKey="modules"
+                  active={sortKey}
+                  dir={sortDir}
+                  onClick={toggleSort}
+                />
+                <SortableHead
+                  label="Подписка"
+                  sortKey="subscription"
+                  active={sortKey}
+                  dir={sortDir}
+                  onClick={toggleSort}
+                />
+                <SortableHead
+                  label="Заказы за 30 дн"
+                  sortKey="orders"
+                  active={sortKey}
+                  dir={sortDir}
+                  onClick={toggleSort}
+                />
+                <SortableHead
+                  label="Место"
+                  sortKey="storage"
+                  active={sortKey}
+                  dir={sortDir}
+                  onClick={toggleSort}
+                />
                 <TableHead>Деплой</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredList.map((bot) => {
+              {sortedList.map((bot) => {
                 const st = STATUS_LABEL[bot.status] ?? {
                   text: bot.status,
                   variant: "outline" as const,
