@@ -18,6 +18,17 @@ const MODEL = "claude-haiku-4-5-20251001";
 const MAX_CANDIDATES = 200;
 const MAX_QUERY_LEN = 200;
 const TIMEOUT_MS = 15_000;
+// Каждый вызов — реальные деньги на счету Anthropic, а бот открыт всем в
+// Telegram (не только покупателям). Без предохранителя один скучающий
+// человек, слающий несовпадающие запросы подряд, накручивает продавцу
+// счёт без всякого ограничения.
+const COOLDOWN_SECONDS = 45;
+const DAILY_LIMIT = 200;
+
+async function db() {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  return supabaseAdmin;
+}
 
 export type SmartSearchCandidate = {
   id: string;
@@ -28,13 +39,70 @@ export type SmartSearchCandidate = {
 
 export async function isSmartSearchEnabled(): Promise<boolean> {
   if (!process.env.ANTHROPIC_API_KEY?.trim()) return false;
-  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  const { data } = await supabaseAdmin
+  const s = await db();
+  const { data } = await s
     .from("app_settings")
     .select("value")
     .eq("key", "smart_search_enabled")
     .maybeSingle();
   return data?.value === "true";
+}
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Личный кулдаун покупателя — не чаще раза в COOLDOWN_SECONDS, независимо
+ * от того, сколько несовпадающих запросов он пришлёт подряд. Метка времени
+ * живёт в bot_users.state рядом с остальными полями состояния — отдельная
+ * таблица тут не нужна, это не история, а один таймстемп на пользователя.
+ */
+async function checkAndTouchCooldown(telegramId: number): Promise<boolean> {
+  const s = await db();
+  const { data: user } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+  const state =
+    user?.state && typeof user.state === "object" && !Array.isArray(user.state)
+      ? (user.state as Record<string, unknown>)
+      : {};
+  const last = typeof state.last_smart_search_at === "string" ? state.last_smart_search_at : null;
+  const now = Date.now();
+  if (last && now - new Date(last).getTime() < COOLDOWN_SECONDS * 1000) return false;
+
+  await s
+    .from("bot_users")
+    .update({ state: { ...state, last_smart_search_at: new Date(now).toISOString() } })
+    .eq("telegram_id", telegramId);
+  return true;
+}
+
+/**
+ * Общий дневной потолок вызовов на бота целиком — грубый предохранитель,
+ * не точный счётчик (обычное чтение-затем-запись, без CAS: гонка двух
+ * одновременных запросов у разных покупателей максимум даст +1 к лимиту в
+ * очень редком случае, а не пробьёт его многократно). Дата в самом
+ * значении — новый день сбрасывает счётчик сам, без отдельного крона.
+ */
+async function checkAndConsumeDailyLimit(): Promise<boolean> {
+  const s = await db();
+  const key = "smart_search_daily_count";
+  const { data } = await s.from("app_settings").select("value").eq("key", key).maybeSingle();
+  const [storedDate, storedCountRaw] = (data?.value ?? "").split(":");
+  const count = storedDate === todayKey() ? Number(storedCountRaw) || 0 : 0;
+  if (count >= DAILY_LIMIT) return false;
+
+  await s.from("app_settings").upsert({ key, value: `${todayKey()}:${count + 1}` });
+  return true;
+}
+
+/** Оба предохранителя разом — если хоть один не пройден, вызов LLM не делаем вовсе. */
+export async function consumeSmartSearchQuota(telegramId: number): Promise<boolean> {
+  if (!(await checkAndTouchCooldown(telegramId))) return false;
+  return checkAndConsumeDailyLimit();
 }
 
 /**
@@ -78,7 +146,11 @@ export async function smartSearchProductIds(
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 1024,
+        // 200 кандидатов (MAX_CANDIDATES) полными UUID в худшем случае —
+        // с запасом, чтобы модель не обрезала валидный JSON на середине
+        // массива id (обрезанный ответ раньше молча читался как «ничего не
+        // подходит», а не как ошибка).
+        max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),

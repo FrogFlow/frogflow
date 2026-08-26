@@ -7,6 +7,7 @@ import {
   legacyAsMaterials,
   materialsForOrderItem,
   materialsForOrderItemAnyLang,
+  parseDeliveredLanguages,
   type MaterialSnapshot,
   type DeliveryLangChoice,
 } from "./product-materials";
@@ -605,6 +606,13 @@ export async function resendOrderFiles(
   if (order.status !== "delivered") return { ok: false, reason: "not_delivered" };
 
   const items = (order.order_items as OrderItem[]) || [];
+  // order.delivery_lang_choice — только у заказов с delivery_lang_timing =
+  // "before" (язык спрошен ДО оформления, см. bot.server.ts
+  // proceedToLanguageOrPlace). У более распространённого сценария — язык
+  // спрашивается ВО ВРЕМЯ выдачи, кнопкой на каждую позицию — эта колонка
+  // остаётся null навсегда, а реально отправленный язык записан по каждой
+  // позиции отдельно в item.delivered_language (см. bot.server.ts,
+  // обработчик callback_data "lang_<lang>:").
   const langChoice = order.delivery_lang_choice as DeliveryLangChoice | null;
   let sent = 0;
   for (const item of items) {
@@ -625,10 +633,41 @@ export async function resendOrderFiles(
       if (langs.length > 0) sent++;
       continue;
     }
-    const materials =
-      langChoice && materialsForOrderItem(item, langChoice).length > 0
-        ? materialsForOrderItem(item, langChoice)
-        : materialsForOrderItemAnyLang(item);
+    if (langChoice && materialsForOrderItem(item, langChoice).length > 0) {
+      await sendMaterials(
+        telegramId,
+        materialsForOrderItem(item, langChoice),
+        item.name_snapshot,
+        1,
+      );
+      sent++;
+      continue;
+    }
+    // Ни "все языки", ни конкретный дозаказный выбор не применимы — берём
+    // то, что реально было отправлено на выдаче (может быть несколько
+    // языков, если покупатель запрашивал не один). Только если для этой
+    // позиции вообще ничего не записано (совсем старый заказ до этой
+    // колонки, либо магазин без мультиязычности), берём любой доступный —
+    // раньше отправлялось всегда именно так, независимо от того, что
+    // покупатель на самом деле получил.
+    const deliveredLangs = [...parseDeliveredLanguages(item.delivered_language)];
+    if (deliveredLangs.length > 0) {
+      for (const lang of deliveredLangs) {
+        const materials = materialsForOrderItem(item, lang);
+        if (materials.length === 0) continue;
+        await sendMaterials(
+          telegramId,
+          materials,
+          deliveredLangs.length > 1
+            ? `${item.name_snapshot} (${localeNames[lang]})`
+            : item.name_snapshot,
+          1,
+        );
+      }
+      sent++;
+      continue;
+    }
+    const materials = materialsForOrderItemAnyLang(item);
     if (materials.length === 0) continue;
     await sendMaterials(telegramId, materials, item.name_snapshot, 1);
     sent++;

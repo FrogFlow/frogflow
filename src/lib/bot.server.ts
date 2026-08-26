@@ -2544,6 +2544,22 @@ async function placeOrderInner(
 
   await s.from("cart_items").delete().eq("telegram_id", telegram_id);
 
+  // Скидки (промокод+баллы+сертификат) могут в сумме покрыть всю стоимость
+  // корзины — платить тогда нечего, и просить чек оплаты 0 ₸ (или вести на
+  // Robokassa с нулевой суммой) для покупателя, который просто накопил
+  // баллы или получил сертификат на полную стоимость, было бы тупиком. Тот
+  // же путь, что и у подтверждённого Robokassa-платежа (result.ts) — сразу
+  // выдаём, не спрашивая чек.
+  if (total <= 0) {
+    try {
+      const { deliverOrder } = await import("./orders.server");
+      await deliverOrder(order.id as number);
+    } catch (e) {
+      console.error(`[bot] deliverOrder failed for zero-total order ${order.id}`, e);
+    }
+    return;
+  }
+
   const rk = await loadRobokassaSettings();
   const cc = String(method?.country_code ?? country_code ?? "").toUpperCase();
   const instructions = (method?.instructions as string) || m.defaultInstructions;
@@ -3145,8 +3161,13 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     // сопоставить по смыслу. Включается отдельно от наличия ключа API (см.
     // isSmartSearchEnabled) — стоимость за вызов реальная, продавец должен
     // включить это сознательно.
-    const { isSmartSearchEnabled, smartSearchProductIds } = await import("./smart-search.server");
-    if (await isSmartSearchEnabled()) {
+    const { isSmartSearchEnabled, consumeSmartSearchQuota, smartSearchProductIds } =
+      await import("./smart-search.server");
+    // Личный кулдаун + общий дневной потолок — бот открыт всем в Telegram,
+    // не только покупателям, а вызов LLM стоит реальных денег продавцу.
+    // Превышение любого из двух молча приводит к «ничего не найдено», как
+    // и раньше — не отдельная ошибка, которую стоило бы объяснять.
+    if ((await isSmartSearchEnabled()) && (await consumeSmartSearchQuota(telegram_id))) {
       const { data: allActive } = await s
         .from("products")
         .select("*, product_images(image_path, sort_order)")

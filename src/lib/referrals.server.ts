@@ -101,20 +101,25 @@ export async function rewardReferralIfFirstDelivery(referredTelegramId: number):
   const s = await db();
   const { data: referral } = await s
     .from("referrals")
-    .select("id, referrer_telegram_id, status")
+    .select("id, referrer_telegram_id, status, created_at")
     .eq("referred_telegram_id", referredTelegramId)
     .maybeSingle();
   if (!referral || referral.status !== "pending") return;
 
-  // «Первая» — считаем прямо по факту: если это не первая, count будет
-  // больше 1, и мы просто ничего не делаем (награда уже случилась раньше
-  // или случится позже — статус referral это и решает, а не count).
+  // «Первая покупка после перехода по ссылке» — не «первая за всю историю
+  // аккаунта»: у постоянного клиента, который сначала что-то купил, а потом
+  // перешёл по чьей-то реферальной ссылке, общий счётчик доставленных
+  // заказов никогда не будет равен 1, и награда не пришла бы вообще
+  // (проверено по коду). CAS ниже (status pending→rewarded) сам защищает
+  // от двойной награды — считать заказы нужно только чтобы отличить
+  // «переход по ссылке был пустым» от «купил хоть раз после перехода».
   const { count } = await s
     .from("orders")
     .select("id", { count: "exact", head: true })
     .eq("telegram_id", referredTelegramId)
-    .eq("status", "delivered");
-  if ((count ?? 0) !== 1) return;
+    .eq("status", "delivered")
+    .gte("created_at", referral.created_at);
+  if ((count ?? 0) < 1) return;
 
   // CAS: чужой параллельный вызов (два независимых заказа выданы почти
   // одновременно) не наградит пригласившего дважды.
