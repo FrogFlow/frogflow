@@ -8,6 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { operatorLogoutFn, operatorRouteStatusFn } from "@/lib/operator/operator-auth.functions";
+import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components-ui/button";
 
 /** Pathless layout — no URL segment of its own, just the auth gate + chrome for everything under /operator except /operator/login. */
@@ -36,6 +38,7 @@ function OperatorLayout() {
               Панель оператора
             </Link>
             <NavLink to="/operator">Клиенты</NavLink>
+            <RequestsNavLink />
             <NavLink to="/operator/broadcast">Рассылка</NavLink>
             <NavLink to="/operator/journal">Журнал</NavLink>
           </div>
@@ -55,6 +58,21 @@ function OperatorLayout() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+/** Бейдж с числом необработанных заявок — тот же приём, что у непрочитанных в чате менеджера. */
+function RequestsNavLink() {
+  const requests = useQuery({
+    queryKey: ["operator_module_requests"],
+    queryFn: () => listPendingModuleRequestsFn(),
+    refetchInterval: 15_000,
+  });
+  const count = requests.data?.length ?? 0;
+  return (
+    <NavLink to="/operator/requests">
+      Заявки{count > 0 && <span className="ml-1 text-primary font-semibold">({count})</span>}
+    </NavLink>
   );
 }
 

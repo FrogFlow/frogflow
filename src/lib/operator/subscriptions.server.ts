@@ -244,6 +244,39 @@ export async function deletePayment(botId: string, paymentId: string, actor: str
   await logEvent(botId, actor, "payment", { action: "deleted", payment_id: paymentId });
 }
 
+export type RevenueTotals = { currency: string; total_all_time: number; total_this_month: number };
+
+/**
+ * Сколько всего заплатили клиенты — сгруппировано по валюте (каждая сумма в
+ * своей, конвертацию платёж-в-платёж не выдумываем). "В этом месяце" — по
+ * paid_at (когда деньги реально пришли), не по periodu, который может быть в
+ * будущем при предоплате.
+ */
+export async function getRevenueSummary(): Promise<RevenueTotals[]> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s.from("subscription_payments").select("amount, currency, paid_at");
+  if (error) throw new Error(`Не удалось получить платежи: ${error.message}`);
+
+  const now = new Date();
+  const monthStartIso = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  ).toISOString();
+
+  const map = new Map<string, RevenueTotals>();
+  for (const p of data ?? []) {
+    const cur = map.get(p.currency) ?? {
+      currency: p.currency,
+      total_all_time: 0,
+      total_this_month: 0,
+    };
+    cur.total_all_time += Number(p.amount);
+    if (p.paid_at >= monthStartIso) cur.total_this_month += Number(p.amount);
+    map.set(p.currency, cur);
+  }
+  return [...map.values()];
+}
+
 export async function setPolicy(botId: string, policy: OverduePolicy, actor: string) {
   await requireOperator();
   const s = await db();

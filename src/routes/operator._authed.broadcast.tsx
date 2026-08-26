@@ -5,6 +5,7 @@ import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { listBotsFn } from "@/lib/operator/bots.functions";
+import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
 import { broadcastToOwnersFn, listBroadcastsFn } from "@/lib/operator/broadcast.functions";
 import type { DeliveryResult, DeliveryStatus } from "@/lib/operator/broadcast.server";
 import { Badge } from "@/components-ui/badge";
@@ -41,10 +42,20 @@ function DeliveryRow({ r }: { r: DeliveryResult }) {
 
 function OperatorBroadcastPage() {
   const qc = useQueryClient();
-  const bots = useQuery({ queryKey: ["operator_bots"], queryFn: () => listBotsFn() });
+  const bots = useQuery({
+    queryKey: ["operator_bots"],
+    queryFn: () => listBotsFn(),
+    refetchInterval: 15_000,
+  });
+  const moduleRequests = useQuery({
+    queryKey: ["operator_module_requests"],
+    queryFn: () => listPendingModuleRequestsFn(),
+    refetchInterval: 15_000,
+  });
   const history = useQuery({
     queryKey: ["operator_broadcasts"],
     queryFn: () => listBroadcastsFn(),
+    refetchInterval: 30_000,
   });
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -54,6 +65,14 @@ function OperatorBroadcastPage() {
 
   const list = bots.data ?? [];
   const allSelected = list.length > 0 && selected.size === list.length;
+  const overdueIds = list
+    .filter((b) => ["overdue", "grace_over"].includes(b.subscription_state))
+    .map((b) => b.id);
+  const requestedIds = [...new Set((moduleRequests.data ?? []).map((r) => r.bot_id))];
+
+  function selectSegment(ids: string[]) {
+    setSelected(new Set(ids));
+  }
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -103,15 +122,27 @@ function OperatorBroadcastPage() {
       </div>
 
       <section className="bg-card border rounded-lg p-4 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <h2 className="font-medium">Получатели</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelected(allSelected ? new Set() : new Set(list.map((b) => b.id)))}
-          >
-            {allSelected ? "Снять всё" : "Выбрать всех"}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {overdueIds.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => selectSegment(overdueIds)}>
+                Просроченные ({overdueIds.length})
+              </Button>
+            )}
+            {requestedIds.length > 0 && (
+              <Button variant="outline" size="sm" onClick={() => selectSegment(requestedIds)}>
+                С заявкой на модуль ({requestedIds.length})
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelected(allSelected ? new Set() : new Set(list.map((b) => b.id)))}
+            >
+              {allSelected ? "Снять всё" : "Выбрать всех"}
+            </Button>
+          </div>
         </div>
         {bots.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
         <div className="space-y-2">

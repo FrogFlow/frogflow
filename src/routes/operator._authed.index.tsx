@@ -10,6 +10,7 @@ import {
   checkReadinessAllFn,
 } from "@/lib/operator/bots.functions";
 import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
+import { getRevenueSummaryFn } from "@/lib/operator/subscriptions.functions";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { moduleDef, type ModuleKey } from "@/lib/modules/registry";
@@ -56,30 +57,46 @@ function OperatorClientsPage() {
   // своей карточке — попасть на неё становится неоткуда.
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
+  // Реал-тайм в этой панели — не вебсокеты (7 клиентов, один оператор, не
+  // стоит того), а частый опрос: та же идея, что уже была у health ниже,
+  // просто применена ко всем запросам страницы. Разная частота — по цене
+  // запроса: лёгкие (bots, module_requests, revenue) каждые 15 сек, тяжёлые
+  // (obходят деплои или считают Storage) — реже.
   const bots = useQuery({
     queryKey: ["operator_bots", showArchived],
     queryFn: () => listBotsFn({ data: { includeArchived: showArchived } }),
+    refetchInterval: 15_000,
   });
   // Отдельным запросом: сводка тяжелее списка (считает место в хранилище), и
   // таблица не должна ждать её, чтобы отрисоваться.
-  const stats = useQuery({ queryKey: ["operator_stats"], queryFn: () => listStatsFn() });
+  const stats = useQuery({
+    queryKey: ["operator_stats"],
+    queryFn: () => listStatsFn(),
+    refetchInterval: 30_000,
+  });
   // Здоровье — тоже отдельно: обход всех деплоев занимает секунды, а таблица
-  // должна появиться сразу. Обновляем раз в минуту, чтобы упавший бот не ждал
-  // перезагрузки страницы.
+  // должна появиться сразу.
   const health = useQuery({
     queryKey: ["operator_health"],
     queryFn: () => listHealthFn(),
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
   const moduleRequests = useQuery({
     queryKey: ["operator_module_requests"],
     queryFn: () => listPendingModuleRequestsFn(),
+    refetchInterval: 15_000,
   });
   // Тоже отдельным запросом — та же причина, что у stats выше: считает
   // размеры объектов в Storage, тяжелее списка.
   const storageByKind = useQuery({
     queryKey: ["operator_storage_by_kind"],
     queryFn: () => listStorageByKindFn(),
+    refetchInterval: 60_000,
+  });
+  const revenue = useQuery({
+    queryKey: ["operator_revenue"],
+    queryFn: () => getRevenueSummaryFn(),
+    refetchInterval: 15_000,
   });
   const list = bots.data ?? [];
   const troubled = Object.values(health.data ?? {}).filter((h) => !h.ok).length;
@@ -101,6 +118,7 @@ function OperatorClientsPage() {
   const who = (bots: typeof list) => bots.map((b) => ({ id: b.id, bot_name: b.bot_name }));
   const attention: { text: string; who: { id: string; bot_name: string }[] }[] = [];
   const overdue = list.filter((b) => ["overdue", "grace_over"].includes(b.subscription_state));
+  const expiringSoon = list.filter((b) => b.subscription_state === "expiring");
   if (overdue.length) attention.push({ text: "просрочена подписка", who: who(overdue) });
   const dead = list.filter((b) => health.data?.[b.id] && !health.data[b.id].ok);
   if (dead.length) attention.push({ text: "бот не отвечает", who: who(dead) });
@@ -160,6 +178,13 @@ function OperatorClientsPage() {
           </Link>
         </div>
       </div>
+
+      <MoneySummary
+        revenue={revenue.data}
+        loading={revenue.isLoading}
+        overdue={overdue}
+        expiringSoon={expiringSoon}
+      />
 
       {attention.length > 0 && (
         <div className="border rounded-lg p-4 bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900 space-y-1">
@@ -281,6 +306,83 @@ function OperatorClientsPage() {
 
       <StorageOverview bots={list} byKind={storageByKind.data} loading={storageByKind.isLoading} />
     </div>
+  );
+}
+
+/**
+ * Сколько денег в моменте — раньше это было видно только зайдя в каждого
+ * клиента по одному, во вкладку «Подписка». Просроченные/истекающие берутся
+ * из того же списка, что уже красит колонку «Подписка» в таблице — здесь
+ * просто вынесены наверх, отдельным списком с числом дней, чтобы понять, к
+ * кому писать в первую очередь.
+ */
+function MoneySummary({
+  revenue,
+  loading,
+  overdue,
+  expiringSoon,
+}: {
+  revenue?: { currency: string; total_all_time: number; total_this_month: number }[];
+  loading: boolean;
+  overdue: { id: string; bot_name: string; subscription_days_left: number | null }[];
+  expiringSoon: { id: string; bot_name: string; subscription_days_left: number | null }[];
+}) {
+  const totals = revenue ?? [];
+  return (
+    <section className="bg-card border rounded-lg p-4 space-y-3">
+      <h2 className="font-medium">Деньги</h2>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Считаю сборы…</p>
+      ) : (
+        <div className="flex flex-wrap gap-6">
+          {totals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Платежей ещё не заводили — добавьте их во вкладке «Подписка» у клиента.
+            </p>
+          ) : (
+            totals.map((t) => (
+              <div key={t.currency}>
+                <p className="text-2xl font-semibold">
+                  {t.total_this_month.toLocaleString("ru-RU")} {t.currency}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  собрано в этом месяце · всего {t.total_all_time.toLocaleString("ru-RU")}{" "}
+                  {t.currency}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+      {(overdue.length > 0 || expiringSoon.length > 0) && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 pt-2 border-t text-sm">
+          {overdue.map((b) => (
+            <Link
+              key={b.id}
+              to="/operator/$botId"
+              params={{ botId: b.id }}
+              className="text-destructive hover:underline"
+            >
+              {b.bot_name}
+              {b.subscription_days_left !== null &&
+                ` · просрочен на ${-b.subscription_days_left} дн.`}
+            </Link>
+          ))}
+          {expiringSoon.map((b) => (
+            <Link
+              key={b.id}
+              to="/operator/$botId"
+              params={{ botId: b.id }}
+              className="text-amber-700 dark:text-amber-500 hover:underline"
+            >
+              {b.bot_name}
+              {b.subscription_days_left !== null &&
+                ` · истекает через ${b.subscription_days_left} дн.`}
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

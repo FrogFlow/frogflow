@@ -85,10 +85,15 @@ function OperatorClientCard() {
   const eventsQuery = useQuery({
     queryKey: ["operator_bot_events", botId],
     queryFn: () => listBotEventsFn({ data: { botId } }),
+    refetchInterval: 20_000,
   });
+  // botQuery намеренно без опроса: его данные заполняют форму «Клиент» через
+  // useEffect ниже, и тихий рефетч посреди правки затёр бы то, что оператор
+  // ещё не сохранил. Список заявок и журнал — только на чтение, им это не грозит.
   const moduleRequestsQuery = useQuery({
     queryKey: ["operator_module_requests"],
     queryFn: () => listPendingModuleRequestsFn(),
+    refetchInterval: 15_000,
   });
   const pendingRequests = (moduleRequestsQuery.data ?? []).filter((r) => r.bot_id === botId);
 

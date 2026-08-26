@@ -8,6 +8,7 @@ import {
   updatePayment,
   deletePayment,
   setPolicy,
+  getRevenueSummary,
 } from "./subscriptions.server";
 
 async function actor(): Promise<string> {
@@ -17,6 +18,12 @@ async function actor(): Promise<string> {
 
 const BotIdInput = z.object({ botId: z.string().uuid() });
 const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Дата в формате ГГГГ-ММ-ДД");
+
+/** Сколько всего собрано — для сводки на главной странице панели. */
+export const getRevenueSummaryFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireOperator();
+  return getRevenueSummary();
+});
 
 export const getSubscriptionFn = createServerFn({ method: "GET" })
   .validator((data: unknown) => BotIdInput.parse(data))
