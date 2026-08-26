@@ -13,8 +13,15 @@ import {
   updateBotMetaFn,
 } from "@/lib/operator/bots.functions";
 import { toast } from "sonner";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components-ui/chart";
 import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
-import { getRevenueSummaryFn } from "@/lib/operator/subscriptions.functions";
+import { getRevenueSummaryFn, getRevenueByMonthFn } from "@/lib/operator/subscriptions.functions";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
@@ -121,6 +128,11 @@ function OperatorClientsPage() {
   const revenue = useQuery({
     queryKey: ["operator_revenue"],
     queryFn: () => getRevenueSummaryFn(),
+    refetchInterval: 15_000,
+  });
+  const revenueByMonth = useQuery({
+    queryKey: ["operator_revenue_by_month"],
+    queryFn: () => getRevenueByMonthFn(),
     refetchInterval: 15_000,
   });
   const list = bots.data ?? [];
@@ -380,6 +392,7 @@ function OperatorClientsPage() {
         loading={revenue.isLoading}
         overdue={overdue}
         expiringSoon={expiringSoon}
+        byMonth={revenueByMonth.data}
       />
 
       {attention.length > 0 && (
@@ -589,11 +602,13 @@ function MoneySummary({
   loading,
   overdue,
   expiringSoon,
+  byMonth,
 }: {
   revenue?: { currency: string; total_all_time: number; total_this_month: number }[];
   loading: boolean;
   overdue: { id: string; bot_name: string; subscription_days_left: number | null }[];
   expiringSoon: { id: string; bot_name: string; subscription_days_left: number | null }[];
+  byMonth?: { month: string; currency: string; total: number }[];
 }) {
   const totals = revenue ?? [];
   return (
@@ -622,6 +637,7 @@ function MoneySummary({
           )}
         </div>
       )}
+      <RevenueByMonthChart byMonth={byMonth} />
       {(overdue.length > 0 || expiringSoon.length > 0) && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 pt-2 border-t text-sm">
           {overdue.map((b) => (
@@ -651,6 +667,61 @@ function MoneySummary({
         </div>
       )}
     </section>
+  );
+}
+
+const MONTH_CHART_CONFIG: ChartConfig = {
+  total: { label: "Сборы", color: "var(--chart-1)" },
+};
+
+/**
+ * Мини-график сборов за полгода — раньше динамику можно было увидеть только
+ * сравнивая «в этом месяце» на глаз от визита к визиту. Валюта только одна:
+ * если у клиентов разные, берём ту, что дала больше сумм за период, а
+ * остальные упоминаем строкой — смешивать валюты на одном графике нечестно.
+ */
+function RevenueByMonthChart({
+  byMonth,
+}: {
+  byMonth?: { month: string; currency: string; total: number }[];
+}) {
+  const rows = byMonth ?? [];
+  if (rows.length === 0) return null;
+
+  const byCurrency = new Map<string, number>();
+  for (const r of rows) byCurrency.set(r.currency, (byCurrency.get(r.currency) ?? 0) + r.total);
+  const dominant = [...byCurrency.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const otherCurrencies = [...byCurrency.keys()].filter((c) => c !== dominant);
+
+  const now = new Date();
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (5 - i), 1));
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const found = rows.find((r) => r.month === key && r.currency === dominant);
+    return {
+      month: key,
+      label: d.toLocaleDateString("ru-RU", { month: "short" }),
+      total: found?.total ?? 0,
+    };
+  });
+
+  return (
+    <div className="pt-1 space-y-1">
+      <ChartContainer config={MONTH_CHART_CONFIG} className="h-32 w-full">
+        <BarChart data={months}>
+          <CartesianGrid vertical={false} />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} />
+          <YAxis tickLine={false} axisLine={false} width={40} />
+          <ChartTooltip content={<ChartTooltipContent />} />
+          <Bar dataKey="total" name={dominant} fill="var(--color-total)" radius={4} />
+        </BarChart>
+      </ChartContainer>
+      {otherCurrencies.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          На графике {dominant} — также есть сборы в {otherCurrencies.join(", ")}.
+        </p>
+      )}
+    </div>
   );
 }
 

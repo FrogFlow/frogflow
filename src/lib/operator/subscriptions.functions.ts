@@ -9,6 +9,7 @@ import {
   deletePayment,
   setPolicy,
   getRevenueSummary,
+  getRevenueByMonth,
 } from "./subscriptions.server";
 
 async function actor(): Promise<string> {
@@ -23,6 +24,12 @@ const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Дата в форма�
 export const getRevenueSummaryFn = createServerFn({ method: "GET" }).handler(async () => {
   await requireOperator();
   return getRevenueSummary();
+});
+
+/** Сборы по месяцам — для мини-графика на главной странице панели. */
+export const getRevenueByMonthFn = createServerFn({ method: "GET" }).handler(async () => {
+  await requireOperator();
+  return getRevenueByMonth();
 });
 
 export const getSubscriptionFn = createServerFn({ method: "GET" })

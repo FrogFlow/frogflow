@@ -277,6 +277,40 @@ export async function getRevenueSummary(): Promise<RevenueTotals[]> {
   return [...map.values()];
 }
 
+export type MonthlyRevenue = { month: string; currency: string; total: number };
+
+/**
+ * Сборы по месяцам — для мини-графика на главной странице панели. Месяц
+ * берётся по paid_at (когда деньги реально пришли), той же логикой, что и
+ * getRevenueSummary() выше. Валюты не смешиваются: клиент сам решает, какую
+ * показать графиком, а остальные — сопроводительной строкой.
+ */
+export async function getRevenueByMonth(months = 6): Promise<MonthlyRevenue[]> {
+  await requireOperator();
+  const s = await db();
+  const { data, error } = await s.from("subscription_payments").select("amount, currency, paid_at");
+  if (error) throw new Error(`Не удалось получить платежи: ${error.message}`);
+
+  const now = new Date();
+  const cutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+
+  const totals = new Map<string, number>();
+  for (const p of data ?? []) {
+    const paidAt = new Date(p.paid_at);
+    if (paidAt < cutoff) continue;
+    const month = `${paidAt.getUTCFullYear()}-${String(paidAt.getUTCMonth() + 1).padStart(2, "0")}`;
+    const key = `${month}|${p.currency}`;
+    totals.set(key, (totals.get(key) ?? 0) + Number(p.amount));
+  }
+
+  return [...totals.entries()]
+    .map(([key, total]) => {
+      const [month, currency] = key.split("|");
+      return { month, currency, total };
+    })
+    .sort((a, b) => a.month.localeCompare(b.month));
+}
+
 export async function setPolicy(botId: string, policy: OverduePolicy, actor: string) {
   await requireOperator();
   const s = await db();
