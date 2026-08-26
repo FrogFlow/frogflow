@@ -19,6 +19,7 @@ import {
   listOwnerCandidates,
   listFeed,
   checkReadinessAll,
+  exportClientsCsv,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -237,6 +238,12 @@ export const buildEnvBlockFn = createServerFn({ method: "POST" })
     });
     return result;
   });
+
+/** Клиенты + выручка одним CSV для выгрузки из панели. */
+export const exportClientsCsvFn = createServerFn({ method: "POST" }).handler(async () => {
+  await requireOperator();
+  return exportClientsCsv();
+});
 
 /** Чего не хватает самой панели. Пустые значения в блоке иначе всплывают уже на упавшем деплое клиента. */
 export const panelSelfCheckFn = createServerFn({ method: "GET" }).handler(async () => {

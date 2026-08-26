@@ -8,7 +8,9 @@ import {
   listStorageByKindFn,
   listHealthFn,
   checkReadinessAllFn,
+  exportClientsCsvFn,
 } from "@/lib/operator/bots.functions";
+import { toast } from "sonner";
 import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
 import { getRevenueSummaryFn } from "@/lib/operator/subscriptions.functions";
 import { Button } from "@/components-ui/button";
@@ -57,6 +59,7 @@ function OperatorClientsPage() {
   // своей карточке — попасть на неё становится неоткуда.
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
   // Реал-тайм в этой панели — не вебсокеты (7 клиентов, один оператор, не
   // стоит того), а частый опрос: та же идея, что уже была у health ниже,
   // просто применена ко всем запросам страницы. Разная частота — по цене
@@ -140,6 +143,23 @@ function OperatorClientsPage() {
   if (wantsModule.length)
     attention.push({ text: "заказал подключение модуля", who: who(wantsModule) });
 
+  async function onExport() {
+    setExporting(true);
+    try {
+      const res = await exportClientsCsvFn();
+      const url = URL.createObjectURL(new Blob([res.csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `clients-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) || "Не удалось выгрузить");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -170,6 +190,9 @@ function OperatorClientsPage() {
             placeholder="Поиск по названию или владельцу…"
             className="w-56"
           />
+          <Button size="sm" variant="outline" onClick={onExport} disabled={exporting}>
+            {exporting ? "Выгружаю…" : "Скачать CSV"}
+          </Button>
           <Link
             to="/operator/onboard"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 shrink-0"

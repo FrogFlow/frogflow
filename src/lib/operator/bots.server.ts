@@ -5,6 +5,7 @@ import { logEvent } from "./events.server";
 import type { Json } from "@/integrations-supabase/types";
 import { computeState, readPolicy, type SubscriptionState } from "./subscriptions.server";
 import { errorMessage } from "@/lib/error-message";
+import { toCsv, isoDate } from "@/lib/csv";
 
 type BotStatus = "active" | "paused" | "suspended";
 
@@ -727,6 +728,75 @@ export async function loadStats(): Promise<Map<string, BotStats>> {
     });
   }
   return map;
+}
+
+/**
+ * Клиенты + выручка одним CSV — для отчётности себе, вне панели. Тот же
+ * приём (toCsv/BOM/«;»), что уже используют экспорты в клиентской админке
+ * (export.functions.ts) — тот же файл открывается двойным щелчком в Excel.
+ */
+export async function exportClientsCsv(): Promise<{ csv: string; count: number }> {
+  await requireOperator();
+  const s = await db();
+  const bots = await listBots(true);
+  const statsMap = await loadStats();
+
+  const { data: payments, error } = await s
+    .from("subscription_payments")
+    .select("bot_id, amount, currency");
+  if (error) throw new Error(`Не удалось получить платежи: ${error.message}`);
+  const revenueByBot = new Map<string, { total: number; currency: string; mixed: boolean }>();
+  for (const p of payments ?? []) {
+    const cur = revenueByBot.get(p.bot_id);
+    if (!cur) {
+      revenueByBot.set(p.bot_id, { total: Number(p.amount), currency: p.currency, mixed: false });
+    } else {
+      cur.total += Number(p.amount);
+      if (cur.currency !== p.currency) cur.mixed = true;
+    }
+  }
+
+  const SUB_LABEL_RU: Record<SubscriptionState, string> = {
+    no_data: "нет данных",
+    ok: "оплачена",
+    expiring: "скоро истекает",
+    overdue: "просрочена",
+    grace_over: "отсрочка кончилась",
+  };
+
+  const csv = toCsv(
+    [
+      "Клиент",
+      "Владелец",
+      "Статус",
+      "Подписка",
+      "Подписка до",
+      "Модулей включено",
+      "Заказов всего",
+      "Заказов за 30 дн",
+      "Оплачено всего",
+      "Валюта",
+      "В архиве",
+    ],
+    bots.map((b) => {
+      const rev = revenueByBot.get(b.id);
+      const stats = statsMap.get(b.id);
+      return [
+        b.bot_name,
+        b.owner_name,
+        b.status,
+        SUB_LABEL_RU[b.subscription_state],
+        isoDate(b.subscription_expires_at),
+        b.modules.length,
+        stats?.orders_total ?? 0,
+        stats?.orders_30d ?? 0,
+        rev?.total ?? 0,
+        rev ? (rev.mixed ? `${rev.currency} + др.` : rev.currency) : "",
+        b.archived_at ? "да" : "нет",
+      ];
+    }),
+  );
+  return { csv, count: bots.length };
 }
 
 export type StorageByKind = { kind: string; bytes: number };
