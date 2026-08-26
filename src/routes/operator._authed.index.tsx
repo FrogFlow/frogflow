@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { errorMessage } from "@/lib/error-message";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   listBotsFn,
@@ -9,6 +9,8 @@ import {
   listHealthFn,
   checkReadinessAllFn,
   exportClientsCsvFn,
+  setModuleFn,
+  updateBotMetaFn,
 } from "@/lib/operator/bots.functions";
 import { toast } from "sonner";
 import { listPendingModuleRequestsFn } from "@/lib/operator/module-requests.functions";
@@ -61,12 +63,19 @@ const SUB_LABEL: Record<
 };
 
 function OperatorClientsPage() {
+  const qc = useQueryClient();
   // Архивные по умолчанию скрыты, но должны быть доступны: иначе убранный
   // клиент исчезает из панели совсем, вместе с кнопкой «Вернуть из архива» на
   // своей карточке — попасть на неё становится неоткуда.
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [exporting, setExporting] = useState(false);
+  // Групповые действия: выделение не зависит от фильтров — если сузить
+  // список фильтром и выделить ещё, старое выделение не теряется.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTag, setBulkTag] = useState("");
+  const [bulkModule, setBulkModule] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   // Фильтры сверх текстового поиска — тоже клиентские: подписка и здоровье
   // уже приходят в списке/health, модуль — по факту наличия в bot.modules.
   const [filterSub, setFilterSub] = useState("all");
@@ -187,6 +196,74 @@ function OperatorClientsPage() {
       setExporting(false);
     }
   }
+
+  function toggleRow(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAllVisible(checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const b of filteredList) {
+        if (checked) next.add(b.id);
+        else next.delete(b.id);
+      }
+      return next;
+    });
+  }
+
+  async function onBulkAddTag() {
+    const tag = bulkTag.trim();
+    if (!tag) return;
+    setBulkBusy(true);
+    try {
+      const targets = list.filter((b) => selectedIds.has(b.id));
+      await Promise.all(
+        targets.map((b) =>
+          updateBotMetaFn({ data: { botId: b.id, tags: [...new Set([...b.tags, tag])] } }),
+        ),
+      );
+      await qc.invalidateQueries({ queryKey: ["operator_bots"] });
+      toast.success(`Тег «${tag}» добавлен: ${targets.length} клиентам`);
+      setBulkTag("");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) || "Не удалось добавить тег");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function onBulkEnableModule() {
+    if (!bulkModule) return;
+    setBulkBusy(true);
+    try {
+      const targets = [...selectedIds];
+      const results = await Promise.allSettled(
+        targets.map((id) =>
+          setModuleFn({ data: { botId: id, key: bulkModule as ModuleKey, enabled: true } }),
+        ),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      await qc.invalidateQueries({ queryKey: ["operator_bots"] });
+      const title = moduleDef(bulkModule as ModuleKey).title;
+      if (failed > 0) {
+        toast.error(`«${title}»: включён у ${targets.length - failed} из ${targets.length}`);
+      } else {
+        toast.success(`«${title}» включён у ${targets.length} клиентов`);
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  const allVisibleSelected =
+    filteredList.length > 0 && filteredList.every((b) => selectedIds.has(b.id));
+  const availableModules = MODULE_KEYS.filter((k) => moduleDef(k).status === "available");
 
   return (
     <div className="space-y-6">
@@ -343,11 +420,63 @@ function OperatorClientsPage() {
         </p>
       )}
 
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border rounded-lg p-3 bg-muted/40">
+          <span className="text-sm font-medium">Выбрано: {selectedIds.size}</span>
+          <Input
+            value={bulkTag}
+            onChange={(e) => setBulkTag(e.target.value)}
+            placeholder="Добавить тег…"
+            className="w-40 h-8"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkBusy || !bulkTag.trim()}
+            onClick={onBulkAddTag}
+          >
+            Добавить тег
+          </Button>
+          <Select value={bulkModule} onValueChange={setBulkModule}>
+            <SelectTrigger className="w-56 h-8">
+              <SelectValue placeholder="Включить модуль…" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableModules.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {moduleDef(k).title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkBusy || !bulkModule}
+            onClick={onBulkEnableModule}
+          >
+            Включить у выбранных
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+            Снять выделение
+          </Button>
+        </div>
+      )}
+
       {filteredList.length > 0 && (
         <div className="bg-card border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-8">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(e) => toggleAllVisible(e.target.checked)}
+                    className="accent-primary"
+                    aria-label="Выбрать всех"
+                  />
+                </TableHead>
                 <TableHead>Клиент</TableHead>
                 <TableHead>Бот</TableHead>
                 <TableHead>Статус</TableHead>
@@ -367,6 +496,15 @@ function OperatorClientsPage() {
                 };
                 return (
                   <TableRow key={bot.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(bot.id)}
+                        onChange={(e) => toggleRow(bot.id, e.target.checked)}
+                        className="accent-primary"
+                        aria-label={`Выбрать ${bot.bot_name}`}
+                      />
+                    </TableCell>
                     <TableCell>
                       <Link
                         to="/operator/$botId"
