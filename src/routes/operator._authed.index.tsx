@@ -714,19 +714,36 @@ function OperatorClientsPage() {
                       {stats.data?.[bot.id] ? formatBytes(stats.data[bot.id].storage_bytes) : "…"}
                     </TableCell>
                     <TableCell>
-                      {bot.app_url ? (
-                        <a
-                          href={bot.app_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-primary hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          деплой ↗
-                        </a>
-                      ) : (
-                        <span className="text-muted-foreground">не задан</span>
-                      )}
+                      <div className="flex flex-col gap-0.5">
+                        {bot.app_url ? (
+                          <a
+                            href={bot.app_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            деплой ↗
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">не задан</span>
+                        )}
+                        {(() => {
+                          const h = health.data?.[bot.id];
+                          const username = h?.ok ? h.report.bot_username : null;
+                          return username ? (
+                            <a
+                              href={`https://t.me/${username}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary hover:underline text-xs"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              @{username} ↗
+                            </a>
+                          ) : null;
+                        })()}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
