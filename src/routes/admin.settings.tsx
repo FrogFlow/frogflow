@@ -18,7 +18,8 @@ import {
 } from "@/lib/settings.functions";
 import { resetAllData } from "@/lib/reset.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
-import type { Locale } from "@/lib/i18n";
+import { t, type Locale } from "@/lib/i18n";
+import { useModules } from "@/lib/modules/use-modules";
 
 export const Route = createFileRoute("/admin/settings")({
   component: SettingsPage,
@@ -350,6 +351,7 @@ const copy: Record<
 function SettingsPage() {
   const { locale } = useAdminLocale();
   const tr = copy[locale];
+  const modules = useModules();
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const [adminChatId, setAdminChatId] = useState("");
@@ -652,85 +654,106 @@ function SettingsPage() {
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.referralTitle}</h2>
         <p className="text-xs text-muted-foreground">{tr.referralHint}</p>
-        <div className="flex items-end gap-2">
-          <div className="space-y-2">
-            <Label>{tr.referralPercentLabel}</Label>
-            <Input
-              type="number"
-              min={1}
-              max={100}
-              value={referralPercent}
-              onChange={(e) => setReferralPercent(e.target.value)}
-              className="w-32"
-            />
+        {modules.referral ? (
+          <div className="flex items-end gap-2">
+            <div className="space-y-2">
+              <Label>{tr.referralPercentLabel}</Label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={referralPercent}
+                onChange={(e) => setReferralPercent(e.target.value)}
+                className="w-32"
+              />
+            </div>
+            <Button onClick={onSaveReferralPercent} disabled={referralSaving || settings.isLoading}>
+              {tr.save}
+            </Button>
+            {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
           </div>
-          <Button onClick={onSaveReferralPercent} disabled={referralSaving || settings.isLoading}>
-            {tr.save}
-          </Button>
-          {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-        </div>
+        ) : (
+          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+        )}
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.loyaltyTitle}</h2>
         <p className="text-xs text-muted-foreground">{tr.loyaltyHint}</p>
-        <div className="flex items-end gap-2">
-          <div className="space-y-2">
-            <Label>{tr.loyaltyEarnPercentLabel}</Label>
-            <Input
-              type="number"
-              min={1}
-              max={100}
-              value={loyaltyEarnPercent}
-              onChange={(e) => setLoyaltyEarnPercent(e.target.value)}
-              className="w-32"
-            />
+        {modules.loyalty ? (
+          <div className="flex items-end gap-2">
+            <div className="space-y-2">
+              <Label>{tr.loyaltyEarnPercentLabel}</Label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={loyaltyEarnPercent}
+                onChange={(e) => setLoyaltyEarnPercent(e.target.value)}
+                className="w-32"
+              />
+            </div>
+            <Button
+              onClick={onSaveLoyaltyEarnPercent}
+              disabled={loyaltySaving || settings.isLoading}
+            >
+              {tr.save}
+            </Button>
+            {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
           </div>
-          <Button onClick={onSaveLoyaltyEarnPercent} disabled={loyaltySaving || settings.isLoading}>
-            {tr.save}
-          </Button>
-          {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-        </div>
+        ) : (
+          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+        )}
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.cartReminderTitle}</h2>
         <p className="text-xs text-muted-foreground">{tr.cartReminderHint}</p>
-        <div className="flex items-end gap-2">
-          <div className="space-y-2">
-            <Label>{tr.cartReminderHoursLabel}</Label>
-            <Input
-              type="number"
-              min={0}
-              max={168}
-              value={cartReminderHours}
-              onChange={(e) => setCartReminderHours(e.target.value)}
-              className="w-32"
-            />
+        {modules.cart_reminder ? (
+          <div className="flex items-end gap-2">
+            <div className="space-y-2">
+              <Label>{tr.cartReminderHoursLabel}</Label>
+              <Input
+                type="number"
+                min={0}
+                max={168}
+                value={cartReminderHours}
+                onChange={(e) => setCartReminderHours(e.target.value)}
+                className="w-32"
+              />
+            </div>
+            <Button
+              onClick={onSaveCartReminderHours}
+              disabled={cartReminderSaving || settings.isLoading}
+            >
+              {tr.save}
+            </Button>
+            {cartReminderSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
           </div>
-          <Button
-            onClick={onSaveCartReminderHours}
-            disabled={cartReminderSaving || settings.isLoading}
-          >
-            {tr.save}
-          </Button>
-          {cartReminderSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-        </div>
+        ) : (
+          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+        )}
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.smartSearchTitle}</h2>
         <p className="text-xs text-muted-foreground">{tr.smartSearchHint}</p>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={smartSearchEnabled}
-            disabled={smartSearchSaving}
-            onChange={(e) => onSaveSmartSearchEnabled(e.target.checked)}
-          />
-          {tr.smartSearchEnableLabel}
-        </label>
-        {smartSearchSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+        {modules.smart_search ? (
+          <>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={smartSearchEnabled}
+                disabled={smartSearchSaving}
+                onChange={(e) => onSaveSmartSearchEnabled(e.target.checked)}
+              />
+              {tr.smartSearchEnableLabel}
+            </label>
+            {smartSearchSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+        )}
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-4">
