@@ -1,10 +1,13 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/")({
   // Панель оператора — не магазин: у неё нет арендатора, и эта страница
-  // работала бы под service_role. См. lib/control-plane.server.ts.
+  // работала бы под service_role. См. lib/control-plane.server.ts. Раньше
+  // здесь был notFound() — открыв корень деплоя панели, оператор упирался
+  // в голый 404 и должен был вручную дописывать /operator в адресную
+  // строку. Редирект прямо на вход в панель убирает этот лишний шаг.
   beforeLoad: ({ context }) => {
-    if (context.isPanel) throw notFound();
+    if (context.isPanel) throw redirect({ to: "/operator" });
   },
   head: () => ({
     meta: [
