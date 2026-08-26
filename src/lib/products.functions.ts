@@ -79,6 +79,8 @@ const SaveInput = z.object({
   file_name_kz: z.string().nullable().optional(),
   file_url: z.string().nullable().optional(),
   file_url_kz: z.string().nullable().optional(),
+  // Складской учёт (Кейс 4) — null = не отслеживается (безлимитно).
+  stock_quantity: z.number().int().min(0).nullable().optional(),
   image_paths: z.array(z.string()).default([]),
   // A material can be several files/photos (e.g. worksheet pages), not just
   // the single file_path/file_url above — those stay for older products that
@@ -101,6 +103,12 @@ export const saveProduct = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
+    // Складской учёт (Кейс 4) — платный модуль, но сохраняем поле
+    // безусловно: тот же приём, что уже у country_prices/kk-материалов в
+    // этой же форме — продавец готовит данные заранее, а реальный эффект
+    // (ограничение добавления в корзину и списание при оформлении) уже
+    // гейтится в bot.server.ts на самом использовании, не здесь.
+    const stock_quantity = data.stock_quantity ?? null;
     let productId = data.id;
     if (productId) {
       const { error } = await s
@@ -122,6 +130,7 @@ export const saveProduct = createServerFn({ method: "POST" })
           file_url: data.file_url ?? null,
           file_url_kz: data.file_url_kz ?? null,
           country_prices: data.country_prices,
+          stock_quantity,
         })
         .eq("id", productId);
       if (error) throw new Error(error.message);
@@ -145,6 +154,7 @@ export const saveProduct = createServerFn({ method: "POST" })
           file_url: data.file_url ?? null,
           file_url_kz: data.file_url_kz ?? null,
           country_prices: data.country_prices,
+          stock_quantity,
         })
         .select("id")
         .single();

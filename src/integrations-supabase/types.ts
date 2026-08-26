@@ -1927,6 +1927,8 @@ export type Database = {
           rating_avg: number | null;
           rating_count: number;
           sort_order: number;
+          // MIGRATION-46. NULL — остаток не отслеживается (безлимитно).
+          stock_quantity: number | null;
         };
         Insert: {
           file_url_kz?: string | null;
@@ -1950,6 +1952,7 @@ export type Database = {
           rating_avg?: number | null;
           rating_count?: number;
           sort_order?: number;
+          stock_quantity?: number | null;
         };
         Update: {
           file_url_kz?: string | null;
@@ -1973,6 +1976,7 @@ export type Database = {
           rating_avg?: number | null;
           rating_count?: number;
           sort_order?: number;
+          stock_quantity?: number | null;
         };
         Relationships: [
           {

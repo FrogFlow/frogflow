@@ -22,6 +22,7 @@ type ProductCard = {
   product_images: Array<{ image_path: string; sort_order: number }> | null;
   rating_avg?: number | null;
   rating_count?: number | null;
+  stock_quantity?: number | null;
 };
 
 /**
@@ -538,6 +539,7 @@ type Msg = {
   giftCertificateInvalid: string;
   giftCertificateRemoved: string;
   giftCertificateDiscountLine: (amount: string) => string;
+  outOfStockAtCheckout: string;
   phonePromptHtml: string;
   shareContactBtn: string;
   paymentNotConfigured: string;
@@ -568,6 +570,7 @@ type Msg = {
   searchSessionExpired: string;
   addedToCart: string;
   productUnavailable: string;
+  outOfStockLabel: string;
   cartCleared: string;
   countrySaved: (countryName: string) => string;
   noOrdersYet: string;
@@ -663,6 +666,8 @@ const copy: Record<Locale, Msg> = {
     giftCertificateInvalid: "⚠️ Сертификат недействителен или уже использован.",
     giftCertificateRemoved: "Сертификат убран.",
     giftCertificateDiscountLine: (amount) => `Скидка по сертификату: −${amount}\n`,
+    outOfStockAtCheckout:
+      "⚠️ Один из товаров в корзине только что закончился на складе. Оформите заказ без него.",
     phonePromptHtml:
       "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
     shareContactBtn: "📱 Поделиться контактом",
@@ -698,6 +703,7 @@ const copy: Record<Locale, Msg> = {
     searchSessionExpired: "Сессия поиска устарела. Повторите поиск.",
     addedToCart: "✅ Добавлено в корзину.",
     productUnavailable: "⚠️ Этот материал сейчас недоступен. Выберите другой в каталоге.",
+    outOfStockLabel: "❌ Нет в наличии",
     cartCleared: "🗑 Корзина очищена.",
     countrySaved: (c) => `✅ Ваша страна сохранена: ${c}\nТеперь вы видите корректные цены!`,
     noOrdersYet: "У вас пока нет заказов.",
@@ -804,6 +810,8 @@ const copy: Record<Locale, Msg> = {
     giftCertificateInvalid: "⚠️ Сертификат жарамсыз немесе бұрын пайдаланылған.",
     giftCertificateRemoved: "Сертификат алынып тасталды.",
     giftCertificateDiscountLine: (amount) => `Сертификат бойынша жеңілдік: −${amount}\n`,
+    outOfStockAtCheckout:
+      "⚠️ Себеттегі тауарлардың бірі жаңа ғана таусылды. Тапсырысты онсыз рәсімдеңіз.",
     phonePromptHtml:
       "Тапсырысты рәсімдеу үшін телефон нөміріңізді көрсетіңіз — <b>оны осы чатқа жазыңыз</b>, мысалы:\n<code>+7 900 123-45-67</code>\n\nНемесе контактіні автоматты түрде бөлісу үшін төмендегі батырманы басыңыз.",
     shareContactBtn: "📱 Контактімен бөлісу",
@@ -839,6 +847,7 @@ const copy: Record<Locale, Msg> = {
     searchSessionExpired: "Іздеу сессиясы ескірді. Іздеуді қайталаңыз.",
     addedToCart: "✅ Себетке қосылды.",
     productUnavailable: "⚠️ Бұл материал қазір қолжетімді емес. Каталогтан басқасын таңдаңыз.",
+    outOfStockLabel: "❌ Қоймада жоқ",
     cartCleared: "🗑 Себет тазартылды.",
     countrySaved: (c) => `✅ Еліңіз сақталды: ${c}\nЕнді сіз дұрыс бағаларды көресіз!`,
     noOrdersYet: "Сізде әзірге тапсырыс жоқ.",
@@ -947,6 +956,7 @@ const copy: Record<Locale, Msg> = {
     giftCertificateInvalid: "⚠️ This certificate is invalid or already used.",
     giftCertificateRemoved: "Certificate removed.",
     giftCertificateDiscountLine: (amount) => `Certificate discount: −${amount}\n`,
+    outOfStockAtCheckout: "⚠️ One of the items in your cart just sold out. Check out without it.",
     phonePromptHtml:
       "To place your order, share your phone number — <b>just type it in this chat</b>, for example:\n<code>+7 900 123-45-67</code>\n\nOr tap the button below to share your contact automatically.",
     shareContactBtn: "📱 Share contact",
@@ -984,6 +994,7 @@ const copy: Record<Locale, Msg> = {
     addedToCart: "✅ Added to cart.",
     productUnavailable:
       "⚠️ This material is currently unavailable. Please pick another one from the catalog.",
+    outOfStockLabel: "❌ Out of stock",
     cartCleared: "🗑 Cart cleared.",
     countrySaved: (c) => `✅ Your country is saved: ${c}\nNow you’ll see the correct prices!`,
     noOrdersYet: "You don’t have any orders yet.",
@@ -1094,6 +1105,8 @@ const copy: Record<Locale, Msg> = {
     giftCertificateInvalid: "⚠️ Sertifikat amal qilmaydi yoki allaqachon ishlatilgan.",
     giftCertificateRemoved: "Sertifikat olib tashlandi.",
     giftCertificateDiscountLine: (amount) => `Sertifikat bo‘yicha chegirma: −${amount}\n`,
+    outOfStockAtCheckout:
+      "⚠️ Savatdagi mahsulotlardan biri hozirgina tugadi. Usiz rasmiylashtiring.",
     phonePromptHtml:
       "Buyurtma berish uchun telefon raqamingizni kiriting — <b>uni shu chatga yozing</b>, masalan:\n<code>+7 900 123-45-67</code>\n\nYoki kontaktni avtomatik ulashish uchun quyidagi tugmani bosing.",
     shareContactBtn: "📱 Kontaktni ulashish",
@@ -1132,6 +1145,7 @@ const copy: Record<Locale, Msg> = {
     searchSessionExpired: "Qidiruv sessiyasi eskirdi. Qayta qidiring.",
     addedToCart: "✅ Savatga qo‘shildi.",
     productUnavailable: "⚠️ Bu material hozir mavjud emas. Katalogdan boshqasini tanlang.",
+    outOfStockLabel: "❌ Sotuvda yo‘q",
     cartCleared: "🗑 Savat tozalandi.",
     countrySaved: (c) => `✅ Mamlakatingiz saqlandi: ${c}\nEndi to‘g‘ri narxlarni ko‘rasiz!`,
     noOrdersYet: "Sizda hali buyurtmalar yo‘q.",
@@ -1564,10 +1578,14 @@ async function sendProductCard(
 
   const desc = p.description ? `\n\n${escapeHtml(p.description)}` : `\n\n<i>${m.descPending}</i>`;
   const ratingLine = formatRatingSummary(p.rating_avg ?? null, p.rating_count ?? 0);
-  const caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>${ratingLine ? `\n${ratingLine}` : ""}`;
-  const reply_markup = {
-    inline_keyboard: [[{ text: m.addToCartBtn, callback_data: `add:${p.id}` }]],
-  };
+  // Складской учёт (Кейс 4) — платный модуль: без него stock_quantity в
+  // карточке никак не влияет на показ, даже если у товара задан остаток.
+  const outOfStock =
+    (await hasModule("stock")) && p.stock_quantity !== undefined && (p.stock_quantity ?? 0) <= 0;
+  const caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>${ratingLine ? `\n${ratingLine}` : ""}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
+  const reply_markup = outOfStock
+    ? { inline_keyboard: [] }
+    : { inline_keyboard: [[{ text: m.addToCartBtn, callback_data: `add:${p.id}` }]] };
 
   if (imgs.length === 0) {
     await tg("sendMessage", { chat_id, text: caption, parse_mode: "HTML", reply_markup });
@@ -1774,7 +1792,7 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
 
   const { data: product, error: productError } = await s
     .from("products")
-    .select("id, is_active")
+    .select("id, is_active, stock_quantity")
     .eq("id", product_id)
     .maybeSingle();
   if (productError) {
@@ -1789,6 +1807,15 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
     .eq("telegram_id", telegram_id)
     .eq("product_id", product_id)
     .maybeSingle();
+
+  // Складской учёт (Кейс 4) — платный модуль: без него stock_quantity
+  // никогда не ограничивает добавление в корзину, даже если задан. Точная
+  // атомарная проверка — на оформлении (placeOrderInner); здесь только
+  // предварительная, чтобы не пускать в корзину заведомо больше остатка.
+  if ((await hasModule("stock")) && product.stock_quantity !== null) {
+    const alreadyInCart = Number(existing?.quantity ?? 0);
+    if (alreadyInCart + 1 > product.stock_quantity) return false;
+  }
 
   if (existing) {
     const { error } = await s
@@ -1808,6 +1835,60 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
     return false;
   }
   return true;
+}
+
+/**
+ * Списывает остаток атомарно (CAS по stock_quantity, с повторами — в
+ * отличие от used_count промокода это ресурс без единственного владельца
+ * "первый выигрывает", гонка при высоком спросе более вероятна). null у
+ * товара — остаток не отслеживается, всегда доступно. false после
+ * исчерпания попыток — вызывающий код (placeOrderInner) откатывает уже
+ * списанные позиции той же корзины через restoreStock().
+ */
+async function decrementStock(productId: string, qty: number): Promise<boolean> {
+  const s = await db();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: product } = await s
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", productId)
+      .maybeSingle();
+    if (!product || product.stock_quantity === null) return true;
+    if (product.stock_quantity < qty) return false;
+    const { data: updated } = await s
+      .from("products")
+      .update({ stock_quantity: product.stock_quantity - qty })
+      .eq("id", productId)
+      .eq("stock_quantity", product.stock_quantity)
+      .select("id")
+      .maybeSingle();
+    if (updated) return true;
+  }
+  return false;
+}
+
+/** Возвращает остаток, списанный decrementStock() ранее в той же попытке оформления. */
+async function restoreStock(productId: string, qty: number): Promise<void> {
+  const s = await db();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: product } = await s
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", productId)
+      .maybeSingle();
+    if (!product || product.stock_quantity === null) return;
+    const { data: updated } = await s
+      .from("products")
+      .update({ stock_quantity: product.stock_quantity + qty })
+      .eq("id", productId)
+      .eq("stock_quantity", product.stock_quantity)
+      .select("id")
+      .maybeSingle();
+    if (updated) return;
+  }
+  // Исчерпали попытки — best-effort, как и остальные CAS в этом файле.
+  // Расхождение требует пяти гонок подряд на одном товаре, крайне
+  // маловероятно; не блокируем оформление ради отката остатка.
 }
 
 async function showCart(chat_id: number, user: BotUser) {
@@ -2359,6 +2440,28 @@ async function placeOrderInner(
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
     await releaseOrderPlacement(telegram_id, user.state);
     return;
+  }
+
+  // Складской учёт (Кейс 4) — платный модуль. Списываем остаток здесь же,
+  // до создания заказа: тот же принцип, что у промокода/сертификата ниже —
+  // если позиции не хватило, не создаём заказ по неверному составу, а
+  // откатываем уже списанные позиции этой же корзины и просим оформить
+  // заново без раскупленного товара.
+  if (await hasModule("stock")) {
+    const reservedStock: Array<{ productId: string; qty: number }> = [];
+    for (const it of items) {
+      if (!it.products) continue;
+      const productId = String(it.products.id);
+      const qty = Number(it.quantity);
+      const ok = await decrementStock(productId, qty);
+      if (!ok) {
+        for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+        await releaseOrderPlacement(telegram_id, user.state);
+        await tg("sendMessage", { chat_id, text: m.outOfStockAtCheckout });
+        return;
+      }
+      reservedStock.push({ productId, qty });
+    }
   }
 
   /**

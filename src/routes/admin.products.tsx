@@ -51,6 +51,7 @@ type Product = {
   product_images?: Img[];
   product_material_files?: (MaterialFile & { language: string })[];
   country_prices?: Record<string, number>;
+  stock_quantity?: number | null;
 };
 
 type MaterialsByLang = Record<Locale, MaterialFile[]>;
@@ -178,6 +179,8 @@ const copy: Record<
     price: string;
     currency: string;
     sortOrder: string;
+    stockQuantity: string;
+    stockQuantityPlaceholder: string;
     photosLabel: string;
     countryPricesTitle: string;
     countryPricesHint: string;
@@ -233,6 +236,8 @@ const copy: Record<
     price: "Цена",
     currency: "Валюта",
     sortOrder: "Порядок",
+    stockQuantity: "Остаток на складе",
+    stockQuantityPlaceholder: "пусто = безлимитно",
     photosLabel: "Фото (можно несколько)",
     countryPricesTitle: "Цены для разных стран (вручную)",
     countryPricesHint:
@@ -289,6 +294,8 @@ const copy: Record<
     price: "Баға",
     currency: "Валюта",
     sortOrder: "Реті",
+    stockQuantity: "Қоймадағы қалдық",
+    stockQuantityPlaceholder: "бос = шексіз",
     photosLabel: "Фото (бірнешеуін таңдауға болады)",
     countryPricesTitle: "Түрлі елдерге бағалар (қолмен)",
     countryPricesHint: "Өрісті бос қалдырсаңыз — негізгі бағаның автоматты айырбасы жұмыс істейді.",
@@ -343,6 +350,8 @@ const copy: Record<
     price: "Price",
     currency: "Currency",
     sortOrder: "Order",
+    stockQuantity: "Stock quantity",
+    stockQuantityPlaceholder: "empty = unlimited",
     photosLabel: "Photos (multiple allowed)",
     countryPricesTitle: "Prices by country (manual)",
     countryPricesHint: "Leave a field empty to use automatic conversion from the base price.",
@@ -398,6 +407,8 @@ const copy: Record<
     price: "Narx",
     currency: "Valyuta",
     sortOrder: "Tartib",
+    stockQuantity: "Ombordagi qoldiq",
+    stockQuantityPlaceholder: "bo‘sh = cheksiz",
     photosLabel: "Fotolar (bir nechtasi mumkin)",
     countryPricesTitle: "Mamlakatlar bo‘yicha narxlar (qo‘lda)",
     countryPricesHint:
@@ -561,6 +572,7 @@ function ProductsPage() {
       file_url: p.file_url,
       file_url_kz: p.file_url_kz,
       country_prices: (p.country_prices as Record<string, number> | null) || {},
+      stock_quantity: (p as { stock_quantity?: number | null }).stock_quantity ?? null,
     });
     const imgs = (p.product_images ?? [])
       .slice()
@@ -683,6 +695,7 @@ function ProductsPage() {
             ]),
           ),
           country_prices: editing.country_prices,
+          stock_quantity: editing.stock_quantity,
         },
       });
       setEditing(null);
@@ -810,6 +823,21 @@ function ProductsPage() {
                 type="number"
                 value={editing.sort_order}
                 onChange={(e) => setEditing({ ...editing, sort_order: Number(e.target.value) })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{tr.stockQuantity}</Label>
+              <Input
+                type="number"
+                min={0}
+                value={editing.stock_quantity ?? ""}
+                placeholder={tr.stockQuantityPlaceholder}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    stock_quantity: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
               />
             </div>
           </div>
