@@ -34,6 +34,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components-ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components-ui/dropdown-menu";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
 import { StorageDonut, DonutLegendRow, buildDonutSegments } from "@/components-ui/storage-donut";
@@ -72,6 +80,16 @@ const SUB_LABEL: Record<
 };
 
 type SortKey = "bot_name" | "modules" | "subscription" | "orders" | "storage";
+
+/** Клиент/Бот/Статус — обязательные, не скрываются. Остальные можно спрятать. */
+const COLUMN_DEFS: { key: string; label: string }[] = [
+  { key: "owner", label: "Владелец" },
+  { key: "modules", label: "Модули" },
+  { key: "subscription", label: "Подписка" },
+  { key: "orders", label: "Заказы за 30 дн" },
+  { key: "storage", label: "Место" },
+  { key: "deploy", label: "Деплой" },
+];
 
 function SortableHead({
   label,
@@ -146,6 +164,32 @@ function OperatorClientsPage() {
       return next;
     });
   }
+  // Хранится множество скрытых, а не показанных: так новая колонка, добавленная
+  // позже в код, по умолчанию видна всем, а не пропадает у тех, кто уже настроил
+  // список под себя.
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("operator_hidden_columns");
+      if (raw) setHiddenCols(new Set(JSON.parse(raw)));
+    } catch {
+      // localStorage недоступен — все колонки просто останутся видны.
+    }
+  }, []);
+  function toggleColumn(key: string) {
+    setHiddenCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem("operator_hidden_columns", JSON.stringify([...next]));
+      } catch {
+        // см. комментарий выше
+      }
+      return next;
+    });
+  }
+  const colVisible = (key: string) => !hiddenCols.has(key);
   // Реал-тайм в этой панели — не вебсокеты (7 клиентов, один оператор, не
   // стоит того), а частый опрос: та же идея, что уже была у health ниже,
   // просто применена ко всем запросам страницы. Разная частота — по цене
@@ -423,6 +467,27 @@ function OperatorClientsPage() {
           <Button size="sm" variant="outline" onClick={onExport} disabled={exporting}>
             {exporting ? "Выгружаю…" : "Скачать CSV"}
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline">
+                Столбцы
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Показывать столбцы</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {COLUMN_DEFS.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.key}
+                  checked={colVisible(c.key)}
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={() => toggleColumn(c.key)}
+                >
+                  {c.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Link
             to="/operator/onboard"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 shrink-0"
@@ -614,36 +679,44 @@ function OperatorClientsPage() {
                 />
                 <TableHead>Бот</TableHead>
                 <TableHead>Статус</TableHead>
-                <TableHead>Владелец</TableHead>
-                <SortableHead
-                  label="Модули"
-                  sortKey="modules"
-                  active={sortKey}
-                  dir={sortDir}
-                  onClick={toggleSort}
-                />
-                <SortableHead
-                  label="Подписка"
-                  sortKey="subscription"
-                  active={sortKey}
-                  dir={sortDir}
-                  onClick={toggleSort}
-                />
-                <SortableHead
-                  label="Заказы за 30 дн"
-                  sortKey="orders"
-                  active={sortKey}
-                  dir={sortDir}
-                  onClick={toggleSort}
-                />
-                <SortableHead
-                  label="Место"
-                  sortKey="storage"
-                  active={sortKey}
-                  dir={sortDir}
-                  onClick={toggleSort}
-                />
-                <TableHead>Деплой</TableHead>
+                {colVisible("owner") && <TableHead>Владелец</TableHead>}
+                {colVisible("modules") && (
+                  <SortableHead
+                    label="Модули"
+                    sortKey="modules"
+                    active={sortKey}
+                    dir={sortDir}
+                    onClick={toggleSort}
+                  />
+                )}
+                {colVisible("subscription") && (
+                  <SortableHead
+                    label="Подписка"
+                    sortKey="subscription"
+                    active={sortKey}
+                    dir={sortDir}
+                    onClick={toggleSort}
+                  />
+                )}
+                {colVisible("orders") && (
+                  <SortableHead
+                    label="Заказы за 30 дн"
+                    sortKey="orders"
+                    active={sortKey}
+                    dir={sortDir}
+                    onClick={toggleSort}
+                  />
+                )}
+                {colVisible("storage") && (
+                  <SortableHead
+                    label="Место"
+                    sortKey="storage"
+                    active={sortKey}
+                    dir={sortDir}
+                    onClick={toggleSort}
+                  />
+                )}
+                {colVisible("deploy") && <TableHead>Деплой</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -707,53 +780,65 @@ function OperatorClientsPage() {
                     <TableCell>
                       <Badge variant={st.variant}>{st.text}</Badge>
                     </TableCell>
-                    <TableCell>
-                      {bot.owner_name || <span className="text-muted-foreground">—</span>}
-                    </TableCell>
-                    <TableCell>
-                      <ModulesCell modules={bot.modules} />
-                    </TableCell>
-                    <TableCell>
-                      <SubCell bot={bot} />
-                    </TableCell>
-                    <TableCell>
-                      <OrdersCell s={stats.data?.[bot.id]} />
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {stats.data?.[bot.id] ? formatBytes(stats.data[bot.id].storage_bytes) : "…"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-0.5">
-                        {bot.app_url ? (
-                          <a
-                            href={bot.app_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-primary hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            деплой ↗
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground">не задан</span>
-                        )}
-                        {(() => {
-                          const h = health.data?.[bot.id];
-                          const username = h?.ok ? h.report.bot_username : null;
-                          return username ? (
+                    {colVisible("owner") && (
+                      <TableCell>
+                        {bot.owner_name || <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                    )}
+                    {colVisible("modules") && (
+                      <TableCell>
+                        <ModulesCell modules={bot.modules} />
+                      </TableCell>
+                    )}
+                    {colVisible("subscription") && (
+                      <TableCell>
+                        <SubCell bot={bot} />
+                      </TableCell>
+                    )}
+                    {colVisible("orders") && (
+                      <TableCell>
+                        <OrdersCell s={stats.data?.[bot.id]} />
+                      </TableCell>
+                    )}
+                    {colVisible("storage") && (
+                      <TableCell className="text-sm text-muted-foreground">
+                        {stats.data?.[bot.id] ? formatBytes(stats.data[bot.id].storage_bytes) : "…"}
+                      </TableCell>
+                    )}
+                    {colVisible("deploy") && (
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          {bot.app_url ? (
                             <a
-                              href={`https://t.me/${username}`}
+                              href={bot.app_url}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-primary hover:underline text-xs"
+                              className="text-primary hover:underline"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              @{username} ↗
+                              деплой ↗
                             </a>
-                          ) : null;
-                        })()}
-                      </div>
-                    </TableCell>
+                          ) : (
+                            <span className="text-muted-foreground">не задан</span>
+                          )}
+                          {(() => {
+                            const h = health.data?.[bot.id];
+                            const username = h?.ok ? h.report.bot_username : null;
+                            return username ? (
+                              <a
+                                href={`https://t.me/${username}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary hover:underline text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                @{username} ↗
+                              </a>
+                            ) : null;
+                          })()}
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
