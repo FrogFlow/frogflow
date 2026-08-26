@@ -43,6 +43,7 @@ import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._
 import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
 import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
 import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
+import { Route as ApiOperatorCronHealthSnapshotRouteImport } from './routes/api/operator-cron/health-snapshot'
 import { Route as ApiInternalSetWebhookRouteImport } from './routes/api/internal/set-webhook'
 import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/reload'
 import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
@@ -241,6 +242,12 @@ const ApiOperatorCronRetentionRoute =
     path: '/api/operator-cron/retention',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOperatorCronHealthSnapshotRoute =
+  ApiOperatorCronHealthSnapshotRouteImport.update({
+    id: '/api/operator-cron/health-snapshot',
+    path: '/api/operator-cron/health-snapshot',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiInternalSetWebhookRoute = ApiInternalSetWebhookRouteImport.update({
   id: '/api/internal/set-webhook',
   path: '/api/internal/set-webhook',
@@ -418,6 +425,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
+  '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
@@ -477,6 +485,7 @@ export interface FileRoutesByTo {
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
+  '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
@@ -539,6 +548,7 @@ export interface FileRoutesById {
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
+  '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
@@ -602,6 +612,7 @@ export interface FileRouteTypes {
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
+    | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
     | '/operator/$botId'
@@ -661,6 +672,7 @@ export interface FileRouteTypes {
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
+    | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
     | '/operator/$botId'
@@ -722,6 +734,7 @@ export interface FileRouteTypes {
     | '/api/internal/notify-owner'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
+    | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
     | '/operator/_authed/$botId'
@@ -763,6 +776,7 @@ export interface RootRouteChildren {
   ApiInternalNotifyOwnerRoute: typeof ApiInternalNotifyOwnerRoute
   ApiInternalReloadRoute: typeof ApiInternalReloadRoute
   ApiInternalSetWebhookRoute: typeof ApiInternalSetWebhookRoute
+  ApiOperatorCronHealthSnapshotRoute: typeof ApiOperatorCronHealthSnapshotRoute
   ApiOperatorCronRetentionRoute: typeof ApiOperatorCronRetentionRoute
   ApiOperatorCronSubscriptionsRoute: typeof ApiOperatorCronSubscriptionsRoute
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
@@ -1015,6 +1029,13 @@ declare module '@tanstack/react-router' {
       path: '/api/operator-cron/retention'
       fullPath: '/api/operator-cron/retention'
       preLoaderRoute: typeof ApiOperatorCronRetentionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/operator-cron/health-snapshot': {
+      id: '/api/operator-cron/health-snapshot'
+      path: '/api/operator-cron/health-snapshot'
+      fullPath: '/api/operator-cron/health-snapshot'
+      preLoaderRoute: typeof ApiOperatorCronHealthSnapshotRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/internal/set-webhook': {
@@ -1318,6 +1339,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalNotifyOwnerRoute: ApiInternalNotifyOwnerRoute,
   ApiInternalReloadRoute: ApiInternalReloadRoute,
   ApiInternalSetWebhookRoute: ApiInternalSetWebhookRoute,
+  ApiOperatorCronHealthSnapshotRoute: ApiOperatorCronHealthSnapshotRoute,
   ApiOperatorCronRetentionRoute: ApiOperatorCronRetentionRoute,
   ApiOperatorCronSubscriptionsRoute: ApiOperatorCronSubscriptionsRoute,
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,

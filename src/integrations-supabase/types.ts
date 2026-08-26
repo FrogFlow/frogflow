@@ -436,6 +436,43 @@ export type Database = {
         };
         Relationships: [];
       };
+      // Заведена MIGRATION-48. Как и другие ручные добавления в этом файле:
+      // scripts/sync-db-types.mjs новые объекты сюда не приносит.
+      bot_health_snapshots: {
+        Row: {
+          id: string;
+          bot_id: string;
+          at: string;
+          ok: boolean;
+          error: string | null;
+          pending_updates: number | null;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          at?: string;
+          ok: boolean;
+          error?: string | null;
+          pending_updates?: number | null;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          at?: string;
+          ok?: boolean;
+          error?: string | null;
+          pending_updates?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "bot_health_snapshots_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       zernio_logs: {
         Row: {
           id: string;

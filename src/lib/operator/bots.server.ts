@@ -400,6 +400,64 @@ export async function loadHealthAll(): Promise<Record<string, BotHealthRow>> {
   return Object.fromEntries(rows);
 }
 
+export type HealthOutage = {
+  /** null — падение продолжается, последнего «отвечает» снимка ещё не было. */
+  endedAt: string | null;
+  startedAt: string;
+  error: string | null;
+};
+
+export type HealthHistorySummary = {
+  /** Доля снимков с ok=true за окно — null, если снимков ещё не накопилось. */
+  uptimeRatio: number | null;
+  snapshotCount: number;
+  /** Новее сверху — так первым в списке идёт то, что случилось недавно. */
+  outages: HealthOutage[];
+};
+
+/**
+ * История падений клиента — снимки пишет крон раз в 15 минут (MIGRATION-48),
+ * здесь они схлопываются в интервалы простоя вместо сырого списка точек: то
+ * же самое «не отвечает» может занять час и лечь двумя-тремя снимками подряд,
+ * а оператору интереснее «когда и сколько», а не каждая точка отдельно.
+ */
+export async function getHealthHistory(botId: string, days = 14): Promise<HealthHistorySummary> {
+  await requireOperator();
+  const s = await db();
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await s
+    .from("bot_health_snapshots")
+    .select("at, ok, error")
+    .eq("bot_id", botId)
+    .gte("at", cutoff)
+    .order("at", { ascending: true });
+  if (error) throw new Error(`Не удалось получить историю: ${error.message}`);
+
+  const rows = data ?? [];
+  if (rows.length === 0) return { uptimeRatio: null, snapshotCount: 0, outages: [] };
+
+  const okCount = rows.filter((r) => r.ok).length;
+  const outages: HealthOutage[] = [];
+  let openOutage: { startedAt: string; error: string | null } | null = null;
+  for (const r of rows) {
+    if (!r.ok && !openOutage) {
+      openOutage = { startedAt: r.at, error: r.error };
+    } else if (r.ok && openOutage) {
+      outages.push({ startedAt: openOutage.startedAt, endedAt: r.at, error: openOutage.error });
+      openOutage = null;
+    }
+  }
+  if (openOutage) {
+    outages.push({ startedAt: openOutage.startedAt, endedAt: null, error: openOutage.error });
+  }
+
+  return {
+    uptimeRatio: okCount / rows.length,
+    snapshotCount: rows.length,
+    outages: outages.reverse(),
+  };
+}
+
 /**
  * Готовность клиента к работе — одной кнопкой вместо обхода вручную.
  *

@@ -15,6 +15,7 @@
     { "path": "/api/cron/cart-reminder", "schedule": "*/30 * * * *" },
     { "path": "/api/public/vip/cron", "schedule": "30 * * * *" },
     { "path": "/api/operator-cron/subscriptions", "schedule": "0 4 * * *" },
-    { "path": "/api/operator-cron/retention", "schedule": "45 3 * * *" }
+    { "path": "/api/operator-cron/retention", "schedule": "45 3 * * *" },
+    { "path": "/api/operator-cron/health-snapshot", "schedule": "*/15 * * * *" }
   ]
 }

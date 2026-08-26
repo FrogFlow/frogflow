@@ -19,6 +19,7 @@ import {
   setArchivedFn,
   checkReadinessFn,
   listOwnerCandidatesFn,
+  getHealthHistoryFn,
 } from "@/lib/operator/bots.functions";
 import {
   listPendingModuleRequestsFn,
@@ -465,6 +466,7 @@ function OperatorClientCard() {
         <TabsContent value="deploy" className="space-y-6">
           <WebhookSection botId={botId} appUrl={bot.app_url} />
           <ReadinessSection botId={botId} />
+          <HealthHistorySection botId={botId} />
           <EnvBlockSection botId={botId} modules={bot.modules} appUrl={bot.app_url} />
         </TabsContent>
 
@@ -1360,6 +1362,95 @@ function ReadinessSection({ botId }: { botId: string }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function formatDuration(startIso: string, endIso: string | null): string {
+  const end = endIso ? new Date(endIso).getTime() : Date.now();
+  const minutes = Math.max(1, Math.round((end - new Date(startIso).getTime()) / 60_000));
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours < 24) return rest > 0 ? `${hours} ч ${rest} мин` : `${hours} ч`;
+  const days = Math.floor(hours / 24);
+  return `${days} дн ${hours % 24} ч`;
+}
+
+/**
+ * История падений — снимки пишет крон раз в 15 минут (MIGRATION-48), здесь
+ * они уже схлопнуты в интервалы простоя на сервере. До первого прохода
+ * крона (максимум 15 минут после выкладки) снимков ещё нет — это ожидаемо,
+ * не ошибка.
+ */
+function HealthHistorySection({ botId }: { botId: string }) {
+  const history = useQuery({
+    queryKey: ["operator_health_history", botId],
+    queryFn: () => getHealthHistoryFn({ data: { botId } }),
+    refetchInterval: 60_000,
+  });
+
+  return (
+    <section className="bg-card border rounded-lg p-4 space-y-3">
+      <h2 className="font-medium">История падений</h2>
+      <p className="text-sm text-muted-foreground">
+        Снимки состояния за последние 14 дней, раз в 15 минут — отдельно от проверки выше, копится
+        сама по себе кроном.
+      </p>
+
+      {history.isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+      {history.isError && (
+        <p className="text-sm text-destructive">
+          {errorMessage(history.error) || "Не удалось получить историю"}
+        </p>
+      )}
+
+      {history.data && history.data.snapshotCount === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Снимков пока нет — появятся после первого прохода крона (не позже чем через 15 минут).
+        </p>
+      )}
+
+      {history.data && history.data.snapshotCount > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm">
+            <span className="font-medium">
+              {Math.round((history.data.uptimeRatio ?? 0) * 100)}%
+            </span>{" "}
+            снимков «отвечает» за 14 дней · {history.data.snapshotCount} снимков
+          </p>
+          {history.data.outages.length === 0 ? (
+            <p className="text-sm text-green-600 dark:text-green-500">
+              Падений за это время не было.
+            </p>
+          ) : (
+            <ul className="text-sm divide-y rounded-md border">
+              {history.data.outages.map((o, i) => (
+                <li key={i} className="px-3 py-1.5 flex flex-wrap items-baseline gap-x-2">
+                  <span
+                    className={o.endedAt ? "text-muted-foreground" : "text-destructive font-medium"}
+                  >
+                    {o.endedAt ? "было" : "продолжается сейчас"}
+                  </span>
+                  <span>
+                    с {new Date(o.startedAt).toLocaleString("ru-RU")}
+                    {o.endedAt && ` до ${new Date(o.endedAt).toLocaleString("ru-RU")}`} ·
+                    длительность {formatDuration(o.startedAt, o.endedAt)}
+                  </span>
+                  {o.error && (
+                    <span
+                      className="text-xs text-muted-foreground max-w-full truncate"
+                      title={o.error}
+                    >
+                      — {o.error}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </section>

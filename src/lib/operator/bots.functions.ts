@@ -20,6 +20,7 @@ import {
   listFeed,
   checkReadinessAll,
   exportClientsCsv,
+  getHealthHistory,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -245,6 +246,14 @@ export const exportClientsCsvFn = createServerFn({ method: "POST" }).handler(asy
   await requireOperator();
   return exportClientsCsv();
 });
+
+/** История падений клиента за последние 14 дней — вкладка «Деплой» карточки. */
+export const getHealthHistoryFn = createServerFn({ method: "GET" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return getHealthHistory(data.botId);
+  });
 
 /** Чего не хватает самой панели. Пустые значения в блоке иначе всплывают уже на упавшем деплое клиента. */
 export const panelSelfCheckFn = createServerFn({ method: "GET" }).handler(async () => {
