@@ -22,6 +22,7 @@ import {
   exportClientsCsv,
   getHealthHistory,
   exportFeedCsv,
+  exportHealthHistoryCsv,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -255,6 +256,14 @@ export const getHealthHistoryFn = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     await requireOperator();
     return getHealthHistory(data.botId);
+  });
+
+/** Интервалы простоя клиента в CSV — вкладка «Деплой» карточки. */
+export const exportHealthHistoryCsvFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return exportHealthHistoryCsv(data.botId);
   });
 
 /** Журнал (с текущими фильтрами страницы) одним CSV. */

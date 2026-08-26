@@ -458,6 +458,50 @@ export async function getHealthHistory(botId: string, days = 14): Promise<Health
   };
 }
 
+function formatOutageDuration(startIso: string, endIso: string | null): string {
+  const end = endIso ? new Date(endIso).getTime() : Date.now();
+  const minutes = Math.max(1, Math.round((end - new Date(startIso).getTime()) / 60_000));
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours < 24) return rest > 0 ? `${hours} ч ${rest} мин` : `${hours} ч`;
+  const days = Math.floor(hours / 24);
+  return `${days} дн ${hours % 24} ч`;
+}
+
+/**
+ * Интервалы простоя одного клиента в CSV — та же вкладка «Деплой», для
+ * разбора инцидентов вне панели. Экспортирует уже схлопнутые интервалы
+ * (как на экране), а не сырые снимки каждые 15 минут — то же соображение,
+ * что и у getHealthHistory().
+ */
+export async function exportHealthHistoryCsv(
+  botId: string,
+  days = 14,
+): Promise<{ csv: string; count: number }> {
+  await requireOperator();
+  const s = await db();
+  const { data: bot, error: botErr } = await s
+    .from("bots")
+    .select("bot_name")
+    .eq("id", botId)
+    .single();
+  if (botErr || !bot) throw new Error(`Клиент не найден: ${botErr?.message ?? botId}`);
+
+  const history = await getHealthHistory(botId, days);
+  const csv = toCsv(
+    ["Клиент", "Начало", "Конец", "Длительность", "Ошибка"],
+    history.outages.map((o) => [
+      bot.bot_name,
+      isoDate(o.startedAt),
+      o.endedAt ? isoDate(o.endedAt) : "продолжается",
+      formatOutageDuration(o.startedAt, o.endedAt),
+      o.error ?? "",
+    ]),
+  );
+  return { csv, count: history.outages.length };
+}
+
 /**
  * Готовность клиента к работе — одной кнопкой вместо обхода вручную.
  *

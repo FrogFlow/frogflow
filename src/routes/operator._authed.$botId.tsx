@@ -20,6 +20,7 @@ import {
   checkReadinessFn,
   listOwnerCandidatesFn,
   getHealthHistoryFn,
+  exportHealthHistoryCsvFn,
 } from "@/lib/operator/bots.functions";
 import {
   listPendingModuleRequestsFn,
@@ -1501,6 +1502,24 @@ function HealthHistorySection({ botId }: { botId: string }) {
     queryFn: () => getHealthHistoryFn({ data: { botId } }),
     refetchInterval: 60_000,
   });
+  const [exportingHistory, setExportingHistory] = useState(false);
+
+  async function onExportHistory() {
+    setExportingHistory(true);
+    try {
+      const res = await exportHealthHistoryCsvFn({ data: { botId } });
+      const url = URL.createObjectURL(new Blob([res.csv], { type: "text/csv;charset=utf-8" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `downtime-${botId}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e) || "Не удалось выгрузить");
+    } finally {
+      setExportingHistory(false);
+    }
+  }
 
   return (
     <section className="bg-card border rounded-lg p-4 space-y-3">
@@ -1525,12 +1544,24 @@ function HealthHistorySection({ botId }: { botId: string }) {
 
       {history.data && history.data.snapshotCount > 0 && (
         <div className="space-y-2">
-          <p className="text-sm">
-            <span className="font-medium">
-              {Math.round((history.data.uptimeRatio ?? 0) * 100)}%
-            </span>{" "}
-            снимков «отвечает» за 14 дней · {history.data.snapshotCount} снимков
-          </p>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-sm">
+              <span className="font-medium">
+                {Math.round((history.data.uptimeRatio ?? 0) * 100)}%
+              </span>{" "}
+              снимков «отвечает» за 14 дней · {history.data.snapshotCount} снимков
+            </p>
+            {history.data.outages.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onExportHistory}
+                disabled={exportingHistory}
+              >
+                {exportingHistory ? "Выгружаю…" : "Скачать CSV"}
+              </Button>
+            )}
+          </div>
           {history.data.outages.length === 0 ? (
             <p className="text-sm text-green-600 dark:text-green-500">
               Падений за это время не было.
