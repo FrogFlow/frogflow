@@ -772,7 +772,12 @@ function MoneySummary({
   expiringSoon,
   byMonth,
 }: {
-  revenue?: { currency: string; total_all_time: number; total_this_month: number }[];
+  revenue?: {
+    currency: string;
+    total_all_time: number;
+    total_this_month: number;
+    total_last_month: number;
+  }[];
   loading: boolean;
   overdue: { id: string; bot_name: string; subscription_days_left: number | null }[];
   expiringSoon: { id: string; bot_name: string; subscription_days_left: number | null }[];
@@ -791,17 +796,41 @@ function MoneySummary({
               Платежей ещё не заводили — добавьте их во вкладке «Подписка» у клиента.
             </p>
           ) : (
-            totals.map((t) => (
-              <div key={t.currency}>
-                <p className="text-2xl font-semibold">
-                  {t.total_this_month.toLocaleString("ru-RU")} {t.currency}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  собрано в этом месяце · всего {t.total_all_time.toLocaleString("ru-RU")}{" "}
-                  {t.currency}
-                </p>
-              </div>
-            ))
+            totals.map((t) => {
+              // Дельта только когда есть с чем сравнивать — «+100%» от нуля
+              // вводит в заблуждение больше, чем помогает.
+              const delta =
+                t.total_last_month > 0
+                  ? Math.round(
+                      ((t.total_this_month - t.total_last_month) / t.total_last_month) * 100,
+                    )
+                  : null;
+              return (
+                <div key={t.currency}>
+                  <p className="text-2xl font-semibold inline-flex items-baseline gap-2">
+                    {t.total_this_month.toLocaleString("ru-RU")} {t.currency}
+                    {delta !== null && (
+                      <span
+                        className={`text-sm font-medium ${
+                          delta > 0
+                            ? "text-green-600 dark:text-green-500"
+                            : delta < 0
+                              ? "text-destructive"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {delta > 0 ? "+" : ""}
+                        {delta}% к прошлому месяцу
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    собрано в этом месяце · всего {t.total_all_time.toLocaleString("ru-RU")}{" "}
+                    {t.currency}
+                  </p>
+                </div>
+              );
+            })
           )}
         </div>
       )}

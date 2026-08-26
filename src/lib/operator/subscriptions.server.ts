@@ -244,13 +244,19 @@ export async function deletePayment(botId: string, paymentId: string, actor: str
   await logEvent(botId, actor, "payment", { action: "deleted", payment_id: paymentId });
 }
 
-export type RevenueTotals = { currency: string; total_all_time: number; total_this_month: number };
+export type RevenueTotals = {
+  currency: string;
+  total_all_time: number;
+  total_this_month: number;
+  /** Собрано за тот же по счёту, но прошлый календарный месяц — для сравнения динамики. */
+  total_last_month: number;
+};
 
 /**
  * Сколько всего заплатили клиенты — сгруппировано по валюте (каждая сумма в
- * своей, конвертацию платёж-в-платёж не выдумываем). "В этом месяце" — по
- * paid_at (когда деньги реально пришли), не по periodu, который может быть в
- * будущем при предоплате.
+ * своей, конвертацию платёж-в-платёж не выдумываем). "В этом месяце"/"в
+ * прошлом месяце" — по paid_at (когда деньги реально пришли), не по periodu,
+ * который может быть в будущем при предоплате.
  */
 export async function getRevenueSummary(): Promise<RevenueTotals[]> {
   await requireOperator();
@@ -262,6 +268,9 @@ export async function getRevenueSummary(): Promise<RevenueTotals[]> {
   const monthStartIso = new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
   ).toISOString();
+  const lastMonthStartIso = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+  ).toISOString();
 
   const map = new Map<string, RevenueTotals>();
   for (const p of data ?? []) {
@@ -269,9 +278,11 @@ export async function getRevenueSummary(): Promise<RevenueTotals[]> {
       currency: p.currency,
       total_all_time: 0,
       total_this_month: 0,
+      total_last_month: 0,
     };
     cur.total_all_time += Number(p.amount);
     if (p.paid_at >= monthStartIso) cur.total_this_month += Number(p.amount);
+    else if (p.paid_at >= lastMonthStartIso) cur.total_last_month += Number(p.amount);
     map.set(p.currency, cur);
   }
   return [...map.values()];
