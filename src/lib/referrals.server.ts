@@ -98,6 +98,8 @@ export async function registerReferral(referredId: number, referrerIdRaw: string
  * первой выданной покупке приглашённого.
  */
 export async function rewardReferralIfFirstDelivery(referredTelegramId: number): Promise<void> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("referral"))) return;
   const s = await db();
   const { data: referral } = await s
     .from("referrals")

@@ -90,8 +90,17 @@ export async function redeemPointsForOrder(
  * Идемпотентность — на самом заказе (points_earned: 0 → N ровно один раз),
  * поэтому повторный вызов на том же orderId (повтор доставки, гонка воркеров)
  * не начислит баллы дважды.
+ *
+ * hasModule() — раньше эта функция не проверяла модуль вовсе (рассуждение
+ * было: списать баллы без модуля всё равно нельзя, значит начисление без
+ * модуля безобидно). На практике это неверно: покупателю продавца без
+ * модуля всё равно уходило "🏆 Вам начислено N баллов" — реклама функции,
+ * которую продавец не покупал, и баллы, которыми покупатель никогда не
+ * сможет воспользоваться.
  */
 export async function awardPointsForDelivery(orderId: number, telegramId: number): Promise<void> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("loyalty"))) return;
   const s = await db();
   const { data: order } = await s.from("orders").select("total").eq("id", orderId).maybeSingle();
   if (!order) return;
