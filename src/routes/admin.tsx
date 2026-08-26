@@ -118,7 +118,7 @@ function AdminLayout() {
                 <GroupLink to="/admin/broadcast" locale={locale}>
                   {t("broadcast", locale)}
                 </GroupLink>
-                <GroupLink to="/admin/promo-codes" locale={locale}>
+                <GroupLink to="/admin/promo-codes" locked={!modules.coupons} locale={locale}>
                   {t("promoCodes", locale)}
                 </GroupLink>
                 <GroupLink to="/admin/gift-certificates" locale={locale}>

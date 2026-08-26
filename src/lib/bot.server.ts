@@ -1842,7 +1842,12 @@ async function showCart(chat_id: number, user: BotUser) {
     text += `• ${escapeHtml(p.name)} × ${it.quantity} — ${formatMoney(line, currency)}\n`;
     buttons.push([{ text: m.removeItem(p.name), callback_data: `rem:${it.id}` }]);
   }
-  const promoCode = user.state?.promo_code;
+  // Кейс 3 №1/№3 (промокоды/баллы) продаются как отдельные платные модули
+  // (registry.ts coupons/loyalty) — без него ни кнопка, ни списание не
+  // показываются, даже если в state завалялся код/переключатель с
+  // момента, когда модуль ещё был включён.
+  const couponsOn = await hasModule("coupons");
+  const promoCode = couponsOn ? user.state?.promo_code : undefined;
   let discount = 0;
   if (promoCode) {
     const found = await findValidPromoCode(promoCode);
@@ -1851,7 +1856,8 @@ async function showCart(chat_id: number, user: BotUser) {
       text += m.discountLine(formatMoney(discount, currency));
     }
   }
-  const pointsBalance = user.loyalty_points ?? 0;
+  const loyaltyOn = await hasModule("loyalty");
+  const pointsBalance = loyaltyOn ? (user.loyalty_points ?? 0) : 0;
   const usePoints = Boolean(user.state?.use_points);
   let pointsDiscount = 0;
   if (pointsBalance > 0) {
@@ -1880,11 +1886,13 @@ async function showCart(chat_id: number, user: BotUser) {
     { text: m.checkoutBtn, callback_data: "checkout" },
     { text: m.clearBtn, callback_data: "clear" },
   ]);
-  buttons.push([
-    promoCode
-      ? { text: m.removePromoBtn, callback_data: "promo:clear" }
-      : { text: m.promoCodeBtn, callback_data: "promo:enter" },
-  ]);
+  if (couponsOn) {
+    buttons.push([
+      promoCode
+        ? { text: m.removePromoBtn, callback_data: "promo:clear" }
+        : { text: m.promoCodeBtn, callback_data: "promo:enter" },
+    ]);
+  }
   if (pointsBalance > 0) {
     buttons.push([
       usePoints
@@ -2291,14 +2299,17 @@ async function placeOrderInner(
   }
   // Промокод — тот же приём: читаем один раз здесь и сразу снимаем из
   // состояния, чтобы код не липнул к следующему заказу, если этот сорвётся.
-  const promoCodeInput = user.state?.promo_code ?? null;
+  // hasModule — на случай, если продавец выключил модуль между тем, как
+  // покупатель ввёл код в корзине, и оформлением: старое значение в state
+  // не должно тихо продолжать работать.
+  const promoCodeInput = (await hasModule("coupons")) ? (user.state?.promo_code ?? null) : null;
   if (user.state?.promo_code !== undefined) {
     const { promo_code: _promo_code, ...rest } = user.state;
     user = { ...user, state: rest };
   }
   // Тот же приём для баллов: снимаем переключатель здесь же, чтобы он не
   // прилип к следующему заказу, если этот сорвётся.
-  const usePointsInput = user.state?.use_points === true;
+  const usePointsInput = (await hasModule("loyalty")) && user.state?.use_points === true;
   if (user.state?.use_points !== undefined) {
     const { use_points: _use_points, ...rest } = user.state;
     user = { ...user, state: rest };
@@ -3255,11 +3266,14 @@ async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale
     .join("\n");
   // «Скачать снова» и «Оценить» — по кнопке на каждый уже выданный заказ
   // (Кейс 3, №4 и №5): самообслуживание без обращения к продавцу.
+  const reviewOn = await hasModule("review_request");
   const buttons = data
     .filter((o) => o.status === "delivered")
     .map((o) => [
       { text: m.resendBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `resend:${o.id}` },
-      { text: m.rateBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `rate:${o.id}` },
+      ...(reviewOn
+        ? [{ text: m.rateBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `rate:${o.id}` }]
+        : []),
     ]);
   await tg("sendMessage", {
     chat_id,
@@ -3875,7 +3889,7 @@ export async function handleUpdate(update: TelegramUpdate) {
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start" || msg.text?.startsWith("/start ")) {
       const startPayload = msg.text.slice("/start".length).trim();
-      if (startPayload.startsWith("ref_")) {
+      if (startPayload.startsWith("ref_") && (await hasModule("referral"))) {
         const { registerReferral } = await import("./referrals.server");
         await registerReferral(from.id, startPayload.slice(4)).catch((e) =>
           console.error("[bot] registerReferral failed", e),
@@ -3908,7 +3922,6 @@ export async function handleUpdate(update: TelegramUpdate) {
       // Без модуля multi_language выбор языка не показывается вовсе — сразу
       // подставляется locale по умолчанию (см. applyLocaleSelection), чтобы
       // покупатель не выбирал то, чего продавец не оплатил.
-      const { hasModule } = await import("./modules/modules.server");
       if (await hasModule("multi_language")) {
         await askLanguage(chat_id);
       } else {
@@ -4378,7 +4391,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       case "ℹ️ Информация": {
         const base = originFromState();
         const { getCachedBotUrl } = await import("./bot-url.server");
-        const botUrl = await getCachedBotUrl();
+        const [botUrl, referralOn] = await Promise.all([getCachedBotUrl(), hasModule("referral")]);
         await tg("sendMessage", {
           chat_id,
           text: m.infoHeader + m.infoRequiredDocs + legalConsentHtml(base, locale),
@@ -4389,7 +4402,7 @@ export async function handleUpdate(update: TelegramUpdate) {
               [{ text: m.privacyBtn, url: `${base}/legal/privacy` }],
               [{ text: m.requisitesBtn, url: `${base}/legal/requisites` }],
               [{ text: m.aboutBtn, url: `${base}/legal/about` }],
-              ...(botUrl
+              ...(botUrl && referralOn
                 ? [[{ text: m.inviteFriendBtn, url: `${botUrl}?start=ref_${from.id}` }]]
                 : []),
             ],
