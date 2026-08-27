@@ -510,9 +510,15 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     };
     // Zernio PATCH cannot change platformPostId, postId, or trigger. If those
     // fields are unchanged, preserve the rule and its statistics with PATCH.
+    // "Все посты" приходит как null с фронта (original) и как undefined из
+    // формы сохранения (platformPostId) — это одно и то же «нет поста», но
+    // `null !== undefined`, и без нормализации это ложно читалось как смена
+    // цели: правило пересоздавалось, счётчик срабатываний обнулялся при
+    // каждом редактировании catch-all автоматизации, даже без правки цели.
+    const normalizePostId = (v: string | null | undefined) => v || null;
     if (automationId) {
       if (
-        originalPlatformPostId === data.platformPostId &&
+        normalizePostId(originalPlatformPostId) === normalizePostId(data.platformPostId) &&
         (originalTrigger || "comment") === data.trigger
       ) {
         return await updateCommentAutomation(automationId, automation);
