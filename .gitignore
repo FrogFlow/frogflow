@@ -25,6 +25,9 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Claude Code agent worktrees (ephemeral, created/cleaned up by tooling)
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
