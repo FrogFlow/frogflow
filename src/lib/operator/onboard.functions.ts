@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOperator, getOperatorSession } from "./guard.server";
 import { MODULE_KEYS, type ModuleKey } from "@/lib/modules/registry";
+import { VERTICAL_KEYS, type VerticalKey } from "@/lib/verticals/registry";
 import { onboardClient, verifyBotToken } from "./onboard.server";
 
 async function actor(): Promise<string> {
@@ -31,6 +32,7 @@ const OnboardInput = z.object({
     .regex(/^[a-z0-9_-]+$/, "Только латиница в нижнем регистре, цифры, дефис и подчёркивание"),
   bot_token: TokenSchema,
   app_url: z.string().url().nullable(),
+  vertical: z.enum(VERTICAL_KEYS as [string, ...string[]]),
   modules: z.array(ModuleKeyEnum),
   owner_name: z.string().nullable(),
   owner_contact: z.string().nullable(),
@@ -44,5 +46,10 @@ export const onboardClientFn = createServerFn({ method: "POST" })
   .validator((data: unknown) => OnboardInput.parse(data))
   .handler(async ({ data }) => {
     await requireOperator();
-    return onboardClient({ ...data, modules: data.modules as ModuleKey[] }, await actor());
+    // z.enum(...) validated both at runtime; casts just restore the literal
+    // union types that the "as [string, ...]" widening for zod dropped.
+    return onboardClient(
+      { ...data, modules: data.modules as ModuleKey[], vertical: data.vertical as VerticalKey },
+      await actor(),
+    );
   });

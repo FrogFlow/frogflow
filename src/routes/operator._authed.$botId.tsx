@@ -37,6 +37,7 @@ import {
   exportPaymentsCsvFn,
 } from "@/lib/operator/subscriptions.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { VERTICAL_KEYS, verticalDef, type VerticalKey } from "@/lib/verticals/registry";
 import { formatBytes, daysSince } from "@/lib/operator/format";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
@@ -45,6 +46,13 @@ import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
 import { Switch } from "@/components-ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components-ui/select";
 import { StorageDonut, DonutLegendRow, buildDonutSegments } from "@/components-ui/storage-donut";
 
 export const Route = createFileRoute("/operator/_authed/$botId")({
@@ -122,6 +130,7 @@ function OperatorClientCard() {
     notes: "",
     paused_message: "",
     tags: "",
+    vertical: "digital" as VerticalKey,
   });
 
   useEffect(() => {
@@ -137,6 +146,7 @@ function OperatorClientCard() {
       notes: b.notes ?? "",
       paused_message: b.paused_message ?? "",
       tags: b.tags.join(", "),
+      vertical: b.vertical,
     });
   }, [botQuery.data]);
 
@@ -206,6 +216,7 @@ function OperatorClientCard() {
           app_url: meta.app_url.trim() || null,
           notes: meta.notes.trim() || null,
           paused_message: meta.paused_message.trim() || null,
+          vertical: meta.vertical,
           tags: meta.tags
             .split(",")
             .map((t) => t.trim())
@@ -462,6 +473,32 @@ function OperatorClientCard() {
                     onChange={(e) => setMeta((m) => ({ ...m, app_url: e.target.value }))}
                     placeholder="https://…vercel.app"
                   />
+                </div>
+                <div className="space-y-1">
+                  <Label>Ниша</Label>
+                  <Select
+                    value={meta.vertical}
+                    onValueChange={(v) => setMeta((m) => ({ ...m, vertical: v as VerticalKey }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VERTICAL_KEYS.map((key) => (
+                        <SelectItem key={key} value={key}>
+                          {verticalDef(key).title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {meta.vertical !== bot.vertical && (
+                    <p className="text-xs text-amber-600">
+                      Само по себе сохранение бота не переключает. Впишите{" "}
+                      <code>VERTICAL={meta.vertical}</code> в переменные проекта Vercel (или уберите
+                      переменную для «Цифровые материалы») и передеплойте — рантайм читает её
+                      напрямую, а не эту запись.
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="space-y-1">

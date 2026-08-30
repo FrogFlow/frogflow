@@ -3,12 +3,20 @@ import { errorMessage } from "@/lib/error-message";
 import { useState } from "react";
 import { onboardClientFn, verifyBotTokenFn } from "@/lib/operator/onboard.functions";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { VERTICAL_KEYS, verticalDef, type VerticalKey } from "@/lib/verticals/registry";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
 import { Checkbox } from "@/components-ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components-ui/select";
 
 export const Route = createFileRoute("/operator/_authed/onboard")({
   head: () => ({ meta: [{ title: "Подключить клиента — панель оператора" }] }),
@@ -60,6 +68,16 @@ const PRESETS: { title: string; hint: string; modules: ModuleKey[] }[] = [
   },
 ];
 
+/**
+ * Пресет ниши — «Магазин» плюс suggestedModules из реестра ниш
+ * (verticals/registry.ts), а не ещё один захардкоженный список модулей:
+ * добавить нишу становится делом одного файла, не двух.
+ */
+function presetForVertical(key: VerticalKey): ModuleKey[] {
+  const extra = verticalDef(key).suggestedModules;
+  return [...new Set([...BASE_MODULES, ...extra])] as ModuleKey[];
+}
+
 function OnboardPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -76,6 +94,7 @@ function OnboardPage() {
   });
   // По умолчанию — только то, что входит в базовый пакет по прайсу.
   const [modules, setModules] = useState<ModuleKey[]>(BASE_MODULES);
+  const [vertical, setVertical] = useState<VerticalKey>("digital");
   const [checking, setChecking] = useState(false);
   const [botIdentity, setBotIdentity] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -110,6 +129,7 @@ function OnboardPage() {
           owner_slug: form.owner_slug.trim(),
           bot_token: form.bot_token.trim(),
           app_url: form.app_url.trim() || null,
+          vertical,
           modules,
           owner_name: form.owner_name.trim() || null,
           owner_contact: form.owner_contact.trim() || null,
@@ -218,6 +238,25 @@ function OnboardPage() {
               Можно оставить пустым и заполнить позже, когда проект Vercel будет создан.
             </p>
           </div>
+          <div className="space-y-1">
+            <Label>Ниша</Label>
+            <Select value={vertical} onValueChange={(v) => setVertical(v as VerticalKey)}>
+              <SelectTrigger className="sm:w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VERTICAL_KEYS.map((key) => (
+                  <SelectItem key={key} value={key}>
+                    {verticalDef(key).title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Тексты и умолчания бота (каталог, оплата, выдача заказа) — по этой нише. Попадёт в
+              блок переменных как <code>VERTICAL=</code>, менять в Vercel руками не нужно.
+            </p>
+          </div>
           <label className="flex items-start gap-2 text-sm cursor-pointer">
             <Checkbox
               checked={form.set_webhook}
@@ -309,6 +348,19 @@ function OnboardPage() {
                 </Button>
               );
             })}
+            {verticalDef(vertical).suggestedModules.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setModules(presetForVertical(vertical))}
+                title={`Базовые + ${verticalDef(vertical)
+                  .suggestedModules.map((k) => moduleDef(k).title)
+                  .join(", ")}`}
+              >
+                Как у ниши «{verticalDef(vertical).title}»
+              </Button>
+            )}
             <Button
               type="button"
               size="sm"

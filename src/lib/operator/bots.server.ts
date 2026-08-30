@@ -1,5 +1,6 @@
 import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import type { VerticalKey } from "@/lib/verticals/registry";
 import { callInternal } from "./internal-client.server";
 import { logEvent } from "./events.server";
 import type { Json } from "@/integrations-supabase/types";
@@ -25,6 +26,13 @@ type BotBase = {
   subscription_expires_at: string | null;
   /** Метки оператора для фильтрации в панели (MIGRATION-47) — не видны клиенту. */
   tags: string[];
+  /**
+   * Ниша деплоя (MIGRATION-49) — запись панели о том, какой VERTICAL= стоит
+   * в переменных Vercel. Рантайм её не читает: читает сам process.env на
+   * деплое. Расхождение возможно (переменную поменяли в Vercel напрямую,
+   * минуя панель) — это ожидаемо, как и с любым другим полем блока переменных.
+   */
+  vertical: VerticalKey;
 };
 
 /**
@@ -49,7 +57,7 @@ export async function listBots(includeArchived = false): Promise<BotListItem[]> 
   let query = s
     .from("bots")
     .select(
-      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings, archived_at, modules, owner_telegram_id, tags",
+      "id, bot_name, status, owner_name, app_url, notes, subscription_plan, subscription_expires_at, settings, archived_at, modules, owner_telegram_id, tags, vertical",
     )
     .order("bot_name", { ascending: true });
   if (!includeArchived) query = query.is("archived_at", null);
@@ -87,6 +95,7 @@ export async function listBots(includeArchived = false): Promise<BotListItem[]> 
         (k) => (b.modules as Record<string, boolean> | null)?.[k] === true,
       ),
       has_owner_telegram_id: b.owner_telegram_id != null,
+      vertical: (b.vertical ?? "digital") as VerticalKey,
     };
   });
 }
@@ -118,7 +127,7 @@ export async function getBot(botId: string): Promise<BotDetail> {
     // Одной строкой, а не конкатенацией: PostgREST выводит типы строки только
     // из строкового литерала — склейка превращает результат в GenericStringError.
     .select(
-      "id, bot_name, owner_id, status, owner_name, owner_contact, owner_telegram_id, app_url, notes, paused_message, subscription_plan, subscription_expires_at, modules, internal_secret, archived_at, tags",
+      "id, bot_name, owner_id, status, owner_name, owner_contact, owner_telegram_id, app_url, notes, paused_message, subscription_plan, subscription_expires_at, modules, internal_secret, archived_at, tags, vertical",
     )
     .eq("id", botId)
     .single();
@@ -144,6 +153,7 @@ export async function getBot(botId: string): Promise<BotDetail> {
     subscription_plan: data.subscription_plan,
     subscription_expires_at: data.subscription_expires_at,
     tags: data.tags ?? [],
+    vertical: (data.vertical ?? "digital") as VerticalKey,
     modules,
   };
 }
@@ -235,6 +245,7 @@ export type BotMetaPatch = Partial<{
   notes: string | null;
   paused_message: string | null;
   tags: string[];
+  vertical: VerticalKey;
 }>;
 
 export async function updateBotMeta(botId: string, patch: BotMetaPatch, actor: string) {

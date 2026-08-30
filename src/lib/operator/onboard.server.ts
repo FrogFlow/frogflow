@@ -1,5 +1,6 @@
 import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import type { VerticalKey } from "@/lib/verticals/registry";
 import { buildEnvBlockFor, randomSecret, verifyBotToken } from "./env-block.server";
 import { logEvent } from "./events.server";
 import { errorMessage } from "@/lib/error-message";
@@ -19,6 +20,8 @@ export type OnboardInput = {
   /** Токен от BotFather. Используется и НЕ сохраняется — см. CONTROL-PLANE-PLAN.md §5. */
   bot_token: string;
   app_url: string | null;
+  /** Ниша деплоя (MIGRATION-49) — попадает и в bots.vertical, и в блок переменных. */
+  vertical: VerticalKey;
   modules: ModuleKey[];
   owner_name: string | null;
   owner_contact: string | null;
@@ -91,6 +94,7 @@ export async function onboardClient(input: OnboardInput, actor: string): Promise
       owner_id: input.owner_slug.trim(),
       status: "active",
       modules,
+      vertical: input.vertical,
       app_url: appUrl,
       internal_secret: internalSecret,
       owner_name: input.owner_name?.trim() || null,
@@ -151,6 +155,7 @@ export async function onboardClient(input: OnboardInput, actor: string): Promise
     bot_name: input.bot_name,
     bot_username: identity.username,
     modules: input.modules,
+    vertical: input.vertical,
     app_url: appUrl,
     first_order_no: input.first_order_no,
   });

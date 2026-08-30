@@ -1,4 +1,5 @@
 import type { Locale } from "@/lib/i18n";
+import type { ModuleKey } from "@/lib/modules/registry";
 
 /**
  * Единственный источник списка ниш — по образцу lib/modules/registry.ts
@@ -38,6 +39,12 @@ export type VerticalDef = {
   botDescriptionIntro: string;
   /** setMyShortDescription — лимит Telegram 120 символов. */
   shortDescription: string;
+  /**
+   * Модули сверх базового пакета, отмеченные в мастере подключения при выборе
+   * этой ниши (панель оператора, Блок 10) — не гейт: продавец может снять
+   * галочку. Только "available"-модули, "planned" в пресет не кладём.
+   */
+  suggestedModules: ModuleKey[];
   locales: Record<Locale, VerticalLocaleCopy>;
 };
 
@@ -52,6 +59,7 @@ export const VERTICALS = {
       `→ Поддержка автора`,
     shortDescription:
       "Каталог материалов. Нажимая /start, вы принимаете оферту и политику конфиденциальности.",
+    suggestedModules: ["multi_currency"],
     locales: {
       ru: {
         welcomeGreeting: "Добро пожаловать в магазин.",
@@ -105,6 +113,9 @@ export const VERTICALS = {
       `→ Связь с кондитерской`,
     shortDescription:
       "Каталог тортов на заказ. Нажимая /start, вы принимаете оферту и политику конфиденциальности.",
+    // stock — остаток на витринную позицию (не на заказ), multi_currency — как
+    // у всех текущих клиентов.
+    suggestedModules: ["multi_currency", "stock"],
     locales: {
       ru: {
         welcomeGreeting: "Добро пожаловать в кондитерскую.",

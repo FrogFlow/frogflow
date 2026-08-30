@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { requireOperator, operatorSessionSecretReady } from "./guard.server";
 import { errorMessage } from "@/lib/error-message";
+import type { VerticalKey } from "@/lib/verticals/registry";
 
 /**
  * Сборка блока переменных окружения для деплоя клиента.
@@ -177,6 +178,7 @@ type BotRow = {
   bot_name: string | null;
   app_url: string | null;
   modules: Record<string, boolean> | null;
+  vertical: string | null;
 };
 
 export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockResult> {
@@ -191,7 +193,7 @@ export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockRe
   const s = await db();
   const { data, error } = await s
     .from("bots")
-    .select("bot_name, app_url, modules")
+    .select("bot_name, app_url, modules, vertical")
     .eq("id", input.botId)
     .single();
   if (error || !data) {
@@ -238,11 +240,15 @@ export async function buildEnvBlockFor(input: EnvBlockInput): Promise<EnvBlockRe
   const supabaseUrl = process.env.SUPABASE_URL ?? "";
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
   const publishable = process.env.SUPABASE_PUBLISHABLE_KEY ?? "";
+  const vertical = (bot.vertical ?? "digital") as VerticalKey;
 
   const lines: string[] = [
     "# ── Арендатор: без BOT_ID + SUPABASE_TENANT_KEY деплой видит чужие данные ──",
     `BOT_ID=${input.botId}`,
     `SUPABASE_TENANT_KEY=${tenantKey}`,
+    // digital — умолчание рантайма (vertical.server.ts): переменную незачем
+    // печатать на семи живых деплоях, у которых её никогда не было.
+    ...(vertical !== "digital" ? [`VERTICAL=${vertical}`] : []),
     "",
     "# ── Общая база ──",
     `SUPABASE_URL=${supabaseUrl}`,

@@ -2,12 +2,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireOperator, getOperatorSession } from "./guard.server";
 import { MODULE_KEYS, type ModuleKey } from "@/lib/modules/registry";
+import { VERTICAL_KEYS } from "@/lib/verticals/registry";
 import {
   listBots,
   getBot,
   setModule,
   setBotStatus,
   updateBotMeta,
+  type BotMetaPatch,
   listBotEvents,
   checkBotHealth,
   requestWebhookSetup,
@@ -96,6 +98,7 @@ const BotMetaInput = z.object({
   notes: z.string().nullable().optional(),
   paused_message: z.string().nullable().optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  vertical: z.enum(VERTICAL_KEYS as [string, ...string[]]).optional(),
 });
 
 export const updateBotMetaFn = createServerFn({ method: "POST" })
@@ -103,7 +106,9 @@ export const updateBotMetaFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     const { botId, ...patch } = data;
-    await updateBotMeta(botId, patch, await actor());
+    // z.enum(VERTICAL_KEYS) validates data.vertical is a VerticalKey at
+    // runtime; the cast just as[string,...] widened the array type dropped that.
+    await updateBotMeta(botId, patch as BotMetaPatch, await actor());
     return { ok: true as const };
   });
 
