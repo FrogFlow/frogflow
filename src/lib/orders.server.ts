@@ -502,7 +502,7 @@ export async function deliverOrder(
 
     const { data: after } = await supabaseAdmin
       .from("orders")
-      .select("delivery_index, status, telegram_id, admin_note")
+      .select("delivery_index, status, telegram_id, admin_note, order_no, display_no")
       .eq("id", orderId)
       .single();
 
@@ -519,9 +519,10 @@ export async function deliverOrder(
         .maybeSingle();
 
       if (finished) {
+        const displayNo = after.display_no ?? after.order_no ?? orderId;
         const text = everManualRequired
-          ? `🙏 Оплата по заказу #${orderId} подтверждена. Часть материалов продавец вышлет вручную — ожидайте, пожалуйста.`
-          : `🙏 Спасибо за покупку! Заказ #${orderId} выдан (${items.length} материалов). Если что-то не так — напишите продавцу.`;
+          ? `🙏 Оплата по заказу #${displayNo} подтверждена. Часть материалов продавец вышлет вручную — ожидайте, пожалуйста.`
+          : `🙏 Спасибо за покупку! Заказ #${displayNo} выдан (${items.length} материалов). Если что-то не так — напишите продавцу.`;
         await tg("sendMessage", { chat_id: after.telegram_id, text });
         const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
         await rewardReferralIfFirstDelivery(after.telegram_id).catch((e) =>

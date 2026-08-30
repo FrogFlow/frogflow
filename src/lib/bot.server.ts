@@ -563,8 +563,8 @@ type Msg = {
   robokassaHint: string;
   manualTitleNew: (displayNo: number | string) => string;
   manualTitleReminder: (displayNo: number | string) => string;
-  afterProofAuto: string;
-  afterProofManual: string;
+  afterProofAuto: (isPhysical: boolean) => string;
+  afterProofManual: (isPhysical: boolean) => string;
   alreadyProcessed: (orderId: number | string) => string;
   robokassaUnavailable: string;
   searchNothingFound: string;
@@ -601,10 +601,10 @@ type Msg = {
   sendReceiptPrompt: string;
   fileDownloadFail: string;
   notReceiptLike: (orderId: number | string) => string;
-  receiptManualReview: (orderId: number | string) => string;
-  receiptVerifiedDelivering: (orderId: number | string) => string;
-  deliveryFailedAfterOcr: (orderId: number | string) => string;
-  receiptForwardedAwaitingConfirm: (orderId: number | string) => string;
+  receiptManualReview: (orderId: number | string, isPhysical: boolean) => string;
+  receiptVerifiedDelivering: (orderId: number | string, isPhysical: boolean) => string;
+  deliveryFailedAfterOcr: (orderId: number | string, isPhysical: boolean) => string;
+  receiptForwardedAwaitingConfirm: (orderId: number | string, isPhysical: boolean) => string;
   receiptForwardedNoStorage: (orderId: number | string) => string;
   receiptSaveFailed: (orderId: number | string) => string;
   searchTypePrompt: string;
@@ -703,10 +703,14 @@ const copy: Record<Locale, Msg> = {
       "Нажмите кнопку ниже для оплаты через Robokassa — после оплаты файлы придут автоматически.",
     manualTitleNew: (n) => `🧾 <b>Заказ #${n}</b> создан.`,
     manualTitleReminder: (n) => `🔔 <b>Заказ #${n}</b> — оплата по реквизитам`,
-    afterProofAuto:
-      "После оплаты <b>пришлите чек</b> (фото или PDF) в этот чат — бот сразу отправит файлы.",
-    afterProofManual:
-      "После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.",
+    afterProofAuto: (isPhysical) =>
+      isPhysical
+        ? "После оплаты <b>пришлите чек</b> (фото или PDF) в этот чат — бот сразу примет заказ в работу."
+        : "После оплаты <b>пришлите чек</b> (фото или PDF) в этот чат — бот сразу отправит файлы.",
+    afterProofManual: (isPhysical) =>
+      isPhysical
+        ? "После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и примет заказ в работу."
+        : "После оплаты <b>пришлите скриншот</b> (фото) в этот чат — продавец проверит и пришлёт файлы.",
     alreadyProcessed: (id) => `Заказ #${id} уже обрабатывается или закрыт.`,
     robokassaUnavailable: "Robokassa временно недоступна. Выберите оплату по реквизитам.",
     searchNothingFound: "Ничего не нашлось. Попробуйте другое слово.",
@@ -746,13 +750,23 @@ const copy: Record<Locale, Msg> = {
     fileDownloadFail: "⚠️ Не удалось загрузить файл. Пришлите чек ещё раз — фото или PDF.",
     notReceiptLike: (id) =>
       `⚠️ Это не похоже на чек оплаты.\n\nПришлите, пожалуйста, скриншот перевода / чека с суммой заказа #${id}.`,
-    receiptManualReview: (id) =>
-      `📨 Чек получен по заказу #${id}, но автоматическая проверка не прошла.\nЗаказ отправлен продавцу на ручную проверку — файлы придут после подтверждения.`,
-    receiptVerifiedDelivering: (id) => `📨 Спасибо! Чек проверен. Заказ #${id} — отправляю файлы…`,
-    deliveryFailedAfterOcr: (id) =>
-      `⚠️ Чек принят, но автоматическая выдача заказа #${id} не завершилась. Продавец проверит и отправит файлы.`,
-    receiptForwardedAwaitingConfirm: (id) =>
-      `📨 Спасибо! Чек получен. Заказ #${id} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`,
+    receiptManualReview: (id, isPhysical) =>
+      `📨 Чек получен по заказу #${id}, но автоматическая проверка не прошла.\n` +
+      (isPhysical
+        ? "Заказ отправлен продавцу на ручную проверку — его примут в работу после подтверждения."
+        : "Заказ отправлен продавцу на ручную проверку — файлы придут после подтверждения."),
+    receiptVerifiedDelivering: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Спасибо! Чек проверен. Заказ #${id} — принимаю в работу…`
+        : `📨 Спасибо! Чек проверен. Заказ #${id} — отправляю файлы…`,
+    deliveryFailedAfterOcr: (id, isPhysical) =>
+      isPhysical
+        ? `⚠️ Чек принят, но автоматическое принятие заказа #${id} не завершилось. Продавец проверит и примет заказ вручную.`
+        : `⚠️ Чек принят, но автоматическая выдача заказа #${id} не завершилась. Продавец проверит и отправит файлы.`,
+    receiptForwardedAwaitingConfirm: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Спасибо! Чек получен. Заказ #${id} отправлен на проверку. Как только продавец подтвердит оплату — заказ примут в работу.`
+        : `📨 Спасибо! Чек получен. Заказ #${id} отправлен на проверку. Как только продавец подтвердит оплату — бот пришлёт файлы.`,
     receiptForwardedNoStorage: (id) =>
       `📨 Чек получен и переслан продавцу. Заказ #${id} на проверке. Если нужно — можно отправить чек ещё раз.`,
     receiptSaveFailed: (id) =>
@@ -854,10 +868,14 @@ const copy: Record<Locale, Msg> = {
       "Robokassa арқылы төлеу үшін төмендегі батырманы басыңыз — төлемнен кейін файлдар автоматты түрде келеді.",
     manualTitleNew: (n) => `🧾 <b>Тапсырыс #${n}</b> жасалды.`,
     manualTitleReminder: (n) => `🔔 <b>Тапсырыс #${n}</b> — деректемелер бойынша төлем`,
-    afterProofAuto:
-      "Төлемнен кейін <b>чекті осы чатқа жіберіңіз</b> (фото немесе PDF) — бот файлдарды бірден жібереді.",
-    afterProofManual:
-      "Төлемнен кейін <b>скриншотты осы чатқа жіберіңіз</b> (фото) — сатушы тексеріп, файлдарды жібереді.",
+    afterProofAuto: (isPhysical) =>
+      isPhysical
+        ? "Төлемнен кейін <b>чекті осы чатқа жіберіңіз</b> (фото немесе PDF) — бот тапсырысты бірден жұмысқа қабылдайды."
+        : "Төлемнен кейін <b>чекті осы чатқа жіберіңіз</b> (фото немесе PDF) — бот файлдарды бірден жібереді.",
+    afterProofManual: (isPhysical) =>
+      isPhysical
+        ? "Төлемнен кейін <b>скриншотты осы чатқа жіберіңіз</b> (фото) — сатушы тексеріп, тапсырысты жұмысқа қабылдайды."
+        : "Төлемнен кейін <b>скриншотты осы чатқа жіберіңіз</b> (фото) — сатушы тексеріп, файлдарды жібереді.",
     alreadyProcessed: (id) => `Тапсырыс #${id} өңделуде немесе жабылған.`,
     robokassaUnavailable: "Robokassa уақытша қолжетімсіз. Деректемелер бойынша төлемді таңдаңыз.",
     searchNothingFound: "Ештеңе табылмады. Басқа сөзбен көріңіз.",
@@ -897,14 +915,23 @@ const copy: Record<Locale, Msg> = {
     fileDownloadFail: "⚠️ Файлды жүктеу мүмкін болмады. Чекті қайта жіберіңіз — фото немесе PDF.",
     notReceiptLike: (id) =>
       `⚠️ Бұл төлем чегіне ұқсамайды.\n\n#${id} тапсырысының сомасы көрсетілген аударым/чек скриншотын жіберіңіз.`,
-    receiptManualReview: (id) =>
-      `📨 #${id} тапсырысы бойынша чек алынды, бірақ автоматты тексеру өтпеді.\nТапсырыс сатушыға қолмен тексеруге жіберілді — файлдар растаудан кейін келеді.`,
-    receiptVerifiedDelivering: (id) =>
-      `📨 Рақмет! Чек тексерілді. Тапсырыс #${id} — файлдарды жіберудемін…`,
-    deliveryFailedAfterOcr: (id) =>
-      `⚠️ Чек қабылданды, бірақ #${id} тапсырысын автоматты жіберу аяқталмады. Сатушы тексеріп, файлдарды жібереді.`,
-    receiptForwardedAwaitingConfirm: (id) =>
-      `📨 Рақмет! Чек алынды. Тапсырыс #${id} тексеруге жіберілді. Сатушы төлемді растаған бойда — бот файлдарды жібереді.`,
+    receiptManualReview: (id, isPhysical) =>
+      `📨 #${id} тапсырысы бойынша чек алынды, бірақ автоматты тексеру өтпеді.\n` +
+      (isPhysical
+        ? "Тапсырыс сатушыға қолмен тексеруге жіберілді — растаудан кейін жұмысқа қабылданады."
+        : "Тапсырыс сатушыға қолмен тексеруге жіберілді — файлдар растаудан кейін келеді."),
+    receiptVerifiedDelivering: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Рақмет! Чек тексерілді. Тапсырыс #${id} — жұмысқа қабылдаудамын…`
+        : `📨 Рақмет! Чек тексерілді. Тапсырыс #${id} — файлдарды жіберудемін…`,
+    deliveryFailedAfterOcr: (id, isPhysical) =>
+      isPhysical
+        ? `⚠️ Чек қабылданды, бірақ #${id} тапсырысын автоматты қабылдау аяқталмады. Сатушы тексеріп, тапсырысты қолмен қабылдайды.`
+        : `⚠️ Чек қабылданды, бірақ #${id} тапсырысын автоматты жіберу аяқталмады. Сатушы тексеріп, файлдарды жібереді.`,
+    receiptForwardedAwaitingConfirm: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Рақмет! Чек алынды. Тапсырыс #${id} тексеруге жіберілді. Сатушы төлемді растаған бойда — тапсырыс жұмысқа қабылданады.`
+        : `📨 Рақмет! Чек алынды. Тапсырыс #${id} тексеруге жіберілді. Сатушы төлемді растаған бойда — бот файлдарды жібереді.`,
     receiptForwardedNoStorage: (id) =>
       `📨 Чек алынды және сатушыға жіберілді. Тапсырыс #${id} тексерілуде. Қажет болса — чекті қайта жіберуге болады.`,
     receiptSaveFailed: (id) =>
@@ -1006,10 +1033,14 @@ const copy: Record<Locale, Msg> = {
       "Tap the button below to pay via Robokassa — files will arrive automatically after payment.",
     manualTitleNew: (n) => `🧾 <b>Order #${n}</b> created.`,
     manualTitleReminder: (n) => `🔔 <b>Order #${n}</b> — payment by bank details`,
-    afterProofAuto:
-      "After payment, <b>send the receipt</b> (photo or PDF) in this chat — the bot will send the files right away.",
-    afterProofManual:
-      "After payment, <b>send a screenshot</b> (photo) in this chat — the seller will verify it and send the files.",
+    afterProofAuto: (isPhysical) =>
+      isPhysical
+        ? "After payment, <b>send the receipt</b> (photo or PDF) in this chat — the bot will accept the order right away."
+        : "After payment, <b>send the receipt</b> (photo or PDF) in this chat — the bot will send the files right away.",
+    afterProofManual: (isPhysical) =>
+      isPhysical
+        ? "After payment, <b>send a screenshot</b> (photo) in this chat — the seller will verify it and accept the order."
+        : "After payment, <b>send a screenshot</b> (photo) in this chat — the seller will verify it and send the files.",
     alreadyProcessed: (id) => `Order #${id} is already being processed or closed.`,
     robokassaUnavailable:
       "Robokassa is temporarily unavailable. Please choose payment by bank details.",
@@ -1052,14 +1083,23 @@ const copy: Record<Locale, Msg> = {
       "⚠️ Couldn’t download the file. Please send the receipt again — photo or PDF.",
     notReceiptLike: (id) =>
       `⚠️ This doesn’t look like a payment receipt.\n\nPlease send a screenshot of the transfer/receipt showing the amount for order #${id}.`,
-    receiptManualReview: (id) =>
-      `📨 Receipt received for order #${id}, but automatic verification failed.\nThe order was sent to the seller for manual review — files will arrive after confirmation.`,
-    receiptVerifiedDelivering: (id) =>
-      `📨 Thank you! Receipt verified. Order #${id} — sending files…`,
-    deliveryFailedAfterOcr: (id) =>
-      `⚠️ Receipt accepted, but automatic delivery of order #${id} didn’t complete. The seller will check and send the files.`,
-    receiptForwardedAwaitingConfirm: (id) =>
-      `📨 Thank you! Receipt received. Order #${id} sent for review. As soon as the seller confirms payment, the bot will send the files.`,
+    receiptManualReview: (id, isPhysical) =>
+      `📨 Receipt received for order #${id}, but automatic verification failed.\n` +
+      (isPhysical
+        ? "The order was sent to the seller for manual review — it will be accepted after confirmation."
+        : "The order was sent to the seller for manual review — files will arrive after confirmation."),
+    receiptVerifiedDelivering: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Thank you! Receipt verified. Order #${id} — accepting it now…`
+        : `📨 Thank you! Receipt verified. Order #${id} — sending files…`,
+    deliveryFailedAfterOcr: (id, isPhysical) =>
+      isPhysical
+        ? `⚠️ Receipt accepted, but automatic acceptance of order #${id} didn’t complete. The seller will check and accept it manually.`
+        : `⚠️ Receipt accepted, but automatic delivery of order #${id} didn’t complete. The seller will check and send the files.`,
+    receiptForwardedAwaitingConfirm: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Thank you! Receipt received. Order #${id} sent for review. As soon as the seller confirms payment, the order will be accepted.`
+        : `📨 Thank you! Receipt received. Order #${id} sent for review. As soon as the seller confirms payment, the bot will send the files.`,
     receiptForwardedNoStorage: (id) =>
       `📨 Receipt received and forwarded to the seller. Order #${id} is under review. If needed, you can send the receipt again.`,
     receiptSaveFailed: (id) =>
@@ -1165,10 +1205,14 @@ const copy: Record<Locale, Msg> = {
       "Robokassa orqali to‘lash uchun quyidagi tugmani bosing — to‘lovdan so‘ng fayllar avtomatik keladi.",
     manualTitleNew: (n) => `🧾 <b>Buyurtma #${n}</b> yaratildi.`,
     manualTitleReminder: (n) => `🔔 <b>Buyurtma #${n}</b> — rekvizitlar bo‘yicha to‘lov`,
-    afterProofAuto:
-      "To‘lovdan so‘ng <b>chekni shu chatga yuboring</b> (foto yoki PDF) — bot fayllarni darhol yuboradi.",
-    afterProofManual:
-      "To‘lovdan so‘ng <b>skrinshotni shu chatga yuboring</b> (foto) — sotuvchi tekshirib, fayllarni yuboradi.",
+    afterProofAuto: (isPhysical) =>
+      isPhysical
+        ? "To‘lovdan so‘ng <b>chekni shu chatga yuboring</b> (foto yoki PDF) — bot buyurtmani darhol ishga qabul qiladi."
+        : "To‘lovdan so‘ng <b>chekni shu chatga yuboring</b> (foto yoki PDF) — bot fayllarni darhol yuboradi.",
+    afterProofManual: (isPhysical) =>
+      isPhysical
+        ? "To‘lovdan so‘ng <b>skrinshotni shu chatga yuboring</b> (foto) — sotuvchi tekshirib, buyurtmani ishga qabul qiladi."
+        : "To‘lovdan so‘ng <b>skrinshotni shu chatga yuboring</b> (foto) — sotuvchi tekshirib, fayllarni yuboradi.",
     alreadyProcessed: (id) => `Buyurtma #${id} allaqachon qayta ishlanmoqda yoki yopilgan.`,
     robokassaUnavailable:
       "Robokassa vaqtincha ishlamayapti. Rekvizitlar bo‘yicha to‘lovni tanlang.",
@@ -1209,14 +1253,23 @@ const copy: Record<Locale, Msg> = {
     fileDownloadFail: "⚠️ Faylni yuklab bo‘lmadi. Chekni qayta yuboring — foto yoki PDF.",
     notReceiptLike: (id) =>
       `⚠️ Bu to‘lov chekiga o‘xshamayapti.\n\n#${id} buyurtma summasi ko‘rsatilgan o‘tkazma/chek skrinshotini yuboring.`,
-    receiptManualReview: (id) =>
-      `📨 #${id} buyurtmasi uchun chek qabul qilindi, lekin avtomatik tekshiruv o‘tmadi.\nBuyurtma sotuvchiga qo‘lda tekshirish uchun yuborildi — fayllar tasdiqlangandan so‘ng keladi.`,
-    receiptVerifiedDelivering: (id) =>
-      `📨 Rahmat! Chek tekshirildi. Buyurtma #${id} — fayllar yuborilmoqda…`,
-    deliveryFailedAfterOcr: (id) =>
-      `⚠️ Chek qabul qilindi, lekin #${id} buyurtmasini avtomatik yetkazish yakunlanmadi. Sotuvchi tekshirib, fayllarni yuboradi.`,
-    receiptForwardedAwaitingConfirm: (id) =>
-      `📨 Rahmat! Chek qabul qilindi. Buyurtma #${id} tekshirishga yuborildi. Sotuvchi to‘lovni tasdiqlashi bilanoq bot fayllarni yuboradi.`,
+    receiptManualReview: (id, isPhysical) =>
+      `📨 #${id} buyurtmasi uchun chek qabul qilindi, lekin avtomatik tekshiruv o‘tmadi.\n` +
+      (isPhysical
+        ? "Buyurtma sotuvchiga qo‘lda tekshirish uchun yuborildi — tasdiqlangandan so‘ng ishga qabul qilinadi."
+        : "Buyurtma sotuvchiga qo‘lda tekshirish uchun yuborildi — fayllar tasdiqlangandan so‘ng keladi."),
+    receiptVerifiedDelivering: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Rahmat! Chek tekshirildi. Buyurtma #${id} — ishga qabul qilinmoqda…`
+        : `📨 Rahmat! Chek tekshirildi. Buyurtma #${id} — fayllar yuborilmoqda…`,
+    deliveryFailedAfterOcr: (id, isPhysical) =>
+      isPhysical
+        ? `⚠️ Chek qabul qilindi, lekin #${id} buyurtmasini avtomatik qabul qilish yakunlanmadi. Sotuvchi tekshirib, qo‘lda qabul qiladi.`
+        : `⚠️ Chek qabul qilindi, lekin #${id} buyurtmasini avtomatik yetkazish yakunlanmadi. Sotuvchi tekshirib, fayllarni yuboradi.`,
+    receiptForwardedAwaitingConfirm: (id, isPhysical) =>
+      isPhysical
+        ? `📨 Rahmat! Chek qabul qilindi. Buyurtma #${id} tekshirishga yuborildi. Sotuvchi to‘lovni tasdiqlashi bilanoq buyurtma ishga qabul qilinadi.`
+        : `📨 Rahmat! Chek qabul qilindi. Buyurtma #${id} tekshirishga yuborildi. Sotuvchi to‘lovni tasdiqlashi bilanoq bot fayllarni yuboradi.`,
     receiptForwardedNoStorage: (id) =>
       `📨 Chek qabul qilindi va sotuvchiga yuborildi. Buyurtma #${id} tekshirilmoqda. Kerak bo‘lsa, chekni qayta yuborishingiz mumkin.`,
     receiptSaveFailed: (id) =>
@@ -2947,6 +3000,7 @@ async function placeOrderInner(
       autoDeliver: false,
       locale,
       qrCodePath: method?.qr_code_path,
+      isPhysical: orderFulfillmentKind === "physical",
     });
     return;
   }
@@ -2965,6 +3019,7 @@ async function placeOrderInner(
       autoDeliver: true,
       locale,
       qrCodePath: method?.qr_code_path,
+      isPhysical: orderFulfillmentKind === "physical",
     });
     return;
   }
@@ -3004,7 +3059,7 @@ export async function remindOrderPayment(orderId: number) {
   const { data: order, error } = await s
     .from("orders")
     .select(
-      "id, order_no, display_no, telegram_id, status, total, currency, country_code, country_name",
+      "id, order_no, display_no, telegram_id, status, total, currency, country_code, country_name, fulfillment_kind",
     )
     .eq("id", orderId)
     .maybeSingle();
@@ -3013,6 +3068,7 @@ export async function remindOrderPayment(orderId: number) {
   if (order.status !== "awaiting_payment") {
     throw new Error(`Напомнить можно только заказам «Ждёт оплаты» (сейчас: ${order.status})`);
   }
+  const isPhysical = order.fulfillment_kind === "physical";
 
   const telegram_id = Number(order.telegram_id);
   const chat_id = telegram_id;
@@ -3059,6 +3115,7 @@ export async function remindOrderPayment(orderId: number) {
       reminder: true,
       locale,
       qrCodePath: method?.qr_code_path,
+      isPhysical,
     });
     return { ok: true as const };
   }
@@ -3077,6 +3134,7 @@ export async function remindOrderPayment(orderId: number) {
       reminder: true,
       locale,
       qrCodePath: method?.qr_code_path,
+      isPhysical,
     });
     return { ok: true as const };
   }
@@ -3274,6 +3332,8 @@ async function startManualProofPath(params: {
   locale?: Locale;
   /** payment_methods.qr_code_path для страны заказа — если задан, шлём QR картинкой перед текстом. */
   qrCodePath?: string | null;
+  /** Ниши, Блок 110-фикс: чтобы не обещать «пришлёт файлы» покупателю торта. */
+  isPhysical?: boolean;
 }) {
   const m = copy[params.locale ?? "ru"];
   const s = await db();
@@ -3289,7 +3349,10 @@ async function startManualProofPath(params: {
     proof_auto: params.autoDeliver,
   });
 
-  const afterProof = params.autoDeliver ? m.afterProofAuto : m.afterProofManual;
+  const isPhysical = Boolean(params.isPhysical);
+  const afterProof = params.autoDeliver
+    ? m.afterProofAuto(isPhysical)
+    : m.afterProofManual(isPhysical);
 
   const title = params.reminder
     ? m.manualTitleReminder(params.displayNo)
@@ -3412,12 +3475,16 @@ async function notifyAdminNewOrder(
       ? `📋 <b>Состав заказа #${displayNo}</b>\n\n${items.map((i) => `• ${escapeHtml(i.name_snapshot)} × ${i.quantity} — ${i.price_snapshot} ${order.currency}`).join("\n")}`
       : "";
 
+  // confirm: уже диспетчеризует по order.fulfillment_kind (Ниши, Блок 6) —
+  // тут меняется только подпись, чтобы кондитеру не предлагали «выдать» торт.
+  const acceptLabel =
+    order.fulfillment_kind === "physical" ? "✅ Принять заказ" : "✅ Подтвердить и выдать";
   const reply_markup = autoDelivered
     ? undefined
     : {
         inline_keyboard: [
           [
-            { text: "✅ Подтвердить и выдать", callback_data: `confirm:${order.id}` },
+            { text: acceptLabel, callback_data: `confirm:${order.id}` },
             { text: "❌ Отклонить", callback_data: `reject:${order.id}` },
           ],
         ],
@@ -3702,7 +3769,9 @@ export async function handleUpdate(update: TelegramUpdate) {
         const s = await db();
         const { data: order } = await s
           .from("orders")
-          .select("id, order_no, display_no, telegram_id, status, total, currency, country_code")
+          .select(
+            "id, order_no, display_no, telegram_id, status, total, currency, country_code, fulfillment_kind",
+          )
           .eq("id", orderId)
           .maybeSingle();
         if (!order || Number(order.telegram_id) !== Number(from_id)) {
@@ -3766,6 +3835,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           autoDeliver: true,
           locale,
           qrCodePath: method?.qr_code_path,
+          isPhysical: order.fulfillment_kind === "physical",
         });
         return;
       }
@@ -4611,7 +4681,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
           await tg("sendMessage", {
             chat_id,
-            text: m.receiptManualReview(displayNo),
+            text: m.receiptManualReview(displayNo, orderRow.fulfillment_kind === "physical"),
             reply_markup: mainMenu(locale),
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
@@ -4639,7 +4709,7 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         await tg("sendMessage", {
           chat_id,
-          text: m.receiptVerifiedDelivering(displayNo),
+          text: m.receiptVerifiedDelivering(displayNo, orderRow.fulfillment_kind === "physical"),
           reply_markup: mainMenu(locale),
         });
 
@@ -4660,7 +4730,7 @@ export async function handleUpdate(update: TelegramUpdate) {
             .eq("id", orderId);
           await tg("sendMessage", {
             chat_id,
-            text: m.deliveryFailedAfterOcr(displayNo),
+            text: m.deliveryFailedAfterOcr(displayNo, orderRow.fulfillment_kind === "physical"),
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
             reviewReason: "Ошибка выдачи после успешного OCR",
@@ -4693,7 +4763,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", {
           chat_id,
           text: proofSaved
-            ? m.receiptForwardedAwaitingConfirm(displayNo)
+            ? m.receiptForwardedAwaitingConfirm(displayNo, orderRow.fulfillment_kind === "physical")
             : m.receiptForwardedNoStorage(displayNo),
           reply_markup: mainMenu(locale),
         });
