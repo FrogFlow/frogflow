@@ -26,11 +26,14 @@ const NEXT_STATUS: Record<string, PhysicalStatus | "delivered"> = {
   ready: "delivered",
 };
 
-const NOTICE_FOR_STATUS: Record<string, (orderId: number) => string> = {
-  accepted: (id) => `✅ Заказ #${id} принят в работу. Сообщим, когда он будет готов.`,
-  in_production: (id) => `👩‍🍳 Заказ #${id} в работе.`,
-  ready: (id) => `📦 Заказ #${id} готов! Уточните у продавца детали получения.`,
-  delivered: (id) => `🙏 Спасибо за покупку! Заказ #${id} выдан.`,
+// Аргумент — display_no/order_no ("Заказ #N", что уже видел покупатель в
+// «Заказ №N создан»), а не PK orders.id: два разных числа, и подстановка PK
+// сюда путает покупателя, который до этого момента видел только display_no.
+const NOTICE_FOR_STATUS: Record<string, (displayNo: number) => string> = {
+  accepted: (n) => `✅ Заказ #${n} принят в работу. Сообщим, когда он будет готов.`,
+  in_production: (n) => `👩‍🍳 Заказ #${n} в работе.`,
+  ready: (n) => `📦 Заказ #${n} готов! Уточните у продавца детали получения.`,
+  delivered: (n) => `🙏 Спасибо за покупку! Заказ #${n} выдан.`,
 };
 
 /**
@@ -48,14 +51,14 @@ export async function acceptOrder(
     .update({ status: "accepted" })
     .eq("id", orderId)
     .in("status", [...DELIVERABLE_STATUSES])
-    .select("id")
+    .select("id, order_no, display_no")
     .maybeSingle();
   if (error) throw new Error(error.message);
 
   if (!claimed) {
     const { data: existing, error: readErr } = await supabaseAdmin
       .from("orders")
-      .select("status")
+      .select("status, order_no, display_no")
       .eq("id", orderId)
       .maybeSingle();
     if (readErr) throw new Error(readErr.message);
@@ -67,11 +70,13 @@ export async function acceptOrder(
     ) {
       return { ok: true, alreadyAccepted: true };
     }
-    throw new Error(`Заказ #${orderId} нельзя принять в работу (статус: ${existing.status})`);
+    const displayNo = existing.display_no ?? existing.order_no ?? orderId;
+    throw new Error(`Заказ #${displayNo} нельзя принять в работу (статус: ${existing.status})`);
   }
 
+  const displayNo = claimed.display_no ?? claimed.order_no ?? orderId;
   const { notifyOrderCustomer } = await import("./orders.server");
-  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS.accepted(orderId)).catch((e) =>
+  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS.accepted(displayNo)).catch((e) =>
     console.error("[fulfillment] notifyOrderCustomer(accepted) failed", e),
   );
   return { ok: true, alreadyAccepted: false };
@@ -89,15 +94,16 @@ export async function advanceFulfillment(
 
   const { data: current, error: readErr } = await supabaseAdmin
     .from("orders")
-    .select("status, telegram_id, platform")
+    .select("status, telegram_id, platform, order_no, display_no")
     .eq("id", orderId)
     .maybeSingle();
   if (readErr) throw new Error(readErr.message);
   if (!current) throw new Error("Order not found");
 
+  const displayNo = current.display_no ?? current.order_no ?? orderId;
   const from = current.status;
   const to = NEXT_STATUS[from];
-  if (!to) throw new Error(`Заказ #${orderId} нельзя продвинуть дальше (статус: ${from})`);
+  if (!to) throw new Error(`Заказ #${displayNo} нельзя продвинуть дальше (статус: ${from})`);
 
   const { data: updated, error } = await supabaseAdmin
     .from("orders")
@@ -108,11 +114,11 @@ export async function advanceFulfillment(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!updated) {
-    throw new Error(`Заказ #${orderId} уже изменился — обновите страницу и попробуйте снова`);
+    throw new Error(`Заказ #${displayNo} уже изменился — обновите страницу и попробуйте снова`);
   }
 
   const { notifyOrderCustomer } = await import("./orders.server");
-  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS[to](orderId)).catch((e) =>
+  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS[to](displayNo)).catch((e) =>
     console.error(`[fulfillment] notifyOrderCustomer(${to}) failed`, e),
   );
 
