@@ -81,6 +81,12 @@ const SaveInput = z.object({
   file_url_kz: z.string().nullable().optional(),
   // Складской учёт (Кейс 4) — null = не отслеживается (безлимитно).
   stock_quantity: z.number().int().min(0).nullable().optional(),
+  // Ниши (Блок 4) — digital (умолчание) выдаётся файлом, physical
+  // изготавливается/выдаётся руками. lead_time_days: NULL/0 = есть в
+  // наличии, N = делается N дней (используется чекаутом для минимальной
+  // даты получения).
+  fulfillment_kind: z.enum(["digital", "physical"]).default("digital"),
+  lead_time_days: z.number().int().min(0).nullable().optional(),
   image_paths: z.array(z.string()).default([]),
   // A material can be several files/photos (e.g. worksheet pages), not just
   // the single file_path/file_url above — those stay for older products that
@@ -109,6 +115,7 @@ export const saveProduct = createServerFn({ method: "POST" })
     // (ограничение добавления в корзину и списание при оформлении) уже
     // гейтится в bot.server.ts на самом использовании, не здесь.
     const stock_quantity = data.stock_quantity ?? null;
+    const lead_time_days = data.lead_time_days ?? null;
     let productId = data.id;
     if (productId) {
       const { error } = await s
@@ -131,6 +138,8 @@ export const saveProduct = createServerFn({ method: "POST" })
           file_url_kz: data.file_url_kz ?? null,
           country_prices: data.country_prices,
           stock_quantity,
+          fulfillment_kind: data.fulfillment_kind,
+          lead_time_days,
         })
         .eq("id", productId);
       if (error) throw new Error(error.message);
@@ -155,6 +164,8 @@ export const saveProduct = createServerFn({ method: "POST" })
           file_url_kz: data.file_url_kz ?? null,
           country_prices: data.country_prices,
           stock_quantity,
+          fulfillment_kind: data.fulfillment_kind,
+          lead_time_days,
         })
         .select("id")
         .single();

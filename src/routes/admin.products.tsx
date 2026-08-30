@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouteContext } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { confirmToast } from "@/lib/confirm-toast";
@@ -52,6 +52,8 @@ type Product = {
   product_material_files?: (MaterialFile & { language: string })[];
   country_prices?: Record<string, number>;
   stock_quantity?: number | null;
+  fulfillment_kind?: "digital" | "physical";
+  lead_time_days?: number | null;
 };
 
 type MaterialsByLang = Record<Locale, MaterialFile[]>;
@@ -75,6 +77,8 @@ const empty: Product = {
   file_url_kz: null,
   product_images: [],
   country_prices: {},
+  fulfillment_kind: "digital",
+  lead_time_days: null,
 };
 
 // Карта расширений → MIME. Браузеры не знают тип для .7z и некоторых других
@@ -181,6 +185,11 @@ const copy: Record<
     sortOrder: string;
     stockQuantity: string;
     stockQuantityPlaceholder: string;
+    fulfillmentKindLabel: string;
+    fulfillmentKindDigital: string;
+    fulfillmentKindPhysical: string;
+    leadTimeDaysLabel: string;
+    leadTimeDaysPlaceholder: string;
     photosLabel: string;
     countryPricesTitle: string;
     countryPricesHint: string;
@@ -238,6 +247,11 @@ const copy: Record<
     sortOrder: "Порядок",
     stockQuantity: "Остаток на складе",
     stockQuantityPlaceholder: "пусто = безлимитно",
+    fulfillmentKindLabel: "Тип товара",
+    fulfillmentKindDigital: "Цифровой (файл)",
+    fulfillmentKindPhysical: "Физический (изготавливается)",
+    leadTimeDaysLabel: "Срок изготовления, дней",
+    leadTimeDaysPlaceholder: "пусто = в наличии",
     photosLabel: "Фото (можно несколько)",
     countryPricesTitle: "Цены для разных стран (вручную)",
     countryPricesHint:
@@ -296,6 +310,11 @@ const copy: Record<
     sortOrder: "Реті",
     stockQuantity: "Қоймадағы қалдық",
     stockQuantityPlaceholder: "бос = шексіз",
+    fulfillmentKindLabel: "Тауар түрі",
+    fulfillmentKindDigital: "Цифрлық (файл)",
+    fulfillmentKindPhysical: "Физикалық (дайындалады)",
+    leadTimeDaysLabel: "Дайындау мерзімі, күн",
+    leadTimeDaysPlaceholder: "бос = бар",
     photosLabel: "Фото (бірнешеуін таңдауға болады)",
     countryPricesTitle: "Түрлі елдерге бағалар (қолмен)",
     countryPricesHint: "Өрісті бос қалдырсаңыз — негізгі бағаның автоматты айырбасы жұмыс істейді.",
@@ -352,6 +371,11 @@ const copy: Record<
     sortOrder: "Order",
     stockQuantity: "Stock quantity",
     stockQuantityPlaceholder: "empty = unlimited",
+    fulfillmentKindLabel: "Product type",
+    fulfillmentKindDigital: "Digital (file)",
+    fulfillmentKindPhysical: "Physical (made to order)",
+    leadTimeDaysLabel: "Lead time, days",
+    leadTimeDaysPlaceholder: "empty = in stock",
     photosLabel: "Photos (multiple allowed)",
     countryPricesTitle: "Prices by country (manual)",
     countryPricesHint: "Leave a field empty to use automatic conversion from the base price.",
@@ -409,6 +433,11 @@ const copy: Record<
     sortOrder: "Tartib",
     stockQuantity: "Ombordagi qoldiq",
     stockQuantityPlaceholder: "bo‘sh = cheksiz",
+    fulfillmentKindLabel: "Tovar turi",
+    fulfillmentKindDigital: "Raqamli (fayl)",
+    fulfillmentKindPhysical: "Jismoniy (tayyorlanadi)",
+    leadTimeDaysLabel: "Tayyorlash muddati, kun",
+    leadTimeDaysPlaceholder: "bo‘sh = mavjud",
     photosLabel: "Fotolar (bir nechtasi mumkin)",
     countryPricesTitle: "Mamlakatlar bo‘yicha narxlar (qo‘lda)",
     countryPricesHint:
@@ -529,6 +558,7 @@ function ProductsPage() {
     Partial<Record<Locale, UploadStatus | null>>
   >({});
   const [saving, setSaving] = useState(false);
+  const { defaultFulfillmentKind } = useRouteContext({ from: "__root__" });
 
   const catsTree = useMemo(() => sortCategoriesTree(cats.data ?? []), [cats.data]);
   const catsFiltered = useMemo(
@@ -548,7 +578,7 @@ function ProductsPage() {
   }, [list, search]);
 
   function startNew() {
-    setEditing({ ...empty });
+    setEditing({ ...empty, fulfillment_kind: defaultFulfillmentKind });
     setImages([]);
     setMaterialLangs(["ru", "kk"]);
     setMaterialFiles({ ...emptyMaterialsByLang });
@@ -573,6 +603,9 @@ function ProductsPage() {
       file_url_kz: p.file_url_kz,
       country_prices: (p.country_prices as Record<string, number> | null) || {},
       stock_quantity: (p as { stock_quantity?: number | null }).stock_quantity ?? null,
+      fulfillment_kind:
+        (p as { fulfillment_kind?: "digital" | "physical" }).fulfillment_kind ?? "digital",
+      lead_time_days: (p as { lead_time_days?: number | null }).lead_time_days ?? null,
     });
     const imgs = (p.product_images ?? [])
       .slice()
@@ -696,6 +729,8 @@ function ProductsPage() {
           ),
           country_prices: editing.country_prices,
           stock_quantity: editing.stock_quantity,
+          fulfillment_kind: editing.fulfillment_kind ?? "digital",
+          lead_time_days: editing.lead_time_days,
         },
       });
       setEditing(null);
@@ -840,6 +875,39 @@ function ProductsPage() {
                 }
               />
             </div>
+            <div className="space-y-2">
+              <Label>{tr.fulfillmentKindLabel}</Label>
+              <select
+                className="border rounded-md h-9 px-2 text-sm bg-background w-full"
+                value={editing.fulfillment_kind ?? "digital"}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    fulfillment_kind: e.target.value as "digital" | "physical",
+                  })
+                }
+              >
+                <option value="digital">{tr.fulfillmentKindDigital}</option>
+                <option value="physical">{tr.fulfillmentKindPhysical}</option>
+              </select>
+            </div>
+            {editing.fulfillment_kind === "physical" && (
+              <div className="space-y-2">
+                <Label>{tr.leadTimeDaysLabel}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editing.lead_time_days ?? ""}
+                  placeholder={tr.leadTimeDaysPlaceholder}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      lead_time_days: e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -902,76 +970,84 @@ function ProductsPage() {
             </div>
           )}
 
-          {materialLangs.map((lang, idx) => (
-            <div className="space-y-2 pt-4 border-t" key={idx}>
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <Label>{tr.materialLabel(`${localeFlags[lang]} ${localeNames[lang]}`)}</Label>
-                  <select
-                    className="border rounded-md h-8 px-2 text-sm bg-background"
-                    value={lang}
-                    onChange={(e) => changeMaterialLang(idx, e.target.value as Locale)}
-                  >
-                    {SUPPORTED_LOCALES.map((l) => (
-                      <option key={l} value={l} disabled={l !== lang && materialLangs.includes(l)}>
-                        {localeFlags[l]} {localeNames[l]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {materialLangs.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeMaterialLangSlot(idx)}
-                    className="text-xs text-destructive hover:underline"
-                  >
-                    {tr.removeLanguageBtn}
-                  </button>
-                )}
-              </div>
-              <Input
-                type="file"
-                multiple
-                disabled={!!materialsUpload[lang]}
-                onChange={(e) => onMaterialFilesChange(e.target.files, lang)}
-              />
-              <UploadProgressBar status={materialsUpload[lang] ?? null} tr={tr} />
-              <MaterialFilesList
-                files={materialFiles[lang]}
-                onRemove={(i) =>
-                  setMaterialFiles({
-                    ...materialFiles,
-                    [lang]: materialFiles[lang].filter((_, fi) => fi !== i),
-                  })
-                }
-                removeLabel={tr.removeBtn}
-              />
-              {(lang === "ru" || lang === "kk") && (
-                <div className="pt-2">
-                  <Label>{tr.externalLink(localeNames[lang])}</Label>
+          {editing.fulfillment_kind !== "physical" && (
+            <>
+              {materialLangs.map((lang, idx) => (
+                <div className="space-y-2 pt-4 border-t" key={idx}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Label>{tr.materialLabel(`${localeFlags[lang]} ${localeNames[lang]}`)}</Label>
+                      <select
+                        className="border rounded-md h-8 px-2 text-sm bg-background"
+                        value={lang}
+                        onChange={(e) => changeMaterialLang(idx, e.target.value as Locale)}
+                      >
+                        {SUPPORTED_LOCALES.map((l) => (
+                          <option
+                            key={l}
+                            value={l}
+                            disabled={l !== lang && materialLangs.includes(l)}
+                          >
+                            {localeFlags[l]} {localeNames[l]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {materialLangs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeMaterialLangSlot(idx)}
+                        className="text-xs text-destructive hover:underline"
+                      >
+                        {tr.removeLanguageBtn}
+                      </button>
+                    )}
+                  </div>
                   <Input
-                    value={(lang === "ru" ? editing.file_url : editing.file_url_kz) || ""}
-                    onChange={(e) =>
-                      setEditing(
-                        lang === "ru"
-                          ? { ...editing, file_url: e.target.value || null }
-                          : { ...editing, file_url_kz: e.target.value || null },
-                      )
-                    }
-                    placeholder={tr.externalLinkPlaceholder}
+                    type="file"
+                    multiple
+                    disabled={!!materialsUpload[lang]}
+                    onChange={(e) => onMaterialFilesChange(e.target.files, lang)}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">{tr.externalLinkHint}</p>
+                  <UploadProgressBar status={materialsUpload[lang] ?? null} tr={tr} />
+                  <MaterialFilesList
+                    files={materialFiles[lang]}
+                    onRemove={(i) =>
+                      setMaterialFiles({
+                        ...materialFiles,
+                        [lang]: materialFiles[lang].filter((_, fi) => fi !== i),
+                      })
+                    }
+                    removeLabel={tr.removeBtn}
+                  />
+                  {(lang === "ru" || lang === "kk") && (
+                    <div className="pt-2">
+                      <Label>{tr.externalLink(localeNames[lang])}</Label>
+                      <Input
+                        value={(lang === "ru" ? editing.file_url : editing.file_url_kz) || ""}
+                        onChange={(e) =>
+                          setEditing(
+                            lang === "ru"
+                              ? { ...editing, file_url: e.target.value || null }
+                              : { ...editing, file_url_kz: e.target.value || null },
+                          )
+                        }
+                        placeholder={tr.externalLinkPlaceholder}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">{tr.externalLinkHint}</p>
+                    </div>
+                  )}
                 </div>
+              ))}
+              {materialLangs.length < SUPPORTED_LOCALES.length && (
+                <Button type="button" variant="outline" size="sm" onClick={addMaterialLang}>
+                  {tr.addLanguageBtn}
+                </Button>
               )}
-            </div>
-          ))}
-          {materialLangs.length < SUPPORTED_LOCALES.length && (
-            <Button type="button" variant="outline" size="sm" onClick={addMaterialLang}>
-              {tr.addLanguageBtn}
-            </Button>
-          )}
-          {materialLangs.length === 1 && (
-            <p className="text-xs text-muted-foreground">{tr.onlyOneLangHint}</p>
+              {materialLangs.length === 1 && (
+                <p className="text-xs text-muted-foreground">{tr.onlyOneLangHint}</p>
+              )}
+            </>
           )}
 
           <label className="flex items-center gap-2 text-sm">
@@ -1044,6 +1120,15 @@ function ProductsPage() {
                       : p.categories?.name || tr.noCategory}{" "}
                     · {p.price} {p.currency}
                     {(() => {
+                      // Физический товар ничего не выдаёт файлом — красная
+                      // пометка «нет файла» здесь была бы ложной тревогой на
+                      // весь каталог кондитерской.
+                      if (
+                        (p as { fulfillment_kind?: "digital" | "physical" }).fulfillment_kind ===
+                        "physical"
+                      ) {
+                        return null;
+                      }
                       const materials = (p.product_material_files ?? []) as { language: string }[];
                       const langsWithFiles = SUPPORTED_LOCALES.filter(
                         (lang) =>
