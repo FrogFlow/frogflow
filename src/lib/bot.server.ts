@@ -2147,6 +2147,17 @@ async function proceedToLanguageOrPlace(chat_id: number, user: BotUser, country_
   await placeOrder(chat_id, user, country_code);
 }
 
+/** payment_mode для физических заказов (Ниши, Блок 7) — "full", если не настроено. */
+async function loadPaymentMode(): Promise<"full" | "deposit" | "on_receipt"> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", "payment_mode")
+    .maybeSingle();
+  return data?.value === "deposit" || data?.value === "on_receipt" ? data.value : "full";
+}
+
 async function shouldAskDeliveryLangBeforeOrder(): Promise<boolean> {
   const { hasModule } = await import("./modules/modules.server");
   if (!(await hasModule("multi_language"))) return false;
@@ -2666,6 +2677,19 @@ async function placeOrderInner(
       }
     } catch (e) {
       console.error(`[bot] auto-fulfillment failed for zero-total order ${order.id}`, e);
+    }
+    return;
+  }
+
+  // Оплата при получении (Ниши, Блок 7) — только для физических заказов:
+  // цифровой без оплаты выдавать нечего, а физический продавец примет и
+  // изготовит без предоплаты, если сам так настроил.
+  if (orderFulfillmentKind === "physical" && (await loadPaymentMode()) === "on_receipt") {
+    try {
+      const { acceptOrder } = await import("./fulfillment.server");
+      await acceptOrder(order.id as number);
+    } catch (e) {
+      console.error(`[bot] acceptOrder failed for on_receipt order ${order.id}`, e);
     }
     return;
   }

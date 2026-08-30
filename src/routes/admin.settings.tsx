@@ -42,6 +42,12 @@ const copy: Record<
     deliveryLangTimingHint: string;
     deliveryLangTimingBefore: string;
     deliveryLangTimingAfter: string;
+    paymentModeTitle: string;
+    paymentModeHint: string;
+    paymentModeFull: string;
+    paymentModeDeposit: string;
+    paymentModeOnReceipt: string;
+    depositPercentLabel: string;
     referralTitle: string;
     referralHint: string;
     referralPercentLabel: string;
@@ -101,6 +107,13 @@ const copy: Record<
       "Актуально, только если у товаров заведено больше одного языка (модуль «Мультиязычность»). «После оплаты» — как раньше: кнопка выбора языка приходит вместе с файлами. «До оформления» — покупатель выбирает язык перед заказом и может выбрать «все языки» (цена ×N по числу языков товара).",
     deliveryLangTimingAfter: "После оплаты (как сейчас)",
     deliveryLangTimingBefore: "До оформления заказа",
+    paymentModeTitle: "Оплата физических заказов",
+    paymentModeHint:
+      "Как принимать оплату за товары, которые изготавливаются под заказ (не выдаются файлом мгновенно).",
+    paymentModeFull: "Полная оплата вперёд",
+    paymentModeDeposit: "Задаток, остаток при получении",
+    paymentModeOnReceipt: "Оплата при получении",
+    depositPercentLabel: "Размер задатка, % от суммы",
     referralTitle: "Реферальная программа",
     referralHint:
       "Покупатель делится персональной ссылкой из раздела «ℹ️ Информация». Новый пользователь по ссылке сразу получает одноразовый промокод; когда он получает первую покупку — такой же промокод получает пригласивший.",
@@ -167,6 +180,13 @@ const copy: Record<
       "Тек тауарда бірнеше тіл болса маңызды («Көптілділік» модулі). «Төлемнен кейін» — бұрынғыдай: тіл таңдау түймесі файлдармен бірге келеді. «Ресімдеуден бұрын» — сатып алушы тапсырыс алдында тілді таңдайды, «барлық тілдер» опциясы да бар (баға тауар тілдерінің санына ×N).",
     deliveryLangTimingAfter: "Төлемнен кейін (қазіргідей)",
     deliveryLangTimingBefore: "Тапсырысты ресімдеуден бұрын",
+    paymentModeTitle: "Физикалық тапсырыстарды төлеу",
+    paymentModeHint:
+      "Тапсырысқа арнап дайындалатын тауарлар үшін (файл ретінде бірден берілмейтін) төлемді қалай қабылдау керек.",
+    paymentModeFull: "Толық төлем алдын ала",
+    paymentModeDeposit: "Алдын ала төлем, қалғаны алу кезінде",
+    paymentModeOnReceipt: "Алу кезінде төлеу",
+    depositPercentLabel: "Алдын ала төлем мөлшері, сомадан %",
     referralTitle: "Реферал бағдарламасы",
     referralHint:
       "Сатып алушы «ℹ️ Ақпарат» бөлімінен жеке сілтемесімен бөліседі. Сілтеме бойынша жаңа пайдаланушы бірден бір реттік промокод алады; ол алғаш рет сатып алғанда — шақырған адам да сондай промокод алады.",
@@ -233,6 +253,13 @@ const copy: Record<
       'Only matters if a product has more than one language (Multi-language module). "After payment" — as now: the language-choice button arrives with the files. "Before checkout" — the buyer picks a language before ordering and can choose "all languages" (price ×N by that product\'s language count).',
     deliveryLangTimingAfter: "After payment (current)",
     deliveryLangTimingBefore: "Before placing the order",
+    paymentModeTitle: "Payment for physical orders",
+    paymentModeHint:
+      "How to accept payment for made-to-order items (not delivered as a file instantly).",
+    paymentModeFull: "Full payment upfront",
+    paymentModeDeposit: "Deposit, balance on pickup/delivery",
+    paymentModeOnReceipt: "Payment on pickup/delivery",
+    depositPercentLabel: "Deposit size, % of total",
     referralTitle: "Referral program",
     referralHint:
       'The buyer shares their personal link from the "ℹ️ Info" section. A new user gets a one-time promo code right away; when they get their first purchase, the referrer gets the same kind of promo code.',
@@ -300,6 +327,13 @@ const copy: Record<
       'Faqat mahsulotda bir nechta til bo‘lsa dolzarb ("Ko‘p tillilik" moduli). "To‘lovdan keyin" — hozirgidek: til tanlash tugmasi fayllar bilan birga keladi. "Buyurtma berishdan oldin" — xaridor buyurtmadan oldin tilni tanlaydi, "barcha tillar" varianti ham bor (narx mahsulot tillari soniga ×N).',
     deliveryLangTimingAfter: "To‘lovdan keyin (hozirgidek)",
     deliveryLangTimingBefore: "Buyurtma berishdan oldin",
+    paymentModeTitle: "Jismoniy buyurtmalar uchun to‘lov",
+    paymentModeHint:
+      "Buyurtma bo‘yicha tayyorlanadigan tovarlar uchun (darhol fayl sifatida berilmaydigan) to‘lovni qanday qabul qilish.",
+    paymentModeFull: "To‘liq to‘lov oldindan",
+    paymentModeDeposit: "Oldindan to‘lov, qolgani olishda",
+    paymentModeOnReceipt: "Olishda to‘lash",
+    depositPercentLabel: "Oldindan to‘lov miqdori, summadan %",
     referralTitle: "Referal dasturi",
     referralHint:
       "Xaridor «ℹ️ Ma’lumot» bo‘limidan shaxsiy havolasini ulashadi. Havola bo‘yicha yangi foydalanuvchi darhol bir martalik promokod oladi; u birinchi xaridni amalga oshirganda — taklif qilgan kishi ham xuddi shunday promokod oladi.",
@@ -362,6 +396,13 @@ function SettingsPage() {
   const [deliveryLangTimingSaving, setDeliveryLangTimingSaving] = useState(false);
   const [deliveryLangTimingSaved, setDeliveryLangTimingSaved] = useState(false);
 
+  const [paymentMode, setPaymentMode] = useState<"full" | "deposit" | "on_receipt">("full");
+  const [paymentModeSaving, setPaymentModeSaving] = useState(false);
+  const [paymentModeSaved, setPaymentModeSaved] = useState(false);
+  const [depositPercent, setDepositPercent] = useState("30");
+  const [depositPercentSaving, setDepositPercentSaving] = useState(false);
+  const [depositPercentSaved, setDepositPercentSaved] = useState(false);
+
   const [referralPercent, setReferralPercent] = useState("10");
   const [referralSaving, setReferralSaving] = useState(false);
   const [referralSaved, setReferralSaved] = useState(false);
@@ -389,6 +430,9 @@ function SettingsPage() {
     setInstructionCaption(settings.data?.instruction_caption ?? "");
     setInstructionVideoPath(settings.data?.instruction_video_path ?? "");
     setDeliveryLangTiming(settings.data?.delivery_lang_timing === "before" ? "before" : "after");
+    const pm = settings.data?.payment_mode;
+    setPaymentMode(pm === "deposit" || pm === "on_receipt" ? pm : "full");
+    setDepositPercent(settings.data?.deposit_percent ?? "30");
     setReferralPercent(settings.data?.referral_discount_percent ?? "10");
     setLoyaltyEarnPercent(settings.data?.loyalty_earn_percent ?? "5");
     setCartReminderHours(settings.data?.cart_reminder_hours ?? "6");
@@ -425,6 +469,36 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setDeliveryLangTimingSaving(false);
+    }
+  }
+
+  async function onSavePaymentMode(value: "full" | "deposit" | "on_receipt") {
+    setPaymentMode(value);
+    setPaymentModeSaving(true);
+    try {
+      await saveSetting({ data: { key: "payment_mode", value } });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setPaymentModeSaved(true);
+      setTimeout(() => setPaymentModeSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setPaymentModeSaving(false);
+    }
+  }
+
+  async function onSaveDepositPercent() {
+    if (settings.isLoading) return;
+    setDepositPercentSaving(true);
+    try {
+      await saveSetting({ data: { key: "deposit_percent", value: depositPercent.trim() } });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setDepositPercentSaved(true);
+      setTimeout(() => setDepositPercentSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setDepositPercentSaving(false);
     }
   }
 
@@ -649,6 +723,66 @@ function SettingsPage() {
           </label>
         </div>
         {deliveryLangTimingSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name="payment-mode"
+              checked={paymentMode === "full"}
+              disabled={paymentModeSaving}
+              onChange={() => onSavePaymentMode("full")}
+            />
+            {tr.paymentModeFull}
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name="payment-mode"
+              checked={paymentMode === "deposit"}
+              disabled={paymentModeSaving}
+              onChange={() => onSavePaymentMode("deposit")}
+            />
+            {tr.paymentModeDeposit}
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name="payment-mode"
+              checked={paymentMode === "on_receipt"}
+              disabled={paymentModeSaving}
+              onChange={() => onSavePaymentMode("on_receipt")}
+            />
+            {tr.paymentModeOnReceipt}
+          </label>
+        </div>
+        {paymentModeSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+        {paymentMode === "deposit" && (
+          <div className="flex items-end gap-2 pt-2">
+            <div className="space-y-2">
+              <Label>{tr.depositPercentLabel}</Label>
+              <Input
+                type="number"
+                min={1}
+                max={100}
+                value={depositPercent}
+                onChange={(e) => setDepositPercent(e.target.value)}
+                className="w-32"
+              />
+            </div>
+            <Button
+              onClick={onSaveDepositPercent}
+              disabled={depositPercentSaving || settings.isLoading}
+            >
+              {tr.save}
+            </Button>
+            {depositPercentSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+          </div>
+        )}
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-3">
