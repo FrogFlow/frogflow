@@ -91,7 +91,7 @@ async function handleRobokassaResult(request: Request) {
   const orderId = Number(invId);
   const { data: order } = await s
     .from("orders")
-    .select("status, total, platform")
+    .select("status, total, platform, fulfillment_kind")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -146,7 +146,10 @@ async function handleRobokassaResult(request: Request) {
   }
 
   try {
-    if (order.platform === "instagram") {
+    if (order.fulfillment_kind === "physical") {
+      const { acceptOrder } = await import("@/lib/fulfillment.server");
+      await acceptOrder(orderId);
+    } else if (order.platform === "instagram") {
       const { deliverInstagramOrder } = await import("@/lib/zernio-bot.server");
       await deliverInstagramOrder(orderId);
     } else {

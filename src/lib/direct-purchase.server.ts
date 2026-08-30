@@ -1296,7 +1296,11 @@ export async function createOrderFromCart(params: {
    * заморозки) — считаем как раньше, живым запросом.
    */
   frozenPriced?: PricedCart;
-}): Promise<{ id: number; order_no: number | null } | null> {
+}): Promise<{
+  id: number;
+  order_no: number | null;
+  fulfillment_kind: "digital" | "physical";
+} | null> {
   const s = await db();
 
   // Считаем в валюте покупателя: по этой сумме он платит, её же сверяет
@@ -1309,6 +1313,23 @@ export async function createOrderFromCart(params: {
   const platform: ZernioPlatform = params.user.platform === "whatsapp" ? "whatsapp" : "instagram";
   const customerLabel =
     platform === "whatsapp" ? "Покупатель из WhatsApp" : "Покупатель из Instagram";
+
+  // Тип заказа — снимок с товаров в корзине, отдельным запросом: CartLine
+  // (readCart/priceCart выше) не несёт это поле, а трогать общий ценовой
+  // конвейер ради одной колонки снимка рискованнее, чем отдельный select.
+  // Смешанная корзина невозможна (см. cartAllowsProduct, Ниши Блок 5) —
+  // типа всей корзины достаточно взять с первой позиции.
+  const { data: firstCartProduct } = await s
+    .from("cart_items")
+    .select("products(fulfillment_kind)")
+    .eq("telegram_id", params.user.telegram_id)
+    .limit(1)
+    .maybeSingle();
+  const orderFulfillmentKind =
+    (firstCartProduct as { products?: { fulfillment_kind?: string } } | null)?.products
+      ?.fulfillment_kind === "physical"
+      ? "physical"
+      : "digital";
 
   const { data: order, error } = await s
     .from("orders")
@@ -1326,8 +1347,9 @@ export async function createOrderFromCart(params: {
       total: amount,
       currency,
       status: "awaiting_confirmation",
+      fulfillment_kind: orderFulfillmentKind,
     })
-    .select("id, order_no")
+    .select("id, order_no, fulfillment_kind")
     .single();
 
   if (error || !order) {
@@ -1391,7 +1413,7 @@ export async function createOrderFromCart(params: {
     return null;
   }
 
-  return order;
+  return { ...order, fulfillment_kind: orderFulfillmentKind };
 }
 
 /** Предел непонятых ответов на одном шаге, после которого зовём продавца. */

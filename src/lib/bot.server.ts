@@ -2411,7 +2411,7 @@ async function placeOrderInner(
   const { data: items } = await s
     .from("cart_items")
     .select(
-      "id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, country_prices, product_material_files(language, file_path, file_name, sort_order))",
+      "id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, country_prices, fulfillment_kind, product_material_files(language, file_path, file_name, sort_order))",
     )
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
@@ -2419,6 +2419,13 @@ async function placeOrderInner(
     await releaseOrderPlacement(telegram_id, user.state);
     return;
   }
+
+  // Тип заказа — снимок с товаров в корзине, тем же приёмом, что и снимок
+  // цены ниже: смена типа товара задним числом не должна задним числом
+  // менять уже размещённые заказы. Смешанная корзина невозможна (см.
+  // addToCart, Ниши Блок 5) — типа всей корзины достаточно взять с первого.
+  const orderFulfillmentKind =
+    items[0]?.products?.fulfillment_kind === "physical" ? "physical" : "digital";
 
   // Складской учёт (Кейс 4) — платный модуль. Списываем остаток здесь же,
   // до создания заказа: тот же принцип, что у промокода/сертификата ниже —
@@ -2541,6 +2548,7 @@ async function placeOrderInner(
       points_used: pointsUsed,
       gift_certificate_code: giftCertificateCode,
       gift_certificate_discount: giftCertificateDiscountAmount,
+      fulfillment_kind: orderFulfillmentKind,
     })
     .select("*")
     .single();
@@ -2649,10 +2657,15 @@ async function placeOrderInner(
   // выдаём, не спрашивая чек.
   if (total <= 0) {
     try {
-      const { deliverOrder } = await import("./orders.server");
-      await deliverOrder(order.id as number);
+      if (orderFulfillmentKind === "physical") {
+        const { acceptOrder } = await import("./fulfillment.server");
+        await acceptOrder(order.id as number);
+      } else {
+        const { deliverOrder } = await import("./orders.server");
+        await deliverOrder(order.id as number);
+      }
     } catch (e) {
-      console.error(`[bot] deliverOrder failed for zero-total order ${order.id}`, e);
+      console.error(`[bot] auto-fulfillment failed for zero-total order ${order.id}`, e);
     }
     return;
   }
@@ -3842,10 +3855,22 @@ export async function handleUpdate(update: TelegramUpdate) {
           await db()
         )
           .from("orders")
-          .select("order_no")
+          .select("order_no, fulfillment_kind")
           .eq("id", orderId)
           .maybeSingle();
         const shownNo = ordRow?.order_no ?? orderId;
+
+        if (ordRow?.fulfillment_kind === "physical") {
+          const { acceptOrder } = await import("./fulfillment.server");
+          try {
+            await acceptOrder(orderId);
+            await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
+          } catch (e: unknown) {
+            await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
+          }
+          return;
+        }
+
         await tg("sendMessage", { chat_id, text: `⏳ Выдаю заказ #${shownNo}...` });
         const { deliverOrder } = await import("./orders.server");
         try {
@@ -4124,7 +4149,9 @@ export async function handleUpdate(update: TelegramUpdate) {
       const sOrder = await db();
       const { data: orderRow } = await sOrder
         .from("orders")
-        .select("id, display_no, status, admin_note, country_code, telegram_id, total, currency")
+        .select(
+          "id, display_no, status, admin_note, country_code, telegram_id, total, currency, fulfillment_kind",
+        )
         .eq("id", orderId)
         .maybeSingle();
 
@@ -4323,8 +4350,13 @@ export async function handleUpdate(update: TelegramUpdate) {
         });
 
         try {
-          const { deliverOrder } = await import("./orders.server");
-          await deliverOrder(orderId);
+          if (orderRow.fulfillment_kind === "physical") {
+            const { acceptOrder } = await import("./fulfillment.server");
+            await acceptOrder(orderId);
+          } else {
+            const { deliverOrder } = await import("./orders.server");
+            await deliverOrder(orderId);
+          }
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, { autoDelivered: true });
         } catch (e: unknown) {
           console.error("[bot] auto-deliver after proof failed", orderId, e);

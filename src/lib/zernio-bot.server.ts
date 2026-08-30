@@ -2665,7 +2665,10 @@ async function handlePurchaseFlow(params: {
     const displayNo = order.order_no || order.id;
     const email = user.email;
     const platform = platformOf(user);
-    const needsEmail = platform === "instagram";
+    // Physical-заказу почта не нужна вовсе — она нужна была только чтобы
+    // дослать файлы письмом (см. deliverOrderByEmail, orders.server.ts).
+    // Полноценный чекаут физического заказа (дата/адрес) — Ниши, Блок 8.
+    const needsEmail = platform === "instagram" && order.fulfillment_kind !== "physical";
 
     // Техническая блокировка нужна только до создания заказа. Переводим
     // сценарий в нормальный пользовательский шаг до OCR и уведомлений: они
@@ -2754,8 +2757,13 @@ async function handlePurchaseFlow(params: {
       if (email) await s.from("orders").update({ customer_email: email }).eq("id", order.id);
       await flow.clearDirectFlow(user.user_key);
       try {
-        const { deliverOrder } = await import("./orders.server");
-        await deliverOrder(order.id);
+        if (order.fulfillment_kind === "physical") {
+          const { acceptOrder } = await import("./fulfillment.server");
+          await acceptOrder(order.id);
+        } else {
+          const { deliverOrder } = await import("./orders.server");
+          await deliverOrder(order.id);
+        }
         // Продавец должен знать о продаже, даже когда делать ничего не нужно.
         await flow.notifyAdminAboutDirectOrder(order.id, displayNo, {
           verdict: verdict.note,

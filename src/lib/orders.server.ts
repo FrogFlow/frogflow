@@ -26,7 +26,8 @@ const ITEM_DELAY_MS = 350;
 const MAX_FILE_BYTES =
   Math.min(200, Math.max(1, Number(process.env.DELIVERY_MAX_FILE_MB) || 100)) * 1024 * 1024;
 
-const DELIVERABLE_STATUSES = ["awaiting_confirmation", "awaiting_payment"] as const;
+/** Экспортирован для fulfillment.server.ts — одна константа на обе машины выдачи (Ниши, Блок 6). */
+export const DELIVERABLE_STATUSES = ["awaiting_confirmation", "awaiting_payment"] as const;
 
 /**
  * Сколько раз подряд подождать 2-минутную аренду и попробовать снова, прежде

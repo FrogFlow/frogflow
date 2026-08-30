@@ -399,11 +399,16 @@ function OrdersPage() {
     try {
       const result = await confirmOrder({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
-      if (result.alreadyDelivered) {
+      // confirmOrder диспетчеризует по fulfillment_kind (Ниши, Блок 6):
+      // физический заказ отвечает { alreadyAccepted }, у цифрового — форма
+      // deliverOrder ниже. Подробный статус физического заказа — Блок 9.
+      if ("alreadyAccepted" in result) {
+        if (result.alreadyAccepted) toast.success(tr.alreadyDelivered(displayNo));
+      } else if ("alreadyDelivered" in result && result.alreadyDelivered) {
         toast.success(tr.alreadyDelivered(displayNo));
       } else if ("pending" in result && result.pending) {
         toast.success(tr.batchSent(result.sent));
-      } else if (result.manualRequired) {
+      } else if ("manualRequired" in result && result.manualRequired) {
         toast.warning(tr.manualRequired(displayNo));
       }
     } catch (e: unknown) {

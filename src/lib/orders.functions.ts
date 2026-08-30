@@ -78,9 +78,32 @@ export const confirmOrder = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
-    const { deliverOrder } = await import("./orders.server");
     await requireAdmin();
+    const s = await db();
+    // Снимок fulfillment_kind на заказе (не на товаре — товар мог смениться
+    // задним числом), тем же приёмом, что и в bot.server.ts confirm:.
+    const { data: order, error } = await s
+      .from("orders")
+      .select("fulfillment_kind")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (order?.fulfillment_kind === "physical") {
+      const { acceptOrder } = await import("./fulfillment.server");
+      return await acceptOrder(data.id);
+    }
+    const { deliverOrder } = await import("./orders.server");
     return await deliverOrder(data.id);
+  });
+
+/** Продвинуть физический заказ: accepted → in_production → ready → delivered. */
+export const advanceOrderFulfillment = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ id: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    await requireAdmin();
+    const { advanceFulfillment } = await import("./fulfillment.server");
+    return await advanceFulfillment(data.id);
   });
 
 export const redeliverOrder = createServerFn({ method: "POST" })
