@@ -1046,10 +1046,14 @@ export async function productHasFiles(productId: string): Promise<boolean> {
   const { data: product } = await s
     .from("products")
     .select(
-      "file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)",
+      "fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)",
     )
     .eq("id", productId)
     .maybeSingle();
+
+  // Физический товар выдаётся не файлом — требовать материал для него
+  // значит запретить продажу всего каталога кондитерской (Ниши, Блок 5).
+  if (product?.fulfillment_kind === "physical") return true;
 
   /**
    * Та же функция, что снимает файлы в заказ, — и это принципиально.
@@ -1063,22 +1067,74 @@ export async function productHasFiles(productId: string): Promise<boolean> {
   return hasAnyMaterial(product);
 }
 
-/** Добавляет материал в корзину; повторное добавление количество не множит. */
+/**
+ * Смешанная корзина (физический товар + цифровой материал в одном заказе)
+ * не поддерживается — у них разные машины выдачи (Ниши, Блок 6). Проверяем
+ * ДО addToCart, тем же приёмом, что и productHasFiles: отказ до того, как
+ * товар лёг в корзину, а не разбор после.
+ */
+export async function cartAllowsProduct(
+  user: { telegram_id: number },
+  productId: string,
+): Promise<boolean> {
+  const s = await db();
+  const { data: incoming } = await s
+    .from("products")
+    .select("fulfillment_kind")
+    .eq("id", productId)
+    .maybeSingle();
+  const incomingKind = incoming?.fulfillment_kind === "physical" ? "physical" : "digital";
+
+  const { data: other } = await s
+    .from("cart_items")
+    .select("products(fulfillment_kind)")
+    .eq("telegram_id", user.telegram_id)
+    .neq("product_id", productId)
+    .limit(1)
+    .maybeSingle();
+  if (!other) return true;
+  const otherKind =
+    (other as { products?: { fulfillment_kind?: string } }).products?.fulfillment_kind ===
+    "physical"
+      ? "physical"
+      : "digital";
+  return otherKind === incomingKind;
+}
+
+/**
+ * Добавляет товар в корзину. Цифровой материал покупают один раз — повторное
+ * добавление количество не множит (второй экземпляр того же файла человеку
+ * не нужен). Физический товар (Ниши, Блок 5) — наоборот, обычно берут
+ * несколько штук, поэтому повторное добавление увеличивает количество.
+ */
 export async function addToCart(
   user: { telegram_id: number; user_key: string },
   productId: string,
 ): Promise<void> {
   const s = await db();
+  const { data: product } = await s
+    .from("products")
+    .select("fulfillment_kind")
+    .eq("id", productId)
+    .maybeSingle();
+  const isPhysical = product?.fulfillment_kind === "physical";
+
   const { data: existing } = await s
     .from("cart_items")
-    .select("id")
+    .select("id, quantity")
     .eq("telegram_id", user.telegram_id)
     .eq("product_id", productId)
     .maybeSingle();
 
-  // Цифровой материал покупают один раз — второй экземпляр того же файла
-  // человеку не нужен, и увеличивать количество было бы ошибкой.
-  if (existing) return;
+  if (existing) {
+    if (isPhysical) {
+      await s
+        .from("cart_items")
+        .update({ quantity: (Number(existing.quantity) || 1) + 1 })
+        .eq("id", existing.id);
+    }
+    return;
+  }
 
   await s.from("cart_items").insert({
     telegram_id: user.telegram_id,

@@ -1750,7 +1750,7 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
 
   const { data: product, error: productError } = await s
     .from("products")
-    .select("id, is_active, stock_quantity")
+    .select("id, is_active, stock_quantity, fulfillment_kind")
     .eq("id", product_id)
     .maybeSingle();
   if (productError) {
@@ -1758,6 +1758,26 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
     return false;
   }
   if (!product?.is_active) return false;
+
+  // Смешанная корзина (физический товар + цифровой материал) не
+  // поддерживается — у них разные машины выдачи (Ниши, Блок 6). Проверяем
+  // ДО вставки, а не разбираем после.
+  const incomingKind = product.fulfillment_kind === "physical" ? "physical" : "digital";
+  const { data: other } = await s
+    .from("cart_items")
+    .select("products(fulfillment_kind)")
+    .eq("telegram_id", telegram_id)
+    .neq("product_id", product_id)
+    .limit(1)
+    .maybeSingle();
+  if (other) {
+    const otherKind =
+      (other as { products?: { fulfillment_kind?: string } }).products?.fulfillment_kind ===
+      "physical"
+        ? "physical"
+        : "digital";
+    if (otherKind !== incomingKind) return false;
+  }
 
   const { data: existing } = await s
     .from("cart_items")

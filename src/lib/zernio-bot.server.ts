@@ -107,6 +107,7 @@ interface DirectCopy {
   btnCheckout: string;
   productUnavailable: string;
   productNoFiles: (name: string) => string;
+  productMixedCart: (name: string) => string;
   cartEmptyHint: string;
   /** Заголовок «В заказе:» перед списком строк корзины на шаге выбора страны. */
   orderCartHeader: string;
@@ -187,6 +188,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     productUnavailable: "Этот материал больше недоступен.",
     productNoFiles: (name) =>
       `«${name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
+    productMixedCart: (name) =>
+      `«${name}» нельзя добавить вместе с тем, что уже в заказе, — разные типы товара. Оформите текущий заказ или очистите корзину.`,
     cartEmptyHint:
       "В заказе пока ничего нет. Напишите номер материала из публикации — например «018».",
     orderCartHeader: "В заказе:",
@@ -315,6 +318,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     productUnavailable: "Бұл материал енді қолжетімсіз.",
     productNoFiles: (name) =>
       `«${name}» қазір жүктеуге қолжетімсіз. Ол қашан пайда болатынын сатушы айтады.`,
+    productMixedCart: (name) =>
+      `«${name}» қазірден бар тапсырыспен бірге қосылмайды — тауар түрлері бөлек. Ағымдағы тапсырысты рәсімдеңіз немесе себетті тазалаңыз.`,
     cartEmptyHint:
       "Тапсырыста әзірге ештеңе жоқ. Жарияланымдағы материал нөмірін жазыңыз — мысалы «018».",
     orderCartHeader: "Тапсырыста:",
@@ -441,6 +446,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     productUnavailable: "This material is no longer available.",
     productNoFiles: (name) =>
       `"${name}" isn't available for download right now. The seller will let you know when it's back.`,
+    productMixedCart: (name) =>
+      `"${name}" can't be added together with what's already in your order — different product types. Place the current order first or clear the cart.`,
     cartEmptyHint:
       "There's nothing in your order yet. Send the material's number from the post — for example \"018\".",
     orderCartHeader: "Your order:",
@@ -565,6 +572,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     productUnavailable: "Bu material endi mavjud emas.",
     productNoFiles: (name) =>
       `«${name}» hozircha yuklab olish uchun mavjud emas. U qachon paydo bo‘lishini sotuvchi aytadi.`,
+    productMixedCart: (name) =>
+      `«${name}»ni buyurtmadagi boshqa mahsulot bilan birga qo‘shib bo‘lmaydi — tovar turlari boshqa. Avval joriy buyurtmani rasmiylashtiring yoki savatni tozalang.`,
     cartEmptyHint:
       "Buyurtmada hozircha hech narsa yo‘q. E’londagi material raqamini yozing — masalan, «018».",
     orderCartHeader: "Buyurtmada:",
@@ -1953,6 +1962,10 @@ async function addProductToCart(
     await reply(user, conversationId, accountId, copy.productNoFiles(product.name));
     return;
   }
+  if (!(await flow.cartAllowsProduct(user, product.id))) {
+    await reply(user, conversationId, accountId, copy.productMixedCart(product.name));
+    return;
+  }
 
   await flow.addToCart(user, product.id);
   // Товар в корзине — счётчик непонятых реплик обнуляем: человек явно понял,
@@ -3021,6 +3034,10 @@ async function handlePurchaseFlow(params: {
     // упёрся бы там — уже после того, как человек заплатил. Таких в каталоге 8.
     if (!(await flow.productHasFiles(product.id))) {
       await say(copy.productNoFiles(product.name));
+      return true;
+    }
+    if (!(await flow.cartAllowsProduct(user, product.id))) {
+      await say(copy.productMixedCart(product.name));
       return true;
     }
 
