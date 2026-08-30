@@ -11,6 +11,7 @@ import type { OrderItem } from "./orders.server";
 import type { ReceiptVerifyResult } from "./receipt-verify.server";
 import { isLocale, localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import { currentVerticalDef } from "./verticals/vertical.server";
+import { appTimeZone } from "./datetime";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
 type ProductCard = {
@@ -104,7 +105,10 @@ type BotUser = {
       | "choose_pay"
       | "awaiting_promo_code"
       | "awaiting_review_comment"
-      | "awaiting_gift_certificate_code";
+      | "awaiting_gift_certificate_code"
+      | "awaiting_fulfillment_date"
+      | "awaiting_address"
+      | "awaiting_fulfillment_note";
     /** Списать баллы при оформлении — переключатель, не текстовый ввод. */
     use_points?: boolean;
     /** Товар, для которого только что поставлена оценка и ждём комментарий. */
@@ -136,6 +140,16 @@ type BotUser = {
     checkout_lang_choice?: DeliveryLangChoice;
     /** Промокод, применённый в корзине — считывается и снимается в placeOrderInner. */
     promo_code?: string;
+    /**
+     * Данные получения физического заказа (Ниши, Блок 8) — собираются в
+     * чекауте до placeOrder и снимаются в placeOrderInner тем же приёмом,
+     * что checkout_lang_choice/promo_code. У цифровой корзины не заводятся.
+     */
+    checkout_fulfillment_type?: "pickup" | "delivery";
+    /** Дата получения, ISO (YYYY-MM-DD) — без времени, время не спрашиваем. */
+    checkout_fulfillment_at?: string;
+    checkout_fulfillment_address?: string;
+    checkout_fulfillment_note?: string;
   } | null;
 };
 
@@ -522,6 +536,15 @@ type Msg = {
   outOfStockAtCheckout: string;
   phonePromptHtml: string;
   shareContactBtn: string;
+  fulfillmentTypePrompt: string;
+  fulfillmentTypePickupBtn: string;
+  fulfillmentTypeDeliveryBtn: string;
+  fulfillmentDatePrompt: (minDate: string) => string;
+  fulfillmentDateInvalid: string;
+  fulfillmentDateTooEarly: (minDate: string) => string;
+  addressPrompt: string;
+  fulfillmentNotePrompt: string;
+  fulfillmentNoteSkipBtn: string;
   paymentNotConfigured: string;
   chooseCountry: string;
   countryNoLongerAvailable: string;
@@ -648,6 +671,18 @@ const copy: Record<Locale, Msg> = {
     phonePromptHtml:
       "Для оформления заказа укажите номер телефона — <b>просто напишите его в этот чат</b>, например:\n<code>+7 900 123-45-67</code>\n\nИли нажмите кнопку ниже, чтобы поделиться контактом автоматически.",
     shareContactBtn: "📱 Поделиться контактом",
+    fulfillmentTypePrompt: "Как вы хотите получить заказ?",
+    fulfillmentTypePickupBtn: "🚶 Самовывоз",
+    fulfillmentTypeDeliveryBtn: "🚚 Доставка",
+    fulfillmentDatePrompt: (minDate) =>
+      `Когда вы сможете получить заказ? Не раньше ${minDate}. Напишите дату в формате ДД.ММ.ГГГГ.`,
+    fulfillmentDateInvalid: "Не разобрал дату. Формат: ДД.ММ.ГГГГ, например 05.03.2026.",
+    fulfillmentDateTooEarly: (minDate) =>
+      `Этот заказ готовится дольше — не раньше ${minDate}. Укажите более позднюю дату.`,
+    addressPrompt: "Укажите адрес доставки.",
+    fulfillmentNotePrompt:
+      "Комментарий к заказу (например, надпись на торте)? Если не нужен — нажмите «Без комментария».",
+    fulfillmentNoteSkipBtn: "Без комментария",
     paymentNotConfigured: "Способы оплаты ещё не настроены. Свяжитесь с продавцом.",
     chooseCountry: "Пожалуйста, выберите вашу страну (для отображения цен и реквизитов):",
     countryNoLongerAvailable:
@@ -787,6 +822,18 @@ const copy: Record<Locale, Msg> = {
     phonePromptHtml:
       "Тапсырысты рәсімдеу үшін телефон нөміріңізді көрсетіңіз — <b>оны осы чатқа жазыңыз</b>, мысалы:\n<code>+7 900 123-45-67</code>\n\nНемесе контактіні автоматты түрде бөлісу үшін төмендегі батырманы басыңыз.",
     shareContactBtn: "📱 Контактімен бөлісу",
+    fulfillmentTypePrompt: "Тапсырысты қалай алғыңыз келеді?",
+    fulfillmentTypePickupBtn: "🚶 Өзі алып кету",
+    fulfillmentTypeDeliveryBtn: "🚚 Жеткізу",
+    fulfillmentDatePrompt: (minDate) =>
+      `Тапсырысты қашан ала аласыз? ${minDate}-ден ерте емес. Күнді КК.АА.ЖЖЖЖ форматында жазыңыз.`,
+    fulfillmentDateInvalid: "Күнді түсінбедім. Формат: КК.АА.ЖЖЖЖ, мысалы 05.03.2026.",
+    fulfillmentDateTooEarly: (minDate) =>
+      `Бұл тапсырыс дайындалуы ұзағырақ — ${minDate}-ден ерте емес. Кейінірек күн көрсетіңіз.`,
+    addressPrompt: "Жеткізу мекенжайын көрсетіңіз.",
+    fulfillmentNotePrompt:
+      "Тапсырысқа түсініктеме (мысалы, тортқа жазу)? Керек болмаса — «Түсініктемесіз» батырмасын басыңыз.",
+    fulfillmentNoteSkipBtn: "Түсініктемесіз",
     paymentNotConfigured: "Төлем әдістері әлі теңшелмеген. Сатушымен байланысыңыз.",
     chooseCountry: "Еліңізді таңдаңыз (бағалар мен деректемелерді көрсету үшін):",
     countryNoLongerAvailable: "Сіздің еліңіз енді қызмет көрсетілмейді — қайта таңдаңыз.",
@@ -927,6 +974,18 @@ const copy: Record<Locale, Msg> = {
     phonePromptHtml:
       "To place your order, share your phone number — <b>just type it in this chat</b>, for example:\n<code>+7 900 123-45-67</code>\n\nOr tap the button below to share your contact automatically.",
     shareContactBtn: "📱 Share contact",
+    fulfillmentTypePrompt: "How would you like to receive your order?",
+    fulfillmentTypePickupBtn: "🚶 Pickup",
+    fulfillmentTypeDeliveryBtn: "🚚 Delivery",
+    fulfillmentDatePrompt: (minDate) =>
+      `When can you receive the order? Not earlier than ${minDate}. Please write the date as DD.MM.YYYY.`,
+    fulfillmentDateInvalid: "Couldn't read that date. Format: DD.MM.YYYY, e.g. 05.03.2026.",
+    fulfillmentDateTooEarly: (minDate) =>
+      `This order takes longer to prepare — not earlier than ${minDate}. Please pick a later date.`,
+    addressPrompt: "Please provide the delivery address.",
+    fulfillmentNotePrompt:
+      'Any note for the order (e.g. a message on the cake)? Tap "No note" if none.',
+    fulfillmentNoteSkipBtn: "No note",
     paymentNotConfigured: "Payment methods are not configured yet. Please contact the seller.",
     chooseCountry: "Please choose your country (to show correct prices and payment details):",
     countryNoLongerAvailable: "Your country is no longer served — please choose it again.",
@@ -1072,6 +1131,18 @@ const copy: Record<Locale, Msg> = {
     phonePromptHtml:
       "Buyurtma berish uchun telefon raqamingizni kiriting — <b>uni shu chatga yozing</b>, masalan:\n<code>+7 900 123-45-67</code>\n\nYoki kontaktni avtomatik ulashish uchun quyidagi tugmani bosing.",
     shareContactBtn: "📱 Kontaktni ulashish",
+    fulfillmentTypePrompt: "Buyurtmani qanday olishni xohlaysiz?",
+    fulfillmentTypePickupBtn: "🚶 O‘zi olib ketish",
+    fulfillmentTypeDeliveryBtn: "🚚 Yetkazib berish",
+    fulfillmentDatePrompt: (minDate) =>
+      `Buyurtmani qachon olishingiz mumkin? ${minDate} dan erta emas. Sanani KK.OO.YYYY formatida yozing.`,
+    fulfillmentDateInvalid: "Sanani tushunmadim. Format: KK.OO.YYYY, masalan 05.03.2026.",
+    fulfillmentDateTooEarly: (minDate) =>
+      `Bu buyurtma tayyorlanishi uzoqroq — ${minDate} dan erta emas. Keyinroq sana ko‘rsating.`,
+    addressPrompt: "Yetkazib berish manzilini ko‘rsating.",
+    fulfillmentNotePrompt:
+      "Buyurtmaga izoh (masalan, tortga yozuv)? Kerak bo‘lmasa — «Izohsiz» tugmasini bosing.",
+    fulfillmentNoteSkipBtn: "Izohsiz",
     paymentNotConfigured: "To‘lov usullari hali sozlanmagan. Sotuvchi bilan bog‘laning.",
     chooseCountry:
       "Iltimos, mamlakatingizni tanlang (narxlar va to‘lov ma’lumotlarini ko‘rsatish uchun):",
@@ -1623,7 +1694,7 @@ async function saveContactAndContinueCheckout(chat_id: number, user: BotUser, ph
     return;
   }
 
-  await placeOrder(chat_id, updatedUser, user.state.country_code);
+  await proceedToFulfillmentOrPlace(chat_id, updatedUser, user.state.country_code);
 }
 
 const TELEGRAM_MEDIA_GROUP_MAX = 10;
@@ -2017,8 +2088,8 @@ async function startCheckout(chat_id: number, user: BotUser) {
   // placeOrder (тем же приёмом, что checkout через кнопку страны) — здесь
   // раньше стоял свой, отдельный и неатомарный guard "прочитал mode, потом
   // записал", ровно тот паттерн гонки, который claimOrderPlacement и чинит.
-  // user has contact and country, proceed to language choice or straight to placeOrder
-  await proceedToLanguageOrPlace(chat_id, user, user.state.country_code);
+  // user has contact and country, proceed to fulfillment/language questions or straight to placeOrder
+  await proceedToFulfillmentOrPlace(chat_id, user, user.state.country_code);
 }
 
 async function askCountry(
@@ -2156,6 +2227,145 @@ async function loadPaymentMode(): Promise<"full" | "deposit" | "on_receipt"> {
     .eq("key", "payment_mode")
     .maybeSingle();
   return data?.value === "deposit" || data?.value === "on_receipt" ? data.value : "full";
+}
+
+/** Тип корзины покупателя — физическая или цифровая. Смешанная невозможна (см. addToCart, Ниши Блок 5). */
+async function cartFulfillmentKind(telegram_id: number): Promise<"digital" | "physical"> {
+  const s = await db();
+  const { data } = await s
+    .from("cart_items")
+    .select("products(fulfillment_kind)")
+    .eq("telegram_id", telegram_id)
+    .limit(1)
+    .maybeSingle();
+  const kind = (data as { products?: { fulfillment_kind?: string } } | null)?.products
+    ?.fulfillment_kind;
+  return kind === "physical" ? "physical" : "digital";
+}
+
+/** Самый долгий срок изготовления среди товаров в корзине — минимальный сдвиг даты получения. */
+async function maxLeadTimeDaysInCart(telegram_id: number): Promise<number> {
+  const s = await db();
+  const { data } = await s
+    .from("cart_items")
+    .select("products(lead_time_days)")
+    .eq("telegram_id", telegram_id);
+  let max = 0;
+  for (const row of data ?? []) {
+    const days = (row as { products?: { lead_time_days?: number | null } }).products
+      ?.lead_time_days;
+    if (typeof days === "number" && days > max) max = days;
+  }
+  return max;
+}
+
+/** Доступность самовывоза/доставки — по умолчанию оба включены, пока продавец явно не отключил. */
+async function fulfillmentOptionsEnabled(): Promise<{ pickup: boolean; delivery: boolean }> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("key, value")
+    .in("key", ["fulfillment_pickup_enabled", "fulfillment_delivery_enabled"]);
+  const get = (key: string) => data?.find((r) => r.key === key)?.value;
+  return {
+    pickup: get("fulfillment_pickup_enabled") !== "false",
+    delivery: get("fulfillment_delivery_enabled") !== "false",
+  };
+}
+
+/** "Сегодня" в таймзоне продавца (APP_TIMEZONE, см. datetime.ts) — не UTC-дата сервера. */
+function todayInAppTZ(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: appTimeZone() });
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/** ДД.ММ.ГГГГ → "YYYY-MM-DD", либо null на нераспознанном/невозможном вводе. */
+function parseFulfillmentDateInput(text: string): string | null {
+  const m = text.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function addDaysToIsoDate(iso: string, days: number): string {
+  const [y, mo, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d) + days * 86_400_000);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+function isoDateToDisplay(iso: string): string {
+  const [y, mo, d] = iso.split("-");
+  return `${d}.${mo}.${y}`;
+}
+
+/**
+ * Развилка чекаута для физических товаров (Ниши, Блок 8) — вставлена между
+ * выбором страны и proceedToLanguageOrPlace. Цифровая корзина идёт по
+ * прежнему пути без единого изменения; физическая — спрашивает способ и
+ * дату получения (и адрес, если доставка) до самого оформления.
+ */
+async function proceedToFulfillmentOrPlace(chat_id: number, user: BotUser, country_code: string) {
+  const telegram_id = user.telegram_id;
+  const locale: Locale = user.state?.locale ?? "ru";
+  const nextState = { ...user.state, country_code };
+
+  if ((await cartFulfillmentKind(telegram_id)) !== "physical") {
+    await setState(telegram_id, nextState);
+    await proceedToLanguageOrPlace(chat_id, { ...user, state: nextState }, country_code);
+    return;
+  }
+
+  const { pickup, delivery } = await fulfillmentOptionsEnabled();
+  if (pickup && delivery) {
+    await setState(telegram_id, { ...nextState, mode: undefined });
+    await tg("sendMessage", {
+      chat_id,
+      text: copy[locale].fulfillmentTypePrompt,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: copy[locale].fulfillmentTypePickupBtn, callback_data: "fulfilltype:pickup" }],
+          [
+            {
+              text: copy[locale].fulfillmentTypeDeliveryBtn,
+              callback_data: "fulfilltype:delivery",
+            },
+          ],
+        ],
+      },
+    });
+    return;
+  }
+  // Продавец сам не оставил выбора (или отключил оба варианта — тогда
+  // самовывоз безопаснее считать умолчанием, чем ломать оформление).
+  const only: "pickup" | "delivery" = delivery ? "delivery" : "pickup";
+  await askFulfillmentDate(
+    chat_id,
+    telegram_id,
+    { ...nextState, checkout_fulfillment_type: only },
+    locale,
+  );
+}
+
+async function askFulfillmentDate(
+  chat_id: number,
+  telegram_id: number,
+  state: BotUser["state"],
+  locale: Locale,
+) {
+  const minDays = await maxLeadTimeDaysInCart(telegram_id);
+  const minIso = addDaysToIsoDate(todayInAppTZ(), minDays);
+  await setState(telegram_id, { ...state, mode: "awaiting_fulfillment_date" });
+  await tg("sendMessage", {
+    chat_id,
+    text: copy[locale].fulfillmentDatePrompt(isoDateToDisplay(minIso)),
+  });
 }
 
 async function shouldAskDeliveryLangBeforeOrder(): Promise<boolean> {
@@ -2395,6 +2605,27 @@ async function placeOrderInner(
     const { gift_certificate_code: _gift_certificate_code, ...rest } = user.state;
     user = { ...user, state: rest };
   }
+  // Данные получения физического заказа (Ниши, Блок 8) — тот же приём:
+  // читаем и сразу снимаем, иначе адрес/дата прилипнут к следующему заказу.
+  const fulfillmentType = user.state?.checkout_fulfillment_type ?? null;
+  const fulfillmentAt = user.state?.checkout_fulfillment_at ?? null;
+  const fulfillmentAddress = user.state?.checkout_fulfillment_address ?? null;
+  const fulfillmentNote = user.state?.checkout_fulfillment_note ?? null;
+  if (
+    user.state?.checkout_fulfillment_type !== undefined ||
+    user.state?.checkout_fulfillment_at !== undefined ||
+    user.state?.checkout_fulfillment_address !== undefined ||
+    user.state?.checkout_fulfillment_note !== undefined
+  ) {
+    const {
+      checkout_fulfillment_type: _cft,
+      checkout_fulfillment_at: _cfa,
+      checkout_fulfillment_address: _cfaddr,
+      checkout_fulfillment_note: _cfn,
+      ...rest
+    } = user.state;
+    user = { ...user, state: rest };
+  }
 
   const s = await db();
   const { data: method } = await s
@@ -2560,6 +2791,10 @@ async function placeOrderInner(
       gift_certificate_code: giftCertificateCode,
       gift_certificate_discount: giftCertificateDiscountAmount,
       fulfillment_kind: orderFulfillmentKind,
+      fulfillment_type: fulfillmentType,
+      fulfillment_at: fulfillmentAt,
+      fulfillment_address: fulfillmentAddress,
+      fulfillment_note: fulfillmentNote,
     })
     .select("*")
     .single();
@@ -3729,7 +3964,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         }
       }
       if (data.startsWith("country:"))
-        return proceedToLanguageOrPlace(chat_id, user, data.slice(8));
+        return proceedToFulfillmentOrPlace(chat_id, user, data.slice(8));
 
       if (data.startsWith("setcountry:")) {
         const code = data.slice(11);
@@ -3773,6 +4008,41 @@ export async function handleUpdate(update: TelegramUpdate) {
             reply_markup: { inline_keyboard: [] },
           }).catch(() => {});
         }
+        await placeOrder(chat_id, { ...user, state: nextState }, countryCode);
+        return;
+      }
+
+      if (data.startsWith("fulfilltype:")) {
+        const typeRaw = data.slice("fulfilltype:".length);
+        if (typeRaw !== "pickup" && typeRaw !== "delivery") return;
+        const type: "pickup" | "delivery" = typeRaw;
+        if (cq.message?.message_id) {
+          await tg("editMessageReplyMarkup", {
+            chat_id,
+            message_id: cq.message.message_id,
+            reply_markup: { inline_keyboard: [] },
+          }).catch(() => {});
+        }
+        const nextState = { ...user.state, checkout_fulfillment_type: type };
+        await askFulfillmentDate(chat_id, from_id, nextState, locale);
+        return;
+      }
+
+      if (data === "fulfillnote:skip") {
+        if (cq.message?.message_id) {
+          await tg("editMessageReplyMarkup", {
+            chat_id,
+            message_id: cq.message.message_id,
+            reply_markup: { inline_keyboard: [] },
+          }).catch(() => {});
+        }
+        const countryCode = user.state?.country_code;
+        if (!countryCode) {
+          await askCountry(chat_id, from_id, true, locale);
+          return;
+        }
+        const nextState = { ...user.state, mode: undefined };
+        await setState(from_id, nextState);
         await placeOrder(chat_id, { ...user, state: nextState }, countryCode);
         return;
       }
@@ -4437,6 +4707,94 @@ export async function handleUpdate(update: TelegramUpdate) {
         await notifyAdminNewOrder(orderId, null, null);
       }
       return;
+    }
+
+    // Дата получения физического заказа (Ниши, Блок 8) — тот же escape hatch.
+    if (user.state?.mode === "awaiting_fulfillment_date" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const iso = parseFulfillmentDateInput(msg.text);
+        const minDays = await maxLeadTimeDaysInCart(from.id);
+        const minIso = addDaysToIsoDate(todayInAppTZ(), minDays);
+        if (!iso) {
+          await tg("sendMessage", { chat_id, text: m.fulfillmentDateInvalid });
+          return;
+        }
+        if (iso < minIso) {
+          await tg("sendMessage", {
+            chat_id,
+            text: m.fulfillmentDateTooEarly(isoDateToDisplay(minIso)),
+          });
+          return;
+        }
+        const withDate = { ...user.state, checkout_fulfillment_at: iso };
+        if (withDate.checkout_fulfillment_type === "delivery") {
+          await setState(from.id, { ...withDate, mode: "awaiting_address" });
+          await tg("sendMessage", { chat_id, text: m.addressPrompt });
+        } else {
+          await setState(from.id, { ...withDate, mode: "awaiting_fulfillment_note" });
+          await tg("sendMessage", {
+            chat_id,
+            text: m.fulfillmentNotePrompt,
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: m.fulfillmentNoteSkipBtn, callback_data: "fulfillnote:skip" }],
+              ],
+            },
+          });
+        }
+        return;
+      }
+    }
+
+    // Адрес доставки физического заказа — тот же escape hatch.
+    if (user.state?.mode === "awaiting_address" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const withAddress = {
+          ...user.state,
+          checkout_fulfillment_address: msg.text.trim().slice(0, 500),
+          mode: "awaiting_fulfillment_note" as const,
+        };
+        await setState(from.id, withAddress);
+        await tg("sendMessage", {
+          chat_id,
+          text: m.fulfillmentNotePrompt,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: m.fulfillmentNoteSkipBtn, callback_data: "fulfillnote:skip" }],
+            ],
+          },
+        });
+        return;
+      }
+    }
+
+    // Комментарий к физическому заказу (надпись на торте и т.п.) — необязателен,
+    // кнопка «Без комментария» обрабатывается отдельно (fulfillnote:skip).
+    if (user.state?.mode === "awaiting_fulfillment_note" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const countryCode = user.state?.country_code;
+        if (!countryCode) {
+          await askCountry(chat_id, from.id, true, locale);
+          return;
+        }
+        const withNote = {
+          ...user.state,
+          checkout_fulfillment_note: msg.text.trim().slice(0, 500),
+          mode: "idle" as const,
+        };
+        await setState(from.id, withNote);
+        await placeOrder(chat_id, { ...user, state: withNote }, countryCode);
+        return;
+      }
     }
 
     // Ввод промокода — тот же escape hatch, что у search/awaiting_contact:
