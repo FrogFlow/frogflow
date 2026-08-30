@@ -389,6 +389,9 @@ export type Database = {
           updated_at: string | null;
           // MIGRATION-47. Теги оператора для фильтрации в панели.
           tags: string[];
+          // MIGRATION-49. Ниша деплоя для панели оператора — см.
+          // lib/verticals/registry.ts. Рантайм клиента её не читает.
+          vertical: string;
         };
         Insert: {
           notes?: string | null;
@@ -411,6 +414,7 @@ export type Database = {
           created_at?: string | null;
           updated_at?: string | null;
           tags?: string[];
+          vertical?: string;
         };
         Update: {
           notes?: string | null;
@@ -433,6 +437,7 @@ export type Database = {
           created_at?: string | null;
           updated_at?: string | null;
           tags?: string[];
+          vertical?: string;
         };
         Relationships: [];
       };
@@ -1468,6 +1473,14 @@ export type Database = {
           total: number;
           updated_at: string;
           username: string | null;
+          // MIGRATION-49. Снимок products.fulfillment_kind на момент
+          // оформления — решает, какая машина выдачи ведёт заказ.
+          fulfillment_kind: string;
+          fulfillment_type: string | null;
+          fulfillment_at: string | null;
+          fulfillment_address: string | null;
+          fulfillment_note: string | null;
+          paid_amount: number;
         };
         Insert: {
           customer_email?: string | null;
@@ -1501,6 +1514,12 @@ export type Database = {
           total?: number;
           updated_at?: string;
           username?: string | null;
+          fulfillment_kind?: string;
+          fulfillment_type?: string | null;
+          fulfillment_at?: string | null;
+          fulfillment_address?: string | null;
+          fulfillment_note?: string | null;
+          paid_amount?: number;
         };
         Update: {
           customer_email?: string | null;
@@ -1534,6 +1553,12 @@ export type Database = {
           total?: number;
           updated_at?: string;
           username?: string | null;
+          fulfillment_kind?: string;
+          fulfillment_type?: string | null;
+          fulfillment_at?: string | null;
+          fulfillment_address?: string | null;
+          fulfillment_note?: string | null;
+          paid_amount?: number;
         };
         Relationships: [
           {
@@ -1970,6 +1995,10 @@ export type Database = {
           sort_order: number;
           // MIGRATION-46. NULL — остаток не отслеживается (безлимитно).
           stock_quantity: number | null;
+          // MIGRATION-49. digital (умолчание) — выдача файлом. physical —
+          // изготавливается/выдаётся руками, продажа не требует файлов.
+          fulfillment_kind: string;
+          lead_time_days: number | null;
         };
         Insert: {
           file_url_kz?: string | null;
@@ -1994,6 +2023,8 @@ export type Database = {
           rating_count?: number;
           sort_order?: number;
           stock_quantity?: number | null;
+          fulfillment_kind?: string;
+          lead_time_days?: number | null;
         };
         Update: {
           file_url_kz?: string | null;
@@ -2018,6 +2049,8 @@ export type Database = {
           rating_count?: number;
           sort_order?: number;
           stock_quantity?: number | null;
+          fulfillment_kind?: string;
+          lead_time_days?: number | null;
         };
         Relationships: [
           {
