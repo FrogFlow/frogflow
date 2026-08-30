@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components-ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components-ui/dialog";
 import {
+  advanceOrderFulfillment,
   confirmOrder,
   continueDeliveryOrder,
   deleteOrder,
@@ -65,6 +66,15 @@ const copy: Record<
     redeliverFromStart: string;
     remindPayment: string;
     confirmAndDeliver: string;
+    acceptOrderBtn: string;
+    advanceToProductionBtn: string;
+    advanceToReadyBtn: string;
+    advanceToDeliveredBtn: string;
+    fulfillmentTypePickup: string;
+    fulfillmentTypeDelivery: string;
+    fulfillmentAddressLabel: string;
+    fulfillmentNoteLabel: string;
+    paidAmountLine: (paid: number, total: number, currency: string) => string;
     reject: string;
     resendFiles: string;
     block: string;
@@ -106,6 +116,9 @@ const copy: Record<
       delivering: { label: "Выдаётся", cls: "bg-blue-100 text-blue-900" },
       delivered: { label: "Выдан", cls: "bg-green-100 text-green-900" },
       rejected: { label: "Отклонён", cls: "bg-red-100 text-red-900" },
+      accepted: { label: "Принят", cls: "bg-blue-100 text-blue-900" },
+      in_production: { label: "В работе", cls: "bg-indigo-100 text-indigo-900" },
+      ready: { label: "Готов", cls: "bg-teal-100 text-teal-900" },
     },
     title: "Заказы",
     platformAll: "Все",
@@ -124,6 +137,18 @@ const copy: Record<
     redeliverFromStart: "Выдать заново с начала",
     remindPayment: "📩 Напомнить об оплате",
     confirmAndDeliver: "✅ Подтвердить и выдать",
+    acceptOrderBtn: "✅ Принять заказ",
+    advanceToProductionBtn: "👩‍🍳 В работу",
+    advanceToReadyBtn: "📦 Готов",
+    advanceToDeliveredBtn: "🙏 Выдан",
+    fulfillmentTypePickup: "🚶 Самовывоз",
+    fulfillmentTypeDelivery: "🚚 Доставка",
+    fulfillmentAddressLabel: "Адрес",
+    fulfillmentNoteLabel: "Комментарий",
+    paidAmountLine: (paid, total, currency) =>
+      paid >= total
+        ? `Оплачено полностью: ${paid} ${currency}`
+        : `Внесено ${paid} из ${total} ${currency} · остаток ${total - paid} ${currency}`,
     reject: "❌ Отклонить",
     resendFiles: "Отправить файлы ещё раз",
     block: "Заблокировать",
@@ -170,6 +195,9 @@ const copy: Record<
       delivering: { label: "Беріліп жатыр", cls: "bg-blue-100 text-blue-900" },
       delivered: { label: "Берілді", cls: "bg-green-100 text-green-900" },
       rejected: { label: "Қабылданбады", cls: "bg-red-100 text-red-900" },
+      accepted: { label: "Қабылданды", cls: "bg-blue-100 text-blue-900" },
+      in_production: { label: "Дайындалуда", cls: "bg-indigo-100 text-indigo-900" },
+      ready: { label: "Дайын", cls: "bg-teal-100 text-teal-900" },
     },
     title: "Тапсырыстар",
     platformAll: "Барлығы",
@@ -188,6 +216,18 @@ const copy: Record<
     redeliverFromStart: "Басынан қайта беру",
     remindPayment: "📩 Төлем туралы еске салу",
     confirmAndDeliver: "✅ Растау және беру",
+    acceptOrderBtn: "✅ Тапсырысты қабылдау",
+    advanceToProductionBtn: "👩‍🍳 Дайындауға",
+    advanceToReadyBtn: "📦 Дайын",
+    advanceToDeliveredBtn: "🙏 Берілді",
+    fulfillmentTypePickup: "🚶 Өзі алып кету",
+    fulfillmentTypeDelivery: "🚚 Жеткізу",
+    fulfillmentAddressLabel: "Мекенжай",
+    fulfillmentNoteLabel: "Түсініктеме",
+    paidAmountLine: (paid, total, currency) =>
+      paid >= total
+        ? `Толық төленді: ${paid} ${currency}`
+        : `Төленді ${paid} / ${total} ${currency} · қалдық ${total - paid} ${currency}`,
     reject: "❌ Қабылдамау",
     resendFiles: "Файлдарды қайта жіберу",
     block: "Бұғаттау",
@@ -235,6 +275,9 @@ const copy: Record<
       delivering: { label: "Delivering", cls: "bg-blue-100 text-blue-900" },
       delivered: { label: "Delivered", cls: "bg-green-100 text-green-900" },
       rejected: { label: "Rejected", cls: "bg-red-100 text-red-900" },
+      accepted: { label: "Accepted", cls: "bg-blue-100 text-blue-900" },
+      in_production: { label: "In production", cls: "bg-indigo-100 text-indigo-900" },
+      ready: { label: "Ready", cls: "bg-teal-100 text-teal-900" },
     },
     title: "Orders",
     platformAll: "All",
@@ -253,6 +296,18 @@ const copy: Record<
     redeliverFromStart: "Redeliver from the start",
     remindPayment: "📩 Send a payment reminder",
     confirmAndDeliver: "✅ Confirm and deliver",
+    acceptOrderBtn: "✅ Accept order",
+    advanceToProductionBtn: "👩‍🍳 Start production",
+    advanceToReadyBtn: "📦 Mark ready",
+    advanceToDeliveredBtn: "🙏 Mark delivered",
+    fulfillmentTypePickup: "🚶 Pickup",
+    fulfillmentTypeDelivery: "🚚 Delivery",
+    fulfillmentAddressLabel: "Address",
+    fulfillmentNoteLabel: "Note",
+    paidAmountLine: (paid, total, currency) =>
+      paid >= total
+        ? `Paid in full: ${paid} ${currency}`
+        : `Paid ${paid} of ${total} ${currency} · balance ${total - paid} ${currency}`,
     reject: "❌ Reject",
     resendFiles: "Resend files",
     block: "Block",
@@ -299,6 +354,9 @@ const copy: Record<
       delivering: { label: "Berilmoqda", cls: "bg-blue-100 text-blue-900" },
       delivered: { label: "Berildi", cls: "bg-green-100 text-green-900" },
       rejected: { label: "Rad etildi", cls: "bg-red-100 text-red-900" },
+      accepted: { label: "Qabul qilindi", cls: "bg-blue-100 text-blue-900" },
+      in_production: { label: "Tayyorlanmoqda", cls: "bg-indigo-100 text-indigo-900" },
+      ready: { label: "Tayyor", cls: "bg-teal-100 text-teal-900" },
     },
     title: "Buyurtmalar",
     platformAll: "Barchasi",
@@ -317,6 +375,18 @@ const copy: Record<
     redeliverFromStart: "Boshidan qayta berish",
     remindPayment: "📩 To‘lov haqida eslatish",
     confirmAndDeliver: "✅ Tasdiqlash va berish",
+    acceptOrderBtn: "✅ Buyurtmani qabul qilish",
+    advanceToProductionBtn: "👩‍🍳 Tayyorlashni boshlash",
+    advanceToReadyBtn: "📦 Tayyor deb belgilash",
+    advanceToDeliveredBtn: "🙏 Berildi deb belgilash",
+    fulfillmentTypePickup: "🚶 O‘zi olib ketish",
+    fulfillmentTypeDelivery: "🚚 Yetkazib berish",
+    fulfillmentAddressLabel: "Manzil",
+    fulfillmentNoteLabel: "Izoh",
+    paidAmountLine: (paid, total, currency) =>
+      paid >= total
+        ? `To‘liq to‘landi: ${paid} ${currency}`
+        : `To‘landi ${paid} / ${total} ${currency} · qoldiq ${total - paid} ${currency}`,
     reject: "❌ Rad etish",
     resendFiles: "Fayllarni qayta yuborish",
     block: "Bloklash",
@@ -411,6 +481,18 @@ function OrdersPage() {
       } else if ("manualRequired" in result && result.manualRequired) {
         toast.warning(tr.manualRequired(displayNo));
       }
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function onAdvance(id: number, displayNo: number) {
+    setBusy(id);
+    try {
+      const result = await advanceOrderFulfillment({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      if (result.status === "delivered") toast.success(tr.orderDelivered(displayNo));
     } catch (e: unknown) {
       toast.error(errorMessage(e));
     } finally {
@@ -625,6 +707,30 @@ function OrdersPage() {
                     ✉️ {o.customer_email || tr.noEmail}
                   </div>
                 )}
+                {o.fulfillment_kind === "physical" && (
+                  <>
+                    <div>
+                      {o.fulfillment_type === "delivery"
+                        ? tr.fulfillmentTypeDelivery
+                        : tr.fulfillmentTypePickup}
+                      {o.fulfillment_at &&
+                        ` · ${new Date(o.fulfillment_at).toLocaleDateString(dateLocales[locale])}`}
+                    </div>
+                    {o.fulfillment_address && (
+                      <div>
+                        📍 {tr.fulfillmentAddressLabel}: {o.fulfillment_address}
+                      </div>
+                    )}
+                    {o.fulfillment_note && (
+                      <div>
+                        💬 {tr.fulfillmentNoteLabel}: {o.fulfillment_note}
+                      </div>
+                    )}
+                    <div className="text-muted-foreground">
+                      {tr.paidAmountLine(Number(o.paid_amount) || 0, Number(o.total), o.currency)}
+                    </div>
+                  </>
+                )}
               </div>
               <ul className="text-sm list-disc pl-5">
                 {(o.order_items ?? []).map((it) => (
@@ -676,7 +782,7 @@ function OrdersPage() {
                     onClick={() => onConfirm(o.id, o.order_no ?? o.id)}
                     disabled={busy === o.id}
                   >
-                    {tr.confirmAndDeliver}
+                    {o.fulfillment_kind === "physical" ? tr.acceptOrderBtn : tr.confirmAndDeliver}
                   </Button>
                   <Button
                     variant="destructive"
@@ -687,7 +793,24 @@ function OrdersPage() {
                   </Button>
                 </div>
               )}
-              {o.status === "delivered" && (
+              {o.fulfillment_kind === "physical" &&
+                (o.status === "accepted" ||
+                  o.status === "in_production" ||
+                  o.status === "ready") && (
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Button
+                      onClick={() => onAdvance(o.id, o.order_no ?? o.id)}
+                      disabled={busy === o.id}
+                    >
+                      {o.status === "accepted"
+                        ? tr.advanceToProductionBtn
+                        : o.status === "in_production"
+                          ? tr.advanceToReadyBtn
+                          : tr.advanceToDeliveredBtn}
+                    </Button>
+                  </div>
+                )}
+              {o.status === "delivered" && o.fulfillment_kind !== "physical" && (
                 <Button
                   size="sm"
                   variant="outline"
