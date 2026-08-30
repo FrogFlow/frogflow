@@ -10,6 +10,7 @@ import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
 import type { ReceiptVerifyResult } from "./receipt-verify.server";
 import { isLocale, localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "./i18n";
+import { currentVerticalDef } from "./verticals/vertical.server";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
 type ProductCard = {
@@ -204,10 +205,7 @@ function legalConsentHtml(base: string, locale: Locale = "ru"): string {
 /** Текст профиля бота («Что умеет этот бот?») — plain text, лимит Telegram 512. */
 export function botPublicDescription(base = originFromState()): string {
   const text =
-    `📚 Каталог цифровых учебных материалов.\n` +
-    `→ Выбор материалов и мгновенная выдача файлов после оплаты\n` +
-    `→ Оплата картой / по реквизитам\n` +
-    `→ Поддержка автора\n\n` +
+    `${currentVerticalDef().botDescriptionIntro}\n\n` +
     `Нажимая /start, вы соглашаетесь с:\n` +
     `• Условиями использования\n` +
     `${base}/legal/offer\n` +
@@ -221,11 +219,7 @@ export async function syncBotPublicDescription() {
   try {
     await tg("setMyDescription", { description });
     await tg("setMyShortDescription", {
-      short_description:
-        "Каталог материалов. Нажимая /start, вы принимаете оферту и политику конфиденциальности.".slice(
-          0,
-          120,
-        ),
+      short_description: currentVerticalDef().shortDescription.slice(0, 120),
     });
   } catch (e) {
     console.error("[bot] setMyDescription failed", e);
@@ -243,9 +237,6 @@ function welcomeStartHtml(
     {
       hello: string;
       friend: string;
-      greeting: string;
-      catalog: string;
-      payment: string;
       documents: string;
       hint: string;
     }
@@ -253,46 +244,35 @@ function welcomeStartHtml(
     ru: {
       hello: "Привет",
       friend: "друг",
-      greeting: "Добро пожаловать в магазин.",
-      catalog: "Каталог учебных материалов",
-      payment: "Оплата и выдача файлов",
       documents: "Документы и реквизиты — в «ℹ️ Информация»",
       hint: "Сначала выберите страну — или откройте «ℹ️ Информация».",
     },
     kk: {
       hello: "Сәлем",
       friend: "дос",
-      greeting: "Дүкенге қош келдіңіз!",
-      catalog: "Оқу материалдарының каталогы",
-      payment: "Төлем және файлдарды алу",
       documents: "Құжаттар мен деректемелер — «ℹ️ Ақпарат» бөлімінде",
       hint: "Алдымен еліңізді таңдаңыз немесе «ℹ️ Ақпарат» бөлімін ашыңыз.",
     },
     en: {
       hello: "Hello",
       friend: "friend",
-      greeting: "Welcome to the store!",
-      catalog: "Learning materials catalog",
-      payment: "Payment and file delivery",
       documents: "Documents and payment details are in “ℹ️ Information”",
       hint: "First choose your country, or open “ℹ️ Information”.",
     },
     uz: {
       hello: "Salom",
       friend: "do‘st",
-      greeting: "Do‘konga xush kelibsiz!",
-      catalog: "O‘quv materiallari katalogi",
-      payment: "To‘lov va fayllarni yetkazib berish",
       documents: "Hujjatlar va to‘lov ma’lumotlari “ℹ️ Ma’lumot” bo‘limida",
       hint: "Avval mamlakatingizni tanlang yoki “ℹ️ Ma’lumot” bo‘limini oching.",
     },
   };
   const c = copy[locale];
+  const v = currentVerticalDef().locales[locale];
   const name = firstName || c.friend;
   const hint = withCountryHint ? `\n\n${c.hint}` : "";
   return (
-    `${c.hello}, ${escapeHtml(name)}! ${c.greeting}\n\n` +
-    `→ ${c.catalog}\n→ ${c.payment}\n→ ${c.documents}\n\n` +
+    `${c.hello}, ${escapeHtml(name)}! ${v.welcomeGreeting}\n\n` +
+    `→ ${v.welcomeCatalog}\n→ ${v.welcomePayment}\n→ ${c.documents}\n\n` +
     legalConsentHtml(base, locale) +
     hint
   );
@@ -615,12 +595,9 @@ type Msg = {
   inviteFriendBtn: string;
   contactsNotSet: string;
   contactUsePrefix: (link: string) => string;
-  instructionComingSoon: string;
-  instructionDefaultCaption: string;
   instructionVideoFail: string;
   idLabel: (id: number | string) => string;
   rejectedNotice: (orderId: number | string) => string;
-  contactAuthorBtn: string;
   accessDenied: string;
   fileAlreadySent: string;
   loadingMaterials: (lang: string) => string;
@@ -756,14 +733,9 @@ const copy: Record<Locale, Msg> = {
     inviteFriendBtn: "🎁 Пригласить друга",
     contactsNotSet: "Контакты автора пока не указаны.",
     contactUsePrefix: (l) => `Для связи с автором используйте следующие контакты:\n${l}`,
-    instructionComingSoon:
-      "📖 Инструкция скоро появится.\nПока: «Каталог» или «Поиск» → корзина → оплата → чек или Robokassa. Файлы придут после оплаты.",
-    instructionDefaultCaption:
-      "📖 Как пользоваться ботом: каталог → корзина → оплата → чек. Файлы придут после оплаты (картой или по чеку).",
     instructionVideoFail: "⚠️ Не удалось загрузить видео инструкции. Напишите продавцу.",
     idLabel: (id) => `Ваш Telegram ID: ${id}`,
     rejectedNotice: (id) => `❌ Ваш заказ №${id} отклонён. Если это ошибка — напишите продавцу.`,
-    contactAuthorBtn: "💬 Связаться с автором",
     accessDenied: "⛔ Доступ запрещён.",
     fileAlreadySent: "⚠️ Этот файл уже был отправлен.",
     loadingMaterials: (lang) => `⏳ Загружаю материалы (${lang})...`,
@@ -901,15 +873,10 @@ const copy: Record<Locale, Msg> = {
     inviteFriendBtn: "🎁 Досты шақыру",
     contactsNotSet: "Автордың байланыс деректері әлі көрсетілмеген.",
     contactUsePrefix: (l) => `Автормен байланысу үшін мына деректерді пайдаланыңыз:\n${l}`,
-    instructionComingSoon:
-      "📖 Нұсқаулық жақында қосылады.\nӘзірге: «Каталог» немесе «Іздеу» → себет → төлем → чек немесе Robokassa. Файлдар төлемнен кейін келеді.",
-    instructionDefaultCaption:
-      "📖 Ботты қалай пайдалану керек: каталог → себет → төлем → чек. Файлдар төлемнен кейін келеді (картамен немесе чекпен).",
     instructionVideoFail: "⚠️ Нұсқаулық видеосын жүктеу мүмкін болмады. Сатушыға жазыңыз.",
     idLabel: (id) => `Сіздің Telegram ID: ${id}`,
     rejectedNotice: (id) =>
       `❌ Сіздің №${id} тапсырысыңыз қабылданбады. Бұл қате болса — сатушыға жазыңыз.`,
-    contactAuthorBtn: "💬 Автормен байланысу",
     accessDenied: "⛔ Қол жеткізу тыйым салынған.",
     fileAlreadySent: "⚠️ Бұл файл бұрын жіберілген.",
     loadingMaterials: (lang) => `⏳ Материалдар жүктелуде (${lang})...`,
@@ -1049,15 +1016,10 @@ const copy: Record<Locale, Msg> = {
     inviteFriendBtn: "🎁 Invite a friend",
     contactsNotSet: "The author’s contact details haven’t been set yet.",
     contactUsePrefix: (l) => `To contact the author, use the following details:\n${l}`,
-    instructionComingSoon:
-      "📖 The guide is coming soon.\nFor now: “Catalog” or “Search” → cart → payment → receipt or Robokassa. Files arrive after payment.",
-    instructionDefaultCaption:
-      "📖 How to use the bot: catalog → cart → payment → receipt. Files arrive after payment (by card or receipt).",
     instructionVideoFail: "⚠️ Couldn’t load the instructional video. Please contact the seller.",
     idLabel: (id) => `Your Telegram ID: ${id}`,
     rejectedNotice: (id) =>
       `❌ Your order №${id} has been rejected. If this is a mistake, please contact the seller.`,
-    contactAuthorBtn: "💬 Contact the author",
     accessDenied: "⛔ Access denied.",
     fileAlreadySent: "⚠️ This file was already sent.",
     loadingMaterials: (lang) => `⏳ Loading materials (${lang})...`,
@@ -1200,15 +1162,10 @@ const copy: Record<Locale, Msg> = {
     contactsNotSet: "Muallifning aloqa ma’lumotlari hali ko‘rsatilmagan.",
     contactUsePrefix: (l) =>
       `Muallif bilan bog‘lanish uchun quyidagi ma’lumotlardan foydalaning:\n${l}`,
-    instructionComingSoon:
-      "📖 Yo‘riqnoma tez orada qo‘shiladi.\nHozircha: «Katalog» yoki «Qidirish» → savat → to‘lov → chek yoki Robokassa. Fayllar to‘lovdan so‘ng keladi.",
-    instructionDefaultCaption:
-      "📖 Botdan qanday foydalanish kerak: katalog → savat → to‘lov → chek. Fayllar to‘lovdan so‘ng keladi (karta yoki chek orqali).",
     instructionVideoFail: "⚠️ Yo‘riqnoma videosini yuklab bo‘lmadi. Sotuvchiga yozing.",
     idLabel: (id) => `Sizning Telegram ID: ${id}`,
     rejectedNotice: (id) =>
       `❌ Sizning №${id} buyurtmangiz rad etildi. Agar bu xato bo‘lsa, sotuvchiga yozing.`,
-    contactAuthorBtn: "💬 Muallif bilan bog‘lanish",
     accessDenied: "⛔ Kirish taqiqlangan.",
     fileAlreadySent: "⚠️ Bu fayl allaqachon yuborilgan.",
     loadingMaterials: (lang) => `⏳ Materiallar yuklanmoqda (${lang})...`,
@@ -1238,7 +1195,7 @@ function mainMenu(locale: Locale = "ru") {
       [{ text: c.catalog }, { text: c.search }],
       [{ text: c.cart }, { text: c.myOrders }],
       [{ text: c.instruction }, { text: c.information }],
-      [{ text: copy[locale].contactAuthorBtn }],
+      [{ text: currentVerticalDef().locales[locale].contactBtn }],
     ],
     resize_keyboard: true,
   };
@@ -1269,7 +1226,7 @@ function canonicalMenuAction(text: string | undefined): string | undefined {
     if (text === c.myOrders) return "📋 Мои заказы";
     if (text === c.instruction) return "📖 Инструкция";
     if (text === c.information) return "ℹ️ Информация";
-    if (text === copy[locale].contactAuthorBtn) return "💬 Связаться с автором";
+    if (text === currentVerticalDef().locales[locale].contactBtn) return "💬 Связаться с автором";
   }
   return text;
 }
@@ -1342,7 +1299,8 @@ async function sendInstruction(chat_id: number, locale: Locale = "ru") {
   const get = (key: string) =>
     (rows?.find((r) => r.key === key)?.value as string | undefined)?.trim() || "";
 
-  const caption = get("instruction_caption") || m.instructionDefaultCaption;
+  const caption =
+    get("instruction_caption") || currentVerticalDef().locales[locale].instructionDefaultCaption;
   const fileId = get("instruction_video_file_id");
   const path = get("instruction_video_path");
 
@@ -1370,7 +1328,7 @@ async function sendInstruction(chat_id: number, locale: Locale = "ru") {
   if (!path) {
     await tg("sendMessage", {
       chat_id,
-      text: m.instructionComingSoon,
+      text: currentVerticalDef().locales[locale].instructionComingSoon,
       reply_markup: mainMenu(locale),
     });
     return;
