@@ -107,6 +107,11 @@ const copy: Record<
     exportHint: string;
     noOrdersInPeriod: string;
     noCustomersYet: string;
+    pickupAll: string;
+    pickupToday: string;
+    pickupTomorrow: string;
+    pickupOverdue: string;
+    noOrdersForPickupFilter: string;
   }
 > = {
   ru: {
@@ -187,6 +192,11 @@ const copy: Record<
       "Файл CSV — открывается двойным щелчком в Excel и Google Таблицах. Период применяется только к заказам; пустые поля — выгрузить всё.",
     noOrdersInPeriod: "За выбранный период заказов нет.",
     noCustomersYet: "Клиентов пока нет.",
+    pickupAll: "Все",
+    pickupToday: "📅 Сегодня",
+    pickupTomorrow: "📅 Завтра",
+    pickupOverdue: "⚠️ Просрочено",
+    noOrdersForPickupFilter: "По этому фильтру заказов нет.",
   },
   kk: {
     statusMap: {
@@ -267,6 +277,11 @@ const copy: Record<
       "CSV файлы Excel мен Google Кестелерінде қос басу арқылы ашылады. Кезең тек тапсырыстарға қолданылады; бос өрістер — барлығын экспорттау.",
     noOrdersInPeriod: "Таңдалған кезеңде тапсырыстар жоқ.",
     noCustomersYet: "Әзірге клиенттер жоқ.",
+    pickupAll: "Барлығы",
+    pickupToday: "📅 Бүгін",
+    pickupTomorrow: "📅 Ертең",
+    pickupOverdue: "⚠️ Мерзімі өтті",
+    noOrdersForPickupFilter: "Бұл сүзгі бойынша тапсырыс жоқ.",
   },
   en: {
     statusMap: {
@@ -346,6 +361,11 @@ const copy: Record<
       "The CSV file opens with a double-click in Excel or Google Sheets. The period applies to orders only; leave the fields empty to export everything.",
     noOrdersInPeriod: "No orders in the selected period.",
     noCustomersYet: "No customers yet.",
+    pickupAll: "All",
+    pickupToday: "📅 Today",
+    pickupTomorrow: "📅 Tomorrow",
+    pickupOverdue: "⚠️ Overdue",
+    noOrdersForPickupFilter: "No orders match this filter.",
   },
   uz: {
     statusMap: {
@@ -426,6 +446,11 @@ const copy: Record<
       "CSV fayli Excel va Google Jadvallarida ikki marta bosish orqali ochiladi. Davr faqat buyurtmalarga qo‘llaniladi; bo‘sh maydonlar — hammasini eksport qilish.",
     noOrdersInPeriod: "Tanlangan davrda buyurtmalar yo‘q.",
     noCustomersYet: "Hozircha mijozlar yo‘q.",
+    pickupAll: "Barchasi",
+    pickupToday: "📅 Bugun",
+    pickupTomorrow: "📅 Ertaga",
+    pickupOverdue: "⚠️ Muddati o‘tgan",
+    noOrdersForPickupFilter: "Bu filtr bo‘yicha buyurtmalar yo‘q.",
   },
 };
 
@@ -447,7 +472,43 @@ function OrdersPage() {
    */
   const [platform, setPlatform] = useState<"all" | OrderPlatform>("all");
   const platformOf = (order: (typeof allOrders)[number]) => orderPlatform(order.platform);
-  const list = platform === "all" ? allOrders : allOrders.filter((o) => platformOf(o) === platform);
+  const platformFiltered =
+    platform === "all" ? allOrders : allOrders.filter((o) => platformOf(o) === platform);
+
+  /**
+   * «Что печём сегодня» — quick-фильтр/сортировка по дате получения
+   * физического заказа (fulfillment_at), Ниши Блок 9 доводка. Показывается
+   * только если у продавца вообще есть физические заказы — на семи живых
+   * digital-клиентах эти кнопки лишние.
+   */
+  const hasPhysicalOrders = allOrders.some((o) => o.fulfillment_kind === "physical");
+  const [pickupFilter, setPickupFilter] = useState<"all" | "today" | "tomorrow" | "overdue">("all");
+  const OPEN_PHYSICAL_STATUSES = new Set([
+    "awaiting_payment",
+    "awaiting_confirmation",
+    "accepted",
+    "in_production",
+    "ready",
+  ]);
+  const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+  const todayIso = isoDate(new Date());
+  const tomorrowIso = isoDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  const fulfillmentDateOf = (o: (typeof allOrders)[number]) =>
+    o.fulfillment_at ? String(o.fulfillment_at).slice(0, 10) : null;
+
+  const list =
+    pickupFilter === "all"
+      ? platformFiltered
+      : platformFiltered
+          .filter((o) => {
+            if (o.fulfillment_kind !== "physical") return false;
+            const day = fulfillmentDateOf(o);
+            if (pickupFilter === "today") return day === todayIso;
+            if (pickupFilter === "tomorrow") return day === tomorrowIso;
+            // overdue: дата получения в прошлом, а заказ ещё не закрыт
+            return !!day && day < todayIso && OPEN_PHYSICAL_STATUSES.has(o.status);
+          })
+          .sort((a, b) => (fulfillmentDateOf(a) ?? "").localeCompare(fulfillmentDateOf(b) ?? ""));
 
   const counts = {
     all: allOrders.length,
@@ -631,6 +692,32 @@ function OrdersPage() {
         ))}
       </div>
 
+      {hasPhysicalOrders && (
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ["all", tr.pickupAll],
+              ["today", tr.pickupToday],
+              ["tomorrow", tr.pickupTomorrow],
+              ["overdue", tr.pickupOverdue],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setPickupFilter(key)}
+              className={`rounded-md border px-3 py-1.5 text-sm ${
+                pickupFilter === key
+                  ? "border-primary bg-primary/10 font-medium"
+                  : "hover:bg-muted/50"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {list.length === 0 && (
         <p className="text-sm text-muted-foreground">
           {orders.isLoading
@@ -639,7 +726,9 @@ function OrdersPage() {
               ? tr.loadError(errorMessage(orders.error))
               : allOrders.length === 0
                 ? tr.noOrdersYet
-                : tr.platformNoOrders}
+                : pickupFilter !== "all"
+                  ? tr.noOrdersForPickupFilter
+                  : tr.platformNoOrders}
         </p>
       )}
       <div className="space-y-3">
