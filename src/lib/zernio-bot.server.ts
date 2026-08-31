@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 import { logger, truncate } from "./logger.server";
 import { localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
+import type { DirectMode } from "./direct-flow";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -126,6 +127,21 @@ interface DirectCopy {
   cartEmptiedRestart: string;
   mixedCurrencySplit: string;
   rememberedCountryNote: (name: string) => string;
+  /**
+   * Чекаут физического заказа (Ниши, Блок 8.3) — идут между выбором страны
+   * и amountDue/sendProofHint, только для physical-корзины.
+   */
+  fulfillmentTypePrompt: string;
+  fulfillmentTypePickupBtn: string;
+  fulfillmentTypeDeliveryBtn: string;
+  /** Промах текстового fallback на шаге выбора способа — своя, у Telegram нет: там способ только кнопкой. */
+  fulfillmentTypeHint: string;
+  fulfillmentDatePrompt: (minDate: string) => string;
+  fulfillmentDateInvalid: string;
+  fulfillmentDateTooEarly: (minDate: string) => string;
+  fulfillmentAddressPrompt: string;
+  fulfillmentNotePrompt: string;
+  fulfillmentNoteSkipBtn: string;
   amountDue: (amount: number, currency: string) => string;
   sendProofHint: string;
   cancelled: string;
@@ -222,6 +238,20 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Напишите «отмена», а потом номер одного материала.",
     rememberedCountryNote: (name) =>
       `Реквизиты для ${name} — если страна другая, напишите «отмена».\n\n`,
+    fulfillmentTypePrompt: "Как хотите получить заказ?",
+    fulfillmentTypePickupBtn: "🚶 Самовывоз",
+    fulfillmentTypeDeliveryBtn: "🚚 Доставка",
+    fulfillmentTypeHint:
+      "Не понял способ получения. Напишите «самовывоз» или «доставка» — либо нажмите кнопку выше.",
+    fulfillmentDatePrompt: (minDate) =>
+      `Когда сможете получить заказ? Не раньше ${minDate}. Напишите дату в формате ДД.ММ.ГГГГ.`,
+    fulfillmentDateInvalid: "Не разобрал дату. Формат — ДД.ММ.ГГГГ, например «05.09.2026».",
+    fulfillmentDateTooEarly: (minDate) =>
+      `Раньше ${minDate} не получится — столько нужно на изготовление. Напишите другую дату.`,
+    fulfillmentAddressPrompt: "Куда доставить? Напишите адрес.",
+    fulfillmentNotePrompt:
+      "Комментарий к заказу (например, надпись на торте)? Если не нужен — нажмите «Без комментария».",
+    fulfillmentNoteSkipBtn: "Без комментария",
     amountDue: (amount, currency) => `К оплате: ${amount} ${currency}\n`,
     sendProofHint: "После оплаты пришлите чек сюда — картинкой или файлом.",
     cancelled:
@@ -352,6 +382,20 @@ const directCopy: Record<Locale, DirectCopy> = {
       "«/stop» деп жазыңыз, содан кейін бір материалдың нөмірін жазыңыз.",
     rememberedCountryNote: (name) =>
       `${name} үшін деректемелер — ел басқа болса, «/stop» деп жазыңыз.\n\n`,
+    fulfillmentTypePrompt: "Тапсырысты қалай алғыңыз келеді?",
+    fulfillmentTypePickupBtn: "🚶 Өзі алып кету",
+    fulfillmentTypeDeliveryBtn: "🚚 Жеткізу",
+    fulfillmentTypeHint:
+      "Алу тәсілін түсінбедім. «алып кету» немесе «жеткізу» деп жазыңыз — немесе жоғарыдағы батырманы басыңыз.",
+    fulfillmentDatePrompt: (minDate) =>
+      `Тапсырысты қашан ала аласыз? ${minDate}-ден ерте емес. Күнді КК.АА.ЖЖЖЖ форматында жазыңыз.`,
+    fulfillmentDateInvalid: "Күнді таный алмадым. Формат — КК.АА.ЖЖЖЖ, мысалы «05.09.2026».",
+    fulfillmentDateTooEarly: (minDate) =>
+      `${minDate}-ден ерте болмайды — дайындауға сонша уақыт керек. Басқа күн жазыңыз.`,
+    fulfillmentAddressPrompt: "Қайда жеткізу керек? Мекенжайды жазыңыз.",
+    fulfillmentNotePrompt:
+      "Тапсырысқа түсініктеме (мысалы, тортқа жазу)? Қажет болмаса — «Түсініктемесіз» батырмасын басыңыз.",
+    fulfillmentNoteSkipBtn: "Түсініктемесіз",
     amountDue: (amount, currency) => `Төлеуге: ${amount} ${currency}\n`,
     sendProofHint: "Төлегеннен кейін чекті осында жіберіңіз — суретпен немесе файлмен.",
     cancelled: "Болдырмадым, себет бос. Дайын болғанда материал нөмірін жазыңыз — мысалы «018».",
@@ -480,6 +524,20 @@ const directCopy: Record<Locale, DirectCopy> = {
       'Send "/stop", then the number of a single material.',
     rememberedCountryNote: (name) =>
       `Payment details for ${name} — if that's not your country, send "/stop".\n\n`,
+    fulfillmentTypePrompt: "How would you like to receive your order?",
+    fulfillmentTypePickupBtn: "🚶 Pickup",
+    fulfillmentTypeDeliveryBtn: "🚚 Delivery",
+    fulfillmentTypeHint:
+      'Didn\'t catch that. Reply "pickup" or "delivery" — or tap the button above.',
+    fulfillmentDatePrompt: (minDate) =>
+      `When can you receive the order? Not earlier than ${minDate}. Send the date as DD.MM.YYYY.`,
+    fulfillmentDateInvalid: 'Couldn\'t read that date. Format is DD.MM.YYYY, e.g. "05.09.2026".',
+    fulfillmentDateTooEarly: (minDate) =>
+      `Not earlier than ${minDate} — that's how long it takes to make. Please send another date.`,
+    fulfillmentAddressPrompt: "Where should we deliver? Send the address.",
+    fulfillmentNotePrompt:
+      'Any note for the order (e.g. a cake inscription)? If not needed, tap "No note".',
+    fulfillmentNoteSkipBtn: "No note",
     amountDue: (amount, currency) => `Total due: ${amount} ${currency}\n`,
     sendProofHint: "After paying, send the receipt here — as a photo or a file.",
     cancelled:
@@ -607,6 +665,20 @@ const directCopy: Record<Locale, DirectCopy> = {
       "«/stop» deb yozing, keyin bitta material raqamini yozing.",
     rememberedCountryNote: (name) =>
       `${name} uchun rekvizitlar — davlat boshqa bo‘lsa, «/stop» deb yozing.\n\n`,
+    fulfillmentTypePrompt: "Buyurtmani qanday olishni xohlaysiz?",
+    fulfillmentTypePickupBtn: "🚶 O‘zi olib ketish",
+    fulfillmentTypeDeliveryBtn: "🚚 Yetkazib berish",
+    fulfillmentTypeHint:
+      "Olish usulini tushunmadim. «olib ketish» yoki «yetkazib berish» deb yozing — yoki yuqoridagi tugmani bosing.",
+    fulfillmentDatePrompt: (minDate) =>
+      `Buyurtmani qachon olishingiz mumkin? ${minDate} dan erta emas. Sanani KK.OO.YYYY formatida yozing.`,
+    fulfillmentDateInvalid: "Sanani tanib bo‘lmadi. Format — KK.OO.YYYY, masalan «05.09.2026».",
+    fulfillmentDateTooEarly: (minDate) =>
+      `${minDate} dan erta bo‘lmaydi — tayyorlash uchun shuncha vaqt kerak. Boshqa sana yozing.`,
+    fulfillmentAddressPrompt: "Qayerga yetkazib berish kerak? Manzilni yozing.",
+    fulfillmentNotePrompt:
+      "Buyurtmaga izoh (masalan, tortga yozuv)? Kerak bo‘lmasa — «Izohsiz» tugmasini bosing.",
+    fulfillmentNoteSkipBtn: "Izohsiz",
     amountDue: (amount, currency) => `To‘lov uchun: ${amount} ${currency}\n`,
     sendProofHint: "To‘lovdan so‘ng chekni shu yerga yuboring — surat yoki fayl sifatida.",
     cancelled:
@@ -1314,6 +1386,22 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     }
     if (features.checkout && postbackPayload === "CHECKOUT") {
       await startInstagramCheckout(conversationId, accountId, user);
+      return;
+    }
+    // Способ получения физического заказа (Ниши, Блок 8.3) — тап по кнопке.
+    // Тот же диспетчер обслуживает и WhatsApp, и Instagram: parseZernioMessage
+    // уже свёл оба нативных механизма (postback/button_reply) в одно поле
+    // postbackPayload. Гейт на features.checkout — как у CHECKOUT: устаревший
+    // тап при выключенном чекауте не должен падать с ошибкой.
+    if (features.checkout && postbackPayload.startsWith("fulfilltype:")) {
+      const typeRaw = postbackPayload.slice("fulfilltype:".length);
+      if (typeRaw === "pickup" || typeRaw === "delivery") {
+        await askFulfillmentDate(conversationId, accountId, user, typeRaw);
+      }
+      return;
+    }
+    if (features.checkout && postbackPayload === "fulfillnote:skip") {
+      await finishFulfillmentAndShowPayment(conversationId, accountId, user, null);
       return;
     }
     if (features.catalog && postbackPayload === "CATALOG") {
@@ -2124,13 +2212,7 @@ async function startInstagramCheckout(
     : undefined;
 
   if (remembered) {
-    await sendDirectPaymentDetails({
-      conversationId,
-      accountId,
-      user,
-      country: remembered,
-      remembered: true,
-    });
+    await proceedToFulfillmentOrPayment(conversationId, accountId, user, remembered, true);
     return;
   }
 
@@ -2244,6 +2326,111 @@ async function sendDirectPaymentDetails(params: {
       copy.amountDue(amount, currency) +
       copy.sendProofHint,
   );
+}
+
+/**
+ * Развилка чекаута для физических товаров (Ниши, Блок 8.3) — вставлена
+ * между выбором страны и sendDirectPaymentDetails. Цифровая корзина идёт по
+ * прежнему пути без единого изменения; физическая — спрашивает способ и
+ * дату получения (и адрес, если доставка) до показа реквизитов.
+ *
+ * Важное отличие от Telegram (bot.server.ts, proceedToFulfillmentOrPlace):
+ * там заказ создаётся в конце чекаута, до оплаты, поэтому собранные поля
+ * просто пишутся в insert. Здесь заказ создаётся не отдельным шагом
+ * «Оформить», а в реакции на уже присланный чек (createOrderFromCart,
+ * см. awaiting_proof в handlePurchaseFlow) — значит данные о получении
+ * нужно собрать ДО показа реквизитов, иначе `orders.fulfillment_at`
+ * останется NULL у обязательного по смыслу поля (см. MIGRATION-49).
+ */
+async function proceedToFulfillmentOrPayment(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+  country: { code: string; name: string },
+  remembered: boolean,
+) {
+  const flow = await import("./direct-purchase.server");
+  const { cartFulfillmentKind, fulfillmentOptionsEnabled } = await import("./fulfillment.server");
+
+  // Страна нужна дальше, на finishFulfillmentAndShowPayment, до которого
+  // пройдёт несколько реплик покупателя — запоминаем её сразу, а не
+  // полагаемся на то, что это сделает sendDirectPaymentDetails в конце.
+  await flow.setDirectState(user.user_key, { country_code: country.code });
+
+  if ((await cartFulfillmentKind(user.telegram_id)) !== "physical") {
+    await sendDirectPaymentDetails({ conversationId, accountId, user, country, remembered });
+    return;
+  }
+
+  const locale = flow.directLocale(flow.readDirectState(user.state));
+  const copy = directCopy[locale];
+  const { pickup, delivery } = await fulfillmentOptionsEnabled();
+
+  if (pickup && delivery) {
+    await flow.setDirectState(user.user_key, { mode: "awaiting_fulfillment_type" });
+    await reply(user, conversationId, accountId, copy.fulfillmentTypePrompt, [
+      { type: "postback", title: copy.fulfillmentTypePickupBtn, payload: "fulfilltype:pickup" },
+      { type: "postback", title: copy.fulfillmentTypeDeliveryBtn, payload: "fulfilltype:delivery" },
+    ]);
+    return;
+  }
+  // Продавец сам не оставил выбора (или отключил оба варианта — тогда
+  // самовывоз безопаснее считать умолчанием, чем ломать чекаут), тем же
+  // приёмом, что и в Telegram (bot.server.ts, proceedToFulfillmentOrPlace).
+  const only: "pickup" | "delivery" = delivery ? "delivery" : "pickup";
+  await askFulfillmentDate(conversationId, accountId, user, only);
+}
+
+async function askFulfillmentDate(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+  type: "pickup" | "delivery",
+) {
+  const flow = await import("./direct-purchase.server");
+  const { maxLeadTimeDaysInCart, todayInAppTZ, addDaysToIsoDate, isoDateToDisplay } =
+    await import("./fulfillment.server");
+  const minIso = addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(user.telegram_id));
+  await flow.setDirectState(user.user_key, {
+    mode: "awaiting_fulfillment_date",
+    checkout_fulfillment_type: type,
+  });
+  const locale = flow.directLocale(flow.readDirectState(user.state));
+  await reply(
+    user,
+    conversationId,
+    accountId,
+    directCopy[locale].fulfillmentDatePrompt(isoDateToDisplay(minIso)),
+  );
+}
+
+/**
+ * Комментарий собран (свободным текстом) или пропущен (кнопка «Без
+ * комментария») — join-point обратно в уже рабочий sendDirectPaymentDetails.
+ * Страна на этот момент уже осела в state (proceedToFulfillmentOrPayment).
+ */
+async function finishFulfillmentAndShowPayment(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+  note: string | null,
+) {
+  const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
+  await flow.setDirectState(user.user_key, { checkout_fulfillment_note: note ?? undefined });
+
+  const options = await flow.listCountries();
+  const country = options.find((option) => option.code === state.country_code);
+  if (!country) {
+    // Реквизиты сняли уже после выбора страны — тот же путь, что и в
+    // sendDirectPaymentDetails на отсутствующие реквизиты.
+    const locale = flow.directLocale(state);
+    await reply(user, conversationId, accountId, directCopy[locale].noRequisitesForCountry);
+    await flow.clearDirectFlow(user.user_key);
+    return;
+  }
+
+  await sendDirectPaymentDetails({ conversationId, accountId, user, country, remembered: false });
 }
 
 /**
@@ -2362,6 +2549,17 @@ export async function handleZernioAccountDisconnected(payload: {
  * появления состояния бот делал наоборот и потому отправлял в поиск товаров
  * и «Здравствуйте», и «Казахстан», и односложный ответ на авто-DM воронки.
  */
+// Шаги сбора данных о получении физического заказа (Ниши, Блок 8.3) — на них
+// «убрать N» не должно молча сваливаться в редактирование корзины: корзина
+// здесь ещё даже не заморожена (frozen_cart появится только в конце,
+// в sendDirectPaymentDetails), так что убирать пока нечего.
+const FULFILLMENT_STEP_MODES = new Set<DirectMode>([
+  "awaiting_fulfillment_type",
+  "awaiting_fulfillment_date",
+  "awaiting_address",
+  "awaiting_fulfillment_note",
+]);
+
 async function handlePurchaseFlow(params: {
   conversationId: string;
   accountId: string;
@@ -2534,7 +2732,11 @@ async function handlePurchaseFlow(params: {
    * старому счёту.
    */
   const removeNumber = flow.parseRemoveCommand(text);
-  if (removeNumber && state.mode !== "awaiting_email") {
+  if (
+    removeNumber &&
+    state.mode !== "awaiting_email" &&
+    !(state.mode && FULFILLMENT_STEP_MODES.has(state.mode))
+  ) {
     const cart = await flow.readCart(user);
     if (cart.length === 0) {
       await say(copy.removeNothing);
@@ -2645,6 +2847,18 @@ async function handlePurchaseFlow(params: {
         user,
         countryCode: claim.country_code!,
         frozenPriced: claim.frozen_cart,
+        // Собраны шагами awaiting_fulfillment_* ДО этого момента (Ниши, Блок
+        // 8.3) — claim несёт полный DirectState, включая их. Digital-корзина
+        // никогда не проходит эти шаги, поэтому checkout_fulfillment_type
+        // остаётся не задан, и fulfillment корректно уходит как undefined.
+        fulfillment: claim.checkout_fulfillment_type
+          ? {
+              type: claim.checkout_fulfillment_type,
+              at: claim.checkout_fulfillment_at!,
+              address: claim.checkout_fulfillment_address,
+              note: claim.checkout_fulfillment_note,
+            }
+          : undefined,
       });
     } catch (error) {
       console.error("[zernio-bot] failed to create direct order", error);
@@ -2823,13 +3037,91 @@ async function handlePurchaseFlow(params: {
     }
 
     // Дальше — общий шаг с тем случаем, когда страну взяли из памяти.
-    await sendDirectPaymentDetails({
+    await proceedToFulfillmentOrPayment(conversationId, accountId, user, chosen, false);
+    return true;
+  }
+
+  // ── Способ/дата/адрес/комментарий получения физического заказа (Ниши, ────
+  // ── Блок 8.3) — между awaiting_country и awaiting_proof. ──────────────────
+  if (state.mode === "awaiting_fulfillment_type") {
+    const { matchFulfillmentType } = await import("./direct-flow");
+    const picked = matchFulfillmentType(text);
+    if (!picked) {
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint: copy.fulfillmentTypeHint,
+        say,
+        locale,
+      });
+      return true;
+    }
+    await askFulfillmentDate(conversationId, accountId, user, picked);
+    return true;
+  }
+
+  if (state.mode === "awaiting_fulfillment_date") {
+    const {
+      parseFulfillmentDateInput,
+      maxLeadTimeDaysInCart,
+      todayInAppTZ,
+      addDaysToIsoDate,
+      isoDateToDisplay,
+    } = await import("./fulfillment.server");
+    const iso = parseFulfillmentDateInput(text);
+    if (!iso) {
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint: copy.fulfillmentDateInvalid,
+        say,
+        locale,
+      });
+      return true;
+    }
+    const minIso = addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(user.telegram_id));
+    if (iso < minIso) {
+      await say(copy.fulfillmentDateTooEarly(isoDateToDisplay(minIso)));
+      return true;
+    }
+    if (state.checkout_fulfillment_type === "delivery") {
+      await flow.setDirectState(user.user_key, {
+        checkout_fulfillment_at: iso,
+        mode: "awaiting_address",
+      });
+      await say(copy.fulfillmentAddressPrompt);
+    } else {
+      await flow.setDirectState(user.user_key, {
+        checkout_fulfillment_at: iso,
+        mode: "awaiting_fulfillment_note",
+      });
+      await reply(user, conversationId, accountId, copy.fulfillmentNotePrompt, [
+        { type: "postback", title: copy.fulfillmentNoteSkipBtn, payload: "fulfillnote:skip" },
+      ]);
+    }
+    return true;
+  }
+
+  if (state.mode === "awaiting_address") {
+    await flow.setDirectState(user.user_key, {
+      checkout_fulfillment_address: text.trim().slice(0, 500),
+      mode: "awaiting_fulfillment_note",
+    });
+    await reply(user, conversationId, accountId, copy.fulfillmentNotePrompt, [
+      { type: "postback", title: copy.fulfillmentNoteSkipBtn, payload: "fulfillnote:skip" },
+    ]);
+    return true;
+  }
+
+  if (state.mode === "awaiting_fulfillment_note") {
+    await finishFulfillmentAndShowPayment(
       conversationId,
       accountId,
       user,
-      country: chosen,
-      remembered: false,
-    });
+      text.trim().slice(0, 500),
+    );
     return true;
   }
 

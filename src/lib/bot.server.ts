@@ -11,7 +11,6 @@ import type { OrderItem } from "./orders.server";
 import type { ReceiptVerifyResult } from "./receipt-verify.server";
 import { isLocale, localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import { currentVerticalDef } from "./verticals/vertical.server";
-import { appTimeZone } from "./datetime";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
 type ProductCard = {
@@ -2271,85 +2270,11 @@ async function proceedToLanguageOrPlace(chat_id: number, user: BotUser, country_
   await placeOrder(chat_id, user, country_code);
 }
 
-// loadPaymentMode() переехала в fulfillment.server.ts вместе с amountDueNow() —
-// физический заказ подтверждается не только из Telegram (admin-панель,
-// Direct-каналы), тянуть туда весь этот файл ради одной функции не нужно.
-
-/** Тип корзины покупателя — физическая или цифровая. Смешанная невозможна (см. addToCart, Ниши Блок 5). */
-async function cartFulfillmentKind(telegram_id: number): Promise<"digital" | "physical"> {
-  const s = await db();
-  const { data } = await s
-    .from("cart_items")
-    .select("products(fulfillment_kind)")
-    .eq("telegram_id", telegram_id)
-    .limit(1)
-    .maybeSingle();
-  const kind = (data as { products?: { fulfillment_kind?: string } } | null)?.products
-    ?.fulfillment_kind;
-  return kind === "physical" ? "physical" : "digital";
-}
-
-/** Самый долгий срок изготовления среди товаров в корзине — минимальный сдвиг даты получения. */
-async function maxLeadTimeDaysInCart(telegram_id: number): Promise<number> {
-  const s = await db();
-  const { data } = await s
-    .from("cart_items")
-    .select("products(lead_time_days)")
-    .eq("telegram_id", telegram_id);
-  let max = 0;
-  for (const row of data ?? []) {
-    const days = (row as { products?: { lead_time_days?: number | null } }).products
-      ?.lead_time_days;
-    if (typeof days === "number" && days > max) max = days;
-  }
-  return max;
-}
-
-/** Доступность самовывоза/доставки — по умолчанию оба включены, пока продавец явно не отключил. */
-async function fulfillmentOptionsEnabled(): Promise<{ pickup: boolean; delivery: boolean }> {
-  const s = await db();
-  const { data } = await s
-    .from("app_settings")
-    .select("key, value")
-    .in("key", ["fulfillment_pickup_enabled", "fulfillment_delivery_enabled"]);
-  const get = (key: string) => data?.find((r) => r.key === key)?.value;
-  return {
-    pickup: get("fulfillment_pickup_enabled") !== "false",
-    delivery: get("fulfillment_delivery_enabled") !== "false",
-  };
-}
-
-/** "Сегодня" в таймзоне продавца (APP_TIMEZONE, см. datetime.ts) — не UTC-дата сервера. */
-function todayInAppTZ(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: appTimeZone() });
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-/** ДД.ММ.ГГГГ → "YYYY-MM-DD", либо null на нераспознанном/невозможном вводе. */
-function parseFulfillmentDateInput(text: string): string | null {
-  const m = text.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!m) return null;
-  const day = Number(m[1]);
-  const month = Number(m[2]);
-  const year = Number(m[3]);
-  if (month < 1 || month > 12) return null;
-  if (day < 1 || day > daysInMonth(year, month)) return null;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function addDaysToIsoDate(iso: string, days: number): string {
-  const [y, mo, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, mo - 1, d) + days * 86_400_000);
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
-}
-
-function isoDateToDisplay(iso: string): string {
-  const [y, mo, d] = iso.split("-");
-  return `${d}.${mo}.${y}`;
-}
+// loadPaymentMode()/cartFulfillmentKind()/maxLeadTimeDaysInCart()/
+// fulfillmentOptionsEnabled() и дата-хелперы (todayInAppTZ и т.д.) переехали
+// в fulfillment.server.ts — физический заказ подтверждается и оформляется
+// не только из Telegram (admin-панель, Direct-каналы), тянуть туда весь
+// этот файл ради нескольких чистых функций не нужно (Ниши, Блок 8.3).
 
 /**
  * Развилка чекаута для физических товаров (Ниши, Блок 8) — вставлена между
@@ -2361,6 +2286,7 @@ async function proceedToFulfillmentOrPlace(chat_id: number, user: BotUser, count
   const telegram_id = user.telegram_id;
   const locale: Locale = user.state?.locale ?? "ru";
   const nextState = { ...user.state, country_code };
+  const { cartFulfillmentKind, fulfillmentOptionsEnabled } = await import("./fulfillment.server");
 
   if ((await cartFulfillmentKind(telegram_id)) !== "physical") {
     await setState(telegram_id, nextState);
@@ -2405,6 +2331,8 @@ async function askFulfillmentDate(
   state: BotUser["state"],
   locale: Locale,
 ) {
+  const { maxLeadTimeDaysInCart, todayInAppTZ, addDaysToIsoDate, isoDateToDisplay } =
+    await import("./fulfillment.server");
   const minDays = await maxLeadTimeDaysInCart(telegram_id);
   const minIso = addDaysToIsoDate(todayInAppTZ(), minDays);
   await setState(telegram_id, { ...state, mode: "awaiting_fulfillment_date" });
@@ -4806,6 +4734,13 @@ export async function handleUpdate(update: TelegramUpdate) {
         await setState(from.id, { ...user.state, mode: "idle" });
         // Fallthrough to the main menu switch below
       } else {
+        const {
+          parseFulfillmentDateInput,
+          maxLeadTimeDaysInCart,
+          todayInAppTZ,
+          addDaysToIsoDate,
+          isoDateToDisplay,
+        } = await import("./fulfillment.server");
         const iso = parseFulfillmentDateInput(msg.text);
         const minDays = await maxLeadTimeDaysInCart(from.id);
         const minIso = addDaysToIsoDate(todayInAppTZ(), minDays);

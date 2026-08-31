@@ -80,6 +80,7 @@ async function client() {
 describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна настоящая база)", () => {
   let botId: string;
   let productId: string;
+  let physicalProductId: string;
   const orderIds: number[] = [];
 
   beforeAll(async () => {
@@ -125,6 +126,29 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     if (productErr || !product) throw new Error(`не удалось создать товар: ${productErr?.message}`);
     productId = product.id;
 
+    // Физический товар — для проверки, что createOrderFromCart записывает
+    // fulfillment_type/at/address/note (Ниши, Блок 8.3), а не только
+    // fulfillment_kind (Блок 6, уже проверен вживую в задаче #110).
+    const { data: physicalProduct, error: physicalErr } = await s
+      .from("products")
+      .insert({
+        bot_id: botId,
+        name: `${TAG} торт`,
+        description: "тестовый физический товар",
+        keywords: "",
+        price: BASE_PRICE,
+        currency: CURRENCY,
+        category_ids: [],
+        country_prices: { [FAKE_COUNTRY]: COUNTRY_PRICE },
+        fulfillment_kind: "physical",
+        is_active: true,
+      })
+      .select("id")
+      .single();
+    if (physicalErr || !physicalProduct)
+      throw new Error(`не удалось создать физический товар: ${physicalErr?.message}`);
+    physicalProductId = physicalProduct.id;
+
     const { error: methodErr } = await s.from("payment_methods").insert({
       bot_id: botId,
       country_code: FAKE_COUNTRY,
@@ -166,6 +190,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     await s.from("bot_users").delete().eq("user_key", USER_KEY);
     await s.from("payment_methods").delete().eq("country_code", FAKE_COUNTRY);
     if (productId) await s.from("products").delete().eq("id", productId);
+    if (physicalProductId) await s.from("products").delete().eq("id", physicalProductId);
     if (botId) await s.from("bots").delete().eq("id", botId);
     delete process.env.BOT_ID;
     delete process.env.SUPABASE_TENANT_KEY;
@@ -246,7 +271,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
       const s = await client();
       const { data: orderRow } = await s
         .from("orders")
-        .select("total, currency, status, platform")
+        .select("total, currency, status, platform, fulfillment_type, fulfillment_at")
         .eq("id", order!.id)
         .single();
       // Ручная цена страны (700), а не основная (1000) — тот самый разбор
@@ -256,6 +281,10 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
         currency: CURRENCY,
         status: "awaiting_confirmation",
         platform: "instagram",
+        // Digital-корзина: fulfillment не передан, значит null — не мусор
+        // от параметра, который к этому заказу не относится (Ниши, Блок 8.3).
+        fulfillment_type: null,
+        fulfillment_at: null,
       });
 
       const { data: items } = await s
@@ -280,6 +309,95 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
         countryCode: FAKE_COUNTRY,
       });
       expect(order).toBeNull();
+    });
+
+    /**
+     * Ниши, Блок 8.3: способ/дата/адрес/комментарий получения собираются
+     * шагами чекаута ДО этого вызова (zernio-bot.server.ts,
+     * proceedToFulfillmentOrPayment) и передаются через новый параметр
+     * fulfillment — здесь проверяется только сама запись в orders, не сам
+     * многошаговый диалог (он проверяется вручную на реальном Instagram/
+     * WhatsApp аккаунте, см. план).
+     */
+    it("физический заказ — записывает fulfillment_type/at/address/note", async () => {
+      const s = await client();
+      await s.from("cart_items").insert({
+        bot_id: botId,
+        telegram_id: TELEGRAM_ID,
+        user_key: USER_KEY,
+        product_id: physicalProductId,
+        quantity: 1,
+      });
+
+      const { createOrderFromCart } = await import("../src/lib/direct-purchase.server");
+      const order = await createOrderFromCart({
+        user: {
+          telegram_id: TELEGRAM_ID,
+          user_key: USER_KEY,
+          username: null,
+          first_name: "Тестовый покупатель",
+        },
+        countryCode: FAKE_COUNTRY,
+        fulfillment: {
+          type: "delivery",
+          at: "2026-09-10",
+          address: "ул. Тестовая, 1",
+          note: "надпись «С днём рождения»",
+        },
+      });
+      expect(order).not.toBeNull();
+      expect(order!.fulfillment_kind).toBe("physical");
+      orderIds.push(order!.id);
+
+      const { data: orderRow } = await s
+        .from("orders")
+        .select(
+          "fulfillment_kind, fulfillment_type, fulfillment_at, fulfillment_address, fulfillment_note",
+        )
+        .eq("id", order!.id)
+        .single();
+      expect(orderRow).toMatchObject({
+        fulfillment_kind: "physical",
+        fulfillment_type: "delivery",
+        fulfillment_address: "ул. Тестовая, 1",
+        fulfillment_note: "надпись «С днём рождения»",
+      });
+      expect(orderRow!.fulfillment_at?.slice(0, 10)).toBe("2026-09-10");
+    });
+
+    it("физический заказ без fulfillment (устаревший вызов) — поля остаются null", async () => {
+      const s = await client();
+      await s.from("cart_items").insert({
+        bot_id: botId,
+        telegram_id: TELEGRAM_ID,
+        user_key: USER_KEY,
+        product_id: physicalProductId,
+        quantity: 1,
+      });
+
+      const { createOrderFromCart } = await import("../src/lib/direct-purchase.server");
+      const order = await createOrderFromCart({
+        user: {
+          telegram_id: TELEGRAM_ID,
+          user_key: USER_KEY,
+          username: null,
+          first_name: "Тестовый покупатель",
+        },
+        countryCode: FAKE_COUNTRY,
+      });
+      expect(order).not.toBeNull();
+      orderIds.push(order!.id);
+
+      const { data: orderRow } = await s
+        .from("orders")
+        .select("fulfillment_kind, fulfillment_type, fulfillment_at")
+        .eq("id", order!.id)
+        .single();
+      expect(orderRow).toMatchObject({
+        fulfillment_kind: "physical",
+        fulfillment_type: null,
+        fulfillment_at: null,
+      });
     });
   });
 });

@@ -6,6 +6,7 @@ import {
   productNumberFromKeywords,
   matchCountry,
   matchLocalePick,
+  matchFulfillmentType,
   extractEmail,
   isAffirmative,
   classifyIncoming,
@@ -158,6 +159,30 @@ describe("matchLocalePick", () => {
     expect(matchLocalePick("")).toBeNull();
     // Двух букв мало: под них подошло бы слишком многое.
     expect(matchLocalePick("ру")).toBeNull();
+  });
+});
+
+describe("matchFulfillmentType", () => {
+  it("понимает слово с кнопки на всех 4 языках", () => {
+    expect(matchFulfillmentType("Самовывоз")).toBe("pickup");
+    expect(matchFulfillmentType("Доставка")).toBe("delivery");
+    expect(matchFulfillmentType("Өзі алып кету")).toBe("pickup");
+    expect(matchFulfillmentType("Жеткізу")).toBe("delivery");
+    expect(matchFulfillmentType("Pickup")).toBe("pickup");
+    expect(matchFulfillmentType("Delivery")).toBe("delivery");
+    expect(matchFulfillmentType("O‘zi olib ketish")).toBe("pickup");
+    expect(matchFulfillmentType("Yetkazib berish")).toBe("delivery");
+  });
+
+  it("понимает слово внутри произвольной реплики", () => {
+    expect(matchFulfillmentType("хочу самовывоз, спасибо")).toBe("pickup");
+    expect(matchFulfillmentType("лучше доставку сделайте")).toBe("delivery");
+  });
+
+  it("не угадывает наугад", () => {
+    for (const input of ["не знаю", "", "торт", "😀"]) {
+      expect(matchFulfillmentType(input)).toBeNull();
+    }
   });
 });
 

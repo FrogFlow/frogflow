@@ -98,6 +98,20 @@ export type DirectState = {
    * как и остальные поля FLOW_KEYS.
    */
   frozen_cart?: PricedCart;
+  /**
+   * Чекаут физического заказа (Ниши, Блок 8.3) — заполняются шагами
+   * awaiting_fulfillment_type/awaiting_fulfillment_date/awaiting_address/
+   * awaiting_fulfillment_note ДО показа реквизитов оплаты, и передаются в
+   * createOrderFromCart при создании заказа (заказ здесь создаётся не
+   * отдельным шагом «Оформить», а в реакции на уже присланный чек — данные
+   * о получении должны быть готовы заранее).
+   */
+  checkout_fulfillment_type?: "pickup" | "delivery";
+  /** ISO YYYY-MM-DD. */
+  checkout_fulfillment_at?: string;
+  /** Только при checkout_fulfillment_type === "delivery". */
+  checkout_fulfillment_address?: string;
+  checkout_fulfillment_note?: string;
 };
 
 /**
@@ -116,6 +130,10 @@ const FLOW_KEYS = [
   "misses",
   "proof_processing_started_at",
   "frozen_cart",
+  "checkout_fulfillment_type",
+  "checkout_fulfillment_at",
+  "checkout_fulfillment_address",
+  "checkout_fulfillment_note",
 ] as const;
 
 /**
@@ -1296,6 +1314,19 @@ export async function createOrderFromCart(params: {
    * заморозки) — считаем как раньше, живым запросом.
    */
   frozenPriced?: PricedCart;
+  /**
+   * Способ/дата/адрес/комментарий получения — собраны шагами чекаута ДО
+   * этого вызова (Ниши, Блок 8.3). Не передан — значит корзина цифровая
+   * (собирающие шаги пропускаются для digital, см. proceedToFulfillmentOrPayment
+   * в zernio-bot.server.ts); cartAllowsProduct гарантирует, что корзина не
+   * смешанная, так что отдельной проверки здесь не нужно.
+   */
+  fulfillment?: {
+    type: "pickup" | "delivery";
+    at: string;
+    address?: string | null;
+    note?: string | null;
+  };
 }): Promise<{
   id: number;
   order_no: number | null;
@@ -1349,6 +1380,10 @@ export async function createOrderFromCart(params: {
       currency,
       status: "awaiting_confirmation",
       fulfillment_kind: orderFulfillmentKind,
+      fulfillment_type: params.fulfillment?.type ?? null,
+      fulfillment_at: params.fulfillment?.at ?? null,
+      fulfillment_address: params.fulfillment?.address ?? null,
+      fulfillment_note: params.fulfillment?.note ?? null,
     })
     .select("id, order_no, fulfillment_kind")
     .single();

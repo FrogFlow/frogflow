@@ -23,10 +23,23 @@ import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
  * нет команды `/start`, а значит нет и естественной точки, где предложить
  * выбор языка, как это делает Telegram-бот. Заводим её сами — первым же
  * ответом новому отправителю, до всего остального сценария.
+ *
+ * `awaiting_fulfillment_type`/`awaiting_fulfillment_date`/`awaiting_address`/
+ * `awaiting_fulfillment_note` — чекаут физического заказа (Ниши, Блок 8.3),
+ * идут между `awaiting_country` и `awaiting_proof`: заказ здесь создаётся
+ * только в ответ на уже присланный чек (createOrderFromCart,
+ * direct-purchase.server.ts), а не отдельным шагом «Оформить», поэтому
+ * данные о получении нужно собрать ДО показа реквизитов — иначе `orders`
+ * получит физический заказ без обязательной по смыслу колонки
+ * `fulfillment_at` (см. MIGRATION-49).
  */
 export type DirectMode =
   | "awaiting_locale"
   | "awaiting_country"
+  | "awaiting_fulfillment_type"
+  | "awaiting_fulfillment_date"
+  | "awaiting_address"
+  | "awaiting_fulfillment_note"
   | "awaiting_proof"
   | "processing_proof"
   | "awaiting_email"
@@ -209,6 +222,27 @@ export function matchCountry(text: string, options: CountryOption[]): CountryOpt
     // «казах» → «казахстан»: покупатели дописывают не всегда.
     if (needle.length >= 4 && name.startsWith(needle)) return option;
   }
+  return null;
+}
+
+// Ключевые слова способа получения на 4 языках — те же, что подписаны на
+// кнопках выбора (bot.server.ts, fulfillmentTypePickupBtn/DeliveryBtn), плюс
+// разговорные варианты. Нужен как текстовый fallback на шаге
+// awaiting_fulfillment_type: тап по кнопке разбирает постбэк напрямую
+// (zernio-bot.server.ts), а вот если покупатель вместо тапа написал слово —
+// этот шаг, в отличие от Telegram (там способ получения — чистый постбэк без
+// текстового ввода), должен его понять, а не промолчать.
+// Стемы, а не полные слова — русское «доставка» склоняется («доставку»,
+// «доставкой»), и полное слово не совпало бы с падежными формами.
+const PICKUP_WORDS = ["самовывоз", "алып кету", "pickup", "olib ketish"];
+const DELIVERY_WORDS = ["достав", "жеткізу", "delivery", "yetkazib"];
+
+/** Разбор ответа на «как хотите получить заказ» — самовывоз/доставка, любой из 4 языков. */
+export function matchFulfillmentType(text: string): "pickup" | "delivery" | null {
+  const raw = text.trim().toLowerCase();
+  if (!raw) return null;
+  if (PICKUP_WORDS.some((w) => raw.includes(w))) return "pickup";
+  if (DELIVERY_WORDS.some((w) => raw.includes(w))) return "delivery";
   return null;
 }
 

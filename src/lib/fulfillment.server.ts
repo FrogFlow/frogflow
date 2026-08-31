@@ -1,3 +1,4 @@
+import { appTimeZone } from "./datetime";
 import { DELIVERABLE_STATUSES } from "./orders.server";
 
 /**
@@ -210,4 +211,91 @@ export async function amountDueNow(order: {
     return Math.round(order.total * (pct / 100));
   }
   return order.total;
+}
+
+/**
+ * Тип корзины покупателя — физическая или цифровая. Смешанная невозможна
+ * (см. addToCart в bot.server.ts, cartAllowsProduct в
+ * direct-purchase.server.ts, Ниши Блок 5). Канало-независима — принимает
+ * голый telegram_id, а не BotUser: у Direct-каналов свои синтетические
+ * отрицательные id (zernioCustomerId), пишущиеся в ту же таблицу
+ * cart_items, поэтому переехала сюда из bot.server.ts вместе с остальными
+ * хелперами чекаута физических заказов (Ниши, Блок 8.3).
+ */
+export async function cartFulfillmentKind(telegram_id: number): Promise<"digital" | "physical"> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("cart_items")
+    .select("products(fulfillment_kind)")
+    .eq("telegram_id", telegram_id)
+    .limit(1)
+    .maybeSingle();
+  const kind = (data as { products?: { fulfillment_kind?: string } } | null)?.products
+    ?.fulfillment_kind;
+  return kind === "physical" ? "physical" : "digital";
+}
+
+/** Самый долгий срок изготовления среди товаров в корзине — минимальный сдвиг даты получения. */
+export async function maxLeadTimeDaysInCart(telegram_id: number): Promise<number> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("cart_items")
+    .select("products(lead_time_days)")
+    .eq("telegram_id", telegram_id);
+  let max = 0;
+  for (const row of data ?? []) {
+    const days = (row as { products?: { lead_time_days?: number | null } }).products
+      ?.lead_time_days;
+    if (typeof days === "number" && days > max) max = days;
+  }
+  return max;
+}
+
+/** Доступность самовывоза/доставки — по умолчанию оба включены, пока продавец явно не отключил. */
+export async function fulfillmentOptionsEnabled(): Promise<{
+  pickup: boolean;
+  delivery: boolean;
+}> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("app_settings")
+    .select("key, value")
+    .in("key", ["fulfillment_pickup_enabled", "fulfillment_delivery_enabled"]);
+  const get = (key: string) => data?.find((r) => r.key === key)?.value;
+  return {
+    pickup: get("fulfillment_pickup_enabled") !== "false",
+    delivery: get("fulfillment_delivery_enabled") !== "false",
+  };
+}
+
+/** "Сегодня" в таймзоне продавца (APP_TIMEZONE, см. datetime.ts) — не UTC-дата сервера. */
+export function todayInAppTZ(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: appTimeZone() });
+}
+
+export function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/** ДД.ММ.ГГГГ → "YYYY-MM-DD", либо null на нераспознанном/невозможном вводе. */
+export function parseFulfillmentDateInput(text: string): string | null {
+  const m = text.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > daysInMonth(year, month)) return null;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function addDaysToIsoDate(iso: string, days: number): string {
+  const [y, mo, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d) + days * 86_400_000);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function isoDateToDisplay(iso: string): string {
+  const [y, mo, d] = iso.split("-");
+  return `${d}.${mo}.${y}`;
 }
