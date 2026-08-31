@@ -20,13 +20,20 @@ const MODEL = "claude-haiku-4-5-20251001";
  * Верхняя граница каталога, которую видит умный поиск. Должна с запасом
  * покрывать реальный размер каталога клиента — иначе часть товаров для
  * LLM просто не существует, и это никак не проявляется (не ошибка, а
- * тихо urезанный список кандидатов). Экспортируется, чтобы bot.server.ts
+ * тихо урезанный список кандидатов). Экспортируется, чтобы bot.server.ts
  * лимитировал запрос к БД тем же числом — раньше эти два лимита стояли
  * порознь (300 в запросе, 200 здесь) и расходились без всякой связи.
+ *
+ * Было поднято сразу до 500 — и это само по себе сломало поиск на живом
+ * каталоге ~400 товаров (заказчик сообщил: раньше находило, теперь молча
+ * «ничего не найдено», хотя запрос уходит). Похоже, резко возросший объём
+ * токенов на запрос упёрся в лимит скорости API на свежем аккаунте
+ * Anthropic — 420 с более короткими description/keywords ниже держит
+ * объём запроса заметно ближе к тому, что раньше работало, но всё ещё
+ * покрывает весь каталог с запасом.
  */
-export const MAX_CANDIDATES = 500;
+export const MAX_CANDIDATES = 420;
 const MAX_QUERY_LEN = 200;
-// 500 кандидатов вместо прежних 200 — вызов стал крупнее и дольше.
 const TIMEOUT_MS = 25_000;
 // Каждый вызов — реальные деньги на счету Anthropic, а бот открыт всем в
 // Telegram (не только покупателям). Без предохранителя один скучающий
@@ -117,6 +124,34 @@ export async function consumeSmartSearchQuota(telegramId: number): Promise<boole
 }
 
 /**
+ * Единственная видимость сбоя умного поиска сейчас — console.error, который
+ * уходит в лог Vercel и никак не всплывает продавцу: он видит только «ничего
+ * не найдено» и не может отличить реальный промах модели от 429/сетевой
+ * ошибки. Пишем последнюю причину в app_settings — тот же ключ читает
+ * /admin/settings, чтобы продавец видел её прямо рядом с переключателем.
+ */
+async function recordSmartSearchError(detail: string) {
+  try {
+    const s = await db();
+    await s.from("app_settings").upsert({
+      key: "smart_search_last_error",
+      value: `${new Date().toISOString()} — ${detail}`.slice(0, 500),
+    });
+  } catch (e) {
+    console.error("[smart-search] failed to record diagnostic", e);
+  }
+}
+
+async function clearSmartSearchError() {
+  try {
+    const s = await db();
+    await s.from("app_settings").upsert({ key: "smart_search_last_error", value: "" });
+  } catch (e) {
+    console.error("[smart-search] failed to clear diagnostic", e);
+  }
+}
+
+/**
  * Возвращает id кандидатов, реально подходящих запросу по смыслу, в порядке
  * убывания релевантности — или null при любом сбое (нет ключа, сеть,
  * невалидный ответ), чтобы вызывающий код просто показал «ничего не
@@ -132,11 +167,13 @@ export async function smartSearchProductIds(
   const trimmedQuery = query.trim().slice(0, MAX_QUERY_LEN);
   if (!trimmedQuery || candidates.length === 0) return null;
 
+  // Короче, чем раньше (было 200/100) — за счёт этого 420 кандидатов в
+  // сумме заметно легче, чем прежние 500 при полной длине полей.
   const list = candidates.slice(0, MAX_CANDIDATES).map((c) => ({
     id: c.id,
     name: c.name,
-    description: (c.description ?? "").slice(0, 200),
-    keywords: (c.keywords ?? "").slice(0, 100),
+    description: (c.description ?? "").slice(0, 150),
+    keywords: (c.keywords ?? "").slice(0, 60),
   }));
 
   const prompt =
@@ -157,7 +194,7 @@ export async function smartSearchProductIds(
       },
       body: JSON.stringify({
         model: MODEL,
-        // MAX_CANDIDATES (500) полными UUID в худшем случае — с запасом,
+        // MAX_CANDIDATES (420) полными UUID в худшем случае — с запасом,
         // чтобы модель не обрезала валидный JSON на середине массива id
         // (обрезанный ответ раньше молча читался как «ничего не подходит»,
         // а не как ошибка). Меняется вместе с MAX_CANDIDATES, не отдельно.
@@ -167,21 +204,25 @@ export async function smartSearchProductIds(
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) {
-      console.error(
-        "[smart-search] Anthropic API error",
-        res.status,
-        await res.text().catch(() => ""),
-      );
+      const body = await res.text().catch(() => "");
+      console.error("[smart-search] Anthropic API error", res.status, body);
+      await recordSmartSearchError(`HTTP ${res.status}: ${body.slice(0, 300)}`);
       return null;
     }
     const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
     const text = json.content?.find((b) => b.type === "text")?.text ?? "";
-    return parseSmartSearchIds(
+    const ids = parseSmartSearchIds(
       text,
       list.map((c) => c.id),
     );
+    // Успешный ответ, даже пустой список (модель реально не нашла
+    // совпадений) — не ошибка, снимаем предыдущую тревогу, если она была.
+    await clearSmartSearchError();
+    return ids;
   } catch (e) {
+    const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
     console.error("[smart-search] request failed", e);
+    await recordSmartSearchError(detail);
     return null;
   }
 }
