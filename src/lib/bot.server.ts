@@ -582,6 +582,7 @@ type Msg = {
   alreadyProcessed: (orderId: number | string) => string;
   robokassaUnavailable: string;
   searchNothingFound: string;
+  searchDeeperHint: string;
   foundCount: (n: number) => string;
   shownOf: (shown: number, total: number) => string;
   searchSessionExpired: string;
@@ -730,6 +731,7 @@ const copy: Record<Locale, Msg> = {
     alreadyProcessed: (id) => `Заказ #${id} уже обрабатывается или закрыт.`,
     robokassaUnavailable: "Robokassa временно недоступна. Выберите оплату по реквизитам.",
     searchNothingFound: "Ничего не нашлось. Попробуйте другое слово.",
+    searchDeeperHint: "Секунду, ищу подробнее…",
     foundCount: (n) => `🔍 Найдено материалов: ${n}`,
     shownOf: (s, t) => `Показано ${s} из ${t}`,
     searchSessionExpired: "Сессия поиска устарела. Повторите поиск.",
@@ -897,6 +899,7 @@ const copy: Record<Locale, Msg> = {
     alreadyProcessed: (id) => `Тапсырыс #${id} өңделуде немесе жабылған.`,
     robokassaUnavailable: "Robokassa уақытша қолжетімсіз. Деректемелер бойынша төлемді таңдаңыз.",
     searchNothingFound: "Ештеңе табылмады. Басқа сөзбен көріңіз.",
+    searchDeeperHint: "Бір сәт, толығырақ іздеп жатырмын…",
     foundCount: (n) => `🔍 Табылған материалдар: ${n}`,
     shownOf: (s, t) => `Көрсетілді ${s} / ${t}`,
     searchSessionExpired: "Іздеу сессиясы ескірді. Іздеуді қайталаңыз.",
@@ -1065,6 +1068,7 @@ const copy: Record<Locale, Msg> = {
     robokassaUnavailable:
       "Robokassa is temporarily unavailable. Please choose payment by bank details.",
     searchNothingFound: "Nothing found. Try a different word.",
+    searchDeeperHint: "One moment, looking deeper…",
     foundCount: (n) => `🔍 Materials found: ${n}`,
     shownOf: (s, t) => `Showing ${s} of ${t}`,
     searchSessionExpired: "Your search session has expired. Please search again.",
@@ -1239,6 +1243,7 @@ const copy: Record<Locale, Msg> = {
     robokassaUnavailable:
       "Robokassa vaqtincha ishlamayapti. Rekvizitlar bo‘yicha to‘lovni tanlang.",
     searchNothingFound: "Hech narsa topilmadi. Boshqa so‘z bilan urinib ko‘ring.",
+    searchDeeperHint: "Bir daqiqa, batafsil qidiryapman…",
     foundCount: (n) => `🔍 Topilgan materiallar: ${n}`,
     shownOf: (s, t) => `Ko‘rsatildi ${s} / ${t}`,
     searchSessionExpired: "Qidiruv sessiyasi eskirdi. Qayta qidiring.",
@@ -3683,6 +3688,10 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     // Превышение любого из двух молча приводит к «ничего не найдено», как
     // и раньше — не отдельная ошибка, которую стоило бы объяснять.
     if ((await isSmartSearchEnabled()) && (await consumeSmartSearchQuota(telegram_id))) {
+      // Обычный поиск уже ответил «ничего», а запрос уходит в LLM и может
+      // занять заметно больше времени — без этой строки молчание бота
+      // выглядит как зависание, а не как «ищу ещё».
+      await tg("sendMessage", { chat_id, text: m.searchDeeperHint });
       // Тот же лимит, что smartSearchProductIds реально отправляет в LLM —
       // раньше здесь стояло независимое число (300 против MAX_CANDIDATES
       // 200), и часть каталога клиента с ~400 товарами умный поиск вообще
