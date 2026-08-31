@@ -121,6 +121,13 @@ export type DirectState = {
   /** Только при checkout_fulfillment_type === "delivery". */
   checkout_fulfillment_address?: string;
   checkout_fulfillment_note?: string;
+  /**
+   * Товар, для которого показан пронумерованный список вариантов (Ниши,
+   * Блок D, awaiting_variant_choice) — нужен, чтобы понять, какому товару
+   * относится ответ на "какой вариант?". Заводится только когда вариантов
+   * больше трёх (иначе кнопки хватает, и этот шаг не нужен вовсе).
+   */
+  pending_variant_product_id?: string;
 };
 
 /**
@@ -146,6 +153,7 @@ const FLOW_KEYS = [
   "checkout_delivery_fee",
   "checkout_fulfillment_address",
   "checkout_fulfillment_note",
+  "pending_variant_product_id",
 ] as const;
 
 /**
@@ -541,9 +549,10 @@ export async function findProductByNumber(number: string): Promise<ProductLookup
 export async function resolveProductPrice(
   product: { price: number; currency: string | null; country_prices: Json | null },
   countryCode: string | null | undefined,
+  variant?: { price: number } | null,
 ): Promise<{ amount: number; currency: string }> {
   const { resolvePrice } = await import("./pricing.server");
-  return await resolvePrice(product, countryCode);
+  return await resolvePrice(product, countryCode, variant);
 }
 
 const countryPromptCopy: Record<Locale, { question: string; answerHint: string }> = {
@@ -603,6 +612,43 @@ export function renderDeliveryZonePrompt(
 ): string {
   const copy = deliveryZonePromptCopy[locale];
   const lines = options.map((option, index) => `${index + 1}. ${option.name}`);
+  return `${copy.question}\n\n${lines.join("\n")}\n\n${copy.answerHint}`;
+}
+
+const variantPromptCopy: Record<Locale, { question: string; answerHint: string }> = {
+  ru: {
+    question: "Какой вариант?",
+    answerHint: "Ответьте номером или названием.",
+  },
+  kk: {
+    question: "Қай нұсқасы керек?",
+    answerHint: "Нөмірімен немесе атауымен жауап беріңіз.",
+  },
+  en: {
+    question: "Which variant?",
+    answerHint: "Reply with the number or the name.",
+  },
+  uz: {
+    question: "Qaysi variant?",
+    answerHint: "Raqami yoki nomi bilan javob bering.",
+  },
+};
+
+/**
+ * Список вариантов товара, пронумерованный (Ниши, Блок D) — тот же
+ * numbered-list-с-текстовым-fallback приём, что и у зон доставки, для
+ * товаров с более чем тремя вариантами, куда кнопки Zernio (лимит — три
+ * на сообщение) уже не помещаются.
+ */
+export function renderVariantPrompt(
+  options: Array<{ name: string; price: number }>,
+  currency: string,
+  locale: Locale = "ru",
+): string {
+  const copy = variantPromptCopy[locale];
+  const lines = options.map(
+    (option, index) => `${index + 1}. ${option.name} — ${option.price} ${currency}`,
+  );
   return `${copy.question}\n\n${lines.join("\n")}\n\n${copy.answerHint}`;
 }
 

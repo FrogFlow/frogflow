@@ -32,6 +32,12 @@ import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
  * данные о получении нужно собрать ДО показа реквизитов — иначе `orders`
  * получит физический заказ без обязательной по смыслу колонки
  * `fulfillment_at` (см. MIGRATION-49).
+ *
+ * `awaiting_variant_choice` — товар с простым списком вариантов (Ниши, Блок D),
+ * у которого их больше трёх: карточка товара не может показать их кнопками
+ * (лимит Zernio — три на сообщение), поэтому шлём пронумерованный список
+ * текстом и ждём ответ тем же приёмом, что и выбор зоны доставки/страны.
+ * До трёх вариантов включительно кнопки хватает, и этот режим не нужен.
  */
 export type DirectMode =
   | "awaiting_locale"
@@ -41,6 +47,7 @@ export type DirectMode =
   | "awaiting_delivery_zone"
   | "awaiting_address"
   | "awaiting_fulfillment_note"
+  | "awaiting_variant_choice"
   | "awaiting_proof"
   | "processing_proof"
   | "awaiting_email"

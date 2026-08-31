@@ -24,6 +24,8 @@ type ProductCard = {
   rating_avg?: number | null;
   rating_count?: number | null;
   stock_quantity?: number | null;
+  /** Простой список вариантов (Ниши, Блок D) — «1 кг»/«2 кг» с ценой. */
+  product_variants?: Array<{ id: string; name: string; price: number; sort_order: number }> | null;
 };
 
 /**
@@ -516,6 +518,8 @@ type Msg = {
   backToCategories: string;
   navigation: string;
   addToCartBtn: string;
+  /** «от 1000 ₸» — цена карточки товара с вариантами (Ниши, Блок D), самый дешёвый вариант. */
+  priceFrom: (amount: string) => string;
   descPending: string;
   productNotFound: string;
   contactSaved: string;
@@ -650,6 +654,7 @@ const copy: Record<Locale, Msg> = {
     backToCategories: "« Назад в категории",
     navigation: "Навигация:",
     addToCartBtn: "➕ В корзину",
+    priceFrom: (amount) => `от ${amount}`,
     descPending: "Подробное описание уточняется у продавца.",
     productNotFound: "Товар не найден.",
     contactSaved: "✅ Номер сохранён.",
@@ -816,6 +821,7 @@ const copy: Record<Locale, Msg> = {
     backToCategories: "« Санаттарға оралу",
     navigation: "Навигация:",
     addToCartBtn: "➕ Себетке",
+    priceFrom: (amount) => `${amount}-ден`,
     descPending: "Толық сипаттаманы сатушыдан нақтылаңыз.",
     productNotFound: "Тауар табылмады.",
     contactSaved: "✅ Нөмір сақталды.",
@@ -983,6 +989,7 @@ const copy: Record<Locale, Msg> = {
     backToCategories: "« Back to categories",
     navigation: "Navigation:",
     addToCartBtn: "➕ Add to cart",
+    priceFrom: (amount) => `from ${amount}`,
     descPending: "Full description available on request from the seller.",
     productNotFound: "Product not found.",
     contactSaved: "✅ Number saved.",
@@ -1153,6 +1160,7 @@ const copy: Record<Locale, Msg> = {
     backToCategories: "« Kategoriyalarga qaytish",
     navigation: "Navigatsiya:",
     addToCartBtn: "➕ Savatga qo‘shish",
+    priceFrom: (amount) => `${amount} dan`,
     descPending: "Batafsil tavsif sotuvchidan aniqlanadi.",
     productNotFound: "Mahsulot topilmadi.",
     contactSaved: "✅ Raqam saqlandi.",
@@ -1556,7 +1564,9 @@ async function showCategories(
     : await q.is("parent_id", null);
   const productsQuery = s
     .from("products")
-    .select("*, product_images(image_path, sort_order)")
+    .select(
+      "*, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
+    )
     .eq("is_active", true)
     .order("sort_order")
     .order("name");
@@ -1668,20 +1678,47 @@ async function sendProductCard(
    * запрос за ней (и параметр targetCurrency) больше не нужен.
    */
   const { resolvePrice } = await import("./pricing.server");
-  const money = await resolvePrice(p, userCountryCode ?? null);
-  const displayPrice = money.amount;
-  const displayCurrency = money.currency;
+
+  // Варианты (Ниши, Блок D) — простой список «1 кг»/«2 кг»: кнопка на
+  // каждый вариант вместо одной «В корзину», в подписи — цена «от».
+  // Инлайн-клавиатура Telegram не ограничена тремя кнопками (в отличие от
+  // Zernio/Direct), пагинация не нужна.
+  const variants = (p.product_variants ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
 
   const desc = p.description ? `\n\n${escapeHtml(p.description)}` : `\n\n<i>${m.descPending}</i>`;
   const ratingLine = formatRatingSummary(p.rating_avg ?? null, p.rating_count ?? 0);
   // Складской учёт (Кейс 4) — платный модуль: без него stock_quantity в
   // карточке никак не влияет на показ, даже если у товара задан остаток.
+  // Остаток считается на весь товар, не на отдельный вариант.
   const outOfStock =
     (await hasModule("stock")) && p.stock_quantity !== undefined && (p.stock_quantity ?? 0) <= 0;
-  const caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(displayPrice, displayCurrency)}</b>${ratingLine ? `\n${ratingLine}` : ""}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
-  const reply_markup = outOfStock
-    ? { inline_keyboard: [] }
-    : { inline_keyboard: [[{ text: m.addToCartBtn, callback_data: `add:${p.id}` }]] };
+
+  let caption: string;
+  let reply_markup: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> };
+  if (variants.length > 0) {
+    const priced = await Promise.all(
+      variants.map(async (v) => ({ v, money: await resolvePrice(p, userCountryCode ?? null, v) })),
+    );
+    const minAmount = Math.min(...priced.map((r) => r.money.amount));
+    const currency = priced[0]?.money.currency ?? p.currency ?? "KZT";
+    caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${m.priceFrom(formatMoney(minAmount, currency))}</b>${ratingLine ? `\n${ratingLine}` : ""}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
+    reply_markup = outOfStock
+      ? { inline_keyboard: [] }
+      : {
+          inline_keyboard: priced.map(({ v, money }) => [
+            {
+              text: `${v.name} — ${formatMoney(money.amount, money.currency)}`,
+              callback_data: `add:${p.id}:${v.id}`,
+            },
+          ]),
+        };
+  } else {
+    const money = await resolvePrice(p, userCountryCode ?? null);
+    caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(money.amount, money.currency)}</b>${ratingLine ? `\n${ratingLine}` : ""}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
+    reply_markup = outOfStock
+      ? { inline_keyboard: [] }
+      : { inline_keyboard: [[{ text: m.addToCartBtn, callback_data: `add:${p.id}` }]] };
+  }
 
   if (imgs.length === 0) {
     await tg("sendMessage", { chat_id, text: caption, parse_mode: "HTML", reply_markup });
@@ -1706,7 +1743,9 @@ async function showProduct(
   const s = await db();
   const { data: p } = await s
     .from("products")
-    .select("*, product_images(image_path, sort_order)")
+    .select(
+      "*, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
+    )
     .eq("id", product_id)
     .eq("is_active", true)
     .single();
@@ -3599,7 +3638,9 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
   const term = `%${query.replace(/[%_,]/g, "")}%`;
   const { data, error } = await s
     .from("products")
-    .select("*, product_images(image_path, sort_order)")
+    .select(
+      "*, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
+    )
     .eq("is_active", true)
     .or(`name.ilike.${term},description.ilike.${term},keywords.ilike.${term}`)
     .order("name")
@@ -3644,7 +3685,9 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     if ((await isSmartSearchEnabled()) && (await consumeSmartSearchQuota(telegram_id))) {
       const { data: allActive } = await s
         .from("products")
-        .select("*, product_images(image_path, sort_order)")
+        .select(
+          "*, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
+        )
         .eq("is_active", true)
         .limit(300);
       const candidates = visibleOf(allActive ?? []);

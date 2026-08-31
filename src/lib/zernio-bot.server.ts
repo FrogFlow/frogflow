@@ -104,6 +104,8 @@ interface DirectCopy {
   searchNoResultsHere: (query: string) => string;
   btnCatalog: string;
   btnAddToCart: string;
+  /** Товар с вариантами (Ниши, Блок D) в выдаче поиска Instagram — ведёт на полную карточку вместо прямого добавления, там варианты и цена. */
+  btnChooseVariant: string;
   btnCart: string;
   btnCheckout: string;
   productUnavailable: string;
@@ -143,6 +145,8 @@ interface DirectCopy {
   deliveryZonePrompt: string;
   /** Промах текстового fallback на шаге выбора зоны — тот же приём, что countryHint. */
   deliveryZoneHint: string;
+  /** Промах текстового fallback на шаге выбора варианта товара (Ниши, Блок D) — свыше трёх вариантов, где кнопок уже не хватает. */
+  variantChoiceHint: string;
   fulfillmentAddressPrompt: string;
   fulfillmentNotePrompt: string;
   fulfillmentNoteSkipBtn: string;
@@ -203,6 +207,7 @@ const directCopy: Record<Locale, DirectCopy> = {
       `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог.`,
     btnCatalog: "Каталог",
     btnAddToCart: "Добавить в корзину",
+    btnChooseVariant: "Выбрать вариант",
     btnCart: "Корзина",
     btnCheckout: "Оформить заказ",
     productUnavailable: "Этот материал больше недоступен.",
@@ -255,6 +260,7 @@ const directCopy: Record<Locale, DirectCopy> = {
     deliveryZonePrompt: "Выберите район доставки:",
     deliveryZoneHint:
       "Не понял район доставки. Ответьте номером из списка или названием — например «1» или «Центр».",
+    variantChoiceHint: "Не понял вариант. Ответьте номером из списка или названием — например «1».",
     fulfillmentAddressPrompt: "Куда доставить? Напишите адрес.",
     fulfillmentNotePrompt:
       "Комментарий к заказу (например, надпись на торте)? Если не нужен — нажмите «Без комментария».",
@@ -350,6 +356,7 @@ const directCopy: Record<Locale, DirectCopy> = {
       `«${query}» бойынша ештеңе табылмады. Басқа сөзбен көріңіз немесе каталогты ашыңыз.`,
     btnCatalog: "Каталог",
     btnAddToCart: "Себетке қосу",
+    btnChooseVariant: "Нұсқа таңдау",
     btnCart: "Себет",
     btnCheckout: "Тапсырысты рәсімдеу",
     productUnavailable: "Бұл материал енді қолжетімсіз.",
@@ -402,6 +409,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     deliveryZonePrompt: "Жеткізу ауданын таңдаңыз:",
     deliveryZoneHint:
       "Жеткізу ауданын түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Орталық».",
+    variantChoiceHint:
+      "Нұсқаны түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1».",
     fulfillmentAddressPrompt: "Қайда жеткізу керек? Мекенжайды жазыңыз.",
     fulfillmentNotePrompt:
       "Тапсырысқа түсініктеме (мысалы, тортқа жазу)? Қажет болмаса — «Түсініктемесіз» батырмасын басыңыз.",
@@ -495,6 +504,7 @@ const directCopy: Record<Locale, DirectCopy> = {
       `Nothing found for "${query}". Try another word, or open the catalog.`,
     btnCatalog: "Catalog",
     btnAddToCart: "Add to cart",
+    btnChooseVariant: "Choose variant",
     btnCart: "Cart",
     btnCheckout: "Place order",
     productUnavailable: "This material is no longer available.",
@@ -547,6 +557,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     deliveryZonePrompt: "Pick a delivery zone:",
     deliveryZoneHint:
       'Didn\'t recognize that delivery zone. Reply with the number from the list or the name — e.g. "1" or "Downtown".',
+    variantChoiceHint:
+      'Didn\'t recognize that variant. Reply with the number from the list or the name — e.g. "1".',
     fulfillmentAddressPrompt: "Where should we deliver? Send the address.",
     fulfillmentNotePrompt:
       'Any note for the order (e.g. a cake inscription)? If not needed, tap "No note".',
@@ -638,6 +650,7 @@ const directCopy: Record<Locale, DirectCopy> = {
       `"${query}" bo'yicha hech narsa topilmadi. Boshqa so'z bilan urinib ko'ring yoki katalogni oching.`,
     btnCatalog: "Katalog",
     btnAddToCart: "Savatga qo‘shish",
+    btnChooseVariant: "Variant tanlash",
     btnCart: "Savat",
     btnCheckout: "Buyurtma berish",
     productUnavailable: "Bu material endi mavjud emas.",
@@ -691,6 +704,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     deliveryZonePrompt: "Yetkazib berish zonasini tanlang:",
     deliveryZoneHint:
       "Yetkazib berish zonasini tushunmadim. Ro‘yxatdagi raqami yoki nomi bilan javob bering — masalan «1» yoki «Markaz».",
+    variantChoiceHint:
+      "Variantni tushunmadim. Ro‘yxatdagi raqami yoki nomi bilan javob bering — masalan «1».",
     fulfillmentAddressPrompt: "Qayerga yetkazib berish kerak? Manzilni yozing.",
     fulfillmentNotePrompt:
       "Buyurtmaga izoh (masalan, tortga yozuv)? Kerak bo‘lmasa — «Izohsiz» tugmasini bosing.",
@@ -1393,7 +1408,10 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     // Без этой проверки выключенный магазин всё равно принимал бы товары в
     // корзину, показать которую уже нельзя.
     if (features.cart && postbackPayload.startsWith("BUY:")) {
-      await addProductToCart(conversationId, accountId, user, postbackPayload.slice(4));
+      // "BUY:<productId>" — товар без вариантов; "BUY:<productId>:<variantId>"
+      // — выбранный вариант (Ниши, Блок D, кнопка на карточке товара).
+      const [buyProductId, buyVariantId] = postbackPayload.slice(4).split(":");
+      await addProductToCart(conversationId, accountId, user, buyProductId, buyVariantId || null);
       return;
     }
     if (features.cart && postbackPayload === "CART") {
@@ -1903,7 +1921,7 @@ async function sendWhatsAppProductCard(
   const { data: product } = await s
     .from("products")
     .select(
-      "id, name, description, price, currency, country_prices, category_ids, is_active, product_images(image_path, sort_order)",
+      "id, name, description, price, currency, country_prices, category_ids, is_active, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
     )
     .eq("id", productId)
     .eq("is_active", true)
@@ -1914,9 +1932,15 @@ async function sendWhatsAppProductCard(
     return;
   }
 
-  const money = await flow.resolveProductPrice(product, state.country_code ?? null);
-  const description = product.description ? `\n\n${String(product.description).slice(0, 600)}` : "";
-  const text = `📦 *${product.name}*\n💰 ${money.amount} ${money.currency}${description}`;
+  // Варианты (Ниши, Блок D) — простой список «1 кг»/«2 кг»: кнопка на
+  // каждый вариант вместо одной «В корзину». Zernio ограничивает три
+  // кнопки на сообщение — ≤3 варианта помещаются кнопками (без «Назад»,
+  // чтобы уместить все варианты разом), больше — тот же
+  // numbered-list-с-текстовым-fallback приём, что уже решает точно такую
+  // же проблему для выбора зоны доставки/страны.
+  const variants = (product.product_variants ?? [])
+    .slice()
+    .sort((a, b) => a.sort_order - b.sort_order);
 
   // Первая картинка по sort_order — как в карточке телеграм-бота.
   const images = (product.product_images ?? [])
@@ -1927,13 +1951,70 @@ async function sendWhatsAppProductCard(
   // Назад — в первую категорию товара, а если её нет, в корень каталога.
   const categoryIds = Array.isArray(product.category_ids) ? product.category_ids : [];
   const backTo = backToOverride ?? (typeof categoryIds[0] === "string" ? categoryIds[0] : CAT_ROOT);
-
-  const buttons: ZernioDmButton[] = [
-    { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
-    { type: "postback", title: copy.catalogBack, payload: `${CAT_PREFIX}${backTo}:0` },
-  ];
+  const backButton: ZernioDmButton = {
+    type: "postback",
+    title: copy.catalogBack,
+    payload: `${CAT_PREFIX}${backTo}:0`,
+  };
 
   const { sendZernioInboxMessage } = await import("./zernio.server");
+
+  if (variants.length > 3) {
+    const priced = await Promise.all(
+      variants.map(async (v) => ({
+        v,
+        money: await flow.resolveProductPrice(product, state.country_code ?? null, v),
+      })),
+    );
+    const currency = priced[0]?.money.currency ?? product.currency ?? "KZT";
+    const description = product.description
+      ? `\n\n${String(product.description).slice(0, 600)}`
+      : "";
+    const text =
+      `📦 *${product.name}*${description}\n\n` +
+      flow.renderVariantPrompt(
+        priced.map(({ v, money }) => ({ name: v.name, price: money.amount })),
+        currency,
+        flow.directLocale(state),
+      );
+    await flow.setDirectState(user.user_key, {
+      mode: "awaiting_variant_choice",
+      pending_variant_product_id: product.id,
+    });
+    if (photo) {
+      await sendZernioInboxMessage(conversationId, accountId, "", {
+        attachmentUrl: photo,
+        attachmentType: "image",
+        platform: "whatsapp",
+      });
+    }
+    await reply(user, conversationId, accountId, text);
+    return;
+  }
+
+  const buttons: ZernioDmButton[] =
+    variants.length > 0
+      ? await Promise.all(
+          variants.map(async (v) => {
+            const money = await flow.resolveProductPrice(product, state.country_code ?? null, v);
+            return {
+              type: "postback" as const,
+              title: `${v.name} — ${money.amount} ${money.currency}`,
+              payload: `BUY:${product.id}:${v.id}`,
+            };
+          }),
+        )
+      : [{ type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` }, backButton];
+
+  const money =
+    variants.length === 0
+      ? await flow.resolveProductPrice(product, state.country_code ?? null)
+      : null;
+  const description = product.description ? `\n\n${String(product.description).slice(0, 600)}` : "";
+  const text = money
+    ? `📦 *${product.name}*\n💰 ${money.amount} ${money.currency}${description}`
+    : `📦 *${product.name}*${description}`;
+
   if (photo) {
     /**
      * Фото и кнопки одним сообщением: Zernio собирает из вложения заголовок
@@ -1978,8 +2059,12 @@ async function sendInteractiveProductResults(
   const { data: products } = await s
     .from("products")
     // country_prices нужен для расчёта цены: в выдаче поиска показывалась
-    // базовая цена товара, а она у клиента намеренно завышена.
-    .select("id, name, price, currency, country_prices, description, is_active")
+    // базовая цена товара, а она у клиента намеренно завышена. product_variants
+    // (Ниши, Блок D) — узнать, есть ли у товара варианты (id достаточно, сами
+    // варианты выбираются на полной карточке).
+    .select(
+      "id, name, price, currency, country_prices, description, is_active, product_variants(id)",
+    )
     .eq("is_active", true)
     .or(`name.ilike.%${query}%,description.ilike.%${query}%,keywords.ilike.%${query}%`)
     // В WhatsApp выдача помещается в один список — берём столько же, сколько
@@ -2042,6 +2127,25 @@ async function sendInteractiveProductResults(
   const country = state.country_code ?? null;
   for (const product of products) {
     const description = product.description ? `\n${String(product.description).slice(0, 180)}` : "";
+    // Товар с вариантами (Ниши, Блок D) — здесь неоткуда взять, какой вариант
+    // выбрать (это отдельное сообщение без кнопок на каждый вариант, лимит
+    // Zernio — три на сообщение, а тут уже занято «Корзиной»), поэтому ведём
+    // на полную карточку (PROD_PREFIX → sendWhatsAppProductCard), где выбор
+    // варианта уже решён кнопками/пронумерованным списком.
+    const hasVariants = (product.product_variants?.length ?? 0) > 0;
+    if (hasVariants) {
+      await sendZernioInboxMessage(conversationId, accountId, `📌 ${product.name}${description}`, {
+        buttons: [
+          {
+            type: "postback",
+            title: copy.btnChooseVariant,
+            payload: `${PROD_PREFIX}${product.id}`,
+          },
+          { type: "postback", title: copy.btnCart, payload: "CART" },
+        ],
+      });
+      continue;
+    }
     const money = await flow.resolveProductPrice(product, country);
     await sendZernioInboxMessage(
       conversationId,
@@ -2070,6 +2174,7 @@ async function addProductToCart(
   accountId: string,
   user: ZernioBotUser,
   productId: string,
+  variantId?: string | null,
 ) {
   const flow = await import("./direct-purchase.server");
   const copy = directCopy[flow.directLocale(flow.readDirectState(user.state))];
@@ -2093,10 +2198,12 @@ async function addProductToCart(
     return;
   }
 
-  await flow.addToCart(user, product.id);
+  // addToCart сама проверяет, что variantId реально принадлежит этому
+  // товару (Ниши, Блок D) — не дублируем проверку здесь.
+  await flow.addToCart(user, product.id, variantId ?? null);
   // Товар в корзине — счётчик непонятых реплик обнуляем: человек явно понял,
   // что от него нужно, и прежние промахи к делу больше не относятся.
-  await flow.setDirectState(user.user_key, { misses: 0 });
+  await flow.setDirectState(user.user_key, { misses: 0, mode: undefined });
   await sendCart(conversationId, accountId, user);
 }
 
@@ -2825,6 +2932,10 @@ async function handlePurchaseFlow(params: {
   if (
     removeNumber &&
     state.mode !== "awaiting_email" &&
+    // Выбор варианта товара (Ниши, Блок D) — тоже не про редактирование
+    // корзины: товар туда ещё не попал, список показывает варианты, а не
+    // позиции корзины.
+    state.mode !== "awaiting_variant_choice" &&
     !(state.mode && FULFILLMENT_STEP_MODES.has(state.mode))
   ) {
     const cart = await flow.readCart(user);
@@ -3200,6 +3311,41 @@ async function handlePurchaseFlow(params: {
         { type: "postback", title: copy.fulfillmentNoteSkipBtn, payload: "fulfillnote:skip" },
       ]);
     }
+    return true;
+  }
+
+  // Выбор варианта товара при более чем трёх вариантах (Ниши, Блок D) —
+  // тот же numbered-list-с-текстовым-fallback приём, что и у зоны
+  // доставки/страны. До трёх вариантов покупатель просто тапает кнопку на
+  // карточке (BUY:<productId>:<variantId>), этот шаг не нужен вовсе.
+  if (state.mode === "awaiting_variant_choice") {
+    const productId = state.pending_variant_product_id;
+    if (!productId) {
+      // Состояние потерялось между сообщениями — переспрашивать нечего,
+      // просто выходим из шага молча, как и остальные шаги без контекста.
+      await flow.setDirectState(user.user_key, { mode: undefined });
+      return true;
+    }
+    const s = await db();
+    const { data: variants } = await s
+      .from("product_variants")
+      .select("id, name, price")
+      .eq("product_id", productId)
+      .order("sort_order");
+    const chosen = matchZone(text, variants ?? []);
+    if (!chosen) {
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint: copy.variantChoiceHint,
+        say,
+        locale,
+      });
+      return true;
+    }
+    await flow.setDirectState(user.user_key, { pending_variant_product_id: undefined });
+    await addProductToCart(conversationId, accountId, user, productId, chosen.id);
     return true;
   }
 
