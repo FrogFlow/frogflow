@@ -18,6 +18,18 @@ export const getSettings = createServerFn({ method: "GET" }).handler(async () =>
   return map;
 });
 
+/**
+ * Ссылка на публичную веб-витрину (Кейс 3, №8) — считается из адреса
+ * деплоя (PUBLIC_APP_URL), не хранится в app_settings: это не настройка,
+ * а производное значение, которое незачем держать в двух местах.
+ */
+export const getShopUrl = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdmin();
+  const { appOrigin } = await import("./app-origin.server");
+  const origin = appOrigin();
+  return { url: origin ? `${origin}/shop` : null };
+});
+
 const SaveInput = z.object({ key: z.string().min(1).max(100), value: z.string().max(100_000) });
 
 export const saveSetting = createServerFn({ method: "POST" })

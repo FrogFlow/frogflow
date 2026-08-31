@@ -12,6 +12,7 @@ import { Textarea } from "@/components-ui/textarea";
 import {
   getSettings,
   saveSetting,
+  getShopUrl,
   getInstructionVideoUploadUrl,
   commitInstructionVideoFn,
   clearInstructionVideoFn,
@@ -60,6 +61,13 @@ const copy: Record<
     smartSearchTitle: string;
     smartSearchHint: string;
     smartSearchEnableLabel: string;
+    webStorefrontTitle: string;
+    webStorefrontHint: string;
+    webStorefrontOpenBtn: string;
+    webStorefrontCopyBtn: string;
+    webStorefrontCopied: (link: string) => string;
+    webStorefrontCopyPrompt: string;
+    webStorefrontNoUrl: string;
     instructionTitle: string;
     instructionHint: string;
     uploading: string;
@@ -130,6 +138,15 @@ const copy: Record<
     smartSearchHint:
       "Если обычный поиск ничего не нашёл, бот пробует понять запрос по смыслу через ИИ (например, «что-то на день рождения пятилетке»). Требует настроенный ANTHROPIC_API_KEY у деплоя — каждый такой запрос стоит денег, поэтому выключено по умолчанию.",
     smartSearchEnableLabel: "Включить умный поиск",
+    webStorefrontTitle: "Публичная веб-витрина каталога",
+    webStorefrontHint:
+      "Публичная страница каталога — фото, названия, цены и рейтинг товаров, без входа. Купить с неё нельзя: кнопка на странице ведёт покупателя в сам бот. Дайте эту ссылку клиентам в шапке Instagram, рекламе и т.п.",
+    webStorefrontOpenBtn: "Открыть витрину",
+    webStorefrontCopyBtn: "Скопировать ссылку",
+    webStorefrontCopied: (link: string) => `Ссылка скопирована: ${link}`,
+    webStorefrontCopyPrompt: "Скопируйте ссылку на витрину:",
+    webStorefrontNoUrl:
+      "Адрес деплоя не определён (нет PUBLIC_APP_URL) — витрина не откроется, пока это не поправят в переменных окружения.",
     instructionTitle: "Инструкция для покупателей",
     instructionHint:
       "Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до 50 МБ (лимит Telegram), формат MP4.",
@@ -203,6 +220,15 @@ const copy: Record<
     smartSearchHint:
       "Әдеттегі іздеу ештеңе таппаса, бот сұранысты мағынасы бойынша ЖИ арқылы түсінуге тырысады (мысалы, «бес жасар балаға туған күнге бір нәрсе»). Деплойда ANTHROPIC_API_KEY бапталған болуы керек — әрбір осындай сұраныс ақылы, сондықтан әдепкі бойынша өшірулі.",
     smartSearchEnableLabel: "Ақылды іздеуді қосу",
+    webStorefrontTitle: "Каталогтың ашық веб-витринасы",
+    webStorefrontHint:
+      "Кірусіз қолжетімді каталог беті — фото, атаулар, бағалар және рейтинг. Одан сатып алу мүмкін емес: беттегі түйме сатып алушыны боттың өзіне апарады. Бұл сілтемені Instagram шапкасында, жарнамада және т.б. беріңіз.",
+    webStorefrontOpenBtn: "Витринаны ашу",
+    webStorefrontCopyBtn: "Сілтемені көшіру",
+    webStorefrontCopied: (link: string) => `Сілтеме көшірілді: ${link}`,
+    webStorefrontCopyPrompt: "Витринаға сілтемені көшіріңіз:",
+    webStorefrontNoUrl:
+      "Деплой мекенжайы анықталмаған (PUBLIC_APP_URL жоқ) — бұл айнымалыны түзеткенше витрина ашылмайды.",
     instructionTitle: "Сатып алушыларға арналған нұсқаулық",
     instructionHint:
       "Бот мәзіріндегі «📖 Нұсқаулық» түймесі. Видео 50 МБ-тан аспағаны жөн (Telegram шегі), MP4 форматы.",
@@ -276,6 +302,15 @@ const copy: Record<
     smartSearchHint:
       "If regular search finds nothing, the bot tries to understand the query by meaning via AI (e.g. a birthday gift for a five-year-old). Requires ANTHROPIC_API_KEY configured on the deployment — each such query costs money, so it is off by default.",
     smartSearchEnableLabel: "Enable smart search",
+    webStorefrontTitle: "Public catalog storefront",
+    webStorefrontHint:
+      "A no-login catalog page — photos, names, prices, and ratings. You can't buy from it: the page button sends the buyer into the bot itself. Share this link in your Instagram bio, ads, etc.",
+    webStorefrontOpenBtn: "Open storefront",
+    webStorefrontCopyBtn: "Copy link",
+    webStorefrontCopied: (link: string) => `Link copied: ${link}`,
+    webStorefrontCopyPrompt: "Copy the storefront link:",
+    webStorefrontNoUrl:
+      "Deployment address unknown (no PUBLIC_APP_URL) — the storefront won't open until that env var is fixed.",
     instructionTitle: "Buyer instructions",
     instructionHint:
       'The "📖 Guide" button in the bot\'s main menu. Video under 50 MB works best (Telegram limit), MP4 format.',
@@ -350,6 +385,15 @@ const copy: Record<
     smartSearchHint:
       "Agar oddiy qidiruv hech narsa topmasa, bot so‘rovni mazmuni bo‘yicha AI orqali tushunishga harakat qiladi (masalan, «besh yoshli bola uchun tug‘ilgan kunga narsa»). Deployda ANTHROPIC_API_KEY sozlangan bo‘lishi kerak — har bir bunday so‘rov pul talab qiladi, shuning uchun standart bo‘yicha o‘chirilgan.",
     smartSearchEnableLabel: "Aqlli qidiruvni yoqish",
+    webStorefrontTitle: "Katalogning ochiq veb-vitrinasi",
+    webStorefrontHint:
+      "Kirishsiz ochiladigan katalog sahifasi — fotolar, nomlar, narxlar va reyting. Undan xarid qilib bo‘lmaydi: sahifadagi tugma xaridorni to‘g‘ridan-to‘g‘ri botga yuboradi. Bu havolani Instagram bio, reklama va h.k.da bering.",
+    webStorefrontOpenBtn: "Vitrinani ochish",
+    webStorefrontCopyBtn: "Havolani nusxalash",
+    webStorefrontCopied: (link: string) => `Havola nusxalandi: ${link}`,
+    webStorefrontCopyPrompt: "Vitrina havolasini nusxalang:",
+    webStorefrontNoUrl:
+      "Deploy manzili aniqlanmadi (PUBLIC_APP_URL yo‘q) — bu o‘zgaruvchi tuzatilmaguncha vitrina ochilmaydi.",
     instructionTitle: "Xaridorlar uchun yo‘riqnoma",
     instructionHint:
       "Botning asosiy menyusidagi «📖 Yo‘riqnoma» tugmasi. Video 50 MB dan kichik bo‘lgani ma’qul (Telegram cheklovi), MP4 formatida.",
@@ -388,6 +432,11 @@ function SettingsPage() {
   const modules = useModules();
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
+  const shopUrl = useQuery({
+    queryKey: ["shop-url"],
+    queryFn: () => getShopUrl(),
+    enabled: modules.web_storefront,
+  });
   const [adminChatId, setAdminChatId] = useState("");
   const [adminContactLink, setAdminContactLink] = useState("");
   const [saved, setSaved] = useState(false);
@@ -565,6 +614,15 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setSmartSearchSaving(false);
+    }
+  }
+
+  async function onCopyShopUrl(link: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success(tr.webStorefrontCopied(link));
+    } catch {
+      prompt(tr.webStorefrontCopyPrompt, link);
     }
   }
 
@@ -835,6 +893,35 @@ function SettingsPage() {
             </Button>
             {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
           </div>
+        ) : (
+          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+        )}
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.webStorefrontTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.webStorefrontHint}</p>
+        {modules.web_storefront ? (
+          shopUrl.data?.url ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input readOnly value={shopUrl.data.url} className="flex-1 min-w-[16rem]" />
+              <Button variant="outline" onClick={() => onCopyShopUrl(shopUrl.data!.url!)}>
+                {tr.webStorefrontCopyBtn}
+              </Button>
+              <a
+                href={shopUrl.data.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm underline text-primary"
+              >
+                {tr.webStorefrontOpenBtn}
+              </a>
+            </div>
+          ) : shopUrl.isLoading ? (
+            <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
+          ) : (
+            <p className="text-sm text-destructive">{tr.webStorefrontNoUrl}</p>
+          )
         ) : (
           <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
         )}
