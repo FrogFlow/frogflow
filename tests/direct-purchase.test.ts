@@ -82,6 +82,9 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
   let productId: string;
   let physicalProductId: string;
   let deliveryZoneId: string;
+  let variantProductId: string;
+  let variantSmallId: string;
+  let variantBigId: string;
   const orderIds: number[] = [];
 
   beforeAll(async () => {
@@ -160,6 +163,40 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     if (zoneErr || !zone) throw new Error(`не удалось создать зону доставки: ${zoneErr?.message}`);
     deliveryZoneId = zone.id;
 
+    // Товар с вариантами (Ниши, Блок D) — для проверки, что createOrderFromCart
+    // складывает две строки одной корзины (по одной на вариант) в две отдельные
+    // строки order_items с верным product_variant_id/price_snapshot/name_snapshot.
+    const { data: variantProduct, error: variantProductErr } = await s
+      .from("products")
+      .insert({
+        bot_id: botId,
+        name: `${TAG} торт с вариантами`,
+        description: "тестовый товар с вариантами",
+        keywords: "",
+        price: BASE_PRICE,
+        currency: CURRENCY,
+        category_ids: [],
+        fulfillment_kind: "physical",
+        is_active: true,
+      })
+      .select("id")
+      .single();
+    if (variantProductErr || !variantProduct)
+      throw new Error(`не удалось создать товар с вариантами: ${variantProductErr?.message}`);
+    variantProductId = variantProduct.id;
+
+    const { data: variantRows, error: variantsErr } = await s
+      .from("product_variants")
+      .insert([
+        { bot_id: botId, product_id: variantProductId, name: "1 кг", price: 1000, sort_order: 0 },
+        { bot_id: botId, product_id: variantProductId, name: "2 кг", price: 1800, sort_order: 1 },
+      ])
+      .select("id, name");
+    if (variantsErr || !variantRows || variantRows.length !== 2)
+      throw new Error(`не удалось создать варианты товара: ${variantsErr?.message}`);
+    variantSmallId = variantRows.find((v) => v.name === "1 кг")!.id;
+    variantBigId = variantRows.find((v) => v.name === "2 кг")!.id;
+
     const { error: methodErr } = await s.from("payment_methods").insert({
       bot_id: botId,
       country_code: FAKE_COUNTRY,
@@ -203,6 +240,9 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     if (deliveryZoneId) await s.from("delivery_zones").delete().eq("id", deliveryZoneId);
     if (productId) await s.from("products").delete().eq("id", productId);
     if (physicalProductId) await s.from("products").delete().eq("id", physicalProductId);
+    // Каскад по product_id (ON DELETE CASCADE, MIGRATION-53) уберёт и сами
+    // варианты — отдельно чистить product_variants не нужно.
+    if (variantProductId) await s.from("products").delete().eq("id", variantProductId);
     if (botId) await s.from("bots").delete().eq("id", botId);
     delete process.env.BOT_ID;
     delete process.env.SUPABASE_TENANT_KEY;
@@ -442,6 +482,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
         frozenPriced: {
           lines: [
             {
+              id: crypto.randomUUID(),
               productId: physicalProductId,
               name: `${TAG} торт`,
               quantity: 1,
@@ -479,6 +520,64 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
         delivery_zone_name: `${TAG} зона`,
         delivery_fee: zoneFee,
       });
+    });
+
+    /**
+     * Ниши, Блок D: товар с двумя вариантами — оба добавляются в корзину как
+     * раздельные строки (addToCart различает их по product_variant_id), и
+     * createOrderFromCart обязан сохранить это разделение в order_items:
+     * две строки, каждая со своим product_variant_id и price_snapshot
+     * варианта (не базовой цены товара), name_snapshot — имя товара со
+     * склеенным именем варианта.
+     */
+    it("товар с двумя вариантами — createOrderFromCart создаёт две строки с верными вариантами", async () => {
+      const { addToCart, createOrderFromCart, clearCart } =
+        await import("../src/lib/direct-purchase.server");
+      await clearCart({ telegram_id: TELEGRAM_ID });
+      await addToCart(
+        { telegram_id: TELEGRAM_ID, user_key: USER_KEY },
+        variantProductId,
+        variantSmallId,
+      );
+      await addToCart(
+        { telegram_id: TELEGRAM_ID, user_key: USER_KEY },
+        variantProductId,
+        variantBigId,
+      );
+
+      const order = await createOrderFromCart({
+        user: {
+          telegram_id: TELEGRAM_ID,
+          user_key: USER_KEY,
+          username: null,
+          first_name: "Тестовый покупатель",
+        },
+        countryCode: FAKE_COUNTRY,
+      });
+      expect(order).not.toBeNull();
+      orderIds.push(order!.id);
+
+      const s = await client();
+      const { data: items } = await s
+        .from("order_items")
+        .select("product_variant_id, name_snapshot, price_snapshot, quantity")
+        .eq("order_id", order!.id)
+        .order("price_snapshot");
+      expect(items).toHaveLength(2);
+      expect(items).toEqual([
+        expect.objectContaining({
+          product_variant_id: variantSmallId,
+          name_snapshot: `${TAG} торт с вариантами — 1 кг`,
+          price_snapshot: 1000,
+          quantity: 1,
+        }),
+        expect.objectContaining({
+          product_variant_id: variantBigId,
+          name_snapshot: `${TAG} торт с вариантами — 2 кг`,
+          price_snapshot: 1800,
+          quantity: 1,
+        }),
+      ]);
     });
   });
 });
