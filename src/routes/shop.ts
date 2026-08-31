@@ -28,6 +28,14 @@ function formatMoney(amount: number, currency: string): string {
   return cur === "KZT" ? `${value} ₸` : `${value} ${currency}`;
 }
 
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
 type StorefrontProduct = {
   id: string;
   name: string;
@@ -68,34 +76,182 @@ function wrapPage(title: string, bodyHtml: string, opts: WrapPageOptions): strin
   <title>${escapeHtml(title)}</title>
   ${metaTags}
   <style>
+    :root {
+      --bg: #f6f6f8;
+      --surface: #ffffff;
+      --border: #e7e7ea;
+      --text: #17171a;
+      --text-muted: #71717a;
+      --accent: #229ed9;
+      --accent-dark: #1b7fae;
+      --accent-soft: rgba(34, 158, 217, 0.1);
+      --star: #d99a1b;
+      --danger: #c0392b;
+      --danger-soft: rgba(192, 57, 43, 0.1);
+      --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+      --shadow-hover: 0 8px 20px rgba(16, 24, 40, 0.1), 0 2px 6px rgba(16, 24, 40, 0.05);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101114;
+        --surface: #18191d;
+        --border: #2a2b30;
+        --text: #eceef1;
+        --text-muted: #9a9ba3;
+        --accent-soft: rgba(34, 158, 217, 0.18);
+        --star: #e0ac3c;
+        --danger-soft: rgba(224, 92, 78, 0.18);
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        --shadow-hover: 0 10px 24px rgba(0, 0, 0, 0.45);
+      }
+    }
+    * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 72rem; margin: 0 auto; padding: 0 1.25rem 3rem; line-height: 1.5; color: #1a1a1a; background: #fafafa; }
-    header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 -1.25rem 1.5rem; padding: 1rem 1.25rem; flex-wrap: wrap; background: #fafafa; box-shadow: 0 1px 0 #e5e5e5; }
-    h1 { font-size: 1.5rem; margin: 0; }
-    h2 { font-size: 1.15rem; margin: 2rem 0 0.75rem; scroll-margin-top: 4.5rem; }
-    .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 0.6rem 1.1rem; border-radius: 0.5rem; font-weight: 600; }
-    .search { width: 100%; box-sizing: border-box; padding: 0.6rem 0.9rem; margin-bottom: 1.25rem; border: 1px solid #ddd; border-radius: 0.5rem; font-size: 0.95rem; font-family: inherit; }
-    .layout { display: flex; align-items: flex-start; gap: 2rem; }
-    .toc { position: sticky; top: 4.5rem; flex: 0 0 13rem; max-height: calc(100vh - 5.5rem); overflow-y: auto; display: flex; flex-direction: column; gap: 0.15rem; }
-    .toc a { display: flex; justify-content: space-between; gap: 0.5rem; color: #1a1a1a; text-decoration: none; font-size: 0.9rem; padding: 0.4rem 0.6rem; border-radius: 0.4rem; border-left: 2px solid transparent; }
-    .toc a:hover { background: #eee; border-left-color: #229ed9; }
-    .toc .count { color: #999; font-size: 0.8rem; }
+    body {
+      font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+      max-width: 76rem;
+      margin: 0 auto;
+      padding: 0 1.25rem 3.5rem;
+      line-height: 1.5;
+      color: var(--text);
+      background: var(--bg);
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin: 0 -1.25rem 1.75rem;
+      padding: 1.1rem 1.25rem;
+      flex-wrap: wrap;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand h1 { font-size: 1.4rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+    .brand .subtitle { margin: 0.15rem 0 0; font-size: 0.85rem; color: var(--text-muted); }
+    h2 { font-size: 1.2rem; font-weight: 700; margin: 2.25rem 0 1rem; scroll-margin-top: 4.75rem; }
+    .tg-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      padding: 0.65rem 1.2rem;
+      border-radius: 0.6rem;
+      font-weight: 600;
+      font-size: 0.92rem;
+      box-shadow: var(--shadow);
+      transition: background-color 0.15s ease, transform 0.15s ease;
+    }
+    .tg-btn:hover { background: var(--accent-dark); transform: translateY(-1px); }
+    .search {
+      width: 100%;
+      padding: 0.7rem 1rem;
+      margin-bottom: 1.5rem;
+      border: 1px solid var(--border);
+      border-radius: 0.65rem;
+      font-size: 0.95rem;
+      font-family: inherit;
+      color: var(--text);
+      background: var(--surface);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .layout { display: flex; align-items: flex-start; gap: 2.25rem; }
+    .toc {
+      position: sticky;
+      top: 4.75rem;
+      flex: 0 0 13.5rem;
+      max-height: calc(100vh - 6rem);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      padding-right: 0.25rem;
+    }
+    .toc a {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 0.5rem 0.7rem;
+      border-radius: 0.5rem;
+      border-left: 2px solid transparent;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    .toc a:hover { background: var(--accent-soft); }
+    .toc a.active { background: var(--accent-soft); border-left-color: var(--accent); color: var(--accent-dark); font-weight: 600; }
+    .toc .count {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      background: var(--border);
+      border-radius: 999px;
+      padding: 0.05rem 0.45rem;
+      flex-shrink: 0;
+    }
     .content { flex: 1; min-width: 0; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
-    .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 0.75rem; overflow: hidden; display: flex; flex-direction: column; }
-    .card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: #f0f0f0; }
-    .card.out-of-stock img { opacity: 0.5; }
-    .card-body { padding: 0.75rem 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
-    .card-name { font-weight: 600; }
-    .card-desc { font-size: 0.85rem; color: #555; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-    .card-price { margin-top: auto; font-weight: 700; }
-    .card-rating { font-size: 0.8rem; color: #b8860b; }
-    .card-oos { font-size: 0.8rem; font-weight: 600; color: #b91c1c; }
-    .empty { color: #666; padding: 2rem 0; text-align: center; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr)); gap: 1.25rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .card:hover { transform: translateY(-3px); box-shadow: var(--shadow-hover); }
+    .card .thumb { overflow: hidden; background: var(--border); aspect-ratio: 1 / 1; }
+    .card img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.3s ease; }
+    .card:hover img { transform: scale(1.04); }
+    .card.out-of-stock img { opacity: 0.45; }
+    .card-body { padding: 0.9rem 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }
+    .card-name { font-weight: 600; font-size: 0.98rem; }
+    .card-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .card-price { margin-top: auto; padding-top: 0.15rem; font-weight: 800; font-size: 1.05rem; }
+    .card-rating { font-size: 0.8rem; color: var(--star); font-weight: 600; }
+    .card-oos {
+      display: inline-block;
+      align-self: flex-start;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--danger);
+      background: var(--danger-soft);
+      border-radius: 999px;
+      padding: 0.15rem 0.55rem;
+    }
+    .empty { color: var(--text-muted); padding: 2.5rem 0; text-align: center; }
     @media (max-width: 720px) {
       .layout { flex-direction: column; }
-      .toc { position: static; flex-direction: row; flex-wrap: nowrap; max-height: none; overflow-y: visible; overflow-x: auto; gap: 0.5rem; width: 100%; padding-bottom: 0.35rem; -webkit-overflow-scrolling: touch; }
-      .toc a { flex: 0 0 auto; white-space: nowrap; background: #fff; border: 1px solid #e5e5e5; border-left: none; }
+      .toc {
+        position: static;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        max-height: none;
+        overflow-y: visible;
+        overflow-x: auto;
+        gap: 0.5rem;
+        width: 100%;
+        padding: 0 0 0.5rem;
+        -webkit-overflow-scrolling: touch;
+      }
+      .toc a { flex: 0 0 auto; white-space: nowrap; background: var(--surface); border: 1px solid var(--border); border-left: 1px solid var(--border); }
+      .toc a.active { border-color: var(--accent); }
     }
   </style>
 </head>
@@ -124,6 +280,36 @@ function wrapPage(title: string, bodyHtml: string, opts: WrapPageOptions): strin
         if (empty) empty.style.display = anyVisible ? "none" : "";
       });
     })();
+    (function () {
+      var links = Array.prototype.slice.call(document.querySelectorAll(".toc a"));
+      if (!links.length || !("IntersectionObserver" in window)) return;
+      var byId = {};
+      var targets = [];
+      links.forEach(function (a) {
+        var id = a.getAttribute("href").slice(1);
+        var el = document.getElementById(id);
+        if (!el) return;
+        byId[id] = a;
+        targets.push(el);
+      });
+      var observer = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            var link = byId[entry.target.id];
+            if (!link) return;
+            links.forEach(function (a) {
+              a.classList.remove("active");
+            });
+            link.classList.add("active");
+          });
+        },
+        { rootMargin: "-45% 0px -50% 0px" },
+      );
+      targets.forEach(function (el) {
+        observer.observe(el);
+      });
+    })();
   </script>
 </body>
 </html>`;
@@ -145,13 +331,14 @@ export const Route = createFileRoute("/shop")({
         const { resolvePrice } = await import("@/lib/pricing.server");
         const { getCachedBotUrl } = await import("@/lib/bot-url.server");
         const { appOrigin } = await import("@/lib/app-origin.server");
+        const { fetchAll } = await import("@/lib/csv");
 
         // Складской учёт — платный модуль (Кейс 4): без него stock_quantity
         // на витрине не смотрим вовсе, как и остальной код проекта
         // (bot.server.ts решает ровно так же перед показом остатка).
         const stockEnabled = await hasModule("stock");
 
-        const [{ data: shopSetting }, { data: cats }, { data: hiddenCats }, { data: products }] =
+        const [{ data: shopSetting }, { data: cats }, { data: hiddenCats }, products] =
           await Promise.all([
             supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
             supabaseAdmin
@@ -161,15 +348,24 @@ export const Route = createFileRoute("/shop")({
               .order("sort_order")
               .order("name"),
             supabaseAdmin.from("categories").select("id").eq("is_visible", false),
-            supabaseAdmin
-              .from("products")
-              .select(
-                "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity",
-              )
-              .eq("is_active", true)
-              .order("sort_order")
-              .order("name")
-              .limit(200),
+            // Раньше здесь стоял .limit(200) — на каталоге клиента с ~400
+            // товарами витрина тихо показывала только первую половину.
+            // fetchAll (тот же приём, что listProducts в админке) читает
+            // страницами, пока страница приходит полной — весь каталог,
+            // сколько бы в нём ни было товаров.
+            fetchAll<StorefrontProduct>(
+              (from, to) =>
+                supabaseAdmin
+                  .from("products")
+                  .select(
+                    "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity",
+                  )
+                  .eq("is_active", true)
+                  .order("sort_order")
+                  .order("name")
+                  .range(from, to),
+              "товары витрины",
+            ),
           ]);
 
         const shopName = shopSetting?.value?.trim() || "Магазин";
@@ -178,7 +374,7 @@ export const Route = createFileRoute("/shop")({
         // Товар скрытой категории не должен всплывать в витрине — тот же
         // фильтр, что использует поиск в боте (Блок 4.5 кейса 2).
         const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
-        const visibleProducts = ((products ?? []) as StorefrontProduct[]).filter((p) => {
+        const visibleProducts = products.filter((p) => {
           const catIds = (p.category_ids as string[] | null) ?? [];
           return catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
         });
@@ -201,7 +397,7 @@ export const Route = createFileRoute("/shop")({
           const oosHtml = outOfStock ? `<div class="card-oos">Нет в наличии</div>` : "";
           const nameForSearch = escapeHtml(p.name.toLowerCase());
           return `<div class="card${outOfStock ? " out-of-stock" : ""}" data-name="${nameForSearch}">
-            ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(p.name)}" loading="lazy" />` : ""}
+            <div class="thumb">${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(p.name)}" loading="lazy" />` : ""}</div>
             <div class="card-body">
               <div class="card-name">${escapeHtml(p.name)}</div>
               ${p.description ? `<div class="card-desc">${escapeHtml(p.description)}</div>` : ""}
@@ -280,9 +476,17 @@ export const Route = createFileRoute("/shop")({
               /><div id="shop-search-empty" class="empty" style="display:none">Ничего не найдено.</div>`
             : "";
 
+        const productCountLabel =
+          visibleProducts.length > 0
+            ? `${visibleProducts.length} ${pluralRu(visibleProducts.length, "товар", "товара", "товаров")} в каталоге`
+            : "";
+
         const body =
           `<header>
-            <h1>${escapeHtml(shopName)}</h1>
+            <div class="brand">
+              <h1>${escapeHtml(shopName)}</h1>
+              ${productCountLabel ? `<p class="subtitle">${escapeHtml(productCountLabel)}</p>` : ""}
+            </div>
             ${botUrl ? `<a class="tg-btn" href="${escapeHtml(botUrl)}">Открыть в Telegram →</a>` : ""}
           </header>` +
           searchHtml +
