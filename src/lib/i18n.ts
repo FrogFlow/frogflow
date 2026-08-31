@@ -42,6 +42,12 @@ const messages: Dictionary = {
     en: "Payment details",
     uz: "To‘lov ma’lumotlari",
   },
+  deliveryZones: {
+    ru: "Зоны доставки",
+    kk: "Жеткізу аймақтары",
+    en: "Delivery zones",
+    uz: "Yetkazib berish zonalari",
+  },
   settings: { ru: "Настройки", kk: "Баптаулар", en: "Settings", uz: "Sozlamalar" },
   catalogGroup: { ru: "Каталог", kk: "Каталог", en: "Catalog", uz: "Katalog" },
   paymentGroup: { ru: "Оплата", kk: "Төлем", en: "Payment", uz: "To‘lov" },

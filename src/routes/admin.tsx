@@ -95,7 +95,8 @@ function AdminLayout() {
                 label={t("paymentGroup", locale)}
                 active={
                   pathname.startsWith("/admin/payment-methods") ||
-                  pathname.startsWith("/admin/robokassa")
+                  pathname.startsWith("/admin/robokassa") ||
+                  pathname.startsWith("/admin/delivery-zones")
                 }
               >
                 <GroupLink to="/admin/payment-methods" locale={locale}>
@@ -103,6 +104,9 @@ function AdminLayout() {
                 </GroupLink>
                 <GroupLink to="/admin/robokassa" locked={!modules.robokassa} locale={locale}>
                   Robokassa
+                </GroupLink>
+                <GroupLink to="/admin/delivery-zones" locale={locale}>
+                  {t("deliveryZones", locale)}
                 </GroupLink>
               </GroupNav>
 

@@ -147,7 +147,9 @@ describe.skipIf(!ready)("sendFulfillmentReminders (нужна настоящая
       .select("fulfillment_reminder_sent_at")
       .eq("id", orderId)
       .single();
-    expect(afterSecond?.fulfillment_reminder_sent_at).toBe(afterFirst?.fulfillment_reminder_sent_at);
+    expect(afterSecond?.fulfillment_reminder_sent_at).toBe(
+      afterFirst?.fulfillment_reminder_sent_at,
+    );
     expect(second.checked).toBe(0); // заказ больше не попадает в выборку — sent_at уже не null
   });
 

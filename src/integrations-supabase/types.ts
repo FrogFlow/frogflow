@@ -1483,6 +1483,10 @@ export type Database = {
           paid_amount: number;
           // MIGRATION-51. Идемпотентность крона напоминания о fulfillment_at.
           fulfillment_reminder_sent_at: string | null;
+          // MIGRATION-52. Выбранная зона доставки и её цена (снимок).
+          delivery_zone_id: string | null;
+          delivery_zone_name: string | null;
+          delivery_fee: number;
         };
         Insert: {
           customer_email?: string | null;
@@ -1523,6 +1527,9 @@ export type Database = {
           fulfillment_note?: string | null;
           paid_amount?: number;
           fulfillment_reminder_sent_at?: string | null;
+          delivery_zone_id?: string | null;
+          delivery_zone_name?: string | null;
+          delivery_fee?: number;
         };
         Update: {
           customer_email?: string | null;
@@ -1563,6 +1570,9 @@ export type Database = {
           fulfillment_note?: string | null;
           paid_amount?: number;
           fulfillment_reminder_sent_at?: string | null;
+          delivery_zone_id?: string | null;
+          delivery_zone_name?: string | null;
+          delivery_fee?: number;
         };
         Relationships: [
           {
@@ -1612,6 +1622,45 @@ export type Database = {
           sort_order?: number;
         };
         Relationships: [];
+      };
+      // MIGRATION-52.
+      delivery_zones: {
+        Row: {
+          id: string;
+          bot_id: string;
+          name: string;
+          price: number;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          name: string;
+          price?: number;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          name?: string;
+          price?: number;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "delivery_zones_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       ig_keywords: {
         Row: {
