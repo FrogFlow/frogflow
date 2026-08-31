@@ -916,6 +916,49 @@ export type Database = {
           },
         ];
       };
+      // MIGRATION-53.
+      product_variants: {
+        Row: {
+          id: string;
+          bot_id: string;
+          product_id: string;
+          name: string;
+          price: number;
+          sort_order: number;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          product_id: string;
+          name: string;
+          price: number;
+          sort_order?: number;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          product_id?: string;
+          name?: string;
+          price?: number;
+          sort_order?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "product_variants_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "product_variants_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       zernio_automations: {
         Row: {
           id: string;
@@ -1067,6 +1110,8 @@ export type Database = {
           product_id: string;
           quantity: number;
           telegram_id: number;
+          // MIGRATION-53.
+          product_variant_id: string | null;
         };
         Insert: {
           bot_id?: string | null;
@@ -1076,6 +1121,7 @@ export type Database = {
           product_id: string;
           quantity?: number;
           telegram_id: number;
+          product_variant_id?: string | null;
         };
         Update: {
           bot_id?: string | null;
@@ -1085,6 +1131,7 @@ export type Database = {
           product_id?: string;
           quantity?: number;
           telegram_id?: number;
+          product_variant_id?: string | null;
         };
         Relationships: [
           {
@@ -1100,6 +1147,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "bot_users";
             referencedColumns: ["telegram_id"];
+          },
+          {
+            foreignKeyName: "cart_items_product_variant_id_fkey";
+            columns: ["product_variant_id"];
+            isOneToOne: false;
+            referencedRelation: "product_variants";
+            referencedColumns: ["id"];
           },
         ];
       };
@@ -1364,6 +1418,8 @@ export type Database = {
           price_snapshot: number;
           product_id: string | null;
           quantity: number;
+          // MIGRATION-53.
+          product_variant_id: string | null;
         };
         Insert: {
           material_files_by_lang?: Json;
@@ -1383,6 +1439,7 @@ export type Database = {
           price_snapshot: number;
           product_id?: string | null;
           quantity?: number;
+          product_variant_id?: string | null;
         };
         Update: {
           material_files_by_lang?: Json;
@@ -1402,6 +1459,7 @@ export type Database = {
           price_snapshot?: number;
           product_id?: string | null;
           quantity?: number;
+          product_variant_id?: string | null;
         };
         Relationships: [
           {
@@ -1416,6 +1474,13 @@ export type Database = {
             columns: ["product_id"];
             isOneToOne: false;
             referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "order_items_product_variant_id_fkey";
+            columns: ["product_variant_id"];
+            isOneToOne: false;
+            referencedRelation: "product_variants";
             referencedColumns: ["id"];
           },
         ];

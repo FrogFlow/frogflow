@@ -31,6 +31,7 @@ type MaterialFile = {
   file_name: string | null;
   sort_order: number;
 };
+type Variant = { id?: string; name: string; price: number; sort_order: number };
 type Product = {
   id?: string;
   category_id: string | null;
@@ -50,6 +51,7 @@ type Product = {
   file_url_kz?: string | null;
   product_images?: Img[];
   product_material_files?: (MaterialFile & { language: string })[];
+  product_variants?: Variant[];
   country_prices?: Record<string, number>;
   stock_quantity?: number | null;
   fulfillment_kind?: "digital" | "physical";
@@ -190,6 +192,12 @@ const copy: Record<
     fulfillmentKindPhysical: string;
     leadTimeDaysLabel: string;
     leadTimeDaysPlaceholder: string;
+    variantsTitle: string;
+    variantsHint: string;
+    variantNamePlaceholder: string;
+    variantPricePlaceholder: string;
+    addVariantBtn: string;
+    removeVariantBtn: string;
     photosLabel: string;
     countryPricesTitle: string;
     countryPricesHint: string;
@@ -252,6 +260,13 @@ const copy: Record<
     fulfillmentKindPhysical: "Физический (изготавливается)",
     leadTimeDaysLabel: "Срок изготовления, дней",
     leadTimeDaysPlaceholder: "пусто = в наличии",
+    variantsTitle: "Варианты",
+    variantsHint:
+      "Например «1 кг» и «2 кг» с разной ценой — покупатель выбирает вариант вместо базовой цены выше.",
+    variantNamePlaceholder: "Название варианта",
+    variantPricePlaceholder: "Цена",
+    addVariantBtn: "+ Добавить вариант",
+    removeVariantBtn: "Убрать",
     photosLabel: "Фото (можно несколько)",
     countryPricesTitle: "Цены для разных стран (вручную)",
     countryPricesHint:
@@ -315,6 +330,13 @@ const copy: Record<
     fulfillmentKindPhysical: "Физикалық (дайындалады)",
     leadTimeDaysLabel: "Дайындау мерзімі, күн",
     leadTimeDaysPlaceholder: "бос = бар",
+    variantsTitle: "Нұсқалар",
+    variantsHint:
+      "Мысалы «1 кг» және «2 кг» әртүрлі бағамен — сатып алушы жоғарыдағы негізгі баға орнына нұсқа таңдайды.",
+    variantNamePlaceholder: "Нұсқа атауы",
+    variantPricePlaceholder: "Баға",
+    addVariantBtn: "+ Нұсқа қосу",
+    removeVariantBtn: "Жою",
     photosLabel: "Фото (бірнешеуін таңдауға болады)",
     countryPricesTitle: "Түрлі елдерге бағалар (қолмен)",
     countryPricesHint: "Өрісті бос қалдырсаңыз — негізгі бағаның автоматты айырбасы жұмыс істейді.",
@@ -376,6 +398,13 @@ const copy: Record<
     fulfillmentKindPhysical: "Physical (made to order)",
     leadTimeDaysLabel: "Lead time, days",
     leadTimeDaysPlaceholder: "empty = in stock",
+    variantsTitle: "Variants",
+    variantsHint:
+      'E.g. "1 kg" and "2 kg" at different prices — the buyer picks a variant instead of the base price above.',
+    variantNamePlaceholder: "Variant name",
+    variantPricePlaceholder: "Price",
+    addVariantBtn: "+ Add variant",
+    removeVariantBtn: "Remove",
     photosLabel: "Photos (multiple allowed)",
     countryPricesTitle: "Prices by country (manual)",
     countryPricesHint: "Leave a field empty to use automatic conversion from the base price.",
@@ -438,6 +467,13 @@ const copy: Record<
     fulfillmentKindPhysical: "Jismoniy (tayyorlanadi)",
     leadTimeDaysLabel: "Tayyorlash muddati, kun",
     leadTimeDaysPlaceholder: "bo‘sh = mavjud",
+    variantsTitle: "Variantlar",
+    variantsHint:
+      "Masalan «1 kg» va «2 kg» turli narxda — xaridor yuqoridagi asosiy narx o‘rniga variant tanlaydi.",
+    variantNamePlaceholder: "Variant nomi",
+    variantPricePlaceholder: "Narxi",
+    addVariantBtn: "+ Variant qo‘shish",
+    removeVariantBtn: "O‘chirish",
     photosLabel: "Fotolar (bir nechtasi mumkin)",
     countryPricesTitle: "Mamlakatlar bo‘yicha narxlar (qo‘lda)",
     countryPricesHint:
@@ -549,6 +585,7 @@ function ProductsPage() {
   const [catQuery, setCatQuery] = useState("");
   const [editing, setEditing] = useState<Product | null>(null);
   const [images, setImages] = useState<Img[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
   // Какие языковые слоты сейчас показаны в форме, и файлы/загрузка для
   // каждого — было два фиксированных поля (RU/KZ), теперь любые из 4 языков.
   const [materialLangs, setMaterialLangs] = useState<Locale[]>(["ru", "kk"]);
@@ -580,6 +617,7 @@ function ProductsPage() {
   function startNew() {
     setEditing({ ...empty, fulfillment_kind: defaultFulfillmentKind });
     setImages([]);
+    setVariants([]);
     setMaterialLangs(["ru", "kk"]);
     setMaterialFiles({ ...emptyMaterialsByLang });
   }
@@ -611,6 +649,11 @@ function ProductsPage() {
       .slice()
       .sort((a: Img, b: Img) => a.sort_order - b.sort_order);
     setImages(imgs);
+
+    const vars = (p.product_variants ?? [])
+      .slice()
+      .sort((a: Variant, b: Variant) => a.sort_order - b.sort_order);
+    setVariants(vars);
 
     const materialRows = (p.product_material_files ?? []) as (MaterialFile & {
       language: string;
@@ -731,10 +774,12 @@ function ProductsPage() {
           stock_quantity: editing.stock_quantity,
           fulfillment_kind: editing.fulfillment_kind ?? "digital",
           lead_time_days: editing.lead_time_days,
+          variants: variants.map((v) => ({ name: v.name, price: Number(v.price) })),
         },
       });
       setEditing(null);
       setImages([]);
+      setVariants([]);
       setMaterialLangs(["ru", "kk"]);
       setMaterialFiles({ ...emptyMaterialsByLang });
       qc.invalidateQueries({ queryKey: ["products"] });
@@ -837,14 +882,16 @@ function ProductsPage() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label>{tr.price}</Label>
-              <Input
-                type="number"
-                value={editing.price}
-                onChange={(e) => setEditing({ ...editing, price: Number(e.target.value) })}
-              />
-            </div>
+            {variants.length === 0 && (
+              <div className="space-y-2">
+                <Label>{tr.price}</Label>
+                <Input
+                  type="number"
+                  value={editing.price}
+                  onChange={(e) => setEditing({ ...editing, price: Number(e.target.value) })}
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label>{tr.currency}</Label>
               <Input
@@ -908,6 +955,60 @@ function ProductsPage() {
                 />
               </div>
             )}
+          </div>
+
+          <div className="space-y-2 pt-4 border-t">
+            <div className="flex items-center justify-between gap-2">
+              <Label>{tr.variantsTitle}</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setVariants([...variants, { name: "", price: 0, sort_order: variants.length }])
+                }
+              >
+                {tr.addVariantBtn}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">{tr.variantsHint}</p>
+            {variants.map((v, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <Input
+                  className="flex-1"
+                  value={v.name}
+                  placeholder={tr.variantNamePlaceholder}
+                  onChange={(e) =>
+                    setVariants(
+                      variants.map((row, i) =>
+                        i === idx ? { ...row, name: e.target.value } : row,
+                      ),
+                    )
+                  }
+                />
+                <Input
+                  type="number"
+                  className="w-32"
+                  value={v.price}
+                  placeholder={tr.variantPricePlaceholder}
+                  onChange={(e) =>
+                    setVariants(
+                      variants.map((row, i) =>
+                        i === idx ? { ...row, price: Number(e.target.value) } : row,
+                      ),
+                    )
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setVariants(variants.filter((_, i) => i !== idx))}
+                >
+                  {tr.removeVariantBtn}
+                </Button>
+              </div>
+            ))}
           </div>
 
           <div className="space-y-2">

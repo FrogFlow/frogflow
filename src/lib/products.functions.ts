@@ -20,7 +20,7 @@ export const listProducts = createServerFn({ method: "GET" }).handler(async () =
       s
         .from("products")
         .select(
-          "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order), categories(name)",
+          "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order), product_variants(id, name, price, sort_order), categories(name)",
         )
         .order("created_at", { ascending: false })
         .range(from, to),
@@ -54,7 +54,7 @@ export const getProduct = createServerFn({ method: "GET" })
     const { data: prod, error } = await s
       .from("products")
       .select(
-        "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order)",
+        "*, product_images(id, image_path, sort_order), product_material_files(id, language, file_path, file_name, sort_order), product_variants(id, name, price, sort_order)",
       )
       .eq("id", data.id)
       .single();
@@ -102,6 +102,13 @@ const SaveInput = z.object({
     .partial()
     .default({}),
   country_prices: z.record(z.number()).optional().default({}),
+  // Ниши (Блок D) — простой список вариантов товара («1 кг» / «2 кг»),
+  // заменяется целиком при сохранении, как image_paths/material_files.
+  // Пустой массив = товар без вариантов, цена берётся из products.price,
+  // как и раньше.
+  variants: z
+    .array(z.object({ name: z.string().min(1).max(120), price: z.number().min(0) }))
+    .default([]),
 });
 
 export const saveProduct = createServerFn({ method: "POST" })
@@ -226,6 +233,35 @@ export const saveProduct = createServerFn({ method: "POST" })
         .in(
           "id",
           oldMaterials.map((r) => r.id),
+        );
+      if (error) throw new Error(error.message);
+    }
+
+    // Replace variants (Ниши, Блок D) — тот же приём: вставить новые, потом
+    // удалить старые. cart_items/order_items, ссылавшиеся на удалённый
+    // вариант, теряют ссылку (ON DELETE SET NULL, MIGRATION-53) — снимок в
+    // order_items.name_snapshot/price_snapshot их не касается.
+    const { data: oldVariants } = await s
+      .from("product_variants")
+      .select("id")
+      .eq("product_id", productId);
+    if (data.variants.length) {
+      const variantRows = data.variants.map((v, idx) => ({
+        product_id: productId!,
+        name: v.name,
+        price: v.price,
+        sort_order: idx,
+      }));
+      const { error } = await s.from("product_variants").insert(variantRows);
+      if (error) throw new Error(error.message);
+    }
+    if (oldVariants?.length) {
+      const { error } = await s
+        .from("product_variants")
+        .delete()
+        .in(
+          "id",
+          oldVariants.map((r) => r.id),
         );
       if (error) throw new Error(error.message);
     }
