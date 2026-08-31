@@ -172,7 +172,13 @@ function wrapPage(title: string, bodyHtml: string, opts: WrapPageOptions): strin
       flex-direction: column;
       gap: 0.15rem;
       padding-right: 0.25rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
+    .toc::-webkit-scrollbar { width: 0.4rem; height: 0.4rem; }
+    .toc::-webkit-scrollbar-track { background: transparent; }
+    .toc::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+    .toc::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
     .toc a {
       display: flex;
       justify-content: space-between;
