@@ -38,6 +38,7 @@ export type DirectMode =
   | "awaiting_country"
   | "awaiting_fulfillment_type"
   | "awaiting_fulfillment_date"
+  | "awaiting_delivery_zone"
   | "awaiting_address"
   | "awaiting_fulfillment_note"
   | "awaiting_proof"
@@ -243,6 +244,43 @@ export function matchFulfillmentType(text: string): "pickup" | "delivery" | null
   if (!raw) return null;
   if (PICKUP_WORDS.some((w) => raw.includes(w))) return "pickup";
   if (DELIVERY_WORDS.some((w) => raw.includes(w))) return "delivery";
+  return null;
+}
+
+export type ZoneOption = { id: string; name: string };
+
+/**
+ * Понять, какую зону доставки назвал покупатель (Ниши, Блок B) — тот же
+ * приём, что и matchCountry: порядковый номер из показанного списка или
+ * название целиком/его начало. Нужен и когда зон больше трёх (список без
+ * кнопок, как у стран), и как текстовый fallback, когда зон ≤3 и они
+ * показаны кнопками — покупатель мог напечатать название вместо тапа.
+ */
+export function matchZone(text: string, options: ZoneOption[]): ZoneOption | null {
+  const raw = text.trim().toLowerCase();
+  if (!raw) return null;
+
+  const ordinal = raw.match(/^(\d{1,2})\s*[.)]?$/);
+  if (ordinal) {
+    const index = Number(ordinal[1]) - 1;
+    return options[index] ?? null;
+  }
+
+  const strip = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+
+  const needle = strip(raw);
+  if (!needle) return null;
+
+  for (const option of options) {
+    const name = strip(option.name);
+    if (!name) continue;
+    if (name === needle) return option;
+    if (needle.length >= 3 && name.startsWith(needle)) return option;
+  }
   return null;
 }
 

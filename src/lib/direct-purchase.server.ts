@@ -109,6 +109,15 @@ export type DirectState = {
   checkout_fulfillment_type?: "pickup" | "delivery";
   /** ISO YYYY-MM-DD. */
   checkout_fulfillment_at?: string;
+  /**
+   * Выбранная зона доставки (Ниши, Блок B) — id и снимок имени/цены на
+   * момент выбора. Заводится только если у продавца есть хоть одна
+   * активная зона; иначе шаг пропускается целиком (обратная
+   * совместимость), и эти поля остаются не заведены.
+   */
+  checkout_delivery_zone_id?: string;
+  checkout_delivery_zone_name?: string;
+  checkout_delivery_fee?: number;
   /** Только при checkout_fulfillment_type === "delivery". */
   checkout_fulfillment_address?: string;
   checkout_fulfillment_note?: string;
@@ -132,6 +141,9 @@ const FLOW_KEYS = [
   "frozen_cart",
   "checkout_fulfillment_type",
   "checkout_fulfillment_at",
+  "checkout_delivery_zone_id",
+  "checkout_delivery_zone_name",
+  "checkout_delivery_fee",
   "checkout_fulfillment_address",
   "checkout_fulfillment_note",
 ] as const;
@@ -556,6 +568,40 @@ const countryPromptCopy: Record<Locale, { question: string; answerHint: string }
 /** Список стран, пронумерованный — покупатель отвечает цифрой или названием. */
 export function renderCountryPrompt(options: CountryOption[], locale: Locale = "ru"): string {
   const copy = countryPromptCopy[locale];
+  const lines = options.map((option, index) => `${index + 1}. ${option.name}`);
+  return `${copy.question}\n\n${lines.join("\n")}\n\n${copy.answerHint}`;
+}
+
+const deliveryZonePromptCopy: Record<Locale, { question: string; answerHint: string }> = {
+  ru: {
+    question: "В какой район доставить?",
+    answerHint: "Ответьте номером или названием.",
+  },
+  kk: {
+    question: "Қай ауданға жеткізу керек?",
+    answerHint: "Нөмірімен немесе атауымен жауап беріңіз.",
+  },
+  en: {
+    question: "Which delivery zone?",
+    answerHint: "Reply with the number or the name.",
+  },
+  uz: {
+    question: "Qaysi tumanga yetkazib berish kerak?",
+    answerHint: "Raqami yoki nomi bilan javob bering.",
+  },
+};
+
+/**
+ * Список зон доставки, пронумерованный (Ниши, Блок B) — тот же
+ * numbered-list-с-текстовым-fallback приём, что и у стран (matchCountry/
+ * renderCountryPrompt), переиспользован для более чем трёх зон, куда
+ * кнопки Zernio (лимит — три на сообщение) уже не помещаются.
+ */
+export function renderDeliveryZonePrompt(
+  options: Array<{ name: string }>,
+  locale: Locale = "ru",
+): string {
+  const copy = deliveryZonePromptCopy[locale];
   const lines = options.map((option, index) => `${index + 1}. ${option.name}`);
   return `${copy.question}\n\n${lines.join("\n")}\n\n${copy.answerHint}`;
 }
@@ -1327,6 +1373,14 @@ export async function createOrderFromCart(params: {
     address?: string | null;
     note?: string | null;
   };
+  /**
+   * Зона доставки (Ниши, Блок B) — выбрана на том же шаге, что и адрес,
+   * до показа реквизитов (её цена уже сложена в amount ниже — см.
+   * sendDirectPaymentDetails, где total замораживается ДО createOrderFromCart).
+   * Не передана — значит зоны у продавца не настроены (обратная
+   * совместимость) или получение — самовывоз.
+   */
+  deliveryZone?: { id: string; name: string; fee: number };
 }): Promise<{
   id: number;
   order_no: number | null;
@@ -1384,6 +1438,9 @@ export async function createOrderFromCart(params: {
       fulfillment_at: params.fulfillment?.at ?? null,
       fulfillment_address: params.fulfillment?.address ?? null,
       fulfillment_note: params.fulfillment?.note ?? null,
+      delivery_zone_id: params.deliveryZone?.id ?? null,
+      delivery_zone_name: params.deliveryZone?.name ?? null,
+      delivery_fee: params.deliveryZone?.fee ?? 0,
     })
     .select("id, order_no, fulfillment_kind")
     .single();

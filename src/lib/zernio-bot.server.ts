@@ -139,6 +139,10 @@ interface DirectCopy {
   fulfillmentDatePrompt: (minDate: string) => string;
   fulfillmentDateInvalid: string;
   fulfillmentDateTooEarly: (minDate: string) => string;
+  /** Заголовок над кнопками зон, когда их ≤3 (Ниши, Блок B) — нумерованный список для остальных случаев печатает renderDeliveryZonePrompt. */
+  deliveryZonePrompt: string;
+  /** Промах текстового fallback на шаге выбора зоны — тот же приём, что countryHint. */
+  deliveryZoneHint: string;
   fulfillmentAddressPrompt: string;
   fulfillmentNotePrompt: string;
   fulfillmentNoteSkipBtn: string;
@@ -248,6 +252,9 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentDateInvalid: "Не разобрал дату. Формат — ДД.ММ.ГГГГ, например «05.09.2026».",
     fulfillmentDateTooEarly: (minDate) =>
       `Раньше ${minDate} не получится — столько нужно на изготовление. Напишите другую дату.`,
+    deliveryZonePrompt: "Выберите район доставки:",
+    deliveryZoneHint:
+      "Не понял район доставки. Ответьте номером из списка или названием — например «1» или «Центр».",
     fulfillmentAddressPrompt: "Куда доставить? Напишите адрес.",
     fulfillmentNotePrompt:
       "Комментарий к заказу (например, надпись на торте)? Если не нужен — нажмите «Без комментария».",
@@ -392,6 +399,9 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentDateInvalid: "Күнді таный алмадым. Формат — КК.АА.ЖЖЖЖ, мысалы «05.09.2026».",
     fulfillmentDateTooEarly: (minDate) =>
       `${minDate}-ден ерте болмайды — дайындауға сонша уақыт керек. Басқа күн жазыңыз.`,
+    deliveryZonePrompt: "Жеткізу ауданын таңдаңыз:",
+    deliveryZoneHint:
+      "Жеткізу ауданын түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Орталық».",
     fulfillmentAddressPrompt: "Қайда жеткізу керек? Мекенжайды жазыңыз.",
     fulfillmentNotePrompt:
       "Тапсырысқа түсініктеме (мысалы, тортқа жазу)? Қажет болмаса — «Түсініктемесіз» батырмасын басыңыз.",
@@ -534,6 +544,9 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentDateInvalid: 'Couldn\'t read that date. Format is DD.MM.YYYY, e.g. "05.09.2026".',
     fulfillmentDateTooEarly: (minDate) =>
       `Not earlier than ${minDate} — that's how long it takes to make. Please send another date.`,
+    deliveryZonePrompt: "Pick a delivery zone:",
+    deliveryZoneHint:
+      'Didn\'t recognize that delivery zone. Reply with the number from the list or the name — e.g. "1" or "Downtown".',
     fulfillmentAddressPrompt: "Where should we deliver? Send the address.",
     fulfillmentNotePrompt:
       'Any note for the order (e.g. a cake inscription)? If not needed, tap "No note".',
@@ -675,6 +688,9 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentDateInvalid: "Sanani tanib bo‘lmadi. Format — KK.OO.YYYY, masalan «05.09.2026».",
     fulfillmentDateTooEarly: (minDate) =>
       `${minDate} dan erta bo‘lmaydi — tayyorlash uchun shuncha vaqt kerak. Boshqa sana yozing.`,
+    deliveryZonePrompt: "Yetkazib berish zonasini tanlang:",
+    deliveryZoneHint:
+      "Yetkazib berish zonasini tushunmadim. Ro‘yxatdagi raqami yoki nomi bilan javob bering — masalan «1» yoki «Markaz».",
     fulfillmentAddressPrompt: "Qayerga yetkazib berish kerak? Manzilni yozing.",
     fulfillmentNotePrompt:
       "Buyurtmaga izoh (masalan, tortga yozuv)? Kerak bo‘lmasa — «Izohsiz» tugmasini bosing.",
@@ -1402,6 +1418,28 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     }
     if (features.checkout && postbackPayload === "fulfillnote:skip") {
       await finishFulfillmentAndShowPayment(conversationId, accountId, user, null);
+      return;
+    }
+    // Зона доставки (Ниши, Блок B) — тап по кнопке, когда зон ≤3.
+    if (features.checkout && postbackPayload.startsWith("zone:")) {
+      const zoneId = postbackPayload.slice("zone:".length);
+      const flow = await import("./direct-purchase.server");
+      const { activeDeliveryZones } = await import("./fulfillment.server");
+      const zones = await activeDeliveryZones();
+      const zone = zones.find((z) => z.id === zoneId);
+      if (!zone) {
+        // Зона исчезла/скрыта между показом кнопок и тапом — переспрашиваем шаг.
+        await proceedToDeliveryZoneOrAddress(conversationId, accountId, user);
+        return;
+      }
+      await flow.setDirectState(user.user_key, {
+        checkout_delivery_zone_id: zone.id,
+        checkout_delivery_zone_name: zone.name,
+        checkout_delivery_fee: Number(zone.price),
+        mode: "awaiting_address",
+      });
+      const locale = flow.directLocale(flow.readDirectState(user.state));
+      await reply(user, conversationId, accountId, directCopy[locale].fulfillmentAddressPrompt);
       return;
     }
     if (features.catalog && postbackPayload === "CATALOG") {
@@ -2278,8 +2316,9 @@ async function sendDirectPaymentDetails(params: {
 }) {
   const { conversationId, accountId, user, country, remembered } = params;
   const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
   const say = (message: string) => reply(user, conversationId, accountId, message);
-  const copy = directCopy[flow.directLocale(flow.readDirectState(user.state))];
+  const copy = directCopy[flow.directLocale(state)];
 
   const requisites = await flow.paymentInstructionsFor(country.code);
   if (!requisites) {
@@ -2299,7 +2338,7 @@ async function sendDirectPaymentDetails(params: {
   // должны совпадать по валюте, иначе он платит непонятно сколько.
   const {
     lines: pricedLines,
-    total: amount,
+    total: cartTotal,
     currency,
     mixedCurrency,
   } = await flow.priceCart(cart, country.code);
@@ -2308,6 +2347,11 @@ async function sendDirectPaymentDetails(params: {
     await say(copy.mixedCurrencySplit);
     return;
   }
+  // Комиссия зоны доставки (Ниши, Блок B) — обязательно ДО заморозки: сумма,
+  // которую видит и по которой платит покупатель, должна совпадать с той,
+  // что попадёт в orders.total через createOrderFromCart (см. frozen_cart).
+  const deliveryFee = state.checkout_delivery_fee ?? 0;
+  const amount = cartTotal + deliveryFee;
 
   await flow.setDirectState(user.user_key, {
     mode: "awaiting_proof",
@@ -2402,6 +2446,45 @@ async function askFulfillmentDate(
     accountId,
     directCopy[locale].fulfillmentDatePrompt(isoDateToDisplay(minIso)),
   );
+}
+
+/**
+ * Шаг выбора зоны доставки (Ниши, Блок B) — между датой и адресом, только
+ * когда выбрана доставка. Если у продавца нет ни одной активной зоны — шаг
+ * пропускается целиком, сразу спрашиваем адрес (обратная совместимость).
+ * ≤3 зоны — постбэк-кнопки (лимит Zernio на кнопку в сообщении), больше —
+ * тот же numbered-list-с-текстовым-fallback, что уже решает точно такую же
+ * проблему для выбора страны (matchCountry/renderCountryPrompt).
+ */
+async function proceedToDeliveryZoneOrAddress(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+) {
+  const flow = await import("./direct-purchase.server");
+  const { activeDeliveryZones } = await import("./fulfillment.server");
+  const locale = flow.directLocale(flow.readDirectState(user.state));
+  const copy = directCopy[locale];
+  const zones = await activeDeliveryZones();
+
+  if (!zones.length) {
+    await flow.setDirectState(user.user_key, { mode: "awaiting_address" });
+    await reply(user, conversationId, accountId, copy.fulfillmentAddressPrompt);
+    return;
+  }
+
+  await flow.setDirectState(user.user_key, { mode: "awaiting_delivery_zone" });
+  if (zones.length <= 3) {
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      copy.deliveryZonePrompt,
+      zones.map((z) => ({ type: "postback" as const, title: z.name, payload: `zone:${z.id}` })),
+    );
+  } else {
+    await reply(user, conversationId, accountId, flow.renderDeliveryZonePrompt(zones, locale));
+  }
 }
 
 /**
@@ -2556,6 +2639,7 @@ export async function handleZernioAccountDisconnected(payload: {
 const FULFILLMENT_STEP_MODES = new Set<DirectMode>([
   "awaiting_fulfillment_type",
   "awaiting_fulfillment_date",
+  "awaiting_delivery_zone",
   "awaiting_address",
   "awaiting_fulfillment_note",
 ]);
@@ -2571,8 +2655,14 @@ async function handlePurchaseFlow(params: {
 }): Promise<boolean> {
   const { conversationId, accountId, user, text, attachmentUrl, answersEverything } = params;
   const flow = await import("./direct-purchase.server");
-  const { classifyIncoming, isCancel, isPaymentComplaint, matchDirectCommand, matchLocalePick } =
-    await import("./direct-flow");
+  const {
+    classifyIncoming,
+    isCancel,
+    isPaymentComplaint,
+    matchDirectCommand,
+    matchLocalePick,
+    matchZone,
+  } = await import("./direct-flow");
   const state = flow.readDirectState(user.state);
   const locale = flow.directLocale(state);
   const copy = directCopy[locale];
@@ -2859,6 +2949,18 @@ async function handlePurchaseFlow(params: {
               note: claim.checkout_fulfillment_note,
             }
           : undefined,
+        // Зона доставки (Ниши, Блок B) — та же claim-запись несёт её, если
+        // шаг awaiting_delivery_zone был пройден (см. комментарий выше про
+        // fulfillment). Её цена уже сложена в frozen_cart.total выше по
+        // цепочке (sendDirectPaymentDetails), здесь только сама зона — для
+        // снимка delivery_zone_id/_name в orders.
+        deliveryZone: claim.checkout_delivery_zone_id
+          ? {
+              id: claim.checkout_delivery_zone_id,
+              name: claim.checkout_delivery_zone_name ?? "",
+              fee: claim.checkout_delivery_fee ?? 0,
+            }
+          : undefined,
       });
     } catch (error) {
       console.error("[zernio-bot] failed to create direct order", error);
@@ -3087,11 +3189,8 @@ async function handlePurchaseFlow(params: {
       return true;
     }
     if (state.checkout_fulfillment_type === "delivery") {
-      await flow.setDirectState(user.user_key, {
-        checkout_fulfillment_at: iso,
-        mode: "awaiting_address",
-      });
-      await say(copy.fulfillmentAddressPrompt);
+      await flow.setDirectState(user.user_key, { checkout_fulfillment_at: iso });
+      await proceedToDeliveryZoneOrAddress(conversationId, accountId, user);
     } else {
       await flow.setDirectState(user.user_key, {
         checkout_fulfillment_at: iso,
@@ -3101,6 +3200,31 @@ async function handlePurchaseFlow(params: {
         { type: "postback", title: copy.fulfillmentNoteSkipBtn, payload: "fulfillnote:skip" },
       ]);
     }
+    return true;
+  }
+
+  if (state.mode === "awaiting_delivery_zone") {
+    const { activeDeliveryZones } = await import("./fulfillment.server");
+    const zones = await activeDeliveryZones();
+    const chosen = matchZone(text, zones);
+    if (!chosen) {
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint: copy.deliveryZoneHint,
+        say,
+        locale,
+      });
+      return true;
+    }
+    await flow.setDirectState(user.user_key, {
+      checkout_delivery_zone_id: chosen.id,
+      checkout_delivery_zone_name: chosen.name,
+      checkout_delivery_fee: Number(zones.find((z) => z.id === chosen.id)?.price ?? 0),
+      mode: "awaiting_address",
+    });
+    await say(copy.fulfillmentAddressPrompt);
     return true;
   }
 
