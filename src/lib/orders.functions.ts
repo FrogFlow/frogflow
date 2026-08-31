@@ -84,13 +84,21 @@ export const confirmOrder = createServerFn({ method: "POST" })
     // задним числом), тем же приёмом, что и в bot.server.ts confirm:.
     const { data: order, error } = await s
       .from("orders")
-      .select("fulfillment_kind")
+      .select("fulfillment_kind, total")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (order?.fulfillment_kind === "physical") {
-      const { acceptOrder } = await import("./fulfillment.server");
-      return await acceptOrder(data.id);
+      const { acceptOrder, amountDueNow, recordPayment } = await import("./fulfillment.server");
+      const result = await acceptOrder(data.id);
+      const due = await amountDueNow({
+        total: Number(order.total),
+        fulfillment_kind: order.fulfillment_kind,
+      });
+      await recordPayment(data.id, due).catch((e) =>
+        console.error("[orders] recordPayment failed", data.id, e),
+      );
+      return result;
     }
     const { deliverOrder } = await import("./orders.server");
     return await deliverOrder(data.id);

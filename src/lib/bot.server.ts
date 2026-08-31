@@ -2271,16 +2271,9 @@ async function proceedToLanguageOrPlace(chat_id: number, user: BotUser, country_
   await placeOrder(chat_id, user, country_code);
 }
 
-/** payment_mode для физических заказов (Ниши, Блок 7) — "full", если не настроено. */
-async function loadPaymentMode(): Promise<"full" | "deposit" | "on_receipt"> {
-  const s = await db();
-  const { data } = await s
-    .from("app_settings")
-    .select("value")
-    .eq("key", "payment_mode")
-    .maybeSingle();
-  return data?.value === "deposit" || data?.value === "on_receipt" ? data.value : "full";
-}
+// loadPaymentMode() переехала в fulfillment.server.ts вместе с amountDueNow() —
+// физический заказ подтверждается не только из Telegram (admin-панель,
+// Direct-каналы), тянуть туда весь этот файл ради одной функции не нужно.
 
 /** Тип корзины покупателя — физическая или цифровая. Смешанная невозможна (см. addToCart, Ниши Блок 5). */
 async function cartFulfillmentKind(telegram_id: number): Promise<"digital" | "physical"> {
@@ -2972,15 +2965,18 @@ async function placeOrderInner(
   // Оплата при получении (Ниши, Блок 7) — только для физических заказов:
   // цифровой без оплаты выдавать нечего, а физический продавец примет и
   // изготовит без предоплаты, если сам так настроил.
+  const { amountDueNow, loadPaymentMode, acceptOrder } = await import("./fulfillment.server");
   if (orderFulfillmentKind === "physical" && (await loadPaymentMode()) === "on_receipt") {
     try {
-      const { acceptOrder } = await import("./fulfillment.server");
       await acceptOrder(order.id as number);
     } catch (e) {
       console.error(`[bot] acceptOrder failed for on_receipt order ${order.id}`, e);
     }
     return;
   }
+  // Сколько просить сейчас (Ниши, Блок 8.2) — total у digital и у full-режима
+  // физического заказа, доля от total при payment_mode=deposit.
+  const amountDue = await amountDueNow({ total, fulfillment_kind: orderFulfillmentKind });
 
   const rk = await loadRobokassaSettings();
   const cc = String(method?.country_code ?? country_code ?? "").toUpperCase();
@@ -2994,7 +2990,7 @@ async function placeOrderInner(
       userState: user.state,
       orderId: order.id as number,
       displayNo: order.display_no ?? order.order_no ?? order.id,
-      total,
+      total: amountDue,
       currency,
       instructions,
       autoDeliver: false,
@@ -3013,7 +3009,7 @@ async function placeOrderInner(
       userState: user.state,
       orderId: order.id as number,
       displayNo: order.display_no ?? order.order_no ?? order.id,
-      total,
+      total: amountDue,
       currency,
       instructions,
       autoDeliver: true,
@@ -3032,7 +3028,7 @@ async function placeOrderInner(
       userState: user.state,
       orderId: order.id as number,
       displayNo: order.display_no ?? order.order_no ?? order.id,
-      total,
+      total: amountDue,
       currency,
       locale,
     });
@@ -3046,7 +3042,7 @@ async function placeOrderInner(
     userState: user.state,
     orderId: order.id as number,
     displayNo: order.display_no ?? order.order_no ?? order.id,
-    total,
+    total: amountDue,
     currency,
     rk,
     locale,
@@ -3091,10 +3087,12 @@ export async function remindOrderPayment(orderId: number) {
   const total = Number(order.total);
   const currency = (order.currency as string) || (method?.currency as string) || "USD";
   const displayNo = order.display_no ?? order.order_no ?? orderId;
+  const { amountDueNow } = await import("./fulfillment.server");
+  const amountDue = await amountDueNow({ total, fulfillment_kind: order.fulfillment_kind });
 
   await tg("sendMessage", {
     chat_id,
-    text: m.paymentReminder(displayNo, formatMoney(total, currency)),
+    text: m.paymentReminder(displayNo, formatMoney(amountDue, currency)),
     parse_mode: "HTML",
     reply_markup: mainMenu(locale),
   });
@@ -3108,7 +3106,7 @@ export async function remindOrderPayment(orderId: number) {
       userState,
       orderId,
       displayNo,
-      total,
+      total: amountDue,
       currency,
       instructions,
       autoDeliver: false,
@@ -3127,7 +3125,7 @@ export async function remindOrderPayment(orderId: number) {
       userState,
       orderId,
       displayNo,
-      total,
+      total: amountDue,
       currency,
       instructions,
       autoDeliver: true,
@@ -3146,7 +3144,7 @@ export async function remindOrderPayment(orderId: number) {
       userState,
       orderId,
       displayNo,
-      total,
+      total: amountDue,
       currency,
       reminder: true,
       locale,
@@ -3160,7 +3158,7 @@ export async function remindOrderPayment(orderId: number) {
     displayNo,
     userState,
     orderId,
-    total,
+    total: amountDue,
     currency,
     rk,
     reminder: true,
@@ -3795,6 +3793,12 @@ export async function handleUpdate(update: TelegramUpdate) {
           }).catch(() => {});
         }
 
+        const { amountDueNow } = await import("./fulfillment.server");
+        const amountDue = await amountDueNow({
+          total: Number(order.total),
+          fulfillment_kind: order.fulfillment_kind,
+        });
+
         if (isRk) {
           const rk = await loadRobokassaSettings();
           if (!rk.ready) {
@@ -3810,7 +3814,7 @@ export async function handleUpdate(update: TelegramUpdate) {
             userState: user.state,
             orderId,
             displayNo,
-            total: Number(order.total),
+            total: amountDue,
             currency: (order.currency as string) || "KZT",
             rk,
             locale,
@@ -3829,7 +3833,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           userState: user.state,
           orderId,
           displayNo,
-          total: Number(order.total),
+          total: amountDue,
           currency: (order.currency as string) || "KZT",
           instructions: (method?.instructions as string) || m.defaultInstructions,
           autoDeliver: true,
@@ -4219,15 +4223,22 @@ export async function handleUpdate(update: TelegramUpdate) {
           await db()
         )
           .from("orders")
-          .select("order_no, fulfillment_kind")
+          .select("order_no, fulfillment_kind, total")
           .eq("id", orderId)
           .maybeSingle();
         const shownNo = ordRow?.order_no ?? orderId;
 
         if (ordRow?.fulfillment_kind === "physical") {
-          const { acceptOrder } = await import("./fulfillment.server");
+          const { acceptOrder, amountDueNow, recordPayment } = await import("./fulfillment.server");
           try {
             await acceptOrder(orderId);
+            const due = await amountDueNow({
+              total: Number(ordRow.total),
+              fulfillment_kind: ordRow.fulfillment_kind,
+            });
+            await recordPayment(orderId, due).catch((e) =>
+              console.error("[bot] recordPayment failed", orderId, e),
+            );
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
           } catch (e: unknown) {
             await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
@@ -4627,11 +4638,16 @@ export async function handleUpdate(update: TelegramUpdate) {
         // includes receipt_ocr. Falls into the same "manual review" branch
         // the module's own ocr_unavailable case already handles.
         const { verifyPaymentReceipt } = await import("./receipt-verify.server");
+        const { amountDueNow: ocrAmountDueNow } = await import("./fulfillment.server");
+        const ocrExpectedAmount = await ocrAmountDueNow({
+          total: Number(orderRow.total),
+          fulfillment_kind: orderRow.fulfillment_kind,
+        });
         const verify: ReceiptVerifyResult = (await hasModule("receipt_ocr"))
           ? await verifyPaymentReceipt({
               bytes: dl.bytes,
               mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
-              expectedAmount: Number(orderRow.total),
+              expectedAmount: ocrExpectedAmount,
               currency: (orderRow.currency as string) || undefined,
               orderId,
             })
@@ -4715,8 +4731,13 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         try {
           if (orderRow.fulfillment_kind === "physical") {
-            const { acceptOrder } = await import("./fulfillment.server");
+            const { acceptOrder, recordPayment } = await import("./fulfillment.server");
             await acceptOrder(orderId);
+            // ocrExpectedAmount уже посчитан выше той же amountDueNow() — то,
+            // что реально проверил OCR, и есть то, что реально внесено.
+            await recordPayment(orderId, ocrExpectedAmount).catch((e) =>
+              console.error("[bot] recordPayment failed", orderId, e),
+            );
           } else {
             const { deliverOrder } = await import("./orders.server");
             await deliverOrder(orderId);

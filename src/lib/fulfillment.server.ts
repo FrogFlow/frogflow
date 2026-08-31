@@ -168,3 +168,46 @@ export async function recordPayment(orderId: number, amount: number): Promise<bo
   }
   return false;
 }
+
+/**
+ * payment_mode для физических заказов (Ниши, Блок 7) — "full", если не
+ * настроено. Раньше жила приватной в bot.server.ts; переехала сюда вместе с
+ * amountDueNow(), чтобы не тянуть весь bot.server.ts туда, где физический
+ * заказ подтверждается не из Telegram (admin-панель, Direct-каналы).
+ */
+export async function loadPaymentMode(): Promise<"full" | "deposit" | "on_receipt"> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", "payment_mode")
+    .maybeSingle();
+  return data?.value === "deposit" || data?.value === "on_receipt" ? data.value : "full";
+}
+
+/**
+ * Сколько просить сейчас за заказ — единая точка правды, вместо того чтобы
+ * каждое место денежного пути читало order.total напрямую (Ниши, Блок 8.2).
+ * on_receipt возвращает 0, но до оплаты эта ветка недостижима — заказ уходит
+ * в acceptOrder(), минуя любой из трёх send*-путей, которые вызывают эту
+ * функцию.
+ */
+export async function amountDueNow(order: {
+  total: number;
+  fulfillment_kind: string;
+}): Promise<number> {
+  if (order.fulfillment_kind !== "physical") return order.total;
+  const mode = await loadPaymentMode();
+  if (mode === "on_receipt") return 0;
+  if (mode === "deposit") {
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("app_settings")
+      .select("value")
+      .eq("key", "deposit_percent")
+      .maybeSingle();
+    const pct = Number(data?.value ?? "30");
+    return Math.round(order.total * (pct / 100));
+  }
+  return order.total;
+}

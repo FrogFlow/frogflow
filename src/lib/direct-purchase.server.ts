@@ -1300,6 +1300,7 @@ export async function createOrderFromCart(params: {
   id: number;
   order_no: number | null;
   fulfillment_kind: "digital" | "physical";
+  total: number;
 } | null> {
   const s = await db();
 
@@ -1413,7 +1414,7 @@ export async function createOrderFromCart(params: {
     return null;
   }
 
-  return { ...order, fulfillment_kind: orderFulfillmentKind };
+  return { ...order, fulfillment_kind: orderFulfillmentKind, total: amount };
 }
 
 /** Предел непонятых ответов на одном шаге, после которого зовём продавца. */

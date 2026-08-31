@@ -102,12 +102,20 @@ async function handleRobokassaResult(request: Request) {
   // Защита от подделки суммы. `Number()` от нечислового OutSum даёт NaN, а
   // `NaN > 0.01` — false, то есть без явной проверки на конечность подмена
   // OutSum мусором тихо проходила бы мимо этой защиты (Блок 4).
+  //
+  // Сверяем не с order.total, а с amountDueNow() — при payment_mode=deposit
+  // с физического заказа просят не полную сумму, а задаток (Ниши, Блок 8.2).
+  const { amountDueNow } = await import("@/lib/fulfillment.server");
+  const expected = await amountDueNow({
+    total: Number(order.total),
+    fulfillment_kind: order.fulfillment_kind,
+  });
   const outSumNum = Number(outSum);
-  if (!Number.isFinite(outSumNum) || Math.abs(outSumNum - Number(order.total)) > 0.01) {
+  if (!Number.isFinite(outSumNum) || Math.abs(outSumNum - expected) > 0.01) {
     logger.error("robokassa.amount_mismatch", {
       order_id: orderId,
       out_sum: outSum,
-      expected: order.total,
+      expected,
     });
     return new Response("amount mismatch", { status: 400 });
   }
@@ -147,8 +155,11 @@ async function handleRobokassaResult(request: Request) {
 
   try {
     if (order.fulfillment_kind === "physical") {
-      const { acceptOrder } = await import("@/lib/fulfillment.server");
+      const { acceptOrder, recordPayment } = await import("@/lib/fulfillment.server");
       await acceptOrder(orderId);
+      await recordPayment(orderId, expected).catch((e) =>
+        logger.error("robokassa.record_payment_failed", { order_id: orderId, err: e }),
+      );
     } else if (order.platform === "instagram") {
       const { deliverInstagramOrder } = await import("@/lib/zernio-bot.server");
       await deliverInstagramOrder(orderId);

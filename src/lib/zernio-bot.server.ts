@@ -2758,8 +2758,14 @@ async function handlePurchaseFlow(params: {
       await flow.clearDirectFlow(user.user_key);
       try {
         if (order.fulfillment_kind === "physical") {
-          const { acceptOrder } = await import("./fulfillment.server");
+          const { acceptOrder, recordPayment } = await import("./fulfillment.server");
           await acceptOrder(order.id);
+          // Не amountDueNow(): чекаут задатка/оплаты-при-получении для Direct
+          // не сделан (Ниши, Блок 8.3) — здесь чек всегда присылают на полную
+          // сумму, амаунт для сверки в verdict уже посчитан от order.total.
+          await recordPayment(order.id, Number(order.total)).catch((e) =>
+            console.error("[zernio-bot] recordPayment failed", order.id, e),
+          );
         } else {
           const { deliverOrder } = await import("./orders.server");
           await deliverOrder(order.id);
