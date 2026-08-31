@@ -50,6 +50,23 @@ export function dominantCurrency(orders: OrderForAnalytics[]): string | null {
   return best;
 }
 
+/**
+ * Все валюты, в которых есть заказы, доминирующая первой — порядок секций
+ * на странице аналитики (Блок «показать каждую валюту отдельно»). Остальные
+ * — по числу заказов по убыванию, чтобы у продавца сверху были валюты,
+ * которыми реально пользуются, а не алфавит.
+ */
+export function orderedCurrencies(
+  summary: Record<string, CurrencySummary>,
+  dominant: string | null,
+): string[] {
+  return Object.keys(summary).sort((a, b) => {
+    if (a === dominant) return -1;
+    if (b === dominant) return 1;
+    return summary[b].ordersCount - summary[a].ordersCount || a.localeCompare(b);
+  });
+}
+
 export function dailyRevenue(
   orders: OrderForAnalytics[],
   days: number,

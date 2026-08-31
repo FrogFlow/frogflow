@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
@@ -8,13 +9,17 @@ import {
   type ChartConfig,
 } from "@/components-ui/chart";
 import { errorMessage } from "@/lib/error-message";
-import { getFinancialAnalytics } from "@/lib/analytics.functions";
+import { getFinancialAnalytics, getFinancialAnalyticsConverted } from "@/lib/analytics.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/analytics")({
   component: AnalyticsPage,
 });
+
+type CurrencySummary = { revenue: number; ordersCount: number; discountsGiven: number };
+type TopProduct = { key: string; name: string; unitsSold: number; revenue: number };
+type DailyPoint = { date: string; revenue: number };
 
 const copy: Record<
   Locale,
@@ -34,7 +39,11 @@ const copy: Record<
     piecesSuffix: string;
     revenueLabel: string;
     noOrders: string;
-    otherCurrencies: (list: string) => string;
+    sectionTitle: (currency: string) => string;
+    combinedTitle: string;
+    combinedHint: string;
+    combinedTargetLabel: string;
+    unconvertedWarning: (list: string) => string;
   }
 > = {
   ru: {
@@ -53,7 +62,12 @@ const copy: Record<
     piecesSuffix: "шт.",
     revenueLabel: "Выручка",
     noOrders: "За этот период выданных заказов ещё не было.",
-    otherCurrencies: (list) => `Также есть заказы в других валютах: ${list} — показаны отдельно.`,
+    sectionTitle: (currency) => `Статистика в ${currency}`,
+    combinedTitle: "Общий свод по всем валютам",
+    combinedHint: "Всё пересчитано в одну валюту по сегодняшнему курсу.",
+    combinedTargetLabel: "Пересчитать в:",
+    unconvertedWarning: (list) =>
+      `Не удалось пересчитать курс для: ${list} — эти суммы не вошли в свод ниже.`,
   },
   kk: {
     title: "Қаржылық аналитика",
@@ -71,7 +85,12 @@ const copy: Record<
     piecesSuffix: "дана",
     revenueLabel: "Түсім",
     noOrders: "Бұл кезеңде әлі берілген тапсырыстар болған жоқ.",
-    otherCurrencies: (list) => `Басқа валютадағы тапсырыстар да бар: ${list} — бөлек көрсетілген.`,
+    sectionTitle: (currency) => `${currency} валютасындағы статистика`,
+    combinedTitle: "Барлық валюта бойынша жалпы қорытынды",
+    combinedHint: "Барлығы бүгінгі бағам бойынша бір валютаға қайта есептелген.",
+    combinedTargetLabel: "Мына валютаға қайта есептеу:",
+    unconvertedWarning: (list) =>
+      `Бағамды қайта есептеу мүмкін болмады: ${list} — бұл сомалар төмендегі қорытындыға кірмеді.`,
   },
   en: {
     title: "Financial analytics",
@@ -89,8 +108,12 @@ const copy: Record<
     piecesSuffix: "pcs",
     revenueLabel: "Revenue",
     noOrders: "No delivered orders in this period yet.",
-    otherCurrencies: (list) =>
-      `There are also orders in other currencies: ${list} — shown separately.`,
+    sectionTitle: (currency) => `Stats in ${currency}`,
+    combinedTitle: "Combined total across all currencies",
+    combinedHint: "Everything converted into one currency at today's rate.",
+    combinedTargetLabel: "Convert into:",
+    unconvertedWarning: (list) =>
+      `Couldn't convert the rate for: ${list} — those amounts are not included in the total below.`,
   },
   uz: {
     title: "Moliyaviy tahlil",
@@ -108,8 +131,12 @@ const copy: Record<
     piecesSuffix: "dona",
     revenueLabel: "Daromad",
     noOrders: "Bu davrda hali yetkazilgan buyurtmalar bo‘lmagan.",
-    otherCurrencies: (list) =>
-      `Boshqa valyutadagi buyurtmalar ham bor: ${list} — alohida ko‘rsatilgan.`,
+    sectionTitle: (currency) => `${currency} valyutasidagi statistika`,
+    combinedTitle: "Barcha valyutalar bo‘yicha umumiy svod",
+    combinedHint: "Hammasi bugungi kurs bo‘yicha bitta valyutaga qayta hisoblangan.",
+    combinedTargetLabel: "Shu valyutaga o‘tkazish:",
+    unconvertedWarning: (list) =>
+      `Kursni qayta hisoblab bo‘lmadi: ${list} — bu summalar quyidagi svodga kirmagan.`,
   },
 };
 
@@ -125,6 +152,154 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border p-4 bg-card">
       <div className="text-sm text-muted-foreground">{label}</div>
       <div className="text-2xl font-semibold mt-1">{value}</div>
+    </div>
+  );
+}
+
+/**
+ * Полный блок цифр (карточки + график + топ товаров) для одной валюты —
+ * используется и для каждой реальной валюты по отдельности, и для общего
+ * свода после пересчёта в одну. Один компонент, а не копия JSX дважды.
+ */
+function CurrencyBlock({
+  title,
+  currency,
+  summary30,
+  summary90,
+  daily,
+  topProducts,
+  tr,
+}: {
+  title: string;
+  currency: string;
+  summary30: CurrencySummary;
+  summary90: CurrencySummary | undefined;
+  daily: DailyPoint[];
+  topProducts: TopProduct[];
+  tr: (typeof copy)["ru"];
+}) {
+  const chartConfig: ChartConfig = {
+    revenue: { label: tr.revenueLabel, color: "var(--chart-1)" },
+  };
+
+  return (
+    <div className="space-y-4">
+      {title && <h2 className="text-lg font-semibold">{title}</h2>}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat label={tr.revenue30} value={formatMoney(summary30.revenue, currency)} />
+        <Stat label={tr.orders30} value={String(summary30.ordersCount)} />
+        <Stat
+          label={tr.avgOrder30}
+          value={formatMoney(
+            summary30.ordersCount ? summary30.revenue / summary30.ordersCount : 0,
+            currency,
+          )}
+        />
+        <Stat label={tr.discounts30} value={formatMoney(summary30.discountsGiven, currency)} />
+      </div>
+
+      {summary90 && <Stat label={tr.revenue90} value={formatMoney(summary90.revenue, currency)} />}
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h3 className="font-medium">{tr.dailyChartTitle}</h3>
+        <ChartContainer config={chartConfig} className="h-64 w-full">
+          <BarChart data={daily}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date"
+              tickFormatter={(v: string) => v.slice(5)}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis tickLine={false} axisLine={false} width={40} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Bar dataKey="revenue" fill="var(--color-revenue)" radius={4} />
+          </BarChart>
+        </ChartContainer>
+      </div>
+
+      <div className="bg-card border rounded-lg divide-y">
+        <h3 className="font-medium p-4 pb-0">{tr.topProductsTitle}</h3>
+        {topProducts.map((p) => (
+          <div key={p.key} className="p-3 flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0 truncate">{p.name}</div>
+            <div className="text-sm text-muted-foreground shrink-0">
+              {p.unitsSold} {tr.piecesSuffix}
+            </div>
+            <div className="text-sm font-medium shrink-0">{formatMoney(p.revenue, currency)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CombinedSection({
+  currencies,
+  defaultTarget,
+  tr,
+}: {
+  currencies: string[];
+  defaultTarget: string;
+  tr: (typeof copy)["ru"];
+}) {
+  const [target, setTarget] = useState(defaultTarget);
+  const converted = useQuery({
+    queryKey: ["financial-analytics-converted", target],
+    queryFn: () => getFinancialAnalyticsConverted({ data: { targetCurrency: target } }),
+    enabled: !!target,
+  });
+
+  // Только валюты, в которых реально были заказы, — переводить в валюту,
+  // которой магазин никогда не пользовался, продавцу незачем.
+  const options = currencies.length > 0 ? currencies : [defaultTarget];
+
+  return (
+    <div className="space-y-4 border-t pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">{tr.combinedTitle}</h2>
+          <p className="text-sm text-muted-foreground mt-1">{tr.combinedHint}</p>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          {tr.combinedTargetLabel}
+          <select
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            className="border rounded-md px-2 py-1.5 bg-background"
+          >
+            {options.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {converted.isLoading ? (
+        <p className="text-sm text-muted-foreground">{tr.loading}</p>
+      ) : converted.isError ? (
+        <p className="text-sm text-destructive">{tr.loadError(errorMessage(converted.error))}</p>
+      ) : converted.data ? (
+        <>
+          {converted.data.unconverted.length > 0 && (
+            <p className="text-xs text-amber-600">
+              {tr.unconvertedWarning(converted.data.unconverted.join(", "))}
+            </p>
+          )}
+          <CurrencyBlock
+            title=""
+            currency={converted.data.targetCurrency}
+            summary30={converted.data.summary30}
+            summary90={converted.data.summary90}
+            daily={converted.data.dailyRevenue}
+            topProducts={converted.data.topProducts}
+            tr={tr}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -148,80 +323,33 @@ function AnalyticsPage() {
 
   const data = analytics.data;
   const dominant = data?.dominantCurrency;
-  const summary30 = dominant ? data?.summary30[dominant] : undefined;
-  const summary90 = dominant ? data?.summary90[dominant] : undefined;
-  const otherCurrencies = Object.keys(data?.summary90 ?? {}).filter((c) => c !== dominant);
-
-  const chartConfig: ChartConfig = {
-    revenue: { label: tr.revenueLabel, color: "var(--chart-1)" },
-  };
+  const currencies = data?.currencies ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div>
         <h1 className="text-2xl font-semibold">{tr.title}</h1>
         <p className="text-sm text-muted-foreground mt-1">{tr.hint(data?.windowDays ?? 90)}</p>
       </div>
 
-      {!dominant || !summary30 ? (
+      {!dominant || currencies.length === 0 ? (
         <p className="text-sm text-muted-foreground">{tr.noOrders}</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label={tr.revenue30} value={formatMoney(summary30.revenue, dominant)} />
-            <Stat label={tr.orders30} value={String(summary30.ordersCount)} />
-            <Stat
-              label={tr.avgOrder30}
-              value={formatMoney(
-                summary30.ordersCount ? summary30.revenue / summary30.ordersCount : 0,
-                dominant,
-              )}
+          {currencies.map((cur) => (
+            <CurrencyBlock
+              key={cur}
+              title={tr.sectionTitle(cur)}
+              currency={cur}
+              summary30={data.summary30[cur]}
+              summary90={data.summary90[cur]}
+              daily={data.dailyRevenueByCurrency[cur] ?? []}
+              topProducts={data.topProductsByCurrency[cur] ?? []}
+              tr={tr}
             />
-            <Stat label={tr.discounts30} value={formatMoney(summary30.discountsGiven, dominant)} />
-          </div>
+          ))}
 
-          {summary90 && (
-            <Stat label={tr.revenue90} value={formatMoney(summary90.revenue, dominant)} />
-          )}
-
-          {otherCurrencies.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {tr.otherCurrencies(otherCurrencies.join(", "))}
-            </p>
-          )}
-
-          <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="font-medium">{tr.dailyChartTitle}</h2>
-            <ChartContainer config={chartConfig} className="h-64 w-full">
-              <BarChart data={data?.dailyRevenue ?? []}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(v: string) => v.slice(5)}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis tickLine={false} axisLine={false} width={40} />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="revenue" fill="var(--color-revenue)" radius={4} />
-              </BarChart>
-            </ChartContainer>
-          </div>
-
-          <div className="bg-card border rounded-lg divide-y">
-            <h2 className="font-medium p-4 pb-0">{tr.topProductsTitle}</h2>
-            {(data?.topProducts ?? []).map((p) => (
-              <div key={p.key} className="p-3 flex items-center justify-between gap-3">
-                <div className="flex-1 min-w-0 truncate">{p.name}</div>
-                <div className="text-sm text-muted-foreground shrink-0">
-                  {p.unitsSold} {tr.piecesSuffix}
-                </div>
-                <div className="text-sm font-medium shrink-0">
-                  {formatMoney(p.revenue, dominant)}
-                </div>
-              </div>
-            ))}
-          </div>
+          <CombinedSection currencies={currencies} defaultTarget={dominant} tr={tr} />
         </>
       )}
     </div>

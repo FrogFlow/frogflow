@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   summarizeByCurrency,
   dominantCurrency,
+  orderedCurrencies,
   dailyRevenue,
   topProductsBySales,
   type OrderForAnalytics,
@@ -50,6 +51,35 @@ describe("dominantCurrency", () => {
 
   it("пустой список — null", () => {
     expect(dominantCurrency([])).toBe(null);
+  });
+});
+
+describe("orderedCurrencies", () => {
+  it("доминирующая валюта всегда первая, остальные — по числу заказов", () => {
+    const summary = {
+      RUB: { revenue: 100, ordersCount: 5, discountsGiven: 0 },
+      KZT: { revenue: 200, ordersCount: 3, discountsGiven: 0 },
+      USD: { revenue: 10, ordersCount: 1, discountsGiven: 0 },
+    };
+    expect(orderedCurrencies(summary, "RUB")).toEqual(["RUB", "KZT", "USD"]);
+  });
+
+  it("доминирующая валюта не обязана быть первой по числу заказов в самой сводке", () => {
+    // Доминирующая считается по всем заказам (90 дней), а сводка здесь может
+    // быть за 30 — числа могут разойтись, порядок всё равно ставит её первой.
+    const summary = {
+      RUB: { revenue: 100, ordersCount: 1, discountsGiven: 0 },
+      KZT: { revenue: 200, ordersCount: 9, discountsGiven: 0 },
+    };
+    expect(orderedCurrencies(summary, "RUB")).toEqual(["RUB", "KZT"]);
+  });
+
+  it("без доминирующей — просто по числу заказов, при равенстве по алфавиту", () => {
+    const summary = {
+      USD: { revenue: 10, ordersCount: 2, discountsGiven: 0 },
+      BYN: { revenue: 10, ordersCount: 2, discountsGiven: 0 },
+    };
+    expect(orderedCurrencies(summary, null)).toEqual(["BYN", "USD"]);
   });
 });
 
