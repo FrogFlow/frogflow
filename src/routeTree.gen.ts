@@ -53,6 +53,7 @@ import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio
 import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
 import { Route as ApiCronMiscRetentionRouteImport } from './routes/api/cron/misc-retention'
 import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/manager-chat-prune'
+import { Route as ApiCronFulfillmentReminderRouteImport } from './routes/api/cron/fulfillment-reminder'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
 import { Route as ApiCronCartReminderRouteImport } from './routes/api/cron/cart-reminder'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
@@ -293,6 +294,12 @@ const ApiCronManagerChatPruneRoute = ApiCronManagerChatPruneRouteImport.update({
   path: '/api/cron/manager-chat-prune',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCronFulfillmentReminderRoute =
+  ApiCronFulfillmentReminderRouteImport.update({
+    id: '/api/cron/fulfillment-reminder',
+    path: '/api/cron/fulfillment-reminder',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
   id: '/api/cron/ensure-webhook',
   path: '/api/cron/ensure-webhook',
@@ -416,6 +423,7 @@ export interface FileRoutesByFullPath {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/fulfillment-reminder': typeof ApiCronFulfillmentReminderRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
@@ -476,6 +484,7 @@ export interface FileRoutesByTo {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/fulfillment-reminder': typeof ApiCronFulfillmentReminderRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
@@ -539,6 +548,7 @@ export interface FileRoutesById {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
+  '/api/cron/fulfillment-reminder': typeof ApiCronFulfillmentReminderRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
@@ -603,6 +613,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/cart-reminder'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/fulfillment-reminder'
     | '/api/cron/manager-chat-prune'
     | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
@@ -663,6 +674,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/cart-reminder'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/fulfillment-reminder'
     | '/api/cron/manager-chat-prune'
     | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
@@ -725,6 +737,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/cart-reminder'
     | '/api/cron/ensure-webhook'
+    | '/api/cron/fulfillment-reminder'
     | '/api/cron/manager-chat-prune'
     | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
@@ -767,6 +780,7 @@ export interface RootRouteChildren {
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronCartReminderRoute: typeof ApiCronCartReminderRoute
   ApiCronEnsureWebhookRoute: typeof ApiCronEnsureWebhookRoute
+  ApiCronFulfillmentReminderRoute: typeof ApiCronFulfillmentReminderRoute
   ApiCronManagerChatPruneRoute: typeof ApiCronManagerChatPruneRoute
   ApiCronMiscRetentionRoute: typeof ApiCronMiscRetentionRoute
   ApiCronZernioLogsPruneRoute: typeof ApiCronZernioLogsPruneRoute
@@ -1101,6 +1115,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCronManagerChatPruneRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/cron/fulfillment-reminder': {
+      id: '/api/cron/fulfillment-reminder'
+      path: '/api/cron/fulfillment-reminder'
+      fullPath: '/api/cron/fulfillment-reminder'
+      preLoaderRoute: typeof ApiCronFulfillmentReminderRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/cron/ensure-webhook': {
       id: '/api/cron/ensure-webhook'
       path: '/api/cron/ensure-webhook'
@@ -1330,6 +1351,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronCartReminderRoute: ApiCronCartReminderRoute,
   ApiCronEnsureWebhookRoute: ApiCronEnsureWebhookRoute,
+  ApiCronFulfillmentReminderRoute: ApiCronFulfillmentReminderRoute,
   ApiCronManagerChatPruneRoute: ApiCronManagerChatPruneRoute,
   ApiCronMiscRetentionRoute: ApiCronMiscRetentionRoute,
   ApiCronZernioLogsPruneRoute: ApiCronZernioLogsPruneRoute,

@@ -1481,6 +1481,8 @@ export type Database = {
           fulfillment_address: string | null;
           fulfillment_note: string | null;
           paid_amount: number;
+          // MIGRATION-51. Идемпотентность крона напоминания о fulfillment_at.
+          fulfillment_reminder_sent_at: string | null;
         };
         Insert: {
           customer_email?: string | null;
@@ -1520,6 +1522,7 @@ export type Database = {
           fulfillment_address?: string | null;
           fulfillment_note?: string | null;
           paid_amount?: number;
+          fulfillment_reminder_sent_at?: string | null;
         };
         Update: {
           customer_email?: string | null;
@@ -1559,6 +1562,7 @@ export type Database = {
           fulfillment_address?: string | null;
           fulfillment_note?: string | null;
           paid_amount?: number;
+          fulfillment_reminder_sent_at?: string | null;
         };
         Relationships: [
           {
