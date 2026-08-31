@@ -106,6 +106,7 @@ type BotUser = {
       | "awaiting_review_comment"
       | "awaiting_gift_certificate_code"
       | "awaiting_fulfillment_date"
+      | "awaiting_delivery_zone"
       | "awaiting_address"
       | "awaiting_fulfillment_note";
     /** Списать баллы при оформлении — переключатель, не текстовый ввод. */
@@ -147,6 +148,15 @@ type BotUser = {
     checkout_fulfillment_type?: "pickup" | "delivery";
     /** Дата получения, ISO (YYYY-MM-DD) — без времени, время не спрашиваем. */
     checkout_fulfillment_at?: string;
+    /**
+     * Выбранная зона доставки (Ниши, Блок B) — id и снимок имени/цены на
+     * момент выбора, тем же приёмом, что и остальные checkout_fulfillment_*.
+     * Заводится только если у продавца есть хоть одна активная зона —
+     * иначе шаг пропускается целиком (обратная совместимость).
+     */
+    checkout_delivery_zone_id?: string;
+    checkout_delivery_zone_name?: string;
+    checkout_delivery_fee?: number;
     checkout_fulfillment_address?: string;
     checkout_fulfillment_note?: string;
   } | null;
@@ -541,6 +551,7 @@ type Msg = {
   fulfillmentDatePrompt: (minDate: string) => string;
   fulfillmentDateInvalid: string;
   fulfillmentDateTooEarly: (minDate: string) => string;
+  deliveryZonePrompt: string;
   addressPrompt: string;
   fulfillmentNotePrompt: string;
   fulfillmentNoteSkipBtn: string;
@@ -678,6 +689,7 @@ const copy: Record<Locale, Msg> = {
     fulfillmentDateInvalid: "Не разобрал дату. Формат: ДД.ММ.ГГГГ, например 05.03.2026.",
     fulfillmentDateTooEarly: (minDate) =>
       `Этот заказ готовится дольше — не раньше ${minDate}. Укажите более позднюю дату.`,
+    deliveryZonePrompt: "Выберите район доставки.",
     addressPrompt: "Укажите адрес доставки.",
     fulfillmentNotePrompt:
       "Комментарий к заказу (например, надпись на торте)? Если не нужен — нажмите «Без комментария».",
@@ -843,6 +855,7 @@ const copy: Record<Locale, Msg> = {
     fulfillmentDateInvalid: "Күнді түсінбедім. Формат: КК.АА.ЖЖЖЖ, мысалы 05.03.2026.",
     fulfillmentDateTooEarly: (minDate) =>
       `Бұл тапсырыс дайындалуы ұзағырақ — ${minDate}-ден ерте емес. Кейінірек күн көрсетіңіз.`,
+    deliveryZonePrompt: "Жеткізу ауданын таңдаңыз.",
     addressPrompt: "Жеткізу мекенжайын көрсетіңіз.",
     fulfillmentNotePrompt:
       "Тапсырысқа түсініктеме (мысалы, тортқа жазу)? Керек болмаса — «Түсініктемесіз» батырмасын басыңыз.",
@@ -1008,6 +1021,7 @@ const copy: Record<Locale, Msg> = {
     fulfillmentDateInvalid: "Couldn't read that date. Format: DD.MM.YYYY, e.g. 05.03.2026.",
     fulfillmentDateTooEarly: (minDate) =>
       `This order takes longer to prepare — not earlier than ${minDate}. Please pick a later date.`,
+    deliveryZonePrompt: "Choose a delivery zone.",
     addressPrompt: "Please provide the delivery address.",
     fulfillmentNotePrompt:
       'Any note for the order (e.g. a message on the cake)? Tap "No note" if none.',
@@ -1178,6 +1192,7 @@ const copy: Record<Locale, Msg> = {
     fulfillmentDateInvalid: "Sanani tushunmadim. Format: KK.OO.YYYY, masalan 05.03.2026.",
     fulfillmentDateTooEarly: (minDate) =>
       `Bu buyurtma tayyorlanishi uzoqroq — ${minDate} dan erta emas. Keyinroq sana ko‘rsating.`,
+    deliveryZonePrompt: "Yetkazib berish zonasini tanlang.",
     addressPrompt: "Yetkazib berish manzilini ko‘rsating.",
     fulfillmentNotePrompt:
       "Buyurtmaga izoh (masalan, tortga yozuv)? Kerak bo‘lmasa — «Izohsiz» tugmasini bosing.",
@@ -2342,6 +2357,35 @@ async function askFulfillmentDate(
   });
 }
 
+/**
+ * Шаг выбора зоны доставки (Ниши, Блок B) — вставлен между датой и адресом,
+ * только когда выбрана доставка. Если у продавца нет ни одной активной
+ * зоны — шаг пропускается целиком и сразу спрашивается адрес, как и было
+ * раньше (обратная совместимость для ботов без настроенных зон).
+ */
+async function proceedToDeliveryZoneOrAddress(
+  chat_id: number,
+  telegram_id: number,
+  state: BotUser["state"],
+  locale: Locale,
+) {
+  const { activeDeliveryZones } = await import("./fulfillment.server");
+  const zones = await activeDeliveryZones();
+  if (!zones.length) {
+    await setState(telegram_id, { ...state, mode: "awaiting_address" });
+    await tg("sendMessage", { chat_id, text: copy[locale].addressPrompt });
+    return;
+  }
+  await setState(telegram_id, { ...state, mode: "awaiting_delivery_zone" });
+  await tg("sendMessage", {
+    chat_id,
+    text: copy[locale].deliveryZonePrompt,
+    reply_markup: {
+      inline_keyboard: zones.map((z) => [{ text: z.name, callback_data: `zone:${z.id}` }]),
+    },
+  });
+}
+
 async function shouldAskDeliveryLangBeforeOrder(): Promise<boolean> {
   const { hasModule } = await import("./modules/modules.server");
   if (!(await hasModule("multi_language"))) return false;
@@ -2585,17 +2629,29 @@ async function placeOrderInner(
   const fulfillmentAt = user.state?.checkout_fulfillment_at ?? null;
   const fulfillmentAddress = user.state?.checkout_fulfillment_address ?? null;
   const fulfillmentNote = user.state?.checkout_fulfillment_note ?? null;
+  // Зона доставки (Ниши, Блок B) — тот же приём, отдельно от адреса: заказ
+  // может быть с доставкой без выбранной зоны, если у продавца зоны не
+  // настроены вовсе (checkout_delivery_zone_id тогда просто не заводится).
+  const deliveryZoneId = user.state?.checkout_delivery_zone_id ?? null;
+  const deliveryZoneName = user.state?.checkout_delivery_zone_name ?? null;
+  const deliveryFee = user.state?.checkout_delivery_fee ?? 0;
   if (
     user.state?.checkout_fulfillment_type !== undefined ||
     user.state?.checkout_fulfillment_at !== undefined ||
     user.state?.checkout_fulfillment_address !== undefined ||
-    user.state?.checkout_fulfillment_note !== undefined
+    user.state?.checkout_fulfillment_note !== undefined ||
+    user.state?.checkout_delivery_zone_id !== undefined ||
+    user.state?.checkout_delivery_zone_name !== undefined ||
+    user.state?.checkout_delivery_fee !== undefined
   ) {
     const {
       checkout_fulfillment_type: _cft,
       checkout_fulfillment_at: _cfa,
       checkout_fulfillment_address: _cfaddr,
       checkout_fulfillment_note: _cfn,
+      checkout_delivery_zone_id: _cdzi,
+      checkout_delivery_zone_name: _cdzn,
+      checkout_delivery_fee: _cdf,
       ...rest
     } = user.state;
     user = { ...user, state: rest };
@@ -2690,6 +2746,10 @@ async function placeOrderInner(
     priced.set(String(it.products.id), amount);
     total += amount * Number(it.quantity);
   }
+  // Комиссия зоны доставки (Ниши, Блок B) — до промокода/баллов/сертификата,
+  // чтобы скидка действовала и на доставку (то же умолчание, что описано в
+  // плане: не выделяем доставку в отдельную неуценяемую строку).
+  total += deliveryFee;
 
   // Промокод — на всю сумму заказа, списывается атомарно прямо здесь (не
   // раньше): если оформление сорвётся ниже, использование не сгорит зря,
@@ -2769,6 +2829,9 @@ async function placeOrderInner(
       fulfillment_at: fulfillmentAt,
       fulfillment_address: fulfillmentAddress,
       fulfillment_note: fulfillmentNote,
+      delivery_zone_id: deliveryZoneId,
+      delivery_zone_name: deliveryZoneName,
+      delivery_fee: deliveryFee,
     })
     .select("*")
     .single();
@@ -4030,6 +4093,39 @@ export async function handleUpdate(update: TelegramUpdate) {
         return;
       }
 
+      if (data.startsWith("zone:")) {
+        const zoneId = data.slice("zone:".length);
+        if (cq.message?.message_id) {
+          await tg("editMessageReplyMarkup", {
+            chat_id,
+            message_id: cq.message.message_id,
+            reply_markup: { inline_keyboard: [] },
+          }).catch(() => {});
+        }
+        const s = await db();
+        const { data: zone } = await s
+          .from("delivery_zones")
+          .select("id, name, price")
+          .eq("id", zoneId)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (!zone) {
+          // Зона исчезла/скрыта между показом кнопок и тапом — переспрашиваем шаг.
+          await proceedToDeliveryZoneOrAddress(chat_id, from_id, user.state, locale);
+          return;
+        }
+        const nextState = {
+          ...user.state,
+          checkout_delivery_zone_id: zone.id,
+          checkout_delivery_zone_name: zone.name,
+          checkout_delivery_fee: Number(zone.price),
+          mode: "awaiting_address" as const,
+        };
+        await setState(from_id, nextState);
+        await tg("sendMessage", { chat_id, text: copy[locale].addressPrompt });
+        return;
+      }
+
       if (data === "fulfillnote:skip") {
         if (cq.message?.message_id) {
           await tg("editMessageReplyMarkup", {
@@ -4757,8 +4853,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         }
         const withDate = { ...user.state, checkout_fulfillment_at: iso };
         if (withDate.checkout_fulfillment_type === "delivery") {
-          await setState(from.id, { ...withDate, mode: "awaiting_address" });
-          await tg("sendMessage", { chat_id, text: m.addressPrompt });
+          await proceedToDeliveryZoneOrAddress(chat_id, from.id, withDate, locale);
         } else {
           await setState(from.id, { ...withDate, mode: "awaiting_fulfillment_note" });
           await tg("sendMessage", {
@@ -4770,6 +4865,35 @@ export async function handleUpdate(update: TelegramUpdate) {
               ],
             },
           });
+        }
+        return;
+      }
+    }
+
+    // Зона доставки — ждём тап по кнопке; текстом можно попасть только
+    // названием зоны, набранным вручную (например, скопированным из другого
+    // чата), иначе просто переспрашиваем список кнопок.
+    if (user.state?.mode === "awaiting_delivery_zone" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const { activeDeliveryZones } = await import("./fulfillment.server");
+        const zones = await activeDeliveryZones();
+        const typed = msg.text.trim().toLowerCase();
+        const matched = zones.find((z) => z.name.trim().toLowerCase() === typed);
+        if (matched) {
+          const withZone = {
+            ...user.state,
+            checkout_delivery_zone_id: matched.id,
+            checkout_delivery_zone_name: matched.name,
+            checkout_delivery_fee: Number(matched.price),
+            mode: "awaiting_address" as const,
+          };
+          await setState(from.id, withZone);
+          await tg("sendMessage", { chat_id, text: m.addressPrompt });
+        } else {
+          await proceedToDeliveryZoneOrAddress(chat_id, from.id, user.state, locale);
         }
         return;
       }

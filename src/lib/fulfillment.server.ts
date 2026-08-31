@@ -251,6 +251,25 @@ export async function maxLeadTimeDaysInCart(telegram_id: number): Promise<number
   return max;
 }
 
+export type DeliveryZone = { id: string; name: string; price: number };
+
+/**
+ * Активные зоны доставки продавца (Ниши, Блок B), отсортированные по
+ * sort_order — пустой массив, если зоны не заведены вовсе (продавец ещё не
+ * пользуется этой функцией, или у него доставка без разбивки на районы).
+ * Каналы, где используется — Telegram и Direct (тот же приём, что и
+ * остальные хелперы этого файла).
+ */
+export async function activeDeliveryZones(): Promise<DeliveryZone[]> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("delivery_zones")
+    .select("id, name, price")
+    .eq("is_active", true)
+    .order("sort_order");
+  return data ?? [];
+}
+
 /** Доступность самовывоза/доставки — по умолчанию оба включены, пока продавец явно не отключил. */
 export async function fulfillmentOptionsEnabled(): Promise<{
   pickup: boolean;
