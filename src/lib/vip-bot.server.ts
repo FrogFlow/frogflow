@@ -233,7 +233,6 @@ type VipCopyKey =
   | "proofResubmitNotified"
   | "proofResubmitQuiet"
   | "proofReceived"
-  | "sendScreenshotAsPhoto"
   | "alreadyPendingPublic"
   | "sendProofIfNotYet"
   | "tempError";
@@ -261,7 +260,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     helpRenewLine: "• <b>{btn}</b> — выбрать тариф / продлить доступ",
     helpStatusLine: "• <b>{btn}</b> — срок подписки и статус оплаты",
     helpIdLine: "• <b>{btn}</b> — ваш Telegram ID (для ручного добавления)",
-    helpPhotoLine: "• После оплаты пришлите <b>фото чека</b> в этот чат",
+    helpPhotoLine: "• После оплаты пришлите <b>чек</b> в этот чат — фото или файлом",
     helpCommandsLine: "Команды: /start — меню, /id — ваш ID",
     myIdLabel: "Ваш Telegram ID:",
     myIdUsername: "Username:",
@@ -306,14 +305,14 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     createRequestFailed: "Не удалось создать заявку. Попробуйте позже.",
     paymentChosenLabel: "Вы выбрали тариф:",
     paymentDueLabel: "К оплате:",
-    paymentAfterPay: "После оплаты отправьте фото (скриншот чека) прямо в этот чат.",
+    paymentAfterPay:
+      "После оплаты отправьте чек прямо в этот чат — фото или файлом (PDF тоже подойдёт).",
     noPendingTariff: "У вас нет ожидающих оплаты тарифов. Нажмите /start чтобы выбрать тариф.",
     proofResubmitNotified:
       "✅ Новый чек получен! Предыдущий заменён. Ожидайте подтверждения администратором.",
     proofResubmitQuiet: "✅ Чек обновлён. Не присылайте чаще раза в минуту — админ уже уведомлён.",
     proofReceived:
       "✅ Чек получен! Ожидайте подтверждения администратором. После проверки вы получите доступ к VIP-группе.",
-    sendScreenshotAsPhoto: "Пожалуйста, отправьте скриншот как изображение (фото), а не файлом.",
     alreadyPendingPublic: "⏳ Заявка уже ждёт подтверждения оплаты",
     sendProofIfNotYet: "Пришлите чек, если ещё не отправили.",
   },
@@ -338,7 +337,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     helpRenewLine: "• <b>{btn}</b> — тарифті таңдау / қолжетімділікті ұзарту",
     helpStatusLine: "• <b>{btn}</b> — жазылым мерзімі және төлем мәртебесі",
     helpIdLine: "• <b>{btn}</b> — сіздің Telegram ID-іңіз (қолмен қосу үшін)",
-    helpPhotoLine: "• Төлегеннен кейін <b>чек фотосын</b> осы чатқа жіберіңіз",
+    helpPhotoLine: "• Төлегеннен кейін <b>чекті</b> осы чатқа жіберіңіз — фото немесе файл түрінде",
     helpCommandsLine: "Пәрмендер: /start — мәзір, /id — сіздің ID",
     myIdLabel: "Сіздің Telegram ID-іңіз:",
     myIdUsername: "Username:",
@@ -384,14 +383,14 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     createRequestFailed: "Өтінім жасау мүмкін болмады. Кейінірек қайталап көріңіз.",
     paymentChosenLabel: "Сіз таңдаған тариф:",
     paymentDueLabel: "Төлеуге тиіс:",
-    paymentAfterPay: "Төлегеннен кейін фотоны (чек скриншотын) осы чатқа тікелей жіберіңіз.",
+    paymentAfterPay:
+      "Төлегеннен кейін чекті осы чатқа тікелей жіберіңіз — фото немесе файл түрінде (PDF де жарайды).",
     noPendingTariff: "Сізде төлемді күтетін тарифтер жоқ. Тариф таңдау үшін /start басыңыз.",
     proofResubmitNotified: "✅ Жаңа чек алынды! Алдыңғысы ауыстырылды. Әкімші растауын күтіңіз.",
     proofResubmitQuiet:
       "✅ Чек жаңартылды. Минутына бір реттен жиі жібермеңіз — әкімшіге хабарланды.",
     proofReceived:
       "✅ Чек алынды! Әкімші растауын күтіңіз. Тексеруден кейін VIP-топқа қолжетімділік аласыз.",
-    sendScreenshotAsPhoto: "Скриншотты файл ретінде емес, сурет (фото) ретінде жіберіңіз.",
     alreadyPendingPublic: "⏳ Өтінім төлем растауын күтуде",
     sendProofIfNotYet: "Егер әлі жібермеген болсаңыз — чекті жіберіңіз.",
   },
@@ -417,7 +416,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     helpRenewLine: "• <b>{btn}</b> — choose a plan / renew access",
     helpStatusLine: "• <b>{btn}</b> — subscription term and payment status",
     helpIdLine: "• <b>{btn}</b> — your Telegram ID (for manual add)",
-    helpPhotoLine: "• After paying, send a <b>photo of the receipt</b> to this chat",
+    helpPhotoLine: "• After paying, send the <b>receipt</b> to this chat — as a photo or a file",
     helpCommandsLine: "Commands: /start — menu, /id — your ID",
     myIdLabel: "Your Telegram ID:",
     myIdUsername: "Username:",
@@ -462,7 +461,8 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     createRequestFailed: "Couldn't create the request. Please try again later.",
     paymentChosenLabel: "You chose the plan:",
     paymentDueLabel: "Amount due:",
-    paymentAfterPay: "After paying, send a photo (receipt screenshot) directly to this chat.",
+    paymentAfterPay:
+      "After paying, send the receipt directly to this chat — as a photo or a file (PDF works too).",
     noPendingTariff: "You have no plans awaiting payment. Tap /start to choose a plan.",
     proofResubmitNotified:
       "✅ New receipt received! The previous one was replaced. Awaiting admin confirmation.",
@@ -470,7 +470,6 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
       "✅ Receipt updated. Please don't send more than once a minute — the admin has already been notified.",
     proofReceived:
       "✅ Receipt received! Awaiting admin confirmation. You'll get access to the VIP group once it's checked.",
-    sendScreenshotAsPhoto: "Please send the screenshot as an image (photo), not as a file.",
     alreadyPendingPublic: "⏳ Your request is already awaiting payment confirmation",
     sendProofIfNotYet: "Send the receipt if you haven't yet.",
   },
@@ -496,7 +495,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     helpRenewLine: "• <b>{btn}</b> — tarif tanlash / kirishni uzaytirish",
     helpStatusLine: "• <b>{btn}</b> — obuna muddati va to‘lov holati",
     helpIdLine: "• <b>{btn}</b> — Telegram ID’ingiz (qo‘lda qo‘shish uchun)",
-    helpPhotoLine: "• To‘lovdan so‘ng <b>chek fotosini</b> shu chatga yuboring",
+    helpPhotoLine: "• To‘lovdan so‘ng <b>chekni</b> shu chatga yuboring — foto yoki fayl sifatida",
     helpCommandsLine: "Buyruqlar: /start — menyu, /id — ID’ingiz",
     myIdLabel: "Sizning Telegram ID’ingiz:",
     myIdUsername: "Username:",
@@ -543,7 +542,7 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
     paymentChosenLabel: "Siz tanlagan tarif:",
     paymentDueLabel: "To‘lash summasi:",
     paymentAfterPay:
-      "To‘lovdan so‘ng fotoni (chek skrinshotini) to‘g‘ridan-to‘g‘ri shu chatga yuboring.",
+      "To‘lovdan so‘ng chekni to‘g‘ridan-to‘g‘ri shu chatga yuboring — foto yoki fayl sifatida (PDF ham bo‘ladi).",
     noPendingTariff:
       "Sizda to‘lovni kutayotgan tariflar yo‘q. Tarif tanlash uchun /start ni bosing.",
     proofResubmitNotified:
@@ -552,8 +551,6 @@ const vipCopy: Record<Locale, Record<VipCopyKey, string>> = {
       "✅ Chek yangilandi. Daqiqasiga bir martadan ko‘p yubormang — administratorga allaqachon xabar berildi.",
     proofReceived:
       "✅ Chek qabul qilindi! Administrator tasdig‘ini kuting. Tekshiruvdan so‘ng VIP guruhiga kirish huquqini olasiz.",
-    sendScreenshotAsPhoto:
-      "Iltimos, skrinshotni fayl sifatida emas, rasm (foto) sifatida yuboring.",
     alreadyPendingPublic: "⏳ So‘rov allaqachon to‘lov tasdiqlanishini kutmoqda",
     sendProofIfNotYet: "Agar hali yubormagan bo‘lsangiz — chekni yuboring.",
   },
@@ -1166,7 +1163,8 @@ async function handleBuyTariff(
 async function handlePhoto(
   chat_id: number,
   from_id: number,
-  photoId: string,
+  fileId: string,
+  kind: "photo" | "document",
   locale: Locale = "ru",
 ) {
   const c = vipCopy[locale];
@@ -1242,7 +1240,7 @@ async function handlePhoto(
     ],
   };
 
-  const fileInfo = await downloadVipTelegramFile(photoId);
+  const fileInfo = await downloadVipTelegramFile(fileId);
   let proofSaved = false;
   if (fileInfo) {
     // bot_id-префикс — payment-proofs общий на все деплои, см. bot.server.ts.
@@ -1273,13 +1271,27 @@ async function handlePhoto(
     caption.length > TG_CAPTION_MAX ? caption.slice(0, TG_CAPTION_MAX - 20) + "…" : caption;
 
   for (const adminId of adminIds) {
-    await tgVip("sendPhoto", {
-      chat_id: adminId,
-      photo: photoId,
-      caption: captionSafe,
-      parse_mode: "HTML",
-      reply_markup,
-    });
+    // Telegram file_ids are tied to how the file was originally sent — a
+    // document's file_id fails with sendPhoto (and vice versa), so the
+    // forwarding method must match what the buyer actually sent (see the
+    // same split in bot.server.ts's proof-forwarding path).
+    if (kind === "document") {
+      await tgVip("sendDocument", {
+        chat_id: adminId,
+        document: fileId,
+        caption: captionSafe,
+        parse_mode: "HTML",
+        reply_markup,
+      });
+    } else {
+      await tgVip("sendPhoto", {
+        chat_id: adminId,
+        photo: fileId,
+        caption: captionSafe,
+        parse_mode: "HTML",
+        reply_markup,
+      });
+    }
   }
 }
 
@@ -1373,20 +1385,15 @@ export async function handleVipUpdate(update: TelegramUpdate) {
 
       if (msg.photo && msg.photo.length > 0) {
         const bestPhoto = msg.photo[msg.photo.length - 1];
-        await handlePhoto(chat_id, from_id, bestPhoto.file_id, locale);
+        await handlePhoto(chat_id, from_id, bestPhoto.file_id, "photo", locale);
         return;
       }
 
       if (msg.document) {
-        const mime = msg.document.mime_type || "";
-        if (mime.startsWith("image/")) {
-          await handlePhoto(chat_id, from_id, msg.document.file_id, locale);
-        } else {
-          await tgVip("sendMessage", {
-            chat_id,
-            text: c.sendScreenshotAsPhoto,
-          });
-        }
+        // Accept any document (PDF receipts included), not just images sent
+        // uncompressed — matches bot.server.ts's proof handling, which never
+        // rejected documents by mime type.
+        await handlePhoto(chat_id, from_id, msg.document.file_id, "document", locale);
         return;
       }
     }
