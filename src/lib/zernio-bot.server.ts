@@ -2844,7 +2844,7 @@ async function handlePurchaseFlow(params: {
     }
 
     const removed = cart[index];
-    await flow.removeFromCart(user, removed.productId);
+    await flow.removeFromCart(user, removed.id);
     const rest = await flow.readCart(user);
 
     if (rest.length === 0) {

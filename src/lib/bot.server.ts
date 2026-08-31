@@ -1883,7 +1883,11 @@ async function sendCoverPreviews(adminChatId: string, displayNo: number, coverUr
  * Возвращает false, когда добавить не удалось: раньше покупатель видел
  * «✅ Добавлено в корзину» независимо от исхода, включая сбой вставки.
  */
-async function addToCart(telegram_id: number, product_id: string): Promise<boolean> {
+async function addToCart(
+  telegram_id: number,
+  product_id: string,
+  product_variant_id?: string | null,
+): Promise<boolean> {
   const s = await db();
 
   const { data: product, error: productError } = await s
@@ -1896,6 +1900,20 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
     return false;
   }
   if (!product?.is_active) return false;
+
+  // Вариант (Ниши, Блок D) должен реально принадлежать этому товару —
+  // callback_data приходит от клиента, доверять её без проверки нельзя:
+  // иначе можно было бы подсунуть чужой (или чужого продавца) вариант с
+  // произвольной ценой.
+  if (product_variant_id) {
+    const { data: variant } = await s
+      .from("product_variants")
+      .select("id")
+      .eq("id", product_variant_id)
+      .eq("product_id", product_id)
+      .maybeSingle();
+    if (!variant) return false;
+  }
 
   // Смешанная корзина (физический товар + цифровой материал) не
   // поддерживается — у них разные машины выдачи (Ниши, Блок 6). Проверяем
@@ -1917,17 +1935,26 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
     if (otherKind !== incomingKind) return false;
   }
 
-  const { data: existing } = await s
+  // Строка корзины — по товару И варианту: у одного товара может быть
+  // несколько строк в корзине одновременно, по одной на выбранный вариант
+  // (Ниши, Блок D). PostgREST не матчит NULL через .eq(), поэтому для
+  // товара без вариантов нужна отдельная ветка с .is().
+  let existingQuery = s
     .from("cart_items")
     .select("id, quantity")
     .eq("telegram_id", telegram_id)
-    .eq("product_id", product_id)
-    .maybeSingle();
+    .eq("product_id", product_id);
+  existingQuery = product_variant_id
+    ? existingQuery.eq("product_variant_id", product_variant_id)
+    : existingQuery.is("product_variant_id", null);
+  const { data: existing } = await existingQuery.maybeSingle();
 
   // Складской учёт (Кейс 4) — платный модуль: без него stock_quantity
   // никогда не ограничивает добавление в корзину, даже если задан. Точная
   // атомарная проверка — на оформлении (placeOrderInner); здесь только
   // предварительная, чтобы не пускать в корзину заведомо больше остатка.
+  // Остаток считается на весь товар, не на отдельный вариант — вариантов
+  // без своего складского учёта (Ниши, Блок D, вне объёма).
   if ((await hasModule("stock")) && product.stock_quantity !== null) {
     const alreadyInCart = Number(existing?.quantity ?? 0);
     if (alreadyInCart + 1 > product.stock_quantity) return false;
@@ -1945,7 +1972,12 @@ async function addToCart(telegram_id: number, product_id: string): Promise<boole
     return true;
   }
 
-  const { error } = await s.from("cart_items").insert({ telegram_id, product_id, quantity: 1 });
+  const { error } = await s.from("cart_items").insert({
+    telegram_id,
+    product_id,
+    product_variant_id: product_variant_id ?? null,
+    quantity: 1,
+  });
   if (error) {
     console.error("[bot] addToCart: не удалось добавить позицию", error);
     return false;
@@ -2014,7 +2046,9 @@ async function showCart(chat_id: number, user: BotUser) {
   const s = await db();
   const { data: items } = await s
     .from("cart_items")
-    .select("id, quantity, products(id, name, price, currency, country_prices)")
+    .select(
+      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices), product_variants(id, name, price)",
+    )
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
@@ -2031,13 +2065,16 @@ async function showCart(chat_id: number, user: BotUser) {
   for (const it of items) {
     const p = it.products;
     if (!p) continue;
-
-    const money = await resolvePrice(p, user.state?.country_code ?? null);
+    // Вариант (Ниши, Блок D) — имя строкой в скобках, цена подставляется в
+    // resolvePrice вместо цены товара.
+    const variant = it.product_variants;
+    const money = await resolvePrice(p, user.state?.country_code ?? null, variant);
     currency = money.currency;
     const line = Number(money.amount) * Number(it.quantity);
     total += line;
-    text += `• ${escapeHtml(p.name)} × ${it.quantity} — ${formatMoney(line, currency)}\n`;
-    buttons.push([{ text: m.removeItem(p.name), callback_data: `rem:${it.id}` }]);
+    const displayName = variant ? `${p.name} (${variant.name})` : p.name;
+    text += `• ${escapeHtml(displayName)} × ${it.quantity} — ${formatMoney(line, currency)}\n`;
+    buttons.push([{ text: m.removeItem(displayName), callback_data: `rem:${it.id}` }]);
   }
   // Кейс 3 №1/№3 (промокоды/баллы) продаются как отдельные платные модули
   // (registry.ts coupons/loyalty) — без него ни кнопка, ни списание не
@@ -2683,7 +2720,7 @@ async function placeOrderInner(
   const { data: items } = await s
     .from("cart_items")
     .select(
-      "id, quantity, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, country_prices, fulfillment_kind, product_material_files(language, file_path, file_name, sort_order))",
+      "id, quantity, product_variant_id, products(id, name, price, currency, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, country_prices, fulfillment_kind, product_material_files(language, file_path, file_name, sort_order)), product_variants(id, name, price)",
     )
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
@@ -2729,12 +2766,15 @@ async function placeOrderInner(
    * попадает и в итог, и в снимок позиции ниже.
    */
   const { resolvePrice } = await import("./pricing.server");
+  // Ключ — id строки корзины, а не товара: у одного товара может быть
+  // несколько строк одновременно, по одной на выбранный вариант (Ниши,
+  // Блок D) — ключ по product_id склеил бы их цены в одну.
   const priced = new Map<string, number>();
   let total = 0;
   let currency = method?.currency || "KZT";
   for (const it of items) {
     if (!it.products) continue;
-    const money = await resolvePrice(it.products, country_code);
+    const money = await resolvePrice(it.products, country_code, it.product_variants);
     // "Все языки" — цена за позицию ×N, где N — сколько языков реально есть
     // у ЭТОГО товара (product-materials.ts deliveryPriceMultiplier).
     const multiplier = deliveryPriceMultiplier(
@@ -2743,7 +2783,7 @@ async function placeOrderInner(
     );
     const amount = money.amount * multiplier;
     currency = money.currency;
-    priced.set(String(it.products.id), amount);
+    priced.set(it.id, amount);
     total += amount * Number(it.quantity);
   }
   // Комиссия зоны доставки (Ниши, Блок B) — до промокода/баллов/сертификата,
@@ -2876,7 +2916,7 @@ async function placeOrderInner(
     withProduct.map(async (it) => {
       // Ту же цену, что вошла в итог заказа: считать её второй раз незачем, а
       // разойтись они не должны.
-      const displayPrice = priced.get(String(it.products?.id)) ?? Number(it.products?.price ?? 0);
+      const displayPrice = priced.get(it.id) ?? Number(it.products?.price ?? 0);
 
       // Снимаем ВСЕ языки, какие у товара реально заведены (было только
       // ru/kk) — иначе купленный материал на en/uz долетит до выдачи пустым.
@@ -2885,10 +2925,19 @@ async function placeOrderInner(
         byLang[lang] = materialsForProduct(it.products, lang);
       }
 
+      // Вариант (Ниши, Блок D) — имя склеивается в снимок позиции, например
+      // «Торт — 1 кг»: order_items не хранит отдельного поля под имя
+      // варианта, а name_snapshot уже и так снимок на момент покупки.
+      const variantName = it.product_variants?.name;
+      const nameSnapshot = variantName
+        ? `${it.products?.name} — ${variantName}`
+        : it.products?.name;
+
       return {
         order_id: order.id,
         product_id: it.products?.id,
-        name_snapshot: it.products?.name,
+        product_variant_id: it.product_variant_id,
+        name_snapshot: nameSnapshot,
         price_snapshot: displayPrice,
         quantity: it.quantity,
         // Legacy single-file columns kept for older order rows/tooling; the
@@ -3868,7 +3917,10 @@ export async function handleUpdate(update: TelegramUpdate) {
         return showSearch(chat_id, user, query, offset);
       }
       if (data.startsWith("add:")) {
-        const added = await addToCart(from_id, data.slice(4));
+        // "add:<productId>" — товар без вариантов; "add:<productId>:<variantId>"
+        // — выбранный вариант (Ниши, Блок D, кнопка на карточке товара).
+        const [productId, variantId] = data.slice(4).split(":");
+        const added = await addToCart(from_id, productId, variantId || null);
         await tg("sendMessage", { chat_id, text: added ? m.addedToCart : m.productUnavailable });
         return;
       }

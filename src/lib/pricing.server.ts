@@ -111,12 +111,20 @@ export async function defaultCountryCode(): Promise<string | null> {
  * Цена товара для покупателя из страны `countryCode`.
  *
  * `null` в стране — «ещё не спросили»: считаем по домашней стране продавца.
+ *
+ * `variant` (Ниши, Блок D) — если у товара выбран вариант (простой список
+ * «1 кг»/«2 кг»), его цена подставляется вместо `product.price` как база
+ * расчёта; курсовая конвертация ниже по-прежнему работает (тот же курс, что
+ * и у обычных товаров), а вот ручная цена по стране (`country_prices`) для
+ * варианта не ищется — у вариантов пока нет своей цены по странам, это
+ * отдельная задача, если понадобится.
  */
 export async function resolvePrice(
   product: PricedProduct,
   countryCode: string | null | undefined,
+  variant?: { price: number | string } | null,
 ): Promise<Money> {
-  const base = Number(product.price) || 0;
+  const base = Number(variant ? variant.price : product.price) || 0;
   const baseCurrency = String(product.currency || "KZT").toUpperCase();
 
   // multi_currency выключен → всегда базовая цена в базовой валюте, без учёта
@@ -132,8 +140,10 @@ export async function resolvePrice(
 
   const currency = (await currencyForCountry(code)) || baseCurrency;
 
-  const manual = manualCountryPrice(product.country_prices, code);
-  if (manual !== null) return { amount: Math.round(manual), currency };
+  if (!variant) {
+    const manual = manualCountryPrice(product.country_prices, code);
+    if (manual !== null) return { amount: Math.round(manual), currency };
+  }
 
   if (currency === baseCurrency) return { amount: Math.round(base), currency };
 

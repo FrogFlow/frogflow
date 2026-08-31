@@ -1088,12 +1088,16 @@ export {
 // накопителем для сценария с чеком.
 
 export type CartLine = {
+  /** Строка cart_items — нужен для removeFromCart, чтобы убрать именно эту строку, а не все строки товара (у одного товара может быть несколько строк, по одной на вариант). */
+  id: string;
   productId: string;
   name: string;
   quantity: number;
   price: number;
   currency: string;
   countryPrices: Json | null;
+  /** Выбранный вариант товара (Ниши, Блок D) — id для снимка в order_items. */
+  variantId?: string | null;
 };
 
 /**
@@ -1174,6 +1178,7 @@ export async function cartAllowsProduct(
 export async function addToCart(
   user: { telegram_id: number; user_key: string },
   productId: string,
+  variantId?: string | null,
 ): Promise<void> {
   const s = await db();
   const { data: product } = await s
@@ -1183,12 +1188,31 @@ export async function addToCart(
     .maybeSingle();
   const isPhysical = product?.fulfillment_kind === "physical";
 
-  const { data: existing } = await s
+  // Вариант (Ниши, Блок D) должен реально принадлежать этому товару —
+  // тот же приём защиты, что и в Telegram (bot.server.ts addToCart):
+  // callback/postback приходит от клиента, доверять её без проверки нельзя.
+  if (variantId) {
+    const { data: variant } = await s
+      .from("product_variants")
+      .select("id")
+      .eq("id", variantId)
+      .eq("product_id", productId)
+      .maybeSingle();
+    if (!variant) return;
+  }
+
+  // Строка корзины — по товару И варианту: у одного товара может быть
+  // несколько строк одновременно, по одной на вариант. PostgREST не матчит
+  // NULL через .eq(), для товара без вариантов нужна ветка с .is().
+  let existingQuery = s
     .from("cart_items")
     .select("id, quantity")
     .eq("telegram_id", user.telegram_id)
-    .eq("product_id", productId)
-    .maybeSingle();
+    .eq("product_id", productId);
+  existingQuery = variantId
+    ? existingQuery.eq("product_variant_id", variantId)
+    : existingQuery.is("product_variant_id", null);
+  const { data: existing } = await existingQuery.maybeSingle();
 
   if (existing) {
     if (isPhysical) {
@@ -1204,6 +1228,7 @@ export async function addToCart(
     telegram_id: user.telegram_id,
     user_key: user.user_key,
     product_id: productId,
+    product_variant_id: variantId ?? null,
     quantity: 1,
   });
 }
@@ -1212,7 +1237,9 @@ export async function readCart(user: { telegram_id: number }): Promise<CartLine[
   const s = await db();
   const { data } = await s
     .from("cart_items")
-    .select("quantity, products(id, name, price, currency, country_prices)")
+    .select(
+      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices), product_variants(id, name, price)",
+    )
     .eq("telegram_id", user.telegram_id);
 
   const lines: CartLine[] = [];
@@ -1226,13 +1253,23 @@ export async function readCart(user: { telegram_id: number }): Promise<CartLine[
       currency: string | null;
       country_prices: Json | null;
     };
+    const variant = (
+      row as { product_variants?: { id: string; name: string; price: number } | null }
+    ).product_variants;
+    // Вариант (Ниши, Блок D) — подставляем его цену/имя вместо цены товара;
+    // country_prices для варианта не решается сейчас (см. pricing.server.ts),
+    // поэтому не передаём его дальше — курсовая конвертация всё ещё
+    // применяется через priceCart/resolvePrice, просто без ручной цены по
+    // стране.
     lines.push({
+      id: String((row as { id: string }).id),
       productId: p.id,
-      name: p.name,
+      name: variant ? `${p.name} — ${variant.name}` : p.name,
       quantity: Number((row as { quantity?: number }).quantity) || 1,
-      price: Number(p.price),
+      price: variant ? Number(variant.price) : Number(p.price),
       currency: String(p.currency || "KZT"),
-      countryPrices: p.country_prices,
+      countryPrices: variant ? null : p.country_prices,
+      variantId: variant?.id ?? null,
     });
   }
   return lines;
@@ -1241,14 +1278,10 @@ export async function readCart(user: { telegram_id: number }): Promise<CartLine[
 /** Убирает одну позицию — «убрать 018», когда номер набрали не тот. */
 export async function removeFromCart(
   user: { telegram_id: number },
-  productId: string,
+  cartItemId: string,
 ): Promise<void> {
   const s = await db();
-  await s
-    .from("cart_items")
-    .delete()
-    .eq("telegram_id", user.telegram_id)
-    .eq("product_id", productId);
+  await s.from("cart_items").delete().eq("telegram_id", user.telegram_id).eq("id", cartItemId);
 }
 
 export async function clearCart(user: { telegram_id: number }): Promise<void> {
@@ -1479,6 +1512,7 @@ export async function createOrderFromCart(params: {
       return {
         order_id: order.id,
         product_id: line.productId,
+        product_variant_id: line.variantId ?? null,
         name_snapshot: line.name,
         // Цена за штуку в валюте покупателя — та же, что он видел в переписке.
         price_snapshot: line.unit,
