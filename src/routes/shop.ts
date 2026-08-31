@@ -76,7 +76,7 @@ function wrapPage(title: string, bodyHtml: string, opts: WrapPageOptions): strin
     .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 0.6rem 1.1rem; border-radius: 0.5rem; font-weight: 600; }
     .search { width: 100%; box-sizing: border-box; padding: 0.6rem 0.9rem; margin-bottom: 1.25rem; border: 1px solid #ddd; border-radius: 0.5rem; font-size: 0.95rem; font-family: inherit; }
     .layout { display: flex; align-items: flex-start; gap: 2rem; }
-    .toc { position: sticky; top: 4.5rem; flex: 0 0 13rem; display: flex; flex-direction: column; gap: 0.15rem; }
+    .toc { position: sticky; top: 4.5rem; flex: 0 0 13rem; max-height: calc(100vh - 5.5rem); overflow-y: auto; display: flex; flex-direction: column; gap: 0.15rem; }
     .toc a { display: flex; justify-content: space-between; gap: 0.5rem; color: #1a1a1a; text-decoration: none; font-size: 0.9rem; padding: 0.4rem 0.6rem; border-radius: 0.4rem; border-left: 2px solid transparent; }
     .toc a:hover { background: #eee; border-left-color: #229ed9; }
     .toc .count { color: #999; font-size: 0.8rem; }
@@ -94,7 +94,7 @@ function wrapPage(title: string, bodyHtml: string, opts: WrapPageOptions): strin
     .empty { color: #666; padding: 2rem 0; text-align: center; }
     @media (max-width: 720px) {
       .layout { flex-direction: column; }
-      .toc { position: static; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 0.5rem; width: 100%; padding-bottom: 0.35rem; -webkit-overflow-scrolling: touch; }
+      .toc { position: static; flex-direction: row; flex-wrap: nowrap; max-height: none; overflow-y: visible; overflow-x: auto; gap: 0.5rem; width: 100%; padding-bottom: 0.35rem; -webkit-overflow-scrolling: touch; }
       .toc a { flex: 0 0 auto; white-space: nowrap; background: #fff; border: 1px solid #e5e5e5; border-left: none; }
     }
   </style>
