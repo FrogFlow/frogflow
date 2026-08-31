@@ -8,6 +8,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components-ui/chart";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { errorMessage } from "@/lib/error-message";
 import { getFinancialAnalytics, getFinancialAnalyticsConverted } from "@/lib/analytics.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
@@ -41,6 +42,7 @@ const copy: Record<
     noOrders: string;
     sectionTitle: (currency: string) => string;
     combinedTitle: string;
+    combinedTabLabel: string;
     combinedHint: string;
     combinedTargetLabel: string;
     unconvertedWarning: (list: string) => string;
@@ -64,6 +66,7 @@ const copy: Record<
     noOrders: "За этот период выданных заказов ещё не было.",
     sectionTitle: (currency) => `Статистика в ${currency}`,
     combinedTitle: "Общий свод по всем валютам",
+    combinedTabLabel: "Общий свод",
     combinedHint: "Всё пересчитано в одну валюту по сегодняшнему курсу.",
     combinedTargetLabel: "Пересчитать в:",
     unconvertedWarning: (list) =>
@@ -87,6 +90,7 @@ const copy: Record<
     noOrders: "Бұл кезеңде әлі берілген тапсырыстар болған жоқ.",
     sectionTitle: (currency) => `${currency} валютасындағы статистика`,
     combinedTitle: "Барлық валюта бойынша жалпы қорытынды",
+    combinedTabLabel: "Жалпы қорытынды",
     combinedHint: "Барлығы бүгінгі бағам бойынша бір валютаға қайта есептелген.",
     combinedTargetLabel: "Мына валютаға қайта есептеу:",
     unconvertedWarning: (list) =>
@@ -110,6 +114,7 @@ const copy: Record<
     noOrders: "No delivered orders in this period yet.",
     sectionTitle: (currency) => `Stats in ${currency}`,
     combinedTitle: "Combined total across all currencies",
+    combinedTabLabel: "Combined",
     combinedHint: "Everything converted into one currency at today's rate.",
     combinedTargetLabel: "Convert into:",
     unconvertedWarning: (list) =>
@@ -133,6 +138,7 @@ const copy: Record<
     noOrders: "Bu davrda hali yetkazilgan buyurtmalar bo‘lmagan.",
     sectionTitle: (currency) => `${currency} valyutasidagi statistika`,
     combinedTitle: "Barcha valyutalar bo‘yicha umumiy svod",
+    combinedTabLabel: "Umumiy svod",
     combinedHint: "Hammasi bugungi kurs bo‘yicha bitta valyutaga qayta hisoblangan.",
     combinedTargetLabel: "Shu valyutaga o‘tkazish:",
     unconvertedWarning: (list) =>
@@ -256,7 +262,7 @@ function CombinedSection({
   const options = currencies.length > 0 ? currencies : [defaultTarget];
 
   return (
-    <div className="space-y-4 border-t pt-6">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{tr.combinedTitle}</h2>
@@ -335,22 +341,34 @@ function AnalyticsPage() {
       {!dominant || currencies.length === 0 ? (
         <p className="text-sm text-muted-foreground">{tr.noOrders}</p>
       ) : (
-        <>
+        <Tabs defaultValue={dominant}>
+          <TabsList className="flex-wrap h-auto">
+            {currencies.map((cur) => (
+              <TabsTrigger key={cur} value={cur}>
+                {cur}
+              </TabsTrigger>
+            ))}
+            <TabsTrigger value="__combined">{tr.combinedTabLabel}</TabsTrigger>
+          </TabsList>
+
           {currencies.map((cur) => (
-            <CurrencyBlock
-              key={cur}
-              title={tr.sectionTitle(cur)}
-              currency={cur}
-              summary30={data.summary30[cur]}
-              summary90={data.summary90[cur]}
-              daily={data.dailyRevenueByCurrency[cur] ?? []}
-              topProducts={data.topProductsByCurrency[cur] ?? []}
-              tr={tr}
-            />
+            <TabsContent key={cur} value={cur} className="space-y-4 pt-4">
+              <CurrencyBlock
+                title=""
+                currency={cur}
+                summary30={data.summary30[cur]}
+                summary90={data.summary90[cur]}
+                daily={data.dailyRevenueByCurrency[cur] ?? []}
+                topProducts={data.topProductsByCurrency[cur] ?? []}
+                tr={tr}
+              />
+            </TabsContent>
           ))}
 
-          <CombinedSection currencies={currencies} defaultTarget={dominant} tr={tr} />
-        </>
+          <TabsContent value="__combined" className="space-y-4 pt-4">
+            <CombinedSection currencies={currencies} defaultTarget={dominant} tr={tr} />
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
