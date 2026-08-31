@@ -81,6 +81,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
   let botId: string;
   let productId: string;
   let physicalProductId: string;
+  let deliveryZoneId: string;
   const orderIds: number[] = [];
 
   beforeAll(async () => {
@@ -149,6 +150,16 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
       throw new Error(`не удалось создать физический товар: ${physicalErr?.message}`);
     physicalProductId = physicalProduct.id;
 
+    // Зона доставки (Ниши, Блок B) — для проверки, что createOrderFromCart
+    // складывает её цену в total и снимает name в delivery_zone_name.
+    const { data: zone, error: zoneErr } = await s
+      .from("delivery_zones")
+      .insert({ bot_id: botId, name: `${TAG} зона`, price: 300, is_active: true })
+      .select("id")
+      .single();
+    if (zoneErr || !zone) throw new Error(`не удалось создать зону доставки: ${zoneErr?.message}`);
+    deliveryZoneId = zone.id;
+
     const { error: methodErr } = await s.from("payment_methods").insert({
       bot_id: botId,
       country_code: FAKE_COUNTRY,
@@ -189,6 +200,7 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     await s.from("cart_items").delete().eq("user_key", USER_KEY);
     await s.from("bot_users").delete().eq("user_key", USER_KEY);
     await s.from("payment_methods").delete().eq("country_code", FAKE_COUNTRY);
+    if (deliveryZoneId) await s.from("delivery_zones").delete().eq("id", deliveryZoneId);
     if (productId) await s.from("products").delete().eq("id", productId);
     if (physicalProductId) await s.from("products").delete().eq("id", physicalProductId);
     if (botId) await s.from("bots").delete().eq("id", botId);
@@ -397,6 +409,75 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
         fulfillment_kind: "physical",
         fulfillment_type: null,
         fulfillment_at: null,
+      });
+    });
+
+    /**
+     * Ниши, Блок B: комиссия зоны доставки складывается в amount ДО этого
+     * вызова (sendDirectPaymentDetails замораживает её в frozen_cart.total —
+     * здесь передаём готовую сумму через frozenPriced, тем же приёмом, что
+     * и настоящий чекаут), а сама зона (id/name) — отдельным параметром
+     * deliveryZone, только для снимка delivery_zone_id/_name в orders.
+     */
+    it("физический заказ с зоной доставки — total включает комиссию, зона — снимок", async () => {
+      const s = await client();
+      await s.from("cart_items").insert({
+        bot_id: botId,
+        telegram_id: TELEGRAM_ID,
+        user_key: USER_KEY,
+        product_id: physicalProductId,
+        quantity: 1,
+      });
+
+      const zoneFee = 300;
+      const { createOrderFromCart } = await import("../src/lib/direct-purchase.server");
+      const order = await createOrderFromCart({
+        user: {
+          telegram_id: TELEGRAM_ID,
+          user_key: USER_KEY,
+          username: null,
+          first_name: "Тестовый покупатель",
+        },
+        countryCode: FAKE_COUNTRY,
+        frozenPriced: {
+          lines: [
+            {
+              productId: physicalProductId,
+              name: `${TAG} торт`,
+              quantity: 1,
+              price: BASE_PRICE,
+              currency: CURRENCY,
+              countryPrices: { [FAKE_COUNTRY]: COUNTRY_PRICE },
+              unit: COUNTRY_PRICE,
+              sum: COUNTRY_PRICE,
+            },
+          ],
+          total: COUNTRY_PRICE + zoneFee,
+          currency: CURRENCY,
+          mixedCurrency: false,
+        },
+        fulfillment: {
+          type: "delivery",
+          at: "2026-09-10",
+          address: "ул. Тестовая, 1",
+          note: null,
+        },
+        deliveryZone: { id: deliveryZoneId, name: `${TAG} зона`, fee: zoneFee },
+      });
+      expect(order).not.toBeNull();
+      orderIds.push(order!.id);
+      expect(order!.total).toBe(COUNTRY_PRICE + zoneFee);
+
+      const { data: orderRow } = await s
+        .from("orders")
+        .select("total, delivery_zone_id, delivery_zone_name, delivery_fee")
+        .eq("id", order!.id)
+        .single();
+      expect(orderRow).toMatchObject({
+        total: COUNTRY_PRICE + zoneFee,
+        delivery_zone_id: deliveryZoneId,
+        delivery_zone_name: `${TAG} зона`,
+        delivery_fee: zoneFee,
       });
     });
   });

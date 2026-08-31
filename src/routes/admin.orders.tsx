@@ -74,6 +74,7 @@ const copy: Record<
     fulfillmentTypeDelivery: string;
     fulfillmentAddressLabel: string;
     fulfillmentNoteLabel: string;
+    deliveryZoneLabel: string;
     paidAmountLine: (paid: number, total: number, currency: string) => string;
     reject: string;
     resendFiles: string;
@@ -150,6 +151,7 @@ const copy: Record<
     fulfillmentTypeDelivery: "🚚 Доставка",
     fulfillmentAddressLabel: "Адрес",
     fulfillmentNoteLabel: "Комментарий",
+    deliveryZoneLabel: "Зона доставки",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `Оплачено полностью: ${paid} ${currency}`
@@ -234,6 +236,7 @@ const copy: Record<
     fulfillmentTypeDelivery: "🚚 Жеткізу",
     fulfillmentAddressLabel: "Мекенжай",
     fulfillmentNoteLabel: "Түсініктеме",
+    deliveryZoneLabel: "Жеткізу аймағы",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `Толық төленді: ${paid} ${currency}`
@@ -319,6 +322,7 @@ const copy: Record<
     fulfillmentTypeDelivery: "🚚 Delivery",
     fulfillmentAddressLabel: "Address",
     fulfillmentNoteLabel: "Note",
+    deliveryZoneLabel: "Delivery zone",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `Paid in full: ${paid} ${currency}`
@@ -403,6 +407,7 @@ const copy: Record<
     fulfillmentTypeDelivery: "🚚 Yetkazib berish",
     fulfillmentAddressLabel: "Manzil",
     fulfillmentNoteLabel: "Izoh",
+    deliveryZoneLabel: "Yetkazib berish zonasi",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `To‘liq to‘landi: ${paid} ${currency}`
@@ -805,6 +810,12 @@ function OrdersPage() {
                       {o.fulfillment_at &&
                         ` · ${new Date(o.fulfillment_at).toLocaleDateString(dateLocales[locale])}`}
                     </div>
+                    {o.delivery_zone_name && (
+                      <div>
+                        🚚 {tr.deliveryZoneLabel}: {o.delivery_zone_name}
+                        {Number(o.delivery_fee) > 0 && ` (+${o.delivery_fee} ${o.currency})`}
+                      </div>
+                    )}
                     {o.fulfillment_address && (
                       <div>
                         📍 {tr.fulfillmentAddressLabel}: {o.fulfillment_address}
