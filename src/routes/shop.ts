@@ -49,11 +49,18 @@ function wrapPage(title: string, bodyHtml: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(title)}</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 64rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; line-height: 1.5; color: #1a1a1a; background: #fafafa; }
+    html { scroll-behavior: smooth; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 72rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; line-height: 1.5; color: #1a1a1a; background: #fafafa; }
     header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
     h1 { font-size: 1.5rem; margin: 0; }
-    h2 { font-size: 1.15rem; margin: 2rem 0 0.75rem; }
+    h2 { font-size: 1.15rem; margin: 2rem 0 0.75rem; scroll-margin-top: 1rem; }
     .tg-btn { display: inline-block; background: #229ed9; color: #fff; text-decoration: none; padding: 0.6rem 1.1rem; border-radius: 0.5rem; font-weight: 600; }
+    .layout { display: flex; align-items: flex-start; gap: 2rem; }
+    .toc { position: sticky; top: 1rem; flex: 0 0 13rem; display: flex; flex-direction: column; gap: 0.15rem; }
+    .toc a { display: flex; justify-content: space-between; gap: 0.5rem; color: #1a1a1a; text-decoration: none; font-size: 0.9rem; padding: 0.4rem 0.6rem; border-radius: 0.4rem; border-left: 2px solid transparent; }
+    .toc a:hover { background: #eee; border-left-color: #229ed9; }
+    .toc .count { color: #999; font-size: 0.8rem; }
+    .content { flex: 1; min-width: 0; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
     .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 0.75rem; overflow: hidden; display: flex; flex-direction: column; }
     .card img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: #f0f0f0; }
@@ -63,6 +70,11 @@ function wrapPage(title: string, bodyHtml: string): string {
     .card-price { margin-top: auto; font-weight: 700; }
     .card-rating { font-size: 0.8rem; color: #b8860b; }
     .empty { color: #666; padding: 2rem 0; text-align: center; }
+    @media (max-width: 720px) {
+      .layout { flex-direction: column; }
+      .toc { position: static; flex-direction: row; flex-wrap: nowrap; overflow-x: auto; gap: 0.5rem; width: 100%; padding-bottom: 0.35rem; -webkit-overflow-scrolling: touch; }
+      .toc a { flex: 0 0 auto; white-space: nowrap; background: #fff; border: 1px solid #e5e5e5; border-left: none; }
+    }
   </style>
 </head>
 <body>
@@ -144,7 +156,8 @@ export const Route = createFileRoute("/shop")({
           </div>`;
         }
 
-        const sections: string[] = [];
+        type Section = { id: string; label: string; count: number; html: string };
+        const sections: Section[] = [];
         const used = new Set<string>();
         for (const c of cats ?? []) {
           const inCat = visibleProducts.filter((p) => {
@@ -153,23 +166,59 @@ export const Route = createFileRoute("/shop")({
           });
           if (inCat.length === 0) continue;
           inCat.forEach((p) => used.add(p.id));
-          sections.push(
-            `<h2>${escapeHtml(c.name as string)}</h2><div class="grid">${inCat.map(renderCard).join("")}</div>`,
-          );
+          const id = `cat-${c.id as string}`;
+          const label = c.name as string;
+          sections.push({
+            id,
+            label,
+            count: inCat.length,
+            html: `<h2 id="${id}">${escapeHtml(label)}</h2><div class="grid">${inCat.map(renderCard).join("")}</div>`,
+          });
         }
         const rootProducts = visibleProducts.filter((p) => !used.has(p.id));
         if (rootProducts.length > 0) {
-          sections.push(`<div class="grid">${rootProducts.map(renderCard).join("")}</div>`);
+          // Заголовок «Без категории» нужен, только если рядом есть другие
+          // секции — для магазина без категорий вообще (одна общая сетка)
+          // это была бы лишняя, ничего не объясняющая надпись.
+          const hasOtherSections = sections.length > 0;
+          const id = "cat-other";
+          const label = "Без категории";
+          const heading = hasOtherSections
+            ? `<h2 id="${id}">${escapeHtml(label)}</h2>`
+            : `<div id="${id}"></div>`;
+          sections.push({
+            id,
+            label,
+            count: rootProducts.length,
+            html: `${heading}<div class="grid">${rootProducts.map(renderCard).join("")}</div>`,
+          });
         }
+
+        // Содержание слева имеет смысл только когда есть что перелистывать —
+        // один раздел и так виден целиком без навигации.
+        const navHtml =
+          sections.length > 1
+            ? `<nav class="toc" aria-label="Категории">${sections
+                .map(
+                  (s) =>
+                    `<a href="#${s.id}">${escapeHtml(s.label)} <span class="count">${s.count}</span></a>`,
+                )
+                .join("")}</nav>`
+            : "";
+
+        const contentHtml =
+          sections.length > 0
+            ? sections.map((s) => s.html).join("\n")
+            : `<div class="empty">Каталог пока пуст.</div>`;
 
         const body =
           `<header>
             <h1>${escapeHtml(shopName)}</h1>
             ${botUrl ? `<a class="tg-btn" href="${escapeHtml(botUrl)}">Открыть в Telegram →</a>` : ""}
           </header>` +
-          (sections.length > 0
-            ? sections.join("\n")
-            : `<div class="empty">Каталог пока пуст.</div>`);
+          (navHtml
+            ? `<div class="layout">${navHtml}<div class="content">${contentHtml}</div></div>`
+            : contentHtml);
 
         return new Response(wrapPage(shopName, body), {
           headers: { "Content-Type": "text/html; charset=utf-8" },

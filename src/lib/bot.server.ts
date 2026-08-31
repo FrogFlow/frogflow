@@ -3676,20 +3676,24 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
     // сопоставить по смыслу. Включается отдельно от наличия ключа API (см.
     // isSmartSearchEnabled) — стоимость за вызов реальная, продавец должен
     // включить это сознательно.
-    const { isSmartSearchEnabled, consumeSmartSearchQuota, smartSearchProductIds } =
+    const { isSmartSearchEnabled, consumeSmartSearchQuota, smartSearchProductIds, MAX_CANDIDATES } =
       await import("./smart-search.server");
     // Личный кулдаун + общий дневной потолок — бот открыт всем в Telegram,
     // не только покупателям, а вызов LLM стоит реальных денег продавцу.
     // Превышение любого из двух молча приводит к «ничего не найдено», как
     // и раньше — не отдельная ошибка, которую стоило бы объяснять.
     if ((await isSmartSearchEnabled()) && (await consumeSmartSearchQuota(telegram_id))) {
+      // Тот же лимит, что smartSearchProductIds реально отправляет в LLM —
+      // раньше здесь стояло независимое число (300 против MAX_CANDIDATES
+      // 200), и часть каталога клиента с ~400 товарами умный поиск вообще
+      // не видел, никак это не показывая.
       const { data: allActive } = await s
         .from("products")
         .select(
           "*, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
         )
         .eq("is_active", true)
-        .limit(300);
+        .limit(MAX_CANDIDATES);
       const candidates = visibleOf(allActive ?? []);
       const ids = await smartSearchProductIds(
         query,
