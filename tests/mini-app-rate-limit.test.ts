@@ -19,4 +19,12 @@ describe("Mini App rate limiting", () => {
       expect(consumeMiniAppRateLimit("cart", telegramId).ok).toBe(true);
     }
   });
+
+  it("limits proof uploads more tightly than cart traffic", () => {
+    const telegramId = 9_000_000_005;
+    for (let i = 0; i < 5; i++) {
+      expect(consumeMiniAppRateLimit("proof", telegramId).ok).toBe(true);
+    }
+    expect(consumeMiniAppRateLimit("proof", telegramId).ok).toBe(false);
+  });
 });

@@ -37,6 +37,7 @@ export type MiniAppCheckoutResponse = {
   qrImageUrl?: string;
   message?: string;
   error?: string;
+  orderId?: number;
 };
 
 async function db() {
@@ -324,6 +325,7 @@ function mapPlaceOrderResult(
       step: "robokassa",
       paymentUrl: result.paymentUrl,
       amountLabel: result.amountLabel,
+      orderId: result.orderId,
     };
   }
   if (result.type === "manual_proof") {
@@ -332,9 +334,10 @@ function mapPlaceOrderResult(
       amountLabel: result.amountLabel,
       instructions: result.instructions,
       qrImageUrl: result.qrImageUrl,
+      orderId: result.orderId,
     };
   }
-  return { step: "completed", message: result.message };
+  return { step: "completed", message: result.message, orderId: result.orderId };
 }
 
 export async function miniAppDefaultCountryForCatalog(

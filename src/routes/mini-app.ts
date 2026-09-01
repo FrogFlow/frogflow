@@ -112,7 +112,10 @@ export const Route = createFileRoute("/mini-app")({
 
         const catalogBody = `
           <header>
-            <h1>${esc(shopName)}</h1>
+            <div class="header-row">
+              <h1>${esc(shopName)}</h1>
+              <a class="header-link" href="/mini-app/orders?${esc(catalogParams().toString())}">${esc(s.myOrders)}</a>
+            </div>
             <p class="subtitle">${totalProducts > 0 ? s.productsCount(totalProducts) : ""}</p>
           </header>
           ${searchHtml}

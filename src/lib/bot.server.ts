@@ -3354,6 +3354,18 @@ async function placeOrderInner(
       .eq("id", giftCertificateId);
     if (linkError) console.error("[bot] gift certificate redeemed_order_id link failed", linkError);
   }
+  if (miniApp) {
+    const { logger } = await import("./logger.server");
+    logger.info("mini_app.order_created", {
+      telegram_id,
+      order_id: order.id,
+      country_code: method?.country_code ?? country_code,
+      fulfillment_kind: orderFulfillmentKind,
+      total,
+      currency,
+      source: "mini_app",
+    });
+  }
 
   /**
    * Строки без товара отсеиваем так же, как их отсеивает расчёт цены выше
@@ -4022,7 +4034,7 @@ async function startManualProofPath(params: {
   }
 }
 
-async function notifyAdminNewOrder(
+export async function notifyAdminNewOrder(
   orderId: number,
   proofFileId: string | null,
   proofKind: "photo" | "document" | null,
@@ -4197,6 +4209,33 @@ ${fulfillmentLine}
           caption: proofCaption,
           parse_mode: "HTML",
         });
+      } else if (order.payment_proof_path) {
+        const proofPath = String(order.payment_proof_path);
+        const { data: storedProof, error: proofDownloadError } = await s.storage
+          .from("payment-proofs")
+          .download(proofPath);
+        if (proofDownloadError || !storedProof) {
+          throw proofDownloadError ?? new Error("stored proof is empty");
+        }
+        const bytes = new Uint8Array(await storedProof.arrayBuffer());
+        const { mimeFromPath, paymentProofKind } = await import("./file-mime");
+        const { tgSendMultipart } = await import("./telegram.server");
+        const mime = mimeFromPath(proofPath, storedProof.type || "application/octet-stream");
+        const kind = paymentProofKind(proofPath);
+        await tgSendMultipart(
+          kind === "image" ? "sendPhoto" : "sendDocument",
+          {
+            chat_id: adminChatId,
+            caption: proofCaption,
+            parse_mode: "HTML",
+          },
+          {
+            field: kind === "image" ? "photo" : "document",
+            filename: proofPath.split("/").pop() || "receipt",
+            bytes,
+            contentType: mime,
+          },
+        );
       } else {
         await tg("sendMessage", {
           chat_id: adminChatId,
@@ -6021,11 +6060,23 @@ export async function miniAppSetCountry(
     existing?.state && typeof existing.state === "object" && !Array.isArray(existing.state)
       ? (existing.state as NonNullable<BotUser["state"]>)
       : {};
-  await setState(telegram_id, {
+  const countryChanged = prev.country_code && prev.country_code !== method.country_code;
+  const nextState: NonNullable<BotUser["state"]> = {
     ...prev,
     country_code: method.country_code as string,
     country_name: method.country_name as string,
-  });
+  };
+  if (countryChanged) {
+    delete nextState.checkout_fulfillment_type;
+    delete nextState.checkout_fulfillment_at;
+    delete nextState.checkout_min_fulfillment_date;
+    delete nextState.checkout_fulfillment_address;
+    delete nextState.checkout_fulfillment_note;
+    delete nextState.checkout_delivery_zone_id;
+    delete nextState.checkout_delivery_zone_name;
+    delete nextState.checkout_delivery_fee;
+  }
+  await setState(telegram_id, nextState);
   return true;
 }
 
@@ -6429,6 +6480,9 @@ export async function completeMiniAppPayment(
   const instructions = (method?.instructions as string) || copy[locale].defaultInstructions;
   const rk = await loadRobokassaSettings();
   const cc = String(order.country_code ?? "").toUpperCase();
+  if (!paymentMethod && user.state?.mode === "awaiting_proof") {
+    paymentMethod = "manual";
+  }
   if (!paymentMethod && cc === "KZ" && rk.ready) {
     return { ok: true, type: "choose_payment", amountLabel, orderId };
   }

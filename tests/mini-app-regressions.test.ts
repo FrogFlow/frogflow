@@ -97,6 +97,31 @@ describe("Mini App production regressions", () => {
       expect(pack.chooseDeliveryLanguage).toBeTruthy();
       expect(pack.invalidField).toBeTruthy();
       expect(pack.paymentUnavailable).toBeTruthy();
+      expect(pack.uploadReceipt).toBeTruthy();
+      expect(pack.myOrders).toBeTruthy();
+      expect(pack.waitingPayment).toBeTruthy();
+      expect(pack.orderStatus).toBeTruthy();
     },
   );
+
+  it("exposes receipt upload, orders history and payment return polling", () => {
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    const page = source("src/routes/mini-app.orders.ts");
+    const proof = source("src/routes/api/public/mini-app/proof.ts");
+    const orders = source("src/routes/api/public/mini-app/orders.ts");
+    expect(runtime).toContain("/api/public/mini-app/proof");
+    expect(runtime).toContain("startPaymentPolling");
+    expect(runtime).toContain("/api/public/mini-app/orders");
+    expect(page).toContain('createFileRoute("/mini-app/orders")');
+    expect(proof).toContain("processMiniAppPaymentProof");
+    expect(orders).toContain("resendOrderFiles");
+  });
+
+  it("clears fulfillment checkout state when Mini App country changes", () => {
+    const bot = source("src/lib/bot.server.ts");
+    const fn = bot.slice(bot.indexOf("export async function miniAppSetCountry"));
+    expect(fn).toContain("countryChanged");
+    expect(fn).toContain("delete nextState.checkout_fulfillment_type");
+    expect(fn).toContain("delete nextState.checkout_delivery_zone_id");
+  });
 });

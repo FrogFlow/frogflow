@@ -9,12 +9,12 @@ let lastSweep = 0;
  * double taps and simple request floods.
  */
 export function consumeMiniAppRateLimit(
-  scope: "cart" | "checkout",
+  scope: "cart" | "checkout" | "proof" | "orders",
   telegramId: number,
 ): { ok: true } | { ok: false; retryAfter: number } {
   const now = Date.now();
   const windowMs = 60_000;
-  const limit = scope === "checkout" ? 20 : 90;
+  const limit = scope === "proof" ? 5 : scope === "checkout" ? 20 : scope === "orders" ? 30 : 90;
   const key = `${scope}:${telegramId}`;
 
   if (now - lastSweep > windowMs) {

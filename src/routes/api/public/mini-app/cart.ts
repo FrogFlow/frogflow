@@ -92,6 +92,7 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
         logger.info("mini_app.cart_action", {
           telegram_id: auth.user.id,
           action,
+          source: "mini_app",
         });
         const {
           ensureMiniAppBotUser,

@@ -10,9 +10,12 @@ Mini App — альтернативный интерфейс того же ма�
 | ------------------------------- | --------------------------------------------------- |
 | `/mini-app`                     | SSR-каталог, серверный поиск, категории и пагинация |
 | `/mini-app/product/:id`         | Карточка товара                                     |
+| `/mini-app/orders`              | История заказов и статусы                           |
 | `/mini-app-runtime`             | Клиентский JS для Telegram WebView                  |
 | `/api/public/mini-app/cart`     | Корзина, количество, промокоды, баллы и сертификаты |
 | `/api/public/mini-app/checkout` | Пошаговый checkout и продолжение оплаты             |
+| `/api/public/mini-app/proof`    | Загрузка чека (multipart)                           |
+| `/api/public/mini-app/orders`   | Список заказов и повторная выдача файлов            |
 
 API принимает подписанный Telegram `initData` только в
 `X-Telegram-Init-Data`. Срок действия — один час.
@@ -21,7 +24,8 @@ API принимает подписанный Telegram `initData` только �
 
 1. Телефон и страна покупателя.
 2. Для физических товаров: получение, дата, зона, адрес и комментарий.
-3. При необходимости — язык цифрового материала.
+3. При `delivery_lang_timing=before` — язык цифрового материала до заказа.
+   При `after` язык спрашивается в боте во время выдачи файлов.
 4. Создание заказа с общей защитой `claim_order_placement`.
 5. Robokassa, реквизиты или оплата при получении.
 
@@ -30,8 +34,27 @@ API принимает подписанный Telegram `initData` только �
 открытия Mini App. Пользователь также может отменить ожидающий заказ: остатки,
 баллы, промокод и сертификат возвращаются.
 
+После перехода в Robokassa Mini App периодически опрашивает статус заказа и
+показывает подтверждение, когда оплата прошла.
+
 Новая непустая корзина никогда автоматически не оплачивает старый
 `awaiting_payment` заказ — сначала нужно продолжить либо отменить старый.
+
+Смена страны в Mini App сбрасывает незавершённые поля fulfillment, чтобы
+старая зона/адрес не уехали в новый заказ.
+
+## Чек оплаты
+
+`/api/public/mini-app/proof` принимает JPEG/PNG/WebP/HEIC/PDF до 20 МБ,
+проверяет magic bytes и пишет файл в Storage `payment-proofs`. Дальше тот же
+путь, что у бота: OCR при `receipt_ocr` или ручная проверка админом. Админ
+получает чек из Storage, если Telegram `file_id` нет.
+
+## Наблюдаемость
+
+События `mini_app.cart_action`, `mini_app.checkout_step`,
+`mini_app.order_created` и `mini_app.proof_upload` пишутся с
+`source: "mini_app"` (без отдельного `orders.platform`).
 
 ## Файлы
 
@@ -39,6 +62,7 @@ API принимает подписанный Telegram `initData` только �
 - `src/lib/mini-app-catalog.server.ts` — индекс, фильтры, SSR карточки.
 - `src/lib/mini-app-cart.server.ts` — общая корзина и итог.
 - `src/lib/mini-app-checkout.server.ts` — машина шагов checkout.
+- `src/lib/payment-proof.server.ts` — валидация и обработка чека.
 - `src/lib/mini-app-runtime.ts` — Telegram WebApp UX.
 - `src/lib/mini-app-i18n.ts` — ru/kk/en/uz.
 - `src/lib/bot.server.ts` — создание и оплата заказа.
@@ -58,6 +82,8 @@ npm run build
 - товар без вариантов и с вариантами;
 - цифровой и физический checkout;
 - KZ Robokassa и оплату по реквизитам;
+- загрузку чека из Mini App;
+- «Мои заказы», повторную выдачу файлов и ссылку в бот;
 - закрытие Mini App до оплаты и последующее продолжение;
 - отмену ожидающего заказа;
 - просроченный initData;

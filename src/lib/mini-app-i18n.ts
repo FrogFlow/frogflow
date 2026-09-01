@@ -73,6 +73,25 @@ export type MiniAppStrings = {
   continuePayment: string;
   cancelOrder: string;
   rateLimited: string;
+  pendingConflict: string;
+  orderAlreadyProcessed: string;
+  uploadReceipt: string;
+  chooseReceipt: string;
+  uploadingReceipt: string;
+  proofReview: string;
+  proofRetry: string;
+  proofAccepted: string;
+  proofCompleted: string;
+  invalidReceiptFile: string;
+  receiptTooLarge: string;
+  myOrders: string;
+  noOrders: string;
+  resendFiles: string;
+  contactSupport: string;
+  waitingPayment: string;
+  paymentConfirmed: string;
+  filesResent: string;
+  orderStatus: Record<string, string>;
 };
 
 const dict: Record<Locale, MiniAppStrings> = {
@@ -136,7 +155,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     orderComplete: "Заказ оформлен! Материалы придут в бот.",
     orderOnReceipt: "Заказ принят! Оплата при получении.",
     openPayment: "Перейти к оплате",
-    sendProofInBot: "Отправьте чек оплаты в чат с ботом.",
+    sendProofInBot: "Если загрузка не сработала — отправьте чек в чат с ботом.",
     continue: "Продолжить",
     cancel: "Отмена",
     back: "Назад",
@@ -149,6 +168,34 @@ const dict: Record<Locale, MiniAppStrings> = {
     continuePayment: "Продолжить оплату",
     cancelOrder: "Отменить заказ",
     rateLimited: "Слишком много запросов. Подождите минуту.",
+    pendingConflict: "Сначала оплатите или отмените предыдущий заказ.",
+    orderAlreadyProcessed: "Заказ уже обработан. Обновите список заказов.",
+    uploadReceipt: "Загрузить чек",
+    chooseReceipt: "Выберите фото или PDF чека",
+    uploadingReceipt: "Загрузка чека…",
+    proofReview: "Чек отправлен продавцу на проверку.",
+    proofRetry: "Файл не похож на чек. Загрузите другой.",
+    proofAccepted: "Оплата подтверждена, заказ принят в работу.",
+    proofCompleted: "Оплата подтверждена, материалы отправлены в бот.",
+    invalidReceiptFile: "Нужен чек в формате JPEG, PNG, WebP, HEIC или PDF.",
+    receiptTooLarge: "Файл больше 20 МБ.",
+    myOrders: "Мои заказы",
+    noOrders: "Заказов пока нет.",
+    resendFiles: "Получить файлы повторно",
+    contactSupport: "Написать в бот",
+    waitingPayment: "Ожидаем оплату. Можно вернуться сюда после оплаты.",
+    paymentConfirmed: "Оплата получена. Статус заказа обновлён.",
+    filesResent: "Файлы отправлены в бот.",
+    orderStatus: {
+      awaiting_payment: "Ожидает оплаты",
+      awaiting_confirmation: "Чек проверяется",
+      delivering: "Материалы отправляются",
+      delivered: "Выполнен",
+      accepted: "Принят в работу",
+      in_production: "В работе",
+      ready: "Готов",
+      rejected: "Отменён",
+    },
   },
   kk: {
     defaultShopName: "Дүкен",
@@ -210,7 +257,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     orderComplete: "Тапсырыс жасалды! Материалдар ботқа келеді.",
     orderOnReceipt: "Тапсырыс қабылданды! Алу кезінде төлем.",
     openPayment: "Төлемге өту",
-    sendProofInBot: "Төлем чегін бот чатында жіберіңіз.",
+    sendProofInBot: "Жүктеу істемесе — чекті бот чатына жіберіңіз.",
     continue: "Жалғастыру",
     cancel: "Бас тарту",
     back: "Артқа",
@@ -223,6 +270,34 @@ const dict: Record<Locale, MiniAppStrings> = {
     continuePayment: "Төлемді жалғастыру",
     cancelOrder: "Тапсырыстан бас тарту",
     rateLimited: "Сұраулар тым көп. Бір минут күтіңіз.",
+    pendingConflict: "Алдымен алдыңғы тапсырысты төлеңіз немесе одан бас тартыңыз.",
+    orderAlreadyProcessed: "Тапсырыс өңделді. Тізімді жаңартыңыз.",
+    uploadReceipt: "Чекті жүктеу",
+    chooseReceipt: "Чектің фотосын немесе PDF файлын таңдаңыз",
+    uploadingReceipt: "Чек жүктелуде…",
+    proofReview: "Чек сатушыға тексеруге жіберілді.",
+    proofRetry: "Файл чекке ұқсамайды. Басқасын жүктеңіз.",
+    proofAccepted: "Төлем расталды, тапсырыс жұмысқа қабылданды.",
+    proofCompleted: "Төлем расталды, материалдар ботқа жіберілді.",
+    invalidReceiptFile: "JPEG, PNG, WebP, HEIC немесе PDF чек қажет.",
+    receiptTooLarge: "Файл 20 МБ-тан үлкен.",
+    myOrders: "Менің тапсырыстарым",
+    noOrders: "Тапсырыстар әзірге жоқ.",
+    resendFiles: "Файлдарды қайта алу",
+    contactSupport: "Ботқа жазу",
+    waitingPayment: "Төлемді күтеміз. Төлегеннен кейін осында оралыңыз.",
+    paymentConfirmed: "Төлем қабылданды. Тапсырыс мәртебесі жаңартылды.",
+    filesResent: "Файлдар ботқа жіберілді.",
+    orderStatus: {
+      awaiting_payment: "Төлемді күтуде",
+      awaiting_confirmation: "Чек тексерілуде",
+      delivering: "Материалдар жіберілуде",
+      delivered: "Орындалды",
+      accepted: "Жұмысқа қабылданды",
+      in_production: "Жұмыста",
+      ready: "Дайын",
+      rejected: "Бас тартылды",
+    },
   },
   en: {
     defaultShopName: "Shop",
@@ -284,7 +359,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     orderComplete: "Order placed! Files will arrive in the bot.",
     orderOnReceipt: "Order accepted! Pay on receipt.",
     openPayment: "Go to payment",
-    sendProofInBot: "Send payment proof in the bot chat.",
+    sendProofInBot: "If upload fails, send the receipt in the bot chat.",
     continue: "Continue",
     cancel: "Cancel",
     back: "Back",
@@ -297,6 +372,34 @@ const dict: Record<Locale, MiniAppStrings> = {
     continuePayment: "Continue payment",
     cancelOrder: "Cancel order",
     rateLimited: "Too many requests. Please wait a minute.",
+    pendingConflict: "Complete or cancel the previous order first.",
+    orderAlreadyProcessed: "The order has already been processed. Refresh your orders.",
+    uploadReceipt: "Upload receipt",
+    chooseReceipt: "Choose a receipt photo or PDF",
+    uploadingReceipt: "Uploading receipt…",
+    proofReview: "The receipt was sent to the seller for review.",
+    proofRetry: "This file does not look like a receipt. Upload another one.",
+    proofAccepted: "Payment confirmed. Your order is now being prepared.",
+    proofCompleted: "Payment confirmed. Files were sent to the bot.",
+    invalidReceiptFile: "Upload a JPEG, PNG, WebP, HEIC or PDF receipt.",
+    receiptTooLarge: "The file is larger than 20 MB.",
+    myOrders: "My orders",
+    noOrders: "No orders yet.",
+    resendFiles: "Send files again",
+    contactSupport: "Open bot",
+    waitingPayment: "Waiting for payment. You can return here after paying.",
+    paymentConfirmed: "Payment received. Order status updated.",
+    filesResent: "Files were sent to the bot.",
+    orderStatus: {
+      awaiting_payment: "Awaiting payment",
+      awaiting_confirmation: "Receipt under review",
+      delivering: "Sending files",
+      delivered: "Completed",
+      accepted: "Accepted",
+      in_production: "In progress",
+      ready: "Ready",
+      rejected: "Cancelled",
+    },
   },
   uz: {
     defaultShopName: "Do‘kon",
@@ -358,7 +461,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     orderComplete: "Buyurtma qabul qilindi! Fayllar botga keladi.",
     orderOnReceipt: "Buyurtma qabul qilindi! Olishda to‘lash.",
     openPayment: "To‘lovga o‘tish",
-    sendProofInBot: "To‘lov chekini bot chatida yuboring.",
+    sendProofInBot: "Yuklash ishlamasa — chekni bot chatiga yuboring.",
     continue: "Davom etish",
     cancel: "Bekor qilish",
     back: "Orqaga",
@@ -371,6 +474,34 @@ const dict: Record<Locale, MiniAppStrings> = {
     continuePayment: "To‘lovni davom ettirish",
     cancelOrder: "Buyurtmani bekor qilish",
     rateLimited: "Juda ko‘p so‘rov. Bir daqiqa kuting.",
+    pendingConflict: "Avval oldingi buyurtmani to‘lang yoki bekor qiling.",
+    orderAlreadyProcessed: "Buyurtma allaqachon qayta ishlangan. Ro‘yxatni yangilang.",
+    uploadReceipt: "Chekni yuklash",
+    chooseReceipt: "Chek rasmi yoki PDF faylini tanlang",
+    uploadingReceipt: "Chek yuklanmoqda…",
+    proofReview: "Chek sotuvchiga tekshirish uchun yuborildi.",
+    proofRetry: "Fayl chekga o‘xshamaydi. Boshqasini yuklang.",
+    proofAccepted: "To‘lov tasdiqlandi, buyurtma ishga qabul qilindi.",
+    proofCompleted: "To‘lov tasdiqlandi, fayllar botga yuborildi.",
+    invalidReceiptFile: "JPEG, PNG, WebP, HEIC yoki PDF chek yuklang.",
+    receiptTooLarge: "Fayl 20 MB dan katta.",
+    myOrders: "Buyurtmalarim",
+    noOrders: "Buyurtmalar hali yo‘q.",
+    resendFiles: "Fayllarni qayta olish",
+    contactSupport: "Botga yozish",
+    waitingPayment: "To‘lovni kutmoqdamiz. To‘lagach shu yerga qayting.",
+    paymentConfirmed: "To‘lov qabul qilindi. Buyurtma holati yangilandi.",
+    filesResent: "Fayllar botga yuborildi.",
+    orderStatus: {
+      awaiting_payment: "To‘lov kutilmoqda",
+      awaiting_confirmation: "Chek tekshirilmoqda",
+      delivering: "Fayllar yuborilmoqda",
+      delivered: "Bajarildi",
+      accepted: "Ishga qabul qilindi",
+      in_production: "Jarayonda",
+      ready: "Tayyor",
+      rejected: "Bekor qilindi",
+    },
   },
 };
 
@@ -392,7 +523,9 @@ export function miniAppStringsForLanguage(language_code?: string | null): MiniAp
 }
 
 /** JSON-safe copy for client (functions → static strings where needed). */
-export function miniAppStringsClientPack(locale: Locale): Record<string, string> {
+export function miniAppStringsClientPack(
+  locale: Locale,
+): Record<string, string | Record<string, string>> {
   const s = miniAppStrings(locale);
   return {
     defaultShopName: s.defaultShopName,
@@ -463,6 +596,25 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     continuePayment: s.continuePayment,
     cancelOrder: s.cancelOrder,
     rateLimited: s.rateLimited,
+    pendingConflict: s.pendingConflict,
+    orderAlreadyProcessed: s.orderAlreadyProcessed,
+    uploadReceipt: s.uploadReceipt,
+    chooseReceipt: s.chooseReceipt,
+    uploadingReceipt: s.uploadingReceipt,
+    proofReview: s.proofReview,
+    proofRetry: s.proofRetry,
+    proofAccepted: s.proofAccepted,
+    proofCompleted: s.proofCompleted,
+    invalidReceiptFile: s.invalidReceiptFile,
+    receiptTooLarge: s.receiptTooLarge,
+    myOrders: s.myOrders,
+    noOrders: s.noOrders,
+    resendFiles: s.resendFiles,
+    contactSupport: s.contactSupport,
+    waitingPayment: s.waitingPayment,
+    paymentConfirmed: s.paymentConfirmed,
+    filesResent: s.filesResent,
+    orderStatus: s.orderStatus,
     productsCountSuffix:
       locale === "ru"
         ? "товаров"

@@ -38,7 +38,9 @@ export const Route = createFileRoute("/api/public/mini-app/checkout")({
         logger.info("mini_app.checkout_step", {
           telegram_id: auth.user.id,
           step: result.step,
+          order_id: result.orderId,
           error: result.error,
+          source: "mini_app",
         });
         if (result.step === "error") {
           const status = result.error === "empty_cart" ? 400 : 400;

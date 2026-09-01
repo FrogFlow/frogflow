@@ -126,7 +126,10 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
         const productBody = `
           <header>
             <a class="back-link" href="/mini-app?${esc(backQuery.toString())}">${esc(s.backToCatalog)}</a>
-            <h1>${esc(p.name)}</h1>
+            <div class="header-row">
+              <h1>${esc(p.name)}</h1>
+              <a class="header-link" href="/mini-app/orders?${esc(backQuery.toString())}">${esc(s.myOrders)}</a>
+            </div>
           </header>
           <div class="pdp-gallery">${gallery}</div>
           <div class="pdp-body">

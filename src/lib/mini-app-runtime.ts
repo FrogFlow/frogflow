@@ -9,6 +9,8 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   var checkoutHistory = [];
   var mainButtonBound = false;
   var quantityBusy = {};
+  var paymentPollTimer = null;
+  var paymentPollOrderId = null;
 
   function t(key) { return I[key] || key; }
 
@@ -196,6 +198,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   var cartLines = document.getElementById("mini-cart-lines");
   var cartDiscounts = document.getElementById("mini-cart-discounts");
   var pendingPaymentEl = document.getElementById("mini-pending-payment");
+  var ordersEl = document.getElementById("mini-orders");
   var checkoutForm = document.getElementById("mini-checkout-form");
   var cartTotalEl = document.getElementById("mini-cart-total");
   var cartCountEl = document.getElementById("mini-cart-count");
@@ -474,8 +477,95 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       .catch(function () { showToast(t("networkError")); });
   }
 
+  function loadOrders() {
+    if (!ordersEl || !initData()) return Promise.resolve();
+    return fetch("/api/public/mini-app/orders", { headers: apiHeaders() })
+      .then(parseResponse)
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d && res.d.error ? res.d.error : "orders_failed");
+        renderOrders(res.d.orders || [], res.d.botUrl || "");
+      })
+      .catch(function (error) {
+        if (!error || !error.auth) ordersEl.innerHTML = "<p class=\\"empty\\">" + escapeHtml(t("networkError")) + "</p>";
+      });
+  }
+
+  function renderOrders(orders, botUrl) {
+    if (!ordersEl) return;
+    if (!orders.length) {
+      ordersEl.innerHTML = "<p class=\\"empty\\">" + escapeHtml(t("noOrders")) + "</p>";
+      return;
+    }
+    var statuses = I.orderStatus || {};
+    ordersEl.innerHTML = orders.map(function (order) {
+      var status = statuses[order.status] || order.status;
+      var date = "";
+      try {
+        date = new Intl.DateTimeFormat(window.__miniAppLocale || "ru", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(order.createdAt));
+      } catch (e) { date = order.createdAt || ""; }
+      var actions = "";
+      if (order.status === "awaiting_payment") {
+        actions += "<button type=\\"button\\" data-order-resume=\\"" + Number(order.id) + "\\">" +
+          escapeHtml(t("continuePayment")) + "</button>";
+      }
+      if (order.status === "delivered" && order.fulfillmentKind !== "physical") {
+        actions += "<button type=\\"button\\" data-order-resend=\\"" + Number(order.id) + "\\">" +
+          escapeHtml(t("resendFiles")) + "</button>";
+      }
+      if (botUrl) {
+        actions += "<a href=\\"" + escapeHtml(botUrl) + "\\" data-bot-link>" +
+          escapeHtml(t("contactSupport")) + "</a>";
+      }
+      return "<article class=\\"order-card\\"><div class=\\"order-head\\"><span>#" +
+        Number(order.displayNo) + "</span><span>" + escapeHtml(status) + "</span></div>" +
+        "<div class=\\"order-meta\\">" + escapeHtml(date) + " · " +
+        escapeHtml(formatMoney(Number(order.total), order.currency)) + "</div>" +
+        (order.fulfillmentAt ? "<div class=\\"order-meta\\">" + escapeHtml(order.fulfillmentAt) + "</div>" : "") +
+        (actions ? "<div class=\\"order-actions\\">" + actions + "</div>" : "") +
+        "</article>";
+    }).join("");
+    ordersEl.querySelectorAll("[data-order-resume]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        runCheckout({ resume_payment: true });
+        showCartSheet();
+      });
+    });
+    ordersEl.querySelectorAll("[data-order-resend]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        resendOrderFiles(Number(button.getAttribute("data-order-resend")), button);
+      });
+    });
+    ordersEl.querySelectorAll("[data-bot-link]").forEach(function (link) {
+      link.addEventListener("click", function (event) {
+        if (tg && tg.openTelegramLink) {
+          event.preventDefault();
+          tg.openTelegramLink(link.href);
+        }
+      });
+    });
+  }
+
+  function resendOrderFiles(orderId, button) {
+    button.disabled = true;
+    fetch("/api/public/mini-app/orders", {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({ action: "resend", order_id: orderId }),
+    })
+      .then(parseResponse)
+      .then(function (res) {
+        showToast(res.ok ? t("filesResent") : t("checkoutFailed"));
+      })
+      .catch(function () { showToast(t("networkError")); })
+      .finally(function () { button.disabled = false; });
+  }
+
   function clearCheckoutForm() {
     if (!checkoutForm) return;
+    stopPaymentPolling();
     checkoutForm.innerHTML = "";
     checkoutForm.classList.add("hidden");
   }
@@ -536,6 +626,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         "</div>";
     } else if (step === "robokassa") {
       html = "<p><strong>" + escapeHtml(data.amountLabel || "") + "</strong></p>" +
+        "<p class=\\"checkout-hint\\">" + t("waitingPayment") + "</p>" +
         "<button type=\\"button\\" class=\\"primary-btn\\" id=\\"mini-open-pay\\">" + t("openPayment") + "</button>";
       checkoutForm.innerHTML = html;
       var openPay = document.getElementById("mini-open-pay");
@@ -543,15 +634,44 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         if (data.paymentUrl && tg) tg.openLink(data.paymentUrl);
         else if (data.paymentUrl) window.open(data.paymentUrl, "_blank");
       });
+      startPaymentPolling(data.orderId);
       return;
     } else if (step === "manual_proof") {
       html = "<p><strong>" + escapeHtml(data.amountLabel || "") + "</strong></p>" +
         (data.qrImageUrl ? "<img class=\\"manual-qr\\" src=\\"" + escapeHtml(data.qrImageUrl) + "\\" alt=\\"QR\\" />" : "") +
         "<div class=\\"manual-instructions\\" id=\\"mini-manual-text\\"></div>" +
-        "<p>" + t("sendProofInBot") + "</p>";
+        "<label for=\\"mini-proof-file\\">" + t("chooseReceipt") + "</label>" +
+        "<input type=\\"file\\" id=\\"mini-proof-file\\" accept=\\"image/jpeg,image/png,image/webp,image/heic,application/pdf\\" />" +
+        "<img id=\\"mini-proof-preview\\" class=\\"proof-preview\\" alt=\\"Receipt preview\\" />" +
+        "<progress id=\\"mini-proof-progress\\" class=\\"proof-progress\\" max=\\"100\\" value=\\"0\\"></progress>" +
+        "<div id=\\"mini-proof-status\\" class=\\"proof-status\\" aria-live=\\"polite\\"></div>" +
+        "<button type=\\"button\\" class=\\"primary-btn\\" id=\\"mini-upload-proof\\">" + t("uploadReceipt") + "</button>" +
+        "<p class=\\"checkout-hint\\">" + t("sendProofInBot") + "</p>";
       checkoutForm.innerHTML = html;
       var instEl = document.getElementById("mini-manual-text");
       if (instEl) instEl.textContent = data.instructions || "";
+      var proofInput = document.getElementById("mini-proof-file");
+      var proofPreview = document.getElementById("mini-proof-preview");
+      if (proofInput) proofInput.addEventListener("change", function () {
+        var file = proofInput.files && proofInput.files[0];
+        if (!file || !proofPreview) return;
+        if (file.type.indexOf("image/") === 0) {
+          proofPreview.src = URL.createObjectURL(file);
+          proofPreview.style.display = "block";
+        } else {
+          proofPreview.removeAttribute("src");
+          proofPreview.style.display = "none";
+        }
+      });
+      var uploadProof = document.getElementById("mini-upload-proof");
+      if (uploadProof) uploadProof.addEventListener("click", function () {
+        var file = proofInput && proofInput.files ? proofInput.files[0] : null;
+        if (!file) {
+          showToast(t("chooseReceipt"));
+          return;
+        }
+        uploadPaymentProof(file, data.orderId, uploadProof);
+      });
       return;
     } else if (step === "completed") {
       html = "<p><strong>" + escapeHtml(data.message || t("orderComplete")) + "</strong></p>";
@@ -640,6 +760,133 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     });
   }
 
+  function stopPaymentPolling() {
+    if (paymentPollTimer) {
+      clearInterval(paymentPollTimer);
+      paymentPollTimer = null;
+    }
+    paymentPollOrderId = null;
+  }
+
+  function startPaymentPolling(orderId) {
+    stopPaymentPolling();
+    if (!orderId) return;
+    paymentPollOrderId = Number(orderId);
+    var attempts = 0;
+    paymentPollTimer = setInterval(function () {
+      attempts += 1;
+      if (attempts > 60) {
+        stopPaymentPolling();
+        return;
+      }
+      if (!initData() || document.visibilityState !== "visible") return;
+      fetch("/api/public/mini-app/orders", { headers: apiHeaders() })
+        .then(parseResponse)
+        .then(function (res) {
+          if (!res.ok || !paymentPollOrderId) return;
+          var orders = res.d.orders || [];
+          var order = null;
+          for (var i = 0; i < orders.length; i++) {
+            if (Number(orders[i].id) === paymentPollOrderId) {
+              order = orders[i];
+              break;
+            }
+          }
+          if (!order || order.status === "awaiting_payment") return;
+          stopPaymentPolling();
+          showToast(t("paymentConfirmed"));
+          showCheckoutStep({
+            step: "completed",
+            message: t("paymentConfirmed"),
+            orderId: order.id,
+          });
+          refreshCart().catch(function () {});
+          loadOrders();
+        })
+        .catch(function () {});
+    }, 4000);
+  }
+
+  function uploadPaymentProof(file, orderId, button) {
+    if (file.size > 20 * 1024 * 1024) {
+      showToast(t("receiptTooLarge"));
+      return;
+    }
+    var allowed = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/heic",
+      "application/pdf",
+    ];
+    if (allowed.indexOf(file.type) === -1) {
+      showToast(t("invalidReceiptFile"));
+      return;
+    }
+    var progress = document.getElementById("mini-proof-progress");
+    var status = document.getElementById("mini-proof-status");
+    var form = new FormData();
+    form.append("file", file);
+    if (orderId) form.append("order_id", String(orderId));
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/public/mini-app/proof");
+    xhr.setRequestHeader("X-Telegram-Init-Data", initData());
+    if (button) button.disabled = true;
+    if (progress) {
+      progress.style.display = "block";
+      progress.value = 0;
+    }
+    if (status) status.textContent = t("uploadingReceipt");
+    try { if (tg) tg.enableClosingConfirmation(); } catch (e) {}
+    xhr.upload.onprogress = function (event) {
+      if (progress && event.lengthComputable) {
+        progress.value = Math.round((event.loaded / event.total) * 100);
+      }
+    };
+    xhr.onload = function () {
+      if (button) button.disabled = false;
+      var result = {};
+      try { result = JSON.parse(xhr.responseText || "{}"); } catch (e) {}
+      if (xhr.status === 401 || xhr.status === 403) {
+        cachedInitData = "";
+        setCartEnabled(false);
+        showSessionError();
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300 || !result.ok) {
+        var errorText = result.error === "file_too_large"
+          ? t("receiptTooLarge")
+          : result.error === "invalid_file"
+            ? t("invalidReceiptFile")
+            : result.error === "rate_limited"
+              ? t("rateLimited")
+              : result.error === "order_already_processed"
+                ? t("orderAlreadyProcessed")
+                : t("checkoutFailed");
+        if (status) status.textContent = errorText;
+        return;
+      }
+      var message = result.outcome === "proof_retry"
+        ? t("proofRetry")
+        : result.outcome === "proof_review"
+          ? t("proofReview")
+          : result.outcome === "accepted"
+            ? t("proofAccepted")
+            : t("proofCompleted");
+      if (status) status.textContent = message;
+      if (result.outcome !== "proof_retry") {
+        if (button) button.style.display = "none";
+        try { if (tg) tg.disableClosingConfirmation(); } catch (e) {}
+        refreshCart().catch(function () {});
+      }
+    };
+    xhr.onerror = function () {
+      if (button) button.disabled = false;
+      if (status) status.textContent = t("networkError");
+    };
+    xhr.send(form);
+  }
+
   function runCheckout(extraBody) {
     if (checkoutBusy) return Promise.resolve();
     checkoutBusy = true;
@@ -663,11 +910,17 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         checkoutBusy = false;
         if (checkoutForm) checkoutForm.setAttribute("aria-busy", "false");
         if (cartError) cartError.textContent = "";
-        if (checkoutBtn) checkoutBtn.disabled = state.items.length === 0;
+        if (checkoutBtn) {
+          checkoutBtn.disabled = state.items.length === 0 && !state.pendingPayment;
+        }
         if (!res.ok) {
           var code = res.d && res.d.error;
           var msg = code === "in_progress"
             ? t("inProgress")
+            : code === "pending_order_conflict"
+              ? t("pendingConflict")
+              : code === "order_already_processed" || code === "already_processed"
+                ? t("orderAlreadyProcessed")
             : code === "rate_limited"
               ? t("rateLimited")
             : code === "empty_cart"
@@ -843,7 +1096,10 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       }
     });
     if (openCart) openCart.disabled = !on;
-    if (checkoutBtn) checkoutBtn.disabled = !on || state.items.length === 0;
+    if (checkoutBtn) {
+      checkoutBtn.disabled =
+        !on || (state.items.length === 0 && !state.pendingPayment);
+    }
   }
 
   function boot() {
@@ -852,8 +1108,10 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         cartReady = true;
         setCartEnabled(true);
         refreshCart().catch(function (error) {
+          revealContext();
           if (!error || !error.auth) showToast(t("cartLoadFailed"));
         });
+        loadOrders();
       }
       return;
     }
@@ -866,6 +1124,17 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   }
 
   bindTelegram();
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && initData()) {
+      refreshCart().catch(function () {});
+      loadOrders();
+    }
+  });
+  if (ordersEl) {
+    setInterval(function () {
+      if (document.visibilityState === "visible") loadOrders();
+    }, 10000);
+  }
   var backLink = document.querySelector(".back-link");
   if (backLink && tg && tg.BackButton) {
     try {

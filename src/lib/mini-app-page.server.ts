@@ -92,6 +92,8 @@ export function wrapMiniAppPage(
       border-bottom: 1px solid var(--border);
     }
     h1 { font-size: 1.25rem; margin: 0; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+    .header-link { color: var(--link); text-decoration: none; font-size: 0.85rem; white-space: nowrap; }
     .subtitle { font-size: 0.8rem; color: var(--hint); margin: 0.25rem 0 0; }
     .back-link { color: var(--link); text-decoration: none; font-size: 0.9rem; display: inline-block; margin-bottom: 0.35rem; }
     .search {
@@ -366,6 +368,15 @@ export function wrapMiniAppPage(
       border-radius: 10px;
     }
     .manual-qr { max-width: 200px; margin: 0.5rem auto; display: block; border-radius: 8px; }
+    .proof-preview { max-width: 100%; max-height: 220px; display: none; margin: 0.75rem auto; border-radius: 10px; object-fit: contain; }
+    .proof-progress { width: 100%; margin-top: 0.75rem; display: none; }
+    .proof-status { font-size: 0.85rem; color: var(--hint); margin-top: 0.5rem; }
+    .orders-list { padding: 1rem; display: grid; gap: 0.75rem; }
+    .order-card { background: var(--secondary); border: 1px solid var(--border); border-radius: 14px; padding: 0.85rem; }
+    .order-head { display: flex; justify-content: space-between; gap: 0.5rem; font-weight: 600; }
+    .order-meta { color: var(--hint); font-size: 0.8rem; margin-top: 0.35rem; }
+    .order-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.65rem; }
+    .order-actions button, .order-actions a { border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); padding: 0.45rem 0.65rem; font-size: 0.8rem; text-decoration: none; cursor: pointer; }
   </style>
   ${extraHead ?? ""}
 </head>
