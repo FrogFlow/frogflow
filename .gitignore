@@ -20,6 +20,7 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+.env.migrations
 
 # Wrangler / Cloudflare
 .wrangler/

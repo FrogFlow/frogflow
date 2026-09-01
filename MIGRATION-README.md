@@ -7,6 +7,25 @@
 Порядок шагов важен: часть изменений ломающие, и применять их можно только
 после того, как задеплоен соответствующий код.
 
+### Применение миграций (Management API)
+
+DDL не выполняется через Data API (`SUPABASE_SERVICE_ROLE_KEY`) — только через
+Supabase SQL Editor или **Management API**.
+
+Скрипт в репозитории (для агента / локально):
+
+```bash
+# Секреты в .env.migrations (не коммитить) или в окружении:
+# SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF (или SUPABASE_URL)
+
+set -a && source .env.migrations && set +a
+node scripts/apply-migration.mjs MIGRATION-56-web-cart-handoff.sql
+node scripts/apply-migration.mjs --check web_cart_handoffs
+```
+
+`SUPABASE_ACCESS_TOKEN` — Personal Access Token из Supabase Dashboard →
+Account → Access Tokens (не anon/service_role ключ).
+
 ---
 
 ## Как устроена изоляция
@@ -204,7 +223,6 @@ delivery_zone_name/delivery_fee/fulfillment_reminder_sent_at`,
 `delivery_zones` — оба безопасны, на боевых данных нарушающих строк не
 было (проверено перед применением).
 
-**56** (`MIGRATION-56-web-cart-handoff.sql`) — **ожидает применения на бою**.
-Таблица `web_cart_handoffs` для переноса корзины с веб-витрины в Telegram
-(deep link `?start=wc_<token>`). Без неё кнопка «Оплатить в Telegram» на
-`/shop` отвечает 503.
+**56** (`MIGRATION-56-web-cart-handoff.sql`) — **применена** на боевой базе
+(2026-09-01, Management API + `scripts/apply-migration.mjs`). Таблица
+`web_cart_handoffs` — 7 колонок, индексы и RLS на месте.
