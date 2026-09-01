@@ -49,10 +49,16 @@ describe("Mini App production regressions", () => {
 
   it("releases order placement for terminal Mini App paths", () => {
     const bot = source("src/lib/bot.server.ts");
-    const completedPaths = bot.match(
-      /if \(miniApp\) \{\s+await releaseOrderPlacement\(telegram_id, user\.state\);/g,
+    const zeroTotal = bot.slice(
+      bot.indexOf("if (total <= 0)"),
+      bot.indexOf("// Оплата при получении"),
     );
-    expect(completedPaths?.length).toBeGreaterThanOrEqual(2);
+    const onReceipt = bot.slice(
+      bot.indexOf('loadPaymentMode()) === "on_receipt"'),
+      bot.indexOf("const amountDue = await amountDueNow"),
+    );
+    expect(zeroTotal).toContain("releaseOrderPlacement(telegram_id, user.state)");
+    expect(onReceipt).toContain("releaseOrderPlacement(telegram_id, user.state)");
     const release = bot.slice(
       bot.indexOf("export async function releaseOrderPlacement"),
       bot.indexOf("export async function releaseOrderPlacement") + 400,
