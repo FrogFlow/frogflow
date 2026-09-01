@@ -67,6 +67,9 @@ export type MiniAppStrings = {
   inProgress: string;
   invalidField: string;
   paymentUnavailable: string;
+  pendingOrder: string;
+  continuePayment: string;
+  cancelOrder: string;
 };
 
 const dict: Record<Locale, MiniAppStrings> = {
@@ -137,6 +140,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     inProgress: "Заказ уже оформляется",
     invalidField: "Проверьте введённые данные",
     paymentUnavailable: "Выбранный способ оплаты недоступен",
+    pendingOrder: "Заказ ожидает оплаты",
+    continuePayment: "Продолжить оплату",
+    cancelOrder: "Отменить заказ",
   },
   kk: {
     defaultShopName: "Дүкен",
@@ -205,6 +211,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     inProgress: "Тапсырыс рәсімделіп жатыр",
     invalidField: "Енгізілген деректерді тексеріңіз",
     paymentUnavailable: "Төлем әдісі қолжетімсіз",
+    pendingOrder: "Тапсырыс төлемді күтуде",
+    continuePayment: "Төлемді жалғастыру",
+    cancelOrder: "Тапсырыстан бас тарту",
   },
   en: {
     defaultShopName: "Shop",
@@ -273,6 +282,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     inProgress: "The order is already being processed",
     invalidField: "Check the entered information",
     paymentUnavailable: "This payment method is unavailable",
+    pendingOrder: "Order awaiting payment",
+    continuePayment: "Continue payment",
+    cancelOrder: "Cancel order",
   },
   uz: {
     defaultShopName: "Do‘kon",
@@ -341,6 +353,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     inProgress: "Buyurtma rasmiylashtirilmoqda",
     invalidField: "Kiritilgan ma’lumotlarni tekshiring",
     paymentUnavailable: "To‘lov usuli mavjud emas",
+    pendingOrder: "Buyurtma to‘lovni kutmoqda",
+    continuePayment: "To‘lovni davom ettirish",
+    cancelOrder: "Buyurtmani bekor qilish",
   },
 };
 
@@ -427,6 +442,9 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     inProgress: s.inProgress,
     invalidField: s.invalidField,
     paymentUnavailable: s.paymentUnavailable,
+    pendingOrder: s.pendingOrder,
+    continuePayment: s.continuePayment,
+    cancelOrder: s.cancelOrder,
     productsCountSuffix:
       locale === "ru"
         ? "товаров"

@@ -18,6 +18,8 @@ export type MiniAppCheckoutBody = {
   fulfillment_note?: string;
   delivery_language?: string;
   payment_method?: "robokassa" | "manual";
+  resume_payment?: boolean;
+  cancel_pending?: boolean;
 };
 
 export type MiniAppCheckoutResponse = {
@@ -52,6 +54,17 @@ export async function miniAppProcessCheckout(
     .eq("telegram_id", telegram_id)
     .maybeSingle();
   if (!row) return { step: "error", error: "no_user" };
+
+  if (body.cancel_pending === true) {
+    const { cancelMiniAppPendingPayment } = await import("./bot.server");
+    const result = await cancelMiniAppPendingPayment(telegram_id);
+    return result === "ok" ? { step: "pending_cancelled" } : { step: "error", error: result };
+  }
+
+  if (body.resume_payment === true) {
+    const { completeMiniAppPayment } = await import("./bot.server");
+    return mapPlaceOrderResult(await completeMiniAppPayment(telegram_id));
+  }
 
   if (body.contact_phone !== undefined) {
     const phone = normalizeMiniAppPhone(body.contact_phone);

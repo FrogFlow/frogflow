@@ -233,6 +233,7 @@ export function renderMiniAppCartShell(locale: Locale): string {
           <strong>${esc(s.cartTitle)}</strong>
           <button type="button" id="mini-close-cart" aria-label="${esc(s.cancel)}" style="border:none;background:none;font-size:1.25rem;cursor:pointer">×</button>
         </div>
+        <div id="mini-pending-payment"></div>
         <div id="mini-cart-lines"></div>
         <div id="mini-cart-discounts"></div>
         <div id="mini-checkout-form" class="checkout-form hidden"></div>

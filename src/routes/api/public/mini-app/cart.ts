@@ -28,7 +28,7 @@ function isDiscountAction(value: string): value is DiscountAction {
 }
 
 async function cartPayload(telegramId: number) {
-  const { listMiniAppCart, miniAppUserContext, miniAppCartSummary } =
+  const { listMiniAppCart, miniAppUserContext, miniAppCartSummary, miniAppPendingPayment } =
     await import("@/lib/mini-app-cart.server");
   const items = await listMiniAppCart(telegramId);
   const summary = await miniAppCartSummary(telegramId, items);
@@ -41,6 +41,7 @@ async function cartPayload(telegramId: number) {
     country_code: context.countryCode,
     locale: context.locale,
     summary,
+    pending_payment: await miniAppPendingPayment(telegramId),
   };
 }
 

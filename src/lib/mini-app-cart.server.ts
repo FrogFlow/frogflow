@@ -1,4 +1,6 @@
+import type { Json } from "@/integrations-supabase/types";
 import type { TelegramWebAppUser } from "./telegram-init-data.server";
+import type { DeliveryLangChoice } from "./product-materials";
 
 type CartListRow = {
   id: string;
@@ -9,7 +11,19 @@ type CartListRow = {
     name: string;
     price: number | string;
     currency: string | null;
-    country_prices: unknown;
+    country_prices: Json;
+    file_path?: string | null;
+    file_name?: string | null;
+    file_path_kz?: string | null;
+    file_name_kz?: string | null;
+    file_url?: string | null;
+    file_url_kz?: string | null;
+    product_material_files?: Array<{
+      language: string;
+      file_path: string | null;
+      file_name: string | null;
+      sort_order: number;
+    }> | null;
   } | null;
   product_variants: { id: string; name: string; price: number | string } | null;
 };
@@ -29,9 +43,13 @@ async function db() {
   return supabaseAdmin;
 }
 
-export async function miniAppUserContext(
-  telegram_id: number,
-): Promise<{ countryCode: string | null; locale: string | null }> {
+export async function miniAppUserContext(telegram_id: number): Promise<{
+  countryCode: string | null;
+  locale: string | null;
+  deliveryLanguage: DeliveryLangChoice | null;
+  fulfillmentType: string | null;
+  deliveryFee: number;
+}> {
   const s = await db();
   const { data } = await s
     .from("bot_users")
@@ -40,13 +58,28 @@ export async function miniAppUserContext(
     .maybeSingle();
   const state = data?.state;
   if (state && typeof state === "object" && !Array.isArray(state)) {
-    const value = state as { country_code?: string; locale?: string };
+    const value = state as {
+      country_code?: string;
+      locale?: string;
+      checkout_lang_choice?: DeliveryLangChoice;
+      checkout_fulfillment_type?: string;
+      checkout_delivery_fee?: number;
+    };
     return {
       countryCode: value.country_code?.trim() || null,
       locale: value.locale?.trim() || null,
+      deliveryLanguage: value.checkout_lang_choice ?? null,
+      fulfillmentType: value.checkout_fulfillment_type ?? null,
+      deliveryFee: Number(value.checkout_delivery_fee) || 0,
     };
   }
-  return { countryCode: null, locale: null };
+  return {
+    countryCode: null,
+    locale: null,
+    deliveryLanguage: null,
+    fulfillmentType: null,
+    deliveryFee: 0,
+  };
 }
 
 export async function miniAppCountryCode(telegram_id: number): Promise<string | null> {
@@ -54,12 +87,12 @@ export async function miniAppCountryCode(telegram_id: number): Promise<string | 
 }
 
 export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartLine[]> {
-  const countryCode = await miniAppCountryCode(telegram_id);
+  const context = await miniAppUserContext(telegram_id);
   const s = await db();
   const { data: items, error } = await s
     .from("cart_items")
     .select(
-      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices), product_variants(id, name, price)",
+      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)), product_variants(id, name, price)",
     )
     .eq("telegram_id", telegram_id);
   if (error) {
@@ -68,12 +101,18 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
   }
 
   const { resolvePrice } = await import("./pricing.server");
+  const { availableMaterialLanguages, deliveryPriceMultiplier } =
+    await import("./product-materials");
   const lines: MiniAppCartLine[] = [];
   for (const it of (items ?? []) as CartListRow[]) {
     const p = it.products;
     if (!p) continue;
-    const money = await resolvePrice(p, countryCode, it.product_variants);
-    const lineTotal = Number(money.amount) * Number(it.quantity);
+    const money = await resolvePrice(p, context.countryCode, it.product_variants);
+    const multiplier = deliveryPriceMultiplier(
+      context.deliveryLanguage,
+      availableMaterialLanguages(p).length,
+    );
+    const lineTotal = Number(money.amount) * multiplier * Number(it.quantity);
     const displayName = it.product_variants ? `${p.name} (${it.product_variants.name})` : p.name;
     lines.push({
       id: it.id,
@@ -147,9 +186,17 @@ export async function miniAppSetCartQuantity(
 }
 
 export async function miniAppCartSummary(telegram_id: number, items: MiniAppCartLine[]) {
-  const subtotal = items.reduce((sum, row) => sum + row.line_total, 0);
+  const context = await miniAppUserContext(telegram_id);
+  const lineSubtotal = items.reduce((sum, row) => sum + row.line_total, 0);
+  const subtotal =
+    lineSubtotal + (context.fulfillmentType === "delivery" ? context.deliveryFee : 0);
   const { miniAppCartDiscountSummary } = await import("./bot.server");
   return miniAppCartDiscountSummary(telegram_id, subtotal);
+}
+
+export async function miniAppPendingPayment(telegram_id: number) {
+  const { miniAppPendingPayment: loadPendingPayment } = await import("./bot.server");
+  return loadPendingPayment(telegram_id);
 }
 
 export async function miniAppChangeDiscount(

@@ -177,34 +177,51 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   var cartSheet = document.getElementById("mini-cart-sheet");
   var cartLines = document.getElementById("mini-cart-lines");
   var cartDiscounts = document.getElementById("mini-cart-discounts");
+  var pendingPaymentEl = document.getElementById("mini-pending-payment");
   var checkoutForm = document.getElementById("mini-checkout-form");
   var cartTotalEl = document.getElementById("mini-cart-total");
   var cartCountEl = document.getElementById("mini-cart-count");
   var checkoutBtn = document.getElementById("mini-checkout");
   var cartError = document.getElementById("mini-cart-error");
-  var state = { items: [], total: 0, subtotal: 0, currency: "KZT", summary: null };
+  var state = {
+    items: [],
+    total: 0,
+    subtotal: 0,
+    currency: "KZT",
+    summary: null,
+    pendingPayment: null,
+  };
   var activeCategory = "";
 
   function renderCart() {
     var count = state.items.reduce(function (s, it) { return s + it.quantity; }, 0);
+    var hasPending = !!state.pendingPayment;
     if (cartCountEl) cartCountEl.textContent = String(count);
     if (cartTotalEl) cartTotalEl.textContent = formatMoney(state.total, state.currency);
-    if (cartBar) cartBar.classList.toggle("hidden", count === 0);
-    if (checkoutBtn) checkoutBtn.disabled = count === 0 || !initData();
+    if (cartBar) cartBar.classList.toggle("hidden", count === 0 && !hasPending);
+    if (checkoutBtn) {
+      checkoutBtn.disabled = (count === 0 && !hasPending) || !initData();
+      checkoutBtn.textContent = hasPending ? t("continuePayment") : t("pay");
+    }
     if (tg && tg.MainButton) {
       try {
-        if (count > 0 && initData()) {
-          tg.MainButton.setText(t("pay") + " · " + formatMoney(state.total, state.currency));
+        if ((count > 0 || hasPending) && initData()) {
+          tg.MainButton.setText(
+            hasPending
+              ? t("continuePayment")
+              : t("pay") + " · " + formatMoney(state.total, state.currency),
+          );
           tg.MainButton.show();
           if (!mainButtonBound) {
             mainButtonBound = true;
-            tg.MainButton.onClick(function () { runCheckout({}); });
+            tg.MainButton.onClick(beginCheckout);
           }
         } else {
           tg.MainButton.hide();
         }
       } catch (e) {}
     }
+    renderPendingPayment();
     if (!cartLines) return;
     if (!state.items.length) {
       cartLines.innerHTML = "<p class=\\"empty\\">" + t("cartEmpty") + "</p>";
@@ -244,6 +261,32 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       });
     });
     renderDiscounts();
+  }
+
+  function renderPendingPayment() {
+    if (!pendingPaymentEl) return;
+    var pending = state.pendingPayment;
+    if (!pending) {
+      pendingPaymentEl.innerHTML = "";
+      return;
+    }
+    pendingPaymentEl.innerHTML =
+      "<div class=\\"discount-box\\"><p><strong>" + escapeHtml(t("pendingOrder")) +
+      " #" + Number(pending.displayNo) + "</strong></p><p>" +
+      escapeHtml(pending.amountLabel || "") + "</p><div class=\\"checkout-actions\\">" +
+      "<button type=\\"button\\" class=\\"primary-btn\\" id=\\"mini-resume-payment\\">" +
+      escapeHtml(t("continuePayment")) + "</button><button type=\\"button\\" class=\\"btn-secondary\\" id=\\"mini-cancel-order\\">" +
+      escapeHtml(t("cancelOrder")) + "</button></div></div>";
+    var resume = document.getElementById("mini-resume-payment");
+    if (resume) resume.addEventListener("click", function () {
+      runCheckout({ resume_payment: true });
+    });
+    var cancel = document.getElementById("mini-cancel-order");
+    if (cancel) cancel.addEventListener("click", function () {
+      if (window.confirm(t("cancelOrder") + "?")) {
+        runCheckout({ cancel_pending: true });
+      }
+    });
   }
 
   function renderDiscounts() {
@@ -306,6 +349,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   function applyCartPayload(data) {
     state.items = data.items || [];
     state.summary = data.summary || null;
+    state.pendingPayment = data.pending_payment || null;
     state.subtotal = data.subtotal == null
       ? state.items.reduce(function (sum, item) { return sum + item.line_total; }, 0)
       : Number(data.subtotal);
@@ -610,6 +654,13 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           if (code === "empty_cart") refreshCart().catch(function () {});
           return;
         }
+        if (res.d.step === "pending_cancelled") {
+          checkoutHistory = [];
+          clearCheckoutForm();
+          refreshCart().catch(function () {});
+          showToast(t("cancelOrder"));
+          return;
+        }
         if (res.d.step) {
           showCheckoutStep(res.d);
           showCartSheet();
@@ -726,13 +777,20 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   });
 
   if (checkoutBtn) {
-    checkoutBtn.addEventListener("click", function () {
-      if (!initData()) {
-        showToast(t("sessionNotReady"));
-        return;
-      }
-      runCheckout({});
-    });
+    checkoutBtn.addEventListener("click", beginCheckout);
+  }
+
+  function beginCheckout() {
+    if (!initData()) {
+      showToast(t("sessionNotReady"));
+      return;
+    }
+    if (state.pendingPayment) {
+      showCartSheet();
+      renderPendingPayment();
+      return;
+    }
+    runCheckout({});
   }
 
   var search = document.getElementById("mini-search");

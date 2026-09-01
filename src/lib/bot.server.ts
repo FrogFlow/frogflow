@@ -2509,11 +2509,7 @@ export async function claimOrderPlacement(telegram_id: number): Promise<boolean>
 }
 
 export async function releaseOrderPlacement(telegram_id: number, state: BotUser["state"]) {
-  const {
-    placing_order: _placing_order,
-    checkout_lang_choice: _checkout_lang_choice,
-    ...rest
-  } = (state ?? {}) as NonNullable<BotUser["state"]>;
+  const { placing_order: _placing_order, ...rest } = (state ?? {}) as NonNullable<BotUser["state"]>;
   await setState(telegram_id, rest);
 }
 
@@ -3048,6 +3044,7 @@ async function placeOrderInner(
 ): Promise<MiniAppPlaceOrderResult | void> {
   const miniApp = Boolean(options?.miniApp);
   const paymentMethod = options?.paymentMethod;
+  const retryState = user.state ? { ...user.state } : user.state;
   // Разовый выбор языка ДО оформления (см. proceedToLanguageOrPlace) — снят
   // сразу же, чтобы не протух в состоянии и не повлиял на следующий заказ:
   // все сообщения ниже (startManualProofPath и т.д.) берут за основу именно
@@ -3127,8 +3124,15 @@ async function placeOrderInner(
     .maybeSingle();
 
   if (!method) {
-    await releaseOrderPlacement(telegram_id, user.state);
-    await setState(telegram_id, { ...user.state, country_code: undefined });
+    const {
+      country_code: _country_code,
+      country_name: _country_name,
+      checkout_delivery_zone_id: _zone_id,
+      checkout_delivery_zone_name: _zone_name,
+      checkout_delivery_fee: _zone_fee,
+      ...stateWithoutCountry
+    } = (retryState ?? {}) as NonNullable<BotUser["state"]>;
+    await releaseOrderPlacement(telegram_id, stateWithoutCountry);
     if (miniApp) return { ok: false, error: "country_unavailable" };
     await tg("sendMessage", { chat_id, text: m.countryNoLongerAvailable });
     await askCountry(chat_id, telegram_id, true, locale);
@@ -3143,11 +3147,11 @@ async function placeOrderInner(
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
     if (miniApp) {
-      await releaseOrderPlacement(telegram_id, user.state);
+      await releaseOrderPlacement(telegram_id, retryState);
       return { ok: false, error: "empty_cart" };
     }
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
-    await releaseOrderPlacement(telegram_id, user.state);
+    await releaseOrderPlacement(telegram_id, retryState);
     return;
   }
 
@@ -3184,7 +3188,7 @@ async function placeOrderInner(
         // падало точно так же, пока покупатель не находил и не удалял её
         // вручную кнопкой в корзине.
         await s.from("cart_items").delete().eq("id", it.id);
-        await releaseOrderPlacement(telegram_id, user.state);
+        await releaseOrderPlacement(telegram_id, retryState);
         if (miniApp) return { ok: false, error: "out_of_stock" };
         await tg("sendMessage", { chat_id, text: m.outOfStockAtCheckout });
         return;
@@ -3247,7 +3251,7 @@ async function placeOrderInner(
       // исчерпан, гонка с другим покупателем) — не создаём заказ по неверной
       // цене, просим повторить без него.
       for (const r of reservedStock) await restoreStock(r.productId, r.qty);
-      await releaseOrderPlacement(telegram_id, user.state);
+      await releaseOrderPlacement(telegram_id, retryState);
       if (miniApp) return { ok: false, error: "promo_invalid" };
       await tg("sendMessage", { chat_id, text: m.promoCodeInvalid });
       return;
@@ -3284,7 +3288,7 @@ async function placeOrderInner(
         promo: promoRedemption,
         pointsUsed,
       });
-      await releaseOrderPlacement(telegram_id, user.state);
+      await releaseOrderPlacement(telegram_id, retryState);
       if (miniApp) return { ok: false, error: "gift_invalid" };
       await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
       return;
@@ -3333,11 +3337,11 @@ async function placeOrderInner(
       giftCertificateId,
     });
     if (miniApp) {
-      await releaseOrderPlacement(telegram_id, user.state);
+      await releaseOrderPlacement(telegram_id, retryState);
       return { ok: false, error: "order_failed" };
     }
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
-    await releaseOrderPlacement(telegram_id, user.state);
+    await releaseOrderPlacement(telegram_id, retryState);
     return;
   }
   if (giftCertificateId) {
@@ -3376,11 +3380,11 @@ async function placeOrderInner(
     });
     await s.from("cart_items").delete().eq("telegram_id", telegram_id);
     if (miniApp) {
-      await releaseOrderPlacement(telegram_id, user.state);
+      await releaseOrderPlacement(telegram_id, retryState);
       return { ok: false, error: "empty_cart" };
     }
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
-    await releaseOrderPlacement(telegram_id, user.state);
+    await releaseOrderPlacement(telegram_id, retryState);
     return;
   }
 
@@ -3455,11 +3459,11 @@ async function placeOrderInner(
       orderId: order.id as number,
     });
     if (miniApp) {
-      await releaseOrderPlacement(telegram_id, user.state);
+      await releaseOrderPlacement(telegram_id, retryState);
       return { ok: false, error: "order_failed" };
     }
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
-    await releaseOrderPlacement(telegram_id, user.state);
+    await releaseOrderPlacement(telegram_id, retryState);
     return;
   }
 
@@ -3490,8 +3494,8 @@ async function placeOrderInner(
     await notifyAdminNewOrder(order.id as number, null, null, { noPaymentNeeded: true }).catch(
       (e) => console.error(`[bot] notifyAdminNewOrder failed for zero-total order ${order.id}`, e),
     );
+    await releaseOrderPlacement(telegram_id, user.state);
     if (miniApp) {
-      await releaseOrderPlacement(telegram_id, user.state);
       const { miniAppStrings } = await import("./mini-app-i18n");
       return {
         ok: true,
@@ -3516,8 +3520,8 @@ async function placeOrderInner(
     await notifyAdminNewOrder(order.id as number, null, null, { noPaymentNeeded: true }).catch(
       (e) => console.error(`[bot] notifyAdminNewOrder failed for on_receipt order ${order.id}`, e),
     );
+    await releaseOrderPlacement(telegram_id, user.state);
     if (miniApp) {
-      await releaseOrderPlacement(telegram_id, user.state);
       const { miniAppStrings } = await import("./mini-app-i18n");
       return {
         ok: true,
@@ -6204,6 +6208,13 @@ export async function placeOrderForMiniApp(
       .eq("telegram_id", telegram_id)
       .maybeSingle();
     if (pending?.status === "awaiting_payment") {
+      const { count: cartCount } = await s
+        .from("cart_items")
+        .select("id", { count: "exact", head: true })
+        .eq("telegram_id", telegram_id);
+      if (cartCount) {
+        return { ok: false, error: "pending_order_conflict" };
+      }
       return completeMiniAppPayment(telegram_id, paymentMethod);
     }
   }
@@ -6230,6 +6241,135 @@ export async function placeOrderForMiniApp(
     await releaseOrderPlacement(telegram_id, user.state);
     return { ok: false, error: "error" };
   }
+}
+
+export type MiniAppPendingPayment = {
+  orderId: number;
+  displayNo: number;
+  amountLabel: string;
+};
+
+export async function miniAppPendingPayment(
+  telegram_id: number,
+): Promise<MiniAppPendingPayment | null> {
+  const s = await db();
+  const { data: botUser } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  const state =
+    botUser?.state && typeof botUser.state === "object" && !Array.isArray(botUser.state)
+      ? (botUser.state as NonNullable<BotUser["state"]>)
+      : {};
+  const orderId = Number(state.pending_order_id);
+  if (!orderId) return null;
+  const { data: order } = await s
+    .from("orders")
+    .select("id, order_no, display_no, telegram_id, status, total, currency, fulfillment_kind")
+    .eq("id", orderId)
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  if (!order || order.status !== "awaiting_payment") return null;
+  const { amountDueNow } = await import("./fulfillment.server");
+  const amountDue = await amountDueNow({
+    total: Number(order.total),
+    fulfillment_kind: order.fulfillment_kind,
+  });
+  const locale: Locale = state.locale ?? "ru";
+  return {
+    orderId,
+    displayNo: order.display_no ?? order.order_no ?? orderId,
+    amountLabel: await miniAppAmountLabel(
+      amountDue,
+      order.currency || "KZT",
+      locale,
+      Number(order.total),
+    ),
+  };
+}
+
+export async function cancelMiniAppPendingPayment(
+  telegram_id: number,
+): Promise<"ok" | "not_found" | "already_processed"> {
+  const s = await db();
+  const { data: botUser } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  const state =
+    botUser?.state && typeof botUser.state === "object" && !Array.isArray(botUser.state)
+      ? (botUser.state as NonNullable<BotUser["state"]>)
+      : {};
+  const orderId = Number(state.pending_order_id);
+  if (!orderId) return "not_found";
+
+  const { data: order } = await s
+    .from("orders")
+    .select(
+      "id, status, promo_code, points_used, gift_certificate_code, order_items(product_id, quantity)",
+    )
+    .eq("id", orderId)
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  if (!order) return "not_found";
+  if (order.status !== "awaiting_payment") return "already_processed";
+
+  // Claim cancellation before restoring money-like resources. A concurrent
+  // Robokassa callback can then no longer process this order as awaiting.
+  const { data: cancelled } = await s
+    .from("orders")
+    .update({ status: "rejected", admin_note: "cancelled_by_customer" })
+    .eq("id", orderId)
+    .eq("status", "awaiting_payment")
+    .select("id")
+    .maybeSingle();
+  if (!cancelled) return "already_processed";
+
+  for (const item of order.order_items ?? []) {
+    if (item.product_id) {
+      await restoreStock(String(item.product_id), Number(item.quantity) || 0);
+    }
+  }
+
+  let promo: { id: string; previousUsedCount: number } | null = null;
+  if (order.promo_code) {
+    const { data } = await s
+      .from("promo_codes")
+      .select("id, used_count")
+      .eq("code", order.promo_code)
+      .maybeSingle();
+    if (data) {
+      promo = {
+        id: data.id,
+        previousUsedCount: Math.max(0, Number(data.used_count) - 1),
+      };
+    }
+  }
+  let giftCertificateId: string | null = null;
+  if (order.gift_certificate_code) {
+    const { data } = await s
+      .from("gift_certificates")
+      .select("id")
+      .eq("code", order.gift_certificate_code)
+      .maybeSingle();
+    giftCertificateId = data?.id ?? null;
+  }
+  await rollbackCheckoutRedemptions({
+    telegram_id,
+    promo,
+    pointsUsed: Number(order.points_used) || 0,
+    giftCertificateId,
+    orderId,
+  });
+  await miniAppMergeState(telegram_id, {
+    pending_order_id: undefined,
+    pending_display_no: undefined,
+    mode: "idle",
+    proof_auto: undefined,
+  });
+  return "ok";
 }
 
 /**
@@ -6279,13 +6419,13 @@ export async function completeMiniAppPayment(
     fulfillment_kind: order.fulfillment_kind,
   });
   const currency = (order.currency as string) || "KZT";
+  const locale: Locale = user.state?.locale ?? "ru";
   const amountLabel = await miniAppAmountLabel(amountDue, currency, locale, Number(order.total));
   const { data: method } = await s
     .from("payment_methods")
     .select("instructions, qr_code_path")
     .eq("country_code", order.country_code || "KZ")
     .maybeSingle();
-  const locale: Locale = user.state?.locale ?? "ru";
   const instructions = (method?.instructions as string) || copy[locale].defaultInstructions;
   const rk = await loadRobokassaSettings();
   const cc = String(order.country_code ?? "").toUpperCase();
