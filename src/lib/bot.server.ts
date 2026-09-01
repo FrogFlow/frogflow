@@ -2772,7 +2772,10 @@ async function findValidPromoCode(rawCode: string): Promise<PromoLookup> {
 async function redeemPromoCode(
   rawCode: string,
   subtotal: number,
-): Promise<{ ok: true; discount: number } | { ok: false }> {
+): Promise<
+  | { ok: true; discount: number; promoId: string; previousUsedCount: number }
+  | { ok: false }
+> {
   const found = await findValidPromoCode(rawCode);
   if (!found.ok) return { ok: false };
   const discount = computePromoDiscount(subtotal, found.promo);
@@ -2785,7 +2788,12 @@ async function redeemPromoCode(
     .select("id")
     .maybeSingle();
   if (!updated) return { ok: false };
-  return { ok: true, discount };
+  return {
+    ok: true,
+    discount,
+    promoId: found.promo.id,
+    previousUsedCount: found.promo.used_count,
+  };
 }
 
 type GiftCertificateLookup =
@@ -2832,6 +2840,77 @@ async function redeemGiftCertificate(
     .maybeSingle();
   if (!updated) return { ok: false };
   return { ok: true, discount, certificateId: found.certificate.id };
+}
+
+async function rollbackCheckoutRedemptions(params: {
+  telegram_id: number;
+  promo?: { id: string; previousUsedCount: number } | null;
+  pointsUsed?: number;
+  giftCertificateId?: string | null;
+  orderId?: number | null;
+}): Promise<void> {
+  const s = await db();
+  if (params.promo) {
+    // Usage is an aggregate counter. If other buyers incremented it after us,
+    // decrement the current value by one with CAS instead of requiring the
+    // exact original value.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { data: promo } = await s
+        .from("promo_codes")
+        .select("used_count")
+        .eq("id", params.promo.id)
+        .maybeSingle();
+      const current = Number(promo?.used_count ?? 0);
+      if (current <= params.promo.previousUsedCount) break;
+      const { data: restored } = await s
+        .from("promo_codes")
+        .update({ used_count: current - 1 })
+        .eq("id", params.promo.id)
+        .eq("used_count", current)
+        .select("id")
+        .maybeSingle();
+      if (restored) break;
+    }
+  }
+
+  const points = Math.max(0, Number(params.pointsUsed ?? 0));
+  if (points > 0) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { data: user } = await s
+        .from("bot_users")
+        .select("loyalty_points")
+        .eq("telegram_id", params.telegram_id)
+        .maybeSingle();
+      if (!user) break;
+      const current = Number(user.loyalty_points ?? 0);
+      const { data: restored } = await s
+        .from("bot_users")
+        .update({ loyalty_points: current + points })
+        .eq("telegram_id", params.telegram_id)
+        .eq("loyalty_points", current)
+        .select("telegram_id")
+        .maybeSingle();
+      if (restored) break;
+    }
+  }
+
+  if (params.giftCertificateId) {
+    let query = s
+      .from("gift_certificates")
+      .update({
+        status: "active",
+        redeemed_by_telegram_id: null,
+        redeemed_at: null,
+        redeemed_order_id: null,
+      })
+      .eq("id", params.giftCertificateId)
+      .eq("status", "redeemed")
+      .eq("redeemed_by_telegram_id", params.telegram_id);
+    query = params.orderId
+      ? query.or(`redeemed_order_id.eq.${params.orderId},redeemed_order_id.is.null`)
+      : query.is("redeemed_order_id", null);
+    await query;
+  }
 }
 
 async function placeOrder(chat_id: number, user: BotUser, country_code: string) {
@@ -3164,11 +3243,16 @@ async function placeOrderInner(
   // ведь до этой строки мы его ещё не трогали.
   let promoCode: string | null = null;
   let discountAmount = 0;
+  let promoRedemption: { id: string; previousUsedCount: number } | null = null;
   if (promoCodeInput) {
     const redeemed = await redeemPromoCode(promoCodeInput, total);
     if (redeemed.ok) {
       promoCode = normalizePromoCode(promoCodeInput);
       discountAmount = redeemed.discount;
+      promoRedemption = {
+        id: redeemed.promoId,
+        previousUsedCount: redeemed.previousUsedCount,
+      };
       total -= discountAmount;
     } else {
       // Код стал недоступен между вводом в корзине и оформлением (истёк,
@@ -3207,6 +3291,11 @@ async function placeOrderInner(
       total -= giftCertificateDiscountAmount;
     } else {
       for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+      await rollbackCheckoutRedemptions({
+        telegram_id,
+        promo: promoRedemption,
+        pointsUsed,
+      });
       await releaseOrderPlacement(telegram_id, user.state);
       if (miniApp) return { ok: false, error: "gift_invalid" };
       await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
@@ -3249,6 +3338,12 @@ async function placeOrderInner(
     .single();
   if (error || !order) {
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+    await rollbackCheckoutRedemptions({
+      telegram_id,
+      promo: promoRedemption,
+      pointsUsed,
+      giftCertificateId,
+    });
     if (miniApp) {
       await releaseOrderPlacement(telegram_id, user.state);
       return { ok: false, error: "order_failed" };
@@ -3284,6 +3379,13 @@ async function placeOrderInner(
     // понятный ответ, а не «оплатите 0 ₸».
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     await s.from("orders").delete().eq("id", order.id);
+    await rollbackCheckoutRedemptions({
+      telegram_id,
+      promo: promoRedemption,
+      pointsUsed,
+      giftCertificateId,
+      orderId: order.id as number,
+    });
     await s.from("cart_items").delete().eq("telegram_id", telegram_id);
     if (miniApp) {
       await releaseOrderPlacement(telegram_id, user.state);
@@ -3357,6 +3459,13 @@ async function placeOrderInner(
     console.error(`[bot] order_items insert failed for order ${order.id}`, itemsError);
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     await s.from("orders").delete().eq("id", order.id);
+    await rollbackCheckoutRedemptions({
+      telegram_id,
+      promo: promoRedemption,
+      pointsUsed,
+      giftCertificateId,
+      orderId: order.id as number,
+    });
     if (miniApp) {
       await releaseOrderPlacement(telegram_id, user.state);
       return { ok: false, error: "order_failed" };
