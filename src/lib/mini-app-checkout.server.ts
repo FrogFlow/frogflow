@@ -1,6 +1,12 @@
 import { formatMiniAppMoney } from "./mini-app-catalog.server";
 import { miniAppCountryCode } from "./mini-app-cart.server";
-import type { TelegramWebAppUser } from "./telegram-init-data.server";
+import {
+  isMiniAppFulfillmentType,
+  isMiniAppPaymentMethod,
+  isValidMiniAppIsoDate,
+  normalizeMiniAppPhone,
+  normalizeMiniAppText,
+} from "./mini-app-validation";
 
 export type MiniAppCheckoutBody = {
   contact_phone?: string;
@@ -44,8 +50,8 @@ export async function miniAppProcessCheckout(
   if (!row) return { step: "error", error: "no_user" };
 
   if (body.contact_phone !== undefined) {
-    const phone = body.contact_phone.trim().slice(0, 32);
-    if (!/^\+?[0-9 ()-]{7,32}$/.test(phone)) {
+    const phone = normalizeMiniAppPhone(body.contact_phone);
+    if (!phone) {
       return { step: "need_contact", error: "invalid_contact" };
     }
     await s.from("bot_users").update({ contact_phone: phone }).eq("telegram_id", telegram_id);
@@ -65,6 +71,9 @@ export async function miniAppProcessCheckout(
   }
 
   if (body.payment_method) {
+    if (!isMiniAppPaymentMethod(body.payment_method)) {
+      return { step: "error", error: "invalid_payment_method" };
+    }
     const { completeMiniAppPayment } = await import("./bot.server");
     return mapPlaceOrderResult(await completeMiniAppPayment(telegram_id, body.payment_method));
   }
@@ -72,8 +81,7 @@ export async function miniAppProcessCheckout(
   const statePatch: Record<string, unknown> = {};
   if (
     body.fulfillment_type !== undefined &&
-    body.fulfillment_type !== "pickup" &&
-    body.fulfillment_type !== "delivery"
+    !isMiniAppFulfillmentType(body.fulfillment_type)
   ) {
     return { step: "error", error: "invalid_fulfillment_type" };
   }
@@ -102,18 +110,19 @@ export async function miniAppProcessCheckout(
       todayInAppTZ(),
       await maxLeadTimeDaysInCart(telegram_id),
     );
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.fulfillment_date) || body.fulfillment_date < minDate) {
+    if (!isValidMiniAppIsoDate(body.fulfillment_date, minDate)) {
       return { step: "need_fulfillment_date", minDate, error: "invalid_fulfillment_date" };
     }
     statePatch.checkout_fulfillment_at = body.fulfillment_date;
   }
   if (body.fulfillment_address !== undefined) {
-    const address = body.fulfillment_address.trim().slice(0, 500);
+    const address = normalizeMiniAppText(body.fulfillment_address, 500, true);
     if (!address) return { step: "need_address", error: "invalid_address" };
     statePatch.checkout_fulfillment_address = address;
   }
   if (body.fulfillment_note !== undefined) {
-    statePatch.checkout_fulfillment_note = body.fulfillment_note.trim().slice(0, 500);
+    statePatch.checkout_fulfillment_note =
+      normalizeMiniAppText(body.fulfillment_note, 500, false) ?? "";
   }
   if (body.delivery_language !== undefined) {
     const { isDeliveryLangChoice } = await import("./product-materials");
@@ -217,8 +226,7 @@ export async function miniAppCheckoutNeeds(
         ? state.checkout_fulfillment_at
         : "";
     if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(fulfillmentDate) ||
-      fulfillmentDate < minDate
+      !isValidMiniAppIsoDate(fulfillmentDate, minDate)
     ) {
       return { step: "need_fulfillment_date", minDate };
     }

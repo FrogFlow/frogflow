@@ -9,6 +9,26 @@
 
 Переменные у них разные, поэтому и таблицы ниже разные.
 
+## Telegram Mini App
+
+Mini App доступен только на клиентском деплое и только при включённых
+модулях `shop` и `telegram_mini_app`.
+
+- URL: `${PUBLIC_APP_URL}/mini-app`.
+- Reply-кнопка добавляется ботом автоматически.
+- Telegram Menu Button синхронизируется при `/api/cron/ensure-webhook` и
+  сразу после переключения модуля через `/api/internal/reload`.
+- При отключении модуля Menu Button сбрасывается в `default`.
+- Для оплаты картой должны быть включены модуль `robokassa`, настройка
+  Robokassa и актуальные MerchantLogin/пароли.
+- HTML не кешируется; клиентский runtime проходит revalidation на каждом
+  открытии, чтобы новая версия API не работала со старым JS.
+- API принимает Telegram `initData` только в заголовке
+  `X-Telegram-Init-Data`; URL-параметр намеренно не поддерживается.
+
+После изменения `PUBLIC_APP_URL` повторно запустите ensure-webhook: он
+обновит одновременно webhook и Menu Button.
+
 ---
 
 ## Переменные деплоя клиента

@@ -456,13 +456,13 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         "<textarea id=\\"mini-note\\"></textarea>" +
         "<div class=\\"checkout-actions\\"><button type=\\"button\\" class=\\"primary-btn\\" id=\\"mini-step-submit\\">" + t("continue") + "</button></div>";
     } else if (step === "choose_payment") {
-      html = "<p><strong>" + t("choosePayment") + "</strong></p><p>" + (data.amountLabel || "") + "</p>" +
+      html = "<p><strong>" + t("choosePayment") + "</strong></p><p>" + escapeHtml(data.amountLabel || "") + "</p>" +
         "<div class=\\"checkout-actions\\">" +
         "<button type=\\"button\\" class=\\"primary-btn\\" data-pay=\\"robokassa\\">" + t("payRobokassa") + "</button>" +
         "<button type=\\"button\\" class=\\"btn-secondary\\" data-pay=\\"manual\\">" + t("payManual") + "</button>" +
         "</div>";
     } else if (step === "robokassa") {
-      html = "<p><strong>" + (data.amountLabel || "") + "</strong></p>" +
+      html = "<p><strong>" + escapeHtml(data.amountLabel || "") + "</strong></p>" +
         "<button type=\\"button\\" class=\\"primary-btn\\" id=\\"mini-open-pay\\">" + t("openPayment") + "</button>";
       checkoutForm.innerHTML = html;
       var openPay = document.getElementById("mini-open-pay");
@@ -472,8 +472,8 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       });
       return;
     } else if (step === "manual_proof") {
-      html = "<p><strong>" + (data.amountLabel || "") + "</strong></p>" +
-        (data.qrImageUrl ? "<img class=\\"manual-qr\\" src=\\"" + data.qrImageUrl + "\\" alt=\\"QR\\" />" : "") +
+      html = "<p><strong>" + escapeHtml(data.amountLabel || "") + "</strong></p>" +
+        (data.qrImageUrl ? "<img class=\\"manual-qr\\" src=\\"" + escapeHtml(data.qrImageUrl) + "\\" alt=\\"QR\\" />" : "") +
         "<div class=\\"manual-instructions\\" id=\\"mini-manual-text\\"></div>" +
         "<p>" + t("sendProofInBot") + "</p>";
       checkoutForm.innerHTML = html;
@@ -481,7 +481,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       if (instEl) instEl.textContent = data.instructions || "";
       return;
     } else if (step === "completed") {
-      html = "<p><strong>" + (data.message || t("orderComplete")) + "</strong></p>";
+      html = "<p><strong>" + escapeHtml(data.message || t("orderComplete")) + "</strong></p>";
       checkoutForm.innerHTML = html;
       try { if (tg) tg.disableClosingConfirmation(); } catch (e) {}
       setTimeout(function () { if (tg) tg.close(); }, 2500);

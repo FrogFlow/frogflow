@@ -344,8 +344,6 @@ const dict: Record<Locale, MiniAppStrings> = {
   },
 };
 
-// uz block has needFulfillmentDate typo - I used needDeliveryDate by mistake. Fix in file.
-
 export function miniAppLocaleFromTelegram(language_code?: string | null): Locale {
   const code = (language_code || "").toLowerCase();
   if (code.startsWith("kk")) return "kk";
