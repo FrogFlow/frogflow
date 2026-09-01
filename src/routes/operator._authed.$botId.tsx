@@ -116,6 +116,12 @@ function OperatorClientCard() {
   });
   const pendingRequests = (moduleRequestsQuery.data ?? []).filter((r) => r.bot_id === botId);
 
+  const panelSelfCheckQuery = useQuery({
+    queryKey: ["panel_self_check"],
+    queryFn: () => panelSelfCheckFn(),
+    staleTime: 60_000,
+  });
+
   const [busyModule, setBusyModule] = useState<ModuleKey | null>(null);
   const [resolvingKey, setResolvingKey] = useState<ModuleKey | null>(null);
   const [busyStatus, setBusyStatus] = useState(false);
@@ -376,7 +382,23 @@ function OperatorClientCard() {
           )}
 
           <section className="bg-card border rounded-lg p-4 space-y-4">
-            <h2 className="font-medium">Модули</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-medium">Модули</h2>
+              {panelSelfCheckQuery.data?.moduleCatalog && (
+                <span className="text-xs text-muted-foreground">
+                  Каталог: {panelSelfCheckQuery.data.moduleCatalog.count} позиций
+                </span>
+              )}
+            </div>
+            {panelSelfCheckQuery.data?.moduleCatalog &&
+              !panelSelfCheckQuery.data.moduleCatalog.hasTelegramMiniApp && (
+                <p className="text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-md p-3">
+                  Панель собрана из старой версии кода — в каталоге нет Telegram Mini App.
+                  Пересоберите деплой панели оператора (Vercel → Redeploy, ветка{" "}
+                  <code className="text-xs">master</code>, проект с{" "}
+                  <code className="text-xs">CONTROL_PLANE=1</code>).
+                </p>
+              )}
             {orderedGroups.map((group) => (
               <div key={group} className="space-y-2">
                 <h3 className="text-xs uppercase tracking-wider text-muted-foreground">{group}</h3>

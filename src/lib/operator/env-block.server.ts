@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { requireOperator, operatorSessionSecretReady } from "./guard.server";
 import { errorMessage } from "@/lib/error-message";
 import type { VerticalKey } from "@/lib/verticals/registry";
+import { MODULE_KEYS } from "@/lib/modules/registry";
 
 /**
  * Сборка блока переменных окружения для деплоя клиента.
@@ -96,6 +97,8 @@ export async function verifyBotToken(token: string): Promise<TelegramBotIdentity
 export type PanelSelfCheck = {
   ok: boolean;
   vars: { name: string; present: boolean; why: string }[];
+  /** Сколько позиций в реестре модулей на этом деплое панели — для проверки, что сборка актуальна. */
+  moduleCatalog: { count: number; hasTelegramMiniApp: boolean };
 };
 
 export function panelSelfCheck(): PanelSelfCheck {
@@ -126,7 +129,14 @@ export function panelSelfCheck(): PanelSelfCheck {
       why: "попадает в блок клиента, в том числе в VITE_-переменные",
     },
   ];
-  return { ok: vars.every((v) => v.present), vars };
+  return {
+    ok: vars.every((v) => v.present),
+    vars,
+    moduleCatalog: {
+      count: MODULE_KEYS.length,
+      hasTelegramMiniApp: (MODULE_KEYS as readonly string[]).includes("telegram_mini_app"),
+    },
+  };
 }
 
 export type EnvBlockMode =
