@@ -2187,6 +2187,44 @@ export type Database = {
           },
         ];
       };
+      web_cart_handoffs: {
+        Row: {
+          bot_id: string;
+          claimed_at: string | null;
+          claimed_telegram_id: number | null;
+          created_at: string;
+          expires_at: string;
+          items: Json;
+          token: string;
+        };
+        Insert: {
+          bot_id: string;
+          claimed_at?: string | null;
+          claimed_telegram_id?: number | null;
+          created_at?: string;
+          expires_at: string;
+          items: Json;
+          token: string;
+        };
+        Update: {
+          bot_id?: string;
+          claimed_at?: string | null;
+          claimed_telegram_id?: number | null;
+          created_at?: string;
+          expires_at?: string;
+          items?: Json;
+          token?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "web_cart_handoffs_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;

@@ -67,6 +67,7 @@ import { Route as ApiPublicVipCronRouteImport } from './routes/api/public/vip/cr
 import { Route as ApiPublicTelegramWebhookVipRouteImport } from './routes/api/public/telegram/webhook-vip'
 import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
 import { Route as ApiPublicTelegramEnsureWebhookRouteImport } from './routes/api/public/telegram/ensure-webhook'
+import { Route as ApiPublicShopHandoffRouteImport } from './routes/api/public/shop/handoff'
 import { Route as ApiPublicRobokassaSuccessRouteImport } from './routes/api/public/robokassa/success'
 import { Route as ApiPublicRobokassaResultRouteImport } from './routes/api/public/robokassa/result'
 import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/robokassa/fail'
@@ -369,6 +370,11 @@ const ApiPublicTelegramEnsureWebhookRoute =
     path: '/api/public/telegram/ensure-webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicShopHandoffRoute = ApiPublicShopHandoffRouteImport.update({
+  id: '/api/public/shop/handoff',
+  path: '/api/public/shop/handoff',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicRobokassaSuccessRoute =
   ApiPublicRobokassaSuccessRouteImport.update({
     id: '/api/public/robokassa/success',
@@ -455,6 +461,7 @@ export interface FileRoutesByFullPath {
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
+  '/api/public/shop/handoff': typeof ApiPublicShopHandoffRoute
   '/api/public/telegram/ensure-webhook': typeof ApiPublicTelegramEnsureWebhookRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
@@ -516,6 +523,7 @@ export interface FileRoutesByTo {
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
+  '/api/public/shop/handoff': typeof ApiPublicShopHandoffRoute
   '/api/public/telegram/ensure-webhook': typeof ApiPublicTelegramEnsureWebhookRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
@@ -582,6 +590,7 @@ export interface FileRoutesById {
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
+  '/api/public/shop/handoff': typeof ApiPublicShopHandoffRoute
   '/api/public/telegram/ensure-webhook': typeof ApiPublicTelegramEnsureWebhookRoute
   '/api/public/telegram/webhook': typeof ApiPublicTelegramWebhookRoute
   '/api/public/telegram/webhook-vip': typeof ApiPublicTelegramWebhookVipRoute
@@ -648,6 +657,7 @@ export interface FileRouteTypes {
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
+    | '/api/public/shop/handoff'
     | '/api/public/telegram/ensure-webhook'
     | '/api/public/telegram/webhook'
     | '/api/public/telegram/webhook-vip'
@@ -709,6 +719,7 @@ export interface FileRouteTypes {
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
+    | '/api/public/shop/handoff'
     | '/api/public/telegram/ensure-webhook'
     | '/api/public/telegram/webhook'
     | '/api/public/telegram/webhook-vip'
@@ -774,6 +785,7 @@ export interface FileRouteTypes {
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
+    | '/api/public/shop/handoff'
     | '/api/public/telegram/ensure-webhook'
     | '/api/public/telegram/webhook'
     | '/api/public/telegram/webhook-vip'
@@ -810,6 +822,7 @@ export interface RootRouteChildren {
   ApiPublicRobokassaFailRoute: typeof ApiPublicRobokassaFailRoute
   ApiPublicRobokassaResultRoute: typeof ApiPublicRobokassaResultRoute
   ApiPublicRobokassaSuccessRoute: typeof ApiPublicRobokassaSuccessRoute
+  ApiPublicShopHandoffRoute: typeof ApiPublicShopHandoffRoute
   ApiPublicTelegramEnsureWebhookRoute: typeof ApiPublicTelegramEnsureWebhookRoute
   ApiPublicTelegramWebhookRoute: typeof ApiPublicTelegramWebhookRoute
   ApiPublicTelegramWebhookVipRoute: typeof ApiPublicTelegramWebhookVipRoute
@@ -1225,6 +1238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicTelegramEnsureWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/shop/handoff': {
+      id: '/api/public/shop/handoff'
+      path: '/api/public/shop/handoff'
+      fullPath: '/api/public/shop/handoff'
+      preLoaderRoute: typeof ApiPublicShopHandoffRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/robokassa/success': {
       id: '/api/public/robokassa/success'
       path: '/api/public/robokassa/success'
@@ -1390,6 +1410,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicRobokassaFailRoute: ApiPublicRobokassaFailRoute,
   ApiPublicRobokassaResultRoute: ApiPublicRobokassaResultRoute,
   ApiPublicRobokassaSuccessRoute: ApiPublicRobokassaSuccessRoute,
+  ApiPublicShopHandoffRoute: ApiPublicShopHandoffRoute,
   ApiPublicTelegramEnsureWebhookRoute: ApiPublicTelegramEnsureWebhookRoute,
   ApiPublicTelegramWebhookRoute: ApiPublicTelegramWebhookRoute,
   ApiPublicTelegramWebhookVipRoute: ApiPublicTelegramWebhookVipRoute,

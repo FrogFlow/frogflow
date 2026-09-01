@@ -172,6 +172,8 @@ type BotUser = {
     checkout_delivery_fee?: number;
     checkout_fulfillment_address?: string;
     checkout_fulfillment_note?: string;
+    /** После переноса корзины с веб-витрины — запустить оформление после выбора языка. */
+    web_handoff_pending_checkout?: boolean;
   } | null;
 };
 
@@ -535,6 +537,7 @@ type Msg = {
   productNotFound: string;
   contactSaved: string;
   cartEmpty: string;
+  webHandoffImported: string;
   cartHeader: string;
   removeItem: (name: string) => string;
   total: (amount: string) => string;
@@ -681,6 +684,8 @@ const copy: Record<Locale, Msg> = {
     productNotFound: "Товар не найден.",
     contactSaved: "✅ Номер сохранён.",
     cartEmpty: "🛒 Корзина пуста.",
+    webHandoffImported:
+      "✅ Товары с веб-витрины добавлены в корзину. Продолжим оформление и оплату.",
     cartHeader: "🛒 <b>Ваша корзина:</b>\n\n",
     removeItem: (name) => `❌ Убрать «${name}»`,
     total: (amount) => `\n<b>Итого: ${amount}</b>`,
@@ -858,6 +863,8 @@ const copy: Record<Locale, Msg> = {
     productNotFound: "Тауар табылмады.",
     contactSaved: "✅ Нөмір сақталды.",
     cartEmpty: "🛒 Себет бос.",
+    webHandoffImported:
+      "✅ Веб-витринадан тауарлар себетке қосылды. Тапсырыс беру мен төлемді жалғастырамыз.",
     cartHeader: "🛒 <b>Сіздің себетіңіз:</b>\n\n",
     removeItem: (name) => `❌ Алып тастау «${name}»`,
     total: (amount) => `\n<b>Барлығы: ${amount}</b>`,
@@ -1035,6 +1042,8 @@ const copy: Record<Locale, Msg> = {
     productNotFound: "Product not found.",
     contactSaved: "✅ Number saved.",
     cartEmpty: "🛒 Your cart is empty.",
+    webHandoffImported:
+      "✅ Items from the web storefront were added to your cart. Let's continue checkout and payment.",
     cartHeader: "🛒 <b>Your cart:</b>\n\n",
     removeItem: (name) => `❌ Remove “${name}”`,
     total: (amount) => `\n<b>Total: ${amount}</b>`,
@@ -1216,6 +1225,8 @@ const copy: Record<Locale, Msg> = {
     productNotFound: "Mahsulot topilmadi.",
     contactSaved: "✅ Raqam saqlandi.",
     cartEmpty: "🛒 Savat bo‘sh.",
+    webHandoffImported:
+      "✅ Veb-vitrinadan tanlangan mahsulotlar savatga qo‘shildi. Buyurtma va to‘lovni davom ettiramiz.",
     cartHeader: "🛒 <b>Sizning savatingiz:</b>\n\n",
     removeItem: (name) => `❌ Olib tashlash «${name}»`,
     total: (amount) => `\n<b>Jami: ${amount}</b>`,
@@ -1473,14 +1484,21 @@ async function applyLocaleSelection(
   locale: Locale,
   user: BotUser,
 ) {
-  const nextState = { ...user.state, locale, mode: "idle" as const };
+  const s = await db();
+  const { data: fresh } = await s
+    .from("bot_users")
+    .select("*")
+    .eq("telegram_id", from_id)
+    .maybeSingle();
+  const baseUser = (fresh ?? user) as BotUser;
+  const nextState = { ...baseUser.state, locale, mode: "idle" as const };
   await setState(from_id, nextState);
   await tg("sendMessage", { chat_id, text: botCopy[locale].languageSaved });
   const base = originFromState();
   const needCountry = !nextState.country_code;
   await tg("sendMessage", {
     chat_id,
-    text: welcomeStartHtml(user.first_name, needCountry, locale),
+    text: welcomeStartHtml(baseUser.first_name, needCountry, locale),
     parse_mode: "HTML",
     reply_markup: legalInlineKeyboard(base, locale),
     disable_web_page_preview: true,
@@ -1488,6 +1506,29 @@ async function applyLocaleSelection(
   await sendMain(chat_id, undefined, undefined, locale);
   if (!nextState.country_code) await askCountry(chat_id, from_id, false, locale);
   void syncBotPublicDescription();
+
+  if (nextState.web_handoff_pending_checkout) {
+    const { web_handoff_pending_checkout: _drop, ...restHandoff } = nextState;
+    await setState(from_id, restHandoff);
+    const s = await db();
+    const { data: refreshed } = await s
+      .from("bot_users")
+      .select("*")
+      .eq("telegram_id", from_id)
+      .maybeSingle();
+    const handoffUser = (refreshed ?? baseUser) as BotUser;
+    const hm = copy[locale];
+    await tg("sendMessage", {
+      chat_id,
+      text: hm.webHandoffImported,
+    });
+    await showCart(chat_id, handoffUser);
+    try {
+      await startCheckout(chat_id, handoffUser);
+    } catch (e: unknown) {
+      console.error(`[bot] web handoff checkout failed for telegram_id=${from_id}`, e);
+    }
+  }
 }
 
 function legalInlineKeyboard(base: string, locale: Locale = "ru") {
@@ -2117,6 +2158,31 @@ async function addToCart(
     return "error";
   }
   return "ok";
+}
+
+/**
+ * Перенос позиций с веб-витрины (deep link wc_<token>) в cart_items.
+ * digital_limit считается успехом — товар уже в корзине.
+ */
+export async function importCartItemsForHandoff(
+  telegram_id: number,
+  items: Array<{
+    product_id: string;
+    product_variant_id?: string | null;
+    quantity: number;
+  }>,
+): Promise<{ imported: number; skipped: number }> {
+  let imported = 0;
+  let skipped = 0;
+  for (const item of items) {
+    const qty = Math.max(1, Math.min(99, Math.floor(item.quantity) || 1));
+    for (let i = 0; i < qty; i++) {
+      const result = await addToCart(telegram_id, item.product_id, item.product_variant_id ?? null);
+      if (result === "ok" || result === "digital_limit") imported++;
+      else skipped++;
+    }
+  }
+  return { imported, skipped };
 }
 
 /**
@@ -4816,13 +4882,28 @@ export async function handleUpdate(update: TelegramUpdate) {
     // /start - special: also detect if sender is the admin and offer to bind
     if (msg.text === "/start" || msg.text?.startsWith("/start ")) {
       const startPayload = msg.text.slice("/start".length).trim();
+      let webHandoffPendingCheckout = false;
       if (startPayload.startsWith("ref_") && (await hasModule("referral"))) {
         const { registerReferral } = await import("./referrals.server");
         await registerReferral(from.id, startPayload.slice(4)).catch((e) =>
           console.error("[bot] registerReferral failed", e),
         );
       }
-      await setState(from.id, { ...user.state, mode: "idle" });
+      const { WEB_CART_HANDOFF_START_PREFIX, claimWebCartHandoff } =
+        await import("./web-storefront-handoff.server");
+      if (startPayload.startsWith(WEB_CART_HANDOFF_START_PREFIX)) {
+        const token = startPayload.slice(WEB_CART_HANDOFF_START_PREFIX.length);
+        const claimResult = await claimWebCartHandoff(from.id, token);
+        if (claimResult === "ok") webHandoffPendingCheckout = true;
+        else if (claimResult !== "missing") {
+          console.warn("[bot] web handoff claim", { telegram_id: from.id, claimResult, token });
+        }
+      }
+      await setState(from.id, {
+        ...user.state,
+        mode: "idle",
+        web_handoff_pending_checkout: webHandoffPendingCheckout,
+      });
 
       // Разовая настройка бота, не имеет отношения к языку покупателя —
       // поэтому идёт до выбора языка и всегда по-русски: тому, кто это
