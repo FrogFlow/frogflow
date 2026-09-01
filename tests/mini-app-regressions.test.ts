@@ -2,12 +2,17 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { miniAppStringsClientPack } from "../src/lib/mini-app-i18n";
+import { MINI_APP_RUNTIME_JS } from "../src/lib/mini-app-runtime";
 
 function source(path: string) {
   return readFileSync(resolve(path), "utf8");
 }
 
 describe("Mini App production regressions", () => {
+  it("ships syntactically valid browser runtime JavaScript", () => {
+    expect(() => new Function(MINI_APP_RUNTIME_JS)).not.toThrow();
+  });
+
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
