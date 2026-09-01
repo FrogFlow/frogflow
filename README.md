@@ -26,6 +26,7 @@ README — только указатель, с чего начать.
 | Как спроектирована и что умеет панель оператора                                                            | [`CONTROL-PLANE-PLAN.md`](./CONTROL-PLANE-PLAN.md)                                   |
 | История объединения клиентов в одну базу                                                                   | [`CONSOLIDATION-PLAN.md`](./CONSOLIDATION-PLAN.md), [`MERGE-MAP.md`](./MERGE-MAP.md) |
 | Как принимается и подтверждается вебхук Telegram/Zernio                                                    | [`WEBHOOK.md`](./WEBHOOK.md)                                                         |
+| Как устроен Telegram Mini App, checkout, оплата и тестирование                                             | [`MINI-APP.md`](./MINI-APP.md)                                                       |
 | Что найдено и починено при аудитах — от безопасности хранилища до гонок в оформлении заказа                | [`ANALYSIS.md`](./ANALYSIS.md)                                                       |
 
 ## Локальная разработка
@@ -34,7 +35,7 @@ README — только указатель, с чего начать.
 npm install
 npm run dev      # dev-сервер (vite dev)
 npm run lint      # eslint
-npx tsc --noEmit  # проверка типов
+npm run typecheck # проверка типов
 npm test          # vitest — часть тестов пропускается без ключей настоящей базы
 npm run build     # production-сборка
 ```

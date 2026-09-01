@@ -72,6 +72,7 @@ export type MiniAppStrings = {
   pendingOrder: string;
   continuePayment: string;
   cancelOrder: string;
+  rateLimited: string;
 };
 
 const dict: Record<Locale, MiniAppStrings> = {
@@ -147,6 +148,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pendingOrder: "Заказ ожидает оплаты",
     continuePayment: "Продолжить оплату",
     cancelOrder: "Отменить заказ",
+    rateLimited: "Слишком много запросов. Подождите минуту.",
   },
   kk: {
     defaultShopName: "Дүкен",
@@ -220,6 +222,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pendingOrder: "Тапсырыс төлемді күтуде",
     continuePayment: "Төлемді жалғастыру",
     cancelOrder: "Тапсырыстан бас тарту",
+    rateLimited: "Сұраулар тым көп. Бір минут күтіңіз.",
   },
   en: {
     defaultShopName: "Shop",
@@ -293,6 +296,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pendingOrder: "Order awaiting payment",
     continuePayment: "Continue payment",
     cancelOrder: "Cancel order",
+    rateLimited: "Too many requests. Please wait a minute.",
   },
   uz: {
     defaultShopName: "Do‘kon",
@@ -366,6 +370,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pendingOrder: "Buyurtma to‘lovni kutmoqda",
     continuePayment: "To‘lovni davom ettirish",
     cancelOrder: "Buyurtmani bekor qilish",
+    rateLimited: "Juda ko‘p so‘rov. Bir daqiqa kuting.",
   },
 };
 
@@ -457,6 +462,7 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     pendingOrder: s.pendingOrder,
     continuePayment: s.continuePayment,
     cancelOrder: s.cancelOrder,
+    rateLimited: s.rateLimited,
     productsCountSuffix:
       locale === "ru"
         ? "товаров"

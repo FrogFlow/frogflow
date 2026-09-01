@@ -47,7 +47,7 @@ export function wrapMiniAppPage(
           var trustedOrigin =
             !ev.origin ||
             ev.origin === location.origin ||
-            /^https:\\/\\/(web\\.)?telegram\\.org$/.test(ev.origin);
+            /^https:\\/\\/(web|webk|webz)\\.telegram\\.org$/.test(ev.origin);
           if (!trustedOrigin) return;
           if (ev.source && ev.source !== window && ev.source !== window.parent) return;
           var d = ev.data;

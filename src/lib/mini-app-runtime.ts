@@ -668,6 +668,8 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           var code = res.d && res.d.error;
           var msg = code === "in_progress"
             ? t("inProgress")
+            : code === "rate_limited"
+              ? t("rateLimited")
             : code === "empty_cart"
               ? t("cartEmpty")
               : code === "robokassa_unavailable" || code === "invalid_payment_method"

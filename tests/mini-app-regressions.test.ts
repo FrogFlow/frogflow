@@ -25,6 +25,19 @@ describe("Mini App production regressions", () => {
     expect(bot).toContain("export async function completeMiniAppPayment");
     expect(bot).toContain("pending_order_id");
     expect(bot).toContain('.eq("telegram_id", telegram_id)');
+    const continuation = bot.slice(bot.indexOf("export async function completeMiniAppPayment"));
+    expect(continuation.indexOf("const locale: Locale")).toBeLessThan(
+      continuation.indexOf("miniAppAmountLabel"),
+    );
+  });
+
+  it("exposes pending payment resume and cancellation", () => {
+    const bot = source("src/lib/bot.server.ts");
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    expect(bot).toContain("export async function miniAppPendingPayment");
+    expect(bot).toContain("export async function cancelMiniAppPendingPayment");
+    expect(runtime).toContain("resume_payment: true");
+    expect(runtime).toContain("cancel_pending: true");
   });
 
   it("uses delivery zone price and never the nonexistent fee property", () => {
@@ -40,6 +53,12 @@ describe("Mini App production regressions", () => {
       /if \(miniApp\) \{\s+await releaseOrderPlacement\(telegram_id, user\.state\);/g,
     );
     expect(completedPaths?.length).toBeGreaterThanOrEqual(2);
+    const release = bot.slice(
+      bot.indexOf("export async function releaseOrderPlacement"),
+      bot.indexOf("export async function releaseOrderPlacement") + 400,
+    );
+    expect(release).toContain("placing_order");
+    expect(release).not.toContain("checkout_lang_choice:");
   });
 
   it("escapes cart product names and supports PDP variant controls", () => {

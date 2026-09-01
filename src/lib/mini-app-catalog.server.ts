@@ -24,6 +24,13 @@ export type MiniAppProduct = {
 };
 
 export type MiniAppCategory = { id: string; name: string };
+export type MiniAppProductIndexRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  category_ids: Json;
+  product_variants: Array<{ name: string }> | null;
+};
 
 export type PricedProduct = {
   amount: number;
@@ -46,46 +53,17 @@ export function formatMiniAppMoney(amount: number, currency: string): string {
   return cur === "KZT" ? `${value} ₸` : `${value} ${currency}`;
 }
 
-export async function loadMiniAppCatalogData(
-  defaultShopName = "Магазин",
-  page = 1,
-  pageSize = 80,
-  filters?: { query?: string; categoryId?: string },
-) {
-  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  const { hasModule } = await import("./modules/modules.server");
-
-  const stockEnabled = await hasModule("stock");
-  const safePage = Math.max(1, Math.floor(page) || 1);
-  const safePageSize = Math.max(20, Math.min(100, Math.floor(pageSize) || 80));
-  const normalizedQuery = (filters?.query ?? "").trim().toLocaleLowerCase().slice(0, 100);
-  const categoryId = (filters?.categoryId ?? "").trim();
-
-  const [{ data: shopSetting }, { data: cats }, { data: hiddenCats }, { data: productIndex }] =
-    await Promise.all([
-      supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
-      supabaseAdmin
-        .from("categories")
-        .select("id, name")
-        .eq("is_visible", true)
-        .order("sort_order")
-        .order("name"),
-      supabaseAdmin.from("categories").select("id").eq("is_visible", false),
-      supabaseAdmin
-        .from("products")
-        .select("id, name, description, category_ids, product_variants(name)")
-        .eq("is_active", true)
-        .order("sort_order")
-        .order("name"),
-    ]);
-
-  const shopName = shopSetting?.value?.trim() || defaultShopName;
-  const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
-  const categories = (cats ?? []) as MiniAppCategory[];
-  const matchingIds = (productIndex ?? [])
+export function filterMiniAppProductIds(
+  products: MiniAppProductIndexRow[],
+  hiddenCategoryIds: ReadonlySet<string>,
+  query = "",
+  categoryId = "",
+): string[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase().slice(0, 100);
+  return products
     .filter((product) => {
       const catIds = (product.category_ids as string[] | null) ?? [];
-      const visible = catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
+      const visible = catIds.length === 0 || catIds.some((id) => !hiddenCategoryIds.has(id));
       if (!visible) return false;
       if (categoryId && !catIds.includes(categoryId)) return false;
       if (!normalizedQuery) return true;
@@ -98,7 +76,51 @@ export async function loadMiniAppCatalogData(
         .toLocaleLowerCase();
       return haystack.includes(normalizedQuery);
     })
-    .map((product) => product.id as string);
+    .map((product) => product.id);
+}
+
+export async function loadMiniAppCatalogData(
+  defaultShopName = "Магазин",
+  page = 1,
+  pageSize = 80,
+  filters?: { query?: string; categoryId?: string },
+) {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { hasModule } = await import("./modules/modules.server");
+  const { fetchAll } = await import("./csv");
+
+  const stockEnabled = await hasModule("stock");
+  const safePage = Math.max(1, Math.floor(page) || 1);
+  const safePageSize = Math.max(20, Math.min(100, Math.floor(pageSize) || 80));
+  const categoryId = (filters?.categoryId ?? "").trim();
+
+  const [{ data: shopSetting }, { data: cats }, { data: hiddenCats }, productIndex] =
+    await Promise.all([
+      supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
+      supabaseAdmin
+        .from("categories")
+        .select("id, name")
+        .eq("is_visible", true)
+        .order("sort_order")
+        .order("name"),
+      supabaseAdmin.from("categories").select("id").eq("is_visible", false),
+      fetchAll<MiniAppProductIndexRow>(
+        (from, to) =>
+          supabaseAdmin
+            .from("products")
+            .select("id, name, description, category_ids, product_variants(name)")
+            .eq("is_active", true)
+            .order("sort_order")
+            .order("name")
+            .range(from, to),
+        "индекс товаров mini-app",
+      ),
+    ]);
+
+  const shopName = shopSetting?.value?.trim() || defaultShopName;
+  const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
+  const categories = (cats ?? []) as MiniAppCategory[];
+  const matchingIds = filterMiniAppProductIds(productIndex, hiddenIds, filters?.query, categoryId);
 
   const totalProducts = matchingIds.length;
   const pageCount = Math.max(1, Math.ceil(totalProducts / safePageSize));
