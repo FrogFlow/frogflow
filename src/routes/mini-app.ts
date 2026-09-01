@@ -24,8 +24,6 @@ export const Route = createFileRoute("/mini-app")({
         if (!(await miniAppModuleEnabled())) {
           return new Response("Not found", { status: 404 });
         }
-        const { hasModule } = await import("@/lib/modules/modules.server");
-
         const url = new URL(request.url);
         const locale = miniAppLocaleFromQuery(url);
         const s = miniAppStrings(locale);
@@ -36,6 +34,8 @@ export const Route = createFileRoute("/mini-app")({
           ? (url.searchParams.get("country") || "").toUpperCase()
           : null;
         const requestedPage = Math.max(1, Math.floor(Number(url.searchParams.get("page"))) || 1);
+        const searchQuery = (url.searchParams.get("q") || "").trim().slice(0, 100);
+        const categoryId = (url.searchParams.get("category") || "").trim();
 
         const {
           shopName,
@@ -45,17 +45,32 @@ export const Route = createFileRoute("/mini-app")({
           totalProducts,
           page,
           pageSize,
-        } = await loadMiniAppCatalogData(s.defaultShopName, requestedPage);
+        } = await loadMiniAppCatalogData(s.defaultShopName, requestedPage, 80, {
+          query: searchQuery,
+          categoryId,
+        });
         const priced = await priceMiniAppProducts(visibleProducts, countryCode);
+
+        const catalogParams = (overrides?: { page?: number; category?: string | null }) => {
+          const params = new URLSearchParams({ lang: locale });
+          if (countryCode) params.set("country", countryCode);
+          if (searchQuery) params.set("q", searchQuery);
+          const nextCategory = overrides?.category === undefined ? categoryId : overrides.category;
+          if (nextCategory) params.set("category", nextCategory);
+          if (overrides?.page && overrides.page > 1) {
+            params.set("page", String(overrides.page));
+          }
+          return params;
+        };
 
         const catChips =
           categories.length > 0
             ? `<div class="cat-scroll" id="mini-categories">
-              <button type="button" class="cat-chip active" data-cat="" aria-pressed="true">${esc(s.allCategories)}</button>
+              <a class="cat-chip${categoryId ? "" : " active"}" href="/mini-app?${esc(catalogParams({ category: null }).toString())}" aria-current="${categoryId ? "false" : "page"}">${esc(s.allCategories)}</a>
               ${categories
                 .map(
                   (c) =>
-                    `<button type="button" class="cat-chip" data-cat="${esc(c.id)}" aria-pressed="false">${esc(c.name)}</button>`,
+                    `<a class="cat-chip${categoryId === c.id ? " active" : ""}" href="/mini-app?${esc(catalogParams({ category: c.id }).toString())}" aria-current="${categoryId === c.id ? "page" : "false"}">${esc(c.name)}</a>`,
                 )
                 .join("")}</div>`
             : "";
@@ -67,19 +82,23 @@ export const Route = createFileRoute("/mini-app")({
                   renderMiniAppProductCard(p, priced.get(p.id), stockEnabled, locale, {
                     linkToDetail: true,
                     countryCode,
+                    catalogParams: catalogParams({ page }).toString(),
                   }),
                 )
                 .join("")
             : `<div class="empty">${esc(s.emptyCatalog)}</div>`;
 
-        const searchHtml =
-          visibleProducts.length > 0
-            ? `<label for="mini-search" style="position:absolute;left:-9999px">${esc(s.searchPlaceholder)}</label><input type="search" id="mini-search" class="search" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" />`
-            : "";
+        const searchHtml = `<form class="catalog-search" action="/mini-app" method="get">
+          <input type="hidden" name="lang" value="${esc(locale)}" />
+          ${countryCode ? `<input type="hidden" name="country" value="${esc(countryCode)}" />` : ""}
+          ${categoryId ? `<input type="hidden" name="category" value="${esc(categoryId)}" />` : ""}
+          <label for="mini-search-server" style="position:absolute;left:-9999px">${esc(s.searchPlaceholder)}</label>
+          <input type="search" name="q" id="mini-search-server" class="search" value="${esc(searchQuery)}" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" />
+          <button type="submit" class="search-submit" aria-label="${esc(s.searchPlaceholder)}">⌕</button>
+        </form>`;
         const pageCount = Math.max(1, Math.ceil(totalProducts / pageSize));
         const paginationLink = (target: number, label: string) => {
-          const params = new URLSearchParams({ lang: locale, page: String(target) });
-          if (countryCode) params.set("country", countryCode);
+          const params = catalogParams({ page: target });
           return `<a href="/mini-app?${esc(params.toString())}">${label}</a>`;
         };
         const paginationHtml =
@@ -91,7 +110,7 @@ export const Route = createFileRoute("/mini-app")({
               </nav>`
             : "";
 
-        const bodyHtml = `
+        const catalogBody = `
           <header>
             <h1>${esc(shopName)}</h1>
             <p class="subtitle">${totalProducts > 0 ? s.productsCount(totalProducts) : ""}</p>
@@ -101,6 +120,10 @@ export const Route = createFileRoute("/mini-app")({
           <div class="grid">${cardsHtml}</div>
           ${paginationHtml}
           ${renderMiniAppCartShell(locale)}`;
+        const needsContext = !url.searchParams.has("lang") || !url.searchParams.has("country");
+        const bodyHtml = needsContext
+          ? `<div id="mini-context-content" class="context-pending">${catalogBody}</div><div id="mini-context-loader" class="context-loader">${esc(s.loading)}</div>`
+          : catalogBody;
 
         return miniAppHtmlResponse(wrapMiniAppPage(shopName, bodyHtml, locale));
       },

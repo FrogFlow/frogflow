@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { isControlPlane } from "@/lib/control-plane.server";
 import { authorizeMiniAppRequest } from "@/lib/mini-app.server";
 import { logger } from "@/lib/logger.server";
+import { consumeMiniAppRateLimit } from "@/lib/mini-app-rate-limit.server";
 
 export const Route = createFileRoute("/api/public/mini-app/checkout")({
   server: {
@@ -12,6 +13,13 @@ export const Route = createFileRoute("/api/public/mini-app/checkout")({
         const auth = await authorizeMiniAppRequest(request);
         if (!auth.ok) {
           return Response.json({ error: auth.error }, { status: auth.status });
+        }
+        const limit = consumeMiniAppRateLimit("checkout", auth.user.id);
+        if (!limit.ok) {
+          return Response.json(
+            { error: "rate_limited" },
+            { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+          );
         }
 
         const { ensureMiniAppBotUser, miniAppRunCheckout } =

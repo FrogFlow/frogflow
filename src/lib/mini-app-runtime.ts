@@ -8,6 +8,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   var bootAttempts = 0;
   var checkoutHistory = [];
   var mainButtonBound = false;
+  var quantityBusy = {};
 
   function t(key) { return I[key] || key; }
 
@@ -103,6 +104,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   }
 
   function showSessionError() {
+    revealContext();
     var existing = document.getElementById("mini-session-error");
     if (existing) return;
     var banner = document.createElement("div");
@@ -115,9 +117,19 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (header && header.parentNode) header.parentNode.insertBefore(banner, header.nextSibling);
   }
 
+  function revealContext() {
+    var content = document.getElementById("mini-context-content");
+    var loader = document.getElementById("mini-context-loader");
+    if (content) content.classList.remove("context-pending");
+    if (loader) loader.remove();
+  }
+
   function parseResponse(response) {
     if (response.status === 401 || response.status === 403) {
       cachedInitData = "";
+      cartReady = false;
+      setCartEnabled(false);
+      try { if (tg && tg.MainButton) tg.MainButton.hide(); } catch (e) {}
       showSessionError();
     }
     return response.json().then(function (data) {
@@ -151,8 +163,14 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       url.searchParams.set("country", countryCode);
       changed = true;
     }
+    try {
+      sessionStorage.setItem(
+        "ff_mini_context",
+        JSON.stringify({ locale: locale, countryCode: countryCode || "" }),
+      );
+    } catch (e) {}
     if (changed) {
-      window.location.replace(url.pathname + "?" + url.searchParams.toString());
+      window.location.replace(url.pathname + "?" + url.searchParams.toString() + url.hash);
       return true;
     }
     return false;
@@ -191,7 +209,6 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     summary: null,
     pendingPayment: null,
   };
-  var activeCategory = "";
 
   function renderCart() {
     var count = state.items.reduce(function (s, it) { return s + it.quantity; }, 0);
@@ -233,9 +250,9 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         "<div class=\\"cart-line\\">" +
         "<div class=\\"cart-line-info\\">" + escapeHtml(it.name) + " — " + escapeHtml(formatMoney(it.line_total, it.currency)) + "</div>" +
         "<div class=\\"qty-controls\\">" +
-        "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-minus=\\"" + it.id + "\\" aria-label=\\"-\\">−</button>" +
+        "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-minus=\\"" + it.id + "\\" aria-label=\\"-\\"" + (quantityBusy[it.id] ? " disabled" : "") + ">−</button>" +
         "<span>" + it.quantity + "</span>" +
-        "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-plus=\\"" + it.id + "\\" aria-label=\\"+\\">+</button>" +
+        "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-plus=\\"" + it.id + "\\" aria-label=\\"+\\"" + (quantityBusy[it.id] ? " disabled" : "") + ">+</button>" +
         "</div>" +
         "<button type=\\"button\\" class=\\"remove-btn\\" data-remove=\\"" + it.id + "\\">" + t("remove") + "</button>" +
         "</div>"
@@ -362,13 +379,21 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     return fetch("/api/public/mini-app/cart", { headers: apiHeaders() })
       .then(parseResponse)
       .then(function (res) {
-        if (!res.ok) throw new Error(res.d && res.d.error ? res.d.error : "cart_failed");
+        if (!res.ok) {
+          var error = new Error(res.d && res.d.error ? res.d.error : "cart_failed");
+          error.auth = res.status === 401 || res.status === 403;
+          throw error;
+        }
         if (reloadForContext(res.d.country_code || "", res.d.locale || "")) return;
+        revealContext();
         applyCartPayload(res.d);
       });
   }
 
   function setQuantity(id, qty) {
+    if (quantityBusy[id]) return Promise.resolve();
+    quantityBusy[id] = true;
+    renderCart();
     return fetch("/api/public/mini-app/cart", {
       method: "POST",
       headers: apiHeaders(),
@@ -382,6 +407,10 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           return;
         }
         applyCartPayload(res.d);
+      })
+      .finally(function () {
+        delete quantityBusy[id];
+        renderCart();
       });
   }
 
@@ -539,7 +568,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         var back = document.createElement("button");
         back.type = "button";
         back.className = "btn-secondary";
-        back.textContent = t("backToCatalog").replace("← ", "");
+        back.textContent = t("back");
         back.addEventListener("click", function () {
           checkoutHistory.pop();
           var previous = checkoutHistory[checkoutHistory.length - 1];
@@ -615,7 +644,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (checkoutBusy) return Promise.resolve();
     checkoutBusy = true;
     try { if (tg) tg.enableClosingConfirmation(); } catch (e) {}
-    if (cartError) cartError.textContent = "";
+    if (cartError) cartError.textContent = t("loading");
     if (checkoutBtn) checkoutBtn.disabled = true;
     if (checkoutForm) checkoutForm.setAttribute("aria-busy", "true");
     if (checkoutForm) {
@@ -633,6 +662,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       .then(function (res) {
         checkoutBusy = false;
         if (checkoutForm) checkoutForm.setAttribute("aria-busy", "false");
+        if (cartError) cartError.textContent = "";
         if (checkoutBtn) checkoutBtn.disabled = state.items.length === 0;
         if (!res.ok) {
           var code = res.d && res.d.error;
@@ -713,6 +743,13 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       var card = sel.closest(".card, .pdp-body");
       var btn = card ? card.querySelector(".add-btn") : null;
       if (btn) btn.disabled = !initData() || !sel.value;
+      var headline = card ? card.querySelector(".pdp-price") : null;
+      var option = sel.options && sel.selectedIndex >= 0
+        ? sel.options[sel.selectedIndex]
+        : null;
+      if (headline && option && option.getAttribute("data-price")) {
+        headline.textContent = option.getAttribute("data-price");
+      }
     });
   });
 
@@ -793,34 +830,6 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     runCheckout({});
   }
 
-  var search = document.getElementById("mini-search");
-  if (search) {
-    search.addEventListener("input", function () { applyFilters(); });
-  }
-
-  function applyFilters() {
-    var q = search ? search.value.trim().toLocaleLowerCase(window.__miniAppLocale || "ru") : "";
-    document.querySelectorAll(".card").forEach(function (card) {
-      var name = card.getAttribute("data-name") || "";
-      var cats = (card.getAttribute("data-categories") || "").split(",").filter(Boolean);
-      var catOk = !activeCategory || cats.length === 0 || cats.indexOf(activeCategory) !== -1;
-      var qOk = !q || name.indexOf(q) !== -1;
-      card.style.display = catOk && qOk ? "" : "none";
-    });
-  }
-
-  document.querySelectorAll(".cat-chip").forEach(function (chip) {
-    chip.addEventListener("click", function () {
-      activeCategory = chip.getAttribute("data-cat") || "";
-      try { sessionStorage.setItem("ff_mini_category", activeCategory); } catch (e) {}
-      document.querySelectorAll(".cat-chip").forEach(function (c) {
-        c.classList.toggle("active", c === chip);
-        c.setAttribute("aria-pressed", c === chip ? "true" : "false");
-      });
-      applyFilters();
-    });
-  });
-
   function setCartEnabled(on) {
     document.querySelectorAll(".add-btn").forEach(function (btn) {
       if (btn.getAttribute("data-has-variants") === "1") {
@@ -840,7 +849,9 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       if (!cartReady) {
         cartReady = true;
         setCartEnabled(true);
-        refreshCart().catch(function () { showToast(t("cartLoadFailed")); });
+        refreshCart().catch(function (error) {
+          if (!error || !error.auth) showToast(t("cartLoadFailed"));
+        });
       }
       return;
     }
@@ -851,22 +862,6 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     }
     setTimeout(boot, 100);
   }
-
-  try {
-    activeCategory = sessionStorage.getItem("ff_mini_category") || "";
-    if (search) {
-      search.value = sessionStorage.getItem("ff_mini_search") || "";
-      search.addEventListener("input", function () {
-        try { sessionStorage.setItem("ff_mini_search", search.value); } catch (e) {}
-      });
-    }
-  } catch (e) {}
-  document.querySelectorAll(".cat-chip").forEach(function (chip) {
-    var selected = (chip.getAttribute("data-cat") || "") === activeCategory;
-    chip.classList.toggle("active", selected);
-    chip.setAttribute("aria-pressed", selected ? "true" : "false");
-  });
-  applyFilters();
 
   bindTelegram();
   var backLink = document.querySelector(".back-link");

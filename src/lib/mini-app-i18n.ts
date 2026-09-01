@@ -63,6 +63,8 @@ export type MiniAppStrings = {
   sendProofInBot: string;
   continue: string;
   cancel: string;
+  back: string;
+  close: string;
   loading: string;
   inProgress: string;
   invalidField: string;
@@ -136,6 +138,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     sendProofInBot: "Отправьте чек оплаты в чат с ботом.",
     continue: "Продолжить",
     cancel: "Отмена",
+    back: "Назад",
+    close: "Закрыть",
     loading: "Подождите…",
     inProgress: "Заказ уже оформляется",
     invalidField: "Проверьте введённые данные",
@@ -207,6 +211,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     sendProofInBot: "Төлем чегін бот чатында жіберіңіз.",
     continue: "Жалғастыру",
     cancel: "Бас тарту",
+    back: "Артқа",
+    close: "Жабу",
     loading: "Күте тұрыңыз…",
     inProgress: "Тапсырыс рәсімделіп жатыр",
     invalidField: "Енгізілген деректерді тексеріңіз",
@@ -278,6 +284,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     sendProofInBot: "Send payment proof in the bot chat.",
     continue: "Continue",
     cancel: "Cancel",
+    back: "Back",
+    close: "Close",
     loading: "Please wait…",
     inProgress: "The order is already being processed",
     invalidField: "Check the entered information",
@@ -349,6 +357,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     sendProofInBot: "To‘lov chekini bot chatida yuboring.",
     continue: "Davom etish",
     cancel: "Bekor qilish",
+    back: "Orqaga",
+    close: "Yopish",
     loading: "Kuting…",
     inProgress: "Buyurtma rasmiylashtirilmoqda",
     invalidField: "Kiritilgan ma’lumotlarni tekshiring",
@@ -438,6 +448,8 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     sendProofInBot: s.sendProofInBot,
     continue: s.continue,
     cancel: s.cancel,
+    back: s.back,
+    close: s.close,
     loading: s.loading,
     inProgress: s.inProgress,
     invalidField: s.invalidField,

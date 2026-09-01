@@ -1,6 +1,7 @@
 import type { Json } from "@/integrations-supabase/types";
 import type { TelegramWebAppUser } from "./telegram-init-data.server";
 import type { DeliveryLangChoice } from "./product-materials";
+import { logger } from "./logger.server";
 
 type CartListRow = {
   id: string;
@@ -96,7 +97,7 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
     )
     .eq("telegram_id", telegram_id);
   if (error) {
-    console.error("[mini-app] listMiniAppCart", error);
+    logger.error("mini_app.cart_list_failed", { err: error, telegram_id });
     return [];
   }
 
@@ -138,7 +139,11 @@ export async function removeMiniAppCartItem(
     .eq("telegram_id", telegram_id)
     .eq("id", cart_item_id);
   if (error) {
-    console.error("[mini-app] removeMiniAppCartItem", error);
+    logger.error("mini_app.cart_remove_failed", {
+      err: error,
+      telegram_id,
+      cart_item_id,
+    });
     return false;
   }
   return (count ?? 0) > 0;
@@ -162,7 +167,10 @@ export async function ensureMiniAppBotUser(user: TelegramWebAppUser) {
       : {};
   if (!state.locale) {
     state.locale = locale;
-    await s.from("bot_users").update({ state }).eq("telegram_id", user.id);
+    await s
+      .from("bot_users")
+      .update({ state: state as Json })
+      .eq("telegram_id", user.id);
   }
   return row;
 }

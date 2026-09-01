@@ -90,7 +90,12 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
             const opts = variants
               .map(
                 (v) =>
-                  `<option value="${esc(v.id)}">${esc(v.name)} — ${esc(
+                  `<option value="${esc(v.id)}" data-price="${esc(
+                    formatMiniAppMoney(
+                      money?.variants[v.id]?.amount ?? Number(v.price),
+                      money?.variants[v.id]?.currency ?? money?.currency ?? p.currency ?? "KZT",
+                    ),
+                  )}">${esc(v.name)} — ${esc(
                     formatMiniAppMoney(
                       money?.variants[v.id]?.amount ?? Number(v.price),
                       money?.variants[v.id]?.currency ?? money?.currency ?? p.currency ?? "KZT",
@@ -113,7 +118,12 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
 
         const backQuery = new URLSearchParams({ lang: locale });
         if (countryCode) backQuery.set("country", countryCode);
-        const bodyHtml = `
+        const requestedBack = new URLSearchParams(url.searchParams.get("back") || "");
+        for (const key of ["q", "category", "page"]) {
+          const value = requestedBack.get(key);
+          if (value) backQuery.set(key, value.slice(0, 100));
+        }
+        const productBody = `
           <header>
             <a class="back-link" href="/mini-app?${esc(backQuery.toString())}">${esc(s.backToCatalog)}</a>
             <h1>${esc(p.name)}</h1>
@@ -126,6 +136,10 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
             <div style="margin-top:1rem">${actionsHtml}</div>
           </div>
           ${renderMiniAppCartShell(locale)}`;
+        const needsContext = !url.searchParams.has("lang") || !url.searchParams.has("country");
+        const bodyHtml = needsContext
+          ? `<div id="mini-context-content" class="context-pending">${productBody}</div><div id="mini-context-loader" class="context-loader">${esc(s.loading)}</div>`
+          : productBody;
 
         return miniAppHtmlResponse(wrapMiniAppPage(p.name, bodyHtml, locale));
       },

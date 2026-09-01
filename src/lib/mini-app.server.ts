@@ -1,5 +1,6 @@
 import { validateTelegramInitData, type TelegramWebAppUser } from "./telegram-init-data.server";
 import { tg } from "./telegram.server";
+import { logger } from "./logger.server";
 
 const INIT_DATA_HEADER = "x-telegram-init-data";
 
@@ -43,10 +44,11 @@ export async function authorizeMiniAppRequest(request: Request): Promise<MiniApp
 
 export async function miniAppModuleEnabled(): Promise<boolean> {
   try {
-    const { hasModule } = await import("./modules/modules.server");
-    return await hasModule("telegram_mini_app");
+    const { loadModulesFresh } = await import("./modules/modules.server");
+    const modules = await loadModulesFresh();
+    return modules.telegram_mini_app && modules.shop;
   } catch (error) {
-    console.error("[mini-app] module status unavailable", error);
+    logger.error("mini_app.module_status_failed", { err: error });
     return false;
   }
 }
@@ -57,7 +59,7 @@ export async function syncMiniAppMenuButton(chatId?: number, text = "🛍 Маг
     await tg("setChatMenuButton", {
       ...(chatId ? { chat_id: chatId } : {}),
       menu_button: { type: "default" },
-    }).catch((e) => console.error("[mini-app] reset ChatMenuButton failed", e));
+    }).catch((error) => logger.error("mini_app.menu_button_reset_failed", { err: error }));
     return;
   }
   const { appOrigin } = await import("./app-origin.server");
@@ -71,5 +73,10 @@ export async function syncMiniAppMenuButton(chatId?: number, text = "🛍 Маг
       text,
       web_app: { url },
     },
-  }).catch((e) => console.error("[mini-app] setChatMenuButton failed", e));
+  }).catch((error) =>
+    logger.error("mini_app.menu_button_sync_failed", {
+      err: error,
+      chat_id: chatId,
+    }),
+  );
 }

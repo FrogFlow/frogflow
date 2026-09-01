@@ -1,5 +1,6 @@
 import { formatMiniAppMoney } from "./mini-app-catalog.server";
 import { miniAppCountryCode } from "./mini-app-cart.server";
+import type { Json } from "@/integrations-supabase/types";
 import {
   isMiniAppFulfillmentType,
   isMiniAppPaymentMethod,
@@ -84,7 +85,7 @@ export async function miniAppProcessCheckout(
         ? { ...(row.state as Record<string, unknown>) }
         : {};
     st.country_code = body.country_code.trim();
-    row.state = st;
+    row.state = st as Json;
   }
 
   if (body.payment_method) {
@@ -157,7 +158,7 @@ export async function miniAppProcessCheckout(
       row.state && typeof row.state === "object" && !Array.isArray(row.state)
         ? { ...(row.state as Record<string, unknown>), ...statePatch }
         : statePatch;
-    row.state = merged;
+    row.state = merged as Json;
   }
 
   const needs = await miniAppCheckoutNeeds(telegram_id, row);
@@ -180,7 +181,7 @@ export async function miniAppCheckoutNeeds(
       .select("contact_phone, state")
       .eq("telegram_id", telegram_id)
       .maybeSingle();
-    user = data;
+    user = data ?? undefined;
   }
   if (!user) return { step: "error", error: "no_user" };
 

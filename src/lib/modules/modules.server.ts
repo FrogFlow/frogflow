@@ -38,8 +38,8 @@ export function resetModuleCache() {
   cache = null;
 }
 
-async function loadBot(): Promise<BotRow> {
-  if (cache && Date.now() - cache.at < TTL_MS) return cache.row;
+async function loadBot(fresh = false): Promise<BotRow> {
+  if (!fresh && cache && Date.now() - cache.at < TTL_MS) return cache.row;
 
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data, error } = await supabaseAdmin
@@ -69,6 +69,15 @@ export function emptyModules(): Record<ModuleKey, boolean> {
 /** Полный канонический набор — ключи реестра, которых нет в строке (например, ещё не забэкфилены), читаются как выключенные. */
 export async function loadModules(): Promise<Record<ModuleKey, boolean>> {
   const { modules } = await loadBot();
+  const result = emptyModules();
+  for (const key of MODULE_KEYS) {
+    result[key] = modules?.[key] === true;
+  }
+  return result;
+}
+
+export async function loadModulesFresh(): Promise<Record<ModuleKey, boolean>> {
+  const { modules } = await loadBot(true);
   const result = emptyModules();
   for (const key of MODULE_KEYS) {
     result[key] = modules?.[key] === true;

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { isControlPlane } from "@/lib/control-plane.server";
 import { authorizeMiniAppRequest } from "@/lib/mini-app.server";
 import { logger } from "@/lib/logger.server";
+import { consumeMiniAppRateLimit } from "@/lib/mini-app-rate-limit.server";
 
 type CartBody = {
   action?: string;
@@ -55,6 +56,13 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
         if (!auth.ok) {
           return Response.json({ error: auth.error }, { status: auth.status });
         }
+        const limit = consumeMiniAppRateLimit("cart", auth.user.id);
+        if (!limit.ok) {
+          return Response.json(
+            { error: "rate_limited" },
+            { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+          );
+        }
 
         return Response.json(await cartPayload(auth.user.id));
       },
@@ -64,6 +72,13 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
         const auth = await authorizeMiniAppRequest(request);
         if (!auth.ok) {
           return Response.json({ error: auth.error }, { status: auth.status });
+        }
+        const limit = consumeMiniAppRateLimit("cart", auth.user.id);
+        if (!limit.ok) {
+          return Response.json(
+            { error: "rate_limited" },
+            { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+          );
         }
 
         let body: CartBody;

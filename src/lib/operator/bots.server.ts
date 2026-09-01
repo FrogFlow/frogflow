@@ -185,10 +185,22 @@ export async function setModule(botId: string, key: ModuleKey, enabled: boolean,
   }
 
   const modules = { ...current, [key]: enabled };
+  const cascadedOff: ModuleKey[] = [];
+  if (!enabled) {
+    for (const candidate of MODULE_KEYS) {
+      if (modules[candidate] === true && moduleDef(candidate).requires?.includes(key)) {
+        modules[candidate] = false;
+        cascadedOff.push(candidate);
+      }
+    }
+  }
   const { error } = await s.from("bots").update({ modules }).eq("id", botId);
   if (error) throw new Error(`Не удалось сохранить модуль: ${error.message}`);
 
-  await logEvent(botId, actor, enabled ? "module_on" : "module_off", { key });
+  await logEvent(botId, actor, enabled ? "module_on" : "module_off", {
+    key,
+    cascaded_off: cascadedOff,
+  });
 
   await nudgeDeployment(botId);
 }

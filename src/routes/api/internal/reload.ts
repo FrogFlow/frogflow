@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { authenticateInternalRequest } from "@/lib/internal/internal-api.server";
 import { resetModuleCache } from "@/lib/modules/modules.server";
+import { logger } from "@/lib/logger.server";
 
 export const Route = createFileRoute("/api/internal/reload")({
   server: {
@@ -15,7 +16,7 @@ export const Route = createFileRoute("/api/internal/reload")({
           const { syncMiniAppMenuButton } = await import("@/lib/mini-app.server");
           await syncMiniAppMenuButton();
         } catch (error) {
-          console.error("[internal/reload] Mini App Menu Button sync failed", error);
+          logger.error("mini_app.menu_button_reload_sync_failed", { err: error });
         }
         return Response.json({ ok: true });
       },

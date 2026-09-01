@@ -46,57 +46,89 @@ export function formatMiniAppMoney(amount: number, currency: string): string {
   return cur === "KZT" ? `${value} ₸` : `${value} ${currency}`;
 }
 
-export async function loadMiniAppCatalogData(defaultShopName = "Магазин", page = 1, pageSize = 80) {
+export async function loadMiniAppCatalogData(
+  defaultShopName = "Магазин",
+  page = 1,
+  pageSize = 80,
+  filters?: { query?: string; categoryId?: string },
+) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
 
   const stockEnabled = await hasModule("stock");
   const safePage = Math.max(1, Math.floor(page) || 1);
   const safePageSize = Math.max(20, Math.min(100, Math.floor(pageSize) || 80));
-  const from = (safePage - 1) * safePageSize;
-  const to = from + safePageSize - 1;
+  const normalizedQuery = (filters?.query ?? "").trim().toLocaleLowerCase().slice(0, 100);
+  const categoryId = (filters?.categoryId ?? "").trim();
 
-  const [
-    { data: shopSetting },
-    { data: cats },
-    { data: hiddenCats },
-    { data: productRows, count: totalProducts },
-  ] = await Promise.all([
-    supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
-    supabaseAdmin
-      .from("categories")
-      .select("id, name")
-      .eq("is_visible", true)
-      .order("sort_order")
-      .order("name"),
-    supabaseAdmin.from("categories").select("id").eq("is_visible", false),
-    supabaseAdmin
-      .from("products")
-      .select(
-        "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
-        { count: "exact" },
-      )
-      .eq("is_active", true)
-      .order("sort_order")
-      .order("name")
-      .range(from, to),
-  ]);
+  const [{ data: shopSetting }, { data: cats }, { data: hiddenCats }, { data: productIndex }] =
+    await Promise.all([
+      supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
+      supabaseAdmin
+        .from("categories")
+        .select("id, name")
+        .eq("is_visible", true)
+        .order("sort_order")
+        .order("name"),
+      supabaseAdmin.from("categories").select("id").eq("is_visible", false),
+      supabaseAdmin
+        .from("products")
+        .select("id, name, description, category_ids, product_variants(name)")
+        .eq("is_active", true)
+        .order("sort_order")
+        .order("name"),
+    ]);
 
   const shopName = shopSetting?.value?.trim() || defaultShopName;
   const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
   const categories = (cats ?? []) as MiniAppCategory[];
-  const visibleProducts = ((productRows ?? []) as MiniAppProduct[]).filter((p) => {
-    const catIds = (p.category_ids as string[] | null) ?? [];
-    return catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
-  });
+  const matchingIds = (productIndex ?? [])
+    .filter((product) => {
+      const catIds = (product.category_ids as string[] | null) ?? [];
+      const visible = catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
+      if (!visible) return false;
+      if (categoryId && !catIds.includes(categoryId)) return false;
+      if (!normalizedQuery) return true;
+      const haystack = [
+        product.name,
+        product.description ?? "",
+        ...(product.product_variants ?? []).map((variant) => variant.name),
+      ]
+        .join(" ")
+        .toLocaleLowerCase();
+      return haystack.includes(normalizedQuery);
+    })
+    .map((product) => product.id as string);
+
+  const totalProducts = matchingIds.length;
+  const pageCount = Math.max(1, Math.ceil(totalProducts / safePageSize));
+  const actualPage = Math.min(safePage, pageCount);
+  const from = (actualPage - 1) * safePageSize;
+  const pageIds = matchingIds.slice(from, from + safePageSize);
+  let visibleProducts: MiniAppProduct[] = [];
+  if (pageIds.length > 0) {
+    const { data: productRows } = await supabaseAdmin
+      .from("products")
+      .select(
+        "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
+      )
+      .in("id", pageIds)
+      .eq("is_active", true);
+    const byId = new Map(
+      ((productRows ?? []) as MiniAppProduct[]).map((product) => [product.id, product]),
+    );
+    visibleProducts = pageIds
+      .map((id) => byId.get(id))
+      .filter((product): product is MiniAppProduct => Boolean(product));
+  }
 
   return {
     shopName,
     categories,
     visibleProducts,
     stockEnabled,
-    totalProducts: totalProducts ?? visibleProducts.length,
-    page: safePage,
+    totalProducts,
+    page: actualPage,
     pageSize: safePageSize,
   };
 }
@@ -147,7 +179,11 @@ export function renderMiniAppProductCard(
   money: PricedProduct | undefined,
   stockEnabled: boolean,
   locale: Locale,
-  opts?: { linkToDetail?: boolean; countryCode?: string | null },
+  opts?: {
+    linkToDetail?: boolean;
+    countryCode?: string | null;
+    catalogParams?: string;
+  },
 ): string {
   const s = miniAppStrings(locale);
   const esc = escapeMiniAppHtml;
@@ -189,6 +225,7 @@ export function renderMiniAppProductCard(
     : `<span aria-hidden="true" style="font-size:2rem">🛍</span>`;
   const query = new URLSearchParams({ lang: locale });
   if (opts?.countryCode) query.set("country", opts.countryCode);
+  if (opts?.catalogParams) query.set("back", opts.catalogParams);
   const detailHref = `/mini-app/product/${encodeURIComponent(p.id)}?${query.toString()}`;
   const thumbHtml = opts?.linkToDetail
     ? `<a class="thumb thumb-link" href="${esc(detailHref)}">${thumbInner}</a>`
@@ -221,7 +258,7 @@ export function renderMiniAppCartShell(locale: Locale): string {
   const esc = escapeMiniAppHtml;
   return `
     <div id="mini-cart-bar" class="cart-bar hidden">
-      <button type="button" id="mini-open-cart" class="cart-summary" style="border:none;background:none;text-align:left;cursor:pointer;color:inherit">
+      <button type="button" id="mini-open-cart" class="cart-summary" aria-label="${esc(s.cartTitle)}" style="border:none;background:none;text-align:left;cursor:pointer;color:inherit">
         <strong id="mini-cart-total">0 ₸</strong>
         <span><span id="mini-cart-count">0</span> ${esc(s.inCartOpen)}</span>
       </button>
@@ -231,13 +268,13 @@ export function renderMiniAppCartShell(locale: Locale): string {
       <div class="cart-panel" tabindex="-1">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
           <strong>${esc(s.cartTitle)}</strong>
-          <button type="button" id="mini-close-cart" aria-label="${esc(s.cancel)}" style="border:none;background:none;font-size:1.25rem;cursor:pointer">×</button>
+          <button type="button" id="mini-close-cart" aria-label="${esc(s.close)}" style="border:none;background:none;font-size:1.25rem;cursor:pointer">×</button>
         </div>
         <div id="mini-pending-payment"></div>
         <div id="mini-cart-lines"></div>
         <div id="mini-cart-discounts"></div>
         <div id="mini-checkout-form" class="checkout-form hidden"></div>
-        <div id="mini-cart-error" class="cart-error"></div>
+        <div id="mini-cart-error" class="cart-error" role="alert" aria-live="assertive"></div>
         <p class="checkout-hint">${esc(s.checkoutInChat)}</p>
       </div>
     </div>`;

@@ -27,9 +27,29 @@ export function wrapMiniAppPage(
       try {
         var packed = (location.hash || "") + "\\n" + (location.search || "");
         if (packed.indexOf("tgWebAppData") !== -1) save("ff_tg_launch", packed);
+        var context = JSON.parse(sessionStorage.getItem("ff_mini_context") || "null");
+        if (context && (context.locale || context.countryCode)) {
+          var u = new URL(location.href);
+          var changed = false;
+          if (!u.searchParams.get("lang") && context.locale) {
+            u.searchParams.set("lang", context.locale);
+            changed = true;
+          }
+          if (!u.searchParams.get("country") && context.countryCode) {
+            u.searchParams.set("country", context.countryCode);
+            changed = true;
+          }
+          if (changed) location.replace(u.pathname + "?" + u.searchParams.toString() + u.hash);
+        }
       } catch (e) {}
       window.addEventListener("message", function (ev) {
         try {
+          var trustedOrigin =
+            !ev.origin ||
+            ev.origin === location.origin ||
+            /^https:\\/\\/(web\\.)?telegram\\.org$/.test(ev.origin);
+          if (!trustedOrigin) return;
+          if (ev.source && ev.source !== window && ev.source !== window.parent) return;
           var d = ev.data;
           if (typeof d === "string") {
             if (d.indexOf("tgWebAppData") !== -1 || d.indexOf("hash=") !== -1) save("ff_tg_launch", d);
@@ -84,6 +104,21 @@ export function wrapMiniAppPage(
       color: var(--text);
       font-size: 1rem;
     }
+    .catalog-search { position: relative; }
+    .catalog-search .search { padding-right: 3rem; }
+    .search-submit {
+      position: absolute;
+      right: 1.35rem;
+      top: 1rem;
+      width: 2.25rem;
+      height: 2.25rem;
+      border: 0;
+      border-radius: 9px;
+      background: var(--btn);
+      color: var(--btn-text);
+      font-size: 1.1rem;
+      cursor: pointer;
+    }
     .cat-scroll {
       display: flex;
       gap: 0.5rem;
@@ -100,6 +135,7 @@ export function wrapMiniAppPage(
       color: var(--text);
       font-size: 0.85rem;
       cursor: pointer;
+      text-decoration: none;
     }
     .cat-chip.active { background: var(--btn); color: var(--btn-text); border-color: transparent; }
     .grid {
@@ -309,6 +345,17 @@ export function wrapMiniAppPage(
       pointer-events: none;
     }
     .toast.show { opacity: 1; }
+    .context-pending { visibility: hidden; }
+    .context-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      color: var(--hint);
+    }
     .manual-instructions {
       font-size: 0.85rem;
       line-height: 1.45;

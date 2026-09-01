@@ -10,6 +10,7 @@
 
 import { tg } from "./telegram.server";
 import { errorMessage } from "./error-message";
+import { logger } from "./logger.server";
 // Мягкий вариант, а не requireAppOrigin: это cron самовосстановления, он должен
 // сообщить о проблеме своим кодом ответа, а не упасть с исключением.
 import { appOrigin as publicAppOrigin } from "./app-origin.server";
@@ -56,7 +57,7 @@ async function syncMiniAppMenuAfterWebhook(): Promise<void> {
     const { syncMiniAppMenuButton } = await import("./mini-app.server");
     await syncMiniAppMenuButton();
   } catch (e) {
-    console.error("[webhook] syncMiniAppMenuButton", e);
+    logger.error("mini_app.menu_button_webhook_sync_failed", { err: e });
   }
 }
 

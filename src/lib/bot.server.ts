@@ -1423,7 +1423,7 @@ async function mainMenu(locale: Locale = "ru") {
     [{ text: c.instruction }, { text: c.information }],
     [{ text: currentVerticalDef().locales[locale].contactBtn }],
   ];
-  if (await hasModule("telegram_mini_app")) {
+  if ((await hasModule("telegram_mini_app")) && (await hasModule("shop"))) {
     const { appOrigin } = await import("./app-origin.server");
     const { miniAppUrl } = await import("./mini-app.server");
     const origin = appOrigin();
