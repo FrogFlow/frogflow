@@ -13,6 +13,7 @@ import {
   getSettings,
   saveSetting,
   getShopUrl,
+  getMiniAppUrl,
   getInstructionVideoUploadUrl,
   commitInstructionVideoFn,
   clearInstructionVideoFn,
@@ -75,6 +76,13 @@ const copy: Record<
     webStorefrontCopied: (link: string) => string;
     webStorefrontCopyPrompt: string;
     webStorefrontNoUrl: string;
+    miniAppTitle: string;
+    miniAppHint: string;
+    miniAppOpenBtn: string;
+    miniAppCopyBtn: string;
+    miniAppCopied: (link: string) => string;
+    miniAppCopyPrompt: string;
+    miniAppNoUrl: string;
     instructionTitle: string;
     instructionHint: string;
     uploading: string;
@@ -162,6 +170,15 @@ const copy: Record<
     webStorefrontCopyPrompt: "Скопируйте ссылку на витрину:",
     webStorefrontNoUrl:
       "Адрес деплоя не определён (нет PUBLIC_APP_URL) — витрина не откроется, пока это не поправят в переменных окружения.",
+    miniAppTitle: "Telegram Mini App",
+    miniAppHint:
+      "Магазин внутри Telegram: каталог и корзина в Mini App, оплата в чате с ботом. В главном меню бота появится кнопка «Магазин». Корзина общая с чатом.",
+    miniAppOpenBtn: "Открыть Mini App",
+    miniAppCopyBtn: "Скопировать ссылку",
+    miniAppCopied: (link: string) => `Ссылка скопирована: ${link}`,
+    miniAppCopyPrompt: "Скопируйте ссылку Mini App:",
+    miniAppNoUrl:
+      "Адрес деплоя не определён (нет PUBLIC_APP_URL) — Mini App не откроется, пока это не поправят в переменных окружения.",
     instructionTitle: "Инструкция для покупателей",
     instructionHint:
       "Кнопка «📖 Инструкция» в главном меню бота. Видео лучше до 50 МБ (лимит Telegram), формат MP4.",
@@ -252,6 +269,14 @@ const copy: Record<
     webStorefrontCopyPrompt: "Витринаға сілтемені көшіріңіз:",
     webStorefrontNoUrl:
       "Деплой мекенжайы анықталмаған (PUBLIC_APP_URL жоқ) — бұл айнымалыны түзеткенше витрина ашылмайды.",
+    miniAppTitle: "Telegram Mini App",
+    miniAppHint:
+      "Telegram ішіндегі дүкен: Mini App-та каталог және себет, төлем ботпен чатта. Боттың негізгі мәзірінде «Дүкен» түймесі пайда болады. Себет чатпен бірдей.",
+    miniAppOpenBtn: "Mini App ашу",
+    miniAppCopyBtn: "Сілтемені көшіру",
+    miniAppCopied: (link: string) => `Сілтеме көшірілді: ${link}`,
+    miniAppCopyPrompt: "Mini App сілтемесін көшіріңіз:",
+    miniAppNoUrl: "Деплой мекенжайы анықталмаған (PUBLIC_APP_URL жоқ) — Mini App ашылмайды.",
     instructionTitle: "Сатып алушыларға арналған нұсқаулық",
     instructionHint:
       "Бот мәзіріндегі «📖 Нұсқаулық» түймесі. Видео 50 МБ-тан аспағаны жөн (Telegram шегі), MP4 форматы.",
@@ -342,6 +367,15 @@ const copy: Record<
     webStorefrontCopyPrompt: "Copy the storefront link:",
     webStorefrontNoUrl:
       "Deployment address unknown (no PUBLIC_APP_URL) — the storefront won't open until that env var is fixed.",
+    miniAppTitle: "Telegram Mini App",
+    miniAppHint:
+      "Shop inside Telegram: catalog and cart in the Mini App, payment in the bot chat. A Shop button appears in the bot main menu. Cart is shared with chat.",
+    miniAppOpenBtn: "Open Mini App",
+    miniAppCopyBtn: "Copy link",
+    miniAppCopied: (link: string) => `Link copied: ${link}`,
+    miniAppCopyPrompt: "Copy the Mini App link:",
+    miniAppNoUrl:
+      "Deployment address unknown (no PUBLIC_APP_URL) — Mini App won't open until that env var is fixed.",
     instructionTitle: "Buyer instructions",
     instructionHint:
       'The "📖 Guide" button in the bot\'s main menu. Video under 50 MB works best (Telegram limit), MP4 format.',
@@ -433,6 +467,14 @@ const copy: Record<
     webStorefrontCopyPrompt: "Vitrina havolasini nusxalang:",
     webStorefrontNoUrl:
       "Deploy manzili aniqlanmadi (PUBLIC_APP_URL yo‘q) — bu o‘zgaruvchi tuzatilmaguncha vitrina ochilmaydi.",
+    miniAppTitle: "Telegram Mini App",
+    miniAppHint:
+      "Telegram ichidagi do‘kon: Mini App-da katalog va savat, to‘lov bot chatida. Bot asosiy menyusida «Do‘kon» tugmasi chiqadi. Savat chat bilan bir xil.",
+    miniAppOpenBtn: "Mini App ochish",
+    miniAppCopyBtn: "Havolani nusxalash",
+    miniAppCopied: (link: string) => `Havola nusxalandi: ${link}`,
+    miniAppCopyPrompt: "Mini App havolasini nusxalang:",
+    miniAppNoUrl: "Deploy manzili aniqlanmadi (PUBLIC_APP_URL yo‘q) — Mini App ochilmaydi.",
     instructionTitle: "Xaridorlar uchun yo‘riqnoma",
     instructionHint:
       "Botning asosiy menyusidagi «📖 Yo‘riqnoma» tugmasi. Video 50 MB dan kichik bo‘lgani ma’qul (Telegram cheklovi), MP4 formatida.",
@@ -475,6 +517,11 @@ function SettingsPage() {
     queryKey: ["shop-url"],
     queryFn: () => getShopUrl(),
     enabled: modules.web_storefront,
+  });
+  const miniAppUrlQuery = useQuery({
+    queryKey: ["mini-app-url"],
+    queryFn: () => getMiniAppUrl(),
+    enabled: modules.telegram_mini_app,
   });
   const [adminChatId, setAdminChatId] = useState("");
   const [adminContactLink, setAdminContactLink] = useState("");
@@ -714,6 +761,15 @@ function SettingsPage() {
       toast.success(tr.webStorefrontCopied(link));
     } catch {
       prompt(tr.webStorefrontCopyPrompt, link);
+    }
+  }
+
+  async function onCopyMiniAppUrl(link: string) {
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success(tr.miniAppCopied(link));
+    } catch {
+      prompt(tr.miniAppCopyPrompt, link);
     }
   }
 
@@ -1037,6 +1093,38 @@ function SettingsPage() {
             <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
           ) : (
             <p className="text-sm text-destructive">{tr.webStorefrontNoUrl}</p>
+          )
+        ) : (
+          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+        )}
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.miniAppTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.miniAppHint}</p>
+        {modules.telegram_mini_app ? (
+          miniAppUrlQuery.data?.url ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input readOnly value={miniAppUrlQuery.data.url} className="flex-1 min-w-[16rem]" />
+              <Button
+                variant="outline"
+                onClick={() => onCopyMiniAppUrl(miniAppUrlQuery.data!.url!)}
+              >
+                {tr.miniAppCopyBtn}
+              </Button>
+              <a
+                href={miniAppUrlQuery.data.url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm underline text-primary"
+              >
+                {tr.miniAppOpenBtn}
+              </a>
+            </div>
+          ) : miniAppUrlQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
+          ) : (
+            <p className="text-sm text-destructive">{tr.miniAppNoUrl}</p>
           )
         ) : (
           <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>

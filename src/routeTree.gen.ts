@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShopRouteImport } from './routes/shop'
 import { Route as OperatorRouteImport } from './routes/operator'
+import { Route as MiniAppRouteImport } from './routes/mini-app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
@@ -71,6 +72,8 @@ import { Route as ApiPublicShopHandoffRouteImport } from './routes/api/public/sh
 import { Route as ApiPublicRobokassaSuccessRouteImport } from './routes/api/public/robokassa/success'
 import { Route as ApiPublicRobokassaResultRouteImport } from './routes/api/public/robokassa/result'
 import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/robokassa/fail'
+import { Route as ApiPublicMiniAppCheckoutRouteImport } from './routes/api/public/mini-app/checkout'
+import { Route as ApiPublicMiniAppCartRouteImport } from './routes/api/public/mini-app/cart'
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
 import { Route as ApiAdminFileSplatRouteImport } from './routes/api/admin/file/$'
 
@@ -82,6 +85,11 @@ const ShopRoute = ShopRouteImport.update({
 const OperatorRoute = OperatorRouteImport.update({
   id: '/operator',
   path: '/operator',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MiniAppRoute = MiniAppRouteImport.update({
+  id: '/mini-app',
+  path: '/mini-app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -392,6 +400,17 @@ const ApiPublicRobokassaFailRoute = ApiPublicRobokassaFailRouteImport.update({
   path: '/api/public/robokassa/fail',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicMiniAppCheckoutRoute =
+  ApiPublicMiniAppCheckoutRouteImport.update({
+    id: '/api/public/mini-app/checkout',
+    path: '/api/public/mini-app/checkout',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicMiniAppCartRoute = ApiPublicMiniAppCartRouteImport.update({
+  id: '/api/public/mini-app/cart',
+  path: '/api/public/mini-app/cart',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicImgSplatRoute = ApiPublicImgSplatRouteImport.update({
   id: '/api/public/img/$',
   path: '/api/public/img/$',
@@ -407,6 +426,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/mini-app': typeof MiniAppRoute
   '/operator': typeof OperatorRouteWithChildren
   '/shop': typeof ShopRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
@@ -458,6 +478,8 @@ export interface FileRoutesByFullPath {
   '/operator/': typeof OperatorAuthedIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
+  '/api/public/mini-app/cart': typeof ApiPublicMiniAppCartRoute
+  '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
@@ -471,6 +493,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/mini-app': typeof MiniAppRoute
   '/operator': typeof OperatorAuthedIndexRoute
   '/shop': typeof ShopRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
@@ -520,6 +543,8 @@ export interface FileRoutesByTo {
   '/admin/vip': typeof AdminVipIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
+  '/api/public/mini-app/cart': typeof ApiPublicMiniAppCartRoute
+  '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
@@ -535,6 +560,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
+  '/mini-app': typeof MiniAppRoute
   '/operator': typeof OperatorRouteWithChildren
   '/shop': typeof ShopRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
@@ -587,6 +613,8 @@ export interface FileRoutesById {
   '/operator/_authed/': typeof OperatorAuthedIndexRoute
   '/api/admin/file/$': typeof ApiAdminFileSplatRoute
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
+  '/api/public/mini-app/cart': typeof ApiPublicMiniAppCartRoute
+  '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
@@ -603,6 +631,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/login'
+    | '/mini-app'
     | '/operator'
     | '/shop'
     | '/admin/analytics'
@@ -654,6 +683,8 @@ export interface FileRouteTypes {
     | '/operator/'
     | '/api/admin/file/$'
     | '/api/public/img/$'
+    | '/api/public/mini-app/cart'
+    | '/api/public/mini-app/checkout'
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
@@ -667,6 +698,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/mini-app'
     | '/operator'
     | '/shop'
     | '/admin/analytics'
@@ -716,6 +748,8 @@ export interface FileRouteTypes {
     | '/admin/vip'
     | '/api/admin/file/$'
     | '/api/public/img/$'
+    | '/api/public/mini-app/cart'
+    | '/api/public/mini-app/checkout'
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
@@ -730,6 +764,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/login'
+    | '/mini-app'
     | '/operator'
     | '/shop'
     | '/admin/analytics'
@@ -782,6 +817,8 @@ export interface FileRouteTypes {
     | '/operator/_authed/'
     | '/api/admin/file/$'
     | '/api/public/img/$'
+    | '/api/public/mini-app/cart'
+    | '/api/public/mini-app/checkout'
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
@@ -797,6 +834,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
+  MiniAppRoute: typeof MiniAppRoute
   OperatorRoute: typeof OperatorRouteWithChildren
   ShopRoute: typeof ShopRoute
   LegalSlugRoute: typeof LegalSlugRoute
@@ -819,6 +857,8 @@ export interface RootRouteChildren {
   ApiOperatorCronSubscriptionsRoute: typeof ApiOperatorCronSubscriptionsRoute
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
+  ApiPublicMiniAppCartRoute: typeof ApiPublicMiniAppCartRoute
+  ApiPublicMiniAppCheckoutRoute: typeof ApiPublicMiniAppCheckoutRoute
   ApiPublicRobokassaFailRoute: typeof ApiPublicRobokassaFailRoute
   ApiPublicRobokassaResultRoute: typeof ApiPublicRobokassaResultRoute
   ApiPublicRobokassaSuccessRoute: typeof ApiPublicRobokassaSuccessRoute
@@ -844,6 +884,13 @@ declare module '@tanstack/react-router' {
       path: '/operator'
       fullPath: '/operator'
       preLoaderRoute: typeof OperatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mini-app': {
+      id: '/mini-app'
+      path: '/mini-app'
+      fullPath: '/mini-app'
+      preLoaderRoute: typeof MiniAppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -1266,6 +1313,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRobokassaFailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/mini-app/checkout': {
+      id: '/api/public/mini-app/checkout'
+      path: '/api/public/mini-app/checkout'
+      fullPath: '/api/public/mini-app/checkout'
+      preLoaderRoute: typeof ApiPublicMiniAppCheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/mini-app/cart': {
+      id: '/api/public/mini-app/cart'
+      path: '/api/public/mini-app/cart'
+      fullPath: '/api/public/mini-app/cart'
+      preLoaderRoute: typeof ApiPublicMiniAppCartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/img/$': {
       id: '/api/public/img/$'
       path: '/api/public/img/$'
@@ -1385,6 +1446,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
+  MiniAppRoute: MiniAppRoute,
   OperatorRoute: OperatorRouteWithChildren,
   ShopRoute: ShopRoute,
   LegalSlugRoute: LegalSlugRoute,
@@ -1407,6 +1469,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOperatorCronSubscriptionsRoute: ApiOperatorCronSubscriptionsRoute,
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
+  ApiPublicMiniAppCartRoute: ApiPublicMiniAppCartRoute,
+  ApiPublicMiniAppCheckoutRoute: ApiPublicMiniAppCheckoutRoute,
   ApiPublicRobokassaFailRoute: ApiPublicRobokassaFailRoute,
   ApiPublicRobokassaResultRoute: ApiPublicRobokassaResultRoute,
   ApiPublicRobokassaSuccessRoute: ApiPublicRobokassaSuccessRoute,

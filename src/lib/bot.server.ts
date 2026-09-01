@@ -472,7 +472,8 @@ const botCopy: Record<
     | "myOrders"
     | "instruction"
     | "information"
-    | "languageSaved",
+    | "languageSaved"
+    | "miniAppShop",
     string
   >
 > = {
@@ -486,6 +487,7 @@ const botCopy: Record<
     instruction: "📖 Инструкция",
     information: "ℹ️ Информация",
     languageSaved: "✅ Язык сохранён.",
+    miniAppShop: "🛍 Магазин",
   },
   kk: {
     chooseLanguage: "Тілді таңдаңыз",
@@ -497,6 +499,7 @@ const botCopy: Record<
     instruction: "📖 Нұсқаулық",
     information: "ℹ️ Ақпарат",
     languageSaved: "✅ Тіл сақталды.",
+    miniAppShop: "🛍 Дүкен",
   },
   en: {
     chooseLanguage: "Choose your language",
@@ -508,6 +511,7 @@ const botCopy: Record<
     instruction: "📖 Guide",
     information: "ℹ️ Information",
     languageSaved: "✅ Language saved.",
+    miniAppShop: "🛍 Shop",
   },
   uz: {
     chooseLanguage: "Tilni tanlang",
@@ -519,6 +523,7 @@ const botCopy: Record<
     instruction: "📖 Yo‘riqnoma",
     information: "ℹ️ Ma’lumot",
     languageSaved: "✅ Til saqlandi.",
+    miniAppShop: "🛍 Do‘kon",
   },
 };
 
@@ -1410,15 +1415,24 @@ const MENU_ACTIONS = new Set([
   "💬 Связаться с автором",
 ]);
 
-function mainMenu(locale: Locale = "ru") {
+async function mainMenu(locale: Locale = "ru") {
   const c = botCopy[locale];
+  const keyboard: Array<Array<Record<string, unknown>>> = [
+    [{ text: c.catalog }, { text: c.search }],
+    [{ text: c.cart }, { text: c.myOrders }],
+    [{ text: c.instruction }, { text: c.information }],
+    [{ text: currentVerticalDef().locales[locale].contactBtn }],
+  ];
+  if (await hasModule("telegram_mini_app")) {
+    const { appOrigin } = await import("./app-origin.server");
+    const { miniAppUrl } = await import("./mini-app.server");
+    const origin = appOrigin();
+    if (origin) {
+      keyboard.unshift([{ text: c.miniAppShop, web_app: { url: miniAppUrl(origin) } }]);
+    }
+  }
   return {
-    keyboard: [
-      [{ text: c.catalog }, { text: c.search }],
-      [{ text: c.cart }, { text: c.myOrders }],
-      [{ text: c.instruction }, { text: c.information }],
-      [{ text: currentVerticalDef().locales[locale].contactBtn }],
-    ],
+    keyboard,
     resize_keyboard: true,
   };
 }
@@ -1432,7 +1446,7 @@ async function sendMain(
   await tg("sendMessage", {
     chat_id,
     text: text ?? botCopy[locale].chooseSection,
-    reply_markup: mainMenu(locale),
+    reply_markup: await mainMenu(locale),
     disable_web_page_preview: true,
     ...(opts?.parse_mode ? { parse_mode: opts.parse_mode } : {}),
   });
@@ -1581,7 +1595,7 @@ async function sendInstruction(chat_id: number, locale: Locale = "ru") {
     await tg("sendMessage", {
       chat_id,
       text: currentVerticalDef().locales[locale].instructionComingSoon,
-      reply_markup: mainMenu(locale),
+      reply_markup: await mainMenu(locale),
     });
     return;
   }
@@ -1602,7 +1616,7 @@ async function sendInstruction(chat_id: number, locale: Locale = "ru") {
     await tg("sendMessage", {
       chat_id,
       text: m.instructionVideoFail,
-      reply_markup: mainMenu(locale),
+      reply_markup: await mainMenu(locale),
     });
     return;
   }
@@ -1646,7 +1660,7 @@ async function sendInstruction(chat_id: number, locale: Locale = "ru") {
   await tg("sendMessage", {
     chat_id,
     text: caption,
-    reply_markup: mainMenu(locale),
+    reply_markup: await mainMenu(locale),
   });
 }
 
@@ -1905,7 +1919,7 @@ async function saveContactAndContinueCheckout(chat_id: number, user: BotUser, ph
   await tg("sendMessage", {
     chat_id,
     text: copy[locale].contactSaved,
-    reply_markup: mainMenu(locale),
+    reply_markup: await mainMenu(locale),
   });
 
   if (!user.state?.country_code) {
@@ -3436,7 +3450,7 @@ export async function remindOrderPayment(orderId: number) {
     chat_id,
     text: m.paymentReminder(displayNo, formatMoney(amountDue, currency)),
     parse_mode: "HTML",
-    reply_markup: mainMenu(locale),
+    reply_markup: await mainMenu(locale),
   });
 
   const rk = await loadRobokassaSettings();
@@ -5071,7 +5085,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", {
           chat_id,
           text: m.alreadyProcessed(displayNo),
-          reply_markup: mainMenu(locale),
+          reply_markup: await mainMenu(locale),
         });
         return;
       }
@@ -5224,7 +5238,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           await tg("sendMessage", {
             chat_id,
             text: m.receiptManualReview(displayNo, orderRow.fulfillment_kind === "physical"),
-            reply_markup: mainMenu(locale),
+            reply_markup: await mainMenu(locale),
           });
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
             reviewReason: verify.detail,
@@ -5252,7 +5266,7 @@ export async function handleUpdate(update: TelegramUpdate) {
         await tg("sendMessage", {
           chat_id,
           text: m.receiptVerifiedDelivering(displayNo, orderRow.fulfillment_kind === "physical"),
-          reply_markup: mainMenu(locale),
+          reply_markup: await mainMenu(locale),
         });
 
         try {
@@ -5329,14 +5343,14 @@ export async function handleUpdate(update: TelegramUpdate) {
           text: proofSaved
             ? m.receiptForwardedAwaitingConfirm(displayNo, orderRow.fulfillment_kind === "physical")
             : m.receiptForwardedNoStorage(displayNo),
-          reply_markup: mainMenu(locale),
+          reply_markup: await mainMenu(locale),
         });
         await notifyAdminNewOrder(orderId, proofFileId, proofKind);
       } else {
         await tg("sendMessage", {
           chat_id,
           text: m.receiptSaveFailed(displayNo),
-          reply_markup: mainMenu(locale),
+          reply_markup: await mainMenu(locale),
         });
         await notifyAdminNewOrder(orderId, null, null);
       }
@@ -5644,4 +5658,44 @@ export async function handleUpdate(update: TelegramUpdate) {
   } catch (e: unknown) {
     console.error("[bot] handleUpdate error", e);
   }
+}
+
+/** Создать или обновить покупателя Telegram — для Mini App и внешних входов. */
+export async function ensureTelegramBotUser(from: {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+  language_code?: string;
+}) {
+  return upsertUser(from);
+}
+
+/** Добавить товар в корзину из Mini App — та же логика, что в чате. */
+export async function miniAppAddToCart(
+  telegram_id: number,
+  product_id: string,
+  product_variant_id?: string | null,
+) {
+  return addToCart(telegram_id, product_id, product_variant_id);
+}
+
+/** Показать корзину в чате после Mini App — оплата продолжается в боте. */
+export async function miniAppOpenCartInChat(telegram_id: number) {
+  const s = await db();
+  const { data: row } = await s
+    .from("bot_users")
+    .select("*")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  if (!row) return { ok: false as const, reason: "no_user" };
+
+  const { count } = await s
+    .from("cart_items")
+    .select("id", { count: "exact", head: true })
+    .eq("telegram_id", telegram_id);
+  if (!count) return { ok: false as const, reason: "empty_cart" };
+
+  await showCart(telegram_id, row as BotUser);
+  return { ok: true as const };
 }

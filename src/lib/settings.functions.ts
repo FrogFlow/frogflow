@@ -30,6 +30,18 @@ export const getShopUrl = createServerFn({ method: "GET" }).handler(async () => 
   return { url: origin ? `${origin}/shop` : null };
 });
 
+export const getMiniAppUrl = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdmin();
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("telegram_mini_app"))) {
+    return { url: null };
+  }
+  const { appOrigin } = await import("./app-origin.server");
+  const { miniAppUrl } = await import("./mini-app.server");
+  const origin = appOrigin();
+  return { url: origin ? miniAppUrl(origin) : null };
+});
+
 /**
  * Часовой пояс магазина (APP_TIMEZONE, см. datetime.ts) — нужен клиенту
  * админки, чтобы считать "сегодня/завтра/просрочено" в фильтре заказов

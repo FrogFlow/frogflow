@@ -180,6 +180,14 @@ export const MODULES = {
     status: "available",
     note: "Отдельный канал продаж: read-only страница каталога без авторизации, покупка по-прежнему только через бота (кнопка «Открыть в Telegram»).",
   },
+  telegram_mini_app: {
+    title: "Telegram Mini App",
+    group: "Каталог",
+    price: 28000,
+    status: "available",
+    requires: ["shop"],
+    note: "Магазин внутри Telegram: каталог и корзина в Mini App, оплата в чате с ботом. Корзина общая с ботом (cart_items).",
+  },
 
   // ── Instagram: «04 Instagram» ──
   instagram: {
