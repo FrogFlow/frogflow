@@ -1,5 +1,7 @@
 import { appTimeZone } from "./datetime";
 import { DELIVERABLE_STATUSES } from "./orders.server";
+import type { Locale } from "./i18n";
+import { isLocale } from "./i18n";
 
 /**
  * Статусная машина физического заказа (Ниши, Блок 6) — сосед orders.server.ts,
@@ -15,7 +17,11 @@ import { DELIVERABLE_STATUSES } from "./orders.server";
  * analytics.functions.ts, reviews.server.ts, referrals.server.ts) — заводить
  * отдельный терминальный статус означало бы сделать выручку кондитерской
  * невидимой для всего этого кода. rejectOrderSafely() (orders.server.ts)
- * работает без изменений: она уже гейтит переход из DELIVERABLE_STATUSES.
+ * доработана отдельным REJECTABLE_STATUSES: изначально стрелка ↘ rejected
+ * выше была недостижима из accepted/in_production/ready (гейт был
+ * DELIVERABLE_STATUSES, которая их не включает) — покупательница, передумавшая
+ * после того, как продавец принял торт в работу, не могла отменить заказ
+ * иначе как удалением строки (Блок 3, находка 3.1). Починено.
  */
 
 export const PHYSICAL_STATUSES = ["accepted", "in_production", "ready"] as const;
@@ -27,15 +33,78 @@ const NEXT_STATUS: Record<string, PhysicalStatus | "delivered"> = {
   ready: "delivered",
 };
 
+// Откат на шаг назад (Блок 3, находка 3.6) — только между "живыми" статусами,
+// без "delivered": та переход необратим сознательно — с ним связаны баллы,
+// реферальная награда и право на отзыв (advanceFulfillment), откатывать их
+// назад значило бы придумывать логику отмены начислений, которой в проекте
+// нет ни для одного другого перехода.
+const PREV_STATUS: Partial<Record<PhysicalStatus, PhysicalStatus>> = {
+  in_production: "accepted",
+  ready: "in_production",
+};
+
 // Аргумент — display_no/order_no ("Заказ #N", что уже видел покупатель в
 // «Заказ №N создан»), а не PK orders.id: два разных числа, и подстановка PK
 // сюда путает покупателя, который до этого момента видел только display_no.
-const NOTICE_FOR_STATUS: Record<string, (displayNo: number) => string> = {
-  accepted: (n) => `✅ Заказ #${n} принят в работу. Сообщим, когда он будет готов.`,
-  in_production: (n) => `👩‍🍳 Заказ #${n} в работе.`,
-  ready: (n) => `📦 Заказ #${n} готов! Уточните у продавца детали получения.`,
-  delivered: (n) => `🙏 Спасибо за покупку! Заказ #${n} выдан.`,
+//
+// Локализовано на все 4 языка (Блок 5, находка 5.1) — раньше это был голый
+// Record<string, …> с русскими строками независимо от того, что покупатель
+// выбрал в /language. Сосед, fulfillment-reminder.server.ts, уже был
+// локализован — из-за этого напоминание за сутки до получения приходило на
+// казахском, а следующий за ним статус "принят в работу" — по-русски.
+//
+// Блок 5, находка 5.6 (сознательно отложена) — текст "in_production" зашит
+// под кондитерскую (👩‍🍳, "в работе"), а не берётся из реестра ниш
+// (registry.ts, VerticalDef). Следующая физическая ниша (не еда) получит
+// повара в эмодзи. Полноценная правка — новое поле в VerticalDef под
+// тексты статусов на все 4 языка и чтение отсюда вместо константы — вне
+// объёма точечной правки; сейчас в проекте только одна физическая ниша.
+const NOTICE_FOR_STATUS: Record<Locale, Record<string, (displayNo: number) => string>> = {
+  ru: {
+    accepted: (n) => `✅ Заказ #${n} принят в работу. Сообщим, когда он будет готов.`,
+    in_production: (n) => `👩‍🍳 Заказ #${n} в работе.`,
+    ready: (n) => `📦 Заказ #${n} готов! Уточните у продавца детали получения.`,
+    delivered: (n) => `🙏 Спасибо за покупку! Заказ #${n} выдан.`,
+  },
+  kk: {
+    accepted: (n) => `✅ №${n} тапсырыс жұмысқа қабылданды. Дайын болғанда хабарлаймыз.`,
+    in_production: (n) => `👩‍🍳 №${n} тапсырыс дайындалуда.`,
+    ready: (n) => `📦 №${n} тапсырыс дайын! Алу мәліметтерін сатушыдан нақтылаңыз.`,
+    delivered: (n) => `🙏 Сатып алғаныңызға рахмет! №${n} тапсырыс берілді.`,
+  },
+  en: {
+    accepted: (n) => `✅ Order #${n} accepted. We'll let you know when it's ready.`,
+    in_production: (n) => `👩‍🍳 Order #${n} is being made.`,
+    ready: (n) => `📦 Order #${n} is ready! Check pickup/delivery details with the seller.`,
+    delivered: (n) => `🙏 Thanks for your purchase! Order #${n} has been delivered.`,
+  },
+  uz: {
+    accepted: (n) => `✅ #${n} buyurtma qabul qilindi. Tayyor bo'lganda xabar beramiz.`,
+    in_production: (n) => `👩‍🍳 #${n} buyurtma tayyorlanmoqda.`,
+    ready: (n) => `📦 #${n} buyurtma tayyor! Olish tafsilotlarini sotuvchidan aniqlashtiring.`,
+    delivered: (n) => `🙏 Xaridingiz uchun rahmat! #${n} buyurtma topshirildi.`,
+  },
 };
+
+/**
+ * Язык покупателя для уведомления о статусе — тот же приём, что уже был у
+ * fulfillment-reminder.server.ts (bot_users.state.locale по telegram_id,
+ * который заведён и для Direct-заказов синтетическим отрицательным id, не
+ * только для Telegram). Запасное значение "ru" — для покупателей, ещё не
+ * прошедших шаг выбора языка.
+ */
+async function localeForOrderBuyer(telegramId: number | null): Promise<Locale> {
+  if (telegramId === null) return "ru";
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data: buyer } = await supabaseAdmin
+    .from("bot_users")
+    .select("state")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+  const state =
+    buyer?.state && typeof buyer.state === "object" ? (buyer.state as { locale?: string }) : null;
+  return isLocale(state?.locale) ? state.locale : "ru";
+}
 
 /**
  * Принять оплаченный (или ожидающий оплаты — при payment_mode=on_receipt,
@@ -52,7 +121,7 @@ export async function acceptOrder(
     .update({ status: "accepted" })
     .eq("id", orderId)
     .in("status", [...DELIVERABLE_STATUSES])
-    .select("id, order_no, display_no")
+    .select("id, order_no, display_no, telegram_id")
     .maybeSingle();
   if (error) throw new Error(error.message);
 
@@ -64,8 +133,9 @@ export async function acceptOrder(
       .maybeSingle();
     if (readErr) throw new Error(readErr.message);
     if (!existing) throw new Error("Order not found");
+    // Блок 14, находка 14.2 — "accepted" уже входит в PHYSICAL_STATUSES,
+    // отдельная проверка на него никогда не была решающей.
     if (
-      existing.status === "accepted" ||
       (PHYSICAL_STATUSES as readonly string[]).includes(existing.status) ||
       existing.status === "delivered"
     ) {
@@ -77,7 +147,8 @@ export async function acceptOrder(
 
   const displayNo = claimed.display_no ?? claimed.order_no ?? orderId;
   const { notifyOrderCustomer } = await import("./orders.server");
-  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS.accepted(displayNo)).catch((e) =>
+  const locale = await localeForOrderBuyer(claimed.telegram_id ?? null);
+  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS[locale].accepted(displayNo)).catch((e) =>
     console.error("[fulfillment] notifyOrderCustomer(accepted) failed", e),
   );
   return { ok: true, alreadyAccepted: false };
@@ -119,7 +190,8 @@ export async function advanceFulfillment(
   }
 
   const { notifyOrderCustomer } = await import("./orders.server");
-  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS[to](displayNo)).catch((e) =>
+  const locale = await localeForOrderBuyer(current.telegram_id ?? null);
+  await notifyOrderCustomer(orderId, NOTICE_FOR_STATUS[locale][to](displayNo)).catch((e) =>
     console.error(`[fulfillment] notifyOrderCustomer(${to}) failed`, e),
   );
 
@@ -139,6 +211,88 @@ export async function advanceFulfillment(
       );
     }
   }
+
+  return { ok: true, status: to };
+}
+
+/**
+ * Откатить статус на шаг назад — accepted ← in_production ← ready (Блок 3,
+ * находка 3.6): продавец промахнулся кнопкой ("Готов" вместо "В работу"),
+ * и без этой функции исправить было нечем — только ждать, пока заказ сам
+ * доедет до delivered. Покупателю уже могло уйти неверное уведомление
+ * ("📦 Заказ готов!") — шлём исправляющее сообщение, а не молчим: тихий
+ * откат в базе оставил бы покупателя с неверным представлением о заказе.
+ */
+const CORRECTION_FOR_REVERT: Record<
+  Locale,
+  Record<PhysicalStatus, (displayNo: number) => string>
+> = {
+  ru: {
+    accepted: (n) =>
+      `↩️ Уточнение по заказу #${n}: он снова в очереди на изготовление, статус «готов» был выставлен по ошибке.`,
+    in_production: (n) =>
+      `↩️ Уточнение по заказу #${n}: он ещё в работе, статус «готов» был выставлен по ошибке.`,
+    ready: (n) => `↩️ Уточнение по заказу #${n}: статус изменён по ошибке.`,
+  },
+  kk: {
+    accepted: (n) =>
+      `↩️ №${n} тапсырыс бойынша нақтылау: ол қайта дайындау кезегіне қойылды, «дайын» мәртебесі қателесіп қойылған.`,
+    in_production: (n) =>
+      `↩️ №${n} тапсырыс бойынша нақтылау: ол әлі дайындалуда, «дайын» мәртебесі қателесіп қойылған.`,
+    ready: (n) => `↩️ №${n} тапсырыс бойынша нақтылау: мәртебе қателесіп өзгертілген.`,
+  },
+  en: {
+    accepted: (n) =>
+      `↩️ Update on order #${n}: it's back in the production queue — "ready" was set by mistake.`,
+    in_production: (n) =>
+      `↩️ Update on order #${n}: it's still being made — "ready" was set by mistake.`,
+    ready: (n) => `↩️ Update on order #${n}: status was changed by mistake.`,
+  },
+  uz: {
+    accepted: (n) =>
+      `↩️ #${n} buyurtma bo'yicha aniqlik: u yana tayyorlash navbatiga qaytdi, "tayyor" holati xato qo'yilgan edi.`,
+    in_production: (n) =>
+      `↩️ #${n} buyurtma bo'yicha aniqlik: u hali tayyorlanmoqda, "tayyor" holati xato qo'yilgan edi.`,
+    ready: (n) => `↩️ #${n} buyurtma bo'yicha aniqlik: holat xato o'zgartirilgan edi.`,
+  },
+};
+
+export async function revertFulfillment(
+  orderId: number,
+): Promise<{ ok: true; status: PhysicalStatus }> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+
+  const { data: current, error: readErr } = await supabaseAdmin
+    .from("orders")
+    .select("status, order_no, display_no, telegram_id")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (readErr) throw new Error(readErr.message);
+  if (!current) throw new Error("Order not found");
+
+  const displayNo = current.display_no ?? current.order_no ?? orderId;
+  const from = current.status as PhysicalStatus;
+  const to = PREV_STATUS[from];
+  if (!to) throw new Error(`Заказ #${displayNo} нельзя вернуть на шаг назад (статус: ${from})`);
+
+  const { data: updated, error } = await supabaseAdmin
+    .from("orders")
+    .update({ status: to })
+    .eq("id", orderId)
+    .eq("status", from)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!updated) {
+    throw new Error(`Заказ #${displayNo} уже изменился — обновите страницу и попробуйте снова`);
+  }
+
+  const { notifyOrderCustomer } = await import("./orders.server");
+  const locale = await localeForOrderBuyer(current.telegram_id ?? null);
+  const correction = CORRECTION_FOR_REVERT[locale][to](displayNo);
+  await notifyOrderCustomer(orderId, correction).catch((e) =>
+    console.error("[fulfillment] notifyOrderCustomer(revert) failed", e),
+  );
 
   return { ok: true, status: to };
 }
@@ -207,7 +361,14 @@ export async function amountDueNow(order: {
       .select("value")
       .eq("key", "deposit_percent")
       .maybeSingle();
-    const pct = Number(data?.value ?? "30");
+    // Пустое поле в настройках даёт Number("") === 0 — просили бы 0 ₸;
+    // мусор даёт NaN — просили бы NaN ₸. Оба варианта раньше уходили прямо
+    // в сумму платежа без проверки (Блок 1, находка 1.7). Зажимаем в
+    // 1..100 и откатываемся на умолчание 30 при нечисловом/битом значении —
+    // тем же приёмом, что и остальной денежный путь: не изобретаем число,
+    // безопасное умолчание лучше, чем сломанный платёж.
+    const raw = Number(data?.value);
+    const pct = Number.isFinite(raw) && raw >= 1 && raw <= 100 ? raw : 30;
     return Math.round(order.total * (pct / 100));
   }
   return order.total;

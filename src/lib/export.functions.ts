@@ -16,12 +16,18 @@ async function db() {
  * зависимостей и покрыты тестами.
  */
 
+// Блок 6, находка 6.7 — без accepted/in_production/ready бухгалтерская
+// выгрузка получала английские коды статуса вместо перевода (фолбэк `??
+// o.status` ниже).
 const STATUS_RU: Record<string, string> = {
   awaiting_payment: "ожидает оплаты",
   awaiting_confirmation: "проверяется",
   delivering: "выдаётся",
   delivered: "выдан",
   rejected: "отклонён",
+  accepted: "принят в работу",
+  in_production: "в работе",
+  ready: "готов",
 };
 
 /**
@@ -47,12 +53,18 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
     await requireAdmin();
     const s = await db();
 
+    // fulfillment_kind/_type/_at/_address, paid_amount, delivery_zone_name,
+    // delivery_fee — Блок 6, находка 6.8: раньше выгрузка не содержала ни
+    // одной физической колонки, бесполезная именно для той ниши, ради
+    // которой всё делалось (кондитерская бухгалтерия не видит ни дат
+    // получения, ни адресов доставки, ни фактически внесённой суммы).
     const rows = await fetchAll<{
       order_no: number | null;
       id: number;
       created_at: string | null;
       status: string;
       total: number;
+      paid_amount: number | null;
       currency: string;
       display_name: string | null;
       username: string | null;
@@ -60,11 +72,17 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
       contact: string | null;
       country_name: string | null;
       admin_note: string | null;
+      fulfillment_kind: string | null;
+      fulfillment_type: string | null;
+      fulfillment_at: string | null;
+      fulfillment_address: string | null;
+      delivery_zone_name: string | null;
+      delivery_fee: number | null;
     }>((from, to) => {
       let q = s
         .from("orders")
         .select(
-          "order_no, id, created_at, status, total, currency, display_name, username, telegram_id, contact, country_name, admin_note",
+          "order_no, id, created_at, status, total, paid_amount, currency, display_name, username, telegram_id, contact, country_name, admin_note, fulfillment_kind, fulfillment_type, fulfillment_at, fulfillment_address, delivery_zone_name, delivery_fee",
         )
         .order("created_at", { ascending: false })
         .range(from, to);
@@ -81,6 +99,7 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
         "Дата",
         "Статус",
         "Сумма",
+        "Внесено",
         "Валюта",
         "Покупатель",
         "Username",
@@ -88,12 +107,19 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
         "Контакт",
         "Страна",
         "Заметка",
+        "Тип получения",
+        "Способ",
+        "Дата получения",
+        "Адрес",
+        "Зона доставки",
+        "Комиссия доставки",
       ],
       rows.map((o) => [
         o.order_no ?? o.id,
         isoDate(o.created_at),
         STATUS_RU[o.status as string] ?? o.status,
         o.total,
+        o.paid_amount ?? "",
         o.currency,
         o.display_name,
         o.username,
@@ -101,6 +127,16 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
         o.contact,
         o.country_name,
         o.admin_note,
+        o.fulfillment_kind === "physical" ? "физический" : "цифровой",
+        o.fulfillment_type === "delivery"
+          ? "доставка"
+          : o.fulfillment_type === "pickup"
+            ? "самовывоз"
+            : "",
+        o.fulfillment_at ? isoDate(o.fulfillment_at) : "",
+        o.fulfillment_address ?? "",
+        o.delivery_zone_name ?? "",
+        o.delivery_fee ?? "",
       ]),
     );
     return { csv, count: rows.length };
@@ -135,20 +171,37 @@ export const exportCustomersCsvFn = createServerFn({ method: "POST" }).handler(a
   const orders = await fetchAll<{
     telegram_id: number | null;
     total: number;
+    paid_amount: number | null;
     status: string;
+    fulfillment_kind: string | null;
     created_at: string | null;
   }>(
-    (from, to) => s.from("orders").select("telegram_id, total, status, created_at").range(from, to),
+    (from, to) =>
+      s
+        .from("orders")
+        .select("telegram_id, total, paid_amount, status, fulfillment_kind, created_at")
+        .range(from, to),
     "заказы для статистики",
   );
   const stats = new Map<number, { count: number; sum: number; last: string | null }>();
+  // Блок 6, находка 6.9 — LTV раньше считал только status==="delivered" и
+  // игнорировал paid_amount вовсе. Свадебный торт, три недели в
+  // in_production с внесённым задатком, в LTV не попадал совсем — хотя
+  // деньги от покупателя уже получены.
   for (const o of orders) {
     const id = Number(o.telegram_id);
     if (!Number.isFinite(id)) continue;
     const cur = stats.get(id) ?? { count: 0, sum: 0, last: null };
     cur.count += 1;
-    // В сумму идёт только доставленное: ожидающие оплаты заказы — ещё не выручка.
-    if (o.status === "delivered") cur.sum += Number(o.total) || 0;
+    if (o.fulfillment_kind === "physical") {
+      // Физический заказ — реально внесённое, на любой стадии производства,
+      // не только "delivered".
+      cur.sum += Number(o.paid_amount) || 0;
+    } else if (o.status === "delivered") {
+      // Цифровой — paid_amount там не пишется (Блок 1, находка 1.13,
+      // сознательно не расширена в этом заходе), берём total выданного.
+      cur.sum += Number(o.total) || 0;
+    }
     const at = String(o.created_at ?? "");
     if (!cur.last || at > cur.last) cur.last = at;
     stats.set(id, cur);

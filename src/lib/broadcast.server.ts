@@ -112,12 +112,17 @@ export async function resolveAudienceIds(
   const realChat = (id: number) => Number.isFinite(id) && id > 0;
 
   if (audience_type === "buyers") {
+    // "delivered" — не единственный признак покупателя (Блок 3, находка
+    // 3.11): у физического заказа с внесённым задатком, который ещё в
+    // работе (accepted/in_production/ready), деньги уже приняты — это
+    // реальный покупатель, а не "ещё ни разу не покупал". Раньше такой
+    // человек одновременно попадал в аудиторию non_buyers.
     const orders = await fetchAll(
       (from, to) =>
         s
           .from("orders")
           .select("telegram_id")
-          .eq("status", "delivered")
+          .in("status", ["delivered", "accepted", "in_production", "ready"])
           .eq("platform", "telegram")
           .range(from, to),
       "покупатели для рассылки",
@@ -318,12 +323,14 @@ export async function resolveWhatsAppAudience(
     // для telegramUsers/buyers выше (Блок 3.3): без него «всем» ушло бы
     // только первой тысяче, а non_buyers перепутал бы обрезанных покупателей
     // с теми, кто ничего не покупал.
+    // Те же дополнительные статусы, что и в Telegram-ветке выше (Блок 3,
+    // находка 3.11) — покупатель с задатком на торт в работе уже покупатель.
     const orders = await fetchAll(
       (from, to) =>
         s
           .from("orders")
           .select("user_key")
-          .eq("status", "delivered")
+          .in("status", ["delivered", "accepted", "in_production", "ready"])
           .eq("platform", "whatsapp")
           .range(from, to),
       "покупатели WhatsApp для рассылки",

@@ -328,9 +328,19 @@ export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler
     direct: { incoming, errors },
     orders: {
       total: orders.length,
-      paid: orders.filter((order) => ["paid", "delivered"].includes(order.status)).length,
+      // "paid" в проекте нигде не пишется как значение status (мёртвый
+      // литерал, Блок 14, находка 14.1) — сравнение никогда не совпадало.
+      // Физические статусы добавлены отдельно (Блок 3, находка 3.12):
+      // раньше выручка Instagram-кондитерской считалась только по
+      // delivered, то есть заказы с внесённым задатком, ещё в работе, в
+      // статистику не попадали вовсе.
+      paid: orders.filter((order) =>
+        ["delivered", "accepted", "in_production", "ready"].includes(order.status),
+      ).length,
       revenue: orders
-        .filter((order) => ["paid", "delivered"].includes(order.status))
+        .filter((order) =>
+          ["delivered", "accepted", "in_production", "ready"].includes(order.status),
+        )
         .reduce((sum, order) => sum + Number(order.total || 0), 0),
     },
   };

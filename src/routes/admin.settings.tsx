@@ -45,6 +45,12 @@ const copy: Record<
     deliveryLangTimingAfter: string;
     paymentModeTitle: string;
     paymentModeHint: string;
+    /** Блок 11, находка 11.1 — способы получения физического заказа. */
+    fulfillmentOptionsTitle: string;
+    fulfillmentOptionsHint: string;
+    fulfillmentOptionsPickup: string;
+    fulfillmentOptionsDelivery: string;
+    fulfillmentOptionsBothOffError: string;
     paymentModeFull: string;
     paymentModeDeposit: string;
     paymentModeOnReceipt: string;
@@ -119,6 +125,13 @@ const copy: Record<
     paymentModeTitle: "Оплата физических заказов",
     paymentModeHint:
       "Как принимать оплату за товары, которые изготавливаются под заказ (не выдаются файлом мгновенно).",
+    fulfillmentOptionsTitle: "Способы получения",
+    fulfillmentOptionsHint:
+      "Какие способы получения предлагать покупателю физического товара. Выключить можно только один — оба сразу оставили бы чекаут без единого варианта.",
+    fulfillmentOptionsPickup: "Самовывоз",
+    fulfillmentOptionsDelivery: "Доставка",
+    fulfillmentOptionsBothOffError:
+      "Нельзя выключить оба способа сразу — тогда получать заказ будет некуда.",
     paymentModeFull: "Полная оплата вперёд",
     paymentModeDeposit: "Задаток, остаток при получении",
     paymentModeOnReceipt: "Оплата при получении",
@@ -202,6 +215,13 @@ const copy: Record<
     paymentModeTitle: "Физикалық тапсырыстарды төлеу",
     paymentModeHint:
       "Тапсырысқа арнап дайындалатын тауарлар үшін (файл ретінде бірден берілмейтін) төлемді қалай қабылдау керек.",
+    fulfillmentOptionsTitle: "Алу тәсілдері",
+    fulfillmentOptionsHint:
+      "Физикалық тауарды алу үшін қандай тәсілдерді ұсыну керек. Тек біреуін ғана өшіруге болады — екеуін бірден өшірсе, тапсырысты алудың жолы қалмайды.",
+    fulfillmentOptionsPickup: "Өзі алып кету",
+    fulfillmentOptionsDelivery: "Жеткізу",
+    fulfillmentOptionsBothOffError:
+      "Екі тәсілді де бірден өшіруге болмайды — тапсырысты алатын жол қалмайды.",
     paymentModeFull: "Толық төлем алдын ала",
     paymentModeDeposit: "Алдын ала төлем, қалғаны алу кезінде",
     paymentModeOnReceipt: "Алу кезінде төлеу",
@@ -285,6 +305,13 @@ const copy: Record<
     paymentModeTitle: "Payment for physical orders",
     paymentModeHint:
       "How to accept payment for made-to-order items (not delivered as a file instantly).",
+    fulfillmentOptionsTitle: "Pickup/delivery options",
+    fulfillmentOptionsHint:
+      "Which fulfillment options to offer buyers of physical items. Only one can be turned off — both off would leave checkout with no way to get the order.",
+    fulfillmentOptionsPickup: "Pickup",
+    fulfillmentOptionsDelivery: "Delivery",
+    fulfillmentOptionsBothOffError:
+      "Can't turn off both options at once — there'd be no way to receive the order.",
     paymentModeFull: "Full payment upfront",
     paymentModeDeposit: "Deposit, balance on pickup/delivery",
     paymentModeOnReceipt: "Payment on pickup/delivery",
@@ -369,6 +396,13 @@ const copy: Record<
     paymentModeTitle: "Jismoniy buyurtmalar uchun to‘lov",
     paymentModeHint:
       "Buyurtma bo‘yicha tayyorlanadigan tovarlar uchun (darhol fayl sifatida berilmaydigan) to‘lovni qanday qabul qilish.",
+    fulfillmentOptionsTitle: "Olish usullari",
+    fulfillmentOptionsHint:
+      "Jismoniy tovarni olish uchun qaysi usullarni taklif qilish. Faqat bittasini o‘chirish mumkin — ikkalasini birdan o‘chirsangiz, buyurtmani olishning yo‘li qolmaydi.",
+    fulfillmentOptionsPickup: "O‘zi olib ketish",
+    fulfillmentOptionsDelivery: "Yetkazib berish",
+    fulfillmentOptionsBothOffError:
+      "Ikkala usulni ham birdan o‘chirib bo‘lmaydi — buyurtmani olishning yo‘li qolmaydi.",
     paymentModeFull: "To‘liq to‘lov oldindan",
     paymentModeDeposit: "Oldindan to‘lov, qolgani olishda",
     paymentModeOnReceipt: "Olishda to‘lash",
@@ -453,6 +487,14 @@ function SettingsPage() {
   const [paymentMode, setPaymentMode] = useState<"full" | "deposit" | "on_receipt">("full");
   const [paymentModeSaving, setPaymentModeSaving] = useState(false);
   const [paymentModeSaved, setPaymentModeSaved] = useState(false);
+  // Блок 11, находка 11.1 — раньше fulfillmentOptionsEnabled()
+  // (fulfillment.server.ts) читала эти два ключа, но нигде во всём
+  // репозитории не было ни одного места, которое бы их записывало: чисто
+  // самовывозный кондитер не мог отключить доставку — настройки, которой
+  // не существовало.
+  const [pickupEnabled, setPickupEnabled] = useState(true);
+  const [deliveryEnabled, setDeliveryEnabled] = useState(true);
+  const [fulfillmentOptionsSaving, setFulfillmentOptionsSaving] = useState(false);
   const [depositPercent, setDepositPercent] = useState("30");
   const [depositPercentSaving, setDepositPercentSaving] = useState(false);
   const [depositPercentSaved, setDepositPercentSaved] = useState(false);
@@ -487,6 +529,8 @@ function SettingsPage() {
     const pm = settings.data?.payment_mode;
     setPaymentMode(pm === "deposit" || pm === "on_receipt" ? pm : "full");
     setDepositPercent(settings.data?.deposit_percent ?? "30");
+    setPickupEnabled(settings.data?.fulfillment_pickup_enabled !== "false");
+    setDeliveryEnabled(settings.data?.fulfillment_delivery_enabled !== "false");
     setReferralPercent(settings.data?.referral_discount_percent ?? "10");
     setLoyaltyEarnPercent(settings.data?.loyalty_earn_percent ?? "5");
     setCartReminderHours(settings.data?.cart_reminder_hours ?? "6");
@@ -541,11 +585,53 @@ function SettingsPage() {
     }
   }
 
+  async function onSaveFulfillmentOption(kind: "pickup" | "delivery", value: boolean) {
+    // Оба выключенных разом — тупик: чекаут физического товара не сможет
+    // предложить покупателю ни одного способа получения (Блок 12, находка
+    // 12.8 упоминает именно этот случай как непокрытый тестами умолчание).
+    const nextPickup = kind === "pickup" ? value : pickupEnabled;
+    const nextDelivery = kind === "delivery" ? value : deliveryEnabled;
+    if (!nextPickup && !nextDelivery) {
+      toast.error(tr.fulfillmentOptionsBothOffError);
+      return;
+    }
+    const prevPickup = pickupEnabled;
+    const prevDelivery = deliveryEnabled;
+    if (kind === "pickup") setPickupEnabled(value);
+    else setDeliveryEnabled(value);
+    setFulfillmentOptionsSaving(true);
+    try {
+      await saveSetting({
+        data: {
+          key: kind === "pickup" ? "fulfillment_pickup_enabled" : "fulfillment_delivery_enabled",
+          value: value ? "true" : "false",
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    } catch (e: unknown) {
+      setPickupEnabled(prevPickup);
+      setDeliveryEnabled(prevDelivery);
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setFulfillmentOptionsSaving(false);
+    }
+  }
+
   async function onSaveDepositPercent() {
     if (settings.isLoading) return;
+    // amountDueNow() (fulfillment.server.ts) сама зажимает битое значение в
+    // 1..100 и откатывается на 30 при NaN/пустой строке (Блок 1, находка
+    // 1.7) — но ловить очевидно неверный ввод здесь, до сохранения,
+    // дешевле, чем ждать, пока продавец заметит по факту, что бот просит
+    // не тот процент.
+    const pct = Number(depositPercent.trim());
+    if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
+      toast.error(tr.saveError(tr.unknownError));
+      return;
+    }
     setDepositPercentSaving(true);
     try {
-      await saveSetting({ data: { key: "deposit_percent", value: depositPercent.trim() } });
+      await saveSetting({ data: { key: "deposit_percent", value: String(pct) } });
       qc.invalidateQueries({ queryKey: ["settings"] });
       setDepositPercentSaved(true);
       setTimeout(() => setDepositPercentSaved(false), 2000);
@@ -846,6 +932,31 @@ function SettingsPage() {
             {depositPercentSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
           </div>
         )}
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.fulfillmentOptionsTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.fulfillmentOptionsHint}</p>
+        <div className="flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={pickupEnabled}
+              disabled={fulfillmentOptionsSaving}
+              onChange={(e) => onSaveFulfillmentOption("pickup", e.target.checked)}
+            />
+            {tr.fulfillmentOptionsPickup}
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={deliveryEnabled}
+              disabled={fulfillmentOptionsSaving}
+              onChange={(e) => onSaveFulfillmentOption("delivery", e.target.checked)}
+            />
+            {tr.fulfillmentOptionsDelivery}
+          </label>
+        </div>
       </div>
 
       <div className="bg-card border rounded-lg p-4 space-y-3">

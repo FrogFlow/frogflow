@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import crypto from "node:crypto";
 
 /**
@@ -73,10 +73,20 @@ describe.skipIf(!ready)(
     afterAll(async () => {
       const s = await client();
       if (orderIds.length) await s.from("orders").delete().in("id", orderIds);
+      if (botId) await s.from("app_settings").delete().eq("bot_id", botId);
       if (botId) await s.from("bots").delete().eq("id", botId);
       delete process.env.BOT_ID;
       delete process.env.SUPABASE_TENANT_KEY;
     });
+
+    async function setSetting(key: string, value: string | null) {
+      const s = await client();
+      if (value === null) {
+        await s.from("app_settings").delete().eq("bot_id", botId).eq("key", key);
+      } else {
+        await s.from("app_settings").upsert({ bot_id: botId, key, value });
+      }
+    }
 
     async function makeOrder(status: string) {
       const s = await client();
@@ -200,5 +210,97 @@ describe.skipIf(!ready)(
       const { data } = await s.from("orders").select("status").eq("id", orderId).single();
       expect(data?.status).toBe("in_production");
     });
+
+    /**
+     * Блок 12, находка 12.2 — самая денежная функция ветки без единого
+     * теста: сколько просить сейчас за физический заказ, по всем трём
+     * payment_mode, включая клэмп deposit_percent (Блок 1, находка 1.7).
+     */
+    describe("amountDueNow / loadPaymentMode (Блок 12, находка 12.2)", () => {
+      afterEach(async () => {
+        await setSetting("payment_mode", null);
+        await setSetting("deposit_percent", null);
+      });
+
+      it("digital-заказ — всегда полная сумма, режим оплаты не смотрится вовсе", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        await setSetting("payment_mode", "deposit");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "digital" })).toBe(15000);
+      });
+
+      it("payment_mode не настроен — full по умолчанию, вся сумма", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "physical" })).toBe(15000);
+      });
+
+      it("full — вся сумма", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        await setSetting("payment_mode", "full");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "physical" })).toBe(15000);
+      });
+
+      it("on_receipt — 0 сейчас", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        await setSetting("payment_mode", "on_receipt");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "physical" })).toBe(0);
+      });
+
+      it("deposit — доля от суммы по deposit_percent", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        await setSetting("payment_mode", "deposit");
+        await setSetting("deposit_percent", "40");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "physical" })).toBe(6000);
+      });
+
+      it("deposit с пустым deposit_percent — откатывается на 30%, не на 0₸ (Блок 1, находка 1.7)", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        await setSetting("payment_mode", "deposit");
+        await setSetting("deposit_percent", "");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "physical" })).toBe(4500);
+      });
+
+      it("deposit с мусорным deposit_percent (NaN) — откатывается на 30%, не на NaN₸", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        await setSetting("payment_mode", "deposit");
+        await setSetting("deposit_percent", "abc");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "physical" })).toBe(4500);
+      });
+
+      it("deposit с deposit_percent вне диапазона (150) — тоже клэмп на 30%", async () => {
+        const { amountDueNow } = await import("../src/lib/fulfillment.server");
+        await setSetting("payment_mode", "deposit");
+        await setSetting("deposit_percent", "150");
+        expect(await amountDueNow({ total: 15000, fulfillment_kind: "physical" })).toBe(4500);
+      });
+    });
+
+    /**
+     * Блок 12, находка 12.3 — paid_amount не должен превышать total: CHECK
+     * (MIGRATION-55) — единственная защита, recordPayment сама суммы не
+     * ограничивает. Регрессионный тест на саму эту миграцию.
+     */
+    it("recordPayment не даёт paid_amount превысить total (CHECK из MIGRATION-55)", async () => {
+      const orderId = await makeOrder("accepted");
+      const { recordPayment } = await import("../src/lib/fulfillment.server");
+      // total у makeOrder — 15000; просим больше.
+      expect(await recordPayment(orderId, 20000)).toBe(false);
+
+      const s = await client();
+      const { data } = await s.from("orders").select("paid_amount").eq("id", orderId).single();
+      expect(Number(data?.paid_amount) || 0).toBe(0);
+    });
+
+    // Блок 12, находка 12.4 (сознательно отложена) — регрессионный тест на
+    // защиту MIGRATION-55 сознательно НЕ добавлен здесь: единственный
+    // способ проверить его через JS-тесты — RPC-вызов
+    // nightly_orders_maintenance(), а эта функция работает по ВСЕЙ базе
+    // сразу (renumbering "только у разъехавшихся" и DELETE), а не в рамках
+    // одного тестового арендатора, как остальной тестовый код в этом
+    // файле. Против настоящего Supabase (.env.local — тот же продовый
+    // проект, который использует живой клиент-кондитер) вызов её из теста
+    // затронул бы реальные заказы всех клиентов. Проверено вручную через
+    // Management API до и после применения миграции (см.
+    // MIGRATION-README.md, п. 10) — тем же приёмом, каким и полагается
+    // проверять функции с глобальным эффектом, а не юнит-тестом.
   },
 );

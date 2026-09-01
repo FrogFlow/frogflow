@@ -100,11 +100,22 @@ export async function blockTelegramUser(
 
   await kickFromVipGroup(telegramId);
 
+  // Физические статусы (accepted/in_production/ready) добавлены отдельно
+  // от awaiting_* (Блок 3, находка 3.10) — блокировка покупателя, чей
+  // торт уже в работе, раньше не трогала эту строку вовсе: заказ оставался
+  // висеть, продавцу продолжали приходить напоминания о получении по
+  // клиенту, с которым бот больше не общается.
   await s
     .from("orders")
     .update({ status: "rejected", admin_note: "user_blocked" })
     .eq("telegram_id", telegramId)
-    .in("status", ["awaiting_payment", "awaiting_confirmation"]);
+    .in("status", [
+      "awaiting_payment",
+      "awaiting_confirmation",
+      "accepted",
+      "in_production",
+      "ready",
+    ]);
 
   await s.from("cart_items").delete().eq("telegram_id", telegramId);
 

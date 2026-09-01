@@ -106,11 +106,43 @@ const SaveInput = z.object({
   // заменяется целиком при сохранении, как image_paths/material_files.
   // Пустой массив = товар без вариантов, цена берётся из products.price,
   // как и раньше.
+  // id — Блок 8, находка 8.1/8.2: присутствует у уже существующего
+  // варианта (снят с формы при загрузке для редактирования), отсутствует
+  // у только что добавленного в форме. Позволяет обновлять/добавлять/
+  // удалять точечно вместо "снести всё и вставить заново".
   variants: z
-    .array(z.object({ name: z.string().min(1).max(120), price: z.number().min(0) }))
+    .array(
+      z.object({
+        id: z.string().uuid().optional(),
+        name: z.string().min(1).max(120),
+        price: z.number().min(0),
+      }),
+    )
     .default([]),
 });
 
+/**
+ * Блок 8 — сознательно отложенные находки:
+ *
+ * 8.7 — lead_time_days сохраняется безусловно даже для digital-товара
+ * (только скрыт в форме при fulfillment_kind !== "physical"): переключение
+ * типа товара туда и обратно возвращает старое значение. Добавить
+ * `lead_time_days: data.fulfillment_kind === "physical" ? ... : null` ниже
+ * решило бы это, но меняет поведение при каждом сохранении любого
+ * цифрового товара — не точечная правка для одного P2.
+ *
+ * 8.8 — у вариантов нет ни своего остатка (stock_quantity), ни своего
+ * срока изготовления (lead_time_days): "1 кг в наличии, 2 кг под заказ"
+ * невыразимо. Требует новых колонок в product_variants (новая миграция) и
+ * правок decrementStock/addToCart под учёт по варианту, а не по товару —
+ * заметно шире одной точечной правки.
+ *
+ * 8.9 — выбор варианта в Direct (awaiting_variant_choice) диспетчеризуется
+ * через matchZone (задуман для зон доставки) — работает структурно
+ * идентично (числа/названия), но смешивает семантику двух разных сущностей
+ * в одной функции. Переименование/выделение отдельной matchVariant —
+ * рефакторинг без изменения поведения, не тронут в этом заходе.
+ */
 export const saveProduct = createServerFn({ method: "POST" })
   .validator((d: unknown) => SaveInput.parse(d))
   .handler(async ({ data }) => {
@@ -237,32 +269,51 @@ export const saveProduct = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
 
-    // Replace variants (Ниши, Блок D) — тот же приём: вставить новые, потом
-    // удалить старые. cart_items/order_items, ссылавшиеся на удалённый
-    // вариант, теряют ссылку (ON DELETE SET NULL, MIGRATION-53) — снимок в
-    // order_items.name_snapshot/price_snapshot их не касается.
+    // Точечное обновление вариантов (Блок 8, находка 8.1/8.2) — раньше все
+    // варианты сносились и вставлялись заново при КАЖДОМ сохранении товара,
+    // даже если правилась только опечатка в описании. cart_items/order_items,
+    // ссылавшиеся на любой из них (не только правда удалённый), теряли
+    // ссылку через ON DELETE SET NULL (MIGRATION-53) — покупатель с "2 кг" в
+    // корзине молча откатывался на базовую products.price. Плюс сама схема
+    // "вставить все новые, потом удалить все старые" могла на секунду
+    // держать одновременно и старую, и новую версию строки того же варианта
+    // — при двух строках корзины на разные варианты одного товара это
+    // роняло уникальный индекс из MIGRATION-54.
+    //
+    // Теперь: вариант с id из формы (существовал и до правки) — UPDATE по
+    // этому id, без каких-либо последствий для cart_items/order_items,
+    // ссылающихся на него. Вариант без id — новая строка, INSERT. Старый
+    // id, которого нет среди присланных — вариант реально удалён продавцом,
+    // DELETE только по нему (ровно тот случай, для которого ON DELETE SET
+    // NULL и существует).
     const { data: oldVariants } = await s
       .from("product_variants")
       .select("id")
       .eq("product_id", productId);
-    if (data.variants.length) {
-      const variantRows = data.variants.map((v, idx) => ({
-        product_id: productId!,
-        name: v.name,
-        price: v.price,
-        sort_order: idx,
-      }));
-      const { error } = await s.from("product_variants").insert(variantRows);
-      if (error) throw new Error(error.message);
+    const oldIds = new Set((oldVariants ?? []).map((r) => r.id as string));
+    const keepIds = new Set<string>();
+    for (let idx = 0; idx < data.variants.length; idx++) {
+      const v = data.variants[idx];
+      if (v.id && oldIds.has(v.id)) {
+        keepIds.add(v.id);
+        const { error } = await s
+          .from("product_variants")
+          .update({ name: v.name, price: v.price, sort_order: idx })
+          .eq("id", v.id);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await s.from("product_variants").insert({
+          product_id: productId!,
+          name: v.name,
+          price: v.price,
+          sort_order: idx,
+        });
+        if (error) throw new Error(error.message);
+      }
     }
-    if (oldVariants?.length) {
-      const { error } = await s
-        .from("product_variants")
-        .delete()
-        .in(
-          "id",
-          oldVariants.map((r) => r.id),
-        );
+    const removedIds = [...oldIds].filter((id) => !keepIds.has(id));
+    if (removedIds.length) {
+      const { error } = await s.from("product_variants").delete().in("id", removedIds);
       if (error) throw new Error(error.message);
     }
     return { ok: true as const, id: productId };

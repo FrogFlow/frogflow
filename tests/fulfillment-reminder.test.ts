@@ -167,11 +167,29 @@ describe.skipIf(!ready)("sendFulfillmentReminders (нужна настоящая
     expect(data?.fulfillment_reminder_sent_at).toBeNull();
   });
 
-  it("заказ ещё не принят продавцом (awaiting_confirmation) — напоминание не шлём", async () => {
+  it("заказ ещё не принят продавцом (awaiting_confirmation), но дата уже завтра — напоминание всё равно шлём", async () => {
+    // Раньше (Блок 3, находка 3.8) такой заказ пропускался: считалось, что
+    // напоминания нужны только уже принятым заказам. На деле именно этот
+    // случай — "продавец проглядел чек, а забрать торт уже завтра" —
+    // нуждается в напоминании сильнее всего.
     const orderId = await makeOrder(
       new Date(Date.now() + 10 * 60 * 60 * 1000),
       "awaiting_confirmation",
     );
+    const { sendFulfillmentReminders } = await import("../src/lib/fulfillment-reminder.server");
+    await sendFulfillmentReminders();
+
+    const s = await client();
+    const { data } = await s
+      .from("orders")
+      .select("fulfillment_reminder_sent_at")
+      .eq("id", orderId)
+      .single();
+    expect(data?.fulfillment_reminder_sent_at).not.toBeNull();
+  });
+
+  it("заказ уже выдан (delivered) — напоминание не шлём", async () => {
+    const orderId = await makeOrder(new Date(Date.now() + 10 * 60 * 60 * 1000), "delivered");
     const { sendFulfillmentReminders } = await import("../src/lib/fulfillment-reminder.server");
     await sendFulfillmentReminders();
 

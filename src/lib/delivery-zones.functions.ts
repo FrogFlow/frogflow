@@ -51,6 +51,27 @@ export const saveDeliveryZone = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+/**
+ * Сколько ещё не закрытых заказов ссылаются на эту зону (Блок 9, находка
+ * 9.3) — раньше удаление зоны не предупреждало вообще ни о чём. История
+ * этих заказов не пострадает от самого удаления (delivery_zone_name —
+ * снимок на момент выбора, а не живая ссылка), но продавец должен видеть,
+ * скольких открытых заказов это касается, прежде чем нажать "Удалить".
+ */
+export const countOrdersUsingZone = createServerFn({ method: "GET" })
+  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const s = await db();
+    const { count, error } = await s
+      .from("orders")
+      .select("*", { count: "exact", head: true })
+      .eq("delivery_zone_id", data.id)
+      .not("status", "in", "(delivered,rejected)");
+    if (error) throw new Error(error.message);
+    return { count: count ?? 0 };
+  });
+
 export const deleteDeliveryZone = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {

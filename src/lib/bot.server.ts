@@ -26,6 +26,8 @@ type ProductCard = {
   stock_quantity?: number | null;
   /** Простой список вариантов (Ниши, Блок D) — «1 кг»/«2 кг» с ценой. */
   product_variants?: Array<{ id: string; name: string; price: number; sort_order: number }> | null;
+  /** Срок изготовления, дней — показывается в карточке ДО покупки (Блок 4, находка 4.21). */
+  lead_time_days?: number | null;
 };
 
 /**
@@ -107,6 +109,7 @@ type BotUser = {
       | "awaiting_promo_code"
       | "awaiting_review_comment"
       | "awaiting_gift_certificate_code"
+      | "awaiting_fulfillment_type"
       | "awaiting_fulfillment_date"
       | "awaiting_delivery_zone"
       | "awaiting_address"
@@ -150,6 +153,14 @@ type BotUser = {
     checkout_fulfillment_type?: "pickup" | "delivery";
     /** Дата получения, ISO (YYYY-MM-DD) — без времени, время не спрашиваем. */
     checkout_fulfillment_at?: string;
+    /**
+     * Минимально допустимая дата, замороженная в момент показа вопроса о
+     * дате (Блок 4, находка 4.22) — раньше askFulfillmentDate и валидация
+     * ответа пересчитывали maxLeadTimeDaysInCart по отдельности; правка
+     * срока изготовления продавцом между этими двумя моментами отклоняла
+     * дату, которую бот только что назвал допустимой в самом вопросе.
+     */
+    checkout_min_fulfillment_date?: string;
     /**
      * Выбранная зона доставки (Ниши, Блок B) — id и снимок имени/цены на
      * момент выбора, тем же приёмом, что и остальные checkout_fulfillment_*.
@@ -588,7 +599,13 @@ type Msg = {
   searchSessionExpired: string;
   addedToCart: string;
   productUnavailable: string;
+  /** Блок 4, находка 4.20 — причины addToCart, различаемые вместо одного generic текста. */
+  productMixedCartMsg: string;
+  productDigitalLimitMsg: string;
+  productOutOfStockMsg: string;
   outOfStockLabel: string;
+  /** Срок изготовления в карточке товара, ДО покупки (Блок 4, находка 4.21). */
+  leadTimeLabel: (days: number) => string;
   cartCleared: string;
   countrySaved: (countryName: string) => string;
   noOrdersYet: string;
@@ -611,6 +628,10 @@ type Msg = {
   statusDelivering: string;
   statusDelivered: string;
   statusRejected: string;
+  /** Блок 5, находка 5.2 — статусы физического заказа в "Мои заказы", раньше показывался сырой код (accepted/in_production/ready). */
+  statusAccepted: string;
+  statusInProduction: string;
+  statusReady: string;
   shareContactHint: string;
   phoneParseFail: string;
   sendReceiptPrompt: string;
@@ -737,7 +758,13 @@ const copy: Record<Locale, Msg> = {
     searchSessionExpired: "Сессия поиска устарела. Повторите поиск.",
     addedToCart: "✅ Добавлено в корзину.",
     productUnavailable: "⚠️ Этот материал сейчас недоступен. Выберите другой в каталоге.",
+    productMixedCartMsg:
+      "⚠️ В корзине уже другой тип товара. Оформите текущую корзину или очистите её.",
+    productDigitalLimitMsg: "⚠️ Этот материал уже в корзине — второй экземпляр не нужен.",
+    productOutOfStockMsg: "⚠️ Товара не осталось в нужном количестве.",
     outOfStockLabel: "❌ Нет в наличии",
+    leadTimeLabel: (days) =>
+      `🕒 Готовим ${days} ${days % 10 === 1 && days % 100 !== 11 ? "день" : days % 10 >= 2 && days % 10 <= 4 && (days % 100 < 10 || days % 100 >= 20) ? "дня" : "дней"}`,
     cartCleared: "🗑 Корзина очищена.",
     countrySaved: (c) => `✅ Ваша страна сохранена: ${c}\nТеперь вы видите корректные цены!`,
     noOrdersYet: "У вас пока нет заказов.",
@@ -760,6 +787,9 @@ const copy: Record<Locale, Msg> = {
     statusDelivering: "📤 выдаётся",
     statusDelivered: "✅ выдан",
     statusRejected: "❌ отклонён",
+    statusAccepted: "✅ принят в работу",
+    statusInProduction: "👩‍🍳 в работе",
+    statusReady: "📦 готов",
     shareContactHint:
       "Нажмите кнопку «📱 Поделиться контактом» внизу экрана или просто напишите номер телефона в чат.",
     phoneParseFail:
@@ -905,7 +935,12 @@ const copy: Record<Locale, Msg> = {
     searchSessionExpired: "Іздеу сессиясы ескірді. Іздеуді қайталаңыз.",
     addedToCart: "✅ Себетке қосылды.",
     productUnavailable: "⚠️ Бұл материал қазір қолжетімді емес. Каталогтан басқасын таңдаңыз.",
+    productMixedCartMsg:
+      "⚠️ Себетте басқа түрдегі тауар бар. Ағымдағы себетті рәсімдеңіз немесе тазалаңыз.",
+    productDigitalLimitMsg: "⚠️ Бұл материал себетте бар — екінші данасы қажет емес.",
+    productOutOfStockMsg: "⚠️ Тауар қажетті мөлшерде қалмады.",
     outOfStockLabel: "❌ Қоймада жоқ",
+    leadTimeLabel: (days) => `🕒 Дайындау мерзімі: ${days} күн`,
     cartCleared: "🗑 Себет тазартылды.",
     countrySaved: (c) => `✅ Еліңіз сақталды: ${c}\nЕнді сіз дұрыс бағаларды көресіз!`,
     noOrdersYet: "Сізде әзірге тапсырыс жоқ.",
@@ -928,6 +963,9 @@ const copy: Record<Locale, Msg> = {
     statusDelivering: "📤 жіберілуде",
     statusDelivered: "✅ жіберілді",
     statusRejected: "❌ қабылданбады",
+    statusAccepted: "✅ жұмысқа қабылданды",
+    statusInProduction: "👩‍🍳 дайындалуда",
+    statusReady: "📦 дайын",
     shareContactHint:
       "Экранның төменгі жағындағы «📱 Контактімен бөлісу» батырмасын басыңыз немесе телефон нөмірін чатқа жазыңыз.",
     phoneParseFail:
@@ -1075,7 +1113,13 @@ const copy: Record<Locale, Msg> = {
     addedToCart: "✅ Added to cart.",
     productUnavailable:
       "⚠️ This material is currently unavailable. Please pick another one from the catalog.",
+    productMixedCartMsg:
+      "⚠️ Your cart already has a different item type. Check out or clear the cart first.",
+    productDigitalLimitMsg:
+      "⚠️ This material is already in your cart — a second copy isn't needed.",
+    productOutOfStockMsg: "⚠️ Not enough of this item left in stock.",
     outOfStockLabel: "❌ Out of stock",
+    leadTimeLabel: (days) => `🕒 Made to order: ${days} day${days === 1 ? "" : "s"}`,
     cartCleared: "🗑 Cart cleared.",
     countrySaved: (c) => `✅ Your country is saved: ${c}\nNow you’ll see the correct prices!`,
     noOrdersYet: "You don’t have any orders yet.",
@@ -1098,6 +1142,9 @@ const copy: Record<Locale, Msg> = {
     statusDelivering: "📤 delivering",
     statusDelivered: "✅ delivered",
     statusRejected: "❌ rejected",
+    statusAccepted: "✅ accepted",
+    statusInProduction: "👩‍🍳 in production",
+    statusReady: "📦 ready",
     shareContactHint:
       "Tap the “📱 Share contact” button at the bottom of the screen, or just type your phone number in the chat.",
     phoneParseFail:
@@ -1249,7 +1296,12 @@ const copy: Record<Locale, Msg> = {
     searchSessionExpired: "Qidiruv sessiyasi eskirdi. Qayta qidiring.",
     addedToCart: "✅ Savatga qo‘shildi.",
     productUnavailable: "⚠️ Bu material hozir mavjud emas. Katalogdan boshqasini tanlang.",
+    productMixedCartMsg:
+      "⚠️ Savatda boshqa turdagi mahsulot bor. Avval joriy savatni rasmiylashtiring yoki tozalang.",
+    productDigitalLimitMsg: "⚠️ Bu material savatda allaqachon bor — ikkinchi nusxasi kerak emas.",
+    productOutOfStockMsg: "⚠️ Kerakli miqdorda mahsulot qolmadi.",
     outOfStockLabel: "❌ Sotuvda yo‘q",
+    leadTimeLabel: (days) => `🕒 Tayyorlash muddati: ${days} kun`,
     cartCleared: "🗑 Savat tozalandi.",
     countrySaved: (c) => `✅ Mamlakatingiz saqlandi: ${c}\nEndi to‘g‘ri narxlarni ko‘rasiz!`,
     noOrdersYet: "Sizda hali buyurtmalar yo‘q.",
@@ -1272,6 +1324,9 @@ const copy: Record<Locale, Msg> = {
     statusDelivering: "📤 yetkazilmoqda",
     statusDelivered: "✅ yetkazildi",
     statusRejected: "❌ rad etildi",
+    statusAccepted: "✅ ishga qabul qilindi",
+    statusInProduction: "👩‍🍳 tayyorlanmoqda",
+    statusReady: "📦 tayyor",
     shareContactHint:
       "Ekranning pastidagi «📱 Kontaktni ulashish» tugmasini bosing yoki telefon raqamini chatga yozing.",
     phoneParseFail:
@@ -1337,6 +1392,11 @@ const MENU_ACTIONS = new Set([
   "📋 Мои заказы",
   "📖 Инструкция",
   "ℹ️ Информация",
+  // Блок 4, находка 4.11: canonicalMenuAction уже знает эту кнопку и
+  // канонизирует под неё локализованный текст — без записи сюда её текст
+  // на любом шаге сбора свободного текста (адрес, дата, комментарий к
+  // торту) сохранялся как есть, вместо перехода в раздел «Автор».
+  "💬 Связаться с автором",
 ]);
 
 function mainMenu(locale: Locale = "ru") {
@@ -1697,6 +1757,13 @@ async function sendProductCard(
   // Остаток считается на весь товар, не на отдельный вариант.
   const outOfStock =
     (await hasModule("stock")) && p.stock_quantity !== undefined && (p.stock_quantity ?? 0) <= 0;
+  // Срок изготовления — ДО покупки, не после выбора способа получения
+  // (Блок 4, находка 4.21): раньше единственным местом, где покупатель
+  // узнавал про "готовим 3 дня", был отказ "Этот заказ готовится дольше"
+  // уже во время ввода даты получения — самый важный для решения о покупке
+  // факт был спрятан в самом конце чекаута.
+  const leadTimeLine =
+    p.lead_time_days && p.lead_time_days > 0 ? `\n${m.leadTimeLabel(p.lead_time_days)}` : "";
 
   let caption: string;
   let reply_markup: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> };
@@ -1706,7 +1773,7 @@ async function sendProductCard(
     );
     const minAmount = Math.min(...priced.map((r) => r.money.amount));
     const currency = priced[0]?.money.currency ?? p.currency ?? "KZT";
-    caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${m.priceFrom(formatMoney(minAmount, currency))}</b>${ratingLine ? `\n${ratingLine}` : ""}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
+    caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${m.priceFrom(formatMoney(minAmount, currency))}</b>${ratingLine ? `\n${ratingLine}` : ""}${leadTimeLine}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
     reply_markup = outOfStock
       ? { inline_keyboard: [] }
       : {
@@ -1719,7 +1786,7 @@ async function sendProductCard(
         };
   } else {
     const money = await resolvePrice(p, userCountryCode ?? null);
-    caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(money.amount, money.currency)}</b>${ratingLine ? `\n${ratingLine}` : ""}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
+    caption = `📦 <b>${escapeHtml(p.name)}</b>${desc}\n\n💰 <b>${formatMoney(money.amount, money.currency)}</b>${ratingLine ? `\n${ratingLine}` : ""}${leadTimeLine}${outOfStock ? `\n${m.outOfStockLabel}` : ""}`;
     reply_markup = outOfStock
       ? { inline_keyboard: [] }
       : { inline_keyboard: [[{ text: m.addToCartBtn, callback_data: `add:${p.id}` }]] };
@@ -1924,14 +1991,17 @@ async function sendCoverPreviews(adminChatId: string, displayNo: number, coverUr
  * упёрся бы там — уже после того, как человек заплатил»). Телеграмная ветка
  * этих проверок не имела.
  *
- * Возвращает false, когда добавить не удалось: раньше покупатель видел
- * «✅ Добавлено в корзину» независимо от исхода, включая сбой вставки.
+ * Возвращает причину, когда добавить не удалось (Блок 4, находка 4.20):
+ * раньше все пять исходов сворачивались в один и тот же generic
+ * «Товар недоступен», и покупатель не мог понять, стоит ли повторить
+ * попытку (сбой БД) или он ничего не может сделать (смешанная корзина,
+ * остаток исчерпан, цифровой товар уже в корзине).
  */
 async function addToCart(
   telegram_id: number,
   product_id: string,
   product_variant_id?: string | null,
-): Promise<boolean> {
+): Promise<"ok" | "unavailable" | "mixed_cart" | "digital_limit" | "out_of_stock" | "error"> {
   const s = await db();
 
   const { data: product, error: productError } = await s
@@ -1941,9 +2011,9 @@ async function addToCart(
     .maybeSingle();
   if (productError) {
     console.error("[bot] addToCart: не удалось прочитать товар", product_id, productError);
-    return false;
+    return "error";
   }
-  if (!product?.is_active) return false;
+  if (!product?.is_active) return "unavailable";
 
   // Вариант (Ниши, Блок D) должен реально принадлежать этому товару —
   // callback_data приходит от клиента, доверять её без проверки нельзя:
@@ -1956,7 +2026,7 @@ async function addToCart(
       .eq("id", product_variant_id)
       .eq("product_id", product_id)
       .maybeSingle();
-    if (!variant) return false;
+    if (!variant) return "unavailable";
   }
 
   // Смешанная корзина (физический товар + цифровой материал) не
@@ -1976,7 +2046,7 @@ async function addToCart(
       "physical"
         ? "physical"
         : "digital";
-    if (otherKind !== incomingKind) return false;
+    if (otherKind !== incomingKind) return "mixed_cart";
   }
 
   // Строка корзины — по товару И варианту: у одного товара может быть
@@ -1993,15 +2063,35 @@ async function addToCart(
     : existingQuery.is("product_variant_id", null);
   const { data: existing } = await existingQuery.maybeSingle();
 
+  // Цифровой товар — не более 1 шт. в строке: копия того же файла не имеет
+  // смысла (Блок 4, находка 4.14). У Direct-канала этот потолок уже был
+  // (direct-purchase.server.ts), у Telegram его не было никогда.
+  if (incomingKind === "digital" && existing) return "digital_limit";
+
   // Складской учёт (Кейс 4) — платный модуль: без него stock_quantity
   // никогда не ограничивает добавление в корзину, даже если задан. Точная
   // атомарная проверка — на оформлении (placeOrderInner); здесь только
   // предварительная, чтобы не пускать в корзину заведомо больше остатка.
   // Остаток считается на весь товар, не на отдельный вариант — вариантов
   // без своего складского учёта (Ниши, Блок D, вне объёма).
+  //
+  // Сумма по ВСЕМ строкам этого товара, не только по `existing` строке
+  // текущего варианта (Блок 8, находка 8.5) — иначе при остатке 1 можно
+  // было положить и "1 кг" (existing для него — 0), и "2 кг" (existing для
+  // него тоже 0), в сумме 2 при остатке 1. decrementStock на оформлении
+  // упал бы, но именно на второй позиции, и без 8.5's cart_items.delete()
+  // выше повторная попытка падала бы так же бесконечно.
   if ((await hasModule("stock")) && product.stock_quantity !== null) {
-    const alreadyInCart = Number(existing?.quantity ?? 0);
-    if (alreadyInCart + 1 > product.stock_quantity) return false;
+    const { data: sameProductRows } = await s
+      .from("cart_items")
+      .select("quantity")
+      .eq("telegram_id", telegram_id)
+      .eq("product_id", product_id);
+    const alreadyInCart = (sameProductRows ?? []).reduce(
+      (sum, r) => sum + (Number(r.quantity) || 0),
+      0,
+    );
+    if (alreadyInCart + 1 > product.stock_quantity) return "out_of_stock";
   }
 
   if (existing) {
@@ -2011,9 +2101,9 @@ async function addToCart(
       .eq("id", existing.id);
     if (error) {
       console.error("[bot] addToCart: не удалось увеличить количество", error);
-      return false;
+      return "error";
     }
-    return true;
+    return "ok";
   }
 
   const { error } = await s.from("cart_items").insert({
@@ -2024,9 +2114,9 @@ async function addToCart(
   });
   if (error) {
     console.error("[bot] addToCart: не удалось добавить позицию", error);
-    return false;
+    return "error";
   }
-  return true;
+  return "ok";
 }
 
 /**
@@ -2381,7 +2471,21 @@ async function proceedToLanguageOrPlace(chat_id: number, user: BotUser, country_
 async function proceedToFulfillmentOrPlace(chat_id: number, user: BotUser, country_code: string) {
   const telegram_id = user.telegram_id;
   const locale: Locale = user.state?.locale ?? "ru";
-  const nextState = { ...user.state, country_code };
+  // Зона/тип/дата получения — одноразовые поля прошлого прохода чекаута
+  // (Блок 4, находка 4.1). Раньше они чистились только внутри
+  // placeOrderInner, в конце успешного оформления: если покупатель выбрал
+  // зону доставки "Левый берег" (+2000), бросил чекаут на шаге адреса и
+  // вернулся выбрать самовывоз — старая зона и её комиссия ехали в новый
+  // заказ, хотя способ получения сменился. Здесь — самое начало решения
+  // "как получать", поэтому все прежние значения сбрасываются явно.
+  const nextState = {
+    ...user.state,
+    country_code,
+    checkout_fulfillment_type: undefined,
+    checkout_delivery_zone_id: undefined,
+    checkout_delivery_zone_name: undefined,
+    checkout_delivery_fee: undefined,
+  };
   const { cartFulfillmentKind, fulfillmentOptionsEnabled } = await import("./fulfillment.server");
 
   if ((await cartFulfillmentKind(telegram_id)) !== "physical") {
@@ -2392,7 +2496,11 @@ async function proceedToFulfillmentOrPlace(chat_id: number, user: BotUser, count
 
   const { pickup, delivery } = await fulfillmentOptionsEnabled();
   if (pickup && delivery) {
-    await setState(telegram_id, { ...nextState, mode: undefined });
+    // Свой mode (Блок 4, находка 4.4) — раньше здесь стоял mode: undefined,
+    // и у шага "как получать" не было ни текстового фолбэка (напечатал
+    // "самовывоз" вместо тапа — уходило в поиск товара), ни защиты от
+    // тапа по старой кнопке из прошлого прохода чекаута (находка 4.6).
+    await setState(telegram_id, { ...nextState, mode: "awaiting_fulfillment_type" });
     await tg("sendMessage", {
       chat_id,
       text: copy[locale].fulfillmentTypePrompt,
@@ -2431,7 +2539,11 @@ async function askFulfillmentDate(
     await import("./fulfillment.server");
   const minDays = await maxLeadTimeDaysInCart(telegram_id);
   const minIso = addDaysToIsoDate(todayInAppTZ(), minDays);
-  await setState(telegram_id, { ...state, mode: "awaiting_fulfillment_date" });
+  await setState(telegram_id, {
+    ...state,
+    mode: "awaiting_fulfillment_date",
+    checkout_min_fulfillment_date: minIso,
+  });
   await tg("sendMessage", {
     chat_id,
     text: copy[locale].fulfillmentDatePrompt(isoDateToDisplay(minIso)),
@@ -2458,11 +2570,22 @@ async function proceedToDeliveryZoneOrAddress(
     return;
   }
   await setState(telegram_id, { ...state, mode: "awaiting_delivery_zone" });
+  // Цена зоны в подписи кнопки (Блок 4, находка 4.2) — раньше показывалось
+  // только название, покупатель выбирал вслепую и узнавал стоимость
+  // доставки только по итоговой сумме к оплате.
+  const { currencyForCountry, defaultCountryCode } = await import("./pricing.server");
+  const currency =
+    (await currencyForCountry(state?.country_code ?? (await defaultCountryCode()))) ?? "";
   await tg("sendMessage", {
     chat_id,
     text: copy[locale].deliveryZonePrompt,
     reply_markup: {
-      inline_keyboard: zones.map((z) => [{ text: z.name, callback_data: `zone:${z.id}` }]),
+      inline_keyboard: zones.map((z) => [
+        {
+          text: `${z.name} (+${z.price}${currency ? ` ${currency}` : ""})`,
+          callback_data: `zone:${z.id}`,
+        },
+      ]),
     },
   });
 }
@@ -2662,6 +2785,45 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   }
 }
 
+/**
+ * Блок 4 (ревизия кондитерской ветки) — сознательно отложенные находки,
+ * не тронутые в этом заходе:
+ *
+ * 4.3 — order_items не содержит строки "Доставка", поэтому
+ * sum(order_items) ≠ orders.total у заказов с доставкой (deliveryFee
+ * прибавляется только к total ниже). Правка через синтетическую строку
+ * order_items с product_id=null задевает всех потребителей order_items
+ * (админку, "Мои заказы" обоих каналов, CSV-экспорт, аналитику) — шире,
+ * чем оправдано для одного P1 в этом заходе; delivery_fee сама по себе
+ * уже видна отдельным полем и в БД, и в админке (Блок 1, находка 7.5).
+ *
+ * 4.10 — нет отдельного текстового "отмена"/"назад" на шагах физического
+ * чекаута. Выход через тап по кнопке главного меню уже работает на каждом
+ * шаге (MENU_ACTIONS + canonicalMenuAction) — как и в Direct, где
+ * matchDirectCommand тоже не знает слова "отмена", только переход в
+ * другой раздел. Добавление парсера отмены на нескольких языках — заметная
+ * по объёму работа на оба канала разом, не входит в этот заход.
+ *
+ * 4.12 — Direct не проверяет остаток вообще (addToCart/createOrderFromCart
+ * не читают stock_quantity). Складской учёт в Direct с нуля — отдельная
+ * задача уровня Блока D, не точечная правка.
+ *
+ * 4.15 — ни один канал не умеет уменьшать количество в корзине, только
+ * удалять строку целиком. Новая UI-механика в обоих ботах, откладывается.
+ *
+ * 4.16 — промокоды/баллы/сертификаты не поддержаны в Direct-чекауте вовсе:
+ * priceCart не знает о скидках. Того же масштаба, что и 4.12.
+ *
+ * 4.17 — Direct не спрашивает телефон; orders.contact — хендл Instagram.
+ * Требует нового шага чекаута (state, i18n, валидация) в Direct — вне
+ * объёма точечной правки.
+ *
+ * 4.19 — запрет смешанной корзины проверяется в коде (read-then-write), но
+ * не на уровне БД. Настоящая защита — триггер на cart_items, а не CHECK
+ * (правило завязано на JOIN с products.fulfillment_kind, обычный CHECK его
+ * не выразит) — миграция потребует отдельного проектирования и проверки
+ * на живых данных, не входит в этот заход.
+ */
 async function placeOrderInner(
   chat_id: number,
   user: BotUser,
@@ -2785,8 +2947,14 @@ async function placeOrderInner(
   // если позиции не хватило, не создаём заказ по неверному составу, а
   // откатываем уже списанные позиции этой же корзины и просим оформить
   // заново без раскупленного товара.
+  // Вынесено за пределы if ниже (Блок 4, находка 4.13) — раньше
+  // reservedStock жил только внутри блока decrementStock, и все более
+  // поздние ранние return (невалидный промокод, гонка сертификата, сбой
+  // вставки заказа/позиций) выходили из функции, не возвращая уже
+  // списанный остаток обратно. Пустой массив, если модуль stock выключен —
+  // восстанавливать нечего, вызов restoreStock по пустому списку безвреден.
+  const reservedStock: Array<{ productId: string; qty: number }> = [];
   if (await hasModule("stock")) {
-    const reservedStock: Array<{ productId: string; qty: number }> = [];
     for (const it of items) {
       if (!it.products) continue;
       const productId = String(it.products.id);
@@ -2794,6 +2962,12 @@ async function placeOrderInner(
       const ok = await decrementStock(productId, qty);
       if (!ok) {
         for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+        // Убираем раскупленную строку из корзины (Блок 8, находка 8.5) —
+        // раньше сообщение говорило "оформите без него", но саму строку не
+        // трогало: повторное «Оформить» било в тот же decrementStock и
+        // падало точно так же, пока покупатель не находил и не удалял её
+        // вручную кнопкой в корзине.
+        await s.from("cart_items").delete().eq("id", it.id);
         await releaseOrderPlacement(telegram_id, user.state);
         await tg("sendMessage", { chat_id, text: m.outOfStockAtCheckout });
         return;
@@ -2850,6 +3024,7 @@ async function placeOrderInner(
       // Код стал недоступен между вводом в корзине и оформлением (истёк,
       // исчерпан, гонка с другим покупателем) — не создаём заказ по неверной
       // цене, просим повторить без него.
+      for (const r of reservedStock) await restoreStock(r.productId, r.qty);
       await releaseOrderPlacement(telegram_id, user.state);
       await tg("sendMessage", { chat_id, text: m.promoCodeInvalid });
       return;
@@ -2880,6 +3055,7 @@ async function placeOrderInner(
       giftCertificateId = redeemed.certificateId;
       total -= giftCertificateDiscountAmount;
     } else {
+      for (const r of reservedStock) await restoreStock(r.productId, r.qty);
       await releaseOrderPlacement(telegram_id, user.state);
       await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
       return;
@@ -2920,6 +3096,7 @@ async function placeOrderInner(
     .select("*")
     .single();
   if (error || !order) {
+    for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
     await releaseOrderPlacement(telegram_id, user.state);
     return;
@@ -2949,6 +3126,7 @@ async function placeOrderInner(
   if (withProduct.length === 0) {
     // Платить не за что: заказ без позиций выдать нельзя, а покупателю нужен
     // понятный ответ, а не «оплатите 0 ₸».
+    for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     await s.from("orders").delete().eq("id", order.id);
     await s.from("cart_items").delete().eq("telegram_id", telegram_id);
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
@@ -3017,6 +3195,7 @@ async function placeOrderInner(
   const { error: itemsError } = await s.from("order_items").insert(rows);
   if (itemsError) {
     console.error(`[bot] order_items insert failed for order ${order.id}`, itemsError);
+    for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     await s.from("orders").delete().eq("id", order.id);
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
     await releaseOrderPlacement(telegram_id, user.state);
@@ -3043,6 +3222,13 @@ async function placeOrderInner(
     } catch (e) {
       console.error(`[bot] auto-fulfillment failed for zero-total order ${order.id}`, e);
     }
+    // Продавец должен знать о продаже, даже когда делать ничего не нужно
+    // (Блок 6, находка 6.3) — раньше этот путь заканчивался тихим return,
+    // и заказ с нулевой суммой (скидка/баллы/сертификат покрыли всё)
+    // доходил до покупателя, но не до продавца вовсе.
+    await notifyAdminNewOrder(order.id as number, null, null, { noPaymentNeeded: true }).catch(
+      (e) => console.error(`[bot] notifyAdminNewOrder failed for zero-total order ${order.id}`, e),
+    );
     return;
   }
 
@@ -3056,6 +3242,12 @@ async function placeOrderInner(
     } catch (e) {
       console.error(`[bot] acceptOrder failed for on_receipt order ${order.id}`, e);
     }
+    // Блок 6, находка 6.3 — тот же пробел: on_receipt-заказ доходил до
+    // продавца молча, notifyAdminNewOrder вызывался только с путей
+    // обработки чека.
+    await notifyAdminNewOrder(order.id as number, null, null, { noPaymentNeeded: true }).catch(
+      (e) => console.error(`[bot] notifyAdminNewOrder failed for on_receipt order ${order.id}`, e),
+    );
     return;
   }
   // Сколько просить сейчас (Ниши, Блок 8.2) — total у digital и у full-режима
@@ -3483,7 +3675,18 @@ async function notifyAdminNewOrder(
   orderId: number,
   proofFileId: string | null,
   proofKind: "photo" | "document" | null,
-  options?: { autoDelivered?: boolean; reviewReason?: string },
+  options?: {
+    autoDelivered?: boolean;
+    reviewReason?: string;
+    /**
+     * Заказ уже принят/выдан без чека — задаток=0 после скидок или
+     * payment_mode=on_receipt (Блок 6, находка 6.3). Не то же самое, что
+     * autoDelivered: там речь о распознанном OCR чеке, здесь чека вообще
+     * не было и не будет. Кнопок принять/отклонить не показываем — решение
+     * уже принято автоматически.
+     */
+    noPaymentNeeded?: boolean;
+  },
 ) {
   const s = await db();
   const { data: setting } = await s
@@ -3510,7 +3713,10 @@ async function notifyAdminNewOrder(
   if (!order) return;
   // Покупателю и админу показывается сквозной номер этого бота, а не глобальный
   // id (id остаётся во внутренних ссылках, callback_data и InvId Robokassa).
-  const displayNo = order.order_no ?? order.id;
+  // display_no, не order_no (Блок 6, находка 6.12) — order_no двигает
+  // ночная перенумерация, покупатель мог увидеть уже другое число; везде
+  // остальное в проекте берёт display_no ?? order_no ?? id.
+  const displayNo = order.display_no ?? order.order_no ?? order.id;
   const items = order.order_items || [];
 
   // --- Задача 4: обложки товаров отдельным сообщением (чтобы админ сразу видел, что продаётся) ---
@@ -3534,23 +3740,51 @@ async function notifyAdminNewOrder(
 
   const autoDelivered = Boolean(options?.autoDelivered);
   const reviewReason = options?.reviewReason?.trim();
+  const noPaymentNeeded = Boolean(options?.noPaymentNeeded);
+  // Дата/адрес/надпись на торте — Блок 6, находка 6.1: раньше это сообщение
+  // печатало только имя/телефон/страну/сумму, хотя order уже выбран через
+  // select("*, order_items(*)") и все физические поля под рукой. Именно из
+  // этого сообщения продавец жмёт «✅ Принять заказ» — без даты и адреса
+  // решение принималось вслепую.
+  let fulfillmentLine = "";
+  if (order.fulfillment_kind === "physical") {
+    const { isoDateToDisplay } = await import("./fulfillment.server");
+    const typeLabel = order.fulfillment_type === "delivery" ? "🚚 Доставка" : "🏠 Самовывоз";
+    const dateLabel = order.fulfillment_at
+      ? isoDateToDisplay(String(order.fulfillment_at).slice(0, 10))
+      : "—";
+    const addressLine =
+      order.fulfillment_type === "delivery"
+        ? `\n📍 ${escapeHtml((order.fulfillment_address as string) || "—")}${order.delivery_zone_name ? ` (${escapeHtml(order.delivery_zone_name as string)})` : ""}`
+        : "";
+    const noteLine = order.fulfillment_note
+      ? `\n✏️ ${escapeHtml(order.fulfillment_note as string)}`
+      : "";
+    fulfillmentLine = `\n${typeLabel} — ${dateLabel}${addressLine}${noteLine}\n`;
+  }
   const summaryText =
     (autoDelivered
       ? `🆕 <b>Заказ #${displayNo}</b> — автовыдача по чеку\n\n`
-      : reviewReason
-        ? `🆕 <b>Заказ #${displayNo}</b> — нужна проверка чека\n\n`
-        : `🆕 <b>Новый заказ #${displayNo}</b>\n\n`) +
+      : noPaymentNeeded
+        ? `🆕 <b>Заказ #${displayNo}</b> — принят без предоплаты\n\n`
+        : reviewReason
+          ? `🆕 <b>Заказ #${displayNo}</b> — нужна проверка чека\n\n`
+          : `🆕 <b>Новый заказ #${displayNo}</b>\n\n`) +
     `👤 ${escapeHtml(order.display_name as string)}${order.username ? ` (@${escapeHtml(order.username)})` : ""}
 📞 ${escapeHtml((order.contact as string) || "—")}
 🌍 ${escapeHtml((order.country_name as string) || "—")}
 📦 Позиций: ${items.length}
-
+${fulfillmentLine}
 💰 <b>Итого: ${order.total} ${order.currency}</b>` +
     (autoDelivered
       ? `\n\n⚡ Файлы выданы автоматически после проверки чека (OCR).`
-      : reviewReason
-        ? `\n\n⚠️ <b>Причина:</b> ${escapeHtml(reviewReason)}`
-        : "");
+      : noPaymentNeeded
+        ? order.fulfillment_kind === "physical"
+          ? `\n\n✅ Заказ принят в работу без предоплаты (оплата при получении, либо скидка покрыла всю сумму).`
+          : `\n\n✅ Материалы уже выданы — скидка покрыла всю сумму, чек не требовался.`
+        : reviewReason
+          ? `\n\n⚠️ <b>Причина:</b> ${escapeHtml(reviewReason)}`
+          : "");
 
   const itemsMessage =
     items.length > 0
@@ -3561,16 +3795,17 @@ async function notifyAdminNewOrder(
   // тут меняется только подпись, чтобы кондитеру не предлагали «выдать» торт.
   const acceptLabel =
     order.fulfillment_kind === "physical" ? "✅ Принять заказ" : "✅ Подтвердить и выдать";
-  const reply_markup = autoDelivered
-    ? undefined
-    : {
-        inline_keyboard: [
-          [
-            { text: acceptLabel, callback_data: `confirm:${order.id}` },
-            { text: "❌ Отклонить", callback_data: `reject:${order.id}` },
+  const reply_markup =
+    autoDelivered || noPaymentNeeded
+      ? undefined
+      : {
+          inline_keyboard: [
+            [
+              { text: acceptLabel, callback_data: `confirm:${order.id}` },
+              { text: "❌ Отклонить", callback_data: `reject:${order.id}` },
+            ],
           ],
-        ],
-      };
+        };
 
   for (const adminChatId of adminIds) {
     // 1) Главное: краткое уведомление с кнопками — отдельно от превью и чека.
@@ -3706,12 +3941,21 @@ async function showSearch(chat_id: number, user: BotUser, query: string, offset 
       const candidates = visibleOf(allActive ?? []);
       const ids = await smartSearchProductIds(
         query,
-        candidates.map((p) => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          keywords: p.keywords,
-        })),
+        candidates.map((p) => {
+          // Блок 10, находка 10.3 — названия вариантов ("1 кг"/"2 кг") не
+          // попадали в кандидаты вовсе: запрос "торт 2 кг" не сопоставлялся
+          // с товаром, у которого именно такой вариант. Дописываем их в
+          // keywords — отдельного поля под варианты в LLM-запросе нет и не
+          // нужно, они не более значимы, чем остальные ключевые слова.
+          const variantNames = (p.product_variants ?? []).map((v) => v.name).join(", ");
+          const keywords = variantNames ? `${p.keywords ?? ""} ${variantNames}`.trim() : p.keywords;
+          return {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            keywords,
+          };
+        }),
       );
       if (ids?.length) {
         const byId = new Map(candidates.map((p) => [p.id, p]));
@@ -3762,7 +4006,7 @@ async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale
   const s = await db();
   const { data } = await s
     .from("orders")
-    .select("id, order_no, display_no, status, total, currency, created_at")
+    .select("id, order_no, display_no, status, total, currency, created_at, fulfillment_kind")
     .eq("telegram_id", telegram_id)
     .order("created_at", { ascending: false })
     .limit(20);
@@ -3770,12 +4014,17 @@ async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale
     await tg("sendMessage", { chat_id, text: m.noOrdersYet });
     return;
   }
+  // Блок 5, находка 5.2 — раньше statusMap знал только 5 цифровых статусов,
+  // и accepted/in_production/ready показывались покупателю сырым кодом.
   const statusMap: Record<string, string> = {
     awaiting_payment: m.statusAwaitingPayment,
     awaiting_confirmation: m.statusAwaitingConfirmation,
     delivering: m.statusDelivering,
     delivered: m.statusDelivered,
     rejected: m.statusRejected,
+    accepted: m.statusAccepted,
+    in_production: m.statusInProduction,
+    ready: m.statusReady,
   };
   const text = data
     .map(
@@ -3789,11 +4038,24 @@ async function showMyOrders(chat_id: number, telegram_id: number, locale: Locale
   const buttons = data
     .filter((o) => o.status === "delivered")
     .map((o) => [
-      { text: m.resendBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `resend:${o.id}` },
+      // "Скачать снова" только для цифровых заказов (Блок 5, находка 5.4) —
+      // раньше кнопка показывалась и на выданный торт, а вела на "⚠️ Не
+      // удалось найти файлы этого заказа" (их у него и не может быть — веб-
+      // панель это уже исключала, бот — нет). "Оценить" остаётся на оба
+      // типа — право на отзыв за физический заказ уже работает корректно.
+      ...(o.fulfillment_kind !== "physical"
+        ? [
+            {
+              text: m.resendBtn(o.display_no ?? o.order_no ?? o.id),
+              callback_data: `resend:${o.id}`,
+            },
+          ]
+        : []),
       ...(reviewOn
         ? [{ text: m.rateBtn(o.display_no ?? o.order_no ?? o.id), callback_data: `rate:${o.id}` }]
         : []),
-    ]);
+    ])
+    .filter((row) => row.length > 0);
   await tg("sendMessage", {
     chat_id,
     text: m.myOrdersHeader(text),
@@ -3976,8 +4238,18 @@ export async function handleUpdate(update: TelegramUpdate) {
         // "add:<productId>" — товар без вариантов; "add:<productId>:<variantId>"
         // — выбранный вариант (Ниши, Блок D, кнопка на карточке товара).
         const [productId, variantId] = data.slice(4).split(":");
-        const added = await addToCart(from_id, productId, variantId || null);
-        await tg("sendMessage", { chat_id, text: added ? m.addedToCart : m.productUnavailable });
+        const addResult = await addToCart(from_id, productId, variantId || null);
+        const addText =
+          addResult === "ok"
+            ? m.addedToCart
+            : addResult === "mixed_cart"
+              ? m.productMixedCartMsg
+              : addResult === "digital_limit"
+                ? m.productDigitalLimitMsg
+                : addResult === "out_of_stock"
+                  ? m.productOutOfStockMsg
+                  : m.productUnavailable;
+        await tg("sendMessage", { chat_id, text: addText });
         return;
       }
       if (data.startsWith("rem:")) {
@@ -4186,6 +4458,12 @@ export async function handleUpdate(update: TelegramUpdate) {
       }
 
       if (data.startsWith("fulfilltype:")) {
+        // Guard по mode (Блок 4, находка 4.6) — тап по кнопке из старого
+        // сообщения (Telegram хранит инлайн-клавиатуры бессрочно) с новой
+        // корзиной/на другом шаге чекаута иначе тихо переписывал бы
+        // checkout_fulfillment_type поверх того, что реально происходит
+        // сейчас.
+        if (user.state?.mode !== "awaiting_fulfillment_type") return;
         const typeRaw = data.slice("fulfilltype:".length);
         if (typeRaw !== "pickup" && typeRaw !== "delivery") return;
         const type: "pickup" | "delivery" = typeRaw;
@@ -4202,6 +4480,11 @@ export async function handleUpdate(update: TelegramUpdate) {
       }
 
       if (data.startsWith("zone:")) {
+        // Guard по mode (Блок 4, находка 4.6/4.7) — тап по старой кнопке
+        // зоны из awaiting_proof (уже другой заказ/шаг) иначе загонял бы
+        // покупателя обратно в awaiting_address, и следующее его сообщение
+        // (например, чек оплаты) съедалось бы как адрес доставки.
+        if (user.state?.mode !== "awaiting_delivery_zone") return;
         const zoneId = data.slice("zone:".length);
         if (cq.message?.message_id) {
           await tg("editMessageReplyMarkup", {
@@ -4235,6 +4518,10 @@ export async function handleUpdate(update: TelegramUpdate) {
       }
 
       if (data === "fulfillnote:skip") {
+        // Guard по mode (Блок 4, находка 4.6) — старая кнопка "Без
+        // комментария" с новой корзиной иначе создавала бы физический
+        // заказ с fulfillment_at = NULL, чего быть не должно (MIGRATION-49).
+        if (user.state?.mode !== "awaiting_fulfillment_note") return;
         if (cq.message?.message_id) {
           await tg("editMessageReplyMarkup", {
             chat_id,
@@ -4355,7 +4642,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           await db()
         )
           .from("orders")
-          .select("order_no, fulfillment_kind, total")
+          .select("order_no, fulfillment_kind, total, status")
           .eq("id", orderId)
           .maybeSingle();
         const shownNo = ordRow?.order_no ?? orderId;
@@ -4363,14 +4650,29 @@ export async function handleUpdate(update: TelegramUpdate) {
         if (ordRow?.fulfillment_kind === "physical") {
           const { acceptOrder, amountDueNow, recordPayment } = await import("./fulfillment.server");
           try {
-            await acceptOrder(orderId);
-            const due = await amountDueNow({
-              total: Number(ordRow.total),
-              fulfillment_kind: ordRow.fulfillment_kind,
-            });
-            await recordPayment(orderId, due).catch((e) =>
-              console.error("[bot] recordPayment failed", orderId, e),
-            );
+            // "awaiting_payment" — покупатель ещё не присылал чек, продавец
+            // принимает на доверие: писать в paid_amount нечего (Блок 1,
+            // находка 1.2). Тот же приём, что в orders.functions.ts
+            // confirmOrder — статус смотрим ДО acceptOrder, она его меняет.
+            const hadProof = ordRow.status !== "awaiting_payment";
+            const result = await acceptOrder(orderId);
+            // alreadyAccepted — двойной тап по той же кнопке (сообщение уже
+            // не редактируется второй раз, но карточка могла остаться
+            // открытой у двух админов) — не задваиваем paid_amount (находка 1.1).
+            if (!result.alreadyAccepted && hadProof) {
+              const due = await amountDueNow({
+                total: Number(ordRow.total),
+                fulfillment_kind: ordRow.fulfillment_kind,
+              });
+              // recordPayment сама не бросает при исчерпанных попытках CAS —
+              // возвращает false (Блок 1, находка 1.8). .catch() ловит только
+              // исключения, false он пропускал молча.
+              const paid = await recordPayment(orderId, due).catch((e) => {
+                console.error("[bot] recordPayment failed", orderId, e);
+                return false;
+              });
+              if (!paid) console.error("[bot] recordPayment returned false", orderId);
+            }
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
           } catch (e: unknown) {
             await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
@@ -4672,7 +4974,18 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (
         orderRow.status === "delivered" ||
         orderRow.status === "rejected" ||
-        orderRow.status === "delivering"
+        orderRow.status === "delivering" ||
+        // Физические статусы (Блок 6) не входили сюда изначально (Блок 3,
+        // находка 3.2): покупатель, уже принятый в работу, присылает ещё
+        // одно фото (например, референс торта) — а pending_order_id всё
+        // ещё указывает на этот заказ, и следующий блок пытался обработать
+        // фото как новый чек: либо откатывал accepted обратно в
+        // awaiting_confirmation/awaiting_payment (ручная/OCR-ветка ниже), либо
+        // при повторном accept удваивал paid_amount, пока не была добавлена
+        // защита alreadyAccepted (Блок 1, находка 1.1).
+        orderRow.status === "accepted" ||
+        orderRow.status === "in_production" ||
+        orderRow.status === "ready"
       ) {
         await tg("sendMessage", {
           chat_id,
@@ -4864,17 +5177,23 @@ export async function handleUpdate(update: TelegramUpdate) {
         try {
           if (orderRow.fulfillment_kind === "physical") {
             const { acceptOrder, recordPayment } = await import("./fulfillment.server");
-            await acceptOrder(orderId);
+            const result = await acceptOrder(orderId);
             // ocrExpectedAmount уже посчитан выше той же amountDueNow() — то,
             // что реально проверил OCR, и есть то, что реально внесено.
-            await recordPayment(orderId, ocrExpectedAmount).catch((e) =>
-              console.error("[bot] recordPayment failed", orderId, e),
-            );
+            // !alreadyAccepted — не задваиваем при повторном срабатывании
+            // (например, покупатель прислал тот же чек дважды), Блок 1,
+            // находка 1.1.
+            if (!result.alreadyAccepted) {
+              const paid = await recordPayment(orderId, ocrExpectedAmount).catch((e) => {
+                console.error("[bot] recordPayment failed", orderId, e);
+                return false;
+              });
+              if (!paid) console.error("[bot] recordPayment returned false", orderId);
+            }
           } else {
             const { deliverOrder } = await import("./orders.server");
             await deliverOrder(orderId);
           }
-          await notifyAdminNewOrder(orderId, proofFileId, proofKind, { autoDelivered: true });
         } catch (e: unknown) {
           console.error("[bot] auto-deliver after proof failed", orderId, e);
           await supabaseAdmin
@@ -4888,7 +5207,18 @@ export async function handleUpdate(update: TelegramUpdate) {
           await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
             reviewReason: "Ошибка выдачи после успешного OCR",
           });
+          return;
         }
+        // Уведомление админу — за пределами try выше (Блок 3, находка 3.3):
+        // acceptOrder/recordPayment/deliverOrder к этому моменту уже
+        // отработали успешно, и сбой одной лишь отправки Telegram-сообщения
+        // (429/таймаут) не должен откатывать уже принятый и оплаченный
+        // заказ обратно в "awaiting_confirmation" — раньше откатывал, весь
+        // блок был одним try.
+        await notifyAdminNewOrder(orderId, proofFileId, proofKind, { autoDelivered: true }).catch(
+          (e) =>
+            console.error("[bot] notifyAdminNewOrder failed after successful accept", orderId, e),
+        );
         return;
       }
 
@@ -4932,6 +5262,28 @@ export async function handleUpdate(update: TelegramUpdate) {
       return;
     }
 
+    // Способ получения физического заказа — текстовый фолбэк (Блок 4,
+    // находка 4.4). Раньше у этого шага не было своего mode вовсе (см.
+    // proceedToFulfillmentOrPlace), и покупатель, напечатавший "самовывоз"
+    // вместо тапа по кнопке, улетал в общий поиск товара с сообщением
+    // "ничего не найдено" — чекаут молча обрывался.
+    if (user.state?.mode === "awaiting_fulfillment_type" && msg.text) {
+      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+        await setState(from.id, { ...user.state, mode: "idle" });
+        // Fallthrough to the main menu switch below
+      } else {
+        const { matchFulfillmentType } = await import("./direct-flow");
+        const type = matchFulfillmentType(msg.text);
+        if (!type) {
+          await tg("sendMessage", { chat_id, text: m.fulfillmentTypePrompt });
+          return;
+        }
+        const nextState = { ...user.state, checkout_fulfillment_type: type };
+        await askFulfillmentDate(chat_id, from.id, nextState, locale);
+        return;
+      }
+    }
+
     // Дата получения физического заказа (Ниши, Блок 8) — тот же escape hatch.
     if (user.state?.mode === "awaiting_fulfillment_date" && msg.text) {
       if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
@@ -4946,8 +5298,14 @@ export async function handleUpdate(update: TelegramUpdate) {
           isoDateToDisplay,
         } = await import("./fulfillment.server");
         const iso = parseFulfillmentDateInput(msg.text);
-        const minDays = await maxLeadTimeDaysInCart(from.id);
-        const minIso = addDaysToIsoDate(todayInAppTZ(), minDays);
+        // Замороженная на шаге вопроса граница (Блок 4, находка 4.22) — не
+        // пересчитываем заново, чтобы не отклонить дату, которую сам бот
+        // только что назвал допустимой. Отсутствие в state — только для
+        // уже начатых до этой правки чекаутов, которым некуда было её
+        // положить; тогда считаем как раньше.
+        const minIso =
+          user.state?.checkout_min_fulfillment_date ??
+          addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(from.id));
         if (!iso) {
           await tg("sendMessage", { chat_id, text: m.fulfillmentDateInvalid });
           return;
@@ -4987,15 +5345,19 @@ export async function handleUpdate(update: TelegramUpdate) {
         // Fallthrough to the main menu switch below
       } else {
         const { activeDeliveryZones } = await import("./fulfillment.server");
+        const { matchZone } = await import("./direct-flow");
         const zones = await activeDeliveryZones();
-        const typed = msg.text.trim().toLowerCase();
-        const matched = zones.find((z) => z.name.trim().toLowerCase() === typed);
-        if (matched) {
+        // matchZone (Блок 4, находка 4.23) — тот же приём, что уже был у
+        // Direct: понимает порядковый номер и совпадение по началу названия,
+        // не только точное совпадение целиком.
+        const matched = matchZone(msg.text, zones);
+        const fullZone = matched ? zones.find((z) => z.id === matched.id) : null;
+        if (fullZone) {
           const withZone = {
             ...user.state,
-            checkout_delivery_zone_id: matched.id,
-            checkout_delivery_zone_name: matched.name,
-            checkout_delivery_fee: Number(matched.price),
+            checkout_delivery_zone_id: fullZone.id,
+            checkout_delivery_zone_name: fullZone.name,
+            checkout_delivery_fee: Number(fullZone.price),
             mode: "awaiting_address" as const,
           };
           await setState(from.id, withZone);

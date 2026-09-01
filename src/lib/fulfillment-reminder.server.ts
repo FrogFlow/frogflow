@@ -29,7 +29,8 @@ const BUYER_TEXT: Record<Locale, (displayNo: number | string, dateLabel: string)
   uz: (n, d) => `⏰ Eslatma: #${n} buyurtma ertaga, ${d} kuni olinadi.`,
 };
 
-async function notifyAdminsAboutUpcomingFulfillment(text: string): Promise<void> {
+/** Возвращает true, если напоминание реально ушло хотя бы одному админу (Блок 3, находка 3.9). */
+async function notifyAdminsAboutUpcomingFulfillment(text: string): Promise<boolean> {
   const { tg } = await import("./telegram.server");
   const s = await db();
   const { data: setting } = await s
@@ -39,18 +40,21 @@ async function notifyAdminsAboutUpcomingFulfillment(text: string): Promise<void>
     .maybeSingle();
 
   const raw = setting?.value?.trim();
-  if (!raw) return;
+  if (!raw) return false;
 
+  let anyOk = false;
   for (const chatId of raw
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean)) {
     try {
       await tg("sendMessage", { chat_id: chatId, text, parse_mode: "HTML" });
+      anyOk = true;
     } catch (e) {
       console.error("[fulfillment-reminder] notifyAdminsAboutUpcomingFulfillment failed", e);
     }
   }
+  return anyOk;
 }
 
 export async function sendFulfillmentReminders(): Promise<{ checked: number; sent: number }> {
@@ -60,6 +64,11 @@ export async function sendFulfillmentReminders(): Promise<{ checked: number; sen
   const now = new Date();
   const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
+  // Незакрытые статусы физического заказа — не только PHYSICAL_STATUSES
+  // (accepted/in_production/ready). Заказ, который продавец ещё не принял
+  // (awaiting_confirmation/awaiting_payment), но у которого дата получения
+  // уже завтра — это ровно тот случай, где напоминание нужнее всего: он
+  // рискует остаться незамеченным до самой даты (Блок 3, находка 3.8).
   // Верхняя граница окна — уже в самом запросе (экономит чтение заказов,
   // которым ещё рано), нижняя (fulfillment_at > now) и «уже отправлено» —
   // добавочная перепроверка isFulfillmentReminderEligible: она же защищает
@@ -71,7 +80,7 @@ export async function sendFulfillmentReminders(): Promise<{ checked: number; sen
       "id, order_no, display_no, telegram_id, fulfillment_at, fulfillment_type, fulfillment_address, fulfillment_reminder_sent_at",
     )
     .eq("fulfillment_kind", "physical")
-    .in("status", [...PHYSICAL_STATUSES])
+    .in("status", ["awaiting_confirmation", "awaiting_payment", ...PHYSICAL_STATUSES])
     .not("fulfillment_at", "is", null)
     .lte("fulfillment_at", in24h.toISOString())
     .is("fulfillment_reminder_sent_at", null);
@@ -98,6 +107,14 @@ export async function sendFulfillmentReminders(): Promise<{ checked: number; sen
       .maybeSingle();
     if (!claimed) continue;
 
+    // Захват — до отправки, тем же приёмом, что и остальные напоминания
+    // проекта (cart-reminder и т.д.): параллельный запуск крона не должен
+    // отправить дважды. Откат claim'а при сбое отправки сюда сознательно
+    // не добавлен — постоянно недоступный покупатель (заблокировал бота,
+    // разрыв с Direct-каналом) заново пытался бы каждый час без остановки,
+    // без потолка повторов (такой есть только у выдачи файлов,
+    // DELIVERY_MAX_RETRIES). Отправка — лучшее старание, как и везде в
+    // проекте; неудача просто уходит в лог.
     const displayNo = order.display_no ?? order.order_no ?? order.id;
     const dateLabel = isoDateToDisplay(order.fulfillment_at!.slice(0, 10));
 
@@ -116,7 +133,14 @@ export async function sendFulfillmentReminders(): Promise<{ checked: number; sen
     );
 
     const typeLabel = order.fulfillment_type === "delivery" ? "Доставка" : "Самовывоз";
-    const addressLine = order.fulfillment_address ? `\n📍 ${order.fulfillment_address}` : "";
+    // escapeHtml — сообщение продавцу идёт с parse_mode: "HTML", а адрес
+    // это свободный текст покупателя (Блок 6, находка 6.10): символ "<" в
+    // адресе рвал HTML-разметку, Telegram отвечал 400, и продавец не
+    // получал напоминание вовсе — тихо, только в console.error.
+    const { escapeHtml } = await import("./vip-bot.server");
+    const addressLine = order.fulfillment_address
+      ? `\n📍 ${escapeHtml(order.fulfillment_address)}`
+      : "";
     await notifyAdminsAboutUpcomingFulfillment(
       `⏰ Завтра (${dateLabel}) — заказ #${displayNo}. ${typeLabel}.${addressLine}`,
     );

@@ -117,12 +117,32 @@ async function claimOrderForDelivery(orderId: number) {
 }
 
 /**
+ * Статусы, из которых заказ можно отклонить — шире DELIVERABLE_STATUSES:
+ * та константа гейтит только "можно ли попытаться выдать/принять", а
+ * отменить нужно и уже принятый физический заказ (Блок 3, находка 3.1 —
+ * "Торт заказан, покупательница передумала" — рутина, а не редкий случай).
+ * Ровно те же три значения, что PHYSICAL_STATUSES в fulfillment.server.ts —
+ * не импортируем оттуда напрямую, чтобы не заводить циклическую зависимость
+ * (fulfillment.server.ts сам импортирует DELIVERABLE_STATUSES отсюда).
+ */
+const REJECTABLE_STATUSES = [
+  ...DELIVERABLE_STATUSES,
+  "accepted",
+  "in_production",
+  "ready",
+] as const;
+
+/**
  * Reject an order with the same compare-and-swap guard deliverOrder uses:
  * a stray reject: tap or a stale button in the admin chat must not stomp a
  * status that already left the awaiting-* set (delivered, delivering,
  * already rejected). `note` is only written when the caller actually passed
  * one — the admin_note column also carries the `proof_auto` OCR marker, and
  * an unconditional write here used to erase it on every reject.
+ *
+ * Деньги (paid_amount) отклонение не трогает — возврат средств в проекте
+ * нигде не автоматизирован (ни для digital, ни для physical), продавец
+ * улаживает его сам вне системы; факт "что было внесено" остаётся в записи.
  */
 export async function rejectOrderSafely(orderId: number, note?: string | null) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -131,7 +151,7 @@ export async function rejectOrderSafely(orderId: number, note?: string | null) {
     .from("orders")
     .update({ status: "rejected", ...(note !== undefined ? { admin_note: note } : {}) })
     .eq("id", orderId)
-    .in("status", [...DELIVERABLE_STATUSES])
+    .in("status", [...REJECTABLE_STATUSES])
     .select("order_no, display_no, telegram_id")
     .maybeSingle();
 

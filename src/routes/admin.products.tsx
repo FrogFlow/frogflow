@@ -201,6 +201,8 @@ const copy: Record<
     photosLabel: string;
     countryPricesTitle: string;
     countryPricesHint: string;
+    /** Блок 8, находка 8.3 — редактор показывался всегда, включая товар с вариантами, где ручная цена по стране молча игнорируется. */
+    countryPricesUnavailableWithVariants: string;
     autoPlaceholder: string;
     materialLabel: (langName: string) => string;
     addLanguageBtn: string;
@@ -227,6 +229,8 @@ const copy: Record<
     uploadPhotoError: (msg: string) => string;
     uploadFileError: (langName: string, msg: string) => string;
     saveError: (msg: string) => string;
+    /** Блок 8, находка 8.6 — раньше пустое имя варианта отбивалось только Zod на сервере, сырым сообщением. */
+    variantNameRequired: string;
     deleteError: (msg: string) => string;
     unknownError: string;
     confirmDelete: string;
@@ -271,6 +275,8 @@ const copy: Record<
     countryPricesTitle: "Цены для разных стран (вручную)",
     countryPricesHint:
       "Если оставить поле пустым — будет работать автоматическая конвертация базовой цены.",
+    countryPricesUnavailableWithVariants:
+      "Недоступно для товара с вариантами — у каждого варианта своя цена, задайте её выше, в списке вариантов.",
     autoPlaceholder: "Авто (по курсу)",
     materialLabel: (langName) => `📄 Материал (${langName}) — можно несколько файлов/фото`,
     addLanguageBtn: "+ Добавить язык",
@@ -298,6 +304,7 @@ const copy: Record<
     uploadPhotoError: (msg) => `Ошибка загрузки фото: ${msg}`,
     uploadFileError: (langName, msg) => `Ошибка загрузки файла (${langName}): ${msg}`,
     saveError: (msg) => `Ошибка сохранения: ${msg}`,
+    variantNameRequired: "У каждого варианта должно быть название.",
     deleteError: (msg) => `Ошибка удаления: ${msg}`,
     unknownError: "Неизвестная ошибка",
     confirmDelete: "Удалить товар?",
@@ -340,6 +347,8 @@ const copy: Record<
     photosLabel: "Фото (бірнешеуін таңдауға болады)",
     countryPricesTitle: "Түрлі елдерге бағалар (қолмен)",
     countryPricesHint: "Өрісті бос қалдырсаңыз — негізгі бағаның автоматты айырбасы жұмыс істейді.",
+    countryPricesUnavailableWithVariants:
+      "Нұсқалары бар тауар үшін қолжетімсіз — әр нұсқаның өз бағасы бар, оны жоғарыда, нұсқалар тізімінде көрсетіңіз.",
     autoPlaceholder: "Авто (курс бойынша)",
     materialLabel: (langName) => `📄 Материал (${langName}) — бірнеше файл/фото болуы мүмкін`,
     addLanguageBtn: "+ Тіл қосу",
@@ -366,6 +375,7 @@ const copy: Record<
     uploadPhotoError: (msg) => `Фото жүктеу қатесі: ${msg}`,
     uploadFileError: (langName, msg) => `Файл жүктеу қатесі (${langName}): ${msg}`,
     saveError: (msg) => `Сақтау қатесі: ${msg}`,
+    variantNameRequired: "Әр нұсқаның атауы болуы керек.",
     deleteError: (msg) => `Жою қатесі: ${msg}`,
     unknownError: "Белгісіз қате",
     confirmDelete: "Тауарды жою керек пе?",
@@ -408,6 +418,8 @@ const copy: Record<
     photosLabel: "Photos (multiple allowed)",
     countryPricesTitle: "Prices by country (manual)",
     countryPricesHint: "Leave a field empty to use automatic conversion from the base price.",
+    countryPricesUnavailableWithVariants:
+      "Not available for a product with variants — each variant has its own price, set it above in the variant list.",
     autoPlaceholder: "Auto (by rate)",
     materialLabel: (langName) => `📄 Material (${langName}) — multiple files/photos allowed`,
     addLanguageBtn: "+ Add language",
@@ -435,6 +447,7 @@ const copy: Record<
     uploadPhotoError: (msg) => `Failed to upload photo: ${msg}`,
     uploadFileError: (langName, msg) => `Failed to upload file (${langName}): ${msg}`,
     saveError: (msg) => `Save error: ${msg}`,
+    variantNameRequired: "Every variant needs a name.",
     deleteError: (msg) => `Delete error: ${msg}`,
     unknownError: "Unknown error",
     confirmDelete: "Delete this product?",
@@ -478,6 +491,8 @@ const copy: Record<
     countryPricesTitle: "Mamlakatlar bo‘yicha narxlar (qo‘lda)",
     countryPricesHint:
       "Maydonni bo‘sh qoldirsangiz — asosiy narxning avtomatik konvertatsiyasi ishlaydi.",
+    countryPricesUnavailableWithVariants:
+      "Variantli mahsulot uchun mavjud emas — har bir variantning o‘z narxi bor, uni yuqorida, variantlar ro‘yxatida belgilang.",
     autoPlaceholder: "Avto (kurs bo‘yicha)",
     materialLabel: (langName) => `📄 Material (${langName}) — bir nechta fayl/foto mumkin`,
     addLanguageBtn: "+ Til qo‘shish",
@@ -505,6 +520,7 @@ const copy: Record<
     uploadPhotoError: (msg) => `Fotoni yuklashda xato: ${msg}`,
     uploadFileError: (langName, msg) => `Faylni yuklashda xato (${langName}): ${msg}`,
     saveError: (msg) => `Saqlash xatosi: ${msg}`,
+    variantNameRequired: "Har bir variant nomga ega bo‘lishi kerak.",
     deleteError: (msg) => `O‘chirish xatosi: ${msg}`,
     unknownError: "Noma’lum xato",
     confirmDelete: "Mahsulotni o‘chirasizmi?",
@@ -741,6 +757,13 @@ function ProductsPage() {
     // без только что выбранного файла, хотя продавец уверен, что он уже
     // приложен (Блок 4.8).
     if (imagesUpload || anyMaterialUploading) return;
+    // Блок 8, находка 8.6 — раньше пустое имя варианта форма принимала
+    // молча, и падало только серверное Zod-сообщение, роняя всё сохранение
+    // товара целиком, включая уже загруженные фото/файлы.
+    if (variants.some((v) => !v.name.trim())) {
+      toast.error(tr.variantNameRequired);
+      return;
+    }
     setSaving(true);
     try {
       await saveProduct({
@@ -774,7 +797,10 @@ function ProductsPage() {
           stock_quantity: editing.stock_quantity,
           fulfillment_kind: editing.fulfillment_kind ?? "digital",
           lead_time_days: editing.lead_time_days,
-          variants: variants.map((v) => ({ name: v.name, price: Number(v.price) })),
+          // id — Блок 8, находка 8.1/8.2: без него сервер не может отличить
+          // отредактированный вариант от нового и был вынужден пересоздавать
+          // все варианты целиком при любом сохранении товара.
+          variants: variants.map((v) => ({ id: v.id, name: v.name, price: Number(v.price) })),
         },
       });
       setEditing(null);
@@ -1043,31 +1069,44 @@ function ProductsPage() {
           {pMethods.data && pMethods.data.length > 0 && (
             <div className="space-y-4 pt-4 border-t">
               <h3 className="font-medium">{tr.countryPricesTitle}</h3>
-              <p className="text-xs text-muted-foreground">{tr.countryPricesHint}</p>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {pMethods.data.map((m) => (
-                  <div key={m.country_code} className="space-y-2">
-                    <Label>
-                      {m.country_name} ({m.currency})
-                    </Label>
-                    <Input
-                      type="number"
-                      placeholder={tr.autoPlaceholder}
-                      value={editing.country_prices?.[m.country_code] ?? ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const newPrices = { ...editing.country_prices };
-                        if (val === "") {
-                          delete newPrices[m.country_code];
-                        } else {
-                          newPrices[m.country_code] = Number(val);
-                        }
-                        setEditing({ ...editing, country_prices: newPrices });
-                      }}
-                    />
+              {variants.length === 0 ? (
+                <>
+                  <p className="text-xs text-muted-foreground">{tr.countryPricesHint}</p>
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {pMethods.data.map((m) => (
+                      <div key={m.country_code} className="space-y-2">
+                        <Label>
+                          {m.country_name} ({m.currency})
+                        </Label>
+                        <Input
+                          type="number"
+                          placeholder={tr.autoPlaceholder}
+                          value={editing.country_prices?.[m.country_code] ?? ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const newPrices = { ...editing.country_prices };
+                            if (val === "") {
+                              delete newPrices[m.country_code];
+                            } else {
+                              newPrices[m.country_code] = Number(val);
+                            }
+                            setEditing({ ...editing, country_prices: newPrices });
+                          }}
+                        />
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : (
+                // Блок 8, находка 8.3 — раньше этот редактор показывался
+                // всегда, включая товар с вариантами, где resolvePrice
+                // (pricing.server.ts) ручную цену по стране молча не ищет
+                // вовсе: продавец заполнял поля, которые ни на что не
+                // влияли, и не мог об этом узнать.
+                <p className="text-xs text-muted-foreground">
+                  {tr.countryPricesUnavailableWithVariants}
+                </p>
+              )}
             </div>
           )}
 
@@ -1219,7 +1258,20 @@ function ProductsPage() {
                           .filter(Boolean)
                           .join(", ") || tr.noCategory
                       : p.categories?.name || tr.noCategory}{" "}
-                    · {p.price} {p.currency}
+                    ·{" "}
+                    {(() => {
+                      // Блок 8, находка 8.4 — p.price для товара с
+                      // вариантами магазин никогда не берёт (resolvePrice
+                      // подставляет variant.price вместо него), но каталог
+                      // печатал именно его — цену, которую уже нельзя
+                      // поправить в форме (поле там скрыто).
+                      const vs = (p.product_variants ?? []) as Variant[];
+                      if (vs.length === 0) return `${p.price} ${p.currency}`;
+                      const prices = vs.map((v) => Number(v.price));
+                      const min = Math.min(...prices);
+                      const max = Math.max(...prices);
+                      return min === max ? `${min} ${p.currency}` : `${min}–${max} ${p.currency}`;
+                    })()}
                     {(() => {
                       // Физический товар ничего не выдаёт файлом — красная
                       // пометка «нет файла» здесь была бы ложной тревогой на

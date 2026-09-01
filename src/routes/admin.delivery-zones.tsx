@@ -8,10 +8,12 @@ import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import {
+  countOrdersUsingZone,
   deleteDeliveryZone,
   listDeliveryZones,
   saveDeliveryZone,
 } from "@/lib/delivery-zones.functions";
+import { listPaymentMethods } from "@/lib/payment-methods.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
 
@@ -39,6 +41,10 @@ const copy: Record<
     editShort: string;
     deleteShort: string;
     confirmDelete: string;
+    /** Блок 9, находка 9.3 — предупреждение о ещё не закрытых заказах на эту зону. */
+    confirmDeleteWithOrders: (n: number) => string;
+    /** Блок 9, находка 9.4 — цена не заполнена/не число. */
+    priceInvalid: string;
     saveError: (msg: string) => string;
     deleteError: (msg: string) => string;
   }
@@ -63,6 +69,9 @@ const copy: Record<
     editShort: "Изм.",
     deleteShort: "Удал.",
     confirmDelete: "Удалить зону доставки?",
+    confirmDeleteWithOrders: (n) =>
+      `Удалить зону доставки? Она используется в ${n} ещё не закрытых заказах — их история не пострадает (имя и цена зоны уже сохранены в самом заказе), но выбрать эту зону для новых заказов будет нельзя.`,
+    priceInvalid: "Укажите цену доставки числом от 0 и больше.",
     saveError: (msg) => `Ошибка при сохранении: ${msg}`,
     deleteError: (msg) => `Не удалось удалить зону: ${msg}`,
   },
@@ -86,6 +95,9 @@ const copy: Record<
     editShort: "Өзг.",
     deleteShort: "Жою",
     confirmDelete: "Жеткізу аймағын жою керек пе?",
+    confirmDeleteWithOrders: (n) =>
+      `Жеткізу аймағын жою керек пе? Ол әлі жабылмаған ${n} тапсырыста қолданылады — олардың тарихы зардап шекпейді (аймақтың атауы мен бағасы тапсырыста сақталған), бірақ жаңа тапсырыстарда бұл аймақты таңдау мүмкін болмайды.`,
+    priceInvalid: "Жеткізу бағасын 0-ден үлкен немесе тең сан ретінде көрсетіңіз.",
     saveError: (msg) => `Сақтау кезінде қате: ${msg}`,
     deleteError: (msg) => `Аймақты жою мүмкін болмады: ${msg}`,
   },
@@ -109,6 +121,9 @@ const copy: Record<
     editShort: "Edit",
     deleteShort: "Delete",
     confirmDelete: "Delete this delivery zone?",
+    confirmDeleteWithOrders: (n) =>
+      `Delete this delivery zone? It's used in ${n} still-open orders — their history is unaffected (the zone's name and price are already saved on the order), but new orders won't be able to pick it.`,
+    priceInvalid: "Enter a delivery price as a number, 0 or higher.",
     saveError: (msg) => `Failed to save: ${msg}`,
     deleteError: (msg) => `Failed to delete the zone: ${msg}`,
   },
@@ -132,6 +147,9 @@ const copy: Record<
     editShort: "Tahr.",
     deleteShort: "O‘chir.",
     confirmDelete: "Yetkazib berish zonasini o‘chirasizmi?",
+    confirmDeleteWithOrders: (n) =>
+      `Yetkazib berish zonasini o‘chirasizmi? U hali yopilmagan ${n} ta buyurtmada ishlatilgan — ularning tarixi zarar ko‘rmaydi (zona nomi va narxi buyurtmada allaqachon saqlangan), lekin yangi buyurtmalarda bu zonani tanlab bo‘lmaydi.`,
+    priceInvalid: "Yetkazib berish narxini 0 yoki undan katta son sifatida kiriting.",
     saveError: (msg) => `Saqlashda xato: ${msg}`,
     deleteError: (msg) => `Zonani o‘chirib bo‘lmadi: ${msg}`,
   },
@@ -160,8 +178,26 @@ function DeliveryZonesPage() {
   const list = (zones.data ?? []) as Zone[];
   const [editing, setEditing] = useState<Zone | null>(null);
 
+  // Валюта зоны (Блок 9, находка 9.1) — delivery_zones.price по замыслу
+  // MIGRATION-52 не конвертируется, значит указана в домашней валюте
+  // продавца; тем же приёмом определения "домашней" страны, что
+  // pricing.server.ts (loadMethods): первая не-OTHER страна по sort_order.
+  const pMethods = useQuery({
+    queryKey: ["payment-methods"],
+    queryFn: () => listPaymentMethods(),
+  });
+  const homeCurrency =
+    (pMethods.data ?? []).find((m) => m.country_code !== "OTHER")?.currency ?? "";
+
   async function onSave() {
     if (!editing) return;
+    // Блок 9, находка 9.4 — раньше пустое поле цены давало NaN, отправленный
+    // на сервер, и падало сырым сообщением Zod ("Expected number, received
+    // nan"), которое ничего не говорит продавцу.
+    if (!Number.isFinite(editing.price) || editing.price < 0) {
+      toast.error(tr.priceInvalid);
+      return;
+    }
     try {
       await saveDeliveryZone({ data: editing });
       setEditing(null);
@@ -171,7 +207,16 @@ function DeliveryZonesPage() {
     }
   }
   async function onDelete(id: string) {
-    if (!(await confirmToast(tr.confirmDelete))) return;
+    // Блок 9, находка 9.3 — считаем открытые заказы на эту зону до
+    // подтверждения удаления, чтобы продавец не удалял её вслепую.
+    let message = tr.confirmDelete;
+    try {
+      const { count } = await countOrdersUsingZone({ data: { id } });
+      if (count > 0) message = tr.confirmDeleteWithOrders(count);
+    } catch (e: unknown) {
+      console.error("[admin.delivery-zones] countOrdersUsingZone failed", e);
+    }
+    if (!(await confirmToast(message))) return;
     try {
       await deleteDeliveryZone({ data: { id } });
       qc.invalidateQueries({ queryKey: ["delivery-zones"] });
@@ -200,7 +245,10 @@ function DeliveryZonesPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>{tr.price}</Label>
+              <Label>
+                {tr.price}
+                {homeCurrency ? ` (${homeCurrency})` : ""}
+              </Label>
               <Input
                 type="number"
                 value={editing.price}
@@ -252,7 +300,10 @@ function DeliveryZonesPage() {
                 {z.name}
                 {!z.is_active && <span className="text-xs text-muted-foreground">{tr.hidden}</span>}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">{z.price}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {z.price}
+                {homeCurrency ? ` ${homeCurrency}` : ""}
+              </div>
             </div>
             <div className="flex gap-1 shrink-0">
               <Button size="sm" variant="outline" onClick={() => setEditing(z)}>

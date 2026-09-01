@@ -110,6 +110,14 @@ export type DirectState = {
   /** ISO YYYY-MM-DD. */
   checkout_fulfillment_at?: string;
   /**
+   * Минимально допустимая дата, замороженная в момент показа вопроса
+   * (Блок 4, находка 4.22, то же в bot.server.ts) — не пересчитываем на
+   * шаге проверки ответа, чтобы правка срока изготовления продавцом между
+   * вопросом и ответом не отклонила дату, которую сам бот только что
+   * назвал допустимой.
+   */
+  checkout_min_fulfillment_date?: string;
+  /**
    * Выбранная зона доставки (Ниши, Блок B) — id и снимок имени/цены на
    * момент выбора. Заводится только если у продавца есть хоть одна
    * активная зона; иначе шаг пропускается целиком (обратная
@@ -555,7 +563,7 @@ export async function resolveProductPrice(
   return await resolvePrice(product, countryCode, variant);
 }
 
-const countryPromptCopy: Record<Locale, { question: string; answerHint: string }> = {
+export const countryPromptCopy: Record<Locale, { question: string; answerHint: string }> = {
   ru: {
     question: "Из какой вы страны? Реквизиты для оплаты у каждой свои.",
     answerHint: "Ответьте номером или названием.",
@@ -573,6 +581,25 @@ const countryPromptCopy: Record<Locale, { question: string; answerHint: string }
     answerHint: "Raqami yoki nomi bilan javob bering.",
   },
 };
+
+/**
+ * Подписи для WhatsApp-списка выбора страны (Блок 5, находка 5.7) — раньше
+ * questin/buttonLabel/section title были захардкожены по-русски прямо в
+ * zernio-bot.server.ts, хотя соседняя Instagram-ветка двумя строками ниже
+ * уже корректно звала renderCountryPrompt(options, locale).
+ */
+export function whatsappCountryListCopy(locale: Locale): {
+  buttonLabel: string;
+  sectionTitle: string;
+} {
+  const table: Record<Locale, { buttonLabel: string; sectionTitle: string }> = {
+    ru: { buttonLabel: "Выбрать страну", sectionTitle: "Страна" },
+    kk: { buttonLabel: "Елді таңдау", sectionTitle: "Ел" },
+    en: { buttonLabel: "Choose country", sectionTitle: "Country" },
+    uz: { buttonLabel: "Davlatni tanlash", sectionTitle: "Davlat" },
+  };
+  return table[locale];
+}
 
 /** Список стран, пронумерованный — покупатель отвечает цифрой или названием. */
 export function renderCountryPrompt(options: CountryOption[], locale: Locale = "ru"): string {
@@ -607,11 +634,18 @@ const deliveryZonePromptCopy: Record<Locale, { question: string; answerHint: str
  * кнопки Zernio (лимит — три на сообщение) уже не помещаются.
  */
 export function renderDeliveryZonePrompt(
-  options: Array<{ name: string }>,
+  options: Array<{ name: string; price: number }>,
   locale: Locale = "ru",
+  currency = "",
 ): string {
+  // Цена рядом с названием (Блок 4, находка 4.2) — тем же приёмом, что уже
+  // есть у renderVariantPrompt ниже: раньше показывалось только название,
+  // покупатель выбирал зону вслепую.
   const copy = deliveryZonePromptCopy[locale];
-  const lines = options.map((option, index) => `${index + 1}. ${option.name}`);
+  const lines = options.map(
+    (option, index) =>
+      `${index + 1}. ${option.name} — +${option.price}${currency ? ` ${currency}` : ""}`,
+  );
   return `${copy.question}\n\n${lines.join("\n")}\n\n${copy.answerHint}`;
 }
 
@@ -843,25 +877,51 @@ export async function notifyAdminAboutDirectOrder(
   const raw = setting?.value?.trim();
   if (!raw) return;
 
+  // Блок 6, находка 6.2 — раньше select не включал ни quantity в позициях,
+  // ни одно физическое поле (fulfillment_kind/_type/_at/_address/_note,
+  // delivery_zone_name): продавец узнавал о дате и адресе торта только из
+  // админки, хотя именно из этого сообщения он и подтверждает заказ.
   const { data: order } = await s
     .from("orders")
     .select(
-      "platform, total, currency, username, display_name, payment_proof_path, order_items(name_snapshot, price_snapshot)",
+      "platform, total, currency, username, display_name, payment_proof_path, fulfillment_kind, fulfillment_type, fulfillment_at, fulfillment_address, fulfillment_note, delivery_zone_name, order_items(name_snapshot, price_snapshot, quantity)",
     )
     .eq("id", orderId)
     .maybeSingle();
 
-  const items = ((order?.order_items ?? []) as Array<{ name_snapshot: string }>)
-    .map((item) => `• ${item.name_snapshot}`)
+  const items = ((order?.order_items ?? []) as Array<{ name_snapshot: string; quantity: number }>)
+    .map((item) => `• ${item.name_snapshot}${item.quantity > 1 ? ` × ${item.quantity}` : ""}`)
     .join("\n");
   const platform: ZernioPlatform = order?.platform === "whatsapp" ? "whatsapp" : "instagram";
   const platformLabel = PLATFORM_LABEL[platform];
+  const isPhysical = order?.fulfillment_kind === "physical";
   const deliveryTarget = platform === "whatsapp" ? "в WhatsApp" : "на почту";
   const who = order?.username
     ? platform === "whatsapp"
       ? order.username
       : `@${order.username}`
     : order?.display_name || "покупатель";
+
+  let fulfillmentLine = "";
+  if (isPhysical) {
+    const { isoDateToDisplay } = await import("./fulfillment.server");
+    // escapeHtml — сообщение идёт с parse_mode: "HTML", а адрес и надпись на
+    // торте — свободный текст покупателя (тот же приём, что уже применён в
+    // fulfillment-reminder.server.ts, Блок 6, находка 6.10): без экранирования
+    // символ "<" в адресе рвёт разметку, Telegram отвечает 400, и продавец
+    // вовсе не получает уведомление о новом заказе.
+    const { escapeHtml } = await import("./vip-bot.server");
+    const typeLabel = order?.fulfillment_type === "delivery" ? "🚚 Доставка" : "🏠 Самовывоз";
+    const dateLabel = order?.fulfillment_at
+      ? isoDateToDisplay(String(order.fulfillment_at).slice(0, 10))
+      : "—";
+    const addressLine =
+      order?.fulfillment_type === "delivery"
+        ? `\n📍 ${escapeHtml(order.fulfillment_address || "—")}${order.delivery_zone_name ? ` (${escapeHtml(order.delivery_zone_name)})` : ""}`
+        : "";
+    const noteLine = order?.fulfillment_note ? `\n✏️ ${escapeHtml(order.fulfillment_note)}` : "";
+    fulfillmentLine = `\n${typeLabel} — ${dateLabel}${addressLine}${noteLine}\n`;
+  }
 
   const { tg } = await import("./telegram.server");
   for (const chatId of raw
@@ -870,17 +930,26 @@ export async function notifyAdminAboutDirectOrder(
     .filter(Boolean)) {
     try {
       const needsAction = options?.needsAction !== false;
+      // Текст и кнопка — по fulfillment_kind (Блок 6, находка 6.2): раньше
+      // они были захардкожены под цифровую выдачу («материалы уйдут на
+      // почту/в WhatsApp», «✅ Подтвердить и выдать») даже для торта.
+      const confirmLabel = isPhysical ? "✅ Принять заказ" : "✅ Подтвердить и выдать";
+      const actionHint = isPhysical
+        ? "Сверьте чек и нажмите кнопку ниже, чтобы принять заказ в работу."
+        : `Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю ${deliveryTarget}.`;
+      const doneHint = isPhysical
+        ? "Заказ уже принят в работу — делать ничего не нужно."
+        : `Материалы уже отправлены покупателю ${deliveryTarget} — делать ничего не нужно.`;
       await tg("sendMessage", {
         chat_id: chatId,
         text:
           `📸 <b>Заказ №${displayNo} из ${platformLabel}</b>\n\n` +
           `От: ${who}\n` +
-          `Сумма: <b>${order?.total ?? "?"} ${order?.currency ?? ""}</b>\n\n` +
+          `Сумма: <b>${order?.total ?? "?"} ${order?.currency ?? ""}</b>\n` +
+          `${fulfillmentLine}\n` +
           `${items || "(состав недоступен)"}\n\n` +
           (options?.verdict ? `Чек: ${options.verdict}\n\n` : "") +
-          (needsAction
-            ? `Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю ${deliveryTarget}.`
-            : `Материалы уже отправлены покупателю ${deliveryTarget} — делать ничего не нужно.`),
+          (needsAction ? actionHint : doneHint),
         parse_mode: "HTML",
         /**
          * Кнопки прямо здесь, а не «зайдите в админку».
@@ -901,7 +970,7 @@ export async function notifyAdminAboutDirectOrder(
               reply_markup: {
                 inline_keyboard: [
                   [
-                    { text: "✅ Подтвердить и выдать", callback_data: `confirm:${orderId}` },
+                    { text: confirmLabel, callback_data: `confirm:${orderId}` },
                     { text: "❌ Отклонить", callback_data: `reject:${orderId}` },
                   ],
                 ],
@@ -1412,7 +1481,12 @@ export async function priceCart(
  */
 export function renderCart(priced: PricedLine[]): string {
   return priced
-    .map((line, index) => `${index + 1}. ${line.name} — ${line.sum} ${line.currency}`)
+    .map(
+      (line, index) =>
+        // Количество — Блок 4, находка 4.18: раньше строка "Торт — 36000 KZT"
+        // не говорила, что это цена уже за 3 штуки, а не за одну.
+        `${index + 1}. ${line.name}${line.quantity > 1 ? ` × ${line.quantity}` : ""} — ${line.sum} ${line.currency}`,
+    )
     .join("\n");
 }
 
@@ -1473,7 +1547,17 @@ export async function createOrderFromCart(params: {
   const priced =
     params.frozenPriced ?? (await priceCart(await readCart(params.user), params.countryCode));
   if (priced.lines.length === 0) return null;
-  const { total: amount, currency } = priced;
+  const { currency } = priced;
+  // Комиссия зоны доставки — уже сложена в params.frozenPriced.total
+  // вызывающим (sendDirectPaymentDetails), но на фолбэк-ветке (сегодня
+  // недостижимой — единственный вызывающий всегда передаёт frozenPriced,
+  // Блок 1, находка 1.12) priceCart() о зоне не знает и молча потерял бы её
+  // из total, хотя delivery_zone_id/_fee всё равно запишутся ниже.
+  // Складываем защитно, а не полагаемся на то, что фолбэк никогда не
+  // используется.
+  const amount = params.frozenPriced
+    ? priced.total
+    : priced.total + (params.deliveryZone?.fee ?? 0);
 
   const platform: ZernioPlatform = params.user.platform === "whatsapp" ? "whatsapp" : "instagram";
   const customerLabel =

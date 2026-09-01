@@ -134,3 +134,37 @@ describe("resolvePrice — модуль multi_currency выключен", () => 
     expect(await resolvePrice(product, null)).toEqual({ amount: 1000, currency: "KZT" });
   });
 });
+
+/**
+ * Блок 12, находка 12.6 — resolvePrice с третьим аргументом (вариант,
+ * Ниши, Блок D): все 9 сценариев выше вызывали функцию только без него.
+ * Отдельно фиксируем сознательный обход ручной цены по стране для
+ * варианта (Блок 8, находка 8.3, docblock pricing.server.ts:14-24) —
+ * поведение неочевидное и раньше не было закреплено регрессионным тестом.
+ */
+describe("resolvePrice — вариант (Ниши, Блок D)", () => {
+  const variant = { price: 500 };
+
+  it("подставляет цену варианта вместо базовой products.price", async () => {
+    const plain = { price: 1000, currency: "KZT", country_prices: null };
+    expect(await resolvePrice(plain, "KZ", variant)).toEqual({ amount: 500, currency: "KZT" });
+  });
+
+  it("курс всё ещё применяется к цене варианта для другой страны", async () => {
+    const plain = { price: 1000, currency: "KZT", country_prices: null };
+    expect(await resolvePrice(plain, "RU", variant)).toEqual({ amount: 80, currency: "RUB" });
+  });
+
+  it("ручная цена страны (country_prices) для варианта не ищется — сознательный обход", async () => {
+    // product.country_prices.KZ = 800 — для товара без варианта resolvePrice
+    // вернул бы именно 800 (см. тест "для Казахстана берёт ручную цену"
+    // выше); с вариантом эта ручная цена игнорируется целиком.
+    expect(await resolvePrice(product, "KZ", variant)).toEqual({ amount: 500, currency: "KZT" });
+  });
+
+  it("без модуля multi_currency — тоже цена варианта, без конвертации", async () => {
+    vi.mocked(hasModule).mockResolvedValue(false);
+    const plain = { price: 1000, currency: "KZT", country_prices: null };
+    expect(await resolvePrice(plain, "RU", variant)).toEqual({ amount: 500, currency: "KZT" });
+  });
+});

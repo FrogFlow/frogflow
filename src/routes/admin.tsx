@@ -103,6 +103,15 @@ function AdminLayout() {
                 <GroupLink to="/admin/robokassa" locked={!modules.robokassa} locale={locale}>
                   Robokassa
                 </GroupLink>
+                {/*
+                  Блок 9, находка 9.2 (сознательно отложена) — этот пункт не
+                  гейтится ничем, в отличие от соседней Robokassa
+                  (locked={!modules.robokassa}): семь чисто цифровых клиентов
+                  видят бесполезный для них раздел. Гейтинг по нише требует
+                  прокинуть currentVertical() (registry.ts) в клиентскую
+                  часть админки — сейчас она нигде туда не экспонирована,
+                  это отдельная инфраструктурная правка, а не точечная.
+                */}
                 <GroupLink to="/admin/delivery-zones" locale={locale}>
                   {t("deliveryZones", locale)}
                 </GroupLink>

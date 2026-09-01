@@ -7,18 +7,22 @@ import { Button } from "@/components-ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components-ui/dialog";
 import {
   advanceOrderFulfillment,
+  revertOrderFulfillment,
   confirmOrder,
   continueDeliveryOrder,
   deleteOrder,
   listOrders,
+  recordManualPayment,
   redeliverOrder,
   rejectOrder,
   remindPaymentOrder,
+  updateOrderFulfillment,
 } from "@/lib/orders.functions";
 import { blockTelegramUserFn } from "@/lib/blocked-users.functions";
 import { useState } from "react";
 import { Input } from "@/components-ui/input";
 import { exportOrdersCsvFn, exportCustomersCsvFn } from "@/lib/export.functions";
+import { getAppTimeZone } from "@/lib/settings.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
 import { useModules } from "@/lib/modules/use-modules";
@@ -70,6 +74,7 @@ const copy: Record<
     advanceToProductionBtn: string;
     advanceToReadyBtn: string;
     advanceToDeliveredBtn: string;
+    revertBtn: string;
     fulfillmentTypePickup: string;
     fulfillmentTypeDelivery: string;
     fulfillmentAddressLabel: string;
@@ -113,6 +118,16 @@ const copy: Record<
     pickupTomorrow: string;
     pickupOverdue: string;
     noOrdersForPickupFilter: string;
+    rejectAcceptedConfirm: (n: number) => string;
+    editFulfillmentBtn: string;
+    saveBtn: string;
+    cancelBtn: string;
+    dateLabel: string;
+    noDateLabel: string;
+    addFundsBtn: string;
+    addFundsPrompt: (remaining: number, currency: string) => string;
+    addFundsInvalid: string;
+    addFundsSuccess: string;
   }
 > = {
   ru: {
@@ -147,6 +162,7 @@ const copy: Record<
     advanceToProductionBtn: "👩‍🍳 В работу",
     advanceToReadyBtn: "📦 Готов",
     advanceToDeliveredBtn: "🙏 Выдан",
+    revertBtn: "◀️ Назад",
     fulfillmentTypePickup: "🚶 Самовывоз",
     fulfillmentTypeDelivery: "🚚 Доставка",
     fulfillmentAddressLabel: "Адрес",
@@ -199,6 +215,17 @@ const copy: Record<
     pickupTomorrow: "📅 Завтра",
     pickupOverdue: "⚠️ Просрочено",
     noOrdersForPickupFilter: "По этому фильтру заказов нет.",
+    rejectAcceptedConfirm: (n) =>
+      `Отменить принятый заказ #${n}? Покупатель получит уведомление, деньги (если внесены) останутся в записи заказа — возврат не автоматизирован.`,
+    editFulfillmentBtn: "✏️ Изменить",
+    saveBtn: "Сохранить",
+    cancelBtn: "Отмена",
+    dateLabel: "Дата получения",
+    noDateLabel: "Без даты",
+    addFundsBtn: "💰 Внести оплату",
+    addFundsPrompt: (remaining, currency) => `Сколько внести (остаток ${remaining} ${currency})?`,
+    addFundsInvalid: "Введите положительное число",
+    addFundsSuccess: "Платёж записан",
   },
   kk: {
     statusMap: {
@@ -232,6 +259,7 @@ const copy: Record<
     advanceToProductionBtn: "👩‍🍳 Дайындауға",
     advanceToReadyBtn: "📦 Дайын",
     advanceToDeliveredBtn: "🙏 Берілді",
+    revertBtn: "◀️ Артқа",
     fulfillmentTypePickup: "🚶 Өзі алып кету",
     fulfillmentTypeDelivery: "🚚 Жеткізу",
     fulfillmentAddressLabel: "Мекенжай",
@@ -285,6 +313,18 @@ const copy: Record<
     pickupTomorrow: "📅 Ертең",
     pickupOverdue: "⚠️ Мерзімі өтті",
     noOrdersForPickupFilter: "Бұл сүзгі бойынша тапсырыс жоқ.",
+    rejectAcceptedConfirm: (n) =>
+      `#${n} қабылданған тапсырысын болдырмайсыз ба? Сатып алушыға хабарланады, енгізілген ақша (болса) тапсырыс жазбасында қалады — қайтару автоматтандырылмаған.`,
+    editFulfillmentBtn: "✏️ Өзгерту",
+    saveBtn: "Сақтау",
+    cancelBtn: "Бас тарту",
+    dateLabel: "Алу күні",
+    noDateLabel: "Күнсіз",
+    addFundsBtn: "💰 Төлем енгізу",
+    addFundsPrompt: (remaining, currency) =>
+      `Қанша енгізу керек (қалдық ${remaining} ${currency})?`,
+    addFundsInvalid: "Оң сан енгізіңіз",
+    addFundsSuccess: "Төлем жазылды",
   },
   en: {
     statusMap: {
@@ -318,6 +358,7 @@ const copy: Record<
     advanceToProductionBtn: "👩‍🍳 Start production",
     advanceToReadyBtn: "📦 Mark ready",
     advanceToDeliveredBtn: "🙏 Mark delivered",
+    revertBtn: "◀️ Back",
     fulfillmentTypePickup: "🚶 Pickup",
     fulfillmentTypeDelivery: "🚚 Delivery",
     fulfillmentAddressLabel: "Address",
@@ -370,6 +411,18 @@ const copy: Record<
     pickupTomorrow: "📅 Tomorrow",
     pickupOverdue: "⚠️ Overdue",
     noOrdersForPickupFilter: "No orders match this filter.",
+    rejectAcceptedConfirm: (n) =>
+      `Cancel accepted order #${n}? The customer will be notified; any money already recorded stays on the order — refunds are not automated.`,
+    editFulfillmentBtn: "✏️ Edit",
+    saveBtn: "Save",
+    cancelBtn: "Cancel",
+    dateLabel: "Pickup/delivery date",
+    noDateLabel: "No date",
+    addFundsBtn: "💰 Record payment",
+    addFundsPrompt: (remaining, currency) =>
+      `How much to record (balance ${remaining} ${currency})?`,
+    addFundsInvalid: "Enter a positive number",
+    addFundsSuccess: "Payment recorded",
   },
   uz: {
     statusMap: {
@@ -403,6 +456,7 @@ const copy: Record<
     advanceToProductionBtn: "👩‍🍳 Tayyorlashni boshlash",
     advanceToReadyBtn: "📦 Tayyor deb belgilash",
     advanceToDeliveredBtn: "🙏 Berildi deb belgilash",
+    revertBtn: "◀️ Orqaga",
     fulfillmentTypePickup: "🚶 O‘zi olib ketish",
     fulfillmentTypeDelivery: "🚚 Yetkazib berish",
     fulfillmentAddressLabel: "Manzil",
@@ -456,6 +510,18 @@ const copy: Record<
     pickupTomorrow: "📅 Ertaga",
     pickupOverdue: "⚠️ Muddati o‘tgan",
     noOrdersForPickupFilter: "Bu filtr bo‘yicha buyurtmalar yo‘q.",
+    rejectAcceptedConfirm: (n) =>
+      `#${n} qabul qilingan buyurtmani bekor qilasizmi? Xaridorga xabar beriladi, kiritilgan pul (bo‘lsa) buyurtma yozuvida qoladi — qaytarish avtomatlashtirilmagan.`,
+    editFulfillmentBtn: "✏️ O‘zgartirish",
+    saveBtn: "Saqlash",
+    cancelBtn: "Bekor qilish",
+    dateLabel: "Olish sanasi",
+    noDateLabel: "Sanasiz",
+    addFundsBtn: "💰 To‘lovni yozish",
+    addFundsPrompt: (remaining, currency) =>
+      `Qancha kiritish kerak (qoldiq ${remaining} ${currency})?`,
+    addFundsInvalid: "Musbat son kiriting",
+    addFundsSuccess: "To‘lov yozildi",
   },
 };
 
@@ -467,6 +533,11 @@ function OrdersPage() {
   const orders = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
   const allOrders = orders.data ?? [];
   const [busy, setBusy] = useState<number | null>(null);
+  // Часовой пояс магазина — для "Сегодня/Завтра/Просрочено" и для дат в
+  // карточке заказа (Блок 6, находка 6.6). Пока не загружен — тот же
+  // умолчательный часовой пояс, что и на сервере (Asia/Almaty), а не UTC.
+  const tzQuery = useQuery({ queryKey: ["app-timezone"], queryFn: () => getAppTimeZone() });
+  const appTz = tzQuery.data?.timeZone ?? "Asia/Almaty";
 
   /**
    * Разделение по площадке. Telegram и WhatsApp выдают файлы в переписку,
@@ -495,7 +566,11 @@ function OrdersPage() {
     "in_production",
     "ready",
   ]);
-  const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+  // en-CA форматирует как YYYY-MM-DD — тот же приём, что todayInAppTZ() в
+  // fulfillment.server.ts. Раньше здесь была d.toISOString().slice(0, 10) —
+  // дата UTC-сервера, а не магазина: с 00:00 до ~06:00 по Алматы "Сегодня"
+  // показывало вчерашние выпечки (Блок 6, находка 6.6).
+  const isoDate = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: appTz });
   const todayIso = isoDate(new Date());
   const tomorrowIso = isoDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
   const fulfillmentDateOf = (o: (typeof allOrders)[number]) =>
@@ -565,6 +640,18 @@ function OrdersPage() {
       setBusy(null);
     }
   }
+  /** Откатить статус физического заказа на шаг назад (Блок 3, находка 3.6). */
+  async function onRevert(id: number) {
+    setBusy(id);
+    try {
+      await revertOrderFulfillment({ data: { id } });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
   async function onRedeliver(id: number, displayNo: number) {
     if (!(await confirmToast(tr.redeliverConfirm(displayNo)))) return;
     setBusy(id);
@@ -596,14 +683,14 @@ function OrdersPage() {
       setBusy(null);
     }
   }
-  async function onReject(id: number, displayNo: number) {
+  async function onReject(id: number, displayNo: number, confirmMsg?: string) {
     // prompt() returns null on Cancel/Esc — `null || undefined` used to
     // collapse that into the same "no reason given" value as an empty
     // confirm, so cancelling the dialog still rejected the order.
     const raw = prompt(tr.rejectReasonPrompt);
     if (raw === null) return;
     const note = raw.trim() || undefined;
-    if (!(await confirmToast(tr.rejectConfirm(displayNo)))) return;
+    if (!(await confirmToast(confirmMsg ?? tr.rejectConfirm(displayNo)))) return;
     setBusy(id);
     try {
       const result = await rejectOrder({ data: { id, note } });
@@ -620,6 +707,17 @@ function OrdersPage() {
       setBusy(null);
     }
   }
+  /**
+   * Отменить уже принятый физический заказ (Блок 3, находка 3.1) — раньше
+   * rejectOrderSafely гейтила переход только из awaiting_*, и покупательница,
+   * передумавшая после того, как продавец принял торт в работу, не могла
+   * отменить заказ иначе как удалением строки (что стирало запись об
+   * оплате). Тот же onReject, только с формулировкой подтверждения, которая
+   * явно предупреждает про деньги — они не откатываются автоматически.
+   */
+  async function onRejectAccepted(id: number, displayNo: number) {
+    await onReject(id, displayNo, tr.rejectAcceptedConfirm(displayNo));
+  }
   async function onRemindPayment(id: number, displayNo: number) {
     if (!(await confirmToast(tr.remindConfirm(displayNo)))) return;
     setBusy(id);
@@ -628,6 +726,32 @@ function OrdersPage() {
       toast.success(tr.remindSent(displayNo));
     } catch (e: unknown) {
       toast.error(errorMessage(e) || tr.remindFailed);
+    } finally {
+      setBusy(null);
+    }
+  }
+  /**
+   * Внести оплату вручную — задаток покупатель доплатил наличными при
+   * получении, и paid_amount иначе так и остался бы равен задатку навсегда
+   * (Блок 1, находка 1.5 / Блок 7, находка 7.2). prompt() — тот же приём,
+   * что уже используется для причины отказа (rejectReasonPrompt) выше.
+   */
+  async function onAddFunds(id: number, total: number, paid: number, currency: string) {
+    const remaining = Math.max(0, total - paid);
+    const raw = prompt(tr.addFundsPrompt(remaining, currency), String(remaining));
+    if (raw === null) return;
+    const amount = Number(raw.replace(",", "."));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error(tr.addFundsInvalid);
+      return;
+    }
+    setBusy(id);
+    try {
+      await recordManualPayment({ data: { id, amount } });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      toast.success(tr.addFundsSuccess);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
     } finally {
       setBusy(null);
     }
@@ -674,6 +798,55 @@ function OrdersPage() {
 
   function onViewScreenshot(path: string) {
     setProofModal({ path });
+  }
+
+  /**
+   * Правка даты/адреса/комментария физического заказа (Блок 7, находка
+   * 7.1) — раньше это можно было сделать только правкой строки в Supabase
+   * напрямую. Дата хранится в тех же терминах, что и чекаут
+   * (parseFulfillmentDateInput кладёт "YYYY-MM-DD" прямо в TIMESTAMPTZ) —
+   * input[type=date] отдаёт ровно такую строку.
+   */
+  const [editing, setEditing] = useState<{
+    id: number;
+    fulfillmentAt: string;
+    address: string;
+    note: string;
+  } | null>(null);
+
+  function onStartEdit(o: {
+    id: number;
+    fulfillment_at: string | null;
+    fulfillment_address: string | null;
+    fulfillment_note: string | null;
+  }) {
+    setEditing({
+      id: o.id,
+      fulfillmentAt: o.fulfillment_at ? String(o.fulfillment_at).slice(0, 10) : "",
+      address: o.fulfillment_address ?? "",
+      note: o.fulfillment_note ?? "",
+    });
+  }
+
+  async function onSaveEdit() {
+    if (!editing) return;
+    setBusy(editing.id);
+    try {
+      await updateOrderFulfillment({
+        data: {
+          id: editing.id,
+          fulfillmentAt: editing.fulfillmentAt || null,
+          address: editing.address.trim() || null,
+          note: editing.note.trim() || null,
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      setEditing(null);
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -801,18 +974,26 @@ function OrdersPage() {
                     ✉️ {o.customer_email || tr.noEmail}
                   </div>
                 )}
-                {o.fulfillment_kind === "physical" && (
+                {o.fulfillment_kind === "physical" && editing?.id !== o.id && (
                   <>
                     <div>
                       {o.fulfillment_type === "delivery"
                         ? tr.fulfillmentTypeDelivery
                         : tr.fulfillmentTypePickup}
                       {o.fulfillment_at &&
-                        ` · ${new Date(o.fulfillment_at).toLocaleDateString(dateLocales[locale])}`}
+                        // Часовой пояс магазина, не браузера продавца (Блок
+                        // 6, находка 6.6) — иначе дата съезжает на день у
+                        // продавца, путешествующего в другом поясе.
+                        ` · ${new Date(o.fulfillment_at).toLocaleDateString(dateLocales[locale], { timeZone: appTz })}`}
                     </div>
-                    {o.delivery_zone_name && (
+                    {/* delivery_fee может быть > 0 без delivery_zone_name
+                        (заказ с ручным адресом, без выбора зоны) — раньше
+                        вся строка пряталась за именем зоны (Блок 7,
+                        находка 7.5), и доставка молча входила в total без
+                        объяснения. */}
+                    {(o.delivery_zone_name || Number(o.delivery_fee) > 0) && (
                       <div>
-                        🚚 {tr.deliveryZoneLabel}: {o.delivery_zone_name}
+                        🚚 {tr.deliveryZoneLabel}: {o.delivery_zone_name || "—"}
                         {Number(o.delivery_fee) > 0 && ` (+${o.delivery_fee} ${o.currency})`}
                       </div>
                     )}
@@ -826,10 +1007,85 @@ function OrdersPage() {
                         💬 {tr.fulfillmentNoteLabel}: {o.fulfillment_note}
                       </div>
                     )}
-                    <div className="text-muted-foreground">
-                      {tr.paidAmountLine(Number(o.paid_amount) || 0, Number(o.total), o.currency)}
+                    <div className="text-muted-foreground flex flex-wrap items-center gap-2">
+                      <span>
+                        {tr.paidAmountLine(Number(o.paid_amount) || 0, Number(o.total), o.currency)}
+                      </span>
+                      {Number(o.paid_amount) < Number(o.total) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-2 text-xs"
+                          onClick={() =>
+                            onAddFunds(
+                              o.id,
+                              Number(o.total),
+                              Number(o.paid_amount) || 0,
+                              o.currency,
+                            )
+                          }
+                          disabled={busy === o.id}
+                        >
+                          {tr.addFundsBtn}
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => onStartEdit(o)}
+                        disabled={busy === o.id}
+                      >
+                        {tr.editFulfillmentBtn}
+                      </Button>
                     </div>
                   </>
+                )}
+                {o.fulfillment_kind === "physical" && editing?.id === o.id && (
+                  <div className="space-y-2 rounded-md border p-3 bg-muted/30">
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground block">{tr.dateLabel}</label>
+                      <Input
+                        type="date"
+                        value={editing.fulfillmentAt}
+                        onChange={(e) => setEditing({ ...editing, fulfillmentAt: e.target.value })}
+                        className="h-8 w-[160px]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground block">
+                        {tr.fulfillmentAddressLabel}
+                      </label>
+                      <Input
+                        value={editing.address}
+                        onChange={(e) => setEditing({ ...editing, address: e.target.value })}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground block">
+                        {tr.fulfillmentNoteLabel}
+                      </label>
+                      <Input
+                        value={editing.note}
+                        onChange={(e) => setEditing({ ...editing, note: e.target.value })}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" onClick={onSaveEdit} disabled={busy === o.id}>
+                        {tr.saveBtn}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditing(null)}
+                        disabled={busy === o.id}
+                      >
+                        {tr.cancelBtn}
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
               <ul className="text-sm list-disc pl-5">
@@ -898,6 +1154,18 @@ function OrdersPage() {
                   o.status === "in_production" ||
                   o.status === "ready") && (
                   <div className="flex flex-wrap gap-2 pt-2">
+                    {/* "Назад" (Блок 3, находка 3.6) — только между
+                        живыми статусами, не с delivered: тот переход
+                        необратим (баллы/реферал/отзыв). */}
+                    {o.status !== "accepted" && (
+                      <Button
+                        variant="outline"
+                        onClick={() => onRevert(o.id)}
+                        disabled={busy === o.id}
+                      >
+                        {tr.revertBtn}
+                      </Button>
+                    )}
                     <Button
                       onClick={() => onAdvance(o.id, o.order_no ?? o.id)}
                       disabled={busy === o.id}
@@ -907,6 +1175,16 @@ function OrdersPage() {
                         : o.status === "in_production"
                           ? tr.advanceToReadyBtn
                           : tr.advanceToDeliveredBtn}
+                    </Button>
+                    {/* Отмена уже принятого заказа (Блок 3, находка 3.1) —
+                        раньше единственным выходом было "🗑️ Удалить" внизу
+                        карточки, которое стирало и запись об оплате. */}
+                    <Button
+                      variant="destructive"
+                      onClick={() => onRejectAccepted(o.id, o.order_no ?? o.id)}
+                      disabled={busy === o.id}
+                    >
+                      {tr.reject}
                     </Button>
                   </div>
                 )}

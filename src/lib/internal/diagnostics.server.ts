@@ -135,6 +135,27 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
     origin ?? "не определён — ссылки в боте и колбэки оплаты уйдут в никуда",
   );
 
+  // Блок 11, находка 11.3 — currentVertical() (vertical.server.ts) молча
+  // откатывается на "digital" на пустой ИЛИ неизвестной переменной: без
+  // этой проверки расхождение "в панели выбрана Кондитерская, на деплое
+  // digital" необнаружимо ни оператором, ни клиентом — бот просто ведёт
+  // себя как цифровой, без единой ошибки.
+  {
+    const { VERTICALS } = await import("@/lib/verticals/registry");
+    const raw = process.env.VERTICAL?.trim();
+    if (!raw) {
+      add("VERTICAL", "ok", "не задан — digital (по умолчанию)");
+    } else if (raw in VERTICALS) {
+      add("VERTICAL", "ok", raw);
+    } else {
+      add(
+        "VERTICAL",
+        "warn",
+        `неизвестное значение "${raw}" — деплой работает как digital, а не как задумано`,
+      );
+    }
+  }
+
   // Два пункта, из-за которых чужой человек попадает в админку клиента.
   const adminPass = process.env.ADMIN_PASSWORD?.trim();
   add(

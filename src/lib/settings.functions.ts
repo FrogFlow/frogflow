@@ -30,6 +30,19 @@ export const getShopUrl = createServerFn({ method: "GET" }).handler(async () => 
   return { url: origin ? `${origin}/shop` : null };
 });
 
+/**
+ * Часовой пояс магазина (APP_TIMEZONE, см. datetime.ts) — нужен клиенту
+ * админки, чтобы считать "сегодня/завтра/просрочено" в фильтре заказов
+ * (admin.orders.tsx) той же датой, что и сам чекаут (todayInAppTZ в
+ * fulfillment.server.ts), а не датой UTC-сервера (Блок 6, находка 6.6):
+ * с 00:00 до ~06:00 по Алматы UTC-дата всё ещё "вчера".
+ */
+export const getAppTimeZone = createServerFn({ method: "GET" }).handler(async () => {
+  await requireAdmin();
+  const { appTimeZone } = await import("./datetime");
+  return { timeZone: appTimeZone() };
+});
+
 const SaveInput = z.object({ key: z.string().min(1).max(100), value: z.string().max(100_000) });
 
 export const saveSetting = createServerFn({ method: "POST" })

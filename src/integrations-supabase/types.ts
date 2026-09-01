@@ -1647,6 +1647,13 @@ export type Database = {
             referencedRelation: "bot_users";
             referencedColumns: ["telegram_id"];
           },
+          {
+            foreignKeyName: "orders_delivery_zone_id_fkey";
+            columns: ["delivery_zone_id"];
+            isOneToOne: false;
+            referencedRelation: "delivery_zones";
+            referencedColumns: ["id"];
+          },
         ];
       };
       payment_methods: {

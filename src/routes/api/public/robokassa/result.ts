@@ -91,7 +91,7 @@ async function handleRobokassaResult(request: Request) {
   const orderId = Number(invId);
   const { data: order } = await s
     .from("orders")
-    .select("status, total, platform, fulfillment_kind")
+    .select("status, total, platform, fulfillment_kind, admin_note")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -140,11 +140,17 @@ async function handleRobokassaResult(request: Request) {
    * Если саму запись не удалось сохранить — отвечаем не "OK", чтобы
    * Robokassa повторила колбэк, а не решила, что всё прошло.
    */
+  // Дописываем к уже существующей заметке, не затираем её (Блок 1, находка
+  // 1.14) — там может быть маркер proof_auto (OCR) или причина сбоя
+  // предыдущей выдачи, который безусловная перезапись стирала.
+  const prevNote = order.admin_note ? String(order.admin_note) : "";
+  const noteAddition = `Paid via Robokassa. Amount: ${outSum}`;
+  const nextNote = prevNote ? `${prevNote}; ${noteAddition}` : noteAddition;
   const { error: recordErr } = await s
     .from("orders")
     .update({
       payment_proof_path: "robokassa",
-      admin_note: `Paid via Robokassa. Amount: ${outSum}`,
+      admin_note: nextNote.slice(0, 500),
     })
     .eq("id", orderId);
 
@@ -156,10 +162,17 @@ async function handleRobokassaResult(request: Request) {
   try {
     if (order.fulfillment_kind === "physical") {
       const { acceptOrder, recordPayment } = await import("@/lib/fulfillment.server");
-      await acceptOrder(orderId);
-      await recordPayment(orderId, expected).catch((e) =>
-        logger.error("robokassa.record_payment_failed", { order_id: orderId, err: e }),
-      );
+      // Robokassa повторяет колбэк, пока не получит "OK<InvId>" — двойной
+      // вызов на один и тот же платёж реален. alreadyAccepted защищает от
+      // повторной записи суммы в paid_amount (Блок 1, находка 1.1).
+      const result = await acceptOrder(orderId);
+      if (!result.alreadyAccepted) {
+        const paid = await recordPayment(orderId, expected).catch((e) => {
+          logger.error("robokassa.record_payment_failed", { order_id: orderId, err: e });
+          return false;
+        });
+        if (!paid) logger.error("robokassa.record_payment_returned_false", { order_id: orderId });
+      }
     } else if (order.platform === "instagram") {
       const { deliverInstagramOrder } = await import("@/lib/zernio-bot.server");
       await deliverInstagramOrder(orderId);

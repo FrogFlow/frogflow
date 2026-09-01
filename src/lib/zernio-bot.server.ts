@@ -72,7 +72,16 @@ function languagePickerText(): string {
  * другой из уже поддерживаемых вариантов записи той же команды, а не новый.
  */
 type OrderStatusKey =
-  "awaiting_confirmation" | "awaiting_payment" | "delivering" | "delivered" | "rejected";
+  | "awaiting_confirmation"
+  | "awaiting_payment"
+  | "delivering"
+  | "delivered"
+  | "rejected"
+  // Блок 5, находка 5.3 — статусы физического заказа, раньше отсутствовали
+  // здесь так же, как и в Telegram (bot.server.ts, statusMap).
+  | "accepted"
+  | "in_production"
+  | "ready";
 
 interface DirectCopy {
   languageSaved: string;
@@ -147,6 +156,8 @@ interface DirectCopy {
   deliveryZoneHint: string;
   /** Промах текстового fallback на шаге выбора варианта товара (Ниши, Блок D) — свыше трёх вариантов, где кнопок уже не хватает. */
   variantChoiceHint: string;
+  /** Блок 8, находка 8.10 — раньше при потере контекста бот выходил из шага молча, без единого сообщения. */
+  variantChoiceExpired: string;
   fulfillmentAddressPrompt: string;
   fulfillmentNotePrompt: string;
   fulfillmentNoteSkipBtn: string;
@@ -166,6 +177,14 @@ interface DirectCopy {
   receiptReceivedAskEmailOptional: (displayNo: number | string, email: string) => string;
   receiptReceivedNeedEmail: (displayNo: number | string) => string;
   receiptReceivedWhatsApp: (displayNo: number | string) => string;
+  /**
+   * Блок 5, находка 5.5 — отдельный текст для физического заказа: раньше
+   * этот путь всегда использовал receiptReceivedWhatsApp ("материалы придут
+   * в WhatsApp"), что для торта неверно ни в Instagram (там вообще нет
+   * материалов — только дата/адрес получения), ни в WhatsApp (доставляют
+   * не файл в чат, а заказ курьером/самовывозом).
+   */
+  receiptReceivedPhysical: (displayNo: number | string) => string;
   countryHint: string;
   emailStepGotReceipt: string;
   emailHint: string;
@@ -232,6 +251,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       delivering: "📤 Отправляем материалы",
       delivered: "✅ Материалы отправлены на почту",
       rejected: "❌ Отклонён",
+      accepted: "✅ Принят в работу",
+      in_production: "👩‍🍳 В работе",
+      ready: "📦 Готов",
     },
     checkoutGiveUp:
       "Похоже, я не помогаю — не буду мешать. Продавец увидит переписку и ответит сам.",
@@ -261,6 +283,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     deliveryZoneHint:
       "Не понял район доставки. Ответьте номером из списка или названием — например «1» или «Центр».",
     variantChoiceHint: "Не понял вариант. Ответьте номером из списка или названием — например «1».",
+    variantChoiceExpired:
+      "Не вижу, о каком товаре речь — начните заново, напишите номер материала.",
     fulfillmentAddressPrompt: "Куда доставить? Напишите адрес.",
     fulfillmentNotePrompt:
       "Комментарий к заказу (например, надпись на торте)? Если не нужен — нажмите «Без комментария».",
@@ -298,6 +322,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Если адрес указан неверно, материал может не прийти.",
     receiptReceivedWhatsApp: (displayNo) =>
       `Чек получил, заказ №${displayNo} принят. После проверки оплаты материалы придут сюда, в WhatsApp.`,
+    receiptReceivedPhysical: (displayNo) =>
+      `Чек получил, заказ №${displayNo} принят. После проверки оплаты продавец свяжется с вами по деталям получения.`,
     countryHint:
       "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\n" +
       "Чтобы выйти, напишите «отмена».",
@@ -381,6 +407,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       delivering: "📤 Материалдарды жіберудеміз",
       delivered: "✅ Материалдар поштаға жіберілді",
       rejected: "❌ Қабылданбады",
+      accepted: "✅ Жұмысқа қабылданды",
+      in_production: "👩‍🍳 Дайындалуда",
+      ready: "📦 Дайын",
     },
     checkoutGiveUp:
       "Байқаймын, көмектесе алмай тұрмын — бөгет жасамайын. Сатушы жазысуды көріп, өзі жауап береді.",
@@ -411,6 +440,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Жеткізу ауданын түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Орталық».",
     variantChoiceHint:
       "Нұсқаны түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1».",
+    variantChoiceExpired:
+      "Қай тауар туралы екенін көрмей тұрмын — қайта бастаңыз, материал нөмірін жазыңыз.",
     fulfillmentAddressPrompt: "Қайда жеткізу керек? Мекенжайды жазыңыз.",
     fulfillmentNotePrompt:
       "Тапсырысқа түсініктеме (мысалы, тортқа жазу)? Қажет болмаса — «Түсініктемесіз» батырмасын басыңыз.",
@@ -447,6 +478,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Мекенжай қате болса, материал келмеуі мүмкін.",
     receiptReceivedWhatsApp: (displayNo) =>
       `Чекті алдым, №${displayNo} тапсырыс қабылданды. Төлем тексерілгеннен кейін материалдар осы WhatsApp чатына жіберіледі.`,
+    receiptReceivedPhysical: (displayNo) =>
+      `Чекті алдым, №${displayNo} тапсырыс қабылданды. Төлем тексерілгеннен кейін сатушы алу мәліметтері бойынша хабарласады.`,
     countryHint:
       "Елді түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Қазақстан».\n\n" +
       "Шығу үшін «/stop» деп жазыңыз.",
@@ -529,6 +562,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       delivering: "📤 Sending materials",
       delivered: "✅ Materials sent by email",
       rejected: "❌ Declined",
+      accepted: "✅ Accepted",
+      in_production: "👩‍🍳 In production",
+      ready: "📦 Ready",
     },
     checkoutGiveUp:
       "Looks like I'm not helping — I'll step aside. The seller will see this chat and reply themselves.",
@@ -559,6 +595,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       'Didn\'t recognize that delivery zone. Reply with the number from the list or the name — e.g. "1" or "Downtown".',
     variantChoiceHint:
       'Didn\'t recognize that variant. Reply with the number from the list or the name — e.g. "1".',
+    variantChoiceExpired:
+      "I've lost track of which item this is — start over and send the material number.",
     fulfillmentAddressPrompt: "Where should we deliver? Send the address.",
     fulfillmentNotePrompt:
       'Any note for the order (e.g. a cake inscription)? If not needed, tap "No note".',
@@ -594,6 +632,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       "If the address is incorrect, the materials may not arrive.",
     receiptReceivedWhatsApp: (displayNo) =>
       `Got the receipt, order #${displayNo} is in. After the payment is checked, the materials will be sent here in WhatsApp.`,
+    receiptReceivedPhysical: (displayNo) =>
+      `Got the receipt, order #${displayNo} is in. Once the payment is checked, the seller will contact you about pickup/delivery details.`,
     countryHint:
       'Didn\'t catch the country. Reply with the number from the list or the name — for example "1" or "Kazakhstan".\n\n' +
       'To exit, send "/stop".',
@@ -676,6 +716,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       delivering: "📤 Materiallarni yubormoqdamiz",
       delivered: "✅ Materiallar pochtaga yuborildi",
       rejected: "❌ Rad etildi",
+      accepted: "✅ Ishga qabul qilindi",
+      in_production: "👩‍🍳 Tayyorlanmoqda",
+      ready: "📦 Tayyor",
     },
     checkoutGiveUp:
       "Chamasi, yordam berolmayapman — xalaqit bermayman. Sotuvchi yozishmani ko‘rib, o‘zi javob beradi.",
@@ -706,6 +749,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Yetkazib berish zonasini tushunmadim. Ro‘yxatdagi raqami yoki nomi bilan javob bering — masalan «1» yoki «Markaz».",
     variantChoiceHint:
       "Variantni tushunmadim. Ro‘yxatdagi raqami yoki nomi bilan javob bering — masalan «1».",
+    variantChoiceExpired:
+      "Qaysi mahsulot haqida ekanini ko‘rmayapman — qaytadan boshlang, material raqamini yozing.",
     fulfillmentAddressPrompt: "Qayerga yetkazib berish kerak? Manzilni yozing.",
     fulfillmentNotePrompt:
       "Buyurtmaga izoh (masalan, tortga yozuv)? Kerak bo‘lmasa — «Izohsiz» tugmasini bosing.",
@@ -744,6 +789,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Manzil noto‘g‘ri bo‘lsa, material yetib kelmasligi mumkin.",
     receiptReceivedWhatsApp: (displayNo) =>
       `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. To‘lov tekshirilgach, materiallar shu WhatsApp chatiga yuboriladi.`,
+    receiptReceivedPhysical: (displayNo) =>
+      `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. To‘lov tekshirilgach, sotuvchi olib ketish tafsilotlari bo‘yicha bog‘lanadi.`,
     countryHint:
       "Davlatni tushunmadim. Ro‘yxatdagi raqam yoki nomi bilan javob bering — masalan, «1» yoki «Qozog‘iston».\n\n" +
       "Chiqish uchun «/stop» deb yozing.",
@@ -2220,15 +2267,19 @@ async function sendCart(conversationId: string, accountId: string, user: ZernioB
   }
 
   const total = await flow.priceCart(cart, state.country_code ?? null);
+  // Итог имеет смысл показывать не только при нескольких строках, но и при
+  // одной строке с количеством > 1 (Блок 4, находка 4.18) — иначе "Торт ×3
+  // — 36000 KZT" выглядит как цена за одну штуку, без единого места, где
+  // сказано, что это уже сумма за все три.
+  const totalUnits = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const showTotal = totalUnits > 1 && !total.mixedCurrency;
   await reply(
     user,
     conversationId,
     accountId,
     `${copy.cartHeader(cart.length)}\n\n` +
       `${flow.renderCart(total.lines)}\n\n` +
-      (cart.length > 1 && !total.mixedCurrency
-        ? copy.cartTotal(total.total, total.currency) + "\n\n"
-        : "") +
+      (showTotal ? copy.cartTotal(total.total, total.currency) + "\n\n" : "") +
       (cart.length > 1 ? copy.cartHintMulti : copy.cartHintSingle),
     [{ type: "postback", title: copy.btnCheckout, payload: "CHECKOUT" }],
   );
@@ -2378,6 +2429,12 @@ async function startInstagramCheckout(
    * ветку.
    */
   if (platformOf(user) === "whatsapp" && options.length) {
+    // Локализовано (Блок 5, находка 5.7) — раньше вопрос, подпись кнопки и
+    // заголовок раздела были жёстко зашиты по-русски, независимо от
+    // выбранного покупателем языка.
+    const { countryPromptCopy, whatsappCountryListCopy } = flow;
+    const { question } = countryPromptCopy[locale];
+    const { buttonLabel, sectionTitle } = whatsappCountryListCopy(locale);
     await reply(
       user,
       conversationId,
@@ -2386,11 +2443,11 @@ async function startInstagramCheckout(
       undefined,
       false,
       whatsappList({
-        body: `${cartText}\n\nОткуда вы? От страны зависят реквизиты и валюта.`,
-        buttonLabel: "Выбрать страну",
+        body: `${cartText}\n\n${question}`,
+        buttonLabel,
         sections: [
           {
-            title: "Страна",
+            title: sectionTitle,
             rows: options.map((option, index) => ({
               id: `${STEP_PREFIX}${index + 1}`,
               title: option.name,
@@ -2457,24 +2514,48 @@ async function sendDirectPaymentDetails(params: {
   // Комиссия зоны доставки (Ниши, Блок B) — обязательно ДО заморозки: сумма,
   // которую видит и по которой платит покупатель, должна совпадать с той,
   // что попадёт в orders.total через createOrderFromCart (см. frozen_cart).
+  //
+  // fullAmount — настоящая полная цена корзины, и именно она идёт в
+  // frozen_cart.total → orders.total (Блок 9 использует orders.total для
+  // "внесено/остаток"; занизить его здесь значило бы навсегда потерять
+  // разницу между задатком и полной ценой). Отдельно считаем amountDue —
+  // сколько реально попросить сейчас и с чем сверять чек: для
+  // payment_mode=deposit Direct раньше всегда требовал fullAmount, хотя
+  // Telegram на той же настройке просит только задаток — покупатель из
+  // Instagram платил в разы больше покупателя из Telegram за одну и ту же
+  // корзину (Блок 1, находка 1.4). on_receipt здесь намеренно не
+  // применяется: amountDueNow() вернула бы 0, а Direct структурно не умеет
+  // создать заказ без чека вообще (заказ рождается только в ответ на уже
+  // присланный чек) — "0 ₸ к оплате" выглядело бы сломанным, а не отражало
+  // бы реальную возможность. Уже задокументированный отдельный разрыв, не
+  // новый.
   const deliveryFee = state.checkout_delivery_fee ?? 0;
-  const amount = cartTotal + deliveryFee;
+  const fullAmount = cartTotal + deliveryFee;
+  const { cartFulfillmentKind, loadPaymentMode, amountDueNow } =
+    await import("./fulfillment.server");
+  const isPhysicalCart = (await cartFulfillmentKind(user.telegram_id)) === "physical";
+  const mode = isPhysicalCart ? await loadPaymentMode() : "full";
+  const amountDue =
+    isPhysicalCart && mode === "deposit"
+      ? await amountDueNow({ total: fullAmount, fulfillment_kind: "physical" })
+      : fullAmount;
 
   await flow.setDirectState(user.user_key, {
     mode: "awaiting_proof",
     country_code: country.code,
-    // Замораживаем именно эту сумму — по ней покупатель платит, и по ней же
-    // потом сверяет чек OCR (Блок 2.6). См. DirectState.frozen_cart.
+    // total здесь — полная цена (см. выше), не amountDue: это то, что
+    // попадёт в orders.total. Сколько реально просить сейчас, заказ
+    // пересчитает сам через amountDueNow() в момент проверки чека (Блок 2.6).
     // mixedCurrency всегда false здесь: раньше по коду уже отбит ранний
     // выход на true.
-    frozen_cart: { lines: pricedLines, total: amount, currency, mixedCurrency: false },
+    frozen_cart: { lines: pricedLines, total: fullAmount, currency, mixedCurrency: false },
   });
 
   await say(
     `${flow.renderCart(pricedLines)}\n\n` +
       (remembered ? copy.rememberedCountryNote(country.name) : "") +
       `${requisites.instructions}\n\n` +
-      copy.amountDue(amount, currency) +
+      copy.amountDue(amountDue, currency) +
       copy.sendProofHint,
   );
 }
@@ -2506,7 +2587,21 @@ async function proceedToFulfillmentOrPayment(
   // Страна нужна дальше, на finishFulfillmentAndShowPayment, до которого
   // пройдёт несколько реплик покупателя — запоминаем её сразу, а не
   // полагаемся на то, что это сделает sendDirectPaymentDetails в конце.
-  await flow.setDirectState(user.user_key, { country_code: country.code });
+  //
+  // Одновременно чистим зону/тип/дату получения прошлого прохода чекаута
+  // (Блок 4, находка 4.1) — setDirectState мёржит патч поверх текущего
+  // состояния (см. её реализацию), просто передать country_code не стёрло
+  // бы старую зону. Тот же сценарий, что и в Telegram
+  // (bot.server.ts, proceedToFulfillmentOrPlace): выбрал зону "+2000",
+  // бросил чекаут на шаге адреса, вернулся и выбрал самовывоз — без этой
+  // очистки старая комиссия ехала бы в новый заказ.
+  await flow.setDirectState(user.user_key, {
+    country_code: country.code,
+    checkout_fulfillment_type: undefined,
+    checkout_delivery_zone_id: undefined,
+    checkout_delivery_zone_name: undefined,
+    checkout_delivery_fee: undefined,
+  });
 
   if ((await cartFulfillmentKind(user.telegram_id)) !== "physical") {
     await sendDirectPaymentDetails({ conversationId, accountId, user, country, remembered });
@@ -2545,6 +2640,7 @@ async function askFulfillmentDate(
   await flow.setDirectState(user.user_key, {
     mode: "awaiting_fulfillment_date",
     checkout_fulfillment_type: type,
+    checkout_min_fulfillment_date: minIso,
   });
   const locale = flow.directLocale(flow.readDirectState(user.state));
   await reply(
@@ -2581,16 +2677,33 @@ async function proceedToDeliveryZoneOrAddress(
   }
 
   await flow.setDirectState(user.user_key, { mode: "awaiting_delivery_zone" });
+  // Цена зоны в подписи (Блок 4, находка 4.2) — раньше показывалось только
+  // название, покупатель выбирал вслепую.
+  const { currencyForCountry } = await import("./pricing.server");
+  const state = flow.readDirectState(user.state);
+  const currency = (await currencyForCountry(state.country_code ?? null)) ?? "";
+  const priceSuffix = (price: number) => ` +${price}${currency ? ` ${currency}` : ""}`;
   if (zones.length <= 3) {
     await reply(
       user,
       conversationId,
       accountId,
       copy.deliveryZonePrompt,
-      zones.map((z) => ({ type: "postback" as const, title: z.name, payload: `zone:${z.id}` })),
+      zones.map((z) => ({
+        type: "postback" as const,
+        // Постбэк-кнопки других мест этого файла режут заголовок до 24
+        // символов (zernio-list) — тот же лимит здесь, с запасом под цену.
+        title: `${z.name}${priceSuffix(z.price)}`.slice(0, 24),
+        payload: `zone:${z.id}`,
+      })),
     );
   } else {
-    await reply(user, conversationId, accountId, flow.renderDeliveryZonePrompt(zones, locale));
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      flow.renderDeliveryZonePrompt(zones, locale, currency),
+    );
   }
 }
 
@@ -3095,6 +3208,15 @@ async function handlePurchaseFlow(params: {
     // Physical-заказу почта не нужна вовсе — она нужна была только чтобы
     // дослать файлы письмом (см. deliverOrderByEmail, orders.server.ts).
     // Полноценный чекаут физического заказа (дата/адрес) — Ниши, Блок 8.
+    //
+    // Блок 5, находка 5.8 (сознательно отложена) — mode: "awaiting_email"
+    // ниже ставится безусловно, ДО этой проверки; сейчас он корректно
+    // очищается на обоих выходах (успешная автовыдача и needsEmail===false
+    // ветка), но это по построению каждого выхода, а не по инварианту —
+    // новый ранний return в этом блоке в будущем мог бы оставить физический
+    // Direct-заказ висеть в awaiting_email. Полноценная защита — отдельный
+    // mode для физического пути (как уже есть в Telegram,
+    // awaiting_fulfillment_*), а не точечная правка.
     const needsEmail = platform === "instagram" && order.fulfillment_kind !== "physical";
 
     // Техническая блокировка нужна только до создания заказа. Переводим
@@ -3159,11 +3281,26 @@ async function handlePurchaseFlow(params: {
      * сторону единственно верная: выдать по чужому чеку хуже, чем задержать
      * выдачу на пару часов.
      */
+    // amountDueNow(), не order.total напрямую — при payment_mode=deposit
+    // Telegram просит и сверяет только задаток, а Direct раньше всегда
+    // требовал (и сверял) полную сумму на той же настройке (Блок 1, находка
+    // 1.4): покупатель из Instagram/WhatsApp платил в 3+ раза больше, чем
+    // покупатель из Telegram, за тот же товар. on_receipt здесь по-прежнему
+    // не даёт настоящего "без чека" пути (Direct создаёт заказ только в
+    // ответ на уже присланный чек) — amountDueNow вернёт 0, автоматическое
+    // совпадение с реальной суммой в чеке не пройдёт, заказ уйдёт на ручную
+    // проверку продавцу; это тот же осознанный незакрытый разрыв, что и
+    // раньше, просто явный, а не тихая переплата.
+    const { amountDueNow } = await import("./fulfillment.server");
+    const expectedAmount = await amountDueNow({
+      total: Number(created?.total ?? order.total),
+      fulfillment_kind: order.fulfillment_kind,
+    });
     const verdict = proofPath
       ? await flow.verifyDirectReceipt({
           bytes: proofPath.bytes,
           mime: proofPath.mime,
-          expectedAmount: Number(created?.total ?? 0),
+          expectedAmount,
           currency: String(created?.currency ?? "KZT"),
           orderId: order.id,
         })
@@ -3186,13 +3323,18 @@ async function handlePurchaseFlow(params: {
       try {
         if (order.fulfillment_kind === "physical") {
           const { acceptOrder, recordPayment } = await import("./fulfillment.server");
-          await acceptOrder(order.id);
-          // Не amountDueNow(): чекаут задатка/оплаты-при-получении для Direct
-          // не сделан (Ниши, Блок 8.3) — здесь чек всегда присылают на полную
-          // сумму, амаунт для сверки в verdict уже посчитан от order.total.
-          await recordPayment(order.id, Number(order.total)).catch((e) =>
-            console.error("[zernio-bot] recordPayment failed", order.id, e),
-          );
+          // alreadyAccepted — не задваиваем paid_amount при повторном
+          // срабатывании (Блок 1, находка 1.1).
+          const result = await acceptOrder(order.id);
+          // expectedAmount уже посчитан через amountDueNow() выше — то, что
+          // реально проверил OCR (Блок 1, находка 1.4).
+          if (!result.alreadyAccepted) {
+            const paid = await recordPayment(order.id, expectedAmount).catch((e) => {
+              console.error("[zernio-bot] recordPayment failed", order.id, e);
+              return false;
+            });
+            if (!paid) console.error("[zernio-bot] recordPayment returned false", order.id);
+          }
         } else {
           const { deliverOrder } = await import("./orders.server");
           await deliverOrder(order.id);
@@ -3209,7 +3351,9 @@ async function handlePurchaseFlow(params: {
         await say(
           needsEmail && email
             ? copy.receiptReceivedKnownEmail(displayNo, email)
-            : copy.receiptReceivedWhatsApp(displayNo),
+            : order.fulfillment_kind === "physical"
+              ? copy.receiptReceivedPhysical(displayNo)
+              : copy.receiptReceivedWhatsApp(displayNo),
         );
         return true;
       }
@@ -3219,7 +3363,11 @@ async function handlePurchaseFlow(params: {
 
     if (!needsEmail) {
       await flow.clearDirectFlow(user.user_key);
-      await say(copy.receiptReceivedWhatsApp(displayNo));
+      await say(
+        order.fulfillment_kind === "physical"
+          ? copy.receiptReceivedPhysical(displayNo)
+          : copy.receiptReceivedWhatsApp(displayNo),
+      );
       return true;
     }
 
@@ -3294,7 +3442,11 @@ async function handlePurchaseFlow(params: {
       });
       return true;
     }
-    const minIso = addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(user.telegram_id));
+    // Замороженная на шаге вопроса граница (Блок 4, находка 4.22) —
+    // отсутствие в state только у чекаутов, начатых до этой правки.
+    const minIso =
+      state.checkout_min_fulfillment_date ??
+      addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(user.telegram_id));
     if (iso < minIso) {
       await say(copy.fulfillmentDateTooEarly(isoDateToDisplay(minIso)));
       return true;
@@ -3321,9 +3473,11 @@ async function handlePurchaseFlow(params: {
   if (state.mode === "awaiting_variant_choice") {
     const productId = state.pending_variant_product_id;
     if (!productId) {
-      // Состояние потерялось между сообщениями — переспрашивать нечего,
-      // просто выходим из шага молча, как и остальные шаги без контекста.
+      // Состояние потерялось между сообщениями (Блок 8, находка 8.10) —
+      // раньше выходили из шага молча: со стороны покупателя бот просто
+      // переставал отвечать на его "1"/"2 кг", без единого слова.
       await flow.setDirectState(user.user_key, { mode: undefined });
+      await say(copy.variantChoiceExpired);
       return true;
     }
     const s = await db();
@@ -3375,6 +3529,24 @@ async function handlePurchaseFlow(params: {
   }
 
   if (state.mode === "awaiting_address") {
+    // Пустой текст (Блок 4, находка 4.8) — покупатель прислал вложение без
+    // подписи (частый случай: присылает скриншот оплаты раньше времени,
+    // ещё до того как назвал адрес — см. комментарий в
+    // proceedToFulfillmentOrPayment). Без этой проверки пустая строка
+    // сохранялась как адрес, и чекаут молча уезжал на шаг дальше с
+    // fulfillment_address = "".
+    if (!text.trim()) {
+      await say(copy.fulfillmentAddressPrompt);
+      return true;
+    }
+    // "Корзина"/"каталог"/"мои заказы" и т.п. — свободный текст здесь
+    // сохраняется как есть, а handlePurchaseFlow (эта функция) выполняется
+    // до диспетчера команд (matchDirectCommand) выше по стеку (Блок 4,
+    // находка 4.9): без этой проверки слово команды, напечатанное на шаге
+    // адреса, сохранялось бы как сам адрес. false — "не обработано мной",
+    // вызывающий код передаёт text дальше в matchDirectCommand.
+    const { matchDirectCommand } = await import("./direct-flow");
+    if (matchDirectCommand(text) !== null) return false;
     await flow.setDirectState(user.user_key, {
       checkout_fulfillment_address: text.trim().slice(0, 500),
       mode: "awaiting_fulfillment_note",
@@ -3386,6 +3558,9 @@ async function handlePurchaseFlow(params: {
   }
 
   if (state.mode === "awaiting_fulfillment_note") {
+    // Та же защита, что и на шаге адреса выше (Блок 4, находка 4.9).
+    const { matchDirectCommand } = await import("./direct-flow");
+    if (text.trim() && matchDirectCommand(text) !== null) return false;
     await finishFulfillmentAndShowPayment(
       conversationId,
       accountId,

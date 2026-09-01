@@ -12,6 +12,16 @@ import type { Json } from "@/integrations-supabase/types";
  * подключение к базе идёт под service_role в обход RLS (см.
  * control-plane.server.ts). Без этой проверки страница отдавала бы первый
  * попавшийся каталог среди всех клиентов на общей базе.
+ *
+ * Блок 10, находка 10.2 (сознательно отложена) — витрина не знает про
+ * физические товары помимо цены варианта (10.1, уже исправлено): нет ни
+ * срока изготовления, ни списка вариантов на карточке (только цена "от"),
+ * значок "Нет в наличии" смотрит на stock_quantity, который у товара "под
+ * заказ" (без остатка) всегда NULL и просто не сработает — не false
+ * positive, но и не покрывает сценарий "остаток есть, но недостаточно".
+ * Полноценная физическая карточка на витрине (варианты кнопками, срок,
+ * адрес/дата — которых тут и не может быть, покупка всё равно только через
+ * бота) — заметно шире одной точечной правки.
  */
 
 function escapeHtml(s: string): string {
@@ -48,6 +58,13 @@ type StorefrontProduct = {
   currency: string | null;
   country_prices: Json;
   stock_quantity: number | null;
+  // Блок 10, находка 10.1 — витрина не знала о вариантах вовсе и всегда
+  // показывала products.price, тогда как боты уже показывают
+  // "от <минимальная цена варианта>" (resolvePrice с вариантом). Для
+  // товара с вариантами products.price — легаси-значение, которое магазин
+  // никогда не берёт (см. Блок 8, находка 8.4) — витрина показывала именно
+  // его, вторую, отличную от ботов цену на один и тот же торт.
+  product_variants: Array<{ price: number | string }> | null;
 };
 
 type WrapPageOptions = {
@@ -364,7 +381,7 @@ export const Route = createFileRoute("/shop")({
                 supabaseAdmin
                   .from("products")
                   .select(
-                    "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity",
+                    "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(price)",
                   )
                   .eq("is_active", true)
                   .order("sort_order")
@@ -385,10 +402,22 @@ export const Route = createFileRoute("/shop")({
           return catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
         });
 
-        const priced = new Map<string, { amount: number; currency: string }>();
+        // Блок 10, находка 10.1 — для товара с вариантами используем
+        // минимальную цену варианта с пометкой "от", тем же приёмом, что
+        // sendProductCard в bot.server.ts (m.priceFrom): resolvePrice с
+        // третьим аргументом-вариантом, а не products.price.
+        const priced = new Map<string, { amount: number; currency: string; isFrom: boolean }>();
         for (const p of visibleProducts) {
-          const money = await resolvePrice(p, null);
-          priced.set(p.id, money);
+          const variants = p.product_variants ?? [];
+          if (variants.length > 0) {
+            const pricedVariants = await Promise.all(variants.map((v) => resolvePrice(p, null, v)));
+            const minAmount = Math.min(...pricedVariants.map((m) => m.amount));
+            const currency = pricedVariants[0]?.currency ?? p.currency ?? "KZT";
+            priced.set(p.id, { amount: minAmount, currency, isFrom: true });
+          } else {
+            const money = await resolvePrice(p, null);
+            priced.set(p.id, { ...money, isFrom: false });
+          }
         }
 
         function renderCard(p: StorefrontProduct): string {
@@ -409,7 +438,7 @@ export const Route = createFileRoute("/shop")({
               ${p.description ? `<div class="card-desc">${escapeHtml(p.description)}</div>` : ""}
               ${ratingHtml}
               ${oosHtml}
-              ${money ? `<div class="card-price">${escapeHtml(formatMoney(money.amount, money.currency))}</div>` : ""}
+              ${money ? `<div class="card-price">${money.isFrom ? "от " : ""}${escapeHtml(formatMoney(money.amount, money.currency))}</div>` : ""}
             </div>
           </div>`;
         }

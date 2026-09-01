@@ -13,6 +13,8 @@ const copy: Record<
     awaiting: string;
     delivered: string;
     delivering: (n: number) => string;
+    /** Блок 6, находка 6.4 — производственная очередь физических заказов. */
+    inProduction: string;
     howToTitle: string;
     step1: string;
     step2: string;
@@ -26,6 +28,7 @@ const copy: Record<
     totalOrders: "Всего заказов",
     awaiting: "Ждут подтверждения",
     delivered: "Выдано",
+    inProduction: "В производстве",
     delivering: (n) =>
       `Выдаётся сейчас: ${n} — порции файлов ещё идут (см. «Заказы» → Продолжить выдачу).`,
     howToTitle: "Как пользоваться",
@@ -41,6 +44,7 @@ const copy: Record<
     totalOrders: "Барлық тапсырыстар",
     awaiting: "Растауды күтуде",
     delivered: "Берілді",
+    inProduction: "Дайындалуда",
     delivering: (n) =>
       `Қазір беріледі: ${n} — файл бөліктері әлі жіберілуде («Тапсырыстар» → Беруді жалғастыру бөлімін қараңыз).`,
     howToTitle: "Қалай пайдалану керек",
@@ -56,6 +60,7 @@ const copy: Record<
     totalOrders: "Total orders",
     awaiting: "Awaiting confirmation",
     delivered: "Delivered",
+    inProduction: "In production",
     delivering: (n) =>
       `Delivering now: ${n} — file batches are still being sent (see "Orders" → Continue delivery).`,
     howToTitle: "How to use this panel",
@@ -71,6 +76,7 @@ const copy: Record<
     totalOrders: "Jami buyurtmalar",
     awaiting: "Tasdiqni kutmoqda",
     delivered: "Berildi",
+    inProduction: "Tayyorlanmoqda",
     delivering: (n) =>
       `Hozir berilmoqda: ${n} — fayl qismlari hali yuborilmoqda («Buyurtmalar» → Berishni davom ettirish bo‘limini qarang).`,
     howToTitle: "Qanday foydalanish kerak",
@@ -99,14 +105,18 @@ function Dashboard() {
   const awaiting = s?.awaiting ?? 0;
   const delivered = s?.delivered ?? 0;
   const delivering = s?.delivering ?? 0;
+  const inProduction = s?.inProduction ?? 0;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">{c.title}</h1>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Stat label={c.products} value={products} />
         <Stat label={c.totalOrders} value={total} />
         <Stat label={c.awaiting} value={awaiting} highlight={awaiting > 0} />
+        {inProduction > 0 && (
+          <Stat label={c.inProduction} value={inProduction} highlight={inProduction > 0} />
+        )}
         <Stat label={c.delivered} value={delivered} />
       </div>
       {delivering > 0 && <p className="text-sm text-blue-700">{c.delivering(delivering)}</p>}
