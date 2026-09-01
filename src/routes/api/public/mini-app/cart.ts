@@ -7,6 +7,7 @@ type CartBody = {
   product_id?: string;
   product_variant_id?: string | null;
   cart_item_id?: string;
+  quantity?: number;
 };
 
 export const Route = createFileRoute("/api/public/mini-app/cart")({
@@ -42,8 +43,13 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
         }
 
         const action = typeof body.action === "string" ? body.action.trim() : "";
-        const { ensureMiniAppBotUser, miniAppAddProduct, removeMiniAppCartItem, listMiniAppCart } =
-          await import("@/lib/mini-app-cart.server");
+        const {
+          ensureMiniAppBotUser,
+          miniAppAddProduct,
+          removeMiniAppCartItem,
+          listMiniAppCart,
+          miniAppSetCartQuantity,
+        } = await import("@/lib/mini-app-cart.server");
 
         await ensureMiniAppBotUser(auth.user);
 
@@ -52,6 +58,17 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
           if (!cartItemId) return Response.json({ error: "missing_id" }, { status: 400 });
           const removed = await removeMiniAppCartItem(auth.user.id, cartItemId);
           if (!removed) return Response.json({ error: "not_found" }, { status: 404 });
+          const items = await listMiniAppCart(auth.user.id);
+          return Response.json({ ok: true, items });
+        }
+
+        if (action === "set_quantity") {
+          const cartItemId = typeof body.cart_item_id === "string" ? body.cart_item_id.trim() : "";
+          const quantity = Number(body.quantity);
+          if (!cartItemId) return Response.json({ error: "missing_id" }, { status: 400 });
+          const result = await miniAppSetCartQuantity(auth.user.id, cartItemId, quantity);
+          if (result === "not_found") return Response.json({ error: "not_found" }, { status: 404 });
+          if (result !== "ok") return Response.json({ error: result }, { status: 400 });
           const items = await listMiniAppCart(auth.user.id);
           return Response.json({ ok: true, items });
         }

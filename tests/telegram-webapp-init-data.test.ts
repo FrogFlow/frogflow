@@ -79,10 +79,11 @@ describe("resolveTelegramInitData", () => {
 
 describe("mini-app boot", () => {
   it("захватывает launch params до SDK и не просит закрыть окно", () => {
-    const src = readFileSync(resolve("src/routes/mini-app.ts"), "utf8");
-    expect(src).toContain("ff_tg_launch");
-    expect(src).toContain("telegram-web-app.js?63");
-    expect(src).not.toMatch(/Закройте окно/);
-    expect(src).not.toMatch(/if\s*\(\s*!initData\(\)\s*\)\s*\{[\s\S]*body\.innerHTML/);
+    const page = readFileSync(resolve("src/lib/mini-app-page.server.ts"), "utf8");
+    const runtime = readFileSync(resolve("src/lib/mini-app-runtime.ts"), "utf8");
+    expect(page).toContain("ff_tg_launch");
+    expect(page).toContain("telegram-web-app.js?63");
+    expect(runtime).not.toMatch(/Закройте окно/);
+    expect(runtime).not.toMatch(/body\.innerHTML/);
   });
 });

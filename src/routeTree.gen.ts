@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ShopRouteImport } from './routes/shop'
 import { Route as OperatorRouteImport } from './routes/operator'
+import { Route as MiniAppRuntimeRouteImport } from './routes/mini-app-runtime'
 import { Route as MiniAppRouteImport } from './routes/mini-app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
@@ -43,6 +44,7 @@ import { Route as OperatorAuthedOnboardRouteImport } from './routes/operator._au
 import { Route as OperatorAuthedJournalRouteImport } from './routes/operator._authed.journal'
 import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._authed.broadcast'
 import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
+import { Route as MiniAppProductProductIdRouteImport } from './routes/mini-app.product.$productId'
 import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
 import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
 import { Route as ApiOperatorCronHealthSnapshotRouteImport } from './routes/api/operator-cron/health-snapshot'
@@ -85,6 +87,11 @@ const ShopRoute = ShopRouteImport.update({
 const OperatorRoute = OperatorRouteImport.update({
   id: '/operator',
   path: '/operator',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MiniAppRuntimeRoute = MiniAppRuntimeRouteImport.update({
+  id: '/mini-app-runtime',
+  path: '/mini-app-runtime',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MiniAppRoute = MiniAppRouteImport.update({
@@ -245,6 +252,11 @@ const OperatorAuthedBotIdRoute = OperatorAuthedBotIdRouteImport.update({
   id: '/$botId',
   path: '/$botId',
   getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const MiniAppProductProductIdRoute = MiniAppProductProductIdRouteImport.update({
+  id: '/product/$productId',
+  path: '/product/$productId',
+  getParentRoute: () => MiniAppRoute,
 } as any)
 const ApiOperatorCronSubscriptionsRoute =
   ApiOperatorCronSubscriptionsRouteImport.update({
@@ -426,7 +438,8 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
-  '/mini-app': typeof MiniAppRoute
+  '/mini-app': typeof MiniAppRouteWithChildren
+  '/mini-app-runtime': typeof MiniAppRuntimeRoute
   '/operator': typeof OperatorRouteWithChildren
   '/shop': typeof ShopRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
@@ -469,6 +482,7 @@ export interface FileRoutesByFullPath {
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
+  '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
   '/operator/journal': typeof OperatorAuthedJournalRoute
@@ -493,7 +507,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/mini-app': typeof MiniAppRoute
+  '/mini-app': typeof MiniAppRouteWithChildren
+  '/mini-app-runtime': typeof MiniAppRuntimeRoute
   '/operator': typeof OperatorAuthedIndexRoute
   '/shop': typeof ShopRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
@@ -535,6 +550,7 @@ export interface FileRoutesByTo {
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
+  '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
   '/operator/journal': typeof OperatorAuthedJournalRoute
@@ -560,7 +576,8 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/login': typeof LoginRoute
-  '/mini-app': typeof MiniAppRoute
+  '/mini-app': typeof MiniAppRouteWithChildren
+  '/mini-app-runtime': typeof MiniAppRuntimeRoute
   '/operator': typeof OperatorRouteWithChildren
   '/shop': typeof ShopRoute
   '/admin/analytics': typeof AdminAnalyticsRoute
@@ -604,6 +621,7 @@ export interface FileRoutesById {
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
+  '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/_authed/broadcast': typeof OperatorAuthedBroadcastRoute
   '/operator/_authed/journal': typeof OperatorAuthedJournalRoute
@@ -632,6 +650,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/mini-app'
+    | '/mini-app-runtime'
     | '/operator'
     | '/shop'
     | '/admin/analytics'
@@ -674,6 +693,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
+    | '/mini-app/product/$productId'
     | '/operator/$botId'
     | '/operator/broadcast'
     | '/operator/journal'
@@ -699,6 +719,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/mini-app'
+    | '/mini-app-runtime'
     | '/operator'
     | '/shop'
     | '/admin/analytics'
@@ -740,6 +761,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
+    | '/mini-app/product/$productId'
     | '/operator/$botId'
     | '/operator/broadcast'
     | '/operator/journal'
@@ -765,6 +787,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/login'
     | '/mini-app'
+    | '/mini-app-runtime'
     | '/operator'
     | '/shop'
     | '/admin/analytics'
@@ -808,6 +831,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
+    | '/mini-app/product/$productId'
     | '/operator/_authed/$botId'
     | '/operator/_authed/broadcast'
     | '/operator/_authed/journal'
@@ -834,7 +858,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   LoginRoute: typeof LoginRoute
-  MiniAppRoute: typeof MiniAppRoute
+  MiniAppRoute: typeof MiniAppRouteWithChildren
+  MiniAppRuntimeRoute: typeof MiniAppRuntimeRoute
   OperatorRoute: typeof OperatorRouteWithChildren
   ShopRoute: typeof ShopRoute
   LegalSlugRoute: typeof LegalSlugRoute
@@ -884,6 +909,13 @@ declare module '@tanstack/react-router' {
       path: '/operator'
       fullPath: '/operator'
       preLoaderRoute: typeof OperatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mini-app-runtime': {
+      id: '/mini-app-runtime'
+      path: '/mini-app-runtime'
+      fullPath: '/mini-app-runtime'
+      preLoaderRoute: typeof MiniAppRuntimeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mini-app': {
@@ -1109,6 +1141,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/operator/$botId'
       preLoaderRoute: typeof OperatorAuthedBotIdRouteImport
       parentRoute: typeof OperatorAuthedRoute
+    }
+    '/mini-app/product/$productId': {
+      id: '/mini-app/product/$productId'
+      path: '/product/$productId'
+      fullPath: '/mini-app/product/$productId'
+      preLoaderRoute: typeof MiniAppProductProductIdRouteImport
+      parentRoute: typeof MiniAppRoute
     }
     '/api/operator-cron/subscriptions': {
       id: '/api/operator-cron/subscriptions'
@@ -1406,6 +1445,17 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface MiniAppRouteChildren {
+  MiniAppProductProductIdRoute: typeof MiniAppProductProductIdRoute
+}
+
+const MiniAppRouteChildren: MiniAppRouteChildren = {
+  MiniAppProductProductIdRoute: MiniAppProductProductIdRoute,
+}
+
+const MiniAppRouteWithChildren =
+  MiniAppRoute._addFileChildren(MiniAppRouteChildren)
+
 interface OperatorAuthedRouteChildren {
   OperatorAuthedBotIdRoute: typeof OperatorAuthedBotIdRoute
   OperatorAuthedBroadcastRoute: typeof OperatorAuthedBroadcastRoute
@@ -1446,7 +1496,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   LoginRoute: LoginRoute,
-  MiniAppRoute: MiniAppRoute,
+  MiniAppRoute: MiniAppRouteWithChildren,
+  MiniAppRuntimeRoute: MiniAppRuntimeRoute,
   OperatorRoute: OperatorRouteWithChildren,
   ShopRoute: ShopRoute,
   LegalSlugRoute: LegalSlugRoute,

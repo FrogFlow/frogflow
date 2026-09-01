@@ -29,7 +29,19 @@ async function db() {
   return supabaseAdmin;
 }
 
+export async function miniAppCountryCode(telegram_id: number): Promise<string | null> {
+  const s = await db();
+  const { data } = await s.from("bot_users").select("state").eq("telegram_id", telegram_id).maybeSingle();
+  const state = data?.state;
+  if (state && typeof state === "object" && !Array.isArray(state)) {
+    const code = (state as { country_code?: string }).country_code;
+    return code?.trim() || null;
+  }
+  return null;
+}
+
 export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartLine[]> {
+  const countryCode = await miniAppCountryCode(telegram_id);
   const s = await db();
   const { data: items, error } = await s
     .from("cart_items")
@@ -47,7 +59,7 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
   for (const it of (items ?? []) as CartListRow[]) {
     const p = it.products;
     if (!p) continue;
-    const money = await resolvePrice(p, null, it.product_variants);
+    const money = await resolvePrice(p, countryCode, it.product_variants);
     const lineTotal = Number(money.amount) * Number(it.quantity);
     const displayName = it.product_variants ? `${p.name} (${it.product_variants.name})` : p.name;
     lines.push({
@@ -82,13 +94,28 @@ export async function removeMiniAppCartItem(
 
 export async function ensureMiniAppBotUser(user: TelegramWebAppUser) {
   const { ensureTelegramBotUser } = await import("./bot.server");
-  return ensureTelegramBotUser({
+  const { miniAppLocaleFromTelegram } = await import("./mini-app-i18n");
+  const row = await ensureTelegramBotUser({
     id: user.id,
     username: user.username,
     first_name: user.first_name,
     last_name: user.last_name,
     language_code: user.language_code,
   });
+  const locale = miniAppLocaleFromTelegram(user.language_code);
+  const s = await db();
+  const state =
+    row.state && typeof row.state === "object" && !Array.isArray(row.state)
+      ? { ...(row.state as Record<string, unknown>) }
+      : {};
+  if (state.locale !== locale) {
+    state.locale = locale;
+    await s
+      .from("bot_users")
+      .update({ state })
+      .eq("telegram_id", user.id);
+  }
+  return row;
 }
 
 export async function miniAppAddProduct(
@@ -100,7 +127,24 @@ export async function miniAppAddProduct(
   return miniAppAddToCart(telegram_id, product_id, product_variant_id);
 }
 
+export async function miniAppSetCartQuantity(
+  telegram_id: number,
+  cart_item_id: string,
+  quantity: number,
+) {
+  const { miniAppUpdateCartQuantity } = await import("./bot.server");
+  return miniAppUpdateCartQuantity(telegram_id, cart_item_id, quantity);
+}
+
 export async function miniAppCheckoutInChat(telegram_id: number) {
   const { miniAppOpenCartInChat } = await import("./bot.server");
   return miniAppOpenCartInChat(telegram_id);
+}
+
+export async function miniAppRunCheckout(
+  telegram_id: number,
+  body: Record<string, unknown>,
+) {
+  const { miniAppProcessCheckout } = await import("./mini-app-checkout.server");
+  return miniAppProcessCheckout(telegram_id, body as import("./mini-app-checkout.server").MiniAppCheckoutBody);
 }

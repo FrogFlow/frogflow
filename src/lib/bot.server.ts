@@ -2854,7 +2854,7 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
   // молча ничего не делал бы), если бы не try/catch именно здесь — он же
   // снимает claim перед тем, как что-то ответить покупателю.
   try {
-    await placeOrderInner(chat_id, user, country_code, telegram_id, locale, m);
+    await placeOrderInner(chat_id, user, country_code, telegram_id, locale, m, undefined);
   } catch (e: unknown) {
     console.error(`[bot] placeOrder failed for telegram_id=${telegram_id}`, e);
     await releaseOrderPlacement(telegram_id, user.state);
@@ -2904,6 +2904,50 @@ async function placeOrder(chat_id: number, user: BotUser, country_code: string) 
  * не выразит) — миграция потребует отдельного проектирования и проверки
  * на живых данных, не входит в этот заход.
  */
+export type MiniAppPlaceOrderResult =
+  | {
+      ok: true;
+      type: "robokassa";
+      paymentUrl: string;
+      amountLabel: string;
+      orderId: number;
+    }
+  | { ok: true; type: "choose_payment"; amountLabel: string; orderId: number }
+  | {
+      ok: true;
+      type: "manual_proof";
+      amountLabel: string;
+      instructions: string;
+      qrImageUrl?: string;
+      orderId: number;
+    }
+  | { ok: true; type: "completed"; message: string; orderId: number }
+  | { ok: false; error: string };
+
+async function miniAppAmountLabel(total: number, currency: string): Promise<string> {
+  return `К оплате: ${formatMoney(total, currency)}`;
+}
+
+async function miniAppRobokassaUrl(
+  orderId: number,
+  displayNo: number,
+  total: number,
+  currency: string,
+  rk: Awaited<ReturnType<typeof loadRobokassaSettings>>,
+): Promise<string | null> {
+  if (!rk.ready) return null;
+  const { buildRobokassaPaymentUrl } = await import("./robokassa.server");
+  const outSum = Number(total).toFixed(2);
+  return buildRobokassaPaymentUrl({
+    login: rk.login,
+    pass1: rk.pass1,
+    outSum,
+    invId: orderId,
+    description: `Заказ #${displayNo}`,
+    isTest: rk.testMode,
+  });
+}
+
 async function placeOrderInner(
   chat_id: number,
   user: BotUser,
@@ -2911,7 +2955,10 @@ async function placeOrderInner(
   telegram_id: number,
   locale: Locale,
   m: (typeof copy)["ru"],
-) {
+  options?: { miniApp?: boolean; paymentMethod?: "robokassa" | "manual" },
+): Promise<MiniAppPlaceOrderResult | void> {
+  const miniApp = Boolean(options?.miniApp);
+  const paymentMethod = options?.paymentMethod;
   // Разовый выбор языка ДО оформления (см. proceedToLanguageOrPlace) — снят
   // сразу же, чтобы не протух в состоянии и не повлиял на следующий заказ:
   // все сообщения ниже (startManualProofPath и т.д.) берут за основу именно
@@ -2988,16 +3035,9 @@ async function placeOrderInner(
     .maybeSingle();
 
   if (!method) {
-    // Сохранённая страна покупателя (state.country_code переживает сессии,
-    // см. setState) больше не соответствует ни одному способу оплаты —
-    // продавец мог удалить её (payment-methods.functions.ts: удаление без
-    // проверки зависимостей). Раньше это тихо проглатывалось: `method`
-    // становился null, и заказ всё равно создавался — с заглушкой
-    // `defaultInstructions` вместо реальных реквизитов, которую заплатить
-    // было нельзя (Блок 2.4). Просим выбрать страну заново вместо того,
-    // чтобы плодить безнадёжный заказ.
     await releaseOrderPlacement(telegram_id, user.state);
     await setState(telegram_id, { ...user.state, country_code: undefined });
+    if (miniApp) return { ok: false, error: "country_unavailable" };
     await tg("sendMessage", { chat_id, text: m.countryNoLongerAvailable });
     await askCountry(chat_id, telegram_id, true, locale);
     return;
@@ -3010,6 +3050,10 @@ async function placeOrderInner(
     )
     .eq("telegram_id", telegram_id);
   if (!items?.length) {
+    if (miniApp) {
+      await releaseOrderPlacement(telegram_id, user.state);
+      return { ok: false, error: "empty_cart" };
+    }
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
     await releaseOrderPlacement(telegram_id, user.state);
     return;
@@ -3049,6 +3093,7 @@ async function placeOrderInner(
         // вручную кнопкой в корзине.
         await s.from("cart_items").delete().eq("id", it.id);
         await releaseOrderPlacement(telegram_id, user.state);
+        if (miniApp) return { ok: false, error: "out_of_stock" };
         await tg("sendMessage", { chat_id, text: m.outOfStockAtCheckout });
         return;
       }
@@ -3106,6 +3151,7 @@ async function placeOrderInner(
       // цене, просим повторить без него.
       for (const r of reservedStock) await restoreStock(r.productId, r.qty);
       await releaseOrderPlacement(telegram_id, user.state);
+      if (miniApp) return { ok: false, error: "promo_invalid" };
       await tg("sendMessage", { chat_id, text: m.promoCodeInvalid });
       return;
     }
@@ -3137,6 +3183,7 @@ async function placeOrderInner(
     } else {
       for (const r of reservedStock) await restoreStock(r.productId, r.qty);
       await releaseOrderPlacement(telegram_id, user.state);
+      if (miniApp) return { ok: false, error: "gift_invalid" };
       await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
       return;
     }
@@ -3177,6 +3224,10 @@ async function placeOrderInner(
     .single();
   if (error || !order) {
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+    if (miniApp) {
+      await releaseOrderPlacement(telegram_id, user.state);
+      return { ok: false, error: "order_failed" };
+    }
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
     await releaseOrderPlacement(telegram_id, user.state);
     return;
@@ -3209,6 +3260,10 @@ async function placeOrderInner(
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     await s.from("orders").delete().eq("id", order.id);
     await s.from("cart_items").delete().eq("telegram_id", telegram_id);
+    if (miniApp) {
+      await releaseOrderPlacement(telegram_id, user.state);
+      return { ok: false, error: "empty_cart" };
+    }
     await tg("sendMessage", { chat_id, text: m.cartEmpty });
     await releaseOrderPlacement(telegram_id, user.state);
     return;
@@ -3277,6 +3332,10 @@ async function placeOrderInner(
     console.error(`[bot] order_items insert failed for order ${order.id}`, itemsError);
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     await s.from("orders").delete().eq("id", order.id);
+    if (miniApp) {
+      await releaseOrderPlacement(telegram_id, user.state);
+      return { ok: false, error: "order_failed" };
+    }
     await tg("sendMessage", { chat_id, text: m.orderCreateFailed });
     await releaseOrderPlacement(telegram_id, user.state);
     return;
@@ -3309,6 +3368,14 @@ async function placeOrderInner(
     await notifyAdminNewOrder(order.id as number, null, null, { noPaymentNeeded: true }).catch(
       (e) => console.error(`[bot] notifyAdminNewOrder failed for zero-total order ${order.id}`, e),
     );
+    if (miniApp) {
+      return {
+        ok: true,
+        type: "completed",
+        message: "Заказ оформлен! Материалы придут в бот.",
+        orderId: order.id as number,
+      };
+    }
     return;
   }
 
@@ -3322,21 +3389,94 @@ async function placeOrderInner(
     } catch (e) {
       console.error(`[bot] acceptOrder failed for on_receipt order ${order.id}`, e);
     }
-    // Блок 6, находка 6.3 — тот же пробел: on_receipt-заказ доходил до
-    // продавца молча, notifyAdminNewOrder вызывался только с путей
-    // обработки чека.
     await notifyAdminNewOrder(order.id as number, null, null, { noPaymentNeeded: true }).catch(
       (e) => console.error(`[bot] notifyAdminNewOrder failed for on_receipt order ${order.id}`, e),
     );
+    if (miniApp) {
+      return {
+        ok: true,
+        type: "completed",
+        message: "Заказ принят! Оплата при получении.",
+        orderId: order.id as number,
+      };
+    }
     return;
   }
-  // Сколько просить сейчас (Ниши, Блок 8.2) — total у digital и у full-режима
-  // физического заказа, доля от total при payment_mode=deposit.
   const amountDue = await amountDueNow({ total, fulfillment_kind: orderFulfillmentKind });
-
+  const orderId = order.id as number;
+  const displayNo = order.display_no ?? order.order_no ?? orderId;
   const rk = await loadRobokassaSettings();
   const cc = String(method?.country_code ?? country_code ?? "").toUpperCase();
   const instructions = (method?.instructions as string) || m.defaultInstructions;
+  const amountLabel = await miniAppAmountLabel(amountDue, currency);
+  const { imageUrl } = await import("./public-image");
+
+  const miniAppManual = (autoDeliver: boolean): MiniAppPlaceOrderResult => ({
+    ok: true,
+    type: "manual_proof",
+    amountLabel,
+    instructions,
+    qrImageUrl: method?.qr_code_path ? imageUrl(method.qr_code_path as string) : undefined,
+    orderId,
+  });
+
+  if (miniApp) {
+    const autoDeliverManual =
+      !rk.ready ? false : isProofAutoOnlyCountry(cc) || paymentMethod === "manual";
+    if (!rk.ready || paymentMethod === "manual") {
+      if (autoDeliverManual) {
+        await s.from("orders").update({ admin_note: "proof_auto" }).eq("id", orderId);
+      }
+      await setState(telegram_id, {
+        ...user.state,
+        mode: "awaiting_proof",
+        pending_order_id: orderId,
+        pending_display_no: displayNo,
+        proof_auto: autoDeliverManual,
+      });
+      return miniAppManual(autoDeliverManual);
+    }
+    if (isProofAutoOnlyCountry(cc)) {
+      await s.from("orders").update({ admin_note: "proof_auto" }).eq("id", orderId);
+      await setState(telegram_id, {
+        ...user.state,
+        mode: "awaiting_proof",
+        pending_order_id: orderId,
+        pending_display_no: displayNo,
+        proof_auto: true,
+      });
+      return miniAppManual(true);
+    }
+    if (cc === "KZ" && !paymentMethod) {
+      await setState(telegram_id, {
+        ...user.state,
+        mode: "choose_pay",
+        pending_order_id: orderId,
+        pending_display_no: displayNo,
+        proof_auto: false,
+      });
+      return { ok: true, type: "choose_payment", amountLabel, orderId };
+    }
+    const paymentUrl = await miniAppRobokassaUrl(orderId, displayNo, amountDue, currency, rk);
+    if (!paymentUrl) {
+      await setState(telegram_id, {
+        ...user.state,
+        mode: "awaiting_proof",
+        pending_order_id: orderId,
+        pending_display_no: displayNo,
+        proof_auto: false,
+      });
+      return miniAppManual(false);
+    }
+    await setState(telegram_id, {
+      ...user.state,
+      mode: "awaiting_payment",
+      pending_order_id: orderId,
+      pending_display_no: displayNo,
+      proof_auto: false,
+    });
+    return { ok: true, type: "robokassa", paymentUrl, amountLabel, orderId };
+  }
 
   // Robokassa off (or misconfigured) → all countries: receipt + manual admin confirm
   if (!rk.ready) {
@@ -5671,6 +5811,137 @@ export async function ensureTelegramBotUser(from: {
   return upsertUser(from);
 }
 
+/** Изменить количество позиции в корзине из Mini App. */
+export async function miniAppUpdateCartQuantity(
+  telegram_id: number,
+  cart_item_id: string,
+  quantity: number,
+): Promise<"ok" | "not_found" | "digital_limit" | "out_of_stock" | "invalid" | "error"> {
+  const qty = Math.floor(quantity);
+  if (qty < 0 || qty > 99) return "invalid";
+  const s = await db();
+  const { data: row } = await s
+    .from("cart_items")
+    .select("id, quantity, product_id, product_variant_id, products(fulfillment_kind, stock_quantity)")
+    .eq("id", cart_item_id)
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  if (!row?.id) return "not_found";
+  const product = row.products as { fulfillment_kind?: string; stock_quantity?: number | null } | null;
+  if (!product) return "not_found";
+
+  if (qty === 0) {
+    await s.from("cart_items").delete().eq("id", cart_item_id);
+    return "ok";
+  }
+
+  const kind = product.fulfillment_kind === "physical" ? "physical" : "digital";
+  if (kind === "digital" && qty > 1) return "digital_limit";
+
+  const currentQty = Number(row.quantity) || 0;
+  if (qty < currentQty) {
+    const { error } = await s.from("cart_items").update({ quantity: qty }).eq("id", cart_item_id);
+    return error ? "error" : "ok";
+  }
+  if (qty === currentQty) return "ok";
+
+  const delta = qty - currentQty;
+  for (let i = 0; i < delta; i++) {
+    const result = await addToCart(
+      telegram_id,
+      row.product_id as string,
+      (row.product_variant_id as string | null) ?? null,
+    );
+    if (result === "ok") continue;
+    if (result === "digital_limit" && qty === 1) break;
+    if (result === "out_of_stock") return "out_of_stock";
+    if (result === "digital_limit") return "digital_limit";
+    return "error";
+  }
+  await s.from("cart_items").update({ quantity: qty }).eq("id", cart_item_id);
+  return "ok";
+}
+
+export async function miniAppSetCountry(telegram_id: number, country_code: string): Promise<boolean> {
+  const code = country_code.trim().toUpperCase();
+  if (!code) return false;
+  const s = await db();
+  const { data: method } = await s
+    .from("payment_methods")
+    .select("country_code, country_name")
+    .eq("country_code", code)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!method) return false;
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  const prev =
+    existing?.state && typeof existing.state === "object" && !Array.isArray(existing.state)
+      ? (existing.state as NonNullable<BotUser["state"]>)
+      : {};
+  await setState(telegram_id, {
+    ...prev,
+    country_code: method.country_code as string,
+    country_name: method.country_name as string,
+  });
+  return true;
+}
+
+export async function miniAppMergeState(
+  telegram_id: number,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const s = await db();
+  const { data: existing } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  const prev =
+    existing?.state && typeof existing.state === "object" && !Array.isArray(existing.state)
+      ? (existing.state as Record<string, unknown>)
+      : {};
+  await setState(telegram_id, { ...prev, ...patch } as BotUser["state"]);
+}
+
+export async function placeOrderForMiniApp(
+  telegram_id: number,
+  paymentMethod?: "robokassa" | "manual",
+): Promise<MiniAppPlaceOrderResult> {
+  const s = await db();
+  const { data: row } = await s.from("bot_users").select("*").eq("telegram_id", telegram_id).maybeSingle();
+  if (!row) return { ok: false, error: "no_user" };
+  const user = row as BotUser;
+  const country_code = user.state?.country_code;
+  if (!country_code) return { ok: false, error: "no_country" };
+
+  if (!(await claimOrderPlacement(telegram_id))) {
+    return { ok: false, error: "in_progress" };
+  }
+
+  const locale: Locale = user.state?.locale ?? "ru";
+  try {
+    const result = await placeOrderInner(
+      telegram_id,
+      user,
+      country_code,
+      telegram_id,
+      locale,
+      copy[locale],
+      { miniApp: true, paymentMethod },
+    );
+    if (result) return result;
+    return { ok: false, error: "unknown" };
+  } catch (e) {
+    console.error("[mini-app] placeOrderForMiniApp failed", e);
+    await releaseOrderPlacement(telegram_id, user.state);
+    return { ok: false, error: "error" };
+  }
+}
+
 /** Добавить товар в корзину из Mini App — та же логика, что в чате. */
 export async function miniAppAddToCart(
   telegram_id: number,
@@ -5699,3 +5970,4 @@ export async function miniAppOpenCartInChat(telegram_id: number) {
   await showCart(telegram_id, row as BotUser);
   return { ok: true as const };
 }
+

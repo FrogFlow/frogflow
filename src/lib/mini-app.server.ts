@@ -1,4 +1,5 @@
 import { validateTelegramInitData, type TelegramWebAppUser } from "./telegram-init-data.server";
+import { tg } from "./telegram.server";
 
 const INIT_DATA_HEADER = "x-telegram-init-data";
 
@@ -38,4 +39,23 @@ export async function authorizeMiniAppRequest(request: Request): Promise<MiniApp
   }
 
   return { ok: true, user: validated.user };
+}
+
+/** Кнопка меню бота (Menu Button) — вход в Mini App без reply-клавиатуры. */
+export async function syncMiniAppMenuButton(): Promise<void> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("telegram_mini_app"))) {
+    return;
+  }
+  const { appOrigin } = await import("./app-origin.server");
+  const origin = appOrigin();
+  if (!origin) return;
+  const url = miniAppUrl(origin);
+  await tg("setChatMenuButton", {
+    menu_button: {
+      type: "web_app",
+      text: "🛍 Магазин",
+      web_app: { url },
+    },
+  }).catch((e) => console.error("[mini-app] setChatMenuButton failed", e));
 }

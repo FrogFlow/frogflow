@@ -51,6 +51,15 @@ export function expectedWebhookUrl(): string {
   return `${publicAppOrigin()}/api/public/telegram/webhook`;
 }
 
+async function syncMiniAppMenuAfterWebhook(): Promise<void> {
+  try {
+    const { syncMiniAppMenuButton } = await import("./mini-app.server");
+    await syncMiniAppMenuButton();
+  } catch (e) {
+    console.error("[webhook] syncMiniAppMenuButton", e);
+  }
+}
+
 export type EnsureWebhookResult = {
   ok: boolean;
   action: "unchanged" | "set" | "error" | "not_owner";
@@ -95,6 +104,7 @@ export async function ensureTelegramWebhook(): Promise<EnsureWebhookResult> {
     const pending = result.pending_update_count ?? 0;
 
     if (previousUrl === expected) {
+      await syncMiniAppMenuAfterWebhook();
       return {
         ok: true,
         action: "unchanged",
@@ -133,6 +143,7 @@ export async function ensureTelegramWebhook(): Promise<EnsureWebhookResult> {
     } catch (e) {
       console.error("[webhook] syncBotPublicDescription", e);
     }
+    await syncMiniAppMenuAfterWebhook();
     return {
       ok: true,
       action: "set",

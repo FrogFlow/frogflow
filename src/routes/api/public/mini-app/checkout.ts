@@ -13,19 +13,23 @@ export const Route = createFileRoute("/api/public/mini-app/checkout")({
           return Response.json({ error: auth.error }, { status: auth.status });
         }
 
-        const { ensureMiniAppBotUser, miniAppCheckoutInChat } =
-          await import("@/lib/mini-app-cart.server");
+        const { ensureMiniAppBotUser, miniAppRunCheckout } = await import("@/lib/mini-app-cart.server");
         await ensureMiniAppBotUser(auth.user);
 
-        const result = await miniAppCheckoutInChat(auth.user.id);
-        if (!result.ok) {
-          if (result.reason === "empty_cart") {
-            return Response.json({ error: "empty_cart" }, { status: 400 });
-          }
-          return Response.json({ error: result.reason }, { status: 400 });
+        let body: Record<string, unknown> = {};
+        try {
+          const raw = await request.text();
+          if (raw.trim()) body = JSON.parse(raw) as Record<string, unknown>;
+        } catch {
+          return Response.json({ error: "invalid_json" }, { status: 400 });
         }
 
-        return Response.json({ ok: true });
+        const result = await miniAppRunCheckout(auth.user.id, body);
+        if (result.step === "error") {
+          const status = result.error === "empty_cart" ? 400 : 400;
+          return Response.json(result, { status });
+        }
+        return Response.json(result);
       },
     },
   },
