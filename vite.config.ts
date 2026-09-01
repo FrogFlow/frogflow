@@ -22,6 +22,9 @@ export default defineConfig({
           "/api/public/mini-app/checkout": {
             maxDuration: 60,
           },
+          "/api/public/mini-app/proof": {
+            maxDuration: 60,
+          },
         },
       },
     }),
