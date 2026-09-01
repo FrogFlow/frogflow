@@ -46,7 +46,11 @@ export async function miniAppProcessCheckout(
   body: MiniAppCheckoutBody,
 ): Promise<MiniAppCheckoutResponse> {
   const s = await db();
-  const { data: row } = await s.from("bot_users").select("*").eq("telegram_id", telegram_id).maybeSingle();
+  const { data: row } = await s
+    .from("bot_users")
+    .select("*")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
   if (!row) return { step: "error", error: "no_user" };
 
   if (body.contact_phone !== undefined) {
@@ -79,10 +83,7 @@ export async function miniAppProcessCheckout(
   }
 
   const statePatch: Record<string, unknown> = {};
-  if (
-    body.fulfillment_type !== undefined &&
-    !isMiniAppFulfillmentType(body.fulfillment_type)
-  ) {
+  if (body.fulfillment_type !== undefined && !isMiniAppFulfillmentType(body.fulfillment_type)) {
     return { step: "error", error: "invalid_fulfillment_type" };
   }
   if (body.fulfillment_type) {
@@ -101,15 +102,9 @@ export async function miniAppProcessCheckout(
     statePatch.checkout_fulfillment_address = undefined;
   }
   if (body.fulfillment_date) {
-    const {
-      maxLeadTimeDaysInCart,
-      todayInAppTZ,
-      addDaysToIsoDate,
-    } = await import("./fulfillment.server");
-    const minDate = addDaysToIsoDate(
-      todayInAppTZ(),
-      await maxLeadTimeDaysInCart(telegram_id),
-    );
+    const { maxLeadTimeDaysInCart, todayInAppTZ, addDaysToIsoDate } =
+      await import("./fulfillment.server");
+    const minDate = addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(telegram_id));
     if (!isValidMiniAppIsoDate(body.fulfillment_date, minDate)) {
       return { step: "need_fulfillment_date", minDate, error: "invalid_fulfillment_date" };
     }
@@ -167,7 +162,11 @@ export async function miniAppCheckoutNeeds(
   const s = await db();
   let user = row;
   if (!user) {
-    const { data } = await s.from("bot_users").select("contact_phone, state").eq("telegram_id", telegram_id).maybeSingle();
+    const { data } = await s
+      .from("bot_users")
+      .select("contact_phone, state")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
     user = data;
   }
   if (!user) return { step: "error", error: "no_user" };
@@ -202,8 +201,14 @@ export async function miniAppCheckoutNeeds(
     };
   }
 
-  const { cartFulfillmentKind, fulfillmentOptionsEnabled, maxLeadTimeDaysInCart, todayInAppTZ, addDaysToIsoDate, activeDeliveryZones } =
-    await import("./fulfillment.server");
+  const {
+    cartFulfillmentKind,
+    fulfillmentOptionsEnabled,
+    maxLeadTimeDaysInCart,
+    todayInAppTZ,
+    addDaysToIsoDate,
+    activeDeliveryZones,
+  } = await import("./fulfillment.server");
 
   if ((await cartFulfillmentKind(telegram_id)) === "physical") {
     const { pickup, delivery } = await fulfillmentOptionsEnabled();
@@ -222,12 +227,8 @@ export async function miniAppCheckoutNeeds(
     const minDays = await maxLeadTimeDaysInCart(telegram_id);
     const minDate = addDaysToIsoDate(todayInAppTZ(), minDays);
     const fulfillmentDate =
-      typeof state.checkout_fulfillment_at === "string"
-        ? state.checkout_fulfillment_at
-        : "";
-    if (
-      !isValidMiniAppIsoDate(fulfillmentDate, minDate)
-    ) {
+      typeof state.checkout_fulfillment_at === "string" ? state.checkout_fulfillment_at : "";
+    if (!isValidMiniAppIsoDate(fulfillmentDate, minDate)) {
       return { step: "need_fulfillment_date", minDate };
     }
     if (effectiveType === "delivery") {
@@ -278,9 +279,7 @@ export async function miniAppCheckoutNeeds(
           available.add(language);
         }
       }
-      const languages = MATERIAL_LANGUAGES.filter((language) =>
-        available.has(language),
-      );
+      const languages = MATERIAL_LANGUAGES.filter((language) => available.has(language));
       if (languages.length > 1) {
         return {
           step: "need_delivery_language",
@@ -299,7 +298,9 @@ export async function miniAppCheckoutNeeds(
   return null;
 }
 
-function mapPlaceOrderResult(result: import("./bot.server").MiniAppPlaceOrderResult): MiniAppCheckoutResponse {
+function mapPlaceOrderResult(
+  result: import("./bot.server").MiniAppPlaceOrderResult,
+): MiniAppCheckoutResponse {
   if (!result.ok) return { step: "error", error: result.error };
   if (result.type === "choose_payment") {
     return { step: "choose_payment", amountLabel: result.amountLabel };
@@ -322,7 +323,9 @@ function mapPlaceOrderResult(result: import("./bot.server").MiniAppPlaceOrderRes
   return { step: "completed", message: result.message };
 }
 
-export async function miniAppDefaultCountryForCatalog(telegram_id?: number): Promise<string | null> {
+export async function miniAppDefaultCountryForCatalog(
+  telegram_id?: number,
+): Promise<string | null> {
   if (!telegram_id) return null;
   return miniAppCountryCode(telegram_id);
 }

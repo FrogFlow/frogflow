@@ -46,11 +46,7 @@ export function formatMiniAppMoney(amount: number, currency: string): string {
   return cur === "KZT" ? `${value} ₸` : `${value} ${currency}`;
 }
 
-export async function loadMiniAppCatalogData(
-  defaultShopName = "Магазин",
-  page = 1,
-  pageSize = 80,
-) {
+export async function loadMiniAppCatalogData(defaultShopName = "Магазин", page = 1, pageSize = 80) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
 
@@ -114,7 +110,9 @@ export async function priceMiniAppProducts(
   for (const p of products) {
     const variants = p.product_variants ?? [];
     if (variants.length > 0) {
-      const pricedVariants = await Promise.all(variants.map((v) => resolvePrice(p, countryCode, v)));
+      const pricedVariants = await Promise.all(
+        variants.map((v) => resolvePrice(p, countryCode, v)),
+      );
       const minAmount = Math.min(...pricedVariants.map((m) => m.amount));
       const currency = pricedVariants[0]?.currency ?? p.currency ?? "KZT";
       const variantMap = Object.fromEntries(

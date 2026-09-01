@@ -2773,8 +2773,7 @@ async function redeemPromoCode(
   rawCode: string,
   subtotal: number,
 ): Promise<
-  | { ok: true; discount: number; promoId: string; previousUsedCount: number }
-  | { ok: false }
+  { ok: true; discount: number; promoId: string; previousUsedCount: number } | { ok: false }
 > {
   const found = await findValidPromoCode(rawCode);
   if (!found.ok) return { ok: false };
@@ -3015,9 +3014,7 @@ async function miniAppAmountLabel(
   const { miniAppStrings } = await import("./mini-app-i18n");
   const strings = miniAppStrings(locale);
   const formatted = formatMoney(total, currency);
-  return total < orderTotal
-    ? strings.depositNow(formatted)
-    : strings.amountToPay(formatted);
+  return total < orderTotal ? strings.depositNow(formatted) : strings.amountToPay(formatted);
 }
 
 async function miniAppRobokassaUrl(
@@ -3090,25 +3087,16 @@ async function placeOrderInner(
   const fulfillmentType = user.state?.checkout_fulfillment_type ?? null;
   const fulfillmentAt = user.state?.checkout_fulfillment_at ?? null;
   const fulfillmentAddress =
-    fulfillmentType === "delivery"
-      ? (user.state?.checkout_fulfillment_address ?? null)
-      : null;
+    fulfillmentType === "delivery" ? (user.state?.checkout_fulfillment_address ?? null) : null;
   const fulfillmentNote = user.state?.checkout_fulfillment_note ?? null;
   // Зона доставки (Ниши, Блок B) — тот же приём, отдельно от адреса: заказ
   // может быть с доставкой без выбранной зоны, если у продавца зоны не
   // настроены вовсе (checkout_delivery_zone_id тогда просто не заводится).
   const deliveryZoneId =
-    fulfillmentType === "delivery"
-      ? (user.state?.checkout_delivery_zone_id ?? null)
-      : null;
+    fulfillmentType === "delivery" ? (user.state?.checkout_delivery_zone_id ?? null) : null;
   const deliveryZoneName =
-    fulfillmentType === "delivery"
-      ? (user.state?.checkout_delivery_zone_name ?? null)
-      : null;
-  const deliveryFee =
-    fulfillmentType === "delivery"
-      ? (user.state?.checkout_delivery_fee ?? 0)
-      : 0;
+    fulfillmentType === "delivery" ? (user.state?.checkout_delivery_zone_name ?? null) : null;
+  const deliveryFee = fulfillmentType === "delivery" ? (user.state?.checkout_delivery_fee ?? 0) : 0;
   if (
     user.state?.checkout_fulfillment_type !== undefined ||
     user.state?.checkout_fulfillment_at !== undefined ||
@@ -3559,8 +3547,9 @@ async function placeOrderInner(
   });
 
   if (miniApp) {
-    const autoDeliverManual =
-      !rk.ready ? false : isProofAutoOnlyCountry(cc) || paymentMethod === "manual";
+    const autoDeliverManual = !rk.ready
+      ? false
+      : isProofAutoOnlyCountry(cc) || paymentMethod === "manual";
     if (!rk.ready || paymentMethod === "manual") {
       if (autoDeliverManual) {
         await s.from("orders").update({ admin_note: "proof_auto" }).eq("id", orderId);
@@ -5960,12 +5949,17 @@ export async function miniAppUpdateCartQuantity(
   const s = await db();
   const { data: row } = await s
     .from("cart_items")
-    .select("id, quantity, product_id, product_variant_id, products(fulfillment_kind, stock_quantity)")
+    .select(
+      "id, quantity, product_id, product_variant_id, products(fulfillment_kind, stock_quantity)",
+    )
     .eq("id", cart_item_id)
     .eq("telegram_id", telegram_id)
     .maybeSingle();
   if (!row?.id) return "not_found";
-  const product = row.products as { fulfillment_kind?: string; stock_quantity?: number | null } | null;
+  const product = row.products as {
+    fulfillment_kind?: string;
+    stock_quantity?: number | null;
+  } | null;
   if (!product) return "not_found";
 
   if (qty === 0) {
@@ -6000,7 +5994,10 @@ export async function miniAppUpdateCartQuantity(
   return "ok";
 }
 
-export async function miniAppSetCountry(telegram_id: number, country_code: string): Promise<boolean> {
+export async function miniAppSetCountry(
+  telegram_id: number,
+  country_code: string,
+): Promise<boolean> {
   const code = country_code.trim().toUpperCase();
   if (!code) return false;
   const s = await db();
@@ -6137,12 +6134,7 @@ export async function miniAppCartDiscountSummary(
 export async function miniAppUpdateDiscount(
   telegram_id: number,
   action:
-    | "promo_apply"
-    | "promo_clear"
-    | "gift_apply"
-    | "gift_clear"
-    | "points_use"
-    | "points_clear",
+    "promo_apply" | "promo_clear" | "gift_apply" | "gift_clear" | "points_use" | "points_clear",
   code?: string,
 ): Promise<"ok" | "invalid_code" | "module_disabled"> {
   const s = await db();
@@ -6194,7 +6186,11 @@ export async function placeOrderForMiniApp(
   paymentMethod?: "robokassa" | "manual",
 ): Promise<MiniAppPlaceOrderResult> {
   const s = await db();
-  const { data: row } = await s.from("bot_users").select("*").eq("telegram_id", telegram_id).maybeSingle();
+  const { data: row } = await s
+    .from("bot_users")
+    .select("*")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
   if (!row) return { ok: false, error: "no_user" };
   const user = row as BotUser;
   const country_code = user.state?.country_code;
@@ -6247,11 +6243,7 @@ export async function completeMiniAppPayment(
   telegram_id: number,
   paymentMethod?: "robokassa" | "manual",
 ): Promise<MiniAppPlaceOrderResult> {
-  if (
-    paymentMethod !== undefined &&
-    paymentMethod !== "robokassa" &&
-    paymentMethod !== "manual"
-  ) {
+  if (paymentMethod !== undefined && paymentMethod !== "robokassa" && paymentMethod !== "manual") {
     return { ok: false, error: "invalid_payment_method" };
   }
 
@@ -6287,12 +6279,7 @@ export async function completeMiniAppPayment(
     fulfillment_kind: order.fulfillment_kind,
   });
   const currency = (order.currency as string) || "KZT";
-  const amountLabel = await miniAppAmountLabel(
-    amountDue,
-    currency,
-    locale,
-    Number(order.total),
-  );
+  const amountLabel = await miniAppAmountLabel(amountDue, currency, locale, Number(order.total));
   const { data: method } = await s
     .from("payment_methods")
     .select("instructions, qr_code_path")
@@ -6306,8 +6293,7 @@ export async function completeMiniAppPayment(
     return { ok: true, type: "choose_payment", amountLabel, orderId };
   }
   const effectivePayment =
-    paymentMethod ??
-    (!rk.ready || isProofAutoOnlyCountry(cc) ? "manual" : "robokassa");
+    paymentMethod ?? (!rk.ready || isProofAutoOnlyCountry(cc) ? "manual" : "robokassa");
 
   if (effectivePayment === "manual") {
     const autoDeliver = rk.ready && (isProofAutoOnlyCountry(cc) || cc === "KZ");
@@ -6332,13 +6318,7 @@ export async function completeMiniAppPayment(
     };
   }
 
-  const paymentUrl = await miniAppRobokassaUrl(
-    orderId,
-    displayNo,
-    amountDue,
-    currency,
-    rk,
-  );
+  const paymentUrl = await miniAppRobokassaUrl(orderId, displayNo, amountDue, currency, rk);
   if (!paymentUrl) return { ok: false, error: "robokassa_unavailable" };
   await setState(telegram_id, {
     ...user.state,
@@ -6378,4 +6358,3 @@ export async function miniAppOpenCartInChat(telegram_id: number) {
   await showCart(telegram_id, row as BotUser);
   return { ok: true as const };
 }
-

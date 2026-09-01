@@ -8,7 +8,11 @@ import {
   renderMiniAppProductCard,
 } from "@/lib/mini-app-catalog.server";
 import { miniAppStrings } from "@/lib/mini-app-i18n";
-import { miniAppHtmlResponse, miniAppLocaleFromQuery, wrapMiniAppPage } from "@/lib/mini-app-page.server";
+import {
+  miniAppHtmlResponse,
+  miniAppLocaleFromQuery,
+  wrapMiniAppPage,
+} from "@/lib/mini-app-page.server";
 
 export const Route = createFileRoute("/mini-app")({
   server: {
@@ -31,10 +35,7 @@ export const Route = createFileRoute("/mini-app")({
         )
           ? (url.searchParams.get("country") || "").toUpperCase()
           : null;
-        const requestedPage = Math.max(
-          1,
-          Math.floor(Number(url.searchParams.get("page"))) || 1,
-        );
+        const requestedPage = Math.max(1, Math.floor(Number(url.searchParams.get("page"))) || 1);
 
         const {
           shopName,

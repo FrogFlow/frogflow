@@ -8,7 +8,11 @@ import {
   type MiniAppProduct,
 } from "@/lib/mini-app-catalog.server";
 import { miniAppStrings } from "@/lib/mini-app-i18n";
-import { miniAppHtmlResponse, miniAppLocaleFromQuery, wrapMiniAppPage } from "@/lib/mini-app-page.server";
+import {
+  miniAppHtmlResponse,
+  miniAppLocaleFromQuery,
+  wrapMiniAppPage,
+} from "@/lib/mini-app-page.server";
 import { imageUrl } from "@/lib/public-image";
 export const Route = createFileRoute("/mini-app/product/$productId")({
   server: {
@@ -30,9 +34,7 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
         const s = miniAppStrings(locale);
         const esc = escapeMiniAppHtml;
         const requestedCountry = (url.searchParams.get("country") || "").toUpperCase();
-        const countryCode = /^[A-Z]{2,8}$/.test(requestedCountry)
-          ? requestedCountry
-          : null;
+        const countryCode = /^[A-Z]{2,8}$/.test(requestedCountry) ? requestedCountry : null;
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const stockEnabled = await hasModule("stock");
@@ -73,7 +75,9 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
                 )
                 .join("")
             : `<div class="thumb" style="width:100%;max-height:280px"><span aria-hidden="true" style="font-size:3rem">🛍</span></div>`;
-        const variants = (p.product_variants ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
+        const variants = (p.product_variants ?? [])
+          .slice()
+          .sort((a, b) => a.sort_order - b.sort_order);
         const outOfStock = stockEnabled && p.stock_quantity !== null && p.stock_quantity <= 0;
         const rating =
           p.rating_count > 0 && p.rating_avg != null

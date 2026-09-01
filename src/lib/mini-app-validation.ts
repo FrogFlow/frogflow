@@ -21,14 +21,10 @@ export function normalizeMiniAppText(
   return required && !normalized ? null : normalized;
 }
 
-export function isMiniAppFulfillmentType(
-  value: unknown,
-): value is "pickup" | "delivery" {
+export function isMiniAppFulfillmentType(value: unknown): value is "pickup" | "delivery" {
   return value === "pickup" || value === "delivery";
 }
 
-export function isMiniAppPaymentMethod(
-  value: unknown,
-): value is "robokassa" | "manual" {
+export function isMiniAppPaymentMethod(value: unknown): value is "robokassa" | "manual" {
   return value === "robokassa" || value === "manual";
 }

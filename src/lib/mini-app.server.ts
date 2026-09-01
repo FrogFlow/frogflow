@@ -52,10 +52,7 @@ export async function miniAppModuleEnabled(): Promise<boolean> {
 }
 
 /** Кнопка меню бота (Menu Button) — вход в Mini App без reply-клавиатуры. */
-export async function syncMiniAppMenuButton(
-  chatId?: number,
-  text = "🛍 Магазин",
-): Promise<void> {
+export async function syncMiniAppMenuButton(chatId?: number, text = "🛍 Магазин"): Promise<void> {
   if (!(await miniAppModuleEnabled())) {
     await tg("setChatMenuButton", {
       ...(chatId ? { chat_id: chatId } : {}),

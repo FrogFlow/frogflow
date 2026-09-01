@@ -9,8 +9,7 @@ import {
   resolveTelegramInitData,
 } from "../src/lib/telegram-webapp-init-data";
 
-const inner =
-  "auth_date=1700000000&query_id=AAE&user=%7B%22id%22%3A1%7D&hash=abc123def";
+const inner = "auth_date=1700000000&query_id=AAE&user=%7B%22id%22%3A1%7D&hash=abc123def";
 
 describe("initDataFromWebAppLocation", () => {
   it("читает tgWebAppData из hash Mini App", () => {

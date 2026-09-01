@@ -14,7 +14,8 @@ export const Route = createFileRoute("/api/public/mini-app/checkout")({
           return Response.json({ error: auth.error }, { status: auth.status });
         }
 
-        const { ensureMiniAppBotUser, miniAppRunCheckout } = await import("@/lib/mini-app-cart.server");
+        const { ensureMiniAppBotUser, miniAppRunCheckout } =
+          await import("@/lib/mini-app-cart.server");
         await ensureMiniAppBotUser(auth.user);
 
         let body: Record<string, unknown> = {};

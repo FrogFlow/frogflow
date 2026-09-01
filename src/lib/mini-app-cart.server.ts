@@ -33,7 +33,11 @@ export async function miniAppUserContext(
   telegram_id: number,
 ): Promise<{ countryCode: string | null; locale: string | null }> {
   const s = await db();
-  const { data } = await s.from("bot_users").select("state").eq("telegram_id", telegram_id).maybeSingle();
+  const { data } = await s
+    .from("bot_users")
+    .select("state")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
   const state = data?.state;
   if (state && typeof state === "object" && !Array.isArray(state)) {
     const value = state as { country_code?: string; locale?: string };
@@ -119,10 +123,7 @@ export async function ensureMiniAppBotUser(user: TelegramWebAppUser) {
       : {};
   if (!state.locale) {
     state.locale = locale;
-    await s
-      .from("bot_users")
-      .update({ state })
-      .eq("telegram_id", user.id);
+    await s.from("bot_users").update({ state }).eq("telegram_id", user.id);
   }
   return row;
 }
@@ -145,10 +146,7 @@ export async function miniAppSetCartQuantity(
   return miniAppUpdateCartQuantity(telegram_id, cart_item_id, quantity);
 }
 
-export async function miniAppCartSummary(
-  telegram_id: number,
-  items: MiniAppCartLine[],
-) {
+export async function miniAppCartSummary(telegram_id: number, items: MiniAppCartLine[]) {
   const subtotal = items.reduce((sum, row) => sum + row.line_total, 0);
   const { miniAppCartDiscountSummary } = await import("./bot.server");
   return miniAppCartDiscountSummary(telegram_id, subtotal);
@@ -157,12 +155,7 @@ export async function miniAppCartSummary(
 export async function miniAppChangeDiscount(
   telegram_id: number,
   action:
-    | "promo_apply"
-    | "promo_clear"
-    | "gift_apply"
-    | "gift_clear"
-    | "points_use"
-    | "points_clear",
+    "promo_apply" | "promo_clear" | "gift_apply" | "gift_clear" | "points_use" | "points_clear",
   code?: string,
 ) {
   const { miniAppUpdateDiscount } = await import("./bot.server");
@@ -174,10 +167,10 @@ export async function miniAppCheckoutInChat(telegram_id: number) {
   return miniAppOpenCartInChat(telegram_id);
 }
 
-export async function miniAppRunCheckout(
-  telegram_id: number,
-  body: Record<string, unknown>,
-) {
+export async function miniAppRunCheckout(telegram_id: number, body: Record<string, unknown>) {
   const { miniAppProcessCheckout } = await import("./mini-app-checkout.server");
-  return miniAppProcessCheckout(telegram_id, body as import("./mini-app-checkout.server").MiniAppCheckoutBody);
+  return miniAppProcessCheckout(
+    telegram_id,
+    body as import("./mini-app-checkout.server").MiniAppCheckoutBody,
+  );
 }

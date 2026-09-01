@@ -28,11 +28,8 @@ function isDiscountAction(value: string): value is DiscountAction {
 }
 
 async function cartPayload(telegramId: number) {
-  const {
-    listMiniAppCart,
-    miniAppUserContext,
-    miniAppCartSummary,
-  } = await import("@/lib/mini-app-cart.server");
+  const { listMiniAppCart, miniAppUserContext, miniAppCartSummary } =
+    await import("@/lib/mini-app-cart.server");
   const items = await listMiniAppCart(telegramId);
   const summary = await miniAppCartSummary(telegramId, items);
   const context = await miniAppUserContext(telegramId);

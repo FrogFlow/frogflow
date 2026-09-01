@@ -427,7 +427,14 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     inProgress: s.inProgress,
     invalidField: s.invalidField,
     paymentUnavailable: s.paymentUnavailable,
-    productsCountSuffix: locale === "ru" ? "товаров" : locale === "kk" ? "тауар" : locale === "en" ? "products" : "mahsulot",
+    productsCountSuffix:
+      locale === "ru"
+        ? "товаров"
+        : locale === "kk"
+          ? "тауар"
+          : locale === "en"
+            ? "products"
+            : "mahsulot",
   };
 }
 
