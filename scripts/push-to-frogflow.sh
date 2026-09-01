@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
-# Перенос репозитория в https://github.com/FrogFlow/frogflow
-# Запуск на машине с доступом к FrogFlow (PAT или gh auth login).
+# Push в основной репозиторий https://github.com/FrogFlow/frogflow
+# Токен: FROGFLOW_GITHUB_TOKEN или GITHUB_TOKEN (не коммитить в репо).
 set -euo pipefail
 
-NEW_REPO="${NEW_REPO:-https://github.com/FrogFlow/frogflow.git}"
-SOURCE="${SOURCE:-origin}"
+REPO="${REPO:-https://github.com/FrogFlow/frogflow.git}"
+BRANCH="${BRANCH:-$(git branch --show-current)}"
+TOKEN="${FROGFLOW_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
 
-echo "→ Fetch from ${SOURCE}..."
-git fetch "${SOURCE}"
+if [[ -n "${TOKEN}" ]]; then
+  REPO="https://${TOKEN}@github.com/FrogFlow/frogflow.git"
+fi
 
-echo "→ Push master to FrogFlow..."
-git push "${NEW_REPO}" master:master
+echo "→ Push ${BRANCH} to FrogFlow/frogflow..."
+git push "${REPO}" "${BRANCH}:${BRANCH}"
 
-echo "→ Push feature branches (если есть)..."
-for branch in cursor/telegram-mini-app-c478 cursor/web-storefront-cart-handoff-c478; do
-  if git show-ref --verify --quiet "refs/heads/${branch}"; then
-    git push "${NEW_REPO}" "${branch}:${branch}" || true
-  fi
-done
-
-echo "✓ Готово. Проверьте: https://github.com/FrogFlow/frogflow"
+echo "✓ https://github.com/FrogFlow/frogflow"
