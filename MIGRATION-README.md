@@ -203,3 +203,8 @@ delivery_zone_name/delivery_fee/fulfillment_reminder_sent_at`,
 `CHECK (paid_amount <= total)` на `orders` и `CHECK (price >= 0)` на
 `delivery_zones` — оба безопасны, на боевых данных нарушающих строк не
 было (проверено перед применением).
+
+**56** (`MIGRATION-56-web-cart-handoff.sql`) — **ожидает применения на бою**.
+Таблица `web_cart_handoffs` для переноса корзины с веб-витрины в Telegram
+(deep link `?start=wc_<token>`). Без неё кнопка «Оплатить в Telegram» на
+`/shop` отвечает 503.
