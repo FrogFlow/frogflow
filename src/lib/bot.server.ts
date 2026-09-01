@@ -1520,6 +1520,9 @@ async function applyLocaleSelection(
   await sendMain(chat_id, undefined, undefined, locale);
   if (!nextState.country_code) await askCountry(chat_id, from_id, false, locale);
   void syncBotPublicDescription();
+  void import("./mini-app.server").then(({ syncMiniAppMenuButton }) =>
+    syncMiniAppMenuButton(chat_id, botCopy[locale].miniAppShop),
+  );
 
   if (nextState.web_handoff_pending_checkout) {
     const { web_handoff_pending_checkout: _drop, ...restHandoff } = nextState;
@@ -2924,8 +2927,18 @@ export type MiniAppPlaceOrderResult =
   | { ok: true; type: "completed"; message: string; orderId: number }
   | { ok: false; error: string };
 
-async function miniAppAmountLabel(total: number, currency: string): Promise<string> {
-  return `К оплате: ${formatMoney(total, currency)}`;
+async function miniAppAmountLabel(
+  total: number,
+  currency: string,
+  locale: Locale = "ru",
+  orderTotal = total,
+): Promise<string> {
+  const { miniAppStrings } = await import("./mini-app-i18n");
+  const strings = miniAppStrings(locale);
+  const formatted = formatMoney(total, currency);
+  return total < orderTotal
+    ? strings.depositNow(formatted)
+    : strings.amountToPay(formatted);
 }
 
 async function miniAppRobokassaUrl(
@@ -2997,14 +3010,26 @@ async function placeOrderInner(
   // читаем и сразу снимаем, иначе адрес/дата прилипнут к следующему заказу.
   const fulfillmentType = user.state?.checkout_fulfillment_type ?? null;
   const fulfillmentAt = user.state?.checkout_fulfillment_at ?? null;
-  const fulfillmentAddress = user.state?.checkout_fulfillment_address ?? null;
+  const fulfillmentAddress =
+    fulfillmentType === "delivery"
+      ? (user.state?.checkout_fulfillment_address ?? null)
+      : null;
   const fulfillmentNote = user.state?.checkout_fulfillment_note ?? null;
   // Зона доставки (Ниши, Блок B) — тот же приём, отдельно от адреса: заказ
   // может быть с доставкой без выбранной зоны, если у продавца зоны не
   // настроены вовсе (checkout_delivery_zone_id тогда просто не заводится).
-  const deliveryZoneId = user.state?.checkout_delivery_zone_id ?? null;
-  const deliveryZoneName = user.state?.checkout_delivery_zone_name ?? null;
-  const deliveryFee = user.state?.checkout_delivery_fee ?? 0;
+  const deliveryZoneId =
+    fulfillmentType === "delivery"
+      ? (user.state?.checkout_delivery_zone_id ?? null)
+      : null;
+  const deliveryZoneName =
+    fulfillmentType === "delivery"
+      ? (user.state?.checkout_delivery_zone_name ?? null)
+      : null;
+  const deliveryFee =
+    fulfillmentType === "delivery"
+      ? (user.state?.checkout_delivery_fee ?? 0)
+      : 0;
   if (
     user.state?.checkout_fulfillment_type !== undefined ||
     user.state?.checkout_fulfillment_at !== undefined ||
@@ -3369,10 +3394,12 @@ async function placeOrderInner(
       (e) => console.error(`[bot] notifyAdminNewOrder failed for zero-total order ${order.id}`, e),
     );
     if (miniApp) {
+      await releaseOrderPlacement(telegram_id, user.state);
+      const { miniAppStrings } = await import("./mini-app-i18n");
       return {
         ok: true,
         type: "completed",
-        message: "Заказ оформлен! Материалы придут в бот.",
+        message: miniAppStrings(locale).orderComplete,
         orderId: order.id as number,
       };
     }
@@ -3393,10 +3420,12 @@ async function placeOrderInner(
       (e) => console.error(`[bot] notifyAdminNewOrder failed for on_receipt order ${order.id}`, e),
     );
     if (miniApp) {
+      await releaseOrderPlacement(telegram_id, user.state);
+      const { miniAppStrings } = await import("./mini-app-i18n");
       return {
         ok: true,
         type: "completed",
-        message: "Заказ принят! Оплата при получении.",
+        message: miniAppStrings(locale).orderOnReceipt,
         orderId: order.id as number,
       };
     }
@@ -3408,7 +3437,7 @@ async function placeOrderInner(
   const rk = await loadRobokassaSettings();
   const cc = String(method?.country_code ?? country_code ?? "").toUpperCase();
   const instructions = (method?.instructions as string) || m.defaultInstructions;
-  const amountLabel = await miniAppAmountLabel(amountDue, currency);
+  const amountLabel = await miniAppAmountLabel(amountDue, currency, locale, total);
   const { imageUrl } = await import("./public-image");
 
   const miniAppManual = (autoDeliver: boolean): MiniAppPlaceOrderResult => ({
@@ -5895,16 +5924,160 @@ export async function miniAppMergeState(
   patch: Record<string, unknown>,
 ): Promise<void> {
   const s = await db();
-  const { data: existing } = await s
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: existing } = await s
+      .from("bot_users")
+      .select("state, updated_at")
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+    if (!existing) return;
+    const prev =
+      existing.state && typeof existing.state === "object" && !Array.isArray(existing.state)
+        ? (existing.state as Record<string, unknown>)
+        : {};
+    const next = { ...prev, ...patch };
+    for (const [key, value] of Object.entries(next)) {
+      if (value === undefined) delete next[key];
+    }
+    const { data: updated } = await s
+      .from("bot_users")
+      .update({ state: next as BotUser["state"] })
+      .eq("telegram_id", telegram_id)
+      .eq("updated_at", existing.updated_at)
+      .select("telegram_id")
+      .maybeSingle();
+    if (updated) return;
+  }
+  throw new Error(`mini-app state update conflict for telegram_id=${telegram_id}`);
+}
+
+export type MiniAppDiscountSummary = {
+  subtotal: number;
+  promoCode: string | null;
+  promoDiscount: number;
+  pointsBalance: number;
+  usePoints: boolean;
+  pointsDiscount: number;
+  giftCode: string | null;
+  giftDiscount: number;
+  total: number;
+  couponsEnabled: boolean;
+  loyaltyEnabled: boolean;
+  giftsEnabled: boolean;
+};
+
+export async function miniAppCartDiscountSummary(
+  telegram_id: number,
+  subtotal: number,
+): Promise<MiniAppDiscountSummary> {
+  const s = await db();
+  const { data: row } = await s
     .from("bot_users")
-    .select("state")
+    .select("state, loyalty_points")
     .eq("telegram_id", telegram_id)
     .maybeSingle();
-  const prev =
-    existing?.state && typeof existing.state === "object" && !Array.isArray(existing.state)
-      ? (existing.state as Record<string, unknown>)
+  const state =
+    row?.state && typeof row.state === "object" && !Array.isArray(row.state)
+      ? (row.state as BotUser["state"])
       : {};
-  await setState(telegram_id, { ...prev, ...patch } as BotUser["state"]);
+  const couponsEnabled = await hasModule("coupons");
+  const loyaltyEnabled = await hasModule("loyalty");
+  const giftsEnabled = await hasModule("gift_certificates");
+
+  const promoCode = couponsEnabled ? (state?.promo_code ?? null) : null;
+  let promoDiscount = 0;
+  if (promoCode) {
+    const promo = await findValidPromoCode(promoCode);
+    if (promo.ok) promoDiscount = computePromoDiscount(subtotal, promo.promo);
+  }
+
+  const pointsBalance = loyaltyEnabled ? Number(row?.loyalty_points ?? 0) : 0;
+  const usePoints = loyaltyEnabled && state?.use_points === true;
+  const pointsDiscount = usePoints
+    ? computePointsDiscount(subtotal - promoDiscount, pointsBalance)
+    : 0;
+
+  const giftCode = giftsEnabled ? (state?.gift_certificate_code ?? null) : null;
+  let giftDiscount = 0;
+  if (giftCode) {
+    const gift = await findValidGiftCertificate(giftCode);
+    if (gift.ok) {
+      giftDiscount = computeGiftCertificateDiscount(
+        subtotal - promoDiscount - pointsDiscount,
+        gift.certificate.amount,
+      );
+    }
+  }
+
+  return {
+    subtotal,
+    promoCode,
+    promoDiscount,
+    pointsBalance,
+    usePoints,
+    pointsDiscount,
+    giftCode,
+    giftDiscount,
+    total: Math.max(0, subtotal - promoDiscount - pointsDiscount - giftDiscount),
+    couponsEnabled,
+    loyaltyEnabled,
+    giftsEnabled,
+  };
+}
+
+export async function miniAppUpdateDiscount(
+  telegram_id: number,
+  action:
+    | "promo_apply"
+    | "promo_clear"
+    | "gift_apply"
+    | "gift_clear"
+    | "points_use"
+    | "points_clear",
+  code?: string,
+): Promise<"ok" | "invalid_code" | "module_disabled"> {
+  const s = await db();
+  const { data: row } = await s
+    .from("bot_users")
+    .select("state, loyalty_points")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  const state =
+    row?.state && typeof row.state === "object" && !Array.isArray(row.state)
+      ? { ...(row.state as NonNullable<BotUser["state"]>) }
+      : {};
+
+  if (action.startsWith("promo_")) {
+    if (!(await hasModule("coupons"))) return "module_disabled";
+    if (action === "promo_apply") {
+      const normalized = normalizePromoCode(code ?? "");
+      const found = await findValidPromoCode(normalized);
+      if (!found.ok) return "invalid_code";
+      state.promo_code = normalized;
+    } else {
+      delete state.promo_code;
+    }
+  } else if (action.startsWith("gift_")) {
+    if (!(await hasModule("gift_certificates"))) return "module_disabled";
+    if (action === "gift_apply") {
+      const normalized = normalizeGiftCertificateCode(code ?? "");
+      const found = await findValidGiftCertificate(normalized);
+      if (!found.ok) return "invalid_code";
+      state.gift_certificate_code = normalized;
+    } else {
+      delete state.gift_certificate_code;
+    }
+  } else {
+    if (!(await hasModule("loyalty"))) return "module_disabled";
+    if (action === "points_use" && Number(row?.loyalty_points ?? 0) <= 0) {
+      return "invalid_code";
+    }
+    if (action === "points_use") state.use_points = true;
+    else delete state.use_points;
+  }
+
+  await setState(telegram_id, state);
+  return "ok";
 }
 
 export async function placeOrderForMiniApp(
@@ -5917,6 +6090,18 @@ export async function placeOrderForMiniApp(
   const user = row as BotUser;
   const country_code = user.state?.country_code;
   if (!country_code) return { ok: false, error: "no_country" };
+  const pendingOrderId = Number(user.state?.pending_order_id);
+  if (pendingOrderId) {
+    const { data: pending } = await s
+      .from("orders")
+      .select("status")
+      .eq("id", pendingOrderId)
+      .eq("telegram_id", telegram_id)
+      .maybeSingle();
+    if (pending?.status === "awaiting_payment") {
+      return completeMiniAppPayment(telegram_id, paymentMethod);
+    }
+  }
 
   if (!(await claimOrderPlacement(telegram_id))) {
     return { ok: false, error: "in_progress" };
@@ -5940,6 +6125,120 @@ export async function placeOrderForMiniApp(
     await releaseOrderPlacement(telegram_id, user.state);
     return { ok: false, error: "error" };
   }
+}
+
+/**
+ * Продолжить оплату уже созданного Mini App заказа.
+ *
+ * В KZ сначала создаётся заказ и очищается корзина, затем покупатель выбирает
+ * Robokassa или реквизиты. Повторный placeOrderInner здесь недопустим:
+ * корзина уже пуста, а заказ существует.
+ */
+export async function completeMiniAppPayment(
+  telegram_id: number,
+  paymentMethod?: "robokassa" | "manual",
+): Promise<MiniAppPlaceOrderResult> {
+  if (
+    paymentMethod !== undefined &&
+    paymentMethod !== "robokassa" &&
+    paymentMethod !== "manual"
+  ) {
+    return { ok: false, error: "invalid_payment_method" };
+  }
+
+  const s = await db();
+  const { data: botUser } = await s
+    .from("bot_users")
+    .select("*")
+    .eq("telegram_id", telegram_id)
+    .maybeSingle();
+  if (!botUser) return { ok: false, error: "no_user" };
+  const user = botUser as BotUser;
+  const orderId = Number(user.state?.pending_order_id);
+  if (!orderId) return { ok: false, error: "no_pending_order" };
+
+  const { data: order } = await s
+    .from("orders")
+    .select(
+      "id, order_no, display_no, telegram_id, status, total, currency, country_code, fulfillment_kind",
+    )
+    .eq("id", orderId)
+    .maybeSingle();
+  if (!order || Number(order.telegram_id) !== telegram_id) {
+    return { ok: false, error: "order_not_found" };
+  }
+  if (order.status !== "awaiting_payment") {
+    return { ok: false, error: "order_already_processed" };
+  }
+
+  const displayNo = order.display_no ?? order.order_no ?? orderId;
+  const { amountDueNow } = await import("./fulfillment.server");
+  const amountDue = await amountDueNow({
+    total: Number(order.total),
+    fulfillment_kind: order.fulfillment_kind,
+  });
+  const currency = (order.currency as string) || "KZT";
+  const amountLabel = await miniAppAmountLabel(
+    amountDue,
+    currency,
+    locale,
+    Number(order.total),
+  );
+  const { data: method } = await s
+    .from("payment_methods")
+    .select("instructions, qr_code_path")
+    .eq("country_code", order.country_code || "KZ")
+    .maybeSingle();
+  const locale: Locale = user.state?.locale ?? "ru";
+  const instructions = (method?.instructions as string) || copy[locale].defaultInstructions;
+  const rk = await loadRobokassaSettings();
+  const cc = String(order.country_code ?? "").toUpperCase();
+  if (!paymentMethod && cc === "KZ" && rk.ready) {
+    return { ok: true, type: "choose_payment", amountLabel, orderId };
+  }
+  const effectivePayment =
+    paymentMethod ??
+    (!rk.ready || isProofAutoOnlyCountry(cc) ? "manual" : "robokassa");
+
+  if (effectivePayment === "manual") {
+    const autoDeliver = rk.ready && (isProofAutoOnlyCountry(cc) || cc === "KZ");
+    if (autoDeliver) {
+      await s.from("orders").update({ admin_note: "proof_auto" }).eq("id", orderId);
+    }
+    await setState(telegram_id, {
+      ...user.state,
+      mode: "awaiting_proof",
+      pending_order_id: orderId,
+      pending_display_no: displayNo,
+      proof_auto: autoDeliver,
+    });
+    const { imageUrl } = await import("./public-image");
+    return {
+      ok: true,
+      type: "manual_proof",
+      amountLabel,
+      instructions,
+      qrImageUrl: method?.qr_code_path ? imageUrl(method.qr_code_path as string) : undefined,
+      orderId,
+    };
+  }
+
+  const paymentUrl = await miniAppRobokassaUrl(
+    orderId,
+    displayNo,
+    amountDue,
+    currency,
+    rk,
+  );
+  if (!paymentUrl) return { ok: false, error: "robokassa_unavailable" };
+  await setState(telegram_id, {
+    ...user.state,
+    mode: "awaiting_payment",
+    pending_order_id: orderId,
+    pending_display_no: displayNo,
+    proof_auto: false,
+  });
+  return { ok: true, type: "robokassa", paymentUrl, amountLabel, orderId };
 }
 
 /** Добавить товар в корзину из Mini App — та же логика, что в чате. */

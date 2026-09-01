@@ -1,6 +1,8 @@
 import { isLocale, type Locale } from "./i18n";
 
 export type MiniAppStrings = {
+  defaultShopName: string;
+  emptyCatalog: string;
   searchPlaceholder: string;
   productsCount: (n: number) => string;
   allCategories: string;
@@ -19,6 +21,14 @@ export type MiniAppStrings = {
   pay: string;
   cartTitle: string;
   remove: string;
+  subtotal: string;
+  discount: string;
+  promoCode: string;
+  giftCode: string;
+  apply: string;
+  loyaltyPoints: string;
+  usePoints: string;
+  clear: string;
   checkoutInChat: string;
   checkoutFailed: string;
   networkError: string;
@@ -37,6 +47,7 @@ export type MiniAppStrings = {
   needFulfillmentDate: string;
   dateLabel: string;
   needDeliveryZone: string;
+  chooseDeliveryLanguage: string;
   needAddress: string;
   addressLabel: string;
   noteLabel: string;
@@ -45,16 +56,23 @@ export type MiniAppStrings = {
   payRobokassa: string;
   payManual: string;
   amountToPay: (amount: string) => string;
+  depositNow: (amount: string) => string;
   orderComplete: string;
   orderOnReceipt: string;
   openPayment: string;
   sendProofInBot: string;
   continue: string;
   cancel: string;
+  loading: string;
+  inProgress: string;
+  invalidField: string;
+  paymentUnavailable: string;
 };
 
 const dict: Record<Locale, MiniAppStrings> = {
   ru: {
+    defaultShopName: "Магазин",
+    emptyCatalog: "Каталог пока пуст.",
     searchPlaceholder: "Поиск…",
     productsCount: (n) => `${n} товаров`,
     allCategories: "Все",
@@ -73,6 +91,14 @@ const dict: Record<Locale, MiniAppStrings> = {
     pay: "Оплатить",
     cartTitle: "Корзина",
     remove: "Удалить",
+    subtotal: "Товары",
+    discount: "Скидка",
+    promoCode: "Промокод",
+    giftCode: "Сертификат",
+    apply: "Применить",
+    loyaltyPoints: "Баллы",
+    usePoints: "Списать баллы",
+    clear: "Убрать",
     checkoutInChat: "Оплата в Mini App или по реквизитам ниже.",
     checkoutFailed: "Не удалось оформить заказ",
     networkError: "Ошибка сети",
@@ -91,6 +117,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     needFulfillmentDate: "Дата получения",
     dateLabel: "Дата (ГГГГ-ММ-ДД)",
     needDeliveryZone: "Зона доставки",
+    chooseDeliveryLanguage: "Язык материалов",
     needAddress: "Адрес доставки",
     addressLabel: "Адрес",
     noteLabel: "Комментарий",
@@ -99,14 +126,21 @@ const dict: Record<Locale, MiniAppStrings> = {
     payRobokassa: "Картой (Robokassa)",
     payManual: "По реквизитам",
     amountToPay: (a) => `К оплате: ${a}`,
+    depositNow: (a) => `Предоплата сейчас: ${a}`,
     orderComplete: "Заказ оформлен! Материалы придут в бот.",
     orderOnReceipt: "Заказ принят! Оплата при получении.",
     openPayment: "Перейти к оплате",
     sendProofInBot: "Отправьте чек оплаты в чат с ботом.",
     continue: "Продолжить",
     cancel: "Отмена",
+    loading: "Подождите…",
+    inProgress: "Заказ уже оформляется",
+    invalidField: "Проверьте введённые данные",
+    paymentUnavailable: "Выбранный способ оплаты недоступен",
   },
   kk: {
+    defaultShopName: "Дүкен",
+    emptyCatalog: "Каталог әзірге бос.",
     searchPlaceholder: "Іздеу…",
     productsCount: (n) => `${n} тауар`,
     allCategories: "Барлығы",
@@ -125,6 +159,14 @@ const dict: Record<Locale, MiniAppStrings> = {
     pay: "Төлеу",
     cartTitle: "Себет",
     remove: "Жою",
+    subtotal: "Тауарлар",
+    discount: "Жеңілдік",
+    promoCode: "Промокод",
+    giftCode: "Сертификат",
+    apply: "Қолдану",
+    loyaltyPoints: "Ұпайлар",
+    usePoints: "Ұпайларды пайдалану",
+    clear: "Алып тастау",
     checkoutInChat: "Төлем Mini App ішінде немесе төлем деректерімен.",
     checkoutFailed: "Тапсырыс жасалмады",
     networkError: "Желі қатесі",
@@ -143,6 +185,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     needFulfillmentDate: "Алу күні",
     dateLabel: "Күні (ЖЖЖЖ-АА-КК)",
     needDeliveryZone: "Жеткізу аймағы",
+    chooseDeliveryLanguage: "Материалдар тілі",
     needAddress: "Жеткізу мекенжайы",
     addressLabel: "Мекенжай",
     noteLabel: "Пікір",
@@ -151,14 +194,21 @@ const dict: Record<Locale, MiniAppStrings> = {
     payRobokassa: "Картамен (Robokassa)",
     payManual: "Деректемелер бойынша",
     amountToPay: (a) => `Төлемге: ${a}`,
+    depositNow: (a) => `Қазір алдын ала төлем: ${a}`,
     orderComplete: "Тапсырыс жасалды! Материалдар ботқа келеді.",
     orderOnReceipt: "Тапсырыс қабылданды! Алу кезінде төлем.",
     openPayment: "Төлемге өту",
     sendProofInBot: "Төлем чегін бот чатында жіберіңіз.",
     continue: "Жалғастыру",
     cancel: "Бас тарту",
+    loading: "Күте тұрыңыз…",
+    inProgress: "Тапсырыс рәсімделіп жатыр",
+    invalidField: "Енгізілген деректерді тексеріңіз",
+    paymentUnavailable: "Төлем әдісі қолжетімсіз",
   },
   en: {
+    defaultShopName: "Shop",
+    emptyCatalog: "The catalog is empty.",
     searchPlaceholder: "Search…",
     productsCount: (n) => `${n} products`,
     allCategories: "All",
@@ -177,6 +227,14 @@ const dict: Record<Locale, MiniAppStrings> = {
     pay: "Pay",
     cartTitle: "Cart",
     remove: "Remove",
+    subtotal: "Items",
+    discount: "Discount",
+    promoCode: "Promo code",
+    giftCode: "Gift certificate",
+    apply: "Apply",
+    loyaltyPoints: "Points",
+    usePoints: "Use points",
+    clear: "Remove",
     checkoutInChat: "Pay in Mini App or use payment details below.",
     checkoutFailed: "Could not place order",
     networkError: "Network error",
@@ -195,6 +253,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     needFulfillmentDate: "Pickup/delivery date",
     dateLabel: "Date (YYYY-MM-DD)",
     needDeliveryZone: "Delivery zone",
+    chooseDeliveryLanguage: "Material language",
     needAddress: "Delivery address",
     addressLabel: "Address",
     noteLabel: "Note",
@@ -203,14 +262,21 @@ const dict: Record<Locale, MiniAppStrings> = {
     payRobokassa: "Card (Robokassa)",
     payManual: "Bank transfer",
     amountToPay: (a) => `Amount due: ${a}`,
+    depositNow: (a) => `Deposit due now: ${a}`,
     orderComplete: "Order placed! Files will arrive in the bot.",
     orderOnReceipt: "Order accepted! Pay on receipt.",
     openPayment: "Go to payment",
     sendProofInBot: "Send payment proof in the bot chat.",
     continue: "Continue",
     cancel: "Cancel",
+    loading: "Please wait…",
+    inProgress: "The order is already being processed",
+    invalidField: "Check the entered information",
+    paymentUnavailable: "This payment method is unavailable",
   },
   uz: {
+    defaultShopName: "Do‘kon",
+    emptyCatalog: "Katalog hozircha bo‘sh.",
     searchPlaceholder: "Qidiruv…",
     productsCount: (n) => `${n} mahsulot`,
     allCategories: "Hammasi",
@@ -229,6 +295,14 @@ const dict: Record<Locale, MiniAppStrings> = {
     pay: "To‘lash",
     cartTitle: "Savat",
     remove: "O‘chirish",
+    subtotal: "Mahsulotlar",
+    discount: "Chegirma",
+    promoCode: "Promokod",
+    giftCode: "Sertifikat",
+    apply: "Qo‘llash",
+    loyaltyPoints: "Ballar",
+    usePoints: "Ballarni ishlatish",
+    clear: "Olib tashlash",
     checkoutInChat: "Mini App ichida yoki quyidagi rekvizitlar bilan to‘lang.",
     checkoutFailed: "Buyurtma yaratilmadi",
     networkError: "Tarmoq xatosi",
@@ -247,6 +321,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     needFulfillmentDate: "Olish sanasi",
     dateLabel: "Sana (YYYY-MM-DD)",
     needDeliveryZone: "Yetkazish zonasi",
+    chooseDeliveryLanguage: "Materiallar tili",
     needAddress: "Yetkazish manzili",
     addressLabel: "Manzil",
     noteLabel: "Izoh",
@@ -255,12 +330,17 @@ const dict: Record<Locale, MiniAppStrings> = {
     payRobokassa: "Karta (Robokassa)",
     payManual: "Rekvizitlar orqali",
     amountToPay: (a) => `To‘lov: ${a}`,
+    depositNow: (a) => `Hozirgi oldindan to‘lov: ${a}`,
     orderComplete: "Buyurtma qabul qilindi! Fayllar botga keladi.",
     orderOnReceipt: "Buyurtma qabul qilindi! Olishda to‘lash.",
     openPayment: "To‘lovga o‘tish",
     sendProofInBot: "To‘lov chekini bot chatida yuboring.",
     continue: "Davom etish",
     cancel: "Bekor qilish",
+    loading: "Kuting…",
+    inProgress: "Buyurtma rasmiylashtirilmoqda",
+    invalidField: "Kiritilgan ma’lumotlarni tekshiring",
+    paymentUnavailable: "To‘lov usuli mavjud emas",
   },
 };
 
@@ -287,6 +367,8 @@ export function miniAppStringsForLanguage(language_code?: string | null): MiniAp
 export function miniAppStringsClientPack(locale: Locale): Record<string, string> {
   const s = miniAppStrings(locale);
   return {
+    defaultShopName: s.defaultShopName,
+    emptyCatalog: s.emptyCatalog,
     searchPlaceholder: s.searchPlaceholder,
     allCategories: s.allCategories,
     addToCart: s.addToCart,
@@ -304,6 +386,14 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     pay: s.pay,
     cartTitle: s.cartTitle,
     remove: s.remove,
+    subtotal: s.subtotal,
+    discount: s.discount,
+    promoCode: s.promoCode,
+    giftCode: s.giftCode,
+    apply: s.apply,
+    loyaltyPoints: s.loyaltyPoints,
+    usePoints: s.usePoints,
+    clear: s.clear,
     checkoutInChat: s.checkoutInChat,
     checkoutFailed: s.checkoutFailed,
     networkError: s.networkError,
@@ -321,6 +411,7 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     needFulfillmentDate: s.needFulfillmentDate,
     dateLabel: s.dateLabel,
     needDeliveryZone: s.needDeliveryZone,
+    chooseDeliveryLanguage: s.chooseDeliveryLanguage,
     needAddress: s.needAddress,
     addressLabel: s.addressLabel,
     noteLabel: s.noteLabel,
@@ -334,6 +425,10 @@ export function miniAppStringsClientPack(locale: Locale): Record<string, string>
     sendProofInBot: s.sendProofInBot,
     continue: s.continue,
     cancel: s.cancel,
+    loading: s.loading,
+    inProgress: s.inProgress,
+    invalidField: s.invalidField,
+    paymentUnavailable: s.paymentUnavailable,
     productsCountSuffix: locale === "ru" ? "товаров" : locale === "kk" ? "тауар" : locale === "en" ? "products" : "mahsulot",
   };
 }

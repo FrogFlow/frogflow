@@ -1,6 +1,6 @@
 import type { Json } from "@/integrations-supabase/types";
 import { imageUrl } from "@/lib/public-image";
-import { miniAppStrings, type MiniAppStrings } from "./mini-app-i18n";
+import { miniAppStrings } from "./mini-app-i18n";
 import type { Locale } from "./i18n";
 
 export type MiniAppProduct = {
@@ -29,6 +29,7 @@ export type PricedProduct = {
   amount: number;
   currency: string;
   isFrom: boolean;
+  variants: Record<string, { amount: number; currency: string }>;
 };
 
 export function escapeMiniAppHtml(s: string): string {
@@ -45,7 +46,7 @@ export function formatMiniAppMoney(amount: number, currency: string): string {
   return cur === "KZT" ? `${value} ₸` : `${value} ${currency}`;
 }
 
-export async function loadMiniAppCatalogData() {
+export async function loadMiniAppCatalogData(defaultShopName = "Магазин") {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { fetchAll } = await import("@/lib/csv");
   const { hasModule } = await import("./modules/modules.server");
@@ -76,7 +77,7 @@ export async function loadMiniAppCatalogData() {
     ),
   ]);
 
-  const shopName = shopSetting?.value?.trim() || "Магазин";
+  const shopName = shopSetting?.value?.trim() || defaultShopName;
   const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
   const categories = (cats ?? []) as MiniAppCategory[];
   const visibleProducts = products.filter((p) => {
@@ -99,10 +100,24 @@ export async function priceMiniAppProducts(
       const pricedVariants = await Promise.all(variants.map((v) => resolvePrice(p, countryCode, v)));
       const minAmount = Math.min(...pricedVariants.map((m) => m.amount));
       const currency = pricedVariants[0]?.currency ?? p.currency ?? "KZT";
-      priced.set(p.id, { amount: minAmount, currency, isFrom: true });
+      const variantMap = Object.fromEntries(
+        variants.map((variant, index) => [
+          variant.id,
+          {
+            amount: pricedVariants[index]?.amount ?? Number(variant.price),
+            currency: pricedVariants[index]?.currency ?? currency,
+          },
+        ]),
+      );
+      priced.set(p.id, {
+        amount: minAmount,
+        currency,
+        isFrom: true,
+        variants: variantMap,
+      });
     } else {
       const money = await resolvePrice(p, countryCode);
-      priced.set(p.id, { ...money, isFrom: false });
+      priced.set(p.id, { ...money, isFrom: false, variants: {} });
     }
   }
   return priced;
@@ -117,7 +132,7 @@ export function renderMiniAppProductCard(
   money: PricedProduct | undefined,
   stockEnabled: boolean,
   locale: Locale,
-  opts?: { linkToDetail?: boolean },
+  opts?: { linkToDetail?: boolean; countryCode?: string | null },
 ): string {
   const s = miniAppStrings(locale);
   const esc = escapeMiniAppHtml;
@@ -138,7 +153,10 @@ export function renderMiniAppProductCard(
         .map(
           (v) =>
             `<option value="${esc(v.id)}">${esc(v.name)} — ${esc(
-              formatMiniAppMoney(Number(v.price), money?.currency ?? p.currency ?? "KZT"),
+              formatMiniAppMoney(
+                money?.variants[v.id]?.amount ?? Number(v.price),
+                money?.variants[v.id]?.currency ?? money?.currency ?? p.currency ?? "KZT",
+              ),
             )}</option>`,
         )
         .join("");
@@ -154,14 +172,20 @@ export function renderMiniAppProductCard(
   const thumbInner = img
     ? `<img src="${esc(img)}" alt="${esc(p.name)}" loading="lazy" />`
     : "";
+  const query = new URLSearchParams({ lang: locale });
+  if (opts?.countryCode) query.set("country", opts.countryCode);
+  const detailHref = `/mini-app/product/${encodeURIComponent(p.id)}?${query.toString()}`;
   const thumbHtml = opts?.linkToDetail
-    ? `<a class="thumb thumb-link" href="/mini-app/product/${esc(p.id)}">${thumbInner}</a>`
+    ? `<a class="thumb thumb-link" href="${esc(detailHref)}">${thumbInner}</a>`
     : `<div class="thumb">${thumbInner}</div>`;
   const nameHtml = opts?.linkToDetail
-    ? `<a class="card-name card-link" href="/mini-app/product/${esc(p.id)}">${esc(p.name)}</a>`
+    ? `<a class="card-name card-link" href="${esc(detailHref)}">${esc(p.name)}</a>`
     : `<div class="card-name">${esc(p.name)}</div>`;
 
-  return `<div class="card${outOfStock ? " out-of-stock" : ""}" data-name="${esc(p.name.toLowerCase())}" data-categories="${esc(catIds)}">
+  const searchText = [p.name, p.description ?? "", ...variants.map((v) => v.name)]
+    .join(" ")
+    .toLocaleLowerCase(locale);
+  return `<div class="card${outOfStock ? " out-of-stock" : ""}" data-name="${esc(searchText)}" data-categories="${esc(catIds)}">
     ${thumbHtml}
     <div class="card-body">
       ${nameHtml}
@@ -183,13 +207,14 @@ export function renderMiniAppCartShell(locale: Locale): string {
       </button>
       <button type="button" id="mini-checkout" class="checkout-btn" disabled>${esc(s.pay)}</button>
     </div>
-    <div id="mini-cart-sheet" class="cart-sheet hidden" aria-hidden="true">
-      <div class="cart-panel">
+    <div id="mini-cart-sheet" class="cart-sheet hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-label="${esc(s.cartTitle)}">
+      <div class="cart-panel" tabindex="-1">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
           <strong>${esc(s.cartTitle)}</strong>
-          <button type="button" id="mini-close-cart" style="border:none;background:none;font-size:1.25rem;cursor:pointer">×</button>
+          <button type="button" id="mini-close-cart" aria-label="${esc(s.cancel)}" style="border:none;background:none;font-size:1.25rem;cursor:pointer">×</button>
         </div>
         <div id="mini-cart-lines"></div>
+        <div id="mini-cart-discounts"></div>
         <div id="mini-checkout-form" class="checkout-form hidden"></div>
         <div id="mini-cart-error" class="cart-error"></div>
         <p class="checkout-hint">${esc(s.checkoutInChat)}</p>

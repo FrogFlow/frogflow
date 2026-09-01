@@ -247,6 +247,11 @@ export function wrapMiniAppPage(
     .checkout-hint { font-size: 0.8rem; color: var(--hint); margin: 0.5rem 0 0; }
     .checkout-form { margin-top: 0.75rem; }
     .checkout-form.hidden { display: none; }
+    .discount-box { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+    .discount-row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; padding: 0.2rem 0; }
+    .discount-entry { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
+    .discount-entry input { flex: 1; min-width: 0; padding: 0.5rem; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); }
+    .discount-entry button { border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); padding: 0.45rem 0.6rem; cursor: pointer; }
     .checkout-form label { display: block; font-size: 0.8rem; color: var(--hint); margin: 0.5rem 0 0.25rem; }
     .checkout-form input, .checkout-form select, .checkout-form textarea {
       width: 100%;
@@ -317,12 +322,12 @@ export function wrapMiniAppPage(
 </head>
 <body>
   ${bodyHtml}
-  <div id="toast" class="toast" role="status"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script>
     window.__miniAppI18n = ${i18n};
     window.__miniAppLocale = "${lang}";
   </script>
-  <script src="/mini-app-runtime.js"></script>
+  <script src="/mini-app-runtime?v=2"></script>
 </body>
 </html>`;
 }

@@ -7,10 +7,14 @@ export const Route = createFileRoute("/mini-app-runtime")({
     handlers: {
       GET: async () => {
         if (isControlPlane()) return new Response("Not found", { status: 404 });
+        const { miniAppModuleEnabled } = await import("@/lib/mini-app.server");
+        if (!(await miniAppModuleEnabled())) {
+          return new Response("Not found", { status: 404 });
+        }
         return new Response(MINI_APP_RUNTIME_JS, {
           headers: {
             "Content-Type": "application/javascript; charset=utf-8",
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "no-cache, must-revalidate",
           },
         });
       },

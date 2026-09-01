@@ -8,7 +8,41 @@ type CartBody = {
   product_variant_id?: string | null;
   cart_item_id?: string;
   quantity?: number;
+  code?: string;
 };
+
+const DISCOUNT_ACTIONS = [
+  "promo_apply",
+  "promo_clear",
+  "gift_apply",
+  "gift_clear",
+  "points_use",
+  "points_clear",
+] as const;
+
+type DiscountAction = (typeof DISCOUNT_ACTIONS)[number];
+
+function isDiscountAction(value: string): value is DiscountAction {
+  return (DISCOUNT_ACTIONS as readonly string[]).includes(value);
+}
+
+async function cartPayload(telegramId: number) {
+  const {
+    listMiniAppCart,
+    miniAppCountryCode,
+    miniAppCartSummary,
+  } = await import("@/lib/mini-app-cart.server");
+  const items = await listMiniAppCart(telegramId);
+  const summary = await miniAppCartSummary(telegramId, items);
+  return {
+    items,
+    total: summary.total,
+    subtotal: summary.subtotal,
+    currency: items[0]?.currency ?? "KZT",
+    country_code: await miniAppCountryCode(telegramId),
+    summary,
+  };
+}
 
 export const Route = createFileRoute("/api/public/mini-app/cart")({
   server: {
@@ -21,11 +55,7 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
           return Response.json({ error: auth.error }, { status: auth.status });
         }
 
-        const { listMiniAppCart } = await import("@/lib/mini-app-cart.server");
-        const items = await listMiniAppCart(auth.user.id);
-        const total = items.reduce((sum, row) => sum + row.line_total, 0);
-        const currency = items[0]?.currency ?? "KZT";
-        return Response.json({ items, total, currency });
+        return Response.json(await cartPayload(auth.user.id));
       },
       POST: async ({ request }) => {
         if (isControlPlane()) return new Response("Not found", { status: 404 });
@@ -47,8 +77,8 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
           ensureMiniAppBotUser,
           miniAppAddProduct,
           removeMiniAppCartItem,
-          listMiniAppCart,
           miniAppSetCartQuantity,
+          miniAppChangeDiscount,
         } = await import("@/lib/mini-app-cart.server");
 
         await ensureMiniAppBotUser(auth.user);
@@ -58,8 +88,7 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
           if (!cartItemId) return Response.json({ error: "missing_id" }, { status: 400 });
           const removed = await removeMiniAppCartItem(auth.user.id, cartItemId);
           if (!removed) return Response.json({ error: "not_found" }, { status: 404 });
-          const items = await listMiniAppCart(auth.user.id);
-          return Response.json({ ok: true, items });
+          return Response.json({ ok: true, ...(await cartPayload(auth.user.id)) });
         }
 
         if (action === "set_quantity") {
@@ -69,8 +98,14 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
           const result = await miniAppSetCartQuantity(auth.user.id, cartItemId, quantity);
           if (result === "not_found") return Response.json({ error: "not_found" }, { status: 404 });
           if (result !== "ok") return Response.json({ error: result }, { status: 400 });
-          const items = await listMiniAppCart(auth.user.id);
-          return Response.json({ ok: true, items });
+          return Response.json({ ok: true, ...(await cartPayload(auth.user.id)) });
+        }
+
+        if (isDiscountAction(action)) {
+          const code = typeof body.code === "string" ? body.code.trim().slice(0, 100) : undefined;
+          const result = await miniAppChangeDiscount(auth.user.id, action, code);
+          if (result !== "ok") return Response.json({ error: result }, { status: 400 });
+          return Response.json({ ok: true, ...(await cartPayload(auth.user.id)) });
         }
 
         if (action !== "add") return Response.json({ error: "invalid_action" }, { status: 400 });
@@ -88,8 +123,7 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
         if (result !== "ok") {
           return Response.json({ error: result }, { status: 400 });
         }
-        const items = await listMiniAppCart(auth.user.id);
-        return Response.json({ ok: true, items });
+        return Response.json({ ok: true, ...(await cartPayload(auth.user.id)) });
       },
     },
   },

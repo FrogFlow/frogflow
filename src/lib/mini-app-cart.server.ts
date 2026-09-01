@@ -136,6 +136,30 @@ export async function miniAppSetCartQuantity(
   return miniAppUpdateCartQuantity(telegram_id, cart_item_id, quantity);
 }
 
+export async function miniAppCartSummary(
+  telegram_id: number,
+  items: MiniAppCartLine[],
+) {
+  const subtotal = items.reduce((sum, row) => sum + row.line_total, 0);
+  const { miniAppCartDiscountSummary } = await import("./bot.server");
+  return miniAppCartDiscountSummary(telegram_id, subtotal);
+}
+
+export async function miniAppChangeDiscount(
+  telegram_id: number,
+  action:
+    | "promo_apply"
+    | "promo_clear"
+    | "gift_apply"
+    | "gift_clear"
+    | "points_use"
+    | "points_clear",
+  code?: string,
+) {
+  const { miniAppUpdateDiscount } = await import("./bot.server");
+  return miniAppUpdateDiscount(telegram_id, action, code);
+}
+
 export async function miniAppCheckoutInChat(telegram_id: number) {
   const { miniAppOpenCartInChat } = await import("./bot.server");
   return miniAppOpenCartInChat(telegram_id);

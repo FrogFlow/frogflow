@@ -10,6 +10,7 @@ export type MiniAppCheckoutBody = {
   delivery_zone_id?: string;
   fulfillment_address?: string;
   fulfillment_note?: string;
+  delivery_language?: string;
   payment_method?: "robokassa" | "manual";
 };
 
@@ -20,6 +21,7 @@ export type MiniAppCheckoutResponse = {
   delivery?: boolean;
   minDate?: string;
   zones?: Array<{ id: string; name: string; fee: number; feeLabel: string }>;
+  languages?: Array<{ code: string; name: string }>;
   paymentUrl?: string;
   amountLabel?: string;
   instructions?: string;
@@ -41,15 +43,19 @@ export async function miniAppProcessCheckout(
   const { data: row } = await s.from("bot_users").select("*").eq("telegram_id", telegram_id).maybeSingle();
   if (!row) return { step: "error", error: "no_user" };
 
-  if (body.contact_phone?.trim()) {
+  if (body.contact_phone !== undefined) {
     const phone = body.contact_phone.trim().slice(0, 32);
+    if (!/^\+?[0-9 ()-]{7,32}$/.test(phone)) {
+      return { step: "need_contact", error: "invalid_contact" };
+    }
     await s.from("bot_users").update({ contact_phone: phone }).eq("telegram_id", telegram_id);
     row.contact_phone = phone;
   }
 
   if (body.country_code?.trim()) {
     const { miniAppSetCountry } = await import("./bot.server");
-    await miniAppSetCountry(telegram_id, body.country_code.trim());
+    const changed = await miniAppSetCountry(telegram_id, body.country_code.trim());
+    if (!changed) return { step: "error", error: "invalid_country" };
     const st =
       row.state && typeof row.state === "object" && !Array.isArray(row.state)
         ? { ...(row.state as Record<string, unknown>) }
@@ -58,23 +64,73 @@ export async function miniAppProcessCheckout(
     row.state = st;
   }
 
+  if (body.payment_method) {
+    const { completeMiniAppPayment } = await import("./bot.server");
+    return mapPlaceOrderResult(await completeMiniAppPayment(telegram_id, body.payment_method));
+  }
+
   const statePatch: Record<string, unknown> = {};
-  if (body.fulfillment_type) statePatch.checkout_fulfillment_type = body.fulfillment_type;
-  if (body.fulfillment_date) statePatch.checkout_fulfillment_at = body.fulfillment_date;
-  if (body.fulfillment_address) statePatch.checkout_fulfillment_address = body.fulfillment_address;
+  if (
+    body.fulfillment_type !== undefined &&
+    body.fulfillment_type !== "pickup" &&
+    body.fulfillment_type !== "delivery"
+  ) {
+    return { step: "error", error: "invalid_fulfillment_type" };
+  }
+  if (body.fulfillment_type) {
+    const { fulfillmentOptionsEnabled } = await import("./fulfillment.server");
+    const enabled = await fulfillmentOptionsEnabled();
+    if (
+      (body.fulfillment_type === "pickup" && !enabled.pickup) ||
+      (body.fulfillment_type === "delivery" && !enabled.delivery)
+    ) {
+      return { step: "error", error: "fulfillment_unavailable" };
+    }
+    statePatch.checkout_fulfillment_type = body.fulfillment_type;
+    statePatch.checkout_delivery_zone_id = undefined;
+    statePatch.checkout_delivery_zone_name = undefined;
+    statePatch.checkout_delivery_fee = undefined;
+    statePatch.checkout_fulfillment_address = undefined;
+  }
+  if (body.fulfillment_date) {
+    const {
+      maxLeadTimeDaysInCart,
+      todayInAppTZ,
+      addDaysToIsoDate,
+    } = await import("./fulfillment.server");
+    const minDate = addDaysToIsoDate(
+      todayInAppTZ(),
+      await maxLeadTimeDaysInCart(telegram_id),
+    );
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.fulfillment_date) || body.fulfillment_date < minDate) {
+      return { step: "need_fulfillment_date", minDate, error: "invalid_fulfillment_date" };
+    }
+    statePatch.checkout_fulfillment_at = body.fulfillment_date;
+  }
+  if (body.fulfillment_address !== undefined) {
+    const address = body.fulfillment_address.trim().slice(0, 500);
+    if (!address) return { step: "need_address", error: "invalid_address" };
+    statePatch.checkout_fulfillment_address = address;
+  }
   if (body.fulfillment_note !== undefined) {
-    statePatch.checkout_fulfillment_note = body.fulfillment_note;
+    statePatch.checkout_fulfillment_note = body.fulfillment_note.trim().slice(0, 500);
+  }
+  if (body.delivery_language !== undefined) {
+    const { isDeliveryLangChoice } = await import("./product-materials");
+    if (!isDeliveryLangChoice(body.delivery_language)) {
+      return { step: "error", error: "invalid_delivery_language" };
+    }
+    statePatch.checkout_lang_choice = body.delivery_language;
   }
 
   if (body.delivery_zone_id) {
     const { activeDeliveryZones } = await import("./fulfillment.server");
     const zones = await activeDeliveryZones();
     const zone = zones.find((z) => z.id === body.delivery_zone_id);
-    if (zone) {
-      statePatch.checkout_delivery_zone_id = zone.id;
-      statePatch.checkout_delivery_zone_name = zone.name;
-      statePatch.checkout_delivery_fee = zone.fee;
-    }
+    if (!zone) return { step: "error", error: "invalid_delivery_zone" };
+    statePatch.checkout_delivery_zone_id = zone.id;
+    statePatch.checkout_delivery_zone_name = zone.name;
+    statePatch.checkout_delivery_fee = Number(zone.price) || 0;
   }
 
   if (Object.keys(statePatch).length > 0) {
@@ -148,10 +204,22 @@ export async function miniAppCheckoutNeeds(
         return { step: "need_fulfillment_type", pickup, delivery };
       }
       effectiveType = delivery ? "delivery" : "pickup";
+      const { miniAppMergeState } = await import("./bot.server");
+      await miniAppMergeState(telegram_id, {
+        checkout_fulfillment_type: effectiveType,
+      });
+      state.checkout_fulfillment_type = effectiveType;
     }
-    if (!state.checkout_fulfillment_at) {
-      const minDays = await maxLeadTimeDaysInCart(telegram_id);
-      const minDate = addDaysToIsoDate(todayInAppTZ(), minDays);
+    const minDays = await maxLeadTimeDaysInCart(telegram_id);
+    const minDate = addDaysToIsoDate(todayInAppTZ(), minDays);
+    const fulfillmentDate =
+      typeof state.checkout_fulfillment_at === "string"
+        ? state.checkout_fulfillment_at
+        : "";
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(fulfillmentDate) ||
+      fulfillmentDate < minDate
+    ) {
       return { step: "need_fulfillment_date", minDate };
     }
     if (effectiveType === "delivery") {
@@ -165,8 +233,8 @@ export async function miniAppCheckoutNeeds(
           zones: zones.map((z) => ({
             id: z.id,
             name: z.name,
-            fee: z.fee,
-            feeLabel: formatMiniAppMoney(z.fee, currency),
+            fee: Number(z.price) || 0,
+            feeLabel: formatMiniAppMoney(Number(z.price) || 0, currency),
           })),
         };
       }
@@ -176,6 +244,47 @@ export async function miniAppCheckoutNeeds(
     }
     if (state.checkout_fulfillment_note === undefined) {
       return { step: "need_fulfillment_note" };
+    }
+  }
+
+  const { hasModule } = await import("./modules/modules.server");
+  if ((await hasModule("multi_language")) && !state.checkout_lang_choice) {
+    const { data: timing } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("key", "delivery_lang_timing")
+      .maybeSingle();
+    if ((timing?.value ?? "after") === "before") {
+      const { data: items } = await s
+        .from("cart_items")
+        .select(
+          "products(file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order))",
+        )
+        .eq("telegram_id", telegram_id);
+      const { MATERIAL_LANGUAGES, availableMaterialLanguages } =
+        await import("./product-materials");
+      const { localeNames, localeFlags } = await import("./i18n");
+      const available = new Set<string>();
+      for (const item of items ?? []) {
+        for (const language of availableMaterialLanguages(item.products)) {
+          available.add(language);
+        }
+      }
+      const languages = MATERIAL_LANGUAGES.filter((language) =>
+        available.has(language),
+      );
+      if (languages.length > 1) {
+        return {
+          step: "need_delivery_language",
+          languages: [
+            ...languages.map((code) => ({
+              code,
+              name: `${localeFlags[code]} ${localeNames[code]}`,
+            })),
+            { code: "all", name: "🌐 All / Все" },
+          ],
+        };
+      }
     }
   }
 

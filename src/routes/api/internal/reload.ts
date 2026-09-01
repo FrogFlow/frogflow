@@ -11,6 +11,12 @@ export const Route = createFileRoute("/api/internal/reload")({
           return Response.json({ ok: false, error: auth.message }, { status: auth.status });
         }
         resetModuleCache();
+        try {
+          const { syncMiniAppMenuButton } = await import("@/lib/mini-app.server");
+          await syncMiniAppMenuButton();
+        } catch (error) {
+          console.error("[internal/reload] Mini App Menu Button sync failed", error);
+        }
         return Response.json({ ok: true });
       },
     },

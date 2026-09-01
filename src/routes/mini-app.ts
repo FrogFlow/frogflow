@@ -16,27 +16,34 @@ export const Route = createFileRoute("/mini-app")({
       GET: async ({ request }) => {
         if (isControlPlane()) return new Response("Not found", { status: 404 });
 
-        const { hasModule } = await import("@/lib/modules/modules.server");
-        if (!(await hasModule("telegram_mini_app"))) {
+        const { miniAppModuleEnabled } = await import("@/lib/mini-app.server");
+        if (!(await miniAppModuleEnabled())) {
           return new Response("Not found", { status: 404 });
         }
+        const { hasModule } = await import("@/lib/modules/modules.server");
 
         const url = new URL(request.url);
         const locale = miniAppLocaleFromQuery(url);
         const s = miniAppStrings(locale);
         const esc = escapeMiniAppHtml;
+        const countryCode = /^[A-Z]{2,8}$/.test(
+          (url.searchParams.get("country") || "").toUpperCase(),
+        )
+          ? (url.searchParams.get("country") || "").toUpperCase()
+          : null;
 
-        const { shopName, categories, visibleProducts, stockEnabled } = await loadMiniAppCatalogData();
-        const priced = await priceMiniAppProducts(visibleProducts, null);
+        const { shopName, categories, visibleProducts, stockEnabled } =
+          await loadMiniAppCatalogData(s.defaultShopName);
+        const priced = await priceMiniAppProducts(visibleProducts, countryCode);
 
         const catChips =
           categories.length > 0
             ? `<div class="cat-scroll" id="mini-categories">
-              <button type="button" class="cat-chip active" data-cat="">${esc(s.allCategories)}</button>
+              <button type="button" class="cat-chip active" data-cat="" aria-pressed="true">${esc(s.allCategories)}</button>
               ${categories
                 .map(
                   (c) =>
-                    `<button type="button" class="cat-chip" data-cat="${esc(c.id)}">${esc(c.name)}</button>`,
+                    `<button type="button" class="cat-chip" data-cat="${esc(c.id)}" aria-pressed="false">${esc(c.name)}</button>`,
                 )
                 .join("")}</div>`
             : "";
@@ -44,13 +51,18 @@ export const Route = createFileRoute("/mini-app")({
         const cardsHtml =
           visibleProducts.length > 0
             ? visibleProducts
-                .map((p) => renderMiniAppProductCard(p, priced.get(p.id), stockEnabled, locale, { linkToDetail: true }))
+                .map((p) =>
+                  renderMiniAppProductCard(p, priced.get(p.id), stockEnabled, locale, {
+                    linkToDetail: true,
+                    countryCode,
+                  }),
+                )
                 .join("")
-            : `<div class="empty">Каталог пока пуст.</div>`;
+            : `<div class="empty">${esc(s.emptyCatalog)}</div>`;
 
         const searchHtml =
           visibleProducts.length > 0
-            ? `<input type="search" id="mini-search" class="search" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" />`
+            ? `<label for="mini-search" style="position:absolute;left:-9999px">${esc(s.searchPlaceholder)}</label><input type="search" id="mini-search" class="search" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" />`
             : "";
 
         const bodyHtml = `

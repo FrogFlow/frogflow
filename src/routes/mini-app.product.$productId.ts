@@ -3,12 +3,11 @@ import { isControlPlane } from "@/lib/control-plane.server";
 import {
   escapeMiniAppHtml,
   formatMiniAppMoney,
-  loadMiniAppCatalogData,
   priceMiniAppProducts,
   renderMiniAppCartShell,
   type MiniAppProduct,
 } from "@/lib/mini-app-catalog.server";
-import { miniAppLocaleFromTelegram, miniAppStrings } from "@/lib/mini-app-i18n";
+import { miniAppStrings } from "@/lib/mini-app-i18n";
 import { miniAppHtmlResponse, miniAppLocaleFromQuery, wrapMiniAppPage } from "@/lib/mini-app-page.server";
 import { imageUrl } from "@/lib/public-image";
 export const Route = createFileRoute("/mini-app/product/$productId")({
@@ -17,10 +16,11 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
       GET: async ({ params, request }) => {
         if (isControlPlane()) return new Response("Not found", { status: 404 });
 
-        const { hasModule } = await import("@/lib/modules/modules.server");
-        if (!(await hasModule("telegram_mini_app"))) {
+        const { miniAppModuleEnabled } = await import("@/lib/mini-app.server");
+        if (!(await miniAppModuleEnabled())) {
           return new Response("Not found", { status: 404 });
         }
+        const { hasModule } = await import("@/lib/modules/modules.server");
 
         const productId = params.productId?.trim();
         if (!productId) return new Response("Not found", { status: 404 });
@@ -29,9 +29,12 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
         const locale = miniAppLocaleFromQuery(url);
         const s = miniAppStrings(locale);
         const esc = escapeMiniAppHtml;
+        const requestedCountry = (url.searchParams.get("country") || "").toUpperCase();
+        const countryCode = /^[A-Z]{2,8}$/.test(requestedCountry)
+          ? requestedCountry
+          : null;
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-        const { resolvePrice } = await import("@/lib/pricing.server");
         const stockEnabled = await hasModule("stock");
 
         const { data: product, error } = await supabaseAdmin
@@ -46,13 +49,28 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
         if (error || !product) return new Response("Not found", { status: 404 });
 
         const p = product as MiniAppProduct;
-        const priced = await priceMiniAppProducts([p], null);
+        const categoryIds = (p.category_ids as string[] | null) ?? [];
+        if (categoryIds.length > 0) {
+          const { data: visibleCategories } = await supabaseAdmin
+            .from("categories")
+            .select("id")
+            .in("id", categoryIds)
+            .eq("is_visible", true);
+          if (!visibleCategories?.length) {
+            return new Response("Not found", { status: 404 });
+          }
+        }
+
+        const priced = await priceMiniAppProducts([p], countryCode);
         const money = priced.get(p.id);
         const imgs = (p.product_images || []).slice().sort((a, b) => a.sort_order - b.sort_order);
         const gallery =
           imgs.length > 0
             ? imgs
-                .map((im) => `<img src="${esc(imageUrl(im.image_path))}" alt="${esc(p.name)}" loading="lazy" />`)
+                .map(
+                  (im, index) =>
+                    `<img src="${esc(imageUrl(im.image_path))}" alt="${esc(p.name)} — ${index + 1}" loading="lazy" />`,
+                )
                 .join("")
             : "";
         const variants = (p.product_variants ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
@@ -69,7 +87,10 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
               .map(
                 (v) =>
                   `<option value="${esc(v.id)}">${esc(v.name)} — ${esc(
-                    formatMiniAppMoney(Number(v.price), money?.currency ?? p.currency ?? "KZT"),
+                    formatMiniAppMoney(
+                      money?.variants[v.id]?.amount ?? Number(v.price),
+                      money?.variants[v.id]?.currency ?? money?.currency ?? p.currency ?? "KZT",
+                    ),
                   )}</option>`,
               )
               .join("");
@@ -86,9 +107,11 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
           ? `${money.isFrom ? s.fromPrice : ""}${formatMiniAppMoney(money.amount, money.currency)}`
           : "";
 
+        const backQuery = new URLSearchParams({ lang: locale });
+        if (countryCode) backQuery.set("country", countryCode);
         const bodyHtml = `
           <header>
-            <a class="back-link" href="/mini-app">${esc(s.backToCatalog)}</a>
+            <a class="back-link" href="/mini-app?${esc(backQuery.toString())}">${esc(s.backToCatalog)}</a>
             <h1>${esc(p.name)}</h1>
           </header>
           ${gallery ? `<div class="pdp-gallery">${gallery}</div>` : ""}
