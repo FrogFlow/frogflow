@@ -226,6 +226,17 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
       pointer-events: none;
     }
     .toast.show { opacity: 1; }
+    .auth-banner {
+      display: none;
+      margin: 0.75rem 1rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: 12px;
+      background: var(--secondary);
+      border: 1px solid var(--border);
+      color: var(--hint);
+      font-size: 0.9rem;
+    }
+    .auth-banner.show { display: block; }
   </style>
 </head>
 <body>
@@ -233,14 +244,63 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
   <div id="toast" class="toast" role="status"></div>
   <script>
     (function () {
-      var tg = window.Telegram && window.Telegram.WebApp;
-      if (tg) {
-        tg.ready();
-        tg.expand();
+      /**
+       * Telegram.WebApp.initData часто пустой в первый тик: SDK ещё не
+       * прочитал #tgWebAppData, натив инжектит объект позже, hash потом
+       * стирается. Раньше из-за этого каталог затирался текстом
+       * «Откройте магазин из Telegram» прямо внутри Mini App.
+       */
+      var tg = null;
+      var cachedInitData = "";
+      var MAX_INIT_ATTEMPTS = 40;
+
+      function bindTelegram() {
+        var next = window.Telegram && window.Telegram.WebApp;
+        if (!next) return null;
+        if (tg !== next) {
+          tg = next;
+          try { tg.ready(); tg.expand(); } catch (e) {}
+        }
+        return tg;
+      }
+
+      function initDataFromHash() {
+        var raw = (window.location.hash || "").replace(/^#/, "");
+        if (!raw) return "";
+        try {
+          var encoded = new URLSearchParams(raw).get("tgWebAppData");
+          if (encoded && encoded.indexOf("hash=") !== -1) return encoded.trim();
+        } catch (e) {}
+        var prefix = "tgWebAppData=";
+        var start = raw.indexOf(prefix);
+        if (start < 0) return "";
+        var rest = raw.slice(start + prefix.length);
+        var cut = rest.search(/&tgWebApp[A-Z]/);
+        if (cut >= 0) rest = rest.slice(0, cut);
+        try { return decodeURIComponent(rest.replace(/\\+/g, " ")).trim(); }
+        catch (e) { return rest.trim(); }
+      }
+
+      function initDataFromStorage() {
+        try {
+          var raw = sessionStorage.getItem("__telegram__initParams");
+          if (!raw) return "";
+          var parsed = JSON.parse(raw);
+          return (parsed.tgWebAppData || parsed.initData || "").trim();
+        } catch (e) { return ""; }
       }
 
       function initData() {
-        return tg && tg.initData ? tg.initData : "";
+        if (cachedInitData) return cachedInitData;
+        bindTelegram();
+        var data = (
+          (tg && tg.initData) ||
+          initDataFromHash() ||
+          initDataFromStorage() ||
+          ""
+        ).trim();
+        if (data) cachedInitData = data;
+        return data;
       }
 
       function apiHeaders() {
@@ -358,6 +418,10 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
 
       document.querySelectorAll(".add-btn").forEach(function (btn) {
         btn.addEventListener("click", function () {
+          if (!initData()) {
+            showToast("Сессия Telegram ещё не готова — закройте и откройте магазин из бота");
+            return;
+          }
           var card = btn.closest(".card");
           var productId = btn.getAttribute("data-product-id");
           var select = card ? card.querySelector(".variant-select") : null;
@@ -367,7 +431,13 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
             return;
           }
           btn.disabled = true;
-          addProduct(productId, variantId).finally(function () { btn.disabled = false; });
+          addProduct(productId, variantId).finally(function () {
+            if (btn.getAttribute("data-has-variants") === "1") {
+              btn.disabled = !select || !select.value || !initData();
+            } else {
+              btn.disabled = !initData();
+            }
+          });
         });
       });
 
@@ -375,7 +445,7 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
         sel.addEventListener("change", function () {
           var card = sel.closest(".card");
           var btn = card ? card.querySelector(".add-btn") : null;
-          if (btn) btn.disabled = !sel.value;
+          if (btn) btn.disabled = !initData() || !sel.value;
         });
       });
 
@@ -432,14 +502,45 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
         });
       }
 
-      if (!initData()) {
-        document.body.innerHTML = "<div class=\\"empty\\">Откройте магазин из Telegram</div>";
-        return;
+      function setCartEnabled(on) {
+        document.querySelectorAll(".add-btn").forEach(function (btn) {
+          if (btn.getAttribute("data-has-variants") === "1") {
+            var card = btn.closest(".card");
+            var select = card ? card.querySelector(".variant-select") : null;
+            btn.disabled = !on || !select || !select.value;
+          } else {
+            btn.disabled = !on;
+          }
+        });
+        if (openCart) openCart.disabled = !on;
+        if (checkoutBtn) checkoutBtn.disabled = !on || state.items.length === 0;
       }
 
-      refreshCart().catch(function () {
-        document.body.innerHTML = "<div class=\\"empty\\">Не удалось загрузить корзину</div>";
-      });
+      function showAuthBanner() {
+        var el = document.getElementById("mini-auth-banner");
+        if (el) el.classList.add("show");
+        setCartEnabled(false);
+      }
+
+      function boot(attempt) {
+        if (initData()) {
+          var banner = document.getElementById("mini-auth-banner");
+          if (banner) banner.classList.remove("show");
+          setCartEnabled(true);
+          refreshCart().catch(function () {
+            showToast("Не удалось загрузить корзину");
+          });
+          return;
+        }
+        if (attempt < MAX_INIT_ATTEMPTS) {
+          setTimeout(function () { boot(attempt + 1); }, 50);
+          return;
+        }
+        showAuthBanner();
+      }
+
+      setCartEnabled(false);
+      boot(0);
     })();
   </script>
 </body>
@@ -568,6 +669,9 @@ export const Route = createFileRoute("/mini-app")({
             <h1>${escapeHtml(shopName)}</h1>
             <p class="subtitle">${visibleProducts.length > 0 ? `${visibleProducts.length} товаров` : ""}</p>
           </header>
+          <div id="mini-auth-banner" class="auth-banner" role="status">
+            Магазин открыт, но Telegram ещё не передал сессию. Закройте окно и нажмите «Магазин» в боте ещё раз.
+          </div>
           ${searchHtml}
           <div class="grid">${cardsHtml}</div>
           <div id="mini-cart-bar" class="cart-bar hidden">
