@@ -4,6 +4,7 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "tanstack-start",
+  "trailingSlash": false,
   "regions": ["icn1"],
   "crons": [
     { "path": "/api/cron/broadcast", "schedule": "*/1 * * * *" },

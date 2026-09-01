@@ -2,18 +2,25 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  initDataFromCapturedLaunch,
   initDataFromStoredInitParams,
   initDataFromWebAppHash,
+  initDataFromWebAppLocation,
   resolveTelegramInitData,
 } from "../src/lib/telegram-webapp-init-data";
 
 const inner =
   "auth_date=1700000000&query_id=AAE&user=%7B%22id%22%3A1%7D&hash=abc123def";
 
-describe("initDataFromWebAppHash", () => {
+describe("initDataFromWebAppLocation", () => {
   it("читает tgWebAppData из hash Mini App", () => {
     const hash = `#tgWebAppData=${encodeURIComponent(inner)}&tgWebAppVersion=8.0&tgWebAppPlatform=android`;
     expect(initDataFromWebAppHash(hash)).toBe(inner);
+  });
+
+  it("читает tgWebAppData из query string", () => {
+    const search = `?tgWebAppData=${encodeURIComponent(inner)}&tgWebAppVersion=8.0`;
+    expect(initDataFromWebAppLocation(search)).toBe(inner);
   });
 
   it("собирает значение, если внутренний query не закодирован целиком", () => {
@@ -39,39 +46,43 @@ describe("initDataFromStoredInitParams", () => {
   });
 });
 
-describe("resolveTelegramInitData", () => {
-  it("предпочитает SDK, затем hash, затем sessionStorage", () => {
-    expect(
-      resolveTelegramInitData({
-        sdkInitData: "from-sdk",
-        hash: `#tgWebAppData=${encodeURIComponent(inner)}`,
-        storedInitParamsJson: JSON.stringify({ tgWebAppData: "from-store" }),
-      }),
-    ).toBe("from-sdk");
+describe("initDataFromCapturedLaunch", () => {
+  it("разбирает сохранённый hash+search", () => {
+    const packed = `#tgWebAppData=${encodeURIComponent(inner)}&tgWebAppVersion=8.0\n`;
+    expect(initDataFromCapturedLaunch(packed)).toBe(inner);
+  });
+});
 
+describe("resolveTelegramInitData", () => {
+  it("предпочитает SDK, затем capture, затем hash", () => {
     expect(
       resolveTelegramInitData({
-        sdkInitData: "",
-        hash: `#tgWebAppData=${encodeURIComponent(inner)}&tgWebAppVersion=8.0`,
-        storedInitParamsJson: JSON.stringify({ tgWebAppData: "from-store" }),
+        sdkInitData: inner,
+        hash: `#tgWebAppData=${encodeURIComponent("auth_date=1&hash=other")}`,
       }),
     ).toBe(inner);
 
     expect(
       resolveTelegramInitData({
-        sdkInitData: "  ",
-        hash: "",
-        storedInitParamsJson: JSON.stringify({ tgWebAppData: "from-store" }),
+        sdkInitData: "",
+        search: `?tgWebAppData=${encodeURIComponent(inner)}`,
       }),
-    ).toBe("from-store");
+    ).toBe(inner);
+
+    expect(
+      resolveTelegramInitData({
+        storedInitParamsJson: JSON.stringify({ tgWebAppData: inner }),
+      }),
+    ).toBe(inner);
   });
 });
 
 describe("mini-app boot", () => {
-  it("не затирает каталог при пустом initData в первый тик", () => {
+  it("захватывает launch params до SDK и не просит закрыть окно", () => {
     const src = readFileSync(resolve("src/routes/mini-app.ts"), "utf8");
-    expect(src).toContain("tgWebAppData");
-    expect(src).toMatch(/MAX_INIT_ATTEMPTS/);
+    expect(src).toContain("ff_tg_launch");
+    expect(src).toContain("telegram-web-app.js?63");
+    expect(src).not.toMatch(/Закройте окно/);
     expect(src).not.toMatch(/if\s*\(\s*!initData\(\)\s*\)\s*\{[\s\S]*body\.innerHTML/);
   });
 });

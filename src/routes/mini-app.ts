@@ -50,7 +50,31 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>${escapeHtml(title)}</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script>
+    (function () {
+      function save(key, value) {
+        try { if (value) sessionStorage.setItem(key, value); } catch (e) {}
+      }
+      try {
+        var packed = (location.hash || "") + "\\n" + (location.search || "");
+        if (packed.indexOf("tgWebAppData") !== -1) save("ff_tg_launch", packed);
+      } catch (e) {}
+      window.addEventListener("message", function (ev) {
+        try {
+          var d = ev.data;
+          if (typeof d === "string") {
+            if (d.indexOf("tgWebAppData") !== -1 || d.indexOf("hash=") !== -1) save("ff_tg_launch", d);
+            d = JSON.parse(d);
+          }
+          if (!d || typeof d !== "object") return;
+          var raw = d.tgWebAppData || d.initData ||
+            (d.eventData && (d.eventData.tgWebAppData || d.eventData.initData));
+          if (typeof raw === "string" && raw.indexOf("hash=") !== -1) save("ff_tg_init", raw);
+        } catch (e) {}
+      });
+    })();
+  </script>
+  <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
   <style>
     :root {
       --bg: var(--tg-theme-bg-color, #f6f6f8);
@@ -226,17 +250,7 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
       pointer-events: none;
     }
     .toast.show { opacity: 1; }
-    .auth-banner {
-      display: none;
-      margin: 0.75rem 1rem;
-      padding: 0.75rem 0.9rem;
-      border-radius: 12px;
-      background: var(--secondary);
-      border: 1px solid var(--border);
-      color: var(--hint);
-      font-size: 0.9rem;
-    }
-    .auth-banner.show { display: block; }
+    .add-btn:disabled, .checkout-btn:disabled { opacity: 0.45; cursor: default; }
   </style>
 </head>
 <body>
@@ -252,7 +266,7 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
        */
       var tg = null;
       var cachedInitData = "";
-      var MAX_INIT_ATTEMPTS = 40;
+      var cartReady = false;
 
       function bindTelegram() {
         var next = window.Telegram && window.Telegram.WebApp;
@@ -264,12 +278,16 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
         return tg;
       }
 
-      function initDataFromHash() {
-        var raw = (window.location.hash || "").replace(/^#/, "");
+      function looksLike(s) {
+        return !!(s && s.indexOf("hash=") !== -1);
+      }
+
+      function fromLocation(source) {
+        var raw = (source || "").replace(/^[#?]/, "");
         if (!raw) return "";
         try {
           var encoded = new URLSearchParams(raw).get("tgWebAppData");
-          if (encoded && encoded.indexOf("hash=") !== -1) return encoded.trim();
+          if (looksLike(encoded)) return encoded.trim();
         } catch (e) {}
         var prefix = "tgWebAppData=";
         var start = raw.indexOf(prefix);
@@ -277,16 +295,32 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
         var rest = raw.slice(start + prefix.length);
         var cut = rest.search(/&tgWebApp[A-Z]/);
         if (cut >= 0) rest = rest.slice(0, cut);
-        try { return decodeURIComponent(rest.replace(/\\+/g, " ")).trim(); }
-        catch (e) { return rest.trim(); }
+        try { rest = decodeURIComponent(rest.replace(/\\+/g, " ")).trim(); }
+        catch (e) { rest = rest.trim(); }
+        return looksLike(rest) ? rest : "";
       }
 
-      function initDataFromStorage() {
+      function readStorage(key) {
+        try { return sessionStorage.getItem(key) || ""; } catch (e) { return ""; }
+      }
+
+      function fromPacked(packed) {
+        if (looksLike(packed)) return packed.trim();
+        var parts = packed.split("\\n");
+        for (var i = 0; i < parts.length; i++) {
+          var got = fromLocation(parts[i]);
+          if (looksLike(got)) return got;
+        }
+        return fromLocation(packed);
+      }
+
+      function fromOfficialStorage() {
         try {
-          var raw = sessionStorage.getItem("__telegram__initParams");
+          var raw = readStorage("__telegram__initParams");
           if (!raw) return "";
           var parsed = JSON.parse(raw);
-          return (parsed.tgWebAppData || parsed.initData || "").trim();
+          var v = (parsed.tgWebAppData || parsed.initData || "").trim();
+          return looksLike(v) ? v : fromLocation(v);
         } catch (e) { return ""; }
       }
 
@@ -295,11 +329,15 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
         bindTelegram();
         var data = (
           (tg && tg.initData) ||
-          initDataFromHash() ||
-          initDataFromStorage() ||
+          readStorage("ff_tg_init") ||
+          fromPacked(readStorage("ff_tg_launch")) ||
+          fromLocation(location.hash) ||
+          fromLocation(location.search) ||
+          fromOfficialStorage() ||
           ""
         ).trim();
-        if (data) cachedInitData = data;
+        if (!looksLike(data)) return "";
+        cachedInitData = data;
         return data;
       }
 
@@ -516,31 +554,22 @@ function wrapMiniAppPage(title: string, bodyHtml: string): string {
         if (checkoutBtn) checkoutBtn.disabled = !on || state.items.length === 0;
       }
 
-      function showAuthBanner() {
-        var el = document.getElementById("mini-auth-banner");
-        if (el) el.classList.add("show");
-        setCartEnabled(false);
-      }
-
-      function boot(attempt) {
+      function boot() {
         if (initData()) {
-          var banner = document.getElementById("mini-auth-banner");
-          if (banner) banner.classList.remove("show");
-          setCartEnabled(true);
-          refreshCart().catch(function () {
-            showToast("Не удалось загрузить корзину");
-          });
+          if (!cartReady) {
+            cartReady = true;
+            setCartEnabled(true);
+            refreshCart().catch(function () {
+              showToast("Не удалось загрузить корзину");
+            });
+          }
           return;
         }
-        if (attempt < MAX_INIT_ATTEMPTS) {
-          setTimeout(function () { boot(attempt + 1); }, 50);
-          return;
-        }
-        showAuthBanner();
+        setTimeout(boot, 100);
       }
 
       setCartEnabled(false);
-      boot(0);
+      boot();
     })();
   </script>
 </body>
@@ -669,9 +698,6 @@ export const Route = createFileRoute("/mini-app")({
             <h1>${escapeHtml(shopName)}</h1>
             <p class="subtitle">${visibleProducts.length > 0 ? `${visibleProducts.length} товаров` : ""}</p>
           </header>
-          <div id="mini-auth-banner" class="auth-banner" role="status">
-            Магазин открыт, но Telegram ещё не передал сессию. Закройте окно и нажмите «Магазин» в боте ещё раз.
-          </div>
           ${searchHtml}
           <div class="grid">${cardsHtml}</div>
           <div id="mini-cart-bar" class="cart-bar hidden">
@@ -694,7 +720,10 @@ export const Route = createFileRoute("/mini-app")({
           </div>`;
 
         return new Response(wrapMiniAppPage(shopName, bodyHtml), {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store",
+          },
         });
       },
     },
