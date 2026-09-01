@@ -20,17 +20,18 @@ export async function authorizeMiniAppRequest(request: Request): Promise<MiniApp
     return { ok: false, status: 404, error: "not_found" };
   }
 
-  const initData =
-    request.headers.get(INIT_DATA_HEADER)?.trim() ||
-    new URL(request.url).searchParams.get("initData")?.trim() ||
-    "";
+  // API credentials belong in a header: query parameters leak to access
+  // logs, browser history and Referer headers.
+  const initData = request.headers.get(INIT_DATA_HEADER)?.trim() || "";
 
   const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
   if (!token) {
     return { ok: false, status: 503, error: "bot_unavailable" };
   }
 
-  const validated = validateTelegramInitData(initData, token);
+  // Mutating Mini App APIs should not accept a captured launch payload all
+  // day. Reopening the app gives Telegram a fresh auth_date.
+  const validated = validateTelegramInitData(initData, token, 60 * 60);
   if (!validated.ok) {
     const status =
       validated.reason === "expired" ? 401 : validated.reason === "missing" ? 401 : 403;

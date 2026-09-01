@@ -31,9 +31,20 @@ export const Route = createFileRoute("/mini-app")({
         )
           ? (url.searchParams.get("country") || "").toUpperCase()
           : null;
+        const requestedPage = Math.max(
+          1,
+          Math.floor(Number(url.searchParams.get("page"))) || 1,
+        );
 
-        const { shopName, categories, visibleProducts, stockEnabled } =
-          await loadMiniAppCatalogData(s.defaultShopName);
+        const {
+          shopName,
+          categories,
+          visibleProducts,
+          stockEnabled,
+          totalProducts,
+          page,
+          pageSize,
+        } = await loadMiniAppCatalogData(s.defaultShopName, requestedPage);
         const priced = await priceMiniAppProducts(visibleProducts, countryCode);
 
         const catChips =
@@ -64,15 +75,30 @@ export const Route = createFileRoute("/mini-app")({
           visibleProducts.length > 0
             ? `<label for="mini-search" style="position:absolute;left:-9999px">${esc(s.searchPlaceholder)}</label><input type="search" id="mini-search" class="search" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" />`
             : "";
+        const pageCount = Math.max(1, Math.ceil(totalProducts / pageSize));
+        const paginationLink = (target: number, label: string) => {
+          const params = new URLSearchParams({ lang: locale, page: String(target) });
+          if (countryCode) params.set("country", countryCode);
+          return `<a href="/mini-app?${esc(params.toString())}">${label}</a>`;
+        };
+        const paginationHtml =
+          pageCount > 1
+            ? `<nav class="pagination" aria-label="Pagination">
+                ${page > 1 ? paginationLink(page - 1, "←") : ""}
+                <span>${page} / ${pageCount}</span>
+                ${page < pageCount ? paginationLink(page + 1, "→") : ""}
+              </nav>`
+            : "";
 
         const bodyHtml = `
           <header>
             <h1>${esc(shopName)}</h1>
-            <p class="subtitle">${visibleProducts.length > 0 ? s.productsCount(visibleProducts.length) : ""}</p>
+            <p class="subtitle">${totalProducts > 0 ? s.productsCount(totalProducts) : ""}</p>
           </header>
           ${searchHtml}
           ${catChips}
           <div class="grid">${cardsHtml}</div>
+          ${paginationHtml}
           ${renderMiniAppCartShell(locale)}`;
 
         return miniAppHtmlResponse(wrapMiniAppPage(shopName, bodyHtml, locale));

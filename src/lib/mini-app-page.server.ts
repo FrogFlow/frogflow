@@ -108,6 +108,8 @@ export function wrapMiniAppPage(
       padding: 0 1rem 1rem;
       grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     }
+    .pagination { display: flex; justify-content: center; gap: 0.75rem; padding: 0 1rem 1rem; }
+    .pagination a { color: var(--link); text-decoration: none; border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem 0.8rem; background: var(--secondary); }
     .card {
       background: var(--secondary);
       border-radius: 14px;

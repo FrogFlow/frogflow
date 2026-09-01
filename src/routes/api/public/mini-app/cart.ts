@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isControlPlane } from "@/lib/control-plane.server";
 import { authorizeMiniAppRequest } from "@/lib/mini-app.server";
+import { logger } from "@/lib/logger.server";
 
 type CartBody = {
   action?: string;
@@ -29,17 +30,19 @@ function isDiscountAction(value: string): value is DiscountAction {
 async function cartPayload(telegramId: number) {
   const {
     listMiniAppCart,
-    miniAppCountryCode,
+    miniAppUserContext,
     miniAppCartSummary,
   } = await import("@/lib/mini-app-cart.server");
   const items = await listMiniAppCart(telegramId);
   const summary = await miniAppCartSummary(telegramId, items);
+  const context = await miniAppUserContext(telegramId);
   return {
     items,
     total: summary.total,
     subtotal: summary.subtotal,
     currency: items[0]?.currency ?? "KZT",
-    country_code: await miniAppCountryCode(telegramId),
+    country_code: context.countryCode,
+    locale: context.locale,
     summary,
   };
 }
@@ -73,6 +76,10 @@ export const Route = createFileRoute("/api/public/mini-app/cart")({
         }
 
         const action = typeof body.action === "string" ? body.action.trim() : "";
+        logger.info("mini_app.cart_action", {
+          telegram_id: auth.user.id,
+          action,
+        });
         const {
           ensureMiniAppBotUser,
           miniAppAddProduct,

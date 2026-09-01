@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isControlPlane } from "@/lib/control-plane.server";
 import { authorizeMiniAppRequest } from "@/lib/mini-app.server";
+import { logger } from "@/lib/logger.server";
 
 export const Route = createFileRoute("/api/public/mini-app/checkout")({
   server: {
@@ -25,6 +26,11 @@ export const Route = createFileRoute("/api/public/mini-app/checkout")({
         }
 
         const result = await miniAppRunCheckout(auth.user.id, body);
+        logger.info("mini_app.checkout_step", {
+          telegram_id: auth.user.id,
+          step: result.step,
+          error: result.error,
+        });
         if (result.step === "error") {
           const status = result.error === "empty_cart" ? 400 : 400;
           return Response.json(result, { status });

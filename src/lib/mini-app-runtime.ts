@@ -6,6 +6,8 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   var cartReady = false;
   var checkoutBusy = false;
   var bootAttempts = 0;
+  var checkoutHistory = [];
+  var mainButtonBound = false;
 
   function t(key) { return I[key] || key; }
 
@@ -135,10 +137,12 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     return "ru";
   }
 
-  function reloadForContext(countryCode) {
+  function reloadForContext(countryCode, savedLocale) {
     var url = new URL(window.location.href);
     var changed = false;
-    var locale = expectedLocale();
+    var locale = /^(ru|kk|en|uz)$/.test(savedLocale || "")
+      ? savedLocale
+      : expectedLocale();
     if (url.searchParams.get("lang") !== locale) {
       url.searchParams.set("lang", locale);
       changed = true;
@@ -187,6 +191,20 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (cartTotalEl) cartTotalEl.textContent = formatMoney(state.total, state.currency);
     if (cartBar) cartBar.classList.toggle("hidden", count === 0);
     if (checkoutBtn) checkoutBtn.disabled = count === 0 || !initData();
+    if (tg && tg.MainButton) {
+      try {
+        if (count > 0 && initData()) {
+          tg.MainButton.setText(t("pay") + " · " + formatMoney(state.total, state.currency));
+          tg.MainButton.show();
+          if (!mainButtonBound) {
+            mainButtonBound = true;
+            tg.MainButton.onClick(function () { runCheckout({}); });
+          }
+        } else {
+          tg.MainButton.hide();
+        }
+      } catch (e) {}
+    }
     if (!cartLines) return;
     if (!state.items.length) {
       cartLines.innerHTML = "<p class=\\"empty\\">" + t("cartEmpty") + "</p>";
@@ -301,7 +319,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       .then(parseResponse)
       .then(function (res) {
         if (!res.ok) throw new Error(res.d && res.d.error ? res.d.error : "cart_failed");
-        if (reloadForContext(res.d.country_code || "")) return;
+        if (reloadForContext(res.d.country_code || "", res.d.locale || "")) return;
         applyCartPayload(res.d);
       });
   }
@@ -389,8 +407,12 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     checkoutForm.classList.add("hidden");
   }
 
-  function showCheckoutStep(data) {
+  function showCheckoutStep(data, fromHistory) {
     if (!checkoutForm) return;
+    if (!fromHistory) {
+      var last = checkoutHistory[checkoutHistory.length - 1];
+      if (!last || last.step !== data.step) checkoutHistory.push(data);
+    }
     checkoutForm.classList.remove("hidden");
     var html = "";
     var step = data.step;
@@ -466,6 +488,29 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       return;
     }
     checkoutForm.innerHTML = html;
+    if (step !== "completed" && step !== "robokassa" && step !== "manual_proof") {
+      var nav = document.createElement("div");
+      nav.className = "checkout-actions";
+      if (checkoutHistory.length > 1) {
+        var back = document.createElement("button");
+        back.type = "button";
+        back.className = "btn-secondary";
+        back.textContent = t("backToCatalog").replace("← ", "");
+        back.addEventListener("click", function () {
+          checkoutHistory.pop();
+          var previous = checkoutHistory[checkoutHistory.length - 1];
+          if (previous) showCheckoutStep(previous, true);
+        });
+        nav.appendChild(back);
+      }
+      var cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "btn-secondary";
+      cancel.textContent = t("cancel");
+      cancel.addEventListener("click", hideCartSheet);
+      nav.appendChild(cancel);
+      checkoutForm.insertBefore(nav, checkoutForm.firstChild);
+    }
     var submit = document.getElementById("mini-step-submit");
     if (submit) {
       submit.addEventListener("click", function () {
@@ -529,6 +574,11 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (cartError) cartError.textContent = "";
     if (checkoutBtn) checkoutBtn.disabled = true;
     if (checkoutForm) checkoutForm.setAttribute("aria-busy", "true");
+    if (checkoutForm) {
+      checkoutForm.querySelectorAll("button").forEach(function (button) {
+        button.disabled = true;
+      });
+    }
     var body = extraBody || {};
     return fetch("/api/public/mini-app/checkout", {
       method: "POST",
@@ -552,6 +602,11 @@ export const MINI_APP_RUNTIME_JS = `(function () {
                   ? t("invalidField")
                   : t("checkoutFailed");
           if (cartError) cartError.textContent = msg;
+          if (checkoutForm) {
+            checkoutForm.querySelectorAll("button").forEach(function (button) {
+              button.disabled = false;
+            });
+          }
           if (code === "empty_cart") refreshCart().catch(function () {});
           return;
         }
@@ -569,6 +624,11 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         if (checkoutForm) checkoutForm.setAttribute("aria-busy", "false");
         if (cartError) cartError.textContent = t("networkError");
         if (checkoutBtn) checkoutBtn.disabled = false;
+        if (checkoutForm) {
+          checkoutForm.querySelectorAll("button").forEach(function (button) {
+            button.disabled = false;
+          });
+        }
       });
   }
 
@@ -618,6 +678,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     cartSheet.classList.add("hidden");
     cartSheet.setAttribute("aria-hidden", "true");
     clearCheckoutForm();
+    checkoutHistory = [];
     try { if (tg) tg.disableClosingConfirmation(); } catch (e) {}
     if (openCart) openCart.focus();
   }
@@ -642,6 +703,25 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && cartSheet && !cartSheet.classList.contains("hidden")) {
       hideCartSheet();
+    }
+    if (
+      e.key === "Tab" &&
+      cartSheet &&
+      !cartSheet.classList.contains("hidden")
+    ) {
+      var focusable = cartSheet.querySelectorAll(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href]",
+      );
+      if (!focusable.length) return;
+      var first = focusable[0];
+      var last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
   });
 
@@ -701,7 +781,6 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (initData()) {
       if (!cartReady) {
         cartReady = true;
-        if (reloadForContext("")) return;
         setCartEnabled(true);
         refreshCart().catch(function () { showToast(t("cartLoadFailed")); });
       }

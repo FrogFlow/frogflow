@@ -46,14 +46,26 @@ export function formatMiniAppMoney(amount: number, currency: string): string {
   return cur === "KZT" ? `${value} ₸` : `${value} ${currency}`;
 }
 
-export async function loadMiniAppCatalogData(defaultShopName = "Магазин") {
+export async function loadMiniAppCatalogData(
+  defaultShopName = "Магазин",
+  page = 1,
+  pageSize = 80,
+) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  const { fetchAll } = await import("@/lib/csv");
   const { hasModule } = await import("./modules/modules.server");
 
   const stockEnabled = await hasModule("stock");
+  const safePage = Math.max(1, Math.floor(page) || 1);
+  const safePageSize = Math.max(20, Math.min(100, Math.floor(pageSize) || 80));
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
 
-  const [{ data: shopSetting }, { data: cats }, { data: hiddenCats }, products] = await Promise.all([
+  const [
+    { data: shopSetting },
+    { data: cats },
+    { data: hiddenCats },
+    { data: productRows, count: totalProducts },
+  ] = await Promise.all([
     supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
     supabaseAdmin
       .from("categories")
@@ -62,30 +74,35 @@ export async function loadMiniAppCatalogData(defaultShopName = "Магазин")
       .order("sort_order")
       .order("name"),
     supabaseAdmin.from("categories").select("id").eq("is_visible", false),
-    fetchAll<MiniAppProduct>(
-      (from, to) =>
-        supabaseAdmin
-          .from("products")
-          .select(
-            "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
-          )
-          .eq("is_active", true)
-          .order("sort_order")
-          .order("name")
-          .range(from, to),
-      "товары mini-app",
-    ),
+    supabaseAdmin
+      .from("products")
+      .select(
+        "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
+        { count: "exact" },
+      )
+      .eq("is_active", true)
+      .order("sort_order")
+      .order("name")
+      .range(from, to),
   ]);
 
   const shopName = shopSetting?.value?.trim() || defaultShopName;
   const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
   const categories = (cats ?? []) as MiniAppCategory[];
-  const visibleProducts = products.filter((p) => {
+  const visibleProducts = ((productRows ?? []) as MiniAppProduct[]).filter((p) => {
     const catIds = (p.category_ids as string[] | null) ?? [];
     return catIds.length === 0 || catIds.some((id) => !hiddenIds.has(id));
   });
 
-  return { shopName, categories, visibleProducts, stockEnabled };
+  return {
+    shopName,
+    categories,
+    visibleProducts,
+    stockEnabled,
+    totalProducts: totalProducts ?? visibleProducts.length,
+    page: safePage,
+    pageSize: safePageSize,
+  };
 }
 
 export async function priceMiniAppProducts(
@@ -171,7 +188,7 @@ export function renderMiniAppProductCard(
 
   const thumbInner = img
     ? `<img src="${esc(img)}" alt="${esc(p.name)}" loading="lazy" />`
-    : "";
+    : `<span aria-hidden="true" style="font-size:2rem">🛍</span>`;
   const query = new URLSearchParams({ lang: locale });
   if (opts?.countryCode) query.set("country", opts.countryCode);
   const detailHref = `/mini-app/product/${encodeURIComponent(p.id)}?${query.toString()}`;
@@ -189,6 +206,11 @@ export function renderMiniAppProductCard(
     ${thumbHtml}
     <div class="card-body">
       ${nameHtml}
+      ${
+        p.rating_count > 0 && p.rating_avg != null
+          ? `<div class="pdp-rating">${esc(s.rating(String(p.rating_avg), p.rating_count))}</div>`
+          : ""
+      }
       ${p.description ? `<div class="card-desc">${esc(p.description)}</div>` : ""}
       ${priceLabel ? `<div class="card-price">${esc(priceLabel)}</div>` : ""}
       ${actionsHtml}

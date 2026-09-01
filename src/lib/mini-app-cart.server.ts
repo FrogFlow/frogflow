@@ -29,15 +29,24 @@ async function db() {
   return supabaseAdmin;
 }
 
-export async function miniAppCountryCode(telegram_id: number): Promise<string | null> {
+export async function miniAppUserContext(
+  telegram_id: number,
+): Promise<{ countryCode: string | null; locale: string | null }> {
   const s = await db();
   const { data } = await s.from("bot_users").select("state").eq("telegram_id", telegram_id).maybeSingle();
   const state = data?.state;
   if (state && typeof state === "object" && !Array.isArray(state)) {
-    const code = (state as { country_code?: string }).country_code;
-    return code?.trim() || null;
+    const value = state as { country_code?: string; locale?: string };
+    return {
+      countryCode: value.country_code?.trim() || null,
+      locale: value.locale?.trim() || null,
+    };
   }
-  return null;
+  return { countryCode: null, locale: null };
+}
+
+export async function miniAppCountryCode(telegram_id: number): Promise<string | null> {
+  return (await miniAppUserContext(telegram_id)).countryCode;
 }
 
 export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartLine[]> {
@@ -108,7 +117,7 @@ export async function ensureMiniAppBotUser(user: TelegramWebAppUser) {
     row.state && typeof row.state === "object" && !Array.isArray(row.state)
       ? { ...(row.state as Record<string, unknown>) }
       : {};
-  if (state.locale !== locale) {
+  if (!state.locale) {
     state.locale = locale;
     await s
       .from("bot_users")

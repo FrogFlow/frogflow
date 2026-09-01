@@ -72,7 +72,7 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
                     `<img src="${esc(imageUrl(im.image_path))}" alt="${esc(p.name)} — ${index + 1}" loading="lazy" />`,
                 )
                 .join("")
-            : "";
+            : `<div class="thumb" style="width:100%;max-height:280px"><span aria-hidden="true" style="font-size:3rem">🛍</span></div>`;
         const variants = (p.product_variants ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
         const outOfStock = stockEnabled && p.stock_quantity !== null && p.stock_quantity <= 0;
         const rating =
@@ -114,7 +114,7 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
             <a class="back-link" href="/mini-app?${esc(backQuery.toString())}">${esc(s.backToCatalog)}</a>
             <h1>${esc(p.name)}</h1>
           </header>
-          ${gallery ? `<div class="pdp-gallery">${gallery}</div>` : ""}
+          <div class="pdp-gallery">${gallery}</div>
           <div class="pdp-body">
             ${rating}
             ${priceLabel ? `<div class="pdp-price">${esc(priceLabel)}</div>` : ""}
