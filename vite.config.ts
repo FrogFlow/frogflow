@@ -16,7 +16,15 @@ export default defineConfig({
       srcDirectory: "src",
       server: { entry: "server" },
     }),
-    nitro(),
+    nitro({
+      vercel: {
+        functionRules: {
+          "/api/public/mini-app/checkout": {
+            maxDuration: 60,
+          },
+        },
+      },
+    }),
     viteReact(),
   ],
 });
