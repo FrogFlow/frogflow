@@ -1,9 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { isControlPlane } from "@/lib/control-plane.server";
-import {
-  escapeMiniAppHtml,
-  renderMiniAppCartShell,
-} from "@/lib/mini-app-catalog.server";
+import { escapeMiniAppHtml, renderMiniAppCartShell } from "@/lib/mini-app-catalog.server";
 import { miniAppStrings } from "@/lib/mini-app-i18n";
 import {
   miniAppHtmlResponse,

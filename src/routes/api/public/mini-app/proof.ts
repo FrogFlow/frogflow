@@ -2,10 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { isControlPlane } from "@/lib/control-plane.server";
 import { authorizeMiniAppRequest } from "@/lib/mini-app.server";
 import { consumeMiniAppRateLimit } from "@/lib/mini-app-rate-limit.server";
-import {
-  PAYMENT_PROOF_MAX_BYTES,
-  processMiniAppPaymentProof,
-} from "@/lib/payment-proof.server";
+import { PAYMENT_PROOF_MAX_BYTES, processMiniAppPaymentProof } from "@/lib/payment-proof.server";
 import { logger } from "@/lib/logger.server";
 
 function errorStatus(error: string): number {
@@ -46,11 +43,7 @@ export const Route = createFileRoute("/api/public/mini-app/proof")({
           return Response.json({ error: "invalid_form" }, { status: 400 });
         }
         const value = form.get("file");
-        if (
-          !value ||
-          typeof value === "string" ||
-          typeof value.arrayBuffer !== "function"
-        ) {
+        if (!value || typeof value === "string" || typeof value.arrayBuffer !== "function") {
           return Response.json({ error: "invalid_file" }, { status: 400 });
         }
         if (value.size > PAYMENT_PROOF_MAX_BYTES) {
@@ -59,9 +52,7 @@ export const Route = createFileRoute("/api/public/mini-app/proof")({
 
         const orderRaw = form.get("order_id");
         const orderId =
-          typeof orderRaw === "string" && orderRaw.trim()
-            ? Number(orderRaw)
-            : undefined;
+          typeof orderRaw === "string" && orderRaw.trim() ? Number(orderRaw) : undefined;
         if (orderId !== undefined && (!Number.isInteger(orderId) || orderId <= 0)) {
           return Response.json({ error: "invalid_order" }, { status: 400 });
         }

@@ -63,12 +63,7 @@ function hasMagicBytes(bytes: Uint8Array, mime: string): boolean {
     return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   }
   if (mime === "image/png") {
-    return (
-      bytes[0] === 0x89 &&
-      bytes[1] === 0x50 &&
-      bytes[2] === 0x4e &&
-      bytes[3] === 0x47
-    );
+    return bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
   }
   if (mime === "image/webp") {
     return (
@@ -88,7 +83,9 @@ function hasMagicBytes(bytes: Uint8Array, mime: string): boolean {
 
 export function validatePaymentProofFile(
   file: PaymentProofFile,
-): { ok: true; mime: string; ext: string } | { ok: false; error: "invalid_file" | "file_too_large" } {
+):
+  | { ok: true; mime: string; ext: string }
+  | { ok: false; error: "invalid_file" | "file_too_large" } {
   if (!file.bytes.length) return { ok: false, error: "invalid_file" };
   if (file.bytes.length > MAX_PROOF_BYTES) {
     return { ok: false, error: "file_too_large" };
@@ -191,8 +188,7 @@ export async function processMiniAppPaymentProof(params: {
     column: "telegram_id",
     value: params.telegramId,
     isClaimable: (state) =>
-      state.mode !== "processing_proof" &&
-      Number(state.pending_order_id ?? orderId) === orderId,
+      state.mode !== "processing_proof" && Number(state.pending_order_id ?? orderId) === orderId,
     claim: (state) => ({
       ...state,
       mode: "processing_proof",
@@ -202,12 +198,7 @@ export async function processMiniAppPaymentProof(params: {
   if (!claimedState) return { ok: false, error: "proof_in_progress" };
 
   const displayNo = order.display_no ?? order.order_no ?? orderId;
-  const proofPath = await saveProof(
-    orderId,
-    params.file,
-    validation.mime,
-    validation.ext,
-  );
+  const proofPath = await saveProof(orderId, params.file, validation.mime, validation.ext);
   if (!proofPath) {
     await setProofState(params.telegramId, claimedState);
     return { ok: false, error: "storage_failed" };
@@ -215,9 +206,7 @@ export async function processMiniAppPaymentProof(params: {
 
   const note = String(order.admin_note || "");
   const autoDeliver =
-    claimedState.proof_auto === true ||
-    note === "proof_auto" ||
-    note.startsWith("proof_auto");
+    claimedState.proof_auto === true || note === "proof_auto" || note.startsWith("proof_auto");
 
   if (!autoDeliver) {
     await supabaseAdmin
