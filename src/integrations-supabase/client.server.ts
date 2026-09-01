@@ -107,6 +107,13 @@ function dbClient(): Client {
   return _db;
 }
 
+/** Full-privilege client for table access when RLS has no tenant policies. */
+export const supabaseService = new Proxy({} as Client, {
+  get(_, prop, receiver) {
+    return Reflect.get(serviceClient(), prop, receiver);
+  },
+});
+
 // SECURITY: server-side only. Route files and *.functions.ts ship to the client
 // bundle, so import this inside handlers:
 //   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");

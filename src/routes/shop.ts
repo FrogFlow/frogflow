@@ -677,10 +677,18 @@ function wrapPage(title: string, bodyHtml: string, opts: WrapPageOptions): strin
               localStorage.removeItem(CART_KEY);
               window.location.href = data.url;
             })
-            .catch(function () {
+            .catch(function (e) {
               checkoutBtn.disabled = false;
               if (err) {
-                err.textContent = "Не удалось открыть бот. Попробуйте ещё раз.";
+                var code = e && e.message ? e.message : "handoff_failed";
+                if (code === "empty_cart") {
+                  err.textContent =
+                    "Товары не прошли проверку. Обновите страницу и добавьте позиции снова.";
+                } else if (code === "bot_unavailable") {
+                  err.textContent = "Бот временно недоступен. Откройте магазин через Telegram вручную.";
+                } else {
+                  err.textContent = "Не удалось открыть бот. Попробуйте ещё раз.";
+                }
                 err.style.display = "";
               }
             });

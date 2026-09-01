@@ -24,6 +24,12 @@ async function db() {
   return supabaseAdmin;
 }
 
+/** web_cart_handoffs: RLS без политик для tenant_bot — только service_role. */
+async function handoffDb() {
+  const { supabaseService } = await import("@/integrations-supabase/client.server");
+  return supabaseService;
+}
+
 function botId(): string {
   const id = (process.env.BOT_ID || "").trim();
   if (!id) throw new Error("BOT_ID is not set");
@@ -124,7 +130,7 @@ export async function createWebCartHandoff(
 
   const token = newToken();
   const expiresAt = new Date(Date.now() + HANDOFF_TTL_MS).toISOString();
-  const s = await db();
+  const s = await handoffDb();
 
   const { error } = await s.from("web_cart_handoffs").insert({
     token,
@@ -153,7 +159,7 @@ export async function claimWebCartHandoff(
   const trimmed = token.trim();
   if (!trimmed) return "missing";
 
-  const s = await db();
+  const s = await handoffDb();
   const { data: row, error } = await s
     .from("web_cart_handoffs")
     .select("bot_id, items, expires_at, claimed_at")
