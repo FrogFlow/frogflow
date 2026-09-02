@@ -1497,10 +1497,15 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
         await proceedToDeliveryZoneOrAddress(conversationId, accountId, user);
         return;
       }
+      const { resolveDeliveryZoneFee } = await import("./pricing.server");
+      const zoneCountry = flow.readDirectState(user.state).country_code ?? null;
+      const zoneFee = await resolveDeliveryZoneFee(Number(zone.price) || 0, zoneCountry);
       await flow.setDirectState(user.user_key, {
         checkout_delivery_zone_id: zone.id,
         checkout_delivery_zone_name: zone.name,
-        checkout_delivery_fee: Number(zone.price),
+        // В валюте покупателя (resolveDeliveryZoneFee) — сумма заказа
+        // ниже складывается уже в этой валюте, не в домашней валюте продавца.
+        checkout_delivery_fee: zoneFee.amount,
         mode: "awaiting_address",
       });
       const locale = flow.directLocale(flow.readDirectState(user.state));
@@ -2679,21 +2684,30 @@ async function proceedToDeliveryZoneOrAddress(
   await flow.setDirectState(user.user_key, { mode: "awaiting_delivery_zone" });
   // Цена зоны в подписи (Блок 4, находка 4.2) — раньше показывалось только
   // название, покупатель выбирал вслепую.
-  const { currencyForCountry } = await import("./pricing.server");
+  //
+  // resolveDeliveryZoneFee, а не голое z.price + currencyForCountry: цена
+  // зоны хранится в домашней валюте продавца и требует конвертации в валюту
+  // покупателя — без неё показывалось (и позже списывалось) число продавца
+  // под чужим ярлыком валюты.
+  const { resolveDeliveryZoneFee } = await import("./pricing.server");
   const state = flow.readDirectState(user.state);
-  const currency = (await currencyForCountry(state.country_code ?? null)) ?? "";
-  const priceSuffix = (price: number) => ` +${price}${currency ? ` ${currency}` : ""}`;
+  const zonesWithFee = await Promise.all(
+    zones.map(async (z) => ({
+      ...z,
+      fee: await resolveDeliveryZoneFee(Number(z.price) || 0, state.country_code ?? null),
+    })),
+  );
   if (zones.length <= 3) {
     await reply(
       user,
       conversationId,
       accountId,
       copy.deliveryZonePrompt,
-      zones.map((z) => ({
+      zonesWithFee.map((z) => ({
         type: "postback" as const,
         // Постбэк-кнопки других мест этого файла режут заголовок до 24
         // символов (zernio-list) — тот же лимит здесь, с запасом под цену.
-        title: `${z.name}${priceSuffix(z.price)}`.slice(0, 24),
+        title: `${z.name} (+${z.fee.amount} ${z.fee.currency})`.slice(0, 24),
         payload: `zone:${z.id}`,
       })),
     );
@@ -2702,7 +2716,11 @@ async function proceedToDeliveryZoneOrAddress(
       user,
       conversationId,
       accountId,
-      flow.renderDeliveryZonePrompt(zones, locale, currency),
+      flow.renderDeliveryZonePrompt(
+        zonesWithFee.map((z) => ({ name: z.name, price: z.fee.amount })),
+        locale,
+        zonesWithFee[0]?.fee.currency ?? "",
+      ),
     );
   }
 }
@@ -3253,10 +3271,17 @@ async function handlePurchaseFlow(params: {
       });
       return true;
     }
+    const { resolveDeliveryZoneFee } = await import("./pricing.server");
+    const chosenZonePrice = zones.find((z) => z.id === chosen.id)?.price ?? 0;
+    const chosenZoneFee = await resolveDeliveryZoneFee(
+      Number(chosenZonePrice) || 0,
+      state.country_code,
+    );
     await flow.setDirectState(user.user_key, {
       checkout_delivery_zone_id: chosen.id,
       checkout_delivery_zone_name: chosen.name,
-      checkout_delivery_fee: Number(zones.find((z) => z.id === chosen.id)?.price ?? 0),
+      // В валюте покупателя — см. resolveDeliveryZoneFee.
+      checkout_delivery_fee: chosenZoneFee.amount,
       mode: "awaiting_address",
     });
     await say(copy.fulfillmentAddressPrompt);

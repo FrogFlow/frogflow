@@ -2669,19 +2669,26 @@ async function proceedToDeliveryZoneOrAddress(
   // Цена зоны в подписи кнопки (Блок 4, находка 4.2) — раньше показывалось
   // только название, покупатель выбирал вслепую и узнавал стоимость
   // доставки только по итоговой сумме к оплате.
-  const { currencyForCountry, defaultCountryCode } = await import("./pricing.server");
-  const currency =
-    (await currencyForCountry(state?.country_code ?? (await defaultCountryCode()))) ?? "";
+  //
+  // resolveDeliveryZoneFee, а не голое z.price + currencyForCountry: цена
+  // зоны хранится в домашней валюте продавца, и без конвертации покупатель
+  // из другой страны/валюты видел (и платил) число продавца под своим
+  // ярлыком валюты.
+  const { resolveDeliveryZoneFee } = await import("./pricing.server");
+  const zoneButtons = await Promise.all(
+    zones.map(async (z) => {
+      const fee = await resolveDeliveryZoneFee(Number(z.price) || 0, state?.country_code);
+      return {
+        text: `${z.name} (+${fee.amount} ${fee.currency})`,
+        callback_data: `zone:${z.id}`,
+      };
+    }),
+  );
   await tg("sendMessage", {
     chat_id,
     text: copy[locale].deliveryZonePrompt,
     reply_markup: {
-      inline_keyboard: zones.map((z) => [
-        {
-          text: `${z.name} (+${z.price}${currency ? ` ${currency}` : ""})`,
-          callback_data: `zone:${z.id}`,
-        },
-      ]),
+      inline_keyboard: zoneButtons.map((btn) => [btn]),
     },
   });
 }
@@ -4950,11 +4957,15 @@ async function handleCallbackQuery(cq: TelegramCallbackQuery): Promise<void> {
       await proceedToDeliveryZoneOrAddress(chat_id, from_id, user.state, locale);
       return;
     }
+    const { resolveDeliveryZoneFee } = await import("./pricing.server");
+    const zoneFee = await resolveDeliveryZoneFee(Number(zone.price) || 0, user.state?.country_code);
     const nextState = {
       ...user.state,
       checkout_delivery_zone_id: zone.id,
       checkout_delivery_zone_name: zone.name,
-      checkout_delivery_fee: Number(zone.price),
+      // В валюте покупателя (см. resolveDeliveryZoneFee) — total ниже
+      // складывается уже из сумм в этой валюте, не в домашней валюте продавца.
+      checkout_delivery_fee: zoneFee.amount,
       mode: "awaiting_address" as const,
     };
     await setState(from_id, nextState);
@@ -5829,11 +5840,16 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
       const matched = matchZone(msg.text, zones);
       const fullZone = matched ? zones.find((z) => z.id === matched.id) : null;
       if (fullZone) {
+        const { resolveDeliveryZoneFee } = await import("./pricing.server");
+        const zoneFee = await resolveDeliveryZoneFee(
+          Number(fullZone.price) || 0,
+          user.state?.country_code,
+        );
         const withZone = {
           ...user.state,
           checkout_delivery_zone_id: fullZone.id,
           checkout_delivery_zone_name: fullZone.name,
-          checkout_delivery_fee: Number(fullZone.price),
+          checkout_delivery_fee: zoneFee.amount,
           mode: "awaiting_address" as const,
         };
         await setState(from.id, withZone);

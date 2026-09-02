@@ -151,9 +151,20 @@ export async function miniAppProcessCheckout(
     const zones = await activeDeliveryZones();
     const zone = zones.find((z) => z.id === body.delivery_zone_id);
     if (!zone) return { step: "error", error: "invalid_delivery_zone" };
+    const currentState =
+      row.state && typeof row.state === "object" && !Array.isArray(row.state)
+        ? (row.state as Record<string, unknown>)
+        : {};
+    const currentCountryCode =
+      typeof currentState.country_code === "string" ? currentState.country_code : null;
+    // resolveDeliveryZoneFee — как выше, при построении списка зон: комиссия
+    // хранится в домашней валюте продавца и конвертируется в валюту
+    // покупателя, иначе total ниже складывал бы разные валюты как одну.
+    const { resolveDeliveryZoneFee } = await import("./pricing.server");
+    const zoneFee = await resolveDeliveryZoneFee(Number(zone.price) || 0, currentCountryCode);
     statePatch.checkout_delivery_zone_id = zone.id;
     statePatch.checkout_delivery_zone_name = zone.name;
-    statePatch.checkout_delivery_fee = Number(zone.price) || 0;
+    statePatch.checkout_delivery_fee = zoneFee.amount;
   }
 
   if (Object.keys(statePatch).length > 0) {
@@ -255,18 +266,23 @@ export async function miniAppCheckoutNeeds(
     if (effectiveType === "delivery") {
       const zones = await activeDeliveryZones();
       if (zones.length > 0 && !state.checkout_delivery_zone_id) {
-        const { currencyForCountry, defaultCountryCode } = await import("./pricing.server");
-        const currency =
-          (await currencyForCountry(countryCode ?? (await defaultCountryCode()))) ?? "KZT";
-        return {
-          step: "need_delivery_zone",
-          zones: zones.map((z) => ({
-            id: z.id,
-            name: z.name,
-            fee: Number(z.price) || 0,
-            feeLabel: formatMiniAppMoney(Number(z.price) || 0, currency),
-          })),
-        };
+        // resolveDeliveryZoneFee, а не голое z.price: цена зоны хранится в
+        // домашней валюте продавца и требует конвертации в валюту
+        // покупателя — иначе показывалось и списывалось число продавца под
+        // ярлыком чужой валюты.
+        const { resolveDeliveryZoneFee } = await import("./pricing.server");
+        const zonesWithFee = await Promise.all(
+          zones.map(async (z) => {
+            const fee = await resolveDeliveryZoneFee(Number(z.price) || 0, countryCode);
+            return {
+              id: z.id,
+              name: z.name,
+              fee: fee.amount,
+              feeLabel: formatMiniAppMoney(fee.amount, fee.currency),
+            };
+          }),
+        );
+        return { step: "need_delivery_zone", zones: zonesWithFee };
       }
       if (!state.checkout_fulfillment_address) {
         return { step: "need_address" };

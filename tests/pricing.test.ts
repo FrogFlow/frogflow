@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { manualCountryPrice, resolvePrice, resetPricingCache } from "../src/lib/pricing.server";
+import {
+  manualCountryPrice,
+  resolvePrice,
+  resolveDeliveryZoneFee,
+  resetPricingCache,
+} from "../src/lib/pricing.server";
 import { hasModule } from "../src/lib/modules/modules.server";
 
 /**
@@ -166,5 +171,44 @@ describe("resolvePrice — вариант (Ниши, Блок D)", () => {
     vi.mocked(hasModule).mockResolvedValue(false);
     const plain = { price: 1000, currency: "KZT", country_prices: null };
     expect(await resolvePrice(plain, "RU", variant)).toEqual({ amount: 500, currency: "KZT" });
+  });
+});
+
+/**
+ * resolveDeliveryZoneFee — комиссия зоны доставки хранится в домашней
+ * валюте продавца (MIGRATION-52), но раньше показывалась и прибавлялась к
+ * total с ярлыком валюты ПОКУПАТЕЛЯ без самой конвертации: покупатель из
+ * России видел и платил "500 RUB" за зону, реально заведённую как "500 KZT".
+ * Тот же приём, что и у resolvePrice — реюзает те же моки методов оплаты
+ * (KZ — домашняя страна, RU — конвертируется, DE — нет реквизитов).
+ */
+describe("resolveDeliveryZoneFee", () => {
+  it("для домашней страны продавца — без конвертации", async () => {
+    expect(await resolveDeliveryZoneFee(500, "KZ")).toEqual({ amount: 500, currency: "KZT" });
+  });
+
+  it("для другой страны — конвертирует по курсу, а не просто меняет ярлык", async () => {
+    expect(await resolveDeliveryZoneFee(500, "RU")).toEqual({ amount: 80, currency: "RUB" });
+  });
+
+  it("страна ещё не выбрана — считает по домашней стране продавца", async () => {
+    expect(await resolveDeliveryZoneFee(500, null)).toEqual({ amount: 500, currency: "KZT" });
+    expect(await resolveDeliveryZoneFee(500, undefined)).toEqual({ amount: 500, currency: "KZT" });
+  });
+
+  it("страна без реквизитов — остаётся домашняя валюта, число не выдумывается", async () => {
+    expect(await resolveDeliveryZoneFee(500, "DE")).toEqual({ amount: 500, currency: "KZT" });
+  });
+
+  it("курс недоступен (convertAmount вернул null) — откатывается на домашнюю валюту", async () => {
+    const { convertAmount } = await import("../src/lib/currency.server");
+    vi.mocked(convertAmount).mockResolvedValueOnce(null);
+    expect(await resolveDeliveryZoneFee(500, "RU")).toEqual({ amount: 500, currency: "KZT" });
+  });
+
+  it("без модуля multi_currency — всегда домашняя валюта, независимо от страны", async () => {
+    vi.mocked(hasModule).mockResolvedValue(false);
+    expect(await resolveDeliveryZoneFee(500, "RU")).toEqual({ amount: 500, currency: "KZT" });
+    expect(await resolveDeliveryZoneFee(500, "KZ")).toEqual({ amount: 500, currency: "KZT" });
   });
 });

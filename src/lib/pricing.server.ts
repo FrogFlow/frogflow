@@ -155,3 +155,40 @@ export async function resolvePrice(
   if (converted === null) return { amount: Math.round(base), currency: baseCurrency };
   return { amount: converted, currency };
 }
+
+/**
+ * Комиссия зоны доставки для конкретного покупателя.
+ *
+ * `delivery_zones.price` не имеет своей колонки валюты: MIGRATION-52 исходила
+ * из того, что доставка происходит в одном городе, а значит и в одной
+ * валюте, что заказ. С multi_currency это больше не гарантия — покупатель
+ * выбирает страну/валюту оплаты независимо от того, куда физически везти
+ * товар (экспат, оплата другой картой), оставаясь в зоне доставки продавца.
+ * Раньше комиссия зоны показывалась и прибавлялась к total с ярлыком
+ * валюты ПОКУПАТЕЛЯ, но самим числом продавца — на всех трёх каналах
+ * (Telegram, Mini App, Instagram/WhatsApp Direct) независимо. Тот же приём,
+ * что и resolvePrice: цена зоны трактуется как заданная в домашней валюте
+ * продавца (валюта его страны по умолчанию в реквизитах) и конвертируется
+ * в валюту покупателя тем же convertAmount; курс недоступен — честно
+ * остаёмся в домашней валюте, а не выдумываем число под чужим ярлыком.
+ */
+export async function resolveDeliveryZoneFee(
+  zonePrice: number,
+  countryCode: string | null | undefined,
+): Promise<Money> {
+  const home = (await currencyForCountry(await defaultCountryCode())) || "KZT";
+
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("multi_currency"))) {
+    return { amount: Math.round(zonePrice) || 0, currency: home };
+  }
+
+  const code = (countryCode || (await defaultCountryCode()) || "").toUpperCase();
+  const currency = (code && (await currencyForCountry(code))) || home;
+  if (currency === home) return { amount: Math.round(zonePrice) || 0, currency: home };
+
+  const { convertAmount } = await import("./currency.server");
+  const converted = await convertAmount(zonePrice, home, currency);
+  if (converted === null) return { amount: Math.round(zonePrice) || 0, currency: home };
+  return { amount: converted, currency };
+}
