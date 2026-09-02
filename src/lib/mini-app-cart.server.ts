@@ -109,13 +109,19 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
   const { resolvePrice } = await import("./pricing.server");
   const { availableMaterialLanguages, deliveryPriceMultiplier } =
     await import("./product-materials");
+  // Как и в placeOrderInner (bot.server.ts) — без модуля deliverOrder всё
+  // равно форсирует один язык при выдаче, так что множитель здесь не
+  // должен показывать (и позже списывать) цену за "все языки", которую
+  // модуль не позволяет доставить.
+  const { hasModule } = await import("./modules/modules.server");
+  const deliveryLanguage = (await hasModule("multi_language")) ? context.deliveryLanguage : null;
   const lines: MiniAppCartLine[] = [];
   for (const it of (items ?? []) as CartListRow[]) {
     const p = it.products;
     if (!p) continue;
     const money = await resolvePrice(p, context.countryCode, it.product_variants);
     const multiplier = deliveryPriceMultiplier(
-      context.deliveryLanguage,
+      deliveryLanguage,
       availableMaterialLanguages(p).length,
     );
     const lineTotal = Number(money.amount) * multiplier * Number(it.quantity);

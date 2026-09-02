@@ -3024,7 +3024,17 @@ async function placeOrderInner(
   // сразу же, чтобы не протух в состоянии и не повлиял на следующий заказ:
   // все сообщения ниже (startManualProofPath и т.д.) берут за основу именно
   // user.state.
-  const deliveryLangChoice: DeliveryLangChoice | null = user.state?.checkout_lang_choice ?? null;
+  //
+  // hasModule("multi_language") — иначе state.checkout_lang_choice, если он
+  // всё же попал в состояние (например, продавец выключил модуль уже после
+  // того, как Mini App записала "all" в этом же чекауте — mini-app-checkout
+  // не перепроверяет модуль на каждой правке состояния), давал бы платный
+  // множитель ×N при оформлении, а deliverOrder ниже по цепочке всё равно
+  // выдал бы только один язык (multiLanguageOn=false там форсирует ровно
+  // это): покупатель платит за все языки, получает один.
+  const deliveryLangChoice: DeliveryLangChoice | null = (await hasModule("multi_language"))
+    ? (user.state?.checkout_lang_choice ?? null)
+    : null;
   if (user.state?.checkout_lang_choice !== undefined) {
     const { checkout_lang_choice: _checkout_lang_choice, ...rest } = user.state;
     user = { ...user, state: rest };

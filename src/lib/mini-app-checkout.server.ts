@@ -143,6 +143,13 @@ export async function miniAppProcessCheckout(
     if (!isDeliveryLangChoice(body.delivery_language)) {
       return { step: "error", error: "invalid_delivery_language" };
     }
+    // Тот же модуль, что уже гейтит need_lang_choice ниже по функции —
+    // без него сохранённый выбор ("all" особенно) давал бы наценку при
+    // оформлении, которую deliverOrder всё равно не смог бы выполнить.
+    const { hasModule } = await import("./modules/modules.server");
+    if (!(await hasModule("multi_language"))) {
+      return { step: "error", error: "multi_language_disabled" };
+    }
     statePatch.checkout_lang_choice = body.delivery_language;
   }
 
