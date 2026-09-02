@@ -1,4 +1,5 @@
 import type { Json } from "@/integrations-supabase/types";
+import { imageUrl } from "@/lib/public-image";
 import type { TelegramWebAppUser } from "./telegram-init-data.server";
 import type { DeliveryLangChoice } from "./product-materials";
 import { logger } from "./logger.server";
@@ -20,6 +21,7 @@ type CartListRow = {
     file_url?: string | null;
     file_url_kz?: string | null;
     fulfillment_kind?: string | null;
+    product_images?: Array<{ image_path: string; sort_order: number }> | null;
     product_material_files?: Array<{
       language: string;
       file_path: string | null;
@@ -39,6 +41,7 @@ export type MiniAppCartLine = {
   line_total: number;
   currency: string;
   quantityLocked: boolean;
+  image?: string | null;
 };
 
 async function db() {
@@ -95,7 +98,7 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
   const { data: items, error } = await s
     .from("cart_items")
     .select(
-      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)), product_variants(id, name, price)",
+      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_images(image_path, sort_order), product_material_files(language, file_path, file_name, sort_order)), product_variants(id, name, price)",
     )
     .eq("telegram_id", telegram_id);
   if (error) {
@@ -117,6 +120,7 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
     );
     const lineTotal = Number(money.amount) * multiplier * Number(it.quantity);
     const displayName = it.product_variants ? `${p.name} (${it.product_variants.name})` : p.name;
+    const images = (p.product_images ?? []).slice().sort((a, b) => a.sort_order - b.sort_order);
     lines.push({
       id: it.id,
       quantity: it.quantity,
@@ -126,6 +130,7 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
       line_total: lineTotal,
       currency: money.currency,
       quantityLocked: p.fulfillment_kind !== "physical",
+      image: images[0] ? imageUrl(images[0].image_path) : null,
     });
   }
   return lines;

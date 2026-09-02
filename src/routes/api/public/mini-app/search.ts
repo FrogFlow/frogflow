@@ -27,6 +27,7 @@ export const Route = createFileRoute("/api/public/mini-app/search")({
           category?: string;
           country?: string;
           lang?: string;
+          mlang?: string;
         } = {};
         try {
           body = (await request.json()) as typeof body;
@@ -41,6 +42,7 @@ export const Route = createFileRoute("/api/public/mini-app/search")({
           categoryId: String(body.category || ""),
           countryCode: String(body.country || "").toUpperCase() || null,
           locale: body.lang,
+          materialLang: body.mlang,
         });
         logger.info("mini_app.smart_search", {
           telegram_id: auth.user.id,

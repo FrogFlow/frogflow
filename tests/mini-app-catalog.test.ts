@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectMiniAppMaterialLanguages,
   filterMiniAppProductIds,
   miniAppEmptyThumbEmoji,
   renderMiniAppLangBadges,
@@ -127,12 +128,64 @@ const worksheet: MiniAppProduct = {
 };
 
 describe("Mini App didactic catalog cards", () => {
-  it("shows RU/KK flags for materials and hides them on cakes", () => {
+  it("shows compact RU/KZ chips, hides description, and keeps flags on named badges", () => {
     const html = renderMiniAppProductCard(worksheet, undefined, false, "ru");
-    expect(html).toContain("🇷🇺");
-    expect(html).toContain("🇰🇿");
-    expect(renderMiniAppLangBadges(worksheet)).toContain("🇷🇺");
+    expect(html).toContain('data-product-id="ws"');
+    expect(html).toContain("lang-chip");
+    expect(html).toContain("RU");
+    expect(html).toContain("KZ");
+    expect(html).not.toContain("🇷🇺");
+    expect(html).not.toContain("card-desc");
+    expect(renderMiniAppLangBadges(worksheet)).toContain("lang-chip");
+    expect(renderMiniAppLangBadges(worksheet, true)).toContain("🇷🇺");
+    expect(renderMiniAppLangBadges(worksheet, true)).toContain("🇰🇿");
     expect(renderMiniAppLangBadges({ ...worksheet, fulfillment_kind: "physical" })).toBe("");
+  });
+
+  it("filters materials by language and keeps chips for the unfiltered set", () => {
+    const ruOnly: MiniAppProductIndexRow = {
+      id: "ru-only",
+      name: "Только русский",
+      description: null,
+      category_ids: ["grade1"],
+      fulfillment_kind: "digital",
+      file_path: "ru.pdf",
+      file_name: "ru.pdf",
+      product_variants: null,
+    };
+    const physical: MiniAppProductIndexRow = {
+      id: "cake",
+      name: "Торт",
+      description: null,
+      category_ids: ["cakes"],
+      fulfillment_kind: "physical",
+      product_variants: null,
+    };
+    const rows = [
+      {
+        id: worksheet.id,
+        name: worksheet.name,
+        description: worksheet.description,
+        category_ids: worksheet.category_ids,
+        fulfillment_kind: worksheet.fulfillment_kind,
+        file_path: worksheet.file_path,
+        file_name: worksheet.file_name,
+        file_path_kz: worksheet.file_path_kz,
+        file_name_kz: worksheet.file_name_kz,
+        product_variants: null,
+      },
+      ruOnly,
+      physical,
+    ];
+    expect(filterMiniAppProductIds(rows, new Set(), "", "", undefined, "kk")).toEqual(["ws"]);
+    expect(filterMiniAppProductIds(rows, new Set(), "", "", undefined, "ru")).toEqual([
+      "ws",
+      "ru-only",
+    ]);
+    expect(collectMiniAppMaterialLanguages(rows, new Set(rows.map((row) => row.id)))).toEqual([
+      "ru",
+      "kk",
+    ]);
   });
 
   it("counts materials, not generic products, on the digital vertical", () => {

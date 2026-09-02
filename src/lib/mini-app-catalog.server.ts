@@ -1,10 +1,16 @@
 import type { Json } from "@/integrations-supabase/types";
 import { imageUrl } from "@/lib/public-image";
 import { miniAppStrings } from "./mini-app-i18n";
-import type { Locale } from "./i18n";
-import { localeFlags, localeNames } from "./i18n";
+import {
+  availableMaterialLanguages,
+  MATERIAL_LANG_SHORT,
+  MATERIAL_LANGUAGES,
+} from "./product-materials";
+import { isLocale, localeFlags, localeNames, type Locale } from "./i18n";
 import { currentVertical } from "./verticals/vertical.server";
-import { availableMaterialLanguages } from "./product-materials";
+
+export const MINI_APP_INDEX_SELECT =
+  "id, name, description, keywords, category_ids, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(name)";
 
 export const MINI_APP_PRODUCT_SELECT =
   "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, lead_time_days, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(id, name, price, sort_order)";
@@ -57,6 +63,19 @@ export type MiniAppProductIndexRow = {
   description: string | null;
   keywords?: string | string[] | null;
   category_ids: Json;
+  fulfillment_kind?: "digital" | "physical" | null;
+  file_path?: string | null;
+  file_name?: string | null;
+  file_path_kz?: string | null;
+  file_name_kz?: string | null;
+  file_url?: string | null;
+  file_url_kz?: string | null;
+  product_material_files?: Array<{
+    language?: string | null;
+    file_path?: string | null;
+    file_name?: string | null;
+    sort_order?: number | null;
+  }> | null;
   product_variants: Array<{ name: string }> | null;
 };
 
@@ -104,27 +123,45 @@ export function filterMiniAppProductIds(
   query = "",
   categoryId = "",
   categoryMatchIds?: ReadonlySet<string>,
+  materialLang = "",
 ): string[] {
   const normalizedQuery = query.trim().toLocaleLowerCase().slice(0, 100);
   const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
   const matchIds = categoryMatchIds ?? (categoryId ? new Set([categoryId]) : null);
+  const lang = materialLang.trim().toLowerCase();
+  const langFilter = isLocale(lang) ? lang : "";
   return products
     .filter((product) => {
       const catIds = (product.category_ids as string[] | null) ?? [];
       const visible = catIds.length === 0 || catIds.some((id) => !hiddenCategoryIds.has(id));
       if (!visible) return false;
       if (matchIds && !catIds.some((id) => matchIds.has(id))) return false;
+      if (langFilter && !availableMaterialLanguages(product).includes(langFilter)) {
+        return false;
+      }
       if (!tokens.length) return true;
       return tokens.every((token) => miniAppProductSearchText(product).includes(token));
     })
     .map((product) => product.id);
 }
 
+export function collectMiniAppMaterialLanguages(
+  products: MiniAppProductIndexRow[],
+  ids: ReadonlySet<string>,
+): Locale[] {
+  const found = new Set<Locale>();
+  for (const product of products) {
+    if (!ids.has(product.id) || product.fulfillment_kind === "physical") continue;
+    for (const language of availableMaterialLanguages(product)) found.add(language);
+  }
+  return MATERIAL_LANGUAGES.filter((language) => found.has(language));
+}
+
 export async function loadMiniAppCatalogData(
   defaultShopName = "Магазин",
   page = 1,
   pageSize = 80,
-  filters?: { query?: string; categoryId?: string },
+  filters?: { query?: string; categoryId?: string; materialLang?: string },
 ) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
@@ -155,7 +192,7 @@ export async function loadMiniAppCatalogData(
       (from, to) =>
         supabaseAdmin
           .from("products")
-          .select("id, name, description, keywords, category_ids, product_variants(name)")
+          .select(MINI_APP_INDEX_SELECT)
           .eq("is_active", true)
           .order("sort_order")
           .order("name")
@@ -175,12 +212,24 @@ export async function loadMiniAppCatalogData(
     categoryId && catalogSettings.layout !== "flat"
       ? descendantCategoryIds(categoryId, categories)
       : undefined;
+  const matchingWithoutLang = filterMiniAppProductIds(
+    productIndex,
+    hiddenIds,
+    filters?.query,
+    categoryId,
+    categoryMatchIds,
+  );
+  const materialLanguages = collectMiniAppMaterialLanguages(
+    productIndex,
+    new Set(matchingWithoutLang),
+  );
   const matchingIds = filterMiniAppProductIds(
     productIndex,
     hiddenIds,
     filters?.query,
     categoryId,
     categoryMatchIds,
+    filters?.materialLang,
   );
 
   const totalProducts = matchingIds.length;
@@ -212,6 +261,7 @@ export async function loadMiniAppCatalogData(
     visibleProducts,
     stockEnabled,
     totalProducts,
+    materialLanguages,
     page: actualPage,
     pageSize: safePageSize,
   };
@@ -278,10 +328,13 @@ export function renderMiniAppLangBadges(p: MiniAppProduct, named = false): strin
   if (p.fulfillment_kind === "physical") return "";
   const langs = availableMaterialLanguages(p);
   if (!langs.length) return "";
-  const label = langs
-    .map((lang) => (named ? `${localeFlags[lang]} ${localeNames[lang]}` : localeFlags[lang]))
-    .join(named ? " · " : " ");
-  return `<div class="card-langs">${escapeMiniAppHtml(label)}</div>`;
+  if (named) {
+    const label = langs.map((lang) => `${localeFlags[lang]} ${localeNames[lang]}`).join(" · ");
+    return `<div class="card-langs">${escapeMiniAppHtml(label)}</div>`;
+  }
+  return `<div class="card-langs">${langs
+    .map((lang) => `<span class="lang-chip">${escapeMiniAppHtml(MATERIAL_LANG_SHORT[lang])}</span>`)
+    .join("")}</div>`;
 }
 
 export function renderMiniAppProductCard(
@@ -345,7 +398,7 @@ export function renderMiniAppProductCard(
     : `<div class="card-name">${esc(p.name)}</div>`;
 
   const searchText = miniAppProductSearchText(p, locale);
-  return `<div class="card${outOfStock ? " out-of-stock" : ""}" data-name="${esc(searchText)}" data-categories="${esc(catIds)}">
+  return `<div class="card${outOfStock ? " out-of-stock" : ""}" data-product-id="${esc(p.id)}" data-name="${esc(searchText)}" data-categories="${esc(catIds)}">
     ${thumbHtml}
     <div class="card-body">
       ${nameHtml}
@@ -354,7 +407,6 @@ export function renderMiniAppProductCard(
           ? `<div class="pdp-rating">${esc(s.rating(String(p.rating_avg), p.rating_count))}</div>`
           : ""
       }
-      ${p.description ? `<div class="card-desc">${esc(p.description)}</div>` : ""}
       ${renderMiniAppLangBadges(p)}
       ${renderMiniAppLeadBadge(p, locale)}
       <div class="card-footer">

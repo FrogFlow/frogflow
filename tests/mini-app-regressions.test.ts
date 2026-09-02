@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=6"');
+    expect(page).toContain('src="/mini-app-runtime?v=7"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -94,7 +94,11 @@ describe("Mini App production regressions", () => {
     (locale) => {
       const pack = miniAppStringsClientPack(locale);
       expect(pack.pay).toBeTruthy();
-      expect(pack.filesAfterPayment).toBeTruthy();
+      expect(pack.inCart).toBeTruthy();
+      expect(pack.materialLangAll).toBeTruthy();
+      expect(pack.filesInBot).toBeTruthy();
+      expect(pack.rateMaterial).toBeTruthy();
+      expect(pack.rateThanks).toBeTruthy();
       expect(pack.allLanguages).toBeTruthy();
       expect(pack.languagesLabel).toBeTruthy();
       expect(pack.orderCompletePhysical).toBeTruthy();
@@ -126,6 +130,10 @@ describe("Mini App production regressions", () => {
     expect(page).toContain('createFileRoute("/mini-app/orders")');
     expect(proof).toContain("processMiniAppPaymentProof");
     expect(orders).toContain("resendOrderFiles");
+    expect(orders).toContain('action === "rate"');
+    expect(orders).toContain("delivery_lang_choice");
+    expect(runtime).toContain("rateMaterial");
+    expect(runtime).toContain("filesInBot");
   });
 
   it("searches the catalog without dropping the Telegram WebView hash", () => {
@@ -166,12 +174,14 @@ describe("Mini App production regressions", () => {
     expect(needs).toContain('hasModule("multi_language")');
   });
 
-  it("uses physical completion copy and keeps the Mini App open", () => {
+  it("uses physical completion copy and keeps the Mini App open after any order", () => {
     const bot = source("src/lib/bot.server.ts");
     const runtime = source("src/lib/mini-app-runtime.ts");
     expect(bot).toContain("orderCompletePhysical");
-    expect(bot).toContain('stayOpen: orderFulfillmentKind === "physical"');
-    expect(runtime).toContain("if (!data.stayOpen)");
+    expect(bot).toContain("stayOpen: true");
+    expect(runtime).not.toContain("tg.close()");
+    expect(runtime).toContain("/mini-app/orders");
+    expect(runtime).toContain('t("filesAfterPayment")');
     expect(runtime).toContain('t("physicalDelivering")');
     expect(runtime).toContain('t("paidLabel")');
     expect(runtime).toContain('fulfillmentType === "pickup"');
@@ -188,7 +198,27 @@ describe("Mini App production regressions", () => {
     expect(checkout).not.toContain("All / Все");
     expect(runtime).toContain("quantityLocked");
     expect(runtime).toContain("productsCountSuffix");
+    expect(runtime).toContain("syncCartButtons");
+    expect(runtime).toContain("in-cart");
+    expect(runtime).toContain("cart-thumb");
     expect(cart).toContain("quantityLocked");
+    expect(cart).toContain("product_images(image_path, sort_order)");
+  });
+
+  it("filters catalog by material language and uses a two-column grid", () => {
+    const page = source("src/lib/mini-app-page.server.ts");
+    const catalog = source("src/lib/mini-app-catalog.server.ts");
+    const route = source("src/routes/mini-app.ts");
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    expect(page).toContain("repeat(2, minmax(0, 1fr))");
+    expect(page).toContain(".lang-chip");
+    expect(catalog).toContain("collectMiniAppMaterialLanguages");
+    expect(catalog).toContain("MATERIAL_LANG_SHORT");
+    expect(catalog).not.toContain("card-desc");
+    expect(route).toContain('searchParams.get("mlang")');
+    expect(route).toContain("mini-mlangs");
+    expect(runtime).toContain("#mini-mlangs");
+    expect(runtime).toContain("mlang:");
   });
 
   it("pins catalog add-to-cart buttons to a shared card footer", () => {

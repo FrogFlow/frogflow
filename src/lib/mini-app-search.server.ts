@@ -1,6 +1,7 @@
 import {
   escapeMiniAppHtml,
   filterMiniAppProductIds,
+  MINI_APP_INDEX_SELECT,
   MINI_APP_PRODUCT_SELECT,
   miniAppProductSearchText,
   priceMiniAppProducts,
@@ -9,6 +10,8 @@ import {
   type MiniAppProductIndexRow,
 } from "./mini-app-catalog.server";
 import { miniAppStrings, resolveMiniAppLocale } from "./mini-app-i18n";
+import { availableMaterialLanguages } from "./product-materials";
+import { isLocale } from "./i18n";
 
 export async function miniAppSmartSearchHtml(params: {
   telegramId: number;
@@ -16,6 +19,7 @@ export async function miniAppSmartSearchHtml(params: {
   categoryId?: string;
   countryCode: string | null;
   locale?: string;
+  materialLang?: string;
 }): Promise<{ html: string; total: number; usedSmartSearch: boolean }> {
   const locale = resolveMiniAppLocale(params.locale);
   const query = params.query.trim().slice(0, 100);
@@ -37,7 +41,7 @@ export async function miniAppSmartSearchHtml(params: {
       (from, to) =>
         supabaseAdmin
           .from("products")
-          .select("id, name, description, keywords, category_ids, product_variants(name)")
+          .select(MINI_APP_INDEX_SELECT)
           .eq("is_active", true)
           .order("sort_order")
           .order("name")
@@ -77,11 +81,18 @@ export async function miniAppSmartSearchHtml(params: {
   );
   const ordered = ids
     .map((id) => byId.get(id))
-    .filter((product): product is MiniAppProduct => Boolean(product));
+    .filter((product): product is MiniAppProduct => Boolean(product))
+    .filter((product) => {
+      const lang = (params.materialLang || "").trim().toLowerCase();
+      if (!isLocale(lang)) return true;
+      return availableMaterialLanguages(product).includes(lang);
+    });
   const priced = await priceMiniAppProducts(ordered, params.countryCode);
   const catalogParams = new URLSearchParams({ lang: locale });
   if (params.countryCode) catalogParams.set("country", params.countryCode);
   catalogParams.set("q", query);
+  const lang = (params.materialLang || "").trim().toLowerCase();
+  if (isLocale(lang)) catalogParams.set("mlang", lang);
   const html = ordered
     .map((product) =>
       renderMiniAppProductCard(product, priced.get(product.id), stockEnabled, locale, {

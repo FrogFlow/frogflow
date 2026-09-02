@@ -265,10 +265,14 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       } catch (e) {}
     }
     renderPendingPayment();
-    if (!cartLines) return;
+    if (!cartLines) {
+      syncCartButtons();
+      return;
+    }
     if (!state.items.length) {
       cartLines.innerHTML = "<p class=\\"empty\\">" + t("cartEmpty") + "</p>";
       renderDiscounts();
+      syncCartButtons();
       return;
     }
     cartLines.innerHTML = state.items.map(function (it) {
@@ -279,8 +283,12 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           "<span>" + it.quantity + "</span>" +
           "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-plus=\\"" + it.id + "\\" aria-label=\\"+\\"" + (quantityBusy[it.id] ? " disabled" : "") + ">+</button>" +
           "</div>";
+      var thumb = it.image
+        ? "<img class=\\"cart-thumb\\" src=\\"" + escapeHtml(it.image) + "\\" alt=\\"\\" />"
+        : "";
       return (
         "<div class=\\"cart-line\\">" +
+        thumb +
         "<div class=\\"cart-line-info\\">" + escapeHtml(it.name) + " — " + escapeHtml(formatMoney(it.line_total, it.currency)) + "</div>" +
         qtyHtml +
         "<button type=\\"button\\" class=\\"remove-btn\\" data-remove=\\"" + it.id + "\\">" + t("remove") + "</button>" +
@@ -307,6 +315,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       });
     });
     renderDiscounts();
+    syncCartButtons();
   }
 
   function renderPendingPayment() {
@@ -509,14 +518,21 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       .then(parseResponse)
       .then(function (res) {
         if (!res.ok) throw new Error(res.d && res.d.error ? res.d.error : "orders_failed");
-        renderOrders(res.d.orders || [], res.d.botUrl || "");
+        renderOrders(res.d.orders || [], res.d.botUrl || "", !!res.d.reviewsEnabled);
       })
       .catch(function (error) {
         if (!error || !error.auth) ordersEl.innerHTML = "<p class=\\"empty\\">" + escapeHtml(t("networkError")) + "</p>";
       });
   }
 
-  function renderOrders(orders, botUrl) {
+  function deliveryLangLabel(code) {
+    if (!code) return "";
+    if (code === "all") return t("materialLangAll");
+    if (code === "kk") return "KZ";
+    return String(code).toUpperCase();
+  }
+
+  function renderOrders(orders, botUrl, reviewsEnabled) {
     if (!ordersEl) return;
     if (!orders.length) {
       ordersEl.innerHTML = "<p class=\\"empty\\">" + escapeHtml(t("noOrders")) + "</p>";
@@ -559,11 +575,40 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       if (order.fulfillmentAt) {
         fulfill = fulfill ? fulfill + " · " + order.fulfillmentAt : order.fulfillmentAt;
       }
+      var lang = deliveryLangLabel(order.deliveryLang);
+      if (lang) fulfill = fulfill ? fulfill + " · " + lang : lang;
+      var items = Array.isArray(order.items) ? order.items : [];
+      var itemHtml = items.length
+        ? "<div class=\\"order-items\\">" + items.map(function (item) {
+            return escapeHtml(item.name || "");
+          }).filter(Boolean).join("<br>") + "</div>"
+        : "";
+      var rateHtml = "";
+      if (reviewsEnabled && order.status === "delivered" && !physical) {
+        rateHtml = items.map(function (item) {
+          if (!item.productId) return "";
+          var stars = "";
+          for (var n = 1; n <= 5; n++) {
+            stars += "<button type=\\"button\\" class=\\"star-btn" +
+              (Number(item.rating) >= n ? " active" : "") +
+              "\\" data-rate=\\"" + n + "\\" aria-label=\\"" + n + "\\">★</button>";
+          }
+          return "<div class=\\"order-stars\\" data-rate-order=\\"" + Number(order.id) +
+            "\\" data-rate-product=\\"" + escapeHtml(item.productId) + "\\"><span>" +
+            escapeHtml(t("rateMaterial")) + "</span>" + stars + "</div>";
+        }).join("");
+      }
+      var digitalHint = order.status === "delivered" && !physical
+        ? "<div class=\\"order-meta\\">" + escapeHtml(t("filesInBot")) + "</div>"
+        : "";
       return "<article class=\\"order-card\\"><div class=\\"order-head\\"><span>#" +
         Number(order.displayNo) + "</span><span>" + escapeHtml(status) + "</span></div>" +
         "<div class=\\"order-meta\\">" + escapeHtml(date) + " · " +
         escapeHtml(money) + "</div>" +
         (fulfill ? "<div class=\\"order-meta\\">" + escapeHtml(fulfill) + "</div>" : "") +
+        digitalHint +
+        itemHtml +
+        rateHtml +
         (actions ? "<div class=\\"order-actions\\">" + actions + "</div>" : "") +
         "</article>";
     }).join("");
@@ -586,6 +631,18 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         }
       });
     });
+    ordersEl.querySelectorAll(".order-stars [data-rate]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var row = button.closest(".order-stars");
+        if (!row) return;
+        rateMaterial(
+          Number(row.getAttribute("data-rate-order")),
+          row.getAttribute("data-rate-product"),
+          Number(button.getAttribute("data-rate")),
+          row,
+        );
+      });
+    });
   }
 
   function resendOrderFiles(orderId, button) {
@@ -601,6 +658,40 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       })
       .catch(function () { showToast(t("networkError")); })
       .finally(function () { button.disabled = false; });
+  }
+
+  function rateMaterial(orderId, productId, rating, row) {
+    if (!orderId || !productId || !rating) return;
+    row.querySelectorAll("[data-rate]").forEach(function (btn) {
+      btn.disabled = true;
+    });
+    fetch("/api/public/mini-app/orders", {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        action: "rate",
+        order_id: orderId,
+        product_id: productId,
+        rating: rating,
+      }),
+    })
+      .then(parseResponse)
+      .then(function (res) {
+        if (!res.ok) {
+          showToast(t("checkoutFailed"));
+          return;
+        }
+        row.querySelectorAll("[data-rate]").forEach(function (btn) {
+          btn.classList.toggle("active", Number(btn.getAttribute("data-rate")) <= rating);
+        });
+        showToast(t("rateThanks"));
+      })
+      .catch(function () { showToast(t("networkError")); })
+      .finally(function () {
+        row.querySelectorAll("[data-rate]").forEach(function (btn) {
+          btn.disabled = false;
+        });
+      });
   }
 
   function clearCheckoutForm() {
@@ -716,12 +807,15 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       return;
     } else if (step === "completed") {
       html = "<p><strong>" + escapeHtml(data.message || t("orderComplete")) + "</strong></p>";
-      if (!data.stayOpen) {
+      if (!window.__miniAppPhysicalShop) {
         html += "<p class=\\"checkout-hint\\">" + escapeHtml(t("filesAfterPayment")) + "</p>";
       }
+      html += "<a class=\\"primary-btn\\" href=\\"/mini-app/orders" + location.search +
+        "\\" style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.75rem\\">" +
+        escapeHtml(t("myOrders")) + "</a>";
       if (data.botUrl) {
-        html += "<a class=\\"primary-btn\\" href=\\"" + escapeHtml(data.botUrl) +
-          "\\" data-bot-link style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.75rem\\">" +
+        html += "<a class=\\"btn-secondary\\" href=\\"" + escapeHtml(data.botUrl) +
+          "\\" data-bot-link style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.5rem\\">" +
           escapeHtml(t("contactSupport")) + "</a>";
       }
       checkoutForm.innerHTML = html;
@@ -734,9 +828,6 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         });
       });
       try { if (tg) tg.disableClosingConfirmation(); } catch (e) {}
-      if (!data.stayOpen) {
-        setTimeout(function () { if (tg) tg.close(); }, 4000);
-      }
       return;
     }
     checkoutForm.innerHTML = html;
@@ -858,7 +949,6 @@ export const MINI_APP_RUNTIME_JS = `(function () {
             step: "completed",
             message: t("paymentConfirmed"),
             orderId: order.id,
-            stayOpen: order.fulfillmentKind === "physical" || window.__miniAppPhysicalShop,
             botUrl: res.d.botUrl || "",
           });
           refreshCart().catch(function () {});
@@ -1052,6 +1142,10 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         showToast(t("sessionNotReady"));
         return;
       }
+      if (addBtn.classList.contains("in-cart")) {
+        showCartSheet();
+        return;
+      }
       var card = addBtn.closest(".card, .pdp-body");
       var productId = addBtn.getAttribute("data-product-id");
       var select = card ? card.querySelector(".variant-select") : null;
@@ -1062,11 +1156,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       }
       addBtn.disabled = true;
       addProduct(productId, variantId).finally(function () {
-        if (addBtn.getAttribute("data-has-variants") === "1") {
-          addBtn.disabled = !select || !select.value || !initData();
-        } else {
-          addBtn.disabled = !initData();
-        }
+        syncCartButtons();
       });
       return;
     }
@@ -1097,6 +1187,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     var card = sel.closest(".card, .pdp-body");
     var btn = card ? card.querySelector(".add-btn") : null;
     if (btn) btn.disabled = !initData() || !sel.value;
+    syncCartButtons();
     var headline = card ? card.querySelector(".pdp-price") : null;
     var option = sel.options && sel.selectedIndex >= 0
       ? sel.options[sel.selectedIndex]
@@ -1120,8 +1211,13 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (!current && incoming) {
       var grid = document.querySelector(".grid");
       var searchBox = document.querySelector(".catalog-search");
+      var cats = document.querySelector("#mini-categories");
       if (selector === ".pagination" && grid) grid.after(incoming.cloneNode(true));
       if (selector === "#mini-categories" && searchBox) searchBox.after(incoming.cloneNode(true));
+      if (selector === "#mini-mlangs") {
+        if (cats) cats.after(incoming.cloneNode(true));
+        else if (searchBox) searchBox.after(incoming.cloneNode(true));
+      }
     }
   }
   function visibleCatalogCards() {
@@ -1165,6 +1261,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           q: q,
           country: url.searchParams.get("country") || "",
           lang: url.searchParams.get("lang") || "",
+          mlang: url.searchParams.get("mlang") || "",
         }),
       })
         .then(parseResponse)
@@ -1208,6 +1305,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         replaceNode(".pagination", nextDoc);
         replaceNode(".subtitle", nextDoc);
         replaceNode("#mini-categories", nextDoc);
+        replaceNode("#mini-mlangs", nextDoc);
         history.replaceState(null, "", search + location.hash);
         setCartEnabled(!!initData());
         maybeSmartSearch(search, id);
@@ -1359,6 +1457,34 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       checkoutBtn.disabled =
         !on || (state.items.length === 0 && !state.pendingPayment);
     }
+    syncCartButtons();
+  }
+
+  function syncCartButtons() {
+    var ready = !!initData();
+    document.querySelectorAll(".add-btn").forEach(function (btn) {
+      var productId = btn.getAttribute("data-product-id");
+      var card = btn.closest(".card, .pdp-body");
+      var select = card ? card.querySelector(".variant-select") : null;
+      var hasVariants = btn.getAttribute("data-has-variants") === "1";
+      var variantId = select && select.value ? select.value : null;
+      var inCart = !!(productId && state.items.some(function (it) {
+        if (it.product_id !== productId) return false;
+        if (hasVariants) return variantId && it.product_variant_id === variantId;
+        return true;
+      }));
+      btn.classList.toggle("in-cart", inCart);
+      btn.textContent = inCart ? t("inCart") : t("addToCart");
+      if (inCart) {
+        btn.disabled = !ready;
+        return;
+      }
+      if (hasVariants) {
+        btn.disabled = !ready || !variantId;
+      } else {
+        btn.disabled = !ready;
+      }
+    });
   }
 
   function boot() {

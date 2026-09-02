@@ -146,7 +146,10 @@ export function wrapMiniAppPage(
       display: grid;
       gap: 0.75rem;
       padding: 0 1rem 1rem;
-      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    @media (min-width: 720px) {
+      .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     .pagination { display: flex; justify-content: center; gap: 0.75rem; padding: 0 1rem 1rem; }
     .pagination a { color: var(--link); text-decoration: none; border: 1px solid var(--border); border-radius: 10px; padding: 0.5rem 0.8rem; background: var(--secondary); }
@@ -182,7 +185,7 @@ export function wrapMiniAppPage(
       font-size: 0.9rem;
       line-height: 1.3;
       display: -webkit-box;
-      -webkit-line-clamp: 3;
+      -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
@@ -200,7 +203,23 @@ export function wrapMiniAppPage(
     .card-price { font-weight: 700; color: var(--link); }
     .card-oos { font-size: 0.75rem; color: #c0392b; margin-top: 0.25rem; }
     .card-lead { font-size: 0.75rem; color: var(--hint); margin-top: 0.25rem; }
-    .card-langs { font-size: 0.9rem; margin-top: 0.3rem; letter-spacing: 0.04em; }
+    .card-langs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      font-size: 0.9rem;
+      margin-top: 0.3rem;
+    }
+    .lang-chip {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 0.12rem 0.35rem;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--text) 8%, transparent);
+      color: var(--hint);
+    }
     .variant-select {
       width: 100%;
       margin-top: 0.5rem;
@@ -222,6 +241,11 @@ export function wrapMiniAppPage(
       font-weight: 600;
       font-size: 0.85rem;
       cursor: pointer;
+    }
+    .add-btn.in-cart {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
     }
     .add-btn:disabled, .primary-btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .empty { padding: 2rem 1rem; text-align: center; color: var(--hint); }
@@ -279,6 +303,14 @@ export function wrapMiniAppPage(
       padding: 0.5rem 0;
       border-bottom: 1px solid var(--border);
       font-size: 0.9rem;
+    }
+    .cart-thumb {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: color-mix(in srgb, var(--text) 6%, transparent);
     }
     .cart-line-info { flex: 1; min-width: 0; }
     .qty-controls {
@@ -405,6 +437,10 @@ export function wrapMiniAppPage(
     .order-meta { color: var(--hint); font-size: 0.8rem; margin-top: 0.35rem; }
     .order-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.65rem; }
     .order-actions button, .order-actions a { border: 1px solid var(--border); border-radius: 9px; background: var(--bg); color: var(--text); padding: 0.45rem 0.65rem; font-size: 0.8rem; text-decoration: none; cursor: pointer; }
+    .order-items { font-size: 0.8rem; margin-top: 0.4rem; }
+    .order-stars { display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; margin-top: 0.45rem; font-size: 0.8rem; color: var(--hint); }
+    .star-btn { border: none; background: none; font-size: 1.15rem; line-height: 1; cursor: pointer; padding: 0 0.08rem; color: var(--hint); }
+    .star-btn.active { color: #f5a623; }
   </style>
   ${extraHead ?? ""}
 </head>
@@ -416,7 +452,7 @@ export function wrapMiniAppPage(
     window.__miniAppLocale = "${lang}";
     window.__miniAppPhysicalShop = ${physicalShop ? "true" : "false"};
   </script>
-  <script src="/mini-app-runtime?v=6"></script>
+  <script src="/mini-app-runtime?v=7"></script>
 </body>
 </html>`;
 }

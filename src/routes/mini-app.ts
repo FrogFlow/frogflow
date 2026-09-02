@@ -7,6 +7,8 @@ import {
   renderMiniAppCartShell,
   renderMiniAppProductCard,
 } from "@/lib/mini-app-catalog.server";
+import { MATERIAL_LANG_SHORT } from "@/lib/product-materials";
+import { isLocale } from "@/lib/i18n";
 import { miniAppStrings } from "@/lib/mini-app-i18n";
 import {
   miniAppHtmlResponse,
@@ -36,6 +38,8 @@ export const Route = createFileRoute("/mini-app")({
         const requestedPage = Math.max(1, Math.floor(Number(url.searchParams.get("page"))) || 1);
         const searchQuery = (url.searchParams.get("q") || "").trim().slice(0, 100);
         const categoryId = (url.searchParams.get("category") || "").trim();
+        const materialLangRaw = (url.searchParams.get("mlang") || "").trim().toLowerCase();
+        const materialLang = isLocale(materialLangRaw) ? materialLangRaw : "";
 
         const {
           shopName,
@@ -45,20 +49,28 @@ export const Route = createFileRoute("/mini-app")({
           visibleProducts,
           stockEnabled,
           totalProducts,
+          materialLanguages,
           page,
           pageSize,
         } = await loadMiniAppCatalogData(s.defaultShopName, requestedPage, 80, {
           query: searchQuery,
           categoryId,
+          materialLang,
         });
         const priced = await priceMiniAppProducts(visibleProducts, countryCode);
 
-        const catalogParams = (overrides?: { page?: number; category?: string | null }) => {
+        const catalogParams = (overrides?: {
+          page?: number;
+          category?: string | null;
+          mlang?: string | null;
+        }) => {
           const params = new URLSearchParams({ lang: locale });
           if (countryCode) params.set("country", countryCode);
           if (searchQuery) params.set("q", searchQuery);
           const nextCategory = overrides?.category === undefined ? categoryId : overrides.category;
           if (nextCategory) params.set("category", nextCategory);
+          const nextLang = overrides?.mlang === undefined ? materialLang : overrides.mlang;
+          if (nextLang) params.set("mlang", nextLang);
           if (overrides?.page && overrides.page > 1) {
             params.set("page", String(overrides.page));
           }
@@ -83,6 +95,18 @@ export const Route = createFileRoute("/mini-app")({
                 .join("")}</div>`
             : "";
 
+        const langChips =
+          materialLanguages.length > 1
+            ? `<div class="cat-scroll" id="mini-mlangs">
+              <a class="cat-chip${materialLang ? "" : " active"}" href="/mini-app?${esc(catalogParams({ mlang: null }).toString())}" aria-current="${materialLang ? "false" : "page"}">${esc(s.materialLangAll)}</a>
+              ${materialLanguages
+                .map(
+                  (code) =>
+                    `<a class="cat-chip${materialLang === code ? " active" : ""}" href="/mini-app?${esc(catalogParams({ mlang: code }).toString())}" aria-current="${materialLang === code ? "page" : "false"}">${esc(MATERIAL_LANG_SHORT[code])}</a>`,
+                )
+                .join("")}</div>`
+            : "";
+
         const cardsHtml =
           visibleProducts.length > 0
             ? visibleProducts
@@ -100,6 +124,7 @@ export const Route = createFileRoute("/mini-app")({
           <input type="hidden" name="lang" value="${esc(locale)}" />
           ${countryCode ? `<input type="hidden" name="country" value="${esc(countryCode)}" />` : ""}
           ${categoryId ? `<input type="hidden" name="category" value="${esc(categoryId)}" />` : ""}
+          ${materialLang ? `<input type="hidden" name="mlang" value="${esc(materialLang)}" />` : ""}
           <label for="mini-search-server" style="position:absolute;left:-9999px">${esc(s.searchPlaceholder)}</label>
           <input type="search" name="q" id="mini-search-server" class="search" value="${esc(searchQuery)}" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" enterkeyhint="search" />
           <button type="submit" class="search-submit" aria-label="${esc(s.searchPlaceholder)}">⌕</button>
@@ -128,6 +153,7 @@ export const Route = createFileRoute("/mini-app")({
           </header>
           ${searchHtml}
           ${catChips}
+          ${langChips}
           <div class="grid">${cardsHtml}</div>
           ${paginationHtml}
           ${renderMiniAppCartShell(locale)}`;

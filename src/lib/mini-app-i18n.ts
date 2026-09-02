@@ -13,6 +13,11 @@ export type MiniAppStrings = {
   filesAfterPayment: string;
   languagesLabel: string;
   allLanguages: string;
+  inCart: string;
+  materialLangAll: string;
+  filesInBot: string;
+  rateMaterial: string;
+  rateThanks: string;
   addToCart: string;
   variant: string;
   outOfStock: string;
@@ -120,6 +125,11 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesAfterPayment: "Файл придёт в бот после оплаты",
     languagesLabel: "Языки",
     allLanguages: "🌐 Все языки (цена ×N)",
+    inCart: "В корзине",
+    materialLangAll: "Все языки",
+    filesInBot: "Файлы отправлены в бот",
+    rateMaterial: "Оценить материал",
+    rateThanks: "Спасибо за оценку!",
     addToCart: "В корзину",
     variant: "Вариант",
     outOfStock: "Нет в наличии",
@@ -234,6 +244,11 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesAfterPayment: "Файл төлемнен кейін ботқа келеді",
     languagesLabel: "Тілдер",
     allLanguages: "🌐 Барлық тілдер (баға ×N)",
+    inCart: "Себетте",
+    materialLangAll: "Барлық тілдер",
+    filesInBot: "Файлдар ботқа жіберілді",
+    rateMaterial: "Материалды бағалау",
+    rateThanks: "Бағалағаныңызға рақмет!",
     addToCart: "Себетке",
     variant: "Нұсқа",
     outOfStock: "Қолда жоқ",
@@ -348,6 +363,11 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesAfterPayment: "The file arrives in the bot after payment",
     languagesLabel: "Languages",
     allLanguages: "🌐 All languages (price ×N)",
+    inCart: "In cart",
+    materialLangAll: "All languages",
+    filesInBot: "Files were sent to the bot",
+    rateMaterial: "Rate this material",
+    rateThanks: "Thanks for the rating!",
     addToCart: "Add to cart",
     variant: "Variant",
     outOfStock: "Out of stock",
@@ -462,6 +482,11 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesAfterPayment: "Fayl to‘lovdan so‘ng botga keladi",
     languagesLabel: "Tillar",
     allLanguages: "🌐 Barcha tillar (narx ×N)",
+    inCart: "Savatda",
+    materialLangAll: "Barcha tillar",
+    filesInBot: "Fayllar botga yuborildi",
+    rateMaterial: "Materialni baholash",
+    rateThanks: "Bahongiz uchun rahmat!",
     addToCart: "Savatga",
     variant: "Variant",
     outOfStock: "Mavjud emas",
@@ -628,6 +653,11 @@ export function miniAppStringsClientPack(
     filesAfterPayment: s.filesAfterPayment,
     languagesLabel: s.languagesLabel,
     allLanguages: s.allLanguages,
+    inCart: s.inCart,
+    materialLangAll: s.materialLangAll,
+    filesInBot: s.filesInBot,
+    rateMaterial: s.rateMaterial,
+    rateThanks: s.rateThanks,
     addToCart: s.addToCart,
     variant: s.variant,
     outOfStock: s.outOfStock,

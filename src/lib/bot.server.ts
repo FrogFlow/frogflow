@@ -3532,7 +3532,7 @@ async function placeOrderInner(
         type: "completed",
         message: orderFulfillmentKind === "physical" ? s.orderCompletePhysical : s.orderComplete,
         orderId: order.id as number,
-        stayOpen: orderFulfillmentKind === "physical",
+        stayOpen: true,
       };
     }
     return;

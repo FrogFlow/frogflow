@@ -59,6 +59,14 @@ type ProductWithFiles = {
 /** Языки материалов — те же 4 кода, что у Locale бота. Порядок — как в UI. */
 export const MATERIAL_LANGUAGES: readonly Locale[] = ["ru", "kk", "en", "uz"];
 
+/** Короткие коды на витрине: kk показываем как KZ — так ищут учителя. */
+export const MATERIAL_LANG_SHORT: Record<Locale, string> = {
+  ru: "RU",
+  kk: "KZ",
+  en: "EN",
+  uz: "UZ",
+};
+
 /**
  * Файлы материала на нужном языке.
  *
