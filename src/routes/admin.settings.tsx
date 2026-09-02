@@ -967,6 +967,7 @@ function SettingsPage() {
       )}
 
       {isPhysicalShop && (
+      <>
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
         <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
@@ -1051,6 +1052,7 @@ function SettingsPage() {
           </label>
         </div>
       </div>
+      </>
       )}
 
       <div className="bg-card border rounded-lg p-4 space-y-3">
