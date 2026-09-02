@@ -9,105 +9,85 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ShopRouteImport } from './routes/shop'
-import { Route as OperatorRouteImport } from './routes/operator'
-import { Route as MiniAppRuntimeRouteImport } from './routes/mini-app-runtime'
-import { Route as MiniAppRouteImport } from './routes/mini-app'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as MiniAppRouteImport } from './routes/mini-app'
+import { Route as MiniAppRuntimeRouteImport } from './routes/mini-app-runtime'
+import { Route as OperatorRouteImport } from './routes/operator'
+import { Route as ShopRouteImport } from './routes/shop'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
-import { Route as OperatorLoginRouteImport } from './routes/operator.login'
-import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
-import { Route as MiniAppOrdersRouteImport } from './routes/mini-app.orders'
-import { Route as MiniAppLibraryRouteImport } from './routes/mini-app.library'
-import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
-import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
-import { Route as AdminVipRouteImport } from './routes/admin.vip'
-import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
-import { Route as AdminRobokassaRouteImport } from './routes/admin.robokassa'
-import { Route as AdminPromoCodesRouteImport } from './routes/admin.promo-codes'
-import { Route as AdminProductsRouteImport } from './routes/admin.products'
-import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
-import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
-import { Route as AdminModulesRouteImport } from './routes/admin.modules'
-import { Route as AdminManagerChatRouteImport } from './routes/admin.manager-chat'
-import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
-import { Route as AdminGiftCertificatesRouteImport } from './routes/admin.gift-certificates'
-import { Route as AdminDeliveryZonesRouteImport } from './routes/admin.delivery-zones'
-import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
-import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
-import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
 import { Route as AdminAnalyticsRouteImport } from './routes/admin.analytics'
-import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
+import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
+import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
+import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
+import { Route as AdminDeliveryZonesRouteImport } from './routes/admin.delivery-zones'
+import { Route as AdminGiftCertificatesRouteImport } from './routes/admin.gift-certificates'
+import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
+import { Route as AdminManagerChatRouteImport } from './routes/admin.manager-chat'
+import { Route as AdminModulesRouteImport } from './routes/admin.modules'
+import { Route as AdminOrdersRouteImport } from './routes/admin.orders'
+import { Route as AdminPaymentMethodsRouteImport } from './routes/admin.payment-methods'
+import { Route as AdminProductsRouteImport } from './routes/admin.products'
+import { Route as AdminPromoCodesRouteImport } from './routes/admin.promo-codes'
+import { Route as AdminRobokassaRouteImport } from './routes/admin.robokassa'
+import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminVipRouteImport } from './routes/admin.vip'
+import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
+import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
+import { Route as MiniAppLibraryRouteImport } from './routes/mini-app.library'
+import { Route as MiniAppOrdersRouteImport } from './routes/mini-app.orders'
+import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
+import { Route as OperatorLoginRouteImport } from './routes/operator.login'
 import { Route as AdminVipIndexRouteImport } from './routes/admin.vip.index'
-import { Route as OperatorAuthedRequestsRouteImport } from './routes/operator._authed.requests'
-import { Route as OperatorAuthedOnboardRouteImport } from './routes/operator._authed.onboard'
-import { Route as OperatorAuthedJournalRouteImport } from './routes/operator._authed.journal'
-import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._authed.broadcast'
-import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
-import { Route as MiniAppProductProductIdRouteImport } from './routes/mini-app.product.$productId'
-import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
-import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
-import { Route as ApiOperatorCronHealthSnapshotRouteImport } from './routes/api/operator-cron/health-snapshot'
-import { Route as ApiInternalSetWebhookRouteImport } from './routes/api/internal/set-webhook'
-import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/reload'
-import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
-import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/health'
-import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
-import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio-retry'
-import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
-import { Route as ApiCronMiscRetentionRouteImport } from './routes/api/cron/misc-retention'
-import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/manager-chat-prune'
-import { Route as ApiCronFulfillmentReminderRouteImport } from './routes/api/cron/fulfillment-reminder'
-import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
-import { Route as ApiCronCartReminderRouteImport } from './routes/api/cron/cart-reminder'
-import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
-import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
-import { Route as AdminVipTariffsRouteImport } from './routes/admin.vip.tariffs'
-import { Route as AdminVipSubscribersRouteImport } from './routes/admin.vip.subscribers'
 import { Route as AdminVipSettingsRouteImport } from './routes/admin.vip.settings'
-import { Route as ApiPublicZernioWebhookRouteImport } from './routes/api/public/zernio/webhook'
-import { Route as ApiPublicVipCronRouteImport } from './routes/api/public/vip/cron'
-import { Route as ApiPublicTelegramWebhookVipRouteImport } from './routes/api/public/telegram/webhook-vip'
-import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
-import { Route as ApiPublicTelegramEnsureWebhookRouteImport } from './routes/api/public/telegram/ensure-webhook'
-import { Route as ApiPublicShopHandoffRouteImport } from './routes/api/public/shop/handoff'
-import { Route as ApiPublicRobokassaSuccessRouteImport } from './routes/api/public/robokassa/success'
-import { Route as ApiPublicRobokassaResultRouteImport } from './routes/api/public/robokassa/result'
-import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/robokassa/fail'
-import { Route as ApiPublicMiniAppSearchRouteImport } from './routes/api/public/mini-app/search'
-import { Route as ApiPublicMiniAppProofRouteImport } from './routes/api/public/mini-app/proof'
-import { Route as ApiPublicMiniAppOrdersRouteImport } from './routes/api/public/mini-app/orders'
-import { Route as ApiPublicMiniAppLibraryRouteImport } from './routes/api/public/mini-app/library'
-import { Route as ApiPublicMiniAppCheckoutRouteImport } from './routes/api/public/mini-app/checkout'
-import { Route as ApiPublicMiniAppCartRouteImport } from './routes/api/public/mini-app/cart'
-import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
+import { Route as AdminVipSubscribersRouteImport } from './routes/admin.vip.subscribers'
+import { Route as AdminVipTariffsRouteImport } from './routes/admin.vip.tariffs'
+import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
+import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
+import { Route as ApiCronCartReminderRouteImport } from './routes/api/cron/cart-reminder'
+import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
+import { Route as ApiCronFulfillmentReminderRouteImport } from './routes/api/cron/fulfillment-reminder'
+import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/manager-chat-prune'
+import { Route as ApiCronMiscRetentionRouteImport } from './routes/api/cron/misc-retention'
+import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
+import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio-retry'
+import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
+import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/health'
+import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
+import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/reload'
+import { Route as ApiInternalSetWebhookRouteImport } from './routes/api/internal/set-webhook'
+import { Route as ApiOperatorCronHealthSnapshotRouteImport } from './routes/api/operator-cron/health-snapshot'
+import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
+import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
+import { Route as MiniAppProductProductIdRouteImport } from './routes/mini-app.product.$productId'
+import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
+import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
+import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._authed.broadcast'
+import { Route as OperatorAuthedJournalRouteImport } from './routes/operator._authed.journal'
+import { Route as OperatorAuthedOnboardRouteImport } from './routes/operator._authed.onboard'
+import { Route as OperatorAuthedRequestsRouteImport } from './routes/operator._authed.requests'
 import { Route as ApiAdminFileSplatRouteImport } from './routes/api/admin/file/$'
+import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
+import { Route as ApiPublicMiniAppCartRouteImport } from './routes/api/public/mini-app/cart'
+import { Route as ApiPublicMiniAppCheckoutRouteImport } from './routes/api/public/mini-app/checkout'
+import { Route as ApiPublicMiniAppLibraryRouteImport } from './routes/api/public/mini-app/library'
+import { Route as ApiPublicMiniAppOrdersRouteImport } from './routes/api/public/mini-app/orders'
+import { Route as ApiPublicMiniAppProofRouteImport } from './routes/api/public/mini-app/proof'
+import { Route as ApiPublicMiniAppSearchRouteImport } from './routes/api/public/mini-app/search'
+import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/robokassa/fail'
+import { Route as ApiPublicRobokassaResultRouteImport } from './routes/api/public/robokassa/result'
+import { Route as ApiPublicRobokassaSuccessRouteImport } from './routes/api/public/robokassa/success'
+import { Route as ApiPublicShopHandoffRouteImport } from './routes/api/public/shop/handoff'
+import { Route as ApiPublicTelegramEnsureWebhookRouteImport } from './routes/api/public/telegram/ensure-webhook'
+import { Route as ApiPublicTelegramWebhookRouteImport } from './routes/api/public/telegram/webhook'
+import { Route as ApiPublicTelegramWebhookVipRouteImport } from './routes/api/public/telegram/webhook-vip'
+import { Route as ApiPublicVipCronRouteImport } from './routes/api/public/vip/cron'
+import { Route as ApiPublicZernioWebhookRouteImport } from './routes/api/public/zernio/webhook'
 
-const ShopRoute = ShopRouteImport.update({
-  id: '/shop',
-  path: '/shop',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OperatorRoute = OperatorRouteImport.update({
-  id: '/operator',
-  path: '/operator',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MiniAppRuntimeRoute = MiniAppRuntimeRouteImport.update({
-  id: '/mini-app-runtime',
-  path: '/mini-app-runtime',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MiniAppRoute = MiniAppRouteImport.update({
-  id: '/mini-app',
-  path: '/mini-app',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -115,9 +95,29 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MiniAppRoute = MiniAppRouteImport.update({
+  id: '/mini-app',
+  path: '/mini-app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MiniAppRuntimeRoute = MiniAppRuntimeRouteImport.update({
+  id: '/mini-app-runtime',
+  path: '/mini-app-runtime',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OperatorRoute = OperatorRouteImport.update({
+  id: '/operator',
+  path: '/operator',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShopRoute = ShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -125,103 +125,9 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
-const OperatorLoginRoute = OperatorLoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => OperatorRoute,
-} as any)
-const OperatorAuthedRoute = OperatorAuthedRouteImport.update({
-  id: '/_authed',
-  getParentRoute: () => OperatorRoute,
-} as any)
-const MiniAppOrdersRoute = MiniAppOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => MiniAppRoute,
-} as any)
-const MiniAppLibraryRoute = MiniAppLibraryRouteImport.update({
-  id: '/library',
-  path: '/library',
-  getParentRoute: () => MiniAppRoute,
-} as any)
-const LegalSlugRoute = LegalSlugRouteImport.update({
-  id: '/legal/$slug',
-  path: '/legal/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminWhatsappRoute = AdminWhatsappRouteImport.update({
-  id: '/whatsapp',
-  path: '/whatsapp',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminVipRoute = AdminVipRouteImport.update({
-  id: '/vip',
-  path: '/vip',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminSettingsRoute = AdminSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminRobokassaRoute = AdminRobokassaRouteImport.update({
-  id: '/robokassa',
-  path: '/robokassa',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPromoCodesRoute = AdminPromoCodesRouteImport.update({
-  id: '/promo-codes',
-  path: '/promo-codes',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminProductsRoute = AdminProductsRouteImport.update({
-  id: '/products',
-  path: '/products',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminPaymentMethodsRoute = AdminPaymentMethodsRouteImport.update({
-  id: '/payment-methods',
-  path: '/payment-methods',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminOrdersRoute = AdminOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminModulesRoute = AdminModulesRouteImport.update({
-  id: '/modules',
-  path: '/modules',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminManagerChatRoute = AdminManagerChatRouteImport.update({
-  id: '/manager-chat',
-  path: '/manager-chat',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminInstagramRoute = AdminInstagramRouteImport.update({
-  id: '/instagram',
-  path: '/instagram',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminGiftCertificatesRoute = AdminGiftCertificatesRouteImport.update({
-  id: '/gift-certificates',
-  path: '/gift-certificates',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminDeliveryZonesRoute = AdminDeliveryZonesRouteImport.update({
-  id: '/delivery-zones',
-  path: '/delivery-zones',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
-  id: '/categories',
-  path: '/categories',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminBroadcastRoute = AdminBroadcastRouteImport.update({
-  id: '/broadcast',
-  path: '/broadcast',
+const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminBlockedRoute = AdminBlockedRouteImport.update({
@@ -229,112 +135,143 @@ const AdminBlockedRoute = AdminBlockedRouteImport.update({
   path: '/blocked',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminAnalyticsRoute = AdminAnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
+const AdminBroadcastRoute = AdminBroadcastRouteImport.update({
+  id: '/broadcast',
+  path: '/broadcast',
   getParentRoute: () => AdminRoute,
 } as any)
-const OperatorAuthedIndexRoute = OperatorAuthedIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => OperatorAuthedRoute,
+const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
+  id: '/categories',
+  path: '/categories',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminDeliveryZonesRoute = AdminDeliveryZonesRouteImport.update({
+  id: '/delivery-zones',
+  path: '/delivery-zones',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminGiftCertificatesRoute = AdminGiftCertificatesRouteImport.update({
+  id: '/gift-certificates',
+  path: '/gift-certificates',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminInstagramRoute = AdminInstagramRouteImport.update({
+  id: '/instagram',
+  path: '/instagram',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminManagerChatRoute = AdminManagerChatRouteImport.update({
+  id: '/manager-chat',
+  path: '/manager-chat',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminModulesRoute = AdminModulesRouteImport.update({
+  id: '/modules',
+  path: '/modules',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOrdersRoute = AdminOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPaymentMethodsRoute = AdminPaymentMethodsRouteImport.update({
+  id: '/payment-methods',
+  path: '/payment-methods',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminProductsRoute = AdminProductsRouteImport.update({
+  id: '/products',
+  path: '/products',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPromoCodesRoute = AdminPromoCodesRouteImport.update({
+  id: '/promo-codes',
+  path: '/promo-codes',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRobokassaRoute = AdminRobokassaRouteImport.update({
+  id: '/robokassa',
+  path: '/robokassa',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSettingsRoute = AdminSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminVipRoute = AdminVipRouteImport.update({
+  id: '/vip',
+  path: '/vip',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminWhatsappRoute = AdminWhatsappRouteImport.update({
+  id: '/whatsapp',
+  path: '/whatsapp',
+  getParentRoute: () => AdminRoute,
+} as any)
+const LegalSlugRoute = LegalSlugRouteImport.update({
+  id: '/legal/$slug',
+  path: '/legal/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MiniAppLibraryRoute = MiniAppLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => MiniAppRoute,
+} as any)
+const MiniAppOrdersRoute = MiniAppOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => MiniAppRoute,
+} as any)
+const OperatorAuthedRoute = OperatorAuthedRouteImport.update({
+  id: '/_authed',
+  getParentRoute: () => OperatorRoute,
+} as any)
+const OperatorLoginRoute = OperatorLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => OperatorRoute,
 } as any)
 const AdminVipIndexRoute = AdminVipIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminVipRoute,
 } as any)
-const OperatorAuthedRequestsRoute = OperatorAuthedRequestsRouteImport.update({
-  id: '/requests',
-  path: '/requests',
-  getParentRoute: () => OperatorAuthedRoute,
+const AdminVipSettingsRoute = AdminVipSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AdminVipRoute,
 } as any)
-const OperatorAuthedOnboardRoute = OperatorAuthedOnboardRouteImport.update({
-  id: '/onboard',
-  path: '/onboard',
-  getParentRoute: () => OperatorAuthedRoute,
+const AdminVipSubscribersRoute = AdminVipSubscribersRouteImport.update({
+  id: '/subscribers',
+  path: '/subscribers',
+  getParentRoute: () => AdminVipRoute,
 } as any)
-const OperatorAuthedJournalRoute = OperatorAuthedJournalRouteImport.update({
-  id: '/journal',
-  path: '/journal',
-  getParentRoute: () => OperatorAuthedRoute,
+const AdminVipTariffsRoute = AdminVipTariffsRouteImport.update({
+  id: '/tariffs',
+  path: '/tariffs',
+  getParentRoute: () => AdminVipRoute,
 } as any)
-const OperatorAuthedBroadcastRoute = OperatorAuthedBroadcastRouteImport.update({
-  id: '/broadcast',
-  path: '/broadcast',
-  getParentRoute: () => OperatorAuthedRoute,
-} as any)
-const OperatorAuthedBotIdRoute = OperatorAuthedBotIdRouteImport.update({
-  id: '/$botId',
-  path: '/$botId',
-  getParentRoute: () => OperatorAuthedRoute,
-} as any)
-const MiniAppProductProductIdRoute = MiniAppProductProductIdRouteImport.update({
-  id: '/product/$productId',
-  path: '/product/$productId',
-  getParentRoute: () => MiniAppRoute,
-} as any)
-const ApiOperatorCronSubscriptionsRoute =
-  ApiOperatorCronSubscriptionsRouteImport.update({
-    id: '/api/operator-cron/subscriptions',
-    path: '/api/operator-cron/subscriptions',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiOperatorCronRetentionRoute =
-  ApiOperatorCronRetentionRouteImport.update({
-    id: '/api/operator-cron/retention',
-    path: '/api/operator-cron/retention',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiOperatorCronHealthSnapshotRoute =
-  ApiOperatorCronHealthSnapshotRouteImport.update({
-    id: '/api/operator-cron/health-snapshot',
-    path: '/api/operator-cron/health-snapshot',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiInternalSetWebhookRoute = ApiInternalSetWebhookRouteImport.update({
-  id: '/api/internal/set-webhook',
-  path: '/api/internal/set-webhook',
+const ApiAdminUploadRoute = ApiAdminUploadRouteImport.update({
+  id: '/api/admin/upload',
+  path: '/api/admin/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiInternalReloadRoute = ApiInternalReloadRouteImport.update({
-  id: '/api/internal/reload',
-  path: '/api/internal/reload',
+const ApiCronBroadcastRoute = ApiCronBroadcastRouteImport.update({
+  id: '/api/cron/broadcast',
+  path: '/api/cron/broadcast',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiInternalNotifyOwnerRoute = ApiInternalNotifyOwnerRouteImport.update({
-  id: '/api/internal/notify-owner',
-  path: '/api/internal/notify-owner',
+const ApiCronCartReminderRoute = ApiCronCartReminderRouteImport.update({
+  id: '/api/cron/cart-reminder',
+  path: '/api/cron/cart-reminder',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiInternalHealthRoute = ApiInternalHealthRouteImport.update({
-  id: '/api/internal/health',
-  path: '/api/internal/health',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiInternalDiagnosticsRoute = ApiInternalDiagnosticsRouteImport.update({
-  id: '/api/internal/diagnostics',
-  path: '/api/internal/diagnostics',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCronZernioRetryRoute = ApiCronZernioRetryRouteImport.update({
-  id: '/api/cron/zernio-retry',
-  path: '/api/cron/zernio-retry',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCronZernioLogsPruneRoute = ApiCronZernioLogsPruneRouteImport.update({
-  id: '/api/cron/zernio-logs-prune',
-  path: '/api/cron/zernio-logs-prune',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCronMiscRetentionRoute = ApiCronMiscRetentionRouteImport.update({
-  id: '/api/cron/misc-retention',
-  path: '/api/cron/misc-retention',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiCronManagerChatPruneRoute = ApiCronManagerChatPruneRouteImport.update({
-  id: '/api/cron/manager-chat-prune',
-  path: '/api/cron/manager-chat-prune',
+const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
+  id: '/api/cron/ensure-webhook',
+  path: '/api/cron/ensure-webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCronFulfillmentReminderRoute =
@@ -343,109 +280,117 @@ const ApiCronFulfillmentReminderRoute =
     path: '/api/cron/fulfillment-reminder',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
-  id: '/api/cron/ensure-webhook',
-  path: '/api/cron/ensure-webhook',
+const ApiCronManagerChatPruneRoute = ApiCronManagerChatPruneRouteImport.update({
+  id: '/api/cron/manager-chat-prune',
+  path: '/api/cron/manager-chat-prune',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCronCartReminderRoute = ApiCronCartReminderRouteImport.update({
-  id: '/api/cron/cart-reminder',
-  path: '/api/cron/cart-reminder',
+const ApiCronMiscRetentionRoute = ApiCronMiscRetentionRouteImport.update({
+  id: '/api/cron/misc-retention',
+  path: '/api/cron/misc-retention',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiCronBroadcastRoute = ApiCronBroadcastRouteImport.update({
-  id: '/api/cron/broadcast',
-  path: '/api/cron/broadcast',
+const ApiCronZernioLogsPruneRoute = ApiCronZernioLogsPruneRouteImport.update({
+  id: '/api/cron/zernio-logs-prune',
+  path: '/api/cron/zernio-logs-prune',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAdminUploadRoute = ApiAdminUploadRouteImport.update({
-  id: '/api/admin/upload',
-  path: '/api/admin/upload',
+const ApiCronZernioRetryRoute = ApiCronZernioRetryRouteImport.update({
+  id: '/api/cron/zernio-retry',
+  path: '/api/cron/zernio-retry',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminVipTariffsRoute = AdminVipTariffsRouteImport.update({
-  id: '/tariffs',
-  path: '/tariffs',
-  getParentRoute: () => AdminVipRoute,
-} as any)
-const AdminVipSubscribersRoute = AdminVipSubscribersRouteImport.update({
-  id: '/subscribers',
-  path: '/subscribers',
-  getParentRoute: () => AdminVipRoute,
-} as any)
-const AdminVipSettingsRoute = AdminVipSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => AdminVipRoute,
-} as any)
-const ApiPublicZernioWebhookRoute = ApiPublicZernioWebhookRouteImport.update({
-  id: '/api/public/zernio/webhook',
-  path: '/api/public/zernio/webhook',
+const ApiInternalDiagnosticsRoute = ApiInternalDiagnosticsRouteImport.update({
+  id: '/api/internal/diagnostics',
+  path: '/api/internal/diagnostics',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicVipCronRoute = ApiPublicVipCronRouteImport.update({
-  id: '/api/public/vip/cron',
-  path: '/api/public/vip/cron',
+const ApiInternalHealthRoute = ApiInternalHealthRouteImport.update({
+  id: '/api/internal/health',
+  path: '/api/internal/health',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicTelegramWebhookVipRoute =
-  ApiPublicTelegramWebhookVipRouteImport.update({
-    id: '/api/public/telegram/webhook-vip',
-    path: '/api/public/telegram/webhook-vip',
+const ApiInternalNotifyOwnerRoute = ApiInternalNotifyOwnerRouteImport.update({
+  id: '/api/internal/notify-owner',
+  path: '/api/internal/notify-owner',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternalReloadRoute = ApiInternalReloadRouteImport.update({
+  id: '/api/internal/reload',
+  path: '/api/internal/reload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternalSetWebhookRoute = ApiInternalSetWebhookRouteImport.update({
+  id: '/api/internal/set-webhook',
+  path: '/api/internal/set-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOperatorCronHealthSnapshotRoute =
+  ApiOperatorCronHealthSnapshotRouteImport.update({
+    id: '/api/operator-cron/health-snapshot',
+    path: '/api/operator-cron/health-snapshot',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicTelegramWebhookRoute =
-  ApiPublicTelegramWebhookRouteImport.update({
-    id: '/api/public/telegram/webhook',
-    path: '/api/public/telegram/webhook',
+const ApiOperatorCronRetentionRoute =
+  ApiOperatorCronRetentionRouteImport.update({
+    id: '/api/operator-cron/retention',
+    path: '/api/operator-cron/retention',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicTelegramEnsureWebhookRoute =
-  ApiPublicTelegramEnsureWebhookRouteImport.update({
-    id: '/api/public/telegram/ensure-webhook',
-    path: '/api/public/telegram/ensure-webhook',
+const ApiOperatorCronSubscriptionsRoute =
+  ApiOperatorCronSubscriptionsRouteImport.update({
+    id: '/api/operator-cron/subscriptions',
+    path: '/api/operator-cron/subscriptions',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicShopHandoffRoute = ApiPublicShopHandoffRouteImport.update({
-  id: '/api/public/shop/handoff',
-  path: '/api/public/shop/handoff',
+const MiniAppProductProductIdRoute = MiniAppProductProductIdRouteImport.update({
+  id: '/product/$productId',
+  path: '/product/$productId',
+  getParentRoute: () => MiniAppRoute,
+} as any)
+const OperatorAuthedIndexRoute = OperatorAuthedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const OperatorAuthedBotIdRoute = OperatorAuthedBotIdRouteImport.update({
+  id: '/$botId',
+  path: '/$botId',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const OperatorAuthedBroadcastRoute = OperatorAuthedBroadcastRouteImport.update({
+  id: '/broadcast',
+  path: '/broadcast',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const OperatorAuthedJournalRoute = OperatorAuthedJournalRouteImport.update({
+  id: '/journal',
+  path: '/journal',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const OperatorAuthedOnboardRoute = OperatorAuthedOnboardRouteImport.update({
+  id: '/onboard',
+  path: '/onboard',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const OperatorAuthedRequestsRoute = OperatorAuthedRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
+const ApiAdminFileSplatRoute = ApiAdminFileSplatRouteImport.update({
+  id: '/api/admin/file/$',
+  path: '/api/admin/file/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicRobokassaSuccessRoute =
-  ApiPublicRobokassaSuccessRouteImport.update({
-    id: '/api/public/robokassa/success',
-    path: '/api/public/robokassa/success',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicRobokassaResultRoute =
-  ApiPublicRobokassaResultRouteImport.update({
-    id: '/api/public/robokassa/result',
-    path: '/api/public/robokassa/result',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicRobokassaFailRoute = ApiPublicRobokassaFailRouteImport.update({
-  id: '/api/public/robokassa/fail',
-  path: '/api/public/robokassa/fail',
+const ApiPublicImgSplatRoute = ApiPublicImgSplatRouteImport.update({
+  id: '/api/public/img/$',
+  path: '/api/public/img/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicMiniAppSearchRoute = ApiPublicMiniAppSearchRouteImport.update({
-  id: '/api/public/mini-app/search',
-  path: '/api/public/mini-app/search',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicMiniAppProofRoute = ApiPublicMiniAppProofRouteImport.update({
-  id: '/api/public/mini-app/proof',
-  path: '/api/public/mini-app/proof',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicMiniAppOrdersRoute = ApiPublicMiniAppOrdersRouteImport.update({
-  id: '/api/public/mini-app/orders',
-  path: '/api/public/mini-app/orders',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicMiniAppLibraryRoute = ApiPublicMiniAppLibraryRouteImport.update({
-  id: '/api/public/mini-app/library',
-  path: '/api/public/mini-app/library',
+const ApiPublicMiniAppCartRoute = ApiPublicMiniAppCartRouteImport.update({
+  id: '/api/public/mini-app/cart',
+  path: '/api/public/mini-app/cart',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicMiniAppCheckoutRoute =
@@ -454,19 +399,74 @@ const ApiPublicMiniAppCheckoutRoute =
     path: '/api/public/mini-app/checkout',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicMiniAppCartRoute = ApiPublicMiniAppCartRouteImport.update({
-  id: '/api/public/mini-app/cart',
-  path: '/api/public/mini-app/cart',
+const ApiPublicMiniAppLibraryRoute = ApiPublicMiniAppLibraryRouteImport.update({
+  id: '/api/public/mini-app/library',
+  path: '/api/public/mini-app/library',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicImgSplatRoute = ApiPublicImgSplatRouteImport.update({
-  id: '/api/public/img/$',
-  path: '/api/public/img/$',
+const ApiPublicMiniAppOrdersRoute = ApiPublicMiniAppOrdersRouteImport.update({
+  id: '/api/public/mini-app/orders',
+  path: '/api/public/mini-app/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAdminFileSplatRoute = ApiAdminFileSplatRouteImport.update({
-  id: '/api/admin/file/$',
-  path: '/api/admin/file/$',
+const ApiPublicMiniAppProofRoute = ApiPublicMiniAppProofRouteImport.update({
+  id: '/api/public/mini-app/proof',
+  path: '/api/public/mini-app/proof',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicMiniAppSearchRoute = ApiPublicMiniAppSearchRouteImport.update({
+  id: '/api/public/mini-app/search',
+  path: '/api/public/mini-app/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRobokassaFailRoute = ApiPublicRobokassaFailRouteImport.update({
+  id: '/api/public/robokassa/fail',
+  path: '/api/public/robokassa/fail',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRobokassaResultRoute =
+  ApiPublicRobokassaResultRouteImport.update({
+    id: '/api/public/robokassa/result',
+    path: '/api/public/robokassa/result',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicRobokassaSuccessRoute =
+  ApiPublicRobokassaSuccessRouteImport.update({
+    id: '/api/public/robokassa/success',
+    path: '/api/public/robokassa/success',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicShopHandoffRoute = ApiPublicShopHandoffRouteImport.update({
+  id: '/api/public/shop/handoff',
+  path: '/api/public/shop/handoff',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicTelegramEnsureWebhookRoute =
+  ApiPublicTelegramEnsureWebhookRouteImport.update({
+    id: '/api/public/telegram/ensure-webhook',
+    path: '/api/public/telegram/ensure-webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicTelegramWebhookRoute =
+  ApiPublicTelegramWebhookRouteImport.update({
+    id: '/api/public/telegram/webhook',
+    path: '/api/public/telegram/webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicTelegramWebhookVipRoute =
+  ApiPublicTelegramWebhookVipRouteImport.update({
+    id: '/api/public/telegram/webhook-vip',
+    path: '/api/public/telegram/webhook-vip',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicVipCronRoute = ApiPublicVipCronRouteImport.update({
+  id: '/api/public/vip/cron',
+  path: '/api/public/vip/cron',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicZernioWebhookRoute = ApiPublicZernioWebhookRouteImport.update({
+  id: '/api/public/zernio/webhook',
+  path: '/api/public/zernio/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -973,39 +973,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/shop': {
-      id: '/shop'
-      path: '/shop'
-      fullPath: '/shop'
-      preLoaderRoute: typeof ShopRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/operator': {
-      id: '/operator'
-      path: '/operator'
-      fullPath: '/operator'
-      preLoaderRoute: typeof OperatorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mini-app-runtime': {
-      id: '/mini-app-runtime'
-      path: '/mini-app-runtime'
-      fullPath: '/mini-app-runtime'
-      preLoaderRoute: typeof MiniAppRuntimeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mini-app': {
-      id: '/mini-app'
-      path: '/mini-app'
-      fullPath: '/mini-app'
-      preLoaderRoute: typeof MiniAppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -1015,11 +987,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mini-app': {
+      id: '/mini-app'
+      path: '/mini-app'
+      fullPath: '/mini-app'
+      preLoaderRoute: typeof MiniAppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mini-app-runtime': {
+      id: '/mini-app-runtime'
+      path: '/mini-app-runtime'
+      fullPath: '/mini-app-runtime'
+      preLoaderRoute: typeof MiniAppRuntimeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/operator': {
+      id: '/operator'
+      path: '/operator'
+      fullPath: '/operator'
+      preLoaderRoute: typeof OperatorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/shop': {
+      id: '/shop'
+      path: '/shop'
+      fullPath: '/shop'
+      preLoaderRoute: typeof ShopRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -1029,19 +1029,131 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/operator/login': {
-      id: '/operator/login'
-      path: '/login'
-      fullPath: '/operator/login'
-      preLoaderRoute: typeof OperatorLoginRouteImport
-      parentRoute: typeof OperatorRoute
+    '/admin/analytics': {
+      id: '/admin/analytics'
+      path: '/analytics'
+      fullPath: '/admin/analytics'
+      preLoaderRoute: typeof AdminAnalyticsRouteImport
+      parentRoute: typeof AdminRoute
     }
-    '/operator/_authed': {
-      id: '/operator/_authed'
-      path: ''
-      fullPath: '/operator'
-      preLoaderRoute: typeof OperatorAuthedRouteImport
-      parentRoute: typeof OperatorRoute
+    '/admin/blocked': {
+      id: '/admin/blocked'
+      path: '/blocked'
+      fullPath: '/admin/blocked'
+      preLoaderRoute: typeof AdminBlockedRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/broadcast': {
+      id: '/admin/broadcast'
+      path: '/broadcast'
+      fullPath: '/admin/broadcast'
+      preLoaderRoute: typeof AdminBroadcastRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/categories': {
+      id: '/admin/categories'
+      path: '/categories'
+      fullPath: '/admin/categories'
+      preLoaderRoute: typeof AdminCategoriesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/delivery-zones': {
+      id: '/admin/delivery-zones'
+      path: '/delivery-zones'
+      fullPath: '/admin/delivery-zones'
+      preLoaderRoute: typeof AdminDeliveryZonesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/gift-certificates': {
+      id: '/admin/gift-certificates'
+      path: '/gift-certificates'
+      fullPath: '/admin/gift-certificates'
+      preLoaderRoute: typeof AdminGiftCertificatesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/instagram': {
+      id: '/admin/instagram'
+      path: '/instagram'
+      fullPath: '/admin/instagram'
+      preLoaderRoute: typeof AdminInstagramRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/manager-chat': {
+      id: '/admin/manager-chat'
+      path: '/manager-chat'
+      fullPath: '/admin/manager-chat'
+      preLoaderRoute: typeof AdminManagerChatRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/modules': {
+      id: '/admin/modules'
+      path: '/modules'
+      fullPath: '/admin/modules'
+      preLoaderRoute: typeof AdminModulesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/orders': {
+      id: '/admin/orders'
+      path: '/orders'
+      fullPath: '/admin/orders'
+      preLoaderRoute: typeof AdminOrdersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/payment-methods': {
+      id: '/admin/payment-methods'
+      path: '/payment-methods'
+      fullPath: '/admin/payment-methods'
+      preLoaderRoute: typeof AdminPaymentMethodsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/products': {
+      id: '/admin/products'
+      path: '/products'
+      fullPath: '/admin/products'
+      preLoaderRoute: typeof AdminProductsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/promo-codes': {
+      id: '/admin/promo-codes'
+      path: '/promo-codes'
+      fullPath: '/admin/promo-codes'
+      preLoaderRoute: typeof AdminPromoCodesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/robokassa': {
+      id: '/admin/robokassa'
+      path: '/robokassa'
+      fullPath: '/admin/robokassa'
+      preLoaderRoute: typeof AdminRobokassaRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/settings': {
+      id: '/admin/settings'
+      path: '/settings'
+      fullPath: '/admin/settings'
+      preLoaderRoute: typeof AdminSettingsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/vip': {
+      id: '/admin/vip'
+      path: '/vip'
+      fullPath: '/admin/vip'
+      preLoaderRoute: typeof AdminVipRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/whatsapp': {
+      id: '/admin/whatsapp'
+      path: '/whatsapp'
+      fullPath: '/admin/whatsapp'
+      preLoaderRoute: typeof AdminWhatsappRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/legal/$slug': {
+      id: '/legal/$slug'
+      path: '/legal/$slug'
+      fullPath: '/legal/$slug'
+      preLoaderRoute: typeof LegalSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/mini-app/library': {
       id: '/mini-app/library'
@@ -1057,319 +1169,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MiniAppOrdersRouteImport
       parentRoute: typeof MiniAppRoute
     }
-    '/legal/$slug': {
-      id: '/legal/$slug'
-      path: '/legal/$slug'
-      fullPath: '/legal/$slug'
-      preLoaderRoute: typeof LegalSlugRouteImport
-      parentRoute: typeof rootRouteImport
+    '/operator/_authed': {
+      id: '/operator/_authed'
+      path: ''
+      fullPath: '/operator'
+      preLoaderRoute: typeof OperatorAuthedRouteImport
+      parentRoute: typeof OperatorRoute
     }
-    '/admin/whatsapp': {
-      id: '/admin/whatsapp'
-      path: '/whatsapp'
-      fullPath: '/admin/whatsapp'
-      preLoaderRoute: typeof AdminWhatsappRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/vip': {
-      id: '/admin/vip'
-      path: '/vip'
-      fullPath: '/admin/vip'
-      preLoaderRoute: typeof AdminVipRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/settings': {
-      id: '/admin/settings'
-      path: '/settings'
-      fullPath: '/admin/settings'
-      preLoaderRoute: typeof AdminSettingsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/robokassa': {
-      id: '/admin/robokassa'
-      path: '/robokassa'
-      fullPath: '/admin/robokassa'
-      preLoaderRoute: typeof AdminRobokassaRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/promo-codes': {
-      id: '/admin/promo-codes'
-      path: '/promo-codes'
-      fullPath: '/admin/promo-codes'
-      preLoaderRoute: typeof AdminPromoCodesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/products': {
-      id: '/admin/products'
-      path: '/products'
-      fullPath: '/admin/products'
-      preLoaderRoute: typeof AdminProductsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/payment-methods': {
-      id: '/admin/payment-methods'
-      path: '/payment-methods'
-      fullPath: '/admin/payment-methods'
-      preLoaderRoute: typeof AdminPaymentMethodsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/orders': {
-      id: '/admin/orders'
-      path: '/orders'
-      fullPath: '/admin/orders'
-      preLoaderRoute: typeof AdminOrdersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/modules': {
-      id: '/admin/modules'
-      path: '/modules'
-      fullPath: '/admin/modules'
-      preLoaderRoute: typeof AdminModulesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/manager-chat': {
-      id: '/admin/manager-chat'
-      path: '/manager-chat'
-      fullPath: '/admin/manager-chat'
-      preLoaderRoute: typeof AdminManagerChatRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/instagram': {
-      id: '/admin/instagram'
-      path: '/instagram'
-      fullPath: '/admin/instagram'
-      preLoaderRoute: typeof AdminInstagramRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/gift-certificates': {
-      id: '/admin/gift-certificates'
-      path: '/gift-certificates'
-      fullPath: '/admin/gift-certificates'
-      preLoaderRoute: typeof AdminGiftCertificatesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/delivery-zones': {
-      id: '/admin/delivery-zones'
-      path: '/delivery-zones'
-      fullPath: '/admin/delivery-zones'
-      preLoaderRoute: typeof AdminDeliveryZonesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/categories': {
-      id: '/admin/categories'
-      path: '/categories'
-      fullPath: '/admin/categories'
-      preLoaderRoute: typeof AdminCategoriesRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/broadcast': {
-      id: '/admin/broadcast'
-      path: '/broadcast'
-      fullPath: '/admin/broadcast'
-      preLoaderRoute: typeof AdminBroadcastRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/blocked': {
-      id: '/admin/blocked'
-      path: '/blocked'
-      fullPath: '/admin/blocked'
-      preLoaderRoute: typeof AdminBlockedRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/analytics': {
-      id: '/admin/analytics'
-      path: '/analytics'
-      fullPath: '/admin/analytics'
-      preLoaderRoute: typeof AdminAnalyticsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/operator/_authed/': {
-      id: '/operator/_authed/'
-      path: '/'
-      fullPath: '/operator/'
-      preLoaderRoute: typeof OperatorAuthedIndexRouteImport
-      parentRoute: typeof OperatorAuthedRoute
+    '/operator/login': {
+      id: '/operator/login'
+      path: '/login'
+      fullPath: '/operator/login'
+      preLoaderRoute: typeof OperatorLoginRouteImport
+      parentRoute: typeof OperatorRoute
     }
     '/admin/vip/': {
       id: '/admin/vip/'
       path: '/'
       fullPath: '/admin/vip/'
       preLoaderRoute: typeof AdminVipIndexRouteImport
-      parentRoute: typeof AdminVipRoute
-    }
-    '/operator/_authed/requests': {
-      id: '/operator/_authed/requests'
-      path: '/requests'
-      fullPath: '/operator/requests'
-      preLoaderRoute: typeof OperatorAuthedRequestsRouteImport
-      parentRoute: typeof OperatorAuthedRoute
-    }
-    '/operator/_authed/onboard': {
-      id: '/operator/_authed/onboard'
-      path: '/onboard'
-      fullPath: '/operator/onboard'
-      preLoaderRoute: typeof OperatorAuthedOnboardRouteImport
-      parentRoute: typeof OperatorAuthedRoute
-    }
-    '/operator/_authed/journal': {
-      id: '/operator/_authed/journal'
-      path: '/journal'
-      fullPath: '/operator/journal'
-      preLoaderRoute: typeof OperatorAuthedJournalRouteImport
-      parentRoute: typeof OperatorAuthedRoute
-    }
-    '/operator/_authed/broadcast': {
-      id: '/operator/_authed/broadcast'
-      path: '/broadcast'
-      fullPath: '/operator/broadcast'
-      preLoaderRoute: typeof OperatorAuthedBroadcastRouteImport
-      parentRoute: typeof OperatorAuthedRoute
-    }
-    '/operator/_authed/$botId': {
-      id: '/operator/_authed/$botId'
-      path: '/$botId'
-      fullPath: '/operator/$botId'
-      preLoaderRoute: typeof OperatorAuthedBotIdRouteImport
-      parentRoute: typeof OperatorAuthedRoute
-    }
-    '/mini-app/product/$productId': {
-      id: '/mini-app/product/$productId'
-      path: '/product/$productId'
-      fullPath: '/mini-app/product/$productId'
-      preLoaderRoute: typeof MiniAppProductProductIdRouteImport
-      parentRoute: typeof MiniAppRoute
-    }
-    '/api/operator-cron/subscriptions': {
-      id: '/api/operator-cron/subscriptions'
-      path: '/api/operator-cron/subscriptions'
-      fullPath: '/api/operator-cron/subscriptions'
-      preLoaderRoute: typeof ApiOperatorCronSubscriptionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/operator-cron/retention': {
-      id: '/api/operator-cron/retention'
-      path: '/api/operator-cron/retention'
-      fullPath: '/api/operator-cron/retention'
-      preLoaderRoute: typeof ApiOperatorCronRetentionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/operator-cron/health-snapshot': {
-      id: '/api/operator-cron/health-snapshot'
-      path: '/api/operator-cron/health-snapshot'
-      fullPath: '/api/operator-cron/health-snapshot'
-      preLoaderRoute: typeof ApiOperatorCronHealthSnapshotRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/set-webhook': {
-      id: '/api/internal/set-webhook'
-      path: '/api/internal/set-webhook'
-      fullPath: '/api/internal/set-webhook'
-      preLoaderRoute: typeof ApiInternalSetWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/reload': {
-      id: '/api/internal/reload'
-      path: '/api/internal/reload'
-      fullPath: '/api/internal/reload'
-      preLoaderRoute: typeof ApiInternalReloadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/notify-owner': {
-      id: '/api/internal/notify-owner'
-      path: '/api/internal/notify-owner'
-      fullPath: '/api/internal/notify-owner'
-      preLoaderRoute: typeof ApiInternalNotifyOwnerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/health': {
-      id: '/api/internal/health'
-      path: '/api/internal/health'
-      fullPath: '/api/internal/health'
-      preLoaderRoute: typeof ApiInternalHealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/diagnostics': {
-      id: '/api/internal/diagnostics'
-      path: '/api/internal/diagnostics'
-      fullPath: '/api/internal/diagnostics'
-      preLoaderRoute: typeof ApiInternalDiagnosticsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/zernio-retry': {
-      id: '/api/cron/zernio-retry'
-      path: '/api/cron/zernio-retry'
-      fullPath: '/api/cron/zernio-retry'
-      preLoaderRoute: typeof ApiCronZernioRetryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/zernio-logs-prune': {
-      id: '/api/cron/zernio-logs-prune'
-      path: '/api/cron/zernio-logs-prune'
-      fullPath: '/api/cron/zernio-logs-prune'
-      preLoaderRoute: typeof ApiCronZernioLogsPruneRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/misc-retention': {
-      id: '/api/cron/misc-retention'
-      path: '/api/cron/misc-retention'
-      fullPath: '/api/cron/misc-retention'
-      preLoaderRoute: typeof ApiCronMiscRetentionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/manager-chat-prune': {
-      id: '/api/cron/manager-chat-prune'
-      path: '/api/cron/manager-chat-prune'
-      fullPath: '/api/cron/manager-chat-prune'
-      preLoaderRoute: typeof ApiCronManagerChatPruneRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/fulfillment-reminder': {
-      id: '/api/cron/fulfillment-reminder'
-      path: '/api/cron/fulfillment-reminder'
-      fullPath: '/api/cron/fulfillment-reminder'
-      preLoaderRoute: typeof ApiCronFulfillmentReminderRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/ensure-webhook': {
-      id: '/api/cron/ensure-webhook'
-      path: '/api/cron/ensure-webhook'
-      fullPath: '/api/cron/ensure-webhook'
-      preLoaderRoute: typeof ApiCronEnsureWebhookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/cart-reminder': {
-      id: '/api/cron/cart-reminder'
-      path: '/api/cron/cart-reminder'
-      fullPath: '/api/cron/cart-reminder'
-      preLoaderRoute: typeof ApiCronCartReminderRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/cron/broadcast': {
-      id: '/api/cron/broadcast'
-      path: '/api/cron/broadcast'
-      fullPath: '/api/cron/broadcast'
-      preLoaderRoute: typeof ApiCronBroadcastRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/admin/upload': {
-      id: '/api/admin/upload'
-      path: '/api/admin/upload'
-      fullPath: '/api/admin/upload'
-      preLoaderRoute: typeof ApiAdminUploadRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/vip/tariffs': {
-      id: '/admin/vip/tariffs'
-      path: '/tariffs'
-      fullPath: '/admin/vip/tariffs'
-      preLoaderRoute: typeof AdminVipTariffsRouteImport
-      parentRoute: typeof AdminVipRoute
-    }
-    '/admin/vip/subscribers': {
-      id: '/admin/vip/subscribers'
-      path: '/subscribers'
-      fullPath: '/admin/vip/subscribers'
-      preLoaderRoute: typeof AdminVipSubscribersRouteImport
       parentRoute: typeof AdminVipRoute
     }
     '/admin/vip/settings': {
@@ -1379,81 +1197,214 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminVipSettingsRouteImport
       parentRoute: typeof AdminVipRoute
     }
-    '/api/public/zernio/webhook': {
-      id: '/api/public/zernio/webhook'
-      path: '/api/public/zernio/webhook'
-      fullPath: '/api/public/zernio/webhook'
-      preLoaderRoute: typeof ApiPublicZernioWebhookRouteImport
+    '/admin/vip/subscribers': {
+      id: '/admin/vip/subscribers'
+      path: '/subscribers'
+      fullPath: '/admin/vip/subscribers'
+      preLoaderRoute: typeof AdminVipSubscribersRouteImport
+      parentRoute: typeof AdminVipRoute
+    }
+    '/admin/vip/tariffs': {
+      id: '/admin/vip/tariffs'
+      path: '/tariffs'
+      fullPath: '/admin/vip/tariffs'
+      preLoaderRoute: typeof AdminVipTariffsRouteImport
+      parentRoute: typeof AdminVipRoute
+    }
+    '/api/admin/upload': {
+      id: '/api/admin/upload'
+      path: '/api/admin/upload'
+      fullPath: '/api/admin/upload'
+      preLoaderRoute: typeof ApiAdminUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/vip/cron': {
-      id: '/api/public/vip/cron'
-      path: '/api/public/vip/cron'
-      fullPath: '/api/public/vip/cron'
-      preLoaderRoute: typeof ApiPublicVipCronRouteImport
+    '/api/cron/broadcast': {
+      id: '/api/cron/broadcast'
+      path: '/api/cron/broadcast'
+      fullPath: '/api/cron/broadcast'
+      preLoaderRoute: typeof ApiCronBroadcastRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/telegram/webhook-vip': {
-      id: '/api/public/telegram/webhook-vip'
-      path: '/api/public/telegram/webhook-vip'
-      fullPath: '/api/public/telegram/webhook-vip'
-      preLoaderRoute: typeof ApiPublicTelegramWebhookVipRouteImport
+    '/api/cron/cart-reminder': {
+      id: '/api/cron/cart-reminder'
+      path: '/api/cron/cart-reminder'
+      fullPath: '/api/cron/cart-reminder'
+      preLoaderRoute: typeof ApiCronCartReminderRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/telegram/webhook': {
-      id: '/api/public/telegram/webhook'
-      path: '/api/public/telegram/webhook'
-      fullPath: '/api/public/telegram/webhook'
-      preLoaderRoute: typeof ApiPublicTelegramWebhookRouteImport
+    '/api/cron/ensure-webhook': {
+      id: '/api/cron/ensure-webhook'
+      path: '/api/cron/ensure-webhook'
+      fullPath: '/api/cron/ensure-webhook'
+      preLoaderRoute: typeof ApiCronEnsureWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/telegram/ensure-webhook': {
-      id: '/api/public/telegram/ensure-webhook'
-      path: '/api/public/telegram/ensure-webhook'
-      fullPath: '/api/public/telegram/ensure-webhook'
-      preLoaderRoute: typeof ApiPublicTelegramEnsureWebhookRouteImport
+    '/api/cron/fulfillment-reminder': {
+      id: '/api/cron/fulfillment-reminder'
+      path: '/api/cron/fulfillment-reminder'
+      fullPath: '/api/cron/fulfillment-reminder'
+      preLoaderRoute: typeof ApiCronFulfillmentReminderRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/shop/handoff': {
-      id: '/api/public/shop/handoff'
-      path: '/api/public/shop/handoff'
-      fullPath: '/api/public/shop/handoff'
-      preLoaderRoute: typeof ApiPublicShopHandoffRouteImport
+    '/api/cron/manager-chat-prune': {
+      id: '/api/cron/manager-chat-prune'
+      path: '/api/cron/manager-chat-prune'
+      fullPath: '/api/cron/manager-chat-prune'
+      preLoaderRoute: typeof ApiCronManagerChatPruneRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/robokassa/success': {
-      id: '/api/public/robokassa/success'
-      path: '/api/public/robokassa/success'
-      fullPath: '/api/public/robokassa/success'
-      preLoaderRoute: typeof ApiPublicRobokassaSuccessRouteImport
+    '/api/cron/misc-retention': {
+      id: '/api/cron/misc-retention'
+      path: '/api/cron/misc-retention'
+      fullPath: '/api/cron/misc-retention'
+      preLoaderRoute: typeof ApiCronMiscRetentionRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/robokassa/result': {
-      id: '/api/public/robokassa/result'
-      path: '/api/public/robokassa/result'
-      fullPath: '/api/public/robokassa/result'
-      preLoaderRoute: typeof ApiPublicRobokassaResultRouteImport
+    '/api/cron/zernio-logs-prune': {
+      id: '/api/cron/zernio-logs-prune'
+      path: '/api/cron/zernio-logs-prune'
+      fullPath: '/api/cron/zernio-logs-prune'
+      preLoaderRoute: typeof ApiCronZernioLogsPruneRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/robokassa/fail': {
-      id: '/api/public/robokassa/fail'
-      path: '/api/public/robokassa/fail'
-      fullPath: '/api/public/robokassa/fail'
-      preLoaderRoute: typeof ApiPublicRobokassaFailRouteImport
+    '/api/cron/zernio-retry': {
+      id: '/api/cron/zernio-retry'
+      path: '/api/cron/zernio-retry'
+      fullPath: '/api/cron/zernio-retry'
+      preLoaderRoute: typeof ApiCronZernioRetryRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/mini-app/search': {
-      id: '/api/public/mini-app/search'
-      path: '/api/public/mini-app/search'
-      fullPath: '/api/public/mini-app/search'
-      preLoaderRoute: typeof ApiPublicMiniAppSearchRouteImport
+    '/api/internal/diagnostics': {
+      id: '/api/internal/diagnostics'
+      path: '/api/internal/diagnostics'
+      fullPath: '/api/internal/diagnostics'
+      preLoaderRoute: typeof ApiInternalDiagnosticsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/mini-app/proof': {
-      id: '/api/public/mini-app/proof'
-      path: '/api/public/mini-app/proof'
-      fullPath: '/api/public/mini-app/proof'
-      preLoaderRoute: typeof ApiPublicMiniAppProofRouteImport
+    '/api/internal/health': {
+      id: '/api/internal/health'
+      path: '/api/internal/health'
+      fullPath: '/api/internal/health'
+      preLoaderRoute: typeof ApiInternalHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/notify-owner': {
+      id: '/api/internal/notify-owner'
+      path: '/api/internal/notify-owner'
+      fullPath: '/api/internal/notify-owner'
+      preLoaderRoute: typeof ApiInternalNotifyOwnerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/reload': {
+      id: '/api/internal/reload'
+      path: '/api/internal/reload'
+      fullPath: '/api/internal/reload'
+      preLoaderRoute: typeof ApiInternalReloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/set-webhook': {
+      id: '/api/internal/set-webhook'
+      path: '/api/internal/set-webhook'
+      fullPath: '/api/internal/set-webhook'
+      preLoaderRoute: typeof ApiInternalSetWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/operator-cron/health-snapshot': {
+      id: '/api/operator-cron/health-snapshot'
+      path: '/api/operator-cron/health-snapshot'
+      fullPath: '/api/operator-cron/health-snapshot'
+      preLoaderRoute: typeof ApiOperatorCronHealthSnapshotRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/operator-cron/retention': {
+      id: '/api/operator-cron/retention'
+      path: '/api/operator-cron/retention'
+      fullPath: '/api/operator-cron/retention'
+      preLoaderRoute: typeof ApiOperatorCronRetentionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/operator-cron/subscriptions': {
+      id: '/api/operator-cron/subscriptions'
+      path: '/api/operator-cron/subscriptions'
+      fullPath: '/api/operator-cron/subscriptions'
+      preLoaderRoute: typeof ApiOperatorCronSubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mini-app/product/$productId': {
+      id: '/mini-app/product/$productId'
+      path: '/product/$productId'
+      fullPath: '/mini-app/product/$productId'
+      preLoaderRoute: typeof MiniAppProductProductIdRouteImport
+      parentRoute: typeof MiniAppRoute
+    }
+    '/operator/_authed/': {
+      id: '/operator/_authed/'
+      path: '/'
+      fullPath: '/operator/'
+      preLoaderRoute: typeof OperatorAuthedIndexRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
+    '/operator/_authed/$botId': {
+      id: '/operator/_authed/$botId'
+      path: '/$botId'
+      fullPath: '/operator/$botId'
+      preLoaderRoute: typeof OperatorAuthedBotIdRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
+    '/operator/_authed/broadcast': {
+      id: '/operator/_authed/broadcast'
+      path: '/broadcast'
+      fullPath: '/operator/broadcast'
+      preLoaderRoute: typeof OperatorAuthedBroadcastRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
+    '/operator/_authed/journal': {
+      id: '/operator/_authed/journal'
+      path: '/journal'
+      fullPath: '/operator/journal'
+      preLoaderRoute: typeof OperatorAuthedJournalRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
+    '/operator/_authed/onboard': {
+      id: '/operator/_authed/onboard'
+      path: '/onboard'
+      fullPath: '/operator/onboard'
+      preLoaderRoute: typeof OperatorAuthedOnboardRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
+    '/operator/_authed/requests': {
+      id: '/operator/_authed/requests'
+      path: '/requests'
+      fullPath: '/operator/requests'
+      preLoaderRoute: typeof OperatorAuthedRequestsRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
+    '/api/admin/file/$': {
+      id: '/api/admin/file/$'
+      path: '/api/admin/file/$'
+      fullPath: '/api/admin/file/$'
+      preLoaderRoute: typeof ApiAdminFileSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/img/$': {
+      id: '/api/public/img/$'
+      path: '/api/public/img/$'
+      fullPath: '/api/public/img/$'
+      preLoaderRoute: typeof ApiPublicImgSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/mini-app/cart': {
+      id: '/api/public/mini-app/cart'
+      path: '/api/public/mini-app/cart'
+      fullPath: '/api/public/mini-app/cart'
+      preLoaderRoute: typeof ApiPublicMiniAppCartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/mini-app/checkout': {
+      id: '/api/public/mini-app/checkout'
+      path: '/api/public/mini-app/checkout'
+      fullPath: '/api/public/mini-app/checkout'
+      preLoaderRoute: typeof ApiPublicMiniAppCheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/mini-app/library': {
@@ -1470,32 +1421,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMiniAppOrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/mini-app/checkout': {
-      id: '/api/public/mini-app/checkout'
-      path: '/api/public/mini-app/checkout'
-      fullPath: '/api/public/mini-app/checkout'
-      preLoaderRoute: typeof ApiPublicMiniAppCheckoutRouteImport
+    '/api/public/mini-app/proof': {
+      id: '/api/public/mini-app/proof'
+      path: '/api/public/mini-app/proof'
+      fullPath: '/api/public/mini-app/proof'
+      preLoaderRoute: typeof ApiPublicMiniAppProofRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/mini-app/cart': {
-      id: '/api/public/mini-app/cart'
-      path: '/api/public/mini-app/cart'
-      fullPath: '/api/public/mini-app/cart'
-      preLoaderRoute: typeof ApiPublicMiniAppCartRouteImport
+    '/api/public/mini-app/search': {
+      id: '/api/public/mini-app/search'
+      path: '/api/public/mini-app/search'
+      fullPath: '/api/public/mini-app/search'
+      preLoaderRoute: typeof ApiPublicMiniAppSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/img/$': {
-      id: '/api/public/img/$'
-      path: '/api/public/img/$'
-      fullPath: '/api/public/img/$'
-      preLoaderRoute: typeof ApiPublicImgSplatRouteImport
+    '/api/public/robokassa/fail': {
+      id: '/api/public/robokassa/fail'
+      path: '/api/public/robokassa/fail'
+      fullPath: '/api/public/robokassa/fail'
+      preLoaderRoute: typeof ApiPublicRobokassaFailRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/admin/file/$': {
-      id: '/api/admin/file/$'
-      path: '/api/admin/file/$'
-      fullPath: '/api/admin/file/$'
-      preLoaderRoute: typeof ApiAdminFileSplatRouteImport
+    '/api/public/robokassa/result': {
+      id: '/api/public/robokassa/result'
+      path: '/api/public/robokassa/result'
+      fullPath: '/api/public/robokassa/result'
+      preLoaderRoute: typeof ApiPublicRobokassaResultRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/robokassa/success': {
+      id: '/api/public/robokassa/success'
+      path: '/api/public/robokassa/success'
+      fullPath: '/api/public/robokassa/success'
+      preLoaderRoute: typeof ApiPublicRobokassaSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/shop/handoff': {
+      id: '/api/public/shop/handoff'
+      path: '/api/public/shop/handoff'
+      fullPath: '/api/public/shop/handoff'
+      preLoaderRoute: typeof ApiPublicShopHandoffRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/telegram/ensure-webhook': {
+      id: '/api/public/telegram/ensure-webhook'
+      path: '/api/public/telegram/ensure-webhook'
+      fullPath: '/api/public/telegram/ensure-webhook'
+      preLoaderRoute: typeof ApiPublicTelegramEnsureWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/telegram/webhook': {
+      id: '/api/public/telegram/webhook'
+      path: '/api/public/telegram/webhook'
+      fullPath: '/api/public/telegram/webhook'
+      preLoaderRoute: typeof ApiPublicTelegramWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/telegram/webhook-vip': {
+      id: '/api/public/telegram/webhook-vip'
+      path: '/api/public/telegram/webhook-vip'
+      fullPath: '/api/public/telegram/webhook-vip'
+      preLoaderRoute: typeof ApiPublicTelegramWebhookVipRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/vip/cron': {
+      id: '/api/public/vip/cron'
+      path: '/api/public/vip/cron'
+      fullPath: '/api/public/vip/cron'
+      preLoaderRoute: typeof ApiPublicVipCronRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/zernio/webhook': {
+      id: '/api/public/zernio/webhook'
+      path: '/api/public/zernio/webhook'
+      fullPath: '/api/public/zernio/webhook'
+      preLoaderRoute: typeof ApiPublicZernioWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

@@ -18,9 +18,6 @@ jobs:
 
       - run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
-
       - name: Lint
         run: npm run lint
 
@@ -45,3 +42,10 @@ jobs:
           # четырёх выше — без него самый важный тест (изоляция арендаторов)
           # тихо пропускал себя даже при настроенных остальных секретах.
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+
+      # Идёт последним и намеренно: новая high/critical CVE в транзитивной
+      # зависимости не должна прятать результаты lint/typecheck/build/test —
+      # раньше audit стоял первым и 35 запусков подряд падали здесь, ни разу
+      # не дав увидеть, проходят ли остальные проверки.
+      - name: Audit dependencies
+        run: npm audit --audit-level=high

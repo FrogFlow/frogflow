@@ -1,0 +1,26 @@
+diff --git a/node_modules/@tanstack/router-generator/dist/cjs/generator.cjs b/node_modules/@tanstack/router-generator/dist/cjs/generator.cjs
+index 2f22566..76597b6 100644
+--- a/node_modules/@tanstack/router-generator/dist/cjs/generator.cjs
++++ b/node_modules/@tanstack/router-generator/dist/cjs/generator.cjs
+@@ -299,7 +299,7 @@ var Generator = class Generator {
+ 				const last = segments[segments.length - 1] ?? "";
+ 				return indexTokenSegmentRegex.test(last) ? -1 : 1;
+ 			},
+-			(d) => d
++			(d) => d.routePath ?? ""
+ 		]);
+ 		const routeImports = [];
+ 		const virtualRouteNodes = [];
+diff --git a/node_modules/@tanstack/router-generator/dist/esm/generator.js b/node_modules/@tanstack/router-generator/dist/esm/generator.js
+index 1262567..f445d0b 100644
+--- a/node_modules/@tanstack/router-generator/dist/esm/generator.js
++++ b/node_modules/@tanstack/router-generator/dist/esm/generator.js
+@@ -295,7 +295,7 @@ var Generator = class Generator {
+ 				const last = segments[segments.length - 1] ?? "";
+ 				return indexTokenSegmentRegex.test(last) ? -1 : 1;
+ 			},
+-			(d) => d
++			(d) => d.routePath ?? ""
+ 		]);
+ 		const routeImports = [];
+ 		const virtualRouteNodes = [];
