@@ -130,16 +130,25 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
           if (value) backQuery.set(key, value.slice(0, 100));
         }
         const { listPublicProductReviews } = await import("@/lib/reviews.server");
-        const [relatedHtml, reviews] = await Promise.all([
+        const { getCachedBotUrl } = await import("@/lib/bot-url.server");
+        const [relatedHtml, reviews, botUrl] = await Promise.all([
           loadRelatedMiniAppProducts(p, countryCode, locale, backQuery.toString()),
           listPublicProductReviews(p.id, 5),
+          getCachedBotUrl(),
         ]);
+        // Обычная страница Mini App (location.href) не открывается вне
+        // авторизованной сессии Telegram WebView — получатель ссылки сразу
+        // видел "сессия не готова". /start p_<id> — рабочий deep-link: Mini
+        // App здесь настроен через Menu Button, у которого нет своего
+        // t.me/…?startapp= входа, поэтому карточка товара показывается
+        // ботом после выбора языка (см. applyLocaleSelection, bot.server.ts).
+        const shareUrl = botUrl ? `${botUrl}?start=p_${encodeURIComponent(p.id)}` : null;
         const productBody = `
           <header>
             <a class="back-link" href="/mini-app?${esc(backQuery.toString())}">${esc(s.backToCatalog)}</a>
             <div class="header-row">
               <h1>${esc(p.name)}</h1>
-              <button type="button" class="header-link" data-share="${esc(p.name)}" style="border:none;background:none;cursor:pointer">${esc(s.shareMaterial)}</button>
+              <button type="button" class="header-link" data-share="${esc(p.name)}"${shareUrl ? ` data-share-url="${esc(shareUrl)}"` : ""} style="border:none;background:none;cursor:pointer">${esc(s.shareMaterial)}</button>
             </div>
           </header>
           <div class="pdp-gallery">${gallery}</div>

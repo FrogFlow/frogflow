@@ -1157,7 +1157,11 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     var shareBtn = el.closest("[data-share]");
     if (shareBtn) {
       var shareText = shareBtn.getAttribute("data-share") || "";
-      var shareUrl = location.href;
+      // data-share-url — рабочий t.me/<bot>?start=p_<id> deep-link (сервер
+      // строит его, зная username бота); location.href — запасной вариант,
+      // если username получить не удалось, но он открывается только внутри
+      // уже авторизованной сессии Telegram WebView.
+      var shareUrl = shareBtn.getAttribute("data-share-url") || location.href;
       e.preventDefault();
       try {
         bindTelegram();

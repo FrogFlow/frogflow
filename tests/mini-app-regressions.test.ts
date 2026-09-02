@@ -258,6 +258,33 @@ describe("Mini App production regressions", () => {
     expect(rateBlock).not.toContain('reviewsEnabled && order.status === "delivered" && !physical');
   });
 
+  /**
+   * Кнопка "Поделиться" раньше рассылала location.href — обычный URL
+   * страницы Mini App, который открывается только внутри уже авторизованной
+   * сессии Telegram WebView; у получателя ссылки сразу падало "сессия не
+   * готова". Mini App здесь настроен через Menu Button (нет своего
+   * t.me/…?startapp= входа), поэтому рабочая ссылка — обычный /start
+   * deep-link (t.me/<bot>?start=p_<id>), а карточка товара показывается
+   * ботом уже после выбора языка.
+   */
+  it("shares a working t.me deep link instead of the raw Mini App page URL", () => {
+    const pdp = source("src/routes/mini-app.product.$productId.ts");
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    const bot = source("src/lib/bot.server.ts");
+    expect(pdp).toContain("getCachedBotUrl");
+    expect(pdp).toContain("?start=p_");
+    expect(pdp).toContain("data-share-url");
+    expect(runtime).toContain('getAttribute("data-share-url") || location.href');
+    expect(bot).toContain('startPayload.startsWith("p_")');
+    expect(bot).toContain("pending_start_product_id");
+    const applyLocale = bot.slice(
+      bot.indexOf("async function applyLocaleSelection"),
+      bot.indexOf("function legalInlineKeyboard"),
+    );
+    expect(applyLocale).toContain("pending_start_product_id");
+    expect(applyLocale).toContain("showProduct(chat_id, sharedProductId");
+  });
+
   it("ships a purchased-materials library, sort chips and bottom tabs", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const catalog = source("src/lib/mini-app-catalog.server.ts");

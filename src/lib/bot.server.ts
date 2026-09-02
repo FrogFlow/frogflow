@@ -179,6 +179,8 @@ type BotUser = {
     checkout_fulfillment_note?: string;
     /** После переноса корзины с веб-витрины — запустить оформление после выбора языка. */
     web_handoff_pending_checkout?: boolean;
+    /** Deep-link "Поделиться" из Mini App (/start p_<id>) — показать карточку товара после выбора языка. */
+    pending_start_product_id?: string;
   } | null;
 };
 
@@ -1528,6 +1530,12 @@ async function applyLocaleSelection(
   void import("./mini-app.server").then(({ syncMiniAppMenuButton }) =>
     syncMiniAppMenuButton(chat_id, botCopy[locale].miniAppShop),
   );
+
+  if (nextState.pending_start_product_id) {
+    const { pending_start_product_id: sharedProductId, ...restShare } = nextState;
+    await setState(from_id, restShare);
+    await showProduct(chat_id, sharedProductId, nextState.country_code, locale);
+  }
 
   if (nextState.web_handoff_pending_checkout) {
     const { web_handoff_pending_checkout: _drop, ...restHandoff } = nextState;
@@ -5265,10 +5273,18 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
         console.warn("[bot] web handoff claim", { telegram_id: from.id, claimResult, token });
       }
     }
+    // Deep-link из кнопки "Поделиться" в Mini App (/start p_<productId>) —
+    // Mini App работает только через Menu Button, у которого нет своего
+    // t.me/…?startapp= входа, поэтому шаринг ведёт сюда, в обычный /start,
+    // а карточка товара показывается после выбора языка (см. applyLocaleSelection).
+    const pendingStartProductId = startPayload.startsWith("p_")
+      ? startPayload.slice(2).trim() || undefined
+      : undefined;
     await setState(from.id, {
       ...user.state,
       mode: "idle",
       web_handoff_pending_checkout: webHandoffPendingCheckout,
+      pending_start_product_id: pendingStartProductId,
     });
 
     // Разовая настройка бота, не имеет отношения к языку покупателя —
