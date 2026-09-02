@@ -95,6 +95,8 @@ describe("Mini App physical catalog cards", () => {
     const html = renderMiniAppProductCard(cake, undefined, false, "ru");
     expect(html).toContain("card-lead");
     expect(html).toContain("Готовим 2 дн.");
+    expect(html).toContain("card-footer");
+    expect(html.indexOf("card-footer")).toBeLessThan(html.indexOf("add-btn"));
   });
 
   it("uses a bakery placeholder on confectionery deploys", () => {

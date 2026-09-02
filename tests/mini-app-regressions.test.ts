@@ -191,6 +191,14 @@ describe("Mini App production regressions", () => {
     expect(cart).toContain("quantityLocked");
   });
 
+  it("pins catalog add-to-cart buttons to a shared card footer", () => {
+    const page = source("src/lib/mini-app-page.server.ts");
+    const catalog = source("src/lib/mini-app-catalog.server.ts");
+    expect(page).toContain("height: 100%");
+    expect(page).toContain(".card-footer { margin-top: auto");
+    expect(catalog).toContain('class="card-footer"');
+  });
+
   it("does not resend files for physical orders", () => {
     const orders = source("src/lib/orders.server.ts");
     const runtime = source("src/lib/mini-app-runtime.ts");

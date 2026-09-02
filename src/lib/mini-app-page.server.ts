@@ -155,6 +155,9 @@ export function wrapMiniAppPage(
       border-radius: 14px;
       overflow: hidden;
       border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     }
     .card.out-of-stock { opacity: 0.65; }
     .thumb {
@@ -163,11 +166,26 @@ export function wrapMiniAppPage(
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
     }
     .thumb img { width: 100%; height: 100%; object-fit: cover; }
     .thumb-link { text-decoration: none; color: inherit; display: block; }
-    .card-body { padding: 0.65rem; }
-    .card-name { font-weight: 600; font-size: 0.9rem; line-height: 1.3; }
+    .card-body {
+      padding: 0.65rem;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    .card-name {
+      font-weight: 600;
+      font-size: 0.9rem;
+      line-height: 1.3;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
     .card-link { color: inherit; text-decoration: none; }
     .card-desc {
       font-size: 0.75rem;
@@ -178,7 +196,8 @@ export function wrapMiniAppPage(
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
-    .card-price { font-weight: 700; margin-top: 0.35rem; color: var(--link); }
+    .card-footer { margin-top: auto; padding-top: 0.35rem; }
+    .card-price { font-weight: 700; color: var(--link); }
     .card-oos { font-size: 0.75rem; color: #c0392b; margin-top: 0.25rem; }
     .card-lead { font-size: 0.75rem; color: var(--hint); margin-top: 0.25rem; }
     .card-langs { font-size: 0.9rem; margin-top: 0.3rem; letter-spacing: 0.04em; }

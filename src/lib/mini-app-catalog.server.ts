@@ -357,8 +357,10 @@ export function renderMiniAppProductCard(
       ${p.description ? `<div class="card-desc">${esc(p.description)}</div>` : ""}
       ${renderMiniAppLangBadges(p)}
       ${renderMiniAppLeadBadge(p, locale)}
-      ${priceLabel ? `<div class="card-price">${esc(priceLabel)}</div>` : ""}
-      ${actionsHtml}
+      <div class="card-footer">
+        ${priceLabel ? `<div class="card-price">${esc(priceLabel)}</div>` : ""}
+        ${actionsHtml}
+      </div>
     </div>
   </div>`;
 }
