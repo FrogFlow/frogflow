@@ -27,7 +27,6 @@ import {
   SMART_SEARCH_DAILY_LIMIT,
   formatUsd,
   parseDailyCount,
-  parseDailySpend,
 } from "@/lib/smart-search-cost";
 
 export const Route = createFileRoute("/admin/settings")({
@@ -78,7 +77,6 @@ const copy: Record<
     smartSearchLastError: (detail: string) => string;
     smartSearchUsage: (used: number, limit: number) => string;
     smartSearchUsageHint: string;
-    smartSearchTokenSpend: (usd: string) => string;
     smartSearchRateSpend: (rate: string, usd: string) => string;
     webStorefrontTitle: string;
     webStorefrontHint: string;
@@ -175,7 +173,6 @@ const copy: Record<
     smartSearchUsage: (used, limit) => `Сегодня: ${used} из ${limit} умных поисков`,
     smartSearchUsageHint:
       "Считаются запросы, по которым обычный поиск ничего не нашёл — в боте и в Mini App.",
-    smartSearchTokenSpend: (usd) => `По токенам Anthropic: ${usd}`,
     smartSearchRateSpend: (rate, usd) => `По ставке ${rate} / запрос: ${usd}`,
     webStorefrontTitle: "Публичная веб-витрина каталога",
     webStorefrontHint:
@@ -279,7 +276,6 @@ const copy: Record<
     smartSearchUsage: (used, limit) => `Бүгін: ${used} / ${limit} ақылды іздеу`,
     smartSearchUsageHint:
       "Қарапайым іздеу ештеңе таппаған сұраулар саналады — ботта және Mini App-та.",
-    smartSearchTokenSpend: (usd) => `Anthropic токендері бойынша: ${usd}`,
     smartSearchRateSpend: (rate, usd) => `${rate} / сұрау мөлшерлемесімен: ${usd}`,
     webStorefrontTitle: "Каталогтың ашық веб-витринасы",
     webStorefrontHint:
@@ -382,7 +378,6 @@ const copy: Record<
     smartSearchUsage: (used, limit) => `Today: ${used} of ${limit} smart searches`,
     smartSearchUsageHint:
       "Counts queries where regular search found nothing — in the bot and Mini App.",
-    smartSearchTokenSpend: (usd) => `Anthropic tokens: ${usd}`,
     smartSearchRateSpend: (rate, usd) => `At ${rate} / request: ${usd}`,
     webStorefrontTitle: "Public catalog storefront",
     webStorefrontHint:
@@ -487,7 +482,6 @@ const copy: Record<
     smartSearchUsage: (used, limit) => `Bugun: ${used} / ${limit} aqlli qidiruv`,
     smartSearchUsageHint:
       "Oddiy qidiruv hech narsa topmagan so‘rovlar sanaladi — botda va Mini App’da.",
-    smartSearchTokenSpend: (usd) => `Anthropic tokenlari: ${usd}`,
     smartSearchRateSpend: (rate, usd) => `${rate} / so‘rov stavkasi: ${usd}`,
     webStorefrontTitle: "Katalogning ochiq veb-vitrinasi",
     webStorefrontHint:
@@ -1210,11 +1204,6 @@ function SettingsPage() {
               {tr.smartSearchUsage(
                 parseDailyCount(settings.data?.smart_search_daily_count),
                 SMART_SEARCH_DAILY_LIMIT,
-              )}
-            </p>
-            <p className="text-sm">
-              {tr.smartSearchTokenSpend(
-                formatUsd(parseDailySpend(settings.data?.smart_search_daily_spend).usd),
               )}
             </p>
             <p className="text-sm">
