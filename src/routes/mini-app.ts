@@ -94,7 +94,7 @@ export const Route = createFileRoute("/mini-app")({
                   }),
                 )
                 .join("")
-            : `<div class="empty">${esc(s.emptyCatalog)}</div>`;
+            : `<div class="empty">${esc(searchQuery ? s.searchEmpty : s.emptyCatalog)}</div>`;
 
         const searchHtml = `<form class="catalog-search" action="/mini-app" method="get">
           <input type="hidden" name="lang" value="${esc(locale)}" />

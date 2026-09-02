@@ -1069,6 +1069,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   });
 
   var catalogRequest = 0;
+  var smartSearchStarted = 0;
   var searchTimer = null;
   function replaceNode(selector, nextDoc) {
     var current = document.querySelector(selector);
@@ -1085,34 +1086,68 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       if (selector === "#mini-categories" && searchBox) searchBox.after(incoming.cloneNode(true));
     }
   }
+  function visibleCatalogCards() {
+    return document.querySelectorAll(".grid .card:not([hidden])");
+  }
+  function showSearchStatus(text) {
+    var grid = document.querySelector(".grid");
+    if (!grid) return;
+    var empty = grid.querySelector(".empty");
+    if (!empty) {
+      empty = document.createElement("div");
+      empty.className = "empty";
+      empty.setAttribute("data-search-empty", "1");
+      grid.appendChild(empty);
+    }
+    empty.hidden = false;
+    empty.textContent = text;
+  }
   function maybeSmartSearch(search, requestId) {
     var url = new URL(search, location.origin);
     var q = (url.searchParams.get("q") || "").trim();
-    if (!q || !initData()) return;
-    if (document.querySelectorAll(".grid .card").length) return;
-    showToast(t("searchingDeeper"));
-    fetch("/api/public/mini-app/search", {
-      method: "POST",
-      headers: apiHeaders(),
-      body: JSON.stringify({
-        q: q,
-        category: url.searchParams.get("category") || "",
-        country: url.searchParams.get("country") || "",
-        lang: url.searchParams.get("lang") || "",
-      }),
-    })
-      .then(parseResponse)
-      .then(function (res) {
-        if (requestId !== catalogRequest) return;
-        if (!res.ok || !res.d || !res.d.html) return;
-        if (!res.d.total) return;
-        var grid = document.querySelector(".grid");
-        if (grid) grid.innerHTML = res.d.html;
-        var subtitle = document.querySelector(".subtitle");
-        if (subtitle) subtitle.textContent = res.d.total ? String(res.d.total) : "";
-        setCartEnabled(!!initData());
+    if (!q || !document.querySelector(".catalog-search") || visibleCatalogCards().length) return;
+    if (smartSearchStarted === requestId) return;
+    smartSearchStarted = requestId;
+    var tries = 0;
+    function start() {
+      if (requestId !== catalogRequest) return;
+      if (visibleCatalogCards().length) return;
+      if (!initData()) {
+        tries += 1;
+        if (tries >= 100) return;
+        setTimeout(start, 100);
+        return;
+      }
+      showSearchStatus(t("searchingDeeper"));
+      showToast(t("searchingDeeper"));
+      fetch("/api/public/mini-app/search", {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          q: q,
+          country: url.searchParams.get("country") || "",
+          lang: url.searchParams.get("lang") || "",
+        }),
       })
-      .catch(function () {});
+        .then(parseResponse)
+        .then(function (res) {
+          if (requestId !== catalogRequest) return;
+          if (res.ok && res.d && res.d.html && res.d.total) {
+            var grid = document.querySelector(".grid");
+            if (grid) grid.innerHTML = res.d.html;
+            var subtitle = document.querySelector(".subtitle");
+            if (subtitle) subtitle.textContent = String(res.d.total);
+            setCartEnabled(!!initData());
+            return;
+          }
+          showSearchStatus(t("searchEmpty"));
+        })
+        .catch(function () {
+          if (requestId !== catalogRequest) return;
+          showSearchStatus(t("searchEmpty"));
+        });
+    }
+    start();
   }
   function loadCatalog(search) {
     var id = ++catalogRequest;
@@ -1294,6 +1329,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         });
         loadOrders();
       }
+      maybeSmartSearch(location.pathname + location.search, catalogRequest);
       return;
     }
     bootAttempts += 1;

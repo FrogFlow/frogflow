@@ -127,6 +127,12 @@ describe("Mini App production regressions", () => {
     expect(runtime).toContain('querySelector(".catalog-search")');
     expect(runtime).toContain("e.preventDefault()");
     expect(runtime).toContain("location.hash");
+    expect(runtime).toContain("maybeSmartSearch(location.pathname + location.search");
+    expect(runtime).toContain(".card:not([hidden])");
+    expect(runtime).toContain('showSearchStatus(t("searchingDeeper"))');
+    const search = source("src/lib/mini-app-search.server.ts");
+    expect(search).not.toContain("descendantCategoryIds");
+    expect(search).toContain("весь видимый каталог");
   });
 
   it("opens Kaspi and other payment URLs from manual instructions", () => {

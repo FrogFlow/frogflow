@@ -7,8 +7,7 @@ import {
   type MiniAppProduct,
   type MiniAppProductIndexRow,
 } from "./mini-app-catalog.server";
-import { resolveMiniAppLocale } from "./mini-app-i18n";
-import { descendantCategoryIds, parseMiniAppCatalogSettings } from "./category-tree";
+import { miniAppStrings, resolveMiniAppLocale } from "./mini-app-i18n";
 
 export async function miniAppSmartSearchHtml(params: {
   telegramId: number;
@@ -19,32 +18,20 @@ export async function miniAppSmartSearchHtml(params: {
 }): Promise<{ html: string; total: number; usedSmartSearch: boolean }> {
   const locale = resolveMiniAppLocale(params.locale);
   const query = params.query.trim().slice(0, 100);
-  const categoryId = (params.categoryId ?? "").trim();
-  const empty = `<div class="empty">${escapeMiniAppHtml("—")}</div>`;
+  const empty = `<div class="empty">${escapeMiniAppHtml(miniAppStrings(locale).searchEmpty)}</div>`;
   if (!query) return { html: empty, total: 0, usedSmartSearch: false };
 
   const { isSmartSearchEnabled, consumeSmartSearchQuota, smartSearchProductIds } =
     await import("./smart-search.server");
-  if (!(await isSmartSearchEnabled()) || !(await consumeSmartSearchQuota(params.telegramId))) {
+  if (!(await isSmartSearchEnabled())) {
     return { html: empty, total: 0, usedSmartSearch: false };
   }
 
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { fetchAll } = await import("./csv");
   const { hasModule } = await import("./modules/modules.server");
-  const [
-    { data: hiddenCats },
-    { data: cats },
-    { data: catalogSetting },
-    productIndex,
-    stockEnabled,
-  ] = await Promise.all([
+  const [{ data: hiddenCats }, productIndex, stockEnabled] = await Promise.all([
     supabaseAdmin.from("categories").select("id").eq("is_visible", false),
-    supabaseAdmin
-      .from("categories")
-      .select("id, name, parent_id, sort_order, is_visible")
-      .eq("is_visible", true),
-    supabaseAdmin.from("app_settings").select("value").eq("key", "mini_app_catalog").maybeSingle(),
     fetchAll<MiniAppProductIndexRow>(
       (from, to) =>
         supabaseAdmin
@@ -59,15 +46,15 @@ export async function miniAppSmartSearchHtml(params: {
     hasModule("stock"),
   ]);
   const hiddenIds = new Set((hiddenCats ?? []).map((row) => row.id as string));
-  const catalogSettings = parseMiniAppCatalogSettings(catalogSetting?.value);
-  const categoryMatchIds =
-    categoryId && catalogSettings.layout !== "flat"
-      ? descendantCategoryIds(categoryId, cats ?? [])
-      : undefined;
-  const visibleIds = new Set(
-    filterMiniAppProductIds(productIndex, hiddenIds, "", categoryId, categoryMatchIds),
-  );
+  // Как в боте: умный поиск смотрит весь видимый каталог, а не текущую
+  // папку Mini App. Иначе запрос из категории «Математика» не находит
+  // подарок из другой ветки и выглядит как «умный поиск сломан».
+  const visibleIds = new Set(filterMiniAppProductIds(productIndex, hiddenIds));
   const candidates = productIndex.filter((product) => visibleIds.has(product.id));
+  if (!candidates.length) return { html: empty, total: 0, usedSmartSearch: false };
+  if (!(await consumeSmartSearchQuota(params.telegramId))) {
+    return { html: empty, total: 0, usedSmartSearch: false };
+  }
   const ids = await smartSearchProductIds(
     query,
     candidates.map((product) => ({
@@ -96,7 +83,6 @@ export async function miniAppSmartSearchHtml(params: {
   const catalogParams = new URLSearchParams({ lang: locale });
   if (params.countryCode) catalogParams.set("country", params.countryCode);
   catalogParams.set("q", query);
-  if (categoryId) catalogParams.set("category", categoryId);
   const html = ordered
     .map((product) =>
       renderMiniAppProductCard(product, priced.get(product.id), stockEnabled, locale, {
