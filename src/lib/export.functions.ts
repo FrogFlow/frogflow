@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
 import { toCsv, fetchAll } from "./csv";
-import { appTimeZone, formatDateTimeIso } from "./datetime";
+import { appTimeZone, formatDateTimeIso, zonedDateTimeToUtcIso } from "./datetime";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -95,10 +95,14 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
         )
         .order("created_at", { ascending: false })
         .range(from, to);
-      if (data.from) q = q.gte("created_at", `${data.from}T00:00:00`);
+      // Границы диапазона — в таймзоне магазина, не в UTC: голая строка
+      // без зоны трактуется Postgres как UTC, и для магазина не в UTC
+      // (умолчание Asia/Almaty) это на несколько часов сдвигало реальные
+      // границы дня.
+      if (data.from) q = q.gte("created_at", zonedDateTimeToUtcIso(data.from, "00:00:00", tz));
       // Конец периода включительно: оператор выбирает «по 31 августа», имея в
       // виду весь этот день.
-      if (data.to) q = q.lte("created_at", `${data.to}T23:59:59`);
+      if (data.to) q = q.lte("created_at", zonedDateTimeToUtcIso(data.to, "23:59:59", tz));
       return q;
     }, "заказы");
 
