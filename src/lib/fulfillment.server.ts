@@ -255,21 +255,20 @@ export async function advanceFulfillment(
     console.error(`[fulfillment] notifyOrderCustomer(${to}) failed`, e),
   );
 
-  if (to === "delivered") {
-    // Реферальные награды и баллы сегодня начисляются только на Telegram-
-    // ветке deliverOrder (orders.server.ts) — deliverOrderToWhatsApp/
-    // deliverOrderByEmail их не зовут вовсе. Не расширяем это здесь, только
-    // повторяем то же ограничение, а не молчаливую новую дыру.
-    if (current.platform === "telegram" && current.telegram_id) {
-      const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
-      await rewardReferralIfFirstDelivery(current.telegram_id).catch((e) =>
-        console.error("[fulfillment] rewardReferralIfFirstDelivery failed", e),
-      );
-      const { awardPointsForDelivery } = await import("./loyalty.server");
-      await awardPointsForDelivery(orderId, current.telegram_id).catch((e) =>
-        console.error("[fulfillment] awardPointsForDelivery failed", e),
-      );
-    }
+  if (to === "delivered" && current.telegram_id) {
+    // Раньше это начислялось только для platform === "telegram" — тем же
+    // ограничением, что deliverOrderToWhatsApp/deliverOrderByEmail (orders.server.ts)
+    // имели по отдельной причине (сами не звали эти функции вовсе). Теперь
+    // оба места закрыты одинаково — покупатель физического заказа из
+    // Instagram/WhatsApp получает награду наравне с Telegram.
+    const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
+    await rewardReferralIfFirstDelivery(current.telegram_id).catch((e) =>
+      console.error("[fulfillment] rewardReferralIfFirstDelivery failed", e),
+    );
+    const { awardPointsForDelivery } = await import("./loyalty.server");
+    await awardPointsForDelivery(orderId, current.telegram_id).catch((e) =>
+      console.error("[fulfillment] awardPointsForDelivery failed", e),
+    );
   }
 
   return { ok: true, status: to };

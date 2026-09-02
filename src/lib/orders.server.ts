@@ -1074,6 +1074,7 @@ async function deliverOrderToWhatsApp(
     order_no?: number | null;
     display_no?: number | null;
     user_key?: string | null;
+    telegram_id: number;
   },
   items: OrderItem[],
 ) {
@@ -1182,6 +1183,19 @@ async function deliverOrderToWhatsApp(
       .from("orders")
       .update({ status: "delivered", delivery_index: items.length })
       .eq("id", orderId);
+    // Реферальная награда и баллы лояльности (Блок 11) — раньше начислялись
+    // только на Telegram-ветке deliverOrder; покупатель из WhatsApp с тем же
+    // доставленным заказом не получал ничего. telegram_id здесь — тот же
+    // синтетический идентификатор, которым уже ключуются рефералы/баллы
+    // этого покупателя во всей системе, платформа роли не играет.
+    const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
+    await rewardReferralIfFirstDelivery(order.telegram_id).catch((e) =>
+      console.error("[orders] rewardReferralIfFirstDelivery failed", e),
+    );
+    const { awardPointsForDelivery } = await import("./loyalty.server");
+    await awardPointsForDelivery(orderId, order.telegram_id).catch((e) =>
+      console.error("[orders] awardPointsForDelivery failed", e),
+    );
   } else {
     const parts: string[] = [];
     if (sent < files.length) parts.push(`ушло ${sent} из ${files.length} вложений`);
@@ -1236,6 +1250,7 @@ async function deliverOrderByEmail(
     order_no?: number | null;
     display_no?: number | null;
     user_key?: string | null;
+    telegram_id: number;
   },
   items: OrderItem[],
 ) {
@@ -1355,6 +1370,18 @@ async function deliverOrderByEmail(
     .from("orders")
     .update({ status: "delivered", delivery_index: items.length })
     .eq("id", orderId);
+
+  // Реферальная награда и баллы лояльности (Блок 11) — см. тот же комментарий
+  // в deliverOrderToWhatsApp; покупатель из Instagram (доставка письмом) не
+  // получал их вовсе, хотя ключ (telegram_id, синтетический) тот же самый.
+  const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
+  await rewardReferralIfFirstDelivery(order.telegram_id).catch((e) =>
+    console.error("[orders] rewardReferralIfFirstDelivery failed", e),
+  );
+  const { awardPointsForDelivery } = await import("./loyalty.server");
+  await awardPointsForDelivery(orderId, order.telegram_id).catch((e) =>
+    console.error("[orders] awardPointsForDelivery failed", e),
+  );
 
   // `alreadyDelivered` держим в форме ответа намеренно: его читают и админка,
   // и бот, и без него ветка почты выпала бы из общего типа результата.
