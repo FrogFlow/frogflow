@@ -3322,14 +3322,17 @@ async function handlePurchaseFlow(params: {
       await flow.clearDirectFlow(user.user_key);
       try {
         if (order.fulfillment_kind === "physical") {
-          const { acceptOrder, recordPayment } = await import("./fulfillment.server");
+          const { acceptOrder, recordPayment, remainingDueNow } =
+            await import("./fulfillment.server");
           // alreadyAccepted — не задваиваем paid_amount при повторном
-          // срабатывании (Блок 1, находка 1.1).
+          // срабатывании (Блок 1, находка 1.1). remainingDueNow — если
+          // продавец уже внесла сумму вручную до автоприёмки по чеку.
           const result = await acceptOrder(order.id);
           // expectedAmount уже посчитан через amountDueNow() выше — то, что
           // реально проверил OCR (Блок 1, находка 1.4).
-          if (!result.alreadyAccepted) {
-            const paid = await recordPayment(order.id, expectedAmount).catch((e) => {
+          const due = remainingDueNow(expectedAmount, 0);
+          if (!result.alreadyAccepted && due > 0) {
+            const paid = await recordPayment(order.id, due).catch((e) => {
               console.error("[zernio-bot] recordPayment failed", order.id, e);
               return false;
             });

@@ -28,6 +28,9 @@ import type { Locale } from "@/lib/i18n";
 import { useModules } from "@/lib/modules/use-modules";
 import { orderPlatform, type OrderPlatform } from "@/lib/order-platform";
 import { matchesPickupFilter, type PickupFilter } from "@/lib/pickup-filter";
+import { addDaysToIsoDate } from "@/lib/datetime";
+import { useVertical } from "@/lib/verticals/use-vertical";
+import { listDeliveryZones } from "@/lib/delivery-zones.functions";
 
 // Тип чека определяется по расширению сохранённого пути.
 // Фото показываем через <img>, PDF — через <iframe>, прочее — ссылкой на скачивание.
@@ -81,6 +84,9 @@ const copy: Record<
     fulfillmentAddressLabel: string;
     fulfillmentNoteLabel: string;
     deliveryZoneLabel: string;
+    deliveryZoneSelectPlaceholder: string;
+    deliveryZoneRequired: string;
+    deliveryZoneEmpty: string;
     paidAmountLine: (paid: number, total: number, currency: string) => string;
     reject: string;
     resendFiles: string;
@@ -176,6 +182,9 @@ const copy: Record<
     fulfillmentAddressLabel: "Адрес",
     fulfillmentNoteLabel: "Комментарий",
     deliveryZoneLabel: "Зона доставки",
+    deliveryZoneSelectPlaceholder: "Выберите зону",
+    deliveryZoneRequired: "Для доставки выберите зону — от этого зависит сумма доставки.",
+    deliveryZoneEmpty: "Сначала добавьте зону доставки в «Зоны доставки».",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `Оплачено полностью: ${paid} ${currency}`
@@ -280,6 +289,9 @@ const copy: Record<
     fulfillmentAddressLabel: "Мекенжай",
     fulfillmentNoteLabel: "Түсініктеме",
     deliveryZoneLabel: "Жеткізу аймағы",
+    deliveryZoneSelectPlaceholder: "Аймақты таңдаңыз",
+    deliveryZoneRequired: "Жеткізу үшін аймақты таңдаңыз — жеткізу сомасы соған байланысты.",
+    deliveryZoneEmpty: "Алдымен «Жеткізу аймақтары» бөліміне аймақ қосыңыз.",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `Толық төленді: ${paid} ${currency}`
@@ -386,6 +398,9 @@ const copy: Record<
     fulfillmentAddressLabel: "Address",
     fulfillmentNoteLabel: "Note",
     deliveryZoneLabel: "Delivery zone",
+    deliveryZoneSelectPlaceholder: "Select a zone",
+    deliveryZoneRequired: "Pick a delivery zone — the delivery fee depends on it.",
+    deliveryZoneEmpty: "Add a delivery zone under Delivery zones first.",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `Paid in full: ${paid} ${currency}`
@@ -491,6 +506,10 @@ const copy: Record<
     fulfillmentAddressLabel: "Manzil",
     fulfillmentNoteLabel: "Izoh",
     deliveryZoneLabel: "Yetkazib berish zonasi",
+    deliveryZoneSelectPlaceholder: "Zonani tanlang",
+    deliveryZoneRequired:
+      "Yetkazib berish uchun zonani tanlang — yetkazib berish summasi shunga bog‘liq.",
+    deliveryZoneEmpty: "Avval «Yetkazib berish zonalari»ga zona qo‘shing.",
     paidAmountLine: (paid, total, currency) =>
       paid >= total
         ? `To‘liq to‘landi: ${paid} ${currency}`
@@ -564,6 +583,7 @@ const copy: Record<
 function OrdersPage() {
   const { locale } = useAdminLocale();
   const modules = useModules();
+  const { isPhysicalShop } = useVertical();
   const tr = copy[locale];
   const qc = useQueryClient();
   const orders = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
@@ -589,11 +609,13 @@ function OrdersPage() {
 
   /**
    * «Что печём сегодня» — quick-фильтр/сортировка по дате получения
-   * физического заказа (fulfillment_at), Ниши Блок 9 доводка. Показывается
-   * только если у продавца вообще есть физические заказы — на семи живых
-   * digital-клиентах эти кнопки лишние.
+   * физического заказа (fulfillment_at), Ниши Блок 9 доводка. На цифровом
+   * деплое прячем, пока нет ни одного физического заказа. Кондитерская
+   * видит кнопки сразу — иначе пустой каталог не даёт отфильтровать
+   * «Сегодня», когда заказы только появятся.
    */
   const hasPhysicalOrders = allOrders.some((o) => o.fulfillment_kind === "physical");
+  const showPickupFilters = isPhysicalShop || hasPhysicalOrders;
   const [pickupFilter, setPickupFilter] = useState<PickupFilter>("all");
   // en-CA форматирует как YYYY-MM-DD — тот же приём, что todayInAppTZ() в
   // fulfillment.server.ts. Раньше здесь была d.toISOString().slice(0, 10) —
@@ -601,7 +623,7 @@ function OrdersPage() {
   // показывало вчерашние выпечки (Блок 6, находка 6.6).
   const isoDate = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: appTz });
   const todayIso = isoDate(new Date());
-  const tomorrowIso = isoDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  const tomorrowIso = addDaysToIsoDate(todayIso, 1);
   const fulfillmentDateOf = (o: (typeof allOrders)[number]) =>
     o.fulfillment_at ? String(o.fulfillment_at).slice(0, 10) : null;
 
@@ -847,7 +869,15 @@ function OrdersPage() {
     address: string;
     note: string;
     fulfillmentType: "pickup" | "delivery";
+    deliveryZoneId: string;
   } | null>(null);
+
+  const zonesQuery = useQuery({
+    queryKey: ["delivery-zones"],
+    queryFn: () => listDeliveryZones(),
+    enabled: showPickupFilters,
+  });
+  const deliveryZones = zonesQuery.data ?? [];
 
   function onStartEdit(o: {
     id: number;
@@ -855,6 +885,7 @@ function OrdersPage() {
     fulfillment_address: string | null;
     fulfillment_note: string | null;
     fulfillment_type: string | null;
+    delivery_zone_id?: string | null;
   }) {
     setEditing({
       id: o.id,
@@ -862,11 +893,16 @@ function OrdersPage() {
       address: o.fulfillment_address ?? "",
       note: o.fulfillment_note ?? "",
       fulfillmentType: o.fulfillment_type === "delivery" ? "delivery" : "pickup",
+      deliveryZoneId: o.delivery_zone_id ?? "",
     });
   }
 
   async function onSaveEdit() {
     if (!editing) return;
+    if (editing.fulfillmentType === "delivery" && !editing.deliveryZoneId) {
+      toast.error(deliveryZones.length === 0 ? tr.deliveryZoneEmpty : tr.deliveryZoneRequired);
+      return;
+    }
     setBusy(editing.id);
     try {
       await updateOrderFulfillment({
@@ -876,6 +912,7 @@ function OrdersPage() {
           address: editing.address.trim() || null,
           note: editing.note.trim() || null,
           fulfillmentType: editing.fulfillmentType,
+          deliveryZoneId: editing.fulfillmentType === "delivery" ? editing.deliveryZoneId : null,
         },
       });
       qc.invalidateQueries({ queryKey: ["orders"] });
@@ -908,7 +945,7 @@ function OrdersPage() {
         ))}
       </div>
 
-      {hasPhysicalOrders && (
+      {showPickupFilters && (
         <div className="flex flex-wrap gap-2">
           {(
             [
@@ -1089,17 +1126,45 @@ function OrdersPage() {
                       <select
                         className="border rounded-md h-8 px-2 text-sm bg-background"
                         value={editing.fulfillmentType}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const next = e.target.value as "pickup" | "delivery";
                           setEditing({
                             ...editing,
-                            fulfillmentType: e.target.value as "pickup" | "delivery",
-                          })
-                        }
+                            fulfillmentType: next,
+                            deliveryZoneId: next === "pickup" ? "" : editing.deliveryZoneId,
+                          });
+                        }}
                       >
                         <option value="pickup">{tr.fulfillmentTypePickup}</option>
                         <option value="delivery">{tr.fulfillmentTypeDelivery}</option>
                       </select>
                     </div>
+                    {editing.fulfillmentType === "delivery" && (
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground block">
+                          {tr.deliveryZoneLabel}
+                        </label>
+                        {deliveryZones.length === 0 ? (
+                          <p className="text-xs text-destructive">{tr.deliveryZoneEmpty}</p>
+                        ) : (
+                          <select
+                            className="border rounded-md h-8 px-2 text-sm bg-background w-full"
+                            value={editing.deliveryZoneId}
+                            onChange={(e) =>
+                              setEditing({ ...editing, deliveryZoneId: e.target.value })
+                            }
+                          >
+                            <option value="">{tr.deliveryZoneSelectPlaceholder}</option>
+                            {deliveryZones.map((z) => (
+                              <option key={z.id} value={z.id}>
+                                {z.name}
+                                {Number(z.price) > 0 ? ` (+${z.price})` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground block">{tr.dateLabel}</label>
                       <Input

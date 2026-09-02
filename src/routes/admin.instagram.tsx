@@ -2546,12 +2546,9 @@ function AdminInstagramPage() {
           <Card className="max-w-3xl">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <CalendarClock className="w-5 h-5 text-primary" /> Публикация и планировщик
+                <CalendarClock className="w-5 h-5 text-primary" /> {tr.publishTitle}
               </CardTitle>
-              <CardDescription>
-                Feed, Reels, Stories и карусели входят в Instagram-автоматизацию. Для публикации
-                нужны прямые публичные ссылки на файлы.
-              </CardDescription>
+              <CardDescription>{tr.publishDesc}</CardDescription>
             </CardHeader>
             <CardContent>
               <form className="space-y-5" onSubmit={handleCreatePost}>

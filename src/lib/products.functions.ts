@@ -81,11 +81,13 @@ const SaveInput = z.object({
   file_url_kz: z.string().nullable().optional(),
   // Складской учёт (Кейс 4) — null = не отслеживается (безлимитно).
   stock_quantity: z.number().int().min(0).nullable().optional(),
-  // Ниши (Блок 4) — digital (умолчание) выдаётся файлом, physical
-  // изготавливается/выдаётся руками. lead_time_days: NULL/0 = есть в
-  // наличии, N = делается N дней (используется чекаутом для минимальной
-  // даты получения).
-  fulfillment_kind: z.enum(["digital", "physical"]).default("digital"),
+  // Ниши (Блок 4) — digital выдаётся файлом, physical изготавливается
+  // руками. Умолчание — из ниши деплоя (кондитерская → physical), а не
+  // жёсткий digital: иначе товар без поля в форме становится «цифровым»
+  // на кондитерском деплое и в списке орёт «нет файла».
+  fulfillment_kind: z.enum(["digital", "physical"]).optional(),
+  // lead_time_days: NULL/0 = есть в наличии, N = делается N дней (используется
+  // чекаутом для минимальной даты получения).
   lead_time_days: z.number().int().min(0).nullable().optional(),
   image_paths: z.array(z.string()).default([]),
   // A material can be several files/photos (e.g. worksheet pages), not just
@@ -148,6 +150,8 @@ export const saveProduct = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
+    const { currentVerticalDef } = await import("./verticals/vertical.server");
+    const fulfillment_kind = data.fulfillment_kind ?? currentVerticalDef().defaultFulfillment;
     // Складской учёт (Кейс 4) — платный модуль, но сохраняем поле
     // безусловно: тот же приём, что уже у country_prices/kk-материалов в
     // этой же форме — продавец готовит данные заранее, а реальный эффект
@@ -177,7 +181,7 @@ export const saveProduct = createServerFn({ method: "POST" })
           file_url_kz: data.file_url_kz ?? null,
           country_prices: data.country_prices,
           stock_quantity,
-          fulfillment_kind: data.fulfillment_kind,
+          fulfillment_kind,
           lead_time_days,
         })
         .eq("id", productId);
@@ -203,7 +207,7 @@ export const saveProduct = createServerFn({ method: "POST" })
           file_url_kz: data.file_url_kz ?? null,
           country_prices: data.country_prices,
           stock_quantity,
-          fulfillment_kind: data.fulfillment_kind,
+          fulfillment_kind,
           lead_time_days,
         })
         .select("id")

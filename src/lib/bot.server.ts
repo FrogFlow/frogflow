@@ -5075,13 +5075,14 @@ export async function handleUpdate(update: TelegramUpdate) {
           await db()
         )
           .from("orders")
-          .select("order_no, fulfillment_kind, total, status")
+          .select("order_no, fulfillment_kind, total, status, paid_amount")
           .eq("id", orderId)
           .maybeSingle();
         const shownNo = ordRow?.order_no ?? orderId;
 
         if (ordRow?.fulfillment_kind === "physical") {
-          const { acceptOrder, amountDueNow, recordPayment } = await import("./fulfillment.server");
+          const { acceptOrder, amountDueNow, recordPayment, remainingDueNow } =
+            await import("./fulfillment.server");
           try {
             // "awaiting_payment" — покупатель ещё не присылал чек, продавец
             // принимает на доверие: писать в paid_amount нечего (Блок 1,
@@ -5092,19 +5093,25 @@ export async function handleUpdate(update: TelegramUpdate) {
             // alreadyAccepted — двойной тап по той же кнопке (сообщение уже
             // не редактируется второй раз, но карточка могла остаться
             // открытой у двух админов) — не задваиваем paid_amount (находка 1.1).
+            // remainingDueNow — «Внести оплату» в админке до этой кнопки.
             if (!result.alreadyAccepted && hadProof) {
-              const due = await amountDueNow({
-                total: Number(ordRow.total),
-                fulfillment_kind: ordRow.fulfillment_kind,
-              });
-              // recordPayment сама не бросает при исчерпанных попытках CAS —
-              // возвращает false (Блок 1, находка 1.8). .catch() ловит только
-              // исключения, false он пропускал молча.
-              const paid = await recordPayment(orderId, due).catch((e) => {
-                console.error("[bot] recordPayment failed", orderId, e);
-                return false;
-              });
-              if (!paid) console.error("[bot] recordPayment returned false", orderId);
+              const due = remainingDueNow(
+                await amountDueNow({
+                  total: Number(ordRow.total),
+                  fulfillment_kind: ordRow.fulfillment_kind,
+                }),
+                ordRow.paid_amount,
+              );
+              if (due > 0) {
+                // recordPayment сама не бросает при исчерпанных попытках CAS —
+                // возвращает false (Блок 1, находка 1.8). .catch() ловит только
+                // исключения, false он пропускал молча.
+                const paid = await recordPayment(orderId, due).catch((e) => {
+                  console.error("[bot] recordPayment failed", orderId, e);
+                  return false;
+                });
+                if (!paid) console.error("[bot] recordPayment returned false", orderId);
+              }
             }
             await scheduleAdminOrderNotifyDismiss(orderId, clicked);
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
@@ -5419,7 +5426,7 @@ export async function handleUpdate(update: TelegramUpdate) {
       const { data: orderRow } = await sOrder
         .from("orders")
         .select(
-          "id, display_no, status, admin_note, country_code, telegram_id, total, currency, fulfillment_kind",
+          "id, display_no, status, admin_note, country_code, telegram_id, total, currency, fulfillment_kind, paid_amount",
         )
         .eq("id", orderId)
         .maybeSingle();
@@ -5636,19 +5643,24 @@ export async function handleUpdate(update: TelegramUpdate) {
 
         try {
           if (orderRow.fulfillment_kind === "physical") {
-            const { acceptOrder, recordPayment } = await import("./fulfillment.server");
+            const { acceptOrder, recordPayment, remainingDueNow } =
+              await import("./fulfillment.server");
             const result = await acceptOrder(orderId);
             // ocrExpectedAmount уже посчитан выше той же amountDueNow() — то,
             // что реально проверил OCR, и есть то, что реально внесено.
             // !alreadyAccepted — не задваиваем при повторном срабатывании
             // (например, покупатель прислал тот же чек дважды), Блок 1,
-            // находка 1.1.
+            // находка 1.1. remainingDueNow — если продавец уже внесла сумму
+            // вручную, второй раз ту же цифру не пишем.
             if (!result.alreadyAccepted) {
-              const paid = await recordPayment(orderId, ocrExpectedAmount).catch((e) => {
-                console.error("[bot] recordPayment failed", orderId, e);
-                return false;
-              });
-              if (!paid) console.error("[bot] recordPayment returned false", orderId);
+              const due = remainingDueNow(ocrExpectedAmount, orderRow.paid_amount);
+              if (due > 0) {
+                const paid = await recordPayment(orderId, due).catch((e) => {
+                  console.error("[bot] recordPayment failed", orderId, e);
+                  return false;
+                });
+                if (!paid) console.error("[bot] recordPayment returned false", orderId);
+              }
             }
           } else {
             const { deliverOrder } = await import("./orders.server");

@@ -1,3 +1,5 @@
+import { addDaysToIsoDate } from "./datetime";
+
 /**
  * Финансовая аналитика для продавца (Кейс 3, №10) — чистые вычисления, без
  * БД. Суммы обязательно группируются по валюте: у мультивалютного магазина
@@ -99,19 +101,27 @@ export function dailyRevenue(
   orders: OrderForAnalytics[],
   days: number,
   now: Date,
+  timeZone = "UTC",
 ): Array<{ date: string; revenue: number }> {
   const byDay = new Map<string, number>();
   for (const o of orders) {
-    const day = o.created_at.slice(0, 10);
+    const day = toShopDateKey(o.created_at, timeZone);
     byDay.set(day, (byDay.get(day) ?? 0) + (Number(o.total) || 0));
   }
+  const todayKey = now.toLocaleDateString("en-CA", { timeZone });
   const result: Array<{ date: string; revenue: number }> = [];
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-    const key = d.toISOString().slice(0, 10);
+    const key = addDaysToIsoDate(todayKey, -i);
     result.push({ date: key, revenue: byDay.get(key) ?? 0 });
   }
   return result;
+}
+
+/** YYYY-MM-DD заказа в таймзоне магазина, не UTC-срез ISO-строки. */
+export function toShopDateKey(iso: string, timeZone: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString("en-CA", { timeZone });
 }
 
 export type OrderItemForAnalytics = {

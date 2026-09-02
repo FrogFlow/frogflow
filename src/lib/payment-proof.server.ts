@@ -173,7 +173,7 @@ export async function processMiniAppPaymentProof(params: {
   const { data: order } = await supabaseAdmin
     .from("orders")
     .select(
-      "id, order_no, display_no, status, admin_note, telegram_id, total, currency, fulfillment_kind, payment_proof_hash",
+      "id, order_no, display_no, status, admin_note, telegram_id, total, currency, fulfillment_kind, payment_proof_hash, paid_amount",
     )
     .eq("id", orderId)
     .eq("telegram_id", params.telegramId)
@@ -304,9 +304,10 @@ export async function processMiniAppPaymentProof(params: {
 
   try {
     if (order.fulfillment_kind === "physical") {
-      const { acceptOrder, recordPayment } = await import("./fulfillment.server");
+      const { acceptOrder, recordPayment, remainingDueNow } = await import("./fulfillment.server");
       const accepted = await acceptOrder(orderId);
-      if (!accepted.alreadyAccepted) await recordPayment(orderId, expectedAmount);
+      const due = remainingDueNow(expectedAmount, order.paid_amount);
+      if (!accepted.alreadyAccepted && due > 0) await recordPayment(orderId, due);
     } else {
       const { deliverOrder } = await import("./orders.server");
       await deliverOrder(orderId);

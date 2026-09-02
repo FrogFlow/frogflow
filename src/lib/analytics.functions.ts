@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
 import { fetchAll } from "./csv";
+import { appTimeZone } from "./datetime";
 import {
   summarizeByCurrency,
   dominantCurrency,
@@ -97,6 +98,7 @@ async function loadAnalyticsData(): Promise<{
 export const getFinancialAnalytics = createServerFn({ method: "GET" }).handler(async () => {
   await requireAdmin();
   const { orders, items } = await loadAnalyticsData();
+  const tz = appTimeZone();
 
   const now = new Date();
   const cutoff30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -111,7 +113,7 @@ export const getFinancialAnalytics = createServerFn({ method: "GET" }).handler(a
   const topProductsByCurrency: Record<string, TopProduct[]> = {};
   for (const cur of currencies) {
     const curOrders30 = orders30.filter((o) => (o.currency || "—") === cur);
-    dailyRevenueByCurrency[cur] = dailyRevenue(curOrders30, 30, now);
+    dailyRevenueByCurrency[cur] = dailyRevenue(curOrders30, 30, now, tz);
 
     const curOrderIds = new Set(orders.filter((o) => (o.currency || "—") === cur).map((o) => o.id));
     // Позиции тоже отфильтрованы по валюте — иначе unitsSold внутри секции
@@ -157,6 +159,7 @@ export const getFinancialAnalyticsConverted = createServerFn({ method: "GET" })
     const { convertAmount } = await import("./currency.server");
 
     const { orders, items } = await loadAnalyticsData();
+    const tz = appTimeZone();
 
     const now = new Date();
     const cutoff30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -204,6 +207,7 @@ export const getFinancialAnalyticsConverted = createServerFn({ method: "GET" })
         orders30.filter((o) => (o.currency || "—") === cur),
         30,
         now,
+        tz,
       );
       for (const d of series) {
         if (!d.revenue) continue;
@@ -215,7 +219,7 @@ export const getFinancialAnalyticsConverted = createServerFn({ method: "GET" })
         dailyByDate.set(d.date, (dailyByDate.get(d.date) ?? 0) + converted);
       }
     }
-    const dailyRevenueConverted = dailyRevenue(orders30, 30, now).map((d) => ({
+    const dailyRevenueConverted = dailyRevenue(orders30, 30, now, tz).map((d) => ({
       date: d.date,
       revenue: dailyByDate.get(d.date) ?? 0,
     }));

@@ -145,7 +145,7 @@ export const MODULES = {
     group: "Каталог",
     price: 16000,
     status: "available",
-    note: "Русский/казахский интерфейс и отдельные версии материалов (file_url_kz, material_files_kz).",
+    note: "Русский/казахский интерфейс и отдельные версии файлов (file_url_kz, material_files_kz).",
   },
   vip: {
     title: "VIP-подписки",
@@ -220,7 +220,7 @@ export const MODULES = {
     price: 16000,
     status: "available",
     requires: ["whatsapp"],
-    note: "Каталог списками, корзина, оформление и выдача материалов документом прямо в чат (WhatsApp принимает файлы до 100 МБ, в отличие от Instagram Direct).",
+    note: "Каталог списками, корзина и оформление заказа прямо в чат (WhatsApp принимает файлы до 100 МБ, в отличие от Instagram Direct).",
   },
   wa_broadcasts: {
     title: "Рассылки в WhatsApp",

@@ -111,12 +111,13 @@ export const confirmOrder = createServerFn({ method: "POST" })
     // задним числом), тем же приёмом, что и в bot.server.ts confirm:.
     const { data: order, error } = await s
       .from("orders")
-      .select("fulfillment_kind, total, status")
+      .select("fulfillment_kind, total, status, paid_amount")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (order?.fulfillment_kind === "physical") {
-      const { acceptOrder, amountDueNow, recordPayment } = await import("./fulfillment.server");
+      const { acceptOrder, amountDueNow, recordPayment, remainingDueNow } =
+        await import("./fulfillment.server");
       // Статус ДО acceptOrder — она его меняет. "awaiting_payment" значит,
       // что покупатель ещё не присылал чек: продавец здесь принимает заказ
       // "на доверие", а не подтверждает получение денег, поэтому платёж
@@ -126,20 +127,26 @@ export const confirmOrder = createServerFn({ method: "POST" })
       const result = await acceptOrder(data.id);
       // alreadyAccepted — это либо двойной клик, либо повторный webhook: во
       // обоих случаях запись платежа второй раз задвоила бы paid_amount
-      // (Блок 1, находка 1.1).
+      // (Блок 1, находка 1.1). remainingDueNow — кондитер могла уже нажать
+      // «Внести оплату» до «Принять заказ»; amountDueNow этого не знает.
       if (!result.alreadyAccepted && hadProof) {
-        const due = await amountDueNow({
-          total: Number(order.total),
-          fulfillment_kind: order.fulfillment_kind,
-        });
-        // recordPayment сама не бросает при исчерпанных попытках CAS —
-        // возвращает false (Блок 1, находка 1.8), .catch() ловил только
-        // исключения.
-        const paid = await recordPayment(data.id, due).catch((e) => {
-          console.error("[orders] recordPayment failed", data.id, e);
-          return false;
-        });
-        if (!paid) console.error("[orders] recordPayment returned false", data.id);
+        const due = remainingDueNow(
+          await amountDueNow({
+            total: Number(order.total),
+            fulfillment_kind: order.fulfillment_kind,
+          }),
+          order.paid_amount,
+        );
+        if (due > 0) {
+          // recordPayment сама не бросает при исчерпанных попытках CAS —
+          // возвращает false (Блок 1, находка 1.8), .catch() ловил только
+          // исключения.
+          const paid = await recordPayment(data.id, due).catch((e) => {
+            console.error("[orders] recordPayment failed", data.id, e);
+            return false;
+          });
+          if (!paid) console.error("[orders] recordPayment returned false", data.id);
+        }
       }
       const { scheduleAdminOrderNotifyDismiss } = await import("./admin-order-notify.server");
       await scheduleAdminOrderNotifyDismiss(data.id).catch((e) =>
@@ -206,7 +213,7 @@ export const recordManualPayment = createServerFn({ method: "POST" })
  * покупательница позвонила перенести на субботу, продавцу нужно место
  * поправить в интерфейсе, а не в Supabase напрямую. Дата/адрес/комментарий
  * не трогают деньги. Смена доставка → самовывоз снимает зону и комиссию
- * с total, иначе «заберут сами», а в сумме остаётся плата за доставку.
+ * с total; самовывоз → доставка требует зону и прибавляет её комиссию.
  */
 export const updateOrderFulfillment = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
@@ -217,6 +224,7 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
         address: z.string().max(500).nullable(),
         note: z.string().max(500).nullable(),
         fulfillmentType: z.enum(["pickup", "delivery"]).nullable().optional(),
+        deliveryZoneId: z.string().uuid().nullable().optional(),
       })
       .parse(d),
   )
@@ -234,6 +242,20 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
     if (order.fulfillment_kind !== "physical") {
       throw new Error("Способ получения правится только у физического заказа");
     }
+    let zone: { id: string; name: string; price: number } | null = null;
+    if (data.fulfillmentType === "delivery") {
+      if (!data.deliveryZoneId) {
+        throw new Error("Выберите зону доставки");
+      }
+      const { data: zoneRow, error: zoneErr } = await s
+        .from("delivery_zones")
+        .select("id, name, price")
+        .eq("id", data.deliveryZoneId)
+        .maybeSingle();
+      if (zoneErr) throw new Error(zoneErr.message);
+      if (!zoneRow) throw new Error("Зона доставки не найдена");
+      zone = { id: zoneRow.id, name: zoneRow.name, price: Number(zoneRow.price) || 0 };
+    }
     const typePatch = fulfillmentTypePatch(
       {
         fulfillment_type: order.fulfillment_type,
@@ -241,6 +263,7 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
         total: Number(order.total),
       },
       data.fulfillmentType,
+      zone,
     );
     const { error } = await s
       .from("orders")

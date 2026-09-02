@@ -228,6 +228,9 @@ const copy: Record<
     hidden: string;
     noCategory: string;
     noFile: string;
+    leadTimeDaysShort: (n: number) => string;
+    inStockShort: string;
+    stockShort: (n: number) => string;
     editShort: string;
     deleteShort: string;
     uploadPhotoError: (msg: string) => string;
@@ -305,6 +308,9 @@ const copy: Record<
     hidden: "(скрыт)",
     noCategory: "без категории",
     noFile: " · нет файла",
+    leadTimeDaysShort: (n) => ` · ${n} дн.`,
+    inStockShort: " · в наличии",
+    stockShort: (n) => ` · остаток ${n}`,
     editShort: "Изм.",
     deleteShort: "Удал.",
     uploadPhotoError: (msg) => `Ошибка загрузки фото: ${msg}`,
@@ -379,6 +385,9 @@ const copy: Record<
     hidden: "(жасырын)",
     noCategory: "санатсыз",
     noFile: " · файл жоқ",
+    leadTimeDaysShort: (n) => ` · ${n} күн`,
+    inStockShort: " · бар",
+    stockShort: (n) => ` · қалдық ${n}`,
     editShort: "Өзг.",
     deleteShort: "Жою",
     uploadPhotoError: (msg) => `Фото жүктеу қатесі: ${msg}`,
@@ -453,6 +462,9 @@ const copy: Record<
     hidden: "(hidden)",
     noCategory: "no category",
     noFile: " · no file",
+    leadTimeDaysShort: (n) => ` · ${n} days`,
+    inStockShort: " · in stock",
+    stockShort: (n) => ` · stock ${n}`,
     editShort: "Edit",
     deleteShort: "Delete",
     uploadPhotoError: (msg) => `Failed to upload photo: ${msg}`,
@@ -528,6 +540,9 @@ const copy: Record<
     hidden: "(yashirin)",
     noCategory: "kategoriyasiz",
     noFile: " · fayl yo‘q",
+    leadTimeDaysShort: (n) => ` · ${n} kun`,
+    inStockShort: " · mavjud",
+    stockShort: (n) => ` · qoldiq ${n}`,
     editShort: "Tahr.",
     deleteShort: "O‘chir.",
     uploadPhotoError: (msg) => `Fotoni yuklashda xato: ${msg}`,
@@ -672,7 +687,8 @@ function ProductsPage() {
       country_prices: (p.country_prices as Record<string, number> | null) || {},
       stock_quantity: (p as { stock_quantity?: number | null }).stock_quantity ?? null,
       fulfillment_kind:
-        (p as { fulfillment_kind?: "digital" | "physical" }).fulfillment_kind ?? "digital",
+        (p as { fulfillment_kind?: "digital" | "physical" }).fulfillment_kind ??
+        defaultFulfillmentKind,
       lead_time_days: (p as { lead_time_days?: number | null }).lead_time_days ?? null,
     });
     const imgs = (p.product_images ?? [])
@@ -809,7 +825,7 @@ function ProductsPage() {
           ),
           country_prices: editing.country_prices,
           stock_quantity: editing.stock_quantity,
-          fulfillment_kind: editing.fulfillment_kind ?? "digital",
+          fulfillment_kind: editing.fulfillment_kind ?? defaultFulfillmentKind,
           lead_time_days: editing.lead_time_days,
           // id — Блок 8, находка 8.1/8.2: без него сервер не может отличить
           // отредактированный вариант от нового и был вынужден пересоздавать
@@ -972,7 +988,7 @@ function ProductsPage() {
               <Label>{tr.fulfillmentKindLabel}</Label>
               <select
                 className="border rounded-md h-9 px-2 text-sm bg-background w-full"
-                value={editing.fulfillment_kind ?? "digital"}
+                value={editing.fulfillment_kind ?? defaultFulfillmentKind}
                 onChange={(e) =>
                   setEditing({
                     ...editing,
@@ -1293,15 +1309,28 @@ function ProductsPage() {
                       return min === max ? `${min} ${p.currency}` : `${min}–${max} ${p.currency}`;
                     })()}
                     {(() => {
+                      const kind =
+                        (p as { fulfillment_kind?: "digital" | "physical" }).fulfillment_kind ??
+                        defaultFulfillmentKind;
+                      const lead = (p as { lead_time_days?: number | null }).lead_time_days;
+                      const stock = (p as { stock_quantity?: number | null }).stock_quantity;
+                      return (
+                        <>
+                          {kind === "physical" &&
+                            (lead && lead > 0 ? tr.leadTimeDaysShort(lead) : tr.inStockShort)}
+                          {modules.stock && stock != null ? tr.stockShort(stock) : null}
+                        </>
+                      );
+                    })()}
+                    {(() => {
                       // Физический товар ничего не выдаёт файлом — красная
                       // пометка «нет файла» здесь была бы ложной тревогой на
-                      // весь каталог кондитерской.
-                      if (
-                        (p as { fulfillment_kind?: "digital" | "physical" }).fulfillment_kind ===
-                        "physical"
-                      ) {
-                        return null;
-                      }
+                      // весь каталог кондитерской. Пустой fulfillment_kind
+                      // на кондитерском деплое — тоже physical.
+                      const kind =
+                        (p as { fulfillment_kind?: "digital" | "physical" }).fulfillment_kind ??
+                        defaultFulfillmentKind;
+                      if (kind === "physical") return null;
                       const materials = (p.product_material_files ?? []) as { language: string }[];
                       const langsWithFiles = SUPPORTED_LOCALES.filter(
                         (lang) =>

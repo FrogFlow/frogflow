@@ -100,6 +100,17 @@ describe("dailyRevenue", () => {
       { date: "2026-01-10", revenue: 800 },
     ]);
   });
+
+  it("кладёт заказ в день магазина, не в UTC-срез ISO", () => {
+    // 21:00 UTC 10 января = 02:00 11 января в Asia/Almaty (UTC+5).
+    const now = new Date("2026-01-11T07:00:00.000Z");
+    const orders = [order({ total: 500, created_at: "2026-01-10T21:00:00.000Z" })];
+    const series = dailyRevenue(orders, 2, now, "Asia/Almaty");
+    expect(series).toEqual([
+      { date: "2026-01-10", revenue: 0 },
+      { date: "2026-01-11", revenue: 500 },
+    ]);
+  });
 });
 
 describe("topProductsBySales", () => {

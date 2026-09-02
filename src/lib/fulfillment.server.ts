@@ -1,7 +1,9 @@
-import { appTimeZone } from "./datetime";
+import { addDaysToIsoDate, appTimeZone } from "./datetime";
 import { DELIVERABLE_STATUSES } from "./orders.server";
 import type { Locale } from "./i18n";
 import { isLocale } from "./i18n";
+
+export { addDaysToIsoDate };
 
 /**
  * Статусная машина физического заказа (Ниши, Блок 6) — сосед orders.server.ts,
@@ -375,6 +377,22 @@ export async function amountDueNow(order: {
 }
 
 /**
+ * Сколько ещё дописать в paid_amount при приёмке. amountDueNow — «сколько
+ * просить сейчас» (задаток / полная сумма), без учёта уже внесённого.
+ * Если кондитер нажала «Внести оплату», а потом «Принять заказ», запись
+ * amountDueNow целиком задвоила бы задаток.
+ */
+export function remainingDueNow(
+  dueNow: number,
+  paidAmount: number | string | null | undefined,
+): number {
+  if (!Number.isFinite(dueNow) || dueNow <= 0) return 0;
+  const paid = Number(paidAmount);
+  const already = Number.isFinite(paid) ? paid : 0;
+  return Math.max(0, Math.round((dueNow - already) * 100) / 100);
+}
+
+/**
  * Тип корзины покупателя — физическая или цифровая. Смешанная невозможна
  * (см. addToCart в bot.server.ts, cartAllowsProduct в
  * direct-purchase.server.ts, Ниши Блок 5). Канало-независима — принимает
@@ -467,12 +485,6 @@ export function parseFulfillmentDateInput(text: string): string | null {
   if (month < 1 || month > 12) return null;
   if (day < 1 || day > daysInMonth(year, month)) return null;
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-export function addDaysToIsoDate(iso: string, days: number): string {
-  const [y, mo, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, mo - 1, d) + days * 86_400_000);
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
 export function isoDateToDisplay(iso: string): string {

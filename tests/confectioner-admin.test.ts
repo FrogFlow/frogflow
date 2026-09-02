@@ -1,6 +1,32 @@
 import { describe, it, expect } from "vitest";
 import { fulfillmentTypePatch } from "../src/lib/fulfillment-edit";
 import { matchesPickupFilter } from "../src/lib/pickup-filter";
+import { remainingDueNow } from "../src/lib/fulfillment.server";
+import { addDaysToIsoDate } from "../src/lib/datetime";
+
+describe("remainingDueNow — задаток не двоится после «Внести оплату»", () => {
+  it("без внесённого пишет весь задаток", () => {
+    expect(remainingDueNow(3000, 0)).toBe(3000);
+    expect(remainingDueNow(3000, null)).toBe(3000);
+  });
+
+  it("после ручной записи задатка больше ничего не дописывает", () => {
+    expect(remainingDueNow(3000, 3000)).toBe(0);
+  });
+
+  it("дописывает только недостающую часть задатка", () => {
+    expect(remainingDueNow(3000, 1000)).toBe(2000);
+  });
+
+  it("не пишет отрицательное, если внесено больше задатка", () => {
+    expect(remainingDueNow(3000, 4000)).toBe(0);
+  });
+
+  it("on_receipt / нулевой due — ничего", () => {
+    expect(remainingDueNow(0, 0)).toBe(0);
+    expect(remainingDueNow(Number.NaN, 0)).toBe(0);
+  });
+});
 
 describe("fulfillmentTypePatch — доставка ↔ самовывоз", () => {
   it("доставка → самовывоз снимает зону и комиссию с total", () => {
@@ -32,11 +58,43 @@ describe("fulfillmentTypePatch — доставка ↔ самовывоз", () 
       ),
     ).toEqual({ fulfillment_type: "delivery" });
   });
+
+  it("самовывоз → доставка с зоной прибавляет комиссию к total", () => {
+    expect(
+      fulfillmentTypePatch(
+        { fulfillment_type: "pickup", delivery_fee: 0, total: 20000 },
+        "delivery",
+        { id: "zone-1", name: "Центр", price: 1500 },
+      ),
+    ).toEqual({
+      fulfillment_type: "delivery",
+      delivery_zone_id: "zone-1",
+      delivery_zone_name: "Центр",
+      delivery_fee: 1500,
+      total: 21500,
+    });
+  });
+
+  it("смена зоны пересчитывает комиссию, не складывая её поверх старой", () => {
+    expect(
+      fulfillmentTypePatch(
+        { fulfillment_type: "delivery", delivery_fee: 1500, total: 21500 },
+        "delivery",
+        { id: "zone-2", name: "Окраина", price: 2500 },
+      ),
+    ).toEqual({
+      fulfillment_type: "delivery",
+      delivery_zone_id: "zone-2",
+      delivery_zone_name: "Окраина",
+      delivery_fee: 2500,
+      total: 22500,
+    });
+  });
 });
 
 describe("matchesPickupFilter", () => {
   const today = "2026-09-02";
-  const tomorrow = "2026-09-03";
+  const tomorrow = addDaysToIsoDate(today, 1);
   const cake = {
     fulfillment_kind: "physical" as const,
     fulfillment_at: "2026-09-02T00:00:00.000Z",

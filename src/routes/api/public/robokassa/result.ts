@@ -91,7 +91,7 @@ async function handleRobokassaResult(request: Request) {
   const orderId = Number(invId);
   const { data: order } = await s
     .from("orders")
-    .select("status, total, platform, fulfillment_kind, admin_note")
+    .select("status, total, platform, fulfillment_kind, admin_note, paid_amount")
     .eq("id", orderId)
     .maybeSingle();
 
@@ -161,13 +161,15 @@ async function handleRobokassaResult(request: Request) {
 
   try {
     if (order.fulfillment_kind === "physical") {
-      const { acceptOrder, recordPayment } = await import("@/lib/fulfillment.server");
+      const { acceptOrder, recordPayment, remainingDueNow } =
+        await import("@/lib/fulfillment.server");
       // Robokassa повторяет колбэк, пока не получит "OK<InvId>" — двойной
       // вызов на один и тот же платёж реален. alreadyAccepted защищает от
       // повторной записи суммы в paid_amount (Блок 1, находка 1.1).
       const result = await acceptOrder(orderId);
-      if (!result.alreadyAccepted) {
-        const paid = await recordPayment(orderId, expected).catch((e) => {
+      const due = remainingDueNow(expected, order.paid_amount);
+      if (!result.alreadyAccepted && due > 0) {
+        const paid = await recordPayment(orderId, due).catch((e) => {
           logger.error("robokassa.record_payment_failed", { order_id: orderId, err: e });
           return false;
         });
