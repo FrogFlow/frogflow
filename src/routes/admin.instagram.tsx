@@ -215,6 +215,7 @@ const copy: Record<
     mediaLinksLabel: string;
     mediaLinksHintVideo: string;
     mediaLinksHint: string;
+    mediaLinksRules: string;
     captionLabel: string;
     captionPlaceholder: string;
     scheduledForLabel: string;
@@ -444,6 +445,7 @@ const copy: Record<
     mediaLinksLabel: "Прямые ссылки на медиа",
     mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
     mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    mediaLinksRules: "Одна ссылка на строку. Story и Reel: один файл; карусель: до 10 изображений.",
     captionLabel: "Подпись",
     captionPlaceholder: "Текст публикации и хэштеги",
     scheduledForLabel: "Время публикации",
@@ -677,6 +679,7 @@ const copy: Record<
     mediaLinksLabel: "Медиаға тікелей сілтемелер",
     mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
     mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    mediaLinksRules: "Әр жолға бір сілтеме. Story мен Reel: бір файл; карусель: 10 суретке дейін.",
     captionLabel: "Қолтаңба",
     captionPlaceholder: "Жарияланым мәтіні мен хэштегтер",
     scheduledForLabel: "Жариялау уақыты",
@@ -911,6 +914,7 @@ const copy: Record<
     mediaLinksLabel: "Direct media links",
     mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
     mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    mediaLinksRules: "One link per line. Story and Reel: one file; carousel: up to 10 images.",
     captionLabel: "Caption",
     captionPlaceholder: "Post text and hashtags",
     scheduledForLabel: "Publish time",
@@ -1144,6 +1148,8 @@ const copy: Record<
     mediaLinksLabel: "Mediaga to‘g‘ridan-to‘g‘ri havolalar",
     mediaLinksHintVideo: "https://cdn.example.com/reel.mp4",
     mediaLinksHint: "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg",
+    mediaLinksRules:
+      "Har qatorda bitta havola. Story va Reel: bitta fayl; karusel: 10 tagacha rasm.",
     captionLabel: "Sarlavha",
     captionPlaceholder: "Post matni va xeshteglar",
     scheduledForLabel: "Nashr vaqti",
@@ -2553,16 +2559,14 @@ function AdminInstagramPage() {
             <CardContent>
               <form className="space-y-5" onSubmit={handleCreatePost}>
                 <div className="space-y-2">
-                  <Label>Аккаунт</Label>
+                  <Label>{tr.accountLabel}</Label>
                   <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
-                    {acc
-                      ? acc.name || acc.username || acc._id
-                      : "Подключите Instagram-аккаунт во вкладке «Аккаунты»"}
+                    {acc ? acc.name || acc.username || acc._id : tr.connectAccountHint}
                   </div>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label>Формат</Label>
+                    <Label>{tr.formatLabel}</Label>
                     <Select
                       value={publishType}
                       onValueChange={(value) => setPublishType(value as "feed" | "story")}
@@ -2571,13 +2575,13 @@ function AdminInstagramPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="feed">Feed / Reel / карусель</SelectItem>
-                        <SelectItem value="story">Story</SelectItem>
+                        <SelectItem value="feed">{tr.formatFeed}</SelectItem>
+                        <SelectItem value="story">{tr.formatStory}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Медиа</Label>
+                    <Label>{tr.mediaLabel}</Label>
                     <Select
                       value={mediaType}
                       onValueChange={(value) => setMediaType(value as "image" | "video")}
@@ -2586,39 +2590,33 @@ function AdminInstagramPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="image">Изображение</SelectItem>
-                        <SelectItem value="video">Видео (публикуется как Reel)</SelectItem>
+                        <SelectItem value="image">{tr.mediaImage}</SelectItem>
+                        <SelectItem value="video">{tr.mediaVideo}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="publish-media">Прямые ссылки на медиа</Label>
+                  <Label htmlFor="publish-media">{tr.mediaLinksLabel}</Label>
                   <Textarea
                     id="publish-media"
                     value={mediaUrlsText}
                     onChange={(e) => setMediaUrlsText(e.target.value)}
                     rows={4}
-                    placeholder={
-                      mediaType === "video"
-                        ? "https://cdn.example.com/reel.mp4"
-                        : "https://cdn.example.com/photo-1.jpg\nhttps://cdn.example.com/photo-2.jpg"
-                    }
+                    placeholder={mediaType === "video" ? tr.mediaLinksHintVideo : tr.mediaLinksHint}
                     required
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Одна ссылка на строку. Story и Reel: один файл; карусель: до 10 изображений.
-                  </p>
+                  <p className="text-xs text-muted-foreground">{tr.mediaLinksRules}</p>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="publish-caption">Подпись</Label>
+                  <Label htmlFor="publish-caption">{tr.captionLabel}</Label>
                   <Textarea
                     id="publish-caption"
                     value={publishContent}
                     onChange={(e) => setPublishContent(e.target.value)}
                     maxLength={2200}
                     rows={5}
-                    placeholder="Текст публикации и хэштеги"
+                    placeholder={tr.captionPlaceholder}
                   />
                   <p className="text-right text-xs text-muted-foreground">
                     {publishContent.length}/2200
@@ -2626,39 +2624,35 @@ function AdminInstagramPage() {
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="scheduled-for">Время публикации</Label>
+                    <Label htmlFor="scheduled-for">{tr.scheduledForLabel}</Label>
                     <Input
                       id="scheduled-for"
                       type="datetime-local"
                       value={scheduledFor}
                       onChange={(e) => setScheduledFor(e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Оставьте пустым, чтобы опубликовать сейчас.
-                    </p>
+                    <p className="text-xs text-muted-foreground">{tr.scheduledForHint}</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="collaborators">Соавторы</Label>
+                    <Label htmlFor="collaborators">{tr.collaboratorsLabel}</Label>
                     <Input
                       id="collaborators"
                       value={collaboratorsText}
                       onChange={(e) => setCollaboratorsText(e.target.value)}
                       placeholder="brand_one, brand_two"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      До трёх публичных Business/Creator аккаунтов.
-                    </p>
+                    <p className="text-xs text-muted-foreground">{tr.collaboratorsHint}</p>
                   </div>
                 </div>
                 {publishType === "feed" && mediaType === "image" && (
                   <div className="space-y-2">
-                    <Label htmlFor="first-comment">Первый комментарий</Label>
+                    <Label htmlFor="first-comment">{tr.firstCommentLabel}</Label>
                     <Textarea
                       id="first-comment"
                       value={firstComment}
                       onChange={(e) => setFirstComment(e.target.value)}
                       rows={2}
-                      placeholder="Ссылка или дополнительная информация"
+                      placeholder={tr.firstCommentPlaceholder}
                     />
                   </div>
                 )}
@@ -2670,7 +2664,7 @@ function AdminInstagramPage() {
                         checked={shareToFeed}
                         onCheckedChange={(checked) => setShareToFeed(checked === true)}
                       />
-                      <Label htmlFor="share-to-feed">Показывать Reel и в основной ленте</Label>
+                      <Label htmlFor="share-to-feed">{tr.shareToFeedLabel}</Label>
                     </div>
                   ) : (
                     <span />
@@ -2681,15 +2675,11 @@ function AdminInstagramPage() {
                       checked={isAiGenerated}
                       onCheckedChange={(checked) => setIsAiGenerated(checked === true)}
                     />
-                    <Label htmlFor="ai-generated">Контент создан ИИ</Label>
+                    <Label htmlFor="ai-generated">{tr.aiGeneratedLabel}</Label>
                   </div>
                 </div>
                 <Button type="submit" disabled={publishing || !acc} className="w-full">
-                  {publishing
-                    ? "Отправляем…"
-                    : scheduledFor
-                      ? "Запланировать публикацию"
-                      : "Опубликовать сейчас"}
+                  {publishing ? tr.publishingBtn : scheduledFor ? tr.scheduleBtn : tr.publishNowBtn}
                 </Button>
               </form>
             </CardContent>

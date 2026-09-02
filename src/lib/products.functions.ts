@@ -126,12 +126,9 @@ const SaveInput = z.object({
 /**
  * Блок 8 — сознательно отложенные находки:
  *
- * 8.7 — lead_time_days сохраняется безусловно даже для digital-товара
- * (только скрыт в форме при fulfillment_kind !== "physical"): переключение
- * типа товара туда и обратно возвращает старое значение. Добавить
- * `lead_time_days: data.fulfillment_kind === "physical" ? ... : null` ниже
- * решило бы это, но меняет поведение при каждом сохранении любого
- * цифрового товара — не точечная правка для одного P2.
+ * 8.7 — сделано: lead_time_days для digital сбрасывается в null при
+ * сохранении, чтобы переключение «торт → файл» не оставляло срок выпечки
+ * на цифровом товаре.
  *
  * 8.8 — у вариантов нет ни своего остатка (stock_quantity), ни своего
  * срока изготовления (lead_time_days): "1 кг в наличии, 2 кг под заказ"
@@ -158,7 +155,7 @@ export const saveProduct = createServerFn({ method: "POST" })
     // (ограничение добавления в корзину и списание при оформлении) уже
     // гейтится в bot.server.ts на самом использовании, не здесь.
     const stock_quantity = data.stock_quantity ?? null;
-    const lead_time_days = data.lead_time_days ?? null;
+    const lead_time_days = fulfillment_kind === "physical" ? (data.lead_time_days ?? null) : null;
     let productId = data.id;
     if (productId) {
       const { error } = await s

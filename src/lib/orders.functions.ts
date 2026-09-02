@@ -2,10 +2,58 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { fetchAll } from "./csv";
 import { fulfillmentTypePatch } from "./fulfillment-edit";
+import {
+  manualCustomerTelegramId,
+  manualCustomerUserKey,
+  manualOrderStatus,
+  manualOrderTotal,
+} from "./manual-order";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
+}
+
+type AdminDb = Awaited<ReturnType<typeof db>>;
+
+async function decrementProductStock(s: AdminDb, productId: string, qty: number): Promise<boolean> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: product } = await s
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", productId)
+      .maybeSingle();
+    if (!product || product.stock_quantity === null) return true;
+    if (product.stock_quantity < qty) return false;
+    const { data: updated } = await s
+      .from("products")
+      .update({ stock_quantity: product.stock_quantity - qty })
+      .eq("id", productId)
+      .eq("stock_quantity", product.stock_quantity)
+      .select("id")
+      .maybeSingle();
+    if (updated) return true;
+  }
+  return false;
+}
+
+async function restoreProductStock(s: AdminDb, productId: string, qty: number): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: product } = await s
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", productId)
+      .maybeSingle();
+    if (!product || product.stock_quantity === null) return;
+    const { data: updated } = await s
+      .from("products")
+      .update({ stock_quantity: product.stock_quantity + qty })
+      .eq("id", productId)
+      .eq("stock_quantity", product.stock_quantity)
+      .select("id")
+      .maybeSingle();
+    if (updated) return;
+  }
 }
 
 export const listOrders = createServerFn({ method: "GET" }).handler(async () => {
@@ -27,6 +75,25 @@ export const listOrders = createServerFn({ method: "GET" }).handler(async () => 
         .order("created_at", { ascending: false })
         .range(from, to),
     "заказы",
+  );
+});
+
+/** Короткий каталог для формы «заказ с телефона» — без картинок и файлов. */
+export const listCatalogForOrders = createServerFn({ method: "GET" }).handler(async () => {
+  const { requireAdmin } = await import("./admin-session.server");
+  await requireAdmin();
+  const s = await db();
+  return fetchAll(
+    (from, to) =>
+      s
+        .from("products")
+        .select(
+          "id, name, price, currency, is_active, fulfillment_kind, stock_quantity, product_variants(id, name, price, sort_order)",
+        )
+        .eq("is_active", true)
+        .order("name")
+        .range(from, to),
+    "каталог",
   );
 });
 
@@ -198,15 +265,221 @@ export const recordManualPayment = createServerFn({ method: "POST" })
   });
 
 /**
- * Блок 7, находка 7.3 (сознательно отложена) — завести заказ вручную
- * по-прежнему нельзя: кондитер, принявший заказ по телефону или в
- * комментариях Instagram, не может ввести его в систему без покупателя,
- * прошедшего через бота. Полноценная реализация — новый server fn
- * (выбор товара/варианта/количества, опционально дата/адрес для
- * физического заказа, контакт покупателя) плюс форма в этой странице —
- * заметная по объёму фича, а не точечная правка; остальные пять находок
- * этого блока (7.1, 7.2, 7.4, 7.5) уже сделаны в Блоке 1.
+ * Завести заказ вручную (Блок 7, находка 7.3) — звонок, комментарий
+ * Instagram, человек без бота. Позиции, дата/адрес, зона и уже внесённая
+ * сумма пишутся сразу; если деньги приняты, заказ идёт в работу, иначе
+ * ждёт оплату как обычный awaiting_payment.
  */
+export const createManualOrder = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        displayName: z.string().trim().min(1).max(120),
+        contact: z.string().trim().max(40).nullable(),
+        items: z
+          .array(
+            z.object({
+              productId: z.string().uuid(),
+              variantId: z.string().uuid().nullable(),
+              quantity: z.number().int().min(1).max(99),
+            }),
+          )
+          .min(1)
+          .max(20),
+        fulfillmentType: z.enum(["pickup", "delivery"]),
+        fulfillmentAt: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable(),
+        address: z.string().trim().max(500).nullable(),
+        note: z.string().trim().max(500).nullable(),
+        deliveryZoneId: z.string().uuid().nullable(),
+        paidAmount: z.number().min(0),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { requireAdmin } = await import("./admin-session.server");
+    await requireAdmin();
+    const s = await db();
+    const { randomUUID } = await import("node:crypto");
+    const { materialsForProduct, availableMaterialLanguages } = await import("./product-materials");
+
+    if (data.fulfillmentType === "delivery" && !data.deliveryZoneId) {
+      throw new Error("Для доставки выберите зону");
+    }
+
+    const productIds = [...new Set(data.items.map((it) => it.productId))];
+    const { data: products, error: prodErr } = await s
+      .from("products")
+      .select(
+        "id, name, price, currency, is_active, fulfillment_kind, stock_quantity, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(id, name, price)",
+      )
+      .in("id", productIds);
+    if (prodErr) throw new Error(prodErr.message);
+    const byId = new Map((products ?? []).map((p) => [p.id as string, p]));
+
+    const lines: Array<{
+      productId: string;
+      variantId: string | null;
+      quantity: number;
+      name: string;
+      unit: number;
+      currency: string;
+      kind: "digital" | "physical";
+      product: NonNullable<typeof products>[number];
+    }> = [];
+    for (const it of data.items) {
+      const p = byId.get(it.productId);
+      if (!p || !p.is_active) throw new Error("Товар не найден или скрыт");
+      const variants = (p.product_variants ?? []) as Array<{
+        id: string;
+        name: string;
+        price: number;
+      }>;
+      let unit = Number(p.price) || 0;
+      let name = p.name as string;
+      if (variants.length > 0) {
+        if (!it.variantId) throw new Error(`Выберите вариант для «${p.name}»`);
+        const v = variants.find((row) => row.id === it.variantId);
+        if (!v) throw new Error(`Вариант не найден для «${p.name}»`);
+        unit = Number(v.price) || 0;
+        name = `${p.name} — ${v.name}`;
+      } else if (it.variantId) {
+        throw new Error(`У «${p.name}» нет вариантов`);
+      }
+      lines.push({
+        productId: it.productId,
+        variantId: it.variantId,
+        quantity: it.quantity,
+        name,
+        unit,
+        currency: p.currency || "KZT",
+        kind: p.fulfillment_kind === "physical" ? "physical" : "digital",
+        product: p,
+      });
+    }
+
+    const currencies = new Set(lines.map((l) => l.currency));
+    if (currencies.size > 1) throw new Error("Все позиции должны быть в одной валюте");
+    const kinds = new Set(lines.map((l) => l.kind));
+    if (kinds.size > 1) {
+      throw new Error("В одном заказе нельзя смешивать торты и цифровые товары");
+    }
+    const fulfillmentKind = kinds.has("physical") ? "physical" : "digital";
+
+    let deliveryFee = 0;
+    let deliveryZoneName: string | null = null;
+    let deliveryZoneId: string | null = null;
+    if (
+      fulfillmentKind === "physical" &&
+      data.fulfillmentType === "delivery" &&
+      data.deliveryZoneId
+    ) {
+      const { data: zone, error: zoneErr } = await s
+        .from("delivery_zones")
+        .select("id, name, price")
+        .eq("id", data.deliveryZoneId)
+        .maybeSingle();
+      if (zoneErr) throw new Error(zoneErr.message);
+      if (!zone) throw new Error("Зона доставки не найдена");
+      deliveryZoneId = zone.id;
+      deliveryZoneName = zone.name;
+      deliveryFee = Number(zone.price) || 0;
+    }
+
+    const total = manualOrderTotal(
+      lines.map((l) => l.unit * l.quantity),
+      fulfillmentKind === "physical" ? deliveryFee : 0,
+    );
+    if (data.paidAmount > total + 0.01) {
+      throw new Error(`Сумма больше итога заказа (${total})`);
+    }
+
+    const reserved: Array<{ productId: string; qty: number }> = [];
+    try {
+      for (const l of lines) {
+        const ok = await decrementProductStock(s, l.productId, l.quantity);
+        if (!ok) {
+          throw new Error(`Недостаточно «${l.name}» на складе`);
+        }
+        reserved.push({ productId: l.productId, qty: l.quantity });
+      }
+
+      const entropy = randomUUID();
+      const telegramId = manualCustomerTelegramId(data.contact, entropy);
+      const userKey = manualCustomerUserKey(data.contact, entropy);
+      const paid = Number(data.paidAmount) || 0;
+      const status = manualOrderStatus(paid);
+      const isPhysical = fulfillmentKind === "physical";
+
+      const { data: order, error } = await s
+        .from("orders")
+        .insert({
+          telegram_id: telegramId,
+          user_key: userKey,
+          platform: "manual",
+          display_name: data.displayName,
+          contact: data.contact,
+          username: null,
+          total,
+          currency: lines[0]?.currency || "KZT",
+          status,
+          paid_amount: paid,
+          admin_note: "Создан вручную",
+          fulfillment_kind: fulfillmentKind,
+          fulfillment_type: isPhysical ? data.fulfillmentType : null,
+          fulfillment_at: isPhysical ? data.fulfillmentAt : null,
+          fulfillment_address:
+            isPhysical && data.fulfillmentType === "delivery" ? data.address : null,
+          fulfillment_note: isPhysical ? data.note : null,
+          delivery_zone_id: isPhysical ? deliveryZoneId : null,
+          delivery_zone_name: isPhysical ? deliveryZoneName : null,
+          delivery_fee: isPhysical ? deliveryFee : 0,
+        })
+        .select("id, order_no")
+        .single();
+      if (error || !order) throw new Error(error?.message || "Не удалось создать заказ");
+
+      const { error: itemsError } = await s.from("order_items").insert(
+        lines.map((l) => {
+          const p = l.product;
+          const byLang: Record<string, ReturnType<typeof materialsForProduct>> = {};
+          for (const lang of availableMaterialLanguages(p)) {
+            byLang[lang] = materialsForProduct(p, lang);
+          }
+          return {
+            order_id: order.id,
+            product_id: l.productId,
+            product_variant_id: l.variantId,
+            name_snapshot: l.name,
+            price_snapshot: l.unit,
+            quantity: l.quantity,
+            file_path_snapshot: p.file_path ?? null,
+            file_name_snapshot: p.file_name ?? null,
+            file_url_snapshot: p.file_url ?? null,
+            file_path_kz_snapshot: p.file_path_kz ?? null,
+            file_name_kz_snapshot: p.file_name_kz ?? null,
+            file_url_kz_snapshot: p.file_url_kz ?? null,
+            material_files_snapshot: byLang.ru ?? [],
+            material_files_kz_snapshot: byLang.kk ?? [],
+            material_files_by_lang: byLang,
+          };
+        }),
+      );
+      if (itemsError) {
+        await s.from("orders").delete().eq("id", order.id);
+        throw new Error(itemsError.message);
+      }
+
+      return { ok: true as const, id: order.id as number, orderNo: order.order_no as number };
+    } catch (e) {
+      for (const r of reserved) {
+        await restoreProductStock(s, r.productId, r.qty).catch(() => {});
+      }
+      throw e;
+    }
+  });
 
 /**
  * Исправить данные получения физического заказа (Блок 7, находка 7.1) —

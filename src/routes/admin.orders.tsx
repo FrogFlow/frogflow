@@ -10,7 +10,9 @@ import {
   revertOrderFulfillment,
   confirmOrder,
   continueDeliveryOrder,
+  createManualOrder,
   deleteOrder,
+  listCatalogForOrders,
   listOrders,
   recordManualPayment,
   redeliverOrder,
@@ -66,6 +68,7 @@ const copy: Record<
     loadError: (msg: string) => string;
     instagramTag: string;
     whatsappTag: string;
+    manualTag: string;
     noEmail: string;
     itemLine: (name: string, qty: number, price: number, currency: string) => string;
     viewScreenshot: string;
@@ -142,6 +145,24 @@ const copy: Record<
     addFundsPrompt: (remaining: number, currency: string) => string;
     addFundsInvalid: string;
     addFundsSuccess: string;
+    createManualBtn: string;
+    createManualTitle: string;
+    createManualHint: string;
+    customerNameLabel: string;
+    customerNamePlaceholder: string;
+    customerPhoneLabel: string;
+    addItemBtn: string;
+    productPlaceholder: string;
+    variantPlaceholder: string;
+    qtyLabel: string;
+    paidNowLabel: string;
+    paidNowHint: string;
+    createManualSubmit: string;
+    createManualSuccess: (n: number) => string;
+    createManualNeedProduct: string;
+    createManualNeedName: string;
+    removeItemBtn: string;
+    platformManual: string;
   }
 > = {
   ru: {
@@ -163,6 +184,7 @@ const copy: Record<
     loadError: (msg) => `Не удалось загрузить заказы: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
+    manualTag: "Телефон",
     noEmail: "почта не указана — материалы отправить некуда",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 Скриншот оплаты",
@@ -250,6 +272,24 @@ const copy: Record<
     addFundsPrompt: (remaining, currency) => `Сколько внести (остаток ${remaining} ${currency})?`,
     addFundsInvalid: "Введите положительное число",
     addFundsSuccess: "Платёж записан",
+    createManualBtn: "+ Заказ с телефона",
+    createManualTitle: "Заказ не из бота",
+    createManualHint: "Звонок, комментарий в Instagram, человек без чата — заведите заказ здесь.",
+    customerNameLabel: "Имя",
+    customerNamePlaceholder: "Как к покупателю обращаться",
+    customerPhoneLabel: "Телефон",
+    addItemBtn: "Добавить",
+    productPlaceholder: "Товар",
+    variantPlaceholder: "Вариант",
+    qtyLabel: "Кол-во",
+    paidNowLabel: "Уже оплачено",
+    paidNowHint: "0 — ждём оплату. Больше 0 — заказ сразу в работу.",
+    createManualSubmit: "Создать заказ",
+    createManualSuccess: (n) => `Заказ #${n} создан.`,
+    createManualNeedProduct: "Добавьте хотя бы один товар.",
+    createManualNeedName: "Укажите имя покупателя.",
+    removeItemBtn: "Убрать",
+    platformManual: "Телефон",
   },
   kk: {
     statusMap: {
@@ -270,6 +310,7 @@ const copy: Record<
     loadError: (msg) => `Тапсырыстарды жүктеу мүмкін болмады: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
+    manualTag: "Телефон",
     noEmail: "пошта көрсетілмеген — материалдарды жіберетін жер жоқ",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 Төлем скриншоты",
@@ -359,6 +400,24 @@ const copy: Record<
       `Қанша енгізу керек (қалдық ${remaining} ${currency})?`,
     addFundsInvalid: "Оң сан енгізіңіз",
     addFundsSuccess: "Төлем жазылды",
+    createManualBtn: "+ Телефоннан тапсырыс",
+    createManualTitle: "Боттан тыс тапсырыс",
+    createManualHint: "Қоңырау, Instagram пікірі, чатсыз адам — тапсырысты осында енгізіңіз.",
+    customerNameLabel: "Аты",
+    customerNamePlaceholder: "Сатып алушыны қалай атау керек",
+    customerPhoneLabel: "Телефон",
+    addItemBtn: "Қосу",
+    productPlaceholder: "Тауар",
+    variantPlaceholder: "Нұсқа",
+    qtyLabel: "Саны",
+    paidNowLabel: "Төленгені",
+    paidNowHint: "0 — төлемді күтеміз. 0-ден көп — тапсырыс бірден жұмысқа кіреді.",
+    createManualSubmit: "Тапсырыс құру",
+    createManualSuccess: (n) => `#${n} тапсырыс құрылды.`,
+    createManualNeedProduct: "Кемінде бір тауар қосыңыз.",
+    createManualNeedName: "Сатып алушының атын жазыңыз.",
+    removeItemBtn: "Алу",
+    platformManual: "Телефон",
   },
   en: {
     statusMap: {
@@ -379,6 +438,7 @@ const copy: Record<
     loadError: (msg) => `Failed to load orders: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
+    manualTag: "Phone",
     noEmail: "no email provided — nowhere to send the materials",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 Payment screenshot",
@@ -467,6 +527,24 @@ const copy: Record<
       `How much to record (balance ${remaining} ${currency})?`,
     addFundsInvalid: "Enter a positive number",
     addFundsSuccess: "Payment recorded",
+    createManualBtn: "+ Phone order",
+    createManualTitle: "Order not from the bot",
+    createManualHint: "A call, an Instagram comment, someone with no chat — create the order here.",
+    customerNameLabel: "Name",
+    customerNamePlaceholder: "How to address the customer",
+    customerPhoneLabel: "Phone",
+    addItemBtn: "Add",
+    productPlaceholder: "Product",
+    variantPlaceholder: "Variant",
+    qtyLabel: "Qty",
+    paidNowLabel: "Already paid",
+    paidNowHint: "0 — waiting for payment. More than 0 — the order goes straight into production.",
+    createManualSubmit: "Create order",
+    createManualSuccess: (n) => `Order #${n} created.`,
+    createManualNeedProduct: "Add at least one product.",
+    createManualNeedName: "Enter the customer's name.",
+    removeItemBtn: "Remove",
+    platformManual: "Phone",
   },
   uz: {
     statusMap: {
@@ -487,6 +565,7 @@ const copy: Record<
     loadError: (msg) => `Buyurtmalarni yuklab bo‘lmadi: ${msg}`,
     instagramTag: "Instagram",
     whatsappTag: "WhatsApp",
+    manualTag: "Telefon",
     noEmail: "email ko‘rsatilmagan — materiallarni yuborishga joy yo‘q",
     itemLine: (name, qty, price, currency) => `${name} × ${qty} — ${price} ${currency}`,
     viewScreenshot: "📷 To‘lov skrinshoti",
@@ -577,6 +656,24 @@ const copy: Record<
       `Qancha kiritish kerak (qoldiq ${remaining} ${currency})?`,
     addFundsInvalid: "Musbat son kiriting",
     addFundsSuccess: "To‘lov yozildi",
+    createManualBtn: "+ Telefondan buyurtma",
+    createManualTitle: "Botdan tashqari buyurtma",
+    createManualHint: "Qo‘ng‘iroq, Instagram izohi, chatsiz odam — buyurtmani shu yerda kiriting.",
+    customerNameLabel: "Ism",
+    customerNamePlaceholder: "Xaridorni qanday atash kerak",
+    customerPhoneLabel: "Telefon",
+    addItemBtn: "Qo‘shish",
+    productPlaceholder: "Mahsulot",
+    variantPlaceholder: "Variant",
+    qtyLabel: "Soni",
+    paidNowLabel: "To‘langani",
+    paidNowHint: "0 — to‘lovni kutamiz. 0 dan ko‘p — buyurtma darhol ishga tushadi.",
+    createManualSubmit: "Buyurtma yaratish",
+    createManualSuccess: (n) => `#${n} buyurtma yaratildi.`,
+    createManualNeedProduct: "Kamida bitta mahsulot qo‘shing.",
+    createManualNeedName: "Xaridor ismini yozing.",
+    removeItemBtn: "Olib tashlash",
+    platformManual: "Telefon",
   },
 };
 
@@ -639,6 +736,7 @@ function OrdersPage() {
     telegram: allOrders.filter((o) => platformOf(o) === "telegram").length,
     instagram: allOrders.filter((o) => platformOf(o) === "instagram").length,
     whatsapp: allOrders.filter((o) => platformOf(o) === "whatsapp").length,
+    manual: allOrders.filter((o) => platformOf(o) === "manual").length,
   };
 
   const platformTabs: ReadonlyArray<readonly ["all" | OrderPlatform, string]> = [
@@ -646,6 +744,7 @@ function OrdersPage() {
     ["telegram", "Telegram"],
     ...(modules.dm_shop || counts.instagram > 0 ? ([["instagram", "Instagram"]] as const) : []),
     ...(modules.wa_shop || counts.whatsapp > 0 ? ([["whatsapp", "WhatsApp"]] as const) : []),
+    ...(isPhysicalShop || counts.manual > 0 ? ([["manual", tr.platformManual]] as const) : []),
   ];
 
   async function onConfirm(id: number, displayNo: number, isPhysical: boolean) {
@@ -927,6 +1026,7 @@ function OrdersPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">{tr.title}</h1>
+      {isPhysicalShop && <CreateManualOrderForm />}
       <ExportBar />
 
       <div className="flex flex-wrap gap-2">
@@ -1005,6 +1105,11 @@ function OrdersPage() {
                       {tr.whatsappTag}
                     </span>
                   )}
+                  {platformOf(o) === "manual" && (
+                    <span className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-900">
+                      {tr.manualTag}
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground">
                     {new Date(o.created_at).toLocaleString(dateLocales[locale])}
                   </span>
@@ -1016,7 +1121,7 @@ function OrdersPage() {
               <div className="text-sm">
                 <div>
                   👤 <b>{o.display_name}</b>
-                  {o.username && (
+                  {o.username && platformOf(o) !== "manual" && (
                     <>
                       {" "}
                       (
@@ -1247,7 +1352,7 @@ function OrdersPage() {
               )}
               {(o.status === "awaiting_confirmation" || o.status === "awaiting_payment") && (
                 <div className="flex flex-wrap gap-2 pt-2">
-                  {o.status === "awaiting_payment" && (
+                  {o.status === "awaiting_payment" && platformOf(o) !== "manual" && (
                     <Button
                       variant="outline"
                       onClick={() => onRemindPayment(o.id, o.order_no ?? o.id)}
@@ -1326,15 +1431,17 @@ function OrdersPage() {
                 </Button>
               )}
               <div className="flex justify-end gap-2 pt-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-destructive border-destructive/40 hover:bg-destructive/10"
-                  onClick={() => onBlock(o)}
-                  disabled={busy === o.id}
-                >
-                  {tr.block}
-                </Button>
+                {platformOf(o) !== "manual" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                    onClick={() => onBlock(o)}
+                    disabled={busy === o.id}
+                  >
+                    {tr.block}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -1387,6 +1494,306 @@ function OrdersPage() {
             })()}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+type ManualLine = {
+  key: string;
+  productId: string;
+  variantId: string;
+  quantity: number;
+};
+
+function CreateManualOrderForm() {
+  const { locale } = useAdminLocale();
+  const tr = copy[locale];
+  const qc = useQueryClient();
+  const catalog = useQuery({
+    queryKey: ["catalog-for-orders"],
+    queryFn: () => listCatalogForOrders(),
+  });
+  const zonesQuery = useQuery({ queryKey: ["delivery-zones"], queryFn: () => listDeliveryZones() });
+  const products = catalog.data ?? [];
+  const zones = zonesQuery.data ?? [];
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [lines, setLines] = useState<ManualLine[]>([]);
+  const [pickProductId, setPickProductId] = useState("");
+  const [pickVariantId, setPickVariantId] = useState("");
+  const [pickQty, setPickQty] = useState(1);
+  const [fulfillmentType, setFulfillmentType] = useState<"pickup" | "delivery">("pickup");
+  const [fulfillmentAt, setFulfillmentAt] = useState("");
+  const [address, setAddress] = useState("");
+  const [note, setNote] = useState("");
+  const [deliveryZoneId, setDeliveryZoneId] = useState("");
+  const [paidAmount, setPaidAmount] = useState("0");
+
+  const picked = products.find((p) => p.id === pickProductId);
+  const variants = (picked?.product_variants ?? []) as Array<{
+    id: string;
+    name: string;
+    price: number;
+    sort_order?: number;
+  }>;
+
+  function addLine() {
+    if (!pickProductId) return;
+    if (variants.length > 0 && !pickVariantId) {
+      toast.error(tr.variantPlaceholder);
+      return;
+    }
+    setLines((prev) => [
+      ...prev,
+      {
+        key: `${pickProductId}:${pickVariantId}:${prev.length}`,
+        productId: pickProductId,
+        variantId: pickVariantId,
+        quantity: pickQty,
+      },
+    ]);
+  }
+
+  function lineLabel(line: ManualLine): string {
+    const p = products.find((row) => row.id === line.productId);
+    if (!p) return line.productId;
+    const vs = (p.product_variants ?? []) as Array<{ id: string; name: string; price: number }>;
+    const v = vs.find((row) => row.id === line.variantId);
+    const unit = v ? Number(v.price) : Number(p.price);
+    const title = v ? `${p.name} — ${v.name}` : p.name;
+    return `${title} × ${line.quantity} — ${unit * line.quantity} ${p.currency}`;
+  }
+
+  async function onSubmit() {
+    if (!name.trim()) {
+      toast.error(tr.createManualNeedName);
+      return;
+    }
+    if (lines.length === 0) {
+      toast.error(tr.createManualNeedProduct);
+      return;
+    }
+    if (fulfillmentType === "delivery" && !deliveryZoneId) {
+      toast.error(zones.length === 0 ? tr.deliveryZoneEmpty : tr.deliveryZoneRequired);
+      return;
+    }
+    const paid = Number(paidAmount);
+    if (!Number.isFinite(paid) || paid < 0) {
+      toast.error(tr.addFundsInvalid);
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await createManualOrder({
+        data: {
+          displayName: name.trim(),
+          contact: phone.trim() || null,
+          items: lines.map((l) => ({
+            productId: l.productId,
+            variantId: l.variantId || null,
+            quantity: l.quantity,
+          })),
+          fulfillmentType,
+          fulfillmentAt: fulfillmentAt || null,
+          address: address.trim() || null,
+          note: note.trim() || null,
+          deliveryZoneId: fulfillmentType === "delivery" ? deliveryZoneId : null,
+          paidAmount: paid,
+        },
+      });
+      toast.success(tr.createManualSuccess(res.orderNo));
+      setOpen(false);
+      setName("");
+      setPhone("");
+      setLines([]);
+      setPaidAmount("0");
+      setAddress("");
+      setNote("");
+      setFulfillmentAt("");
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["catalog-for-orders"] });
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="bg-card border rounded-lg p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-medium text-sm">{tr.createManualTitle}</div>
+          <p className="text-xs text-muted-foreground">{tr.createManualHint}</p>
+        </div>
+        <Button size="sm" variant={open ? "outline" : "default"} onClick={() => setOpen(!open)}>
+          {open ? tr.cancelBtn : tr.createManualBtn}
+        </Button>
+      </div>
+      {open && (
+        <div className="space-y-3 pt-1">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">{tr.customerNameLabel}</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={tr.customerNamePlaceholder}
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">{tr.customerPhoneLabel}</label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-8" />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <select
+              className="border rounded-md h-8 px-2 text-sm bg-background min-w-[180px]"
+              value={pickProductId}
+              onChange={(e) => {
+                setPickProductId(e.target.value);
+                setPickVariantId("");
+              }}
+            >
+              <option value="">{tr.productPlaceholder}</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — {p.price} {p.currency}
+                </option>
+              ))}
+            </select>
+            {variants.length > 0 && (
+              <select
+                className="border rounded-md h-8 px-2 text-sm bg-background"
+                value={pickVariantId}
+                onChange={(e) => setPickVariantId(e.target.value)}
+              >
+                <option value="">{tr.variantPlaceholder}</option>
+                {variants
+                  .slice()
+                  .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+                  .map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} — {v.price}
+                    </option>
+                  ))}
+              </select>
+            )}
+            <Input
+              type="number"
+              min={1}
+              className="h-8 w-20"
+              value={pickQty}
+              onChange={(e) => setPickQty(Math.max(1, Number(e.target.value) || 1))}
+            />
+            <Button type="button" size="sm" variant="outline" onClick={addLine}>
+              {tr.addItemBtn}
+            </Button>
+          </div>
+          {lines.length > 0 && (
+            <ul className="text-sm space-y-1">
+              {lines.map((line) => (
+                <li key={line.key} className="flex items-center justify-between gap-2">
+                  <span>{lineLabel(line)}</span>
+                  <button
+                    type="button"
+                    className="text-xs text-destructive"
+                    onClick={() => setLines((prev) => prev.filter((x) => x.key !== line.key))}
+                  >
+                    {tr.removeItemBtn}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">
+                {tr.fulfillmentTypePickup} / {tr.fulfillmentTypeDelivery}
+              </label>
+              <select
+                className="border rounded-md h-8 px-2 text-sm bg-background w-full"
+                value={fulfillmentType}
+                onChange={(e) => setFulfillmentType(e.target.value as "pickup" | "delivery")}
+              >
+                <option value="pickup">{tr.fulfillmentTypePickup}</option>
+                <option value="delivery">{tr.fulfillmentTypeDelivery}</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">{tr.dateLabel}</label>
+              <Input
+                type="date"
+                className="h-8"
+                value={fulfillmentAt}
+                onChange={(e) => setFulfillmentAt(e.target.value)}
+              />
+            </div>
+          </div>
+          {fulfillmentType === "delivery" && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground block">
+                  {tr.deliveryZoneLabel}
+                </label>
+                {zones.length === 0 ? (
+                  <p className="text-xs text-destructive">{tr.deliveryZoneEmpty}</p>
+                ) : (
+                  <select
+                    className="border rounded-md h-8 px-2 text-sm bg-background w-full"
+                    value={deliveryZoneId}
+                    onChange={(e) => setDeliveryZoneId(e.target.value)}
+                  >
+                    <option value="">{tr.deliveryZoneSelectPlaceholder}</option>
+                    {zones.map((z) => (
+                      <option key={z.id} value={z.id}>
+                        {z.name}
+                        {Number(z.price) > 0 ? ` (+${z.price})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground block">
+                  {tr.fulfillmentAddressLabel}
+                </label>
+                <Input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  className="h-8"
+                />
+              </div>
+            </div>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">
+                {tr.fulfillmentNoteLabel}
+              </label>
+              <Input value={note} onChange={(e) => setNote(e.target.value)} className="h-8" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground block">{tr.paidNowLabel}</label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                className="h-8"
+                value={paidAmount}
+                onChange={(e) => setPaidAmount(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{tr.paidNowHint}</p>
+            </div>
+          </div>
+          <Button size="sm" onClick={onSubmit} disabled={busy}>
+            {tr.createManualSubmit}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

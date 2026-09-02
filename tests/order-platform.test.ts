@@ -5,6 +5,7 @@ describe("orderPlatform", () => {
   it("keeps Instagram and WhatsApp orders in their own channels", () => {
     expect(orderPlatform("instagram")).toBe("instagram");
     expect(orderPlatform("whatsapp")).toBe("whatsapp");
+    expect(orderPlatform("manual")).toBe("manual");
   });
 
   it("treats legacy and unknown orders as Telegram", () => {

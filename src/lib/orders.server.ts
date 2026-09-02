@@ -1417,6 +1417,10 @@ export async function notifyOrderCustomer(orderId: number, text: string): Promis
     return result.ok;
   }
 
+  // Синтетический id (заказ с телефона, сломанный Direct без platform) —
+  // чата в Telegram нет, sendMessage туда только засоряет лог 400.
+  if (order.platform === "manual" || Number(order.telegram_id) <= 0) return false;
+
   try {
     const response = (await tg("sendMessage", { chat_id: order.telegram_id, text })) as {
       ok?: boolean;

@@ -14,6 +14,13 @@ export function addDaysToIsoDate(iso: string, days: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
+/** YYYY-MM-DD HH:mm:ss in a named timezone — for CSV, not UTC-срез ISO. */
+export function formatDateTimeIso(date: Date | string, timeZone: string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("sv-SE", { timeZone }).replace(", ", " ");
+}
+
 /** Format date for users/admins in a fixed TZ (Vercel UTC ≠ browser local). */
 export function formatDateTimeRu(date: Date | string | null | undefined): string {
   if (!date) return "—";

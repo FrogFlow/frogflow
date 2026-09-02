@@ -1,7 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAdmin } from "./admin-session.server";
-import { toCsv, fetchAll, isoDate } from "./csv";
+import { toCsv, fetchAll } from "./csv";
+import { appTimeZone, formatDateTimeIso } from "./datetime";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -52,6 +53,13 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
+    const tz = appTimeZone();
+    const shopDate = (v: unknown) => {
+      if (!v) return "";
+      const raw = String(v);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+      return formatDateTimeIso(raw, tz) || raw;
+    };
 
     // fulfillment_kind/_type/_at/_address, paid_amount, delivery_zone_name,
     // delivery_fee — Блок 6, находка 6.8: раньше выгрузка не содержала ни
@@ -118,7 +126,7 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
       ],
       rows.map((o) => [
         o.order_no ?? o.id,
-        isoDate(o.created_at),
+        shopDate(o.created_at),
         STATUS_RU[o.status as string] ?? o.status,
         o.total,
         o.paid_amount ?? "",
@@ -135,7 +143,7 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
           : o.fulfillment_type === "pickup"
             ? "самовывоз"
             : "",
-        o.fulfillment_at ? isoDate(o.fulfillment_at) : "",
+        o.fulfillment_at ? shopDate(o.fulfillment_at) : "",
         o.fulfillment_address ?? "",
         o.fulfillment_note ?? "",
         o.delivery_zone_name ?? "",
@@ -149,6 +157,13 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
 export const exportCustomersCsvFn = createServerFn({ method: "POST" }).handler(async () => {
   await requireAdmin();
   const s = await db();
+  const tz = appTimeZone();
+  const shopDate = (v: unknown) => {
+    if (!v) return "";
+    const raw = String(v);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    return formatDateTimeIso(raw, tz) || raw;
+  };
 
   const users = await fetchAll<{
     telegram_id: number | null;
@@ -232,10 +247,10 @@ export const exportCustomersCsvFn = createServerFn({ method: "POST" }).handler(a
         u.username,
         u.contact_phone,
         u.language_code,
-        isoDate(u.created_at),
+        shopDate(u.created_at),
         st?.count ?? 0,
         st?.sum ?? 0,
-        isoDate(st?.last),
+        shopDate(st?.last),
       ];
     }),
   );
