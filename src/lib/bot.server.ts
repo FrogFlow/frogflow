@@ -4507,890 +4507,747 @@ export async function handleUpdate(update: TelegramUpdate) {
   try {
     // Callback queries
     if (update.callback_query) {
-      const cq = update.callback_query;
-      const chat_id = cq.message?.chat?.id;
-      const data: string = cq.data || "";
-      await tg("answerCallbackQuery", { callback_query_id: cq.id });
-      // Отсутствует только у inline-режима (inline_message_id вместо message),
-      // которым этот бот не пользуется — но раз callback без message пришёл,
-      // отвечать в чат всё равно некуда.
-      if (!chat_id || !cq.from) return;
-      const from_id = cq.from.id;
-      if (await replyIfBlocked(chat_id, from_id)) return;
-      // Keep the manager-chat audit trail, but do not let takeover suppress
-      // callback queries. These are explicit actions in the bot UI (catalog,
-      // cart, checkout, country selection), not free-form conversation. A
-      // previous takeover guard returned here and made the button tap visible
-      // in the chat log while silently preventing order placement.
-      await handleManagerChatCallback(from_id, callbackButtonLabel(cq));
-      if (await replyIfPaused(chat_id)) return;
-
-      const user = await upsertUser(cq.from);
-      if (!user) return;
-      const locale: Locale = user.state?.locale ?? "ru";
-      const m = copy[locale];
-
-      // Before allowing navigation, require country code
-      if (
-        !data.startsWith("setcountry:") &&
-        !data.startsWith("confirm:") &&
-        !data.startsWith("reject:") &&
-        !data.startsWith("pay:") &&
-        data !== "clear" &&
-        !data.startsWith("rem:") &&
-        !data.startsWith("add:") &&
-        !data.startsWith("lang_") &&
-        !data.startsWith("locale:") &&
-        !data.startsWith("searchmore:") &&
-        !data.startsWith("prod:")
-      ) {
-        if (!user.state?.country_code) {
-          await askCountry(chat_id, from_id, false, locale);
-          return;
-        }
-      }
-
-      if (data.startsWith("locale:")) {
-        const locale = data.slice("locale:".length);
-        if (!isLocale(locale)) return;
-        await applyLocaleSelection(chat_id, from_id, locale, user);
-        return;
-      }
-
-      if (data.startsWith("pay:rk:") || data.startsWith("pay:manual:")) {
-        const isRk = data.startsWith("pay:rk:");
-        const orderId = Number(data.slice(isRk ? 7 : 11));
-        if (!orderId) return;
-
-        const s = await db();
-        const { data: order } = await s
-          .from("orders")
-          .select(
-            "id, order_no, display_no, telegram_id, status, total, currency, country_code, fulfillment_kind",
-          )
-          .eq("id", orderId)
-          .maybeSingle();
-        if (!order || Number(order.telegram_id) !== Number(from_id)) {
-          await tg("sendMessage", { chat_id, text: m.orderNotFound });
-          return;
-        }
-        const displayNo = order.display_no ?? order.order_no ?? orderId;
-        if (order.status !== "awaiting_payment") {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.alreadyProcessed(displayNo),
-          });
-          return;
-        }
-
-        if (cq.message?.message_id) {
-          await tg("editMessageReplyMarkup", {
-            chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
-          }).catch(() => {});
-        }
-
-        const { amountDueNow } = await import("./fulfillment.server");
-        const amountDue = await amountDueNow({
-          total: Number(order.total),
-          fulfillment_kind: order.fulfillment_kind,
-        });
-
-        if (isRk) {
-          const rk = await loadRobokassaSettings();
-          if (!rk.ready) {
-            await tg("sendMessage", {
-              chat_id,
-              text: m.robokassaUnavailable,
-            });
-            return;
-          }
-          await sendRobokassaPayLink({
-            chat_id,
-            telegram_id: from_id,
-            userState: user.state,
-            orderId,
-            displayNo,
-            total: amountDue,
-            currency: (order.currency as string) || "KZT",
-            rk,
-            locale,
-          });
-          return;
-        }
-
-        const { data: method } = await s
-          .from("payment_methods")
-          .select("instructions, qr_code_path")
-          .eq("country_code", order.country_code || "KZ")
-          .maybeSingle();
-        await startManualProofPath({
-          chat_id,
-          telegram_id: from_id,
-          userState: user.state,
-          orderId,
-          displayNo,
-          total: amountDue,
-          currency: (order.currency as string) || "KZT",
-          instructions: (method?.instructions as string) || m.defaultInstructions,
-          autoDeliver: true,
-          locale,
-          qrCodePath: method?.qr_code_path,
-          isPhysical: order.fulfillment_kind === "physical",
-        });
-        return;
-      }
-
-      if (data.startsWith("cat:root")) {
-        const parts = data.split(":");
-        return showCategories(
-          chat_id,
-          null,
-          user.state?.country_code,
-          Number(parts[2] || 0),
-          locale,
-        );
-      }
-      if (data.startsWith("cat:")) {
-        const parts = data.split(":");
-        return showCategories(
-          chat_id,
-          parts[1],
-          user.state?.country_code,
-          Number(parts[2] || 0),
-          locale,
-        );
-      }
-      if (data.startsWith("prod:"))
-        return showProduct(chat_id, data.slice(5), user.state?.country_code, locale);
-      if (data.startsWith("searchmore:")) {
-        // Пагинация поиска: запрос берём из state.last_search
-        const offset = Number(data.slice(11)) || 0;
-        const query = user.state?.last_search;
-        if (!query) {
-          await tg("sendMessage", { chat_id, text: m.searchSessionExpired });
-          return;
-        }
-        return showSearch(chat_id, user, query, offset);
-      }
-      if (data.startsWith("add:")) {
-        // "add:<productId>" — товар без вариантов; "add:<productId>:<variantId>"
-        // — выбранный вариант (Ниши, Блок D, кнопка на карточке товара).
-        const [productId, variantId] = data.slice(4).split(":");
-        const addResult = await addToCart(from_id, productId, variantId || null);
-        const addText =
-          addResult === "ok"
-            ? m.addedToCart
-            : addResult === "mixed_cart"
-              ? m.productMixedCartMsg
-              : addResult === "digital_limit"
-                ? m.productDigitalLimitMsg
-                : addResult === "out_of_stock"
-                  ? m.productOutOfStockMsg
-                  : m.productUnavailable;
-        await tg("sendMessage", { chat_id, text: addText });
-        return;
-      }
-      if (data.startsWith("rem:")) {
-        const s = await db();
-        await s.from("cart_items").delete().eq("id", data.slice(4)).eq("telegram_id", from_id);
-        return showCart(chat_id, user);
-      }
-      if (data === "clear") {
-        const s = await db();
-        await s.from("cart_items").delete().eq("telegram_id", from_id);
-        await tg("sendMessage", { chat_id, text: m.cartCleared });
-        return;
-      }
-      if (data === "promo:enter") {
-        await setState(from_id, { ...user.state, mode: "awaiting_promo_code" });
-        await tg("sendMessage", { chat_id, text: m.promoCodePrompt });
-        return;
-      }
-      if (data === "promo:clear") {
-        const { promo_code: _promo_code, ...rest } = user.state ?? {};
-        await setState(from_id, rest);
-        await tg("sendMessage", { chat_id, text: m.promoCodeRemoved });
-        return showCart(chat_id, { ...user, state: rest });
-      }
-      if (data === "giftcert:enter") {
-        await setState(from_id, { ...user.state, mode: "awaiting_gift_certificate_code" });
-        await tg("sendMessage", { chat_id, text: m.giftCertificateCodePrompt });
-        return;
-      }
-      if (data === "giftcert:clear") {
-        const { gift_certificate_code: _gift_certificate_code, ...rest } = user.state ?? {};
-        await setState(from_id, rest);
-        await tg("sendMessage", { chat_id, text: m.giftCertificateRemoved });
-        return showCart(chat_id, { ...user, state: rest });
-      }
-      if (data === "points:use") {
-        const nextState = { ...user.state, use_points: true };
-        await setState(from_id, nextState);
-        return showCart(chat_id, { ...user, state: nextState });
-      }
-      if (data === "points:clear") {
-        const { use_points: _use_points, ...rest } = user.state ?? {};
-        await setState(from_id, rest);
-        return showCart(chat_id, { ...user, state: rest });
-      }
-      if (data.startsWith("resend:")) {
-        const orderId = Number(data.slice(7));
-        await tg("sendMessage", { chat_id, text: m.resendSent });
-        const { resendOrderFiles } = await import("./orders.server");
-        const result = await resendOrderFiles(orderId, from_id).catch((e) => {
-          console.error(`[bot] resendOrderFiles failed for order ${orderId}`, e);
-          return { ok: false as const, reason: "not_found" as const };
-        });
-        if (!result.ok || result.sent === 0) {
-          await tg("sendMessage", { chat_id, text: m.resendFailed });
-        }
-        return;
-      }
-      if (data.startsWith("rate:")) {
-        // hasModule — не только на кнопке в showMyOrders: старое сообщение с
-        // кнопкой «⭐ Оценить» остаётся рабочим в Telegram даже после того,
-        // как продавец отключил модуль. Проверяем здесь же, на самом
-        // действии, тем же приёмом, что и в awardPointsForDelivery.
-        if (!(await hasModule("review_request"))) return;
-        const orderId = Number(data.slice(5));
-        const { reviewableProductsForOrder } = await import("./reviews.server");
-        const products = await reviewableProductsForOrder(orderId, from_id);
-        if (products.length === 0) {
-          await tg("sendMessage", { chat_id, text: m.noReviewableProducts });
-          return;
-        }
-        if (products.length === 1) {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.chooseRatingPrompt(products[0].name),
-            reply_markup: { inline_keyboard: [starButtons(products[0].product_id)] },
-          });
-          return;
-        }
-        await tg("sendMessage", {
-          chat_id,
-          text: m.chooseProductToRate,
-          reply_markup: {
-            inline_keyboard: products.map((p) => [
-              { text: p.name, callback_data: `rateproduct:${p.product_id}` },
-            ]),
-          },
-        });
-        return;
-      }
-      if (data.startsWith("rateproduct:")) {
-        if (!(await hasModule("review_request"))) return;
-        const productId = data.slice(12);
-        const { hasDeliveredPurchase } = await import("./reviews.server");
-        if (!(await hasDeliveredPurchase(from_id, productId))) {
-          await tg("sendMessage", { chat_id, text: m.reviewNotAllowed });
-          return;
-        }
-        const s = await db();
-        const { data: product } = await s
-          .from("products")
-          .select("name")
-          .eq("id", productId)
-          .maybeSingle();
-        await tg("sendMessage", {
-          chat_id,
-          text: m.chooseRatingPrompt(product?.name ?? ""),
-          reply_markup: { inline_keyboard: [starButtons(productId)] },
-        });
-        return;
-      }
-      if (data.startsWith("stars:")) {
-        if (!(await hasModule("review_request"))) return;
-        const [, productId, ratingRaw] = data.split(":");
-        const rating = Number(ratingRaw);
-        if (!isValidRating(rating)) return;
-        const { hasDeliveredPurchase, upsertReview } = await import("./reviews.server");
-        if (!(await hasDeliveredPurchase(from_id, productId))) {
-          await tg("sendMessage", { chat_id, text: m.reviewNotAllowed });
-          return;
-        }
-        await upsertReview(from_id, productId, rating, null);
-        await setState(from_id, {
-          ...user.state,
-          mode: "awaiting_review_comment",
-          review_product_id: productId,
-        });
-        await tg("sendMessage", {
-          chat_id,
-          text: m.reviewSaved,
-          reply_markup: {
-            inline_keyboard: [[{ text: m.reviewSkipBtn, callback_data: "reviewskip" }]],
-          },
-        });
-        return;
-      }
-      if (data === "reviewskip") {
-        const { mode: _mode, review_product_id: _rpid, ...rest } = user.state ?? {};
-        await setState(from_id, rest);
-        return;
-      }
-      // Кнопка из напоминания о брошенной корзине (Кейс 3, №6) — просто
-      // открывает корзину, как и текстовая кнопка "🛒 Корзина" меню.
-      if (data === "cart:show") {
-        return showCart(chat_id, user);
-      }
-      if (data === "checkout") {
-        try {
-          return await startCheckout(chat_id, user);
-        } catch (e: unknown) {
-          console.error(`[bot] checkout failed for telegram_id=${from_id}`, e);
-          await tg("sendMessage", {
-            chat_id,
-            text: "⚠️ Не удалось начать оформление заказа. Попробуйте ещё раз через минуту или напишите продавцу.",
-          }).catch(() => {});
-          return;
-        }
-      }
-      if (data.startsWith("country:"))
-        return proceedToFulfillmentOrPlace(chat_id, user, data.slice(8));
-
-      if (data.startsWith("setcountry:")) {
-        const code = data.slice(11);
-        const s = await db();
-        const { data: countryMethod } = await s
-          .from("payment_methods")
-          .select("country_name")
-          .eq("country_code", code)
-          .maybeSingle();
-        await setState(from_id, {
-          ...user.state,
-          country_code: code,
-          country_name: countryMethod?.country_name,
-        });
-        await tg("sendMessage", {
-          chat_id,
-          text: m.countrySaved(countryMethod?.country_name as string),
-        });
-        await sendMain(chat_id, undefined, undefined, locale);
-        return;
-      }
-
-      if (data.startsWith("checkoutlang:")) {
-        const choice = data.slice("checkoutlang:".length);
-        if (!isDeliveryLangChoice(choice)) return;
-
-        const countryCode = user.state?.country_code;
-        if (!countryCode) {
-          // Состояние потерялось между сообщениями (например, сессия
-          // истекла) — переспрашиваем страну, а не падаем молча.
-          await askCountry(chat_id, from_id, true, locale);
-          return;
-        }
-
-        const nextState = { ...user.state, checkout_lang_choice: choice };
-        await setState(from_id, nextState);
-        if (cq.message?.message_id) {
-          await tg("editMessageReplyMarkup", {
-            chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
-          }).catch(() => {});
-        }
-        await placeOrder(chat_id, { ...user, state: nextState }, countryCode);
-        return;
-      }
-
-      if (data.startsWith("fulfilltype:")) {
-        // Guard по mode (Блок 4, находка 4.6) — тап по кнопке из старого
-        // сообщения (Telegram хранит инлайн-клавиатуры бессрочно) с новой
-        // корзиной/на другом шаге чекаута иначе тихо переписывал бы
-        // checkout_fulfillment_type поверх того, что реально происходит
-        // сейчас.
-        if (user.state?.mode !== "awaiting_fulfillment_type") return;
-        const typeRaw = data.slice("fulfilltype:".length);
-        if (typeRaw !== "pickup" && typeRaw !== "delivery") return;
-        const type: "pickup" | "delivery" = typeRaw;
-        if (cq.message?.message_id) {
-          await tg("editMessageReplyMarkup", {
-            chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
-          }).catch(() => {});
-        }
-        const nextState = { ...user.state, checkout_fulfillment_type: type };
-        await askFulfillmentDate(chat_id, from_id, nextState, locale);
-        return;
-      }
-
-      if (data.startsWith("zone:")) {
-        // Guard по mode (Блок 4, находка 4.6/4.7) — тап по старой кнопке
-        // зоны из awaiting_proof (уже другой заказ/шаг) иначе загонял бы
-        // покупателя обратно в awaiting_address, и следующее его сообщение
-        // (например, чек оплаты) съедалось бы как адрес доставки.
-        if (user.state?.mode !== "awaiting_delivery_zone") return;
-        const zoneId = data.slice("zone:".length);
-        if (cq.message?.message_id) {
-          await tg("editMessageReplyMarkup", {
-            chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
-          }).catch(() => {});
-        }
-        const s = await db();
-        const { data: zone } = await s
-          .from("delivery_zones")
-          .select("id, name, price")
-          .eq("id", zoneId)
-          .eq("is_active", true)
-          .maybeSingle();
-        if (!zone) {
-          // Зона исчезла/скрыта между показом кнопок и тапом — переспрашиваем шаг.
-          await proceedToDeliveryZoneOrAddress(chat_id, from_id, user.state, locale);
-          return;
-        }
-        const nextState = {
-          ...user.state,
-          checkout_delivery_zone_id: zone.id,
-          checkout_delivery_zone_name: zone.name,
-          checkout_delivery_fee: Number(zone.price),
-          mode: "awaiting_address" as const,
-        };
-        await setState(from_id, nextState);
-        await tg("sendMessage", { chat_id, text: copy[locale].addressPrompt });
-        return;
-      }
-
-      if (data === "fulfillnote:skip") {
-        // Guard по mode (Блок 4, находка 4.6) — старая кнопка "Без
-        // комментария" с новой корзиной иначе создавала бы физический
-        // заказ с fulfillment_at = NULL, чего быть не должно (MIGRATION-49).
-        if (user.state?.mode !== "awaiting_fulfillment_note") return;
-        if (cq.message?.message_id) {
-          await tg("editMessageReplyMarkup", {
-            chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
-          }).catch(() => {});
-        }
-        const countryCode = user.state?.country_code;
-        if (!countryCode) {
-          await askCountry(chat_id, from_id, true, locale);
-          return;
-        }
-        const nextState = { ...user.state, mode: undefined };
-        await setState(from_id, nextState);
-        await placeOrder(chat_id, { ...user, state: nextState }, countryCode);
-        return;
-      }
-
-      if (data.startsWith("lang_") && isLocale(data.slice(5).split(":")[0])) {
-        const parts = data.split(":");
-        const lang = parts[0].slice(5) as Locale;
-        const orderId = Number(parts[1]);
-        const idx = Number(parts[2]);
-        const s = await db();
-        const { data: order } = await s
-          .from("orders")
-          .select("*, order_items(*)")
-          .eq("id", orderId)
-          .single();
-        if (!order) return;
-
-        // Security: verify the order belongs to the user clicking the button
-        if (order.telegram_id !== from_id) {
-          await tg("answerCallbackQuery", {
-            callback_query_id: cq.id,
-            text: m.accessDenied,
-          });
-          return;
-        }
-
-        // Sort items to match server delivery index logic
-        const items = ((order.order_items as OrderItem[]) || []).slice().sort((a, b) => {
-          const ai = String(a.id || "");
-          const bi = String(b.id || "");
-          return ai < bi ? -1 : ai > bi ? 1 : 0;
-        });
-
-        const item = items[idx];
-        if (!item?.id) return;
-
-        // Check if this language was already delivered
-        if (parseDeliveredLanguages(item.delivered_language).has(lang)) {
-          await tg("sendMessage", { chat_id, text: m.fileAlreadySent });
-          return;
-        }
-
-        const { sendMaterials } = await import("./orders.server");
-        const materials = materialsForOrderItem(item, lang);
-        const langLabel = `${localeFlags[lang]} ${localeNames[lang]}`;
-
-        let materialOk = true;
-        if (materials.length) {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.loadingMaterials(langLabel),
-          });
-          // Always 1 copy — quantity is cart price, not file copies
-          const result = await sendMaterials(order.telegram_id, materials, item.name_snapshot, 1);
-          materialOk = result.outcome === "sent";
-          if (!materialOk) {
-            await tg("sendMessage", {
-              chat_id,
-              text: `⚠️ Не удалось отправить материал (${langLabel}) — продавец вышлет вручную.`,
-            });
-          }
-        } else {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.materialNotConfigured(langLabel),
-          });
-        }
-
-        // Update delivered_language tracking — only on an actual send, so a
-        // failed attempt can still be retried by tapping the language button
-        // again instead of being silently marked done.
-        if (materialOk) {
-          await s
-            .from("order_items")
-            .update({ delivered_language: addDeliveredLanguage(item.delivered_language, lang) })
-            .eq("id", item.id);
-        }
-
-        // Edit the message to remove buttons
-        if (cq.message?.message_id) {
-          await tg("editMessageReplyMarkup", {
-            chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
-          });
-        }
-
-        return;
-      }
-
-      // Admin actions
-      if (data.startsWith("confirm:")) {
-        if (!(await requireShopAdmin(from_id, chat_id))) return;
-        const orderId = Number(data.slice(8));
-        const clicked = cq.message?.message_id
-          ? [{ chat_id: String(chat_id), message_id: cq.message.message_id }]
-          : [];
-        // Админу показываем сквозной номер этого бота, а не внутренний id.
-        const { data: ordRow } = await (
-          await db()
-        )
-          .from("orders")
-          .select("order_no, fulfillment_kind, total, status, paid_amount")
-          .eq("id", orderId)
-          .maybeSingle();
-        const shownNo = ordRow?.order_no ?? orderId;
-
-        if (ordRow?.fulfillment_kind === "physical") {
-          const { acceptOrder, amountDueNow, recordPayment, remainingDueNow } =
-            await import("./fulfillment.server");
-          try {
-            // "awaiting_payment" — покупатель ещё не присылал чек, продавец
-            // принимает на доверие: писать в paid_amount нечего (Блок 1,
-            // находка 1.2). Тот же приём, что в orders.functions.ts
-            // confirmOrder — статус смотрим ДО acceptOrder, она его меняет.
-            const hadProof = ordRow.status !== "awaiting_payment";
-            const result = await acceptOrder(orderId);
-            // alreadyAccepted — двойной тап по той же кнопке (сообщение уже
-            // не редактируется второй раз, но карточка могла остаться
-            // открытой у двух админов) — не задваиваем paid_amount (находка 1.1).
-            // remainingDueNow — «Внести оплату» в админке до этой кнопки.
-            if (!result.alreadyAccepted && hadProof) {
-              const due = remainingDueNow(
-                await amountDueNow({
-                  total: Number(ordRow.total),
-                  fulfillment_kind: ordRow.fulfillment_kind,
-                }),
-                ordRow.paid_amount,
-              );
-              if (due > 0) {
-                // recordPayment сама не бросает при исчерпанных попытках CAS —
-                // возвращает false (Блок 1, находка 1.8). .catch() ловит только
-                // исключения, false он пропускал молча.
-                const paid = await recordPayment(orderId, due).catch((e) => {
-                  console.error("[bot] recordPayment failed", orderId, e);
-                  return false;
-                });
-                if (!paid) console.error("[bot] recordPayment returned false", orderId);
-              }
-            }
-            await scheduleAdminOrderNotifyDismiss(orderId, clicked);
-            await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
-          } catch (e: unknown) {
-            await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
-          }
-          return;
-        }
-
-        await scheduleAdminOrderNotifyDismiss(orderId, clicked);
-        const statusRes = await tg("sendMessage", {
-          chat_id,
-          text: `⏳ Выдаю заказ #${shownNo}...`,
-        });
-        const statusId = collectTgMessageIds(statusRes.result)[0];
-        const finishAdminStatus = async (text: string) => {
-          if (statusId) {
-            await tg("editMessageText", { chat_id, message_id: statusId, text });
-            return;
-          }
-          await tg("sendMessage", { chat_id, text });
-        };
-        const { deliverOrder } = await import("./orders.server");
-        try {
-          const result = await deliverOrder(orderId);
-          if (result.alreadyDelivered) {
-            await finishAdminStatus(`ℹ️ Заказ #${shownNo} уже выдаётся или выдан.`);
-          } else if ("pending" in result && result.pending) {
-            await finishAdminStatus(
-              `📤 Заказ #${shownNo}: отправлено ${result.sent} из ${result.total}. Продолжаю рассылку — нажмите «Продолжить выдачу» в панели или подождите крон.`,
-            );
-          } else if (result.manualRequired) {
-            await finishAdminStatus(
-              `⚠️ Заказ #${shownNo} обработан, но часть материалов нужно выслать вручную — проверьте панель.`,
-            );
-          } else {
-            await finishAdminStatus(`✅ Заказ #${shownNo} выдан.`);
-          }
-        } catch (e: unknown) {
-          await finishAdminStatus(`Ошибка: ${errorMessage(e)}`);
-        }
-        return;
-      }
-      if (data.startsWith("reject:")) {
-        if (!(await requireShopAdmin(from_id, chat_id))) return;
-        const orderId = Number(data.slice(7));
-        const clicked = cq.message?.message_id
-          ? [{ chat_id: String(chat_id), message_id: cq.message.message_id }]
-          : [];
-        const s = await db();
-        const { rejectOrderSafely } = await import("./orders.server");
-        const claim = await rejectOrderSafely(orderId);
-        if (!claim.ok) {
-          await tg("sendMessage", {
-            chat_id,
-            text: `⚠️ Заказ #${orderId} нельзя отклонить: статус уже «${claim.status}».`,
-          });
-          return;
-        }
-        const order = claim.order;
-
-        // Пишем туда, откуда пришёл заказ: у покупателя из Instagram
-        // telegram_id синтетический, и прямая отправка улетала в пустоту —
-        // человек не узнавал об отказе и продолжал ждать материалы.
-        const { notifyOrderCustomer } = await import("./orders.server");
-        // Админу — сквозной номер этого бота (как и в confirm: выше);
-        // покупателю — замороженный при создании, MIGRATION-28, чтобы
-        // совпадал с тем, что он уже видел в переписке.
-        const shownNo = order?.order_no ?? orderId;
-        const customerDisplayNo = order?.display_no ?? order?.order_no ?? orderId;
-        const { data: buyer } = order?.telegram_id
-          ? await s
-              .from("bot_users")
-              .select("state")
-              .eq("telegram_id", order.telegram_id)
-              .maybeSingle()
-          : { data: null };
-        const buyerLocale: Locale = (buyer?.state as BotUser["state"])?.locale ?? "ru";
-        const notified = await notifyOrderCustomer(
-          orderId,
-          copy[buyerLocale].rejectedNotice(customerDisplayNo),
-        );
-
-        await scheduleAdminOrderNotifyDismiss(orderId, clicked);
-        await tg("sendMessage", {
-          chat_id,
-          text: notified
-            ? `Заказ №${shownNo} отклонён, покупатель предупреждён.`
-            : `Заказ №${shownNo} отклонён. Сообщить покупателю не удалось — напишите ему сами.`,
-        });
-        return;
-      }
-      return;
+      return await handleCallbackQuery(update.callback_query);
     }
 
     const msg = update.message;
     if (!msg) return;
-    const chat_id = msg.chat.id;
-    const from = msg.from;
-    if (!from) return;
-    if (await replyIfBlocked(chat_id, from.id)) return;
+    return await handleIncomingMessage(msg);
+  } catch (e: unknown) {
+    console.error("[bot] handleUpdate error", e);
+  }
+}
 
-    // Фото/документ приходят с `caption`, а не `text` — раньше перехват
-    // логировал такое сообщение как "[без текста]", и оператор не видел ни
-    // подписи, ни того, что это вообще вложение.
-    const attachmentLabel = msg.photo ? "📷 Фото" : msg.document ? "📎 Документ" : undefined;
-    const managerLogText = msg.text || msg.caption || attachmentLabel;
-    const managerIntercepted = await handleManagerChatInbound(from.id, managerLogText);
+/** Инлайн-кнопки: callback_query из handleUpdate (каталог, корзина, чекаут, статус заказа, модерация оплаты). */
+async function handleCallbackQuery(cq: TelegramCallbackQuery): Promise<void> {
+  const chat_id = cq.message?.chat?.id;
+  const data: string = cq.data || "";
+  await tg("answerCallbackQuery", { callback_query_id: cq.id });
+  // Отсутствует только у inline-режима (inline_message_id вместо message),
+  // которым этот бот не пользуется — но раз callback без message пришёл,
+  // отвечать в чат всё равно некуда.
+  if (!chat_id || !cq.from) return;
+  const from_id = cq.from.id;
+  if (await replyIfBlocked(chat_id, from_id)) return;
+  // Keep the manager-chat audit trail, but do not let takeover suppress
+  // callback queries. These are explicit actions in the bot UI (catalog,
+  // cart, checkout, country selection), not free-form conversation. A
+  // previous takeover guard returned here and made the button tap visible
+  // in the chat log while silently preventing order placement.
+  await handleManagerChatCallback(from_id, callbackButtonLabel(cq));
+  if (await replyIfPaused(chat_id)) return;
 
-    // Чек по заказу не должен потеряться только из-за того, что менеджер
-    // взял диалог на себя (Блок 2.1): раньше `return` здесь выполнялся
-    // безусловно, и вложение, отправленное во время перехвата, вообще не
-    // доходило до кода приёма чека ниже — заказ оставался неоплаченным, а
-    // покупатель думал, что чек отправлен. Условие то же самое, что и у
-    // обычной ветки приёма чека дальше по файлу: mode ожидания чека с
-    // привязанным заказом, либо любой открытый awaiting_payment заказ.
-    let interceptedButAwaitingProof = false;
-    if (managerIntercepted && (msg.photo || msg.document)) {
-      const s = await db();
-      const { data: buyer } = await s
-        .from("bot_users")
-        .select("state")
-        .eq("telegram_id", from.id)
-        .maybeSingle();
-      const state = buyer?.state as BotUser["state"] | undefined;
-      const proofModes = new Set(["awaiting_proof", "awaiting_payment"]);
-      if (state?.mode && proofModes.has(String(state.mode)) && state.pending_order_id) {
-        interceptedButAwaitingProof = true;
-      } else {
-        // То же окно, что и у запасного пути приёма чека ниже: иначе перехват
-        // пропускал бы дальше вложения по заказам, которые тот путь всё равно
-        // уже не примет.
-        const since = new Date(Date.now() - PROOF_FALLBACK_WINDOW_MS).toISOString();
-        const { data: openOrder } = await s
-          .from("orders")
-          .select("id")
-          .eq("telegram_id", from.id)
-          .eq("status", "awaiting_payment")
-          .gte("created_at", since)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        interceptedButAwaitingProof = Boolean(openOrder?.id);
-      }
+  const user = await upsertUser(cq.from);
+  if (!user) return;
+  const locale: Locale = user.state?.locale ?? "ru";
+  const m = copy[locale];
+
+  // Before allowing navigation, require country code
+  if (
+    !data.startsWith("setcountry:") &&
+    !data.startsWith("confirm:") &&
+    !data.startsWith("reject:") &&
+    !data.startsWith("pay:") &&
+    data !== "clear" &&
+    !data.startsWith("rem:") &&
+    !data.startsWith("add:") &&
+    !data.startsWith("lang_") &&
+    !data.startsWith("locale:") &&
+    !data.startsWith("searchmore:") &&
+    !data.startsWith("prod:")
+  ) {
+    if (!user.state?.country_code) {
+      await askCountry(chat_id, from_id, false, locale);
+      return;
+    }
+  }
+
+  if (data.startsWith("locale:")) {
+    const locale = data.slice("locale:".length);
+    if (!isLocale(locale)) return;
+    await applyLocaleSelection(chat_id, from_id, locale, user);
+    return;
+  }
+
+  if (data.startsWith("pay:rk:") || data.startsWith("pay:manual:")) {
+    const isRk = data.startsWith("pay:rk:");
+    const orderId = Number(data.slice(isRk ? 7 : 11));
+    if (!orderId) return;
+
+    const s = await db();
+    const { data: order } = await s
+      .from("orders")
+      .select(
+        "id, order_no, display_no, telegram_id, status, total, currency, country_code, fulfillment_kind",
+      )
+      .eq("id", orderId)
+      .maybeSingle();
+    if (!order || Number(order.telegram_id) !== Number(from_id)) {
+      await tg("sendMessage", { chat_id, text: m.orderNotFound });
+      return;
+    }
+    const displayNo = order.display_no ?? order.order_no ?? orderId;
+    if (order.status !== "awaiting_payment") {
+      await tg("sendMessage", {
+        chat_id,
+        text: m.alreadyProcessed(displayNo),
+      });
+      return;
     }
 
-    if (managerIntercepted && !interceptedButAwaitingProof) return;
-    if (await replyIfPaused(chat_id)) return;
-    const user = await upsertUser(from);
-    if (!user) return;
-    const locale: Locale = user.state?.locale ?? "ru";
-    const m = copy[locale];
+    if (cq.message?.message_id) {
+      await tg("editMessageReplyMarkup", {
+        chat_id,
+        message_id: cq.message.message_id,
+        reply_markup: { inline_keyboard: [] },
+      }).catch(() => {});
+    }
 
-    // /start - special: also detect if sender is the admin and offer to bind
-    if (msg.text === "/start" || msg.text?.startsWith("/start ")) {
-      const startPayload = msg.text.slice("/start".length).trim();
-      let webHandoffPendingCheckout = false;
-      if (startPayload.startsWith("ref_") && (await hasModule("referral"))) {
-        const { registerReferral } = await import("./referrals.server");
-        await registerReferral(from.id, startPayload.slice(4)).catch((e) =>
-          console.error("[bot] registerReferral failed", e),
-        );
-      }
-      const { WEB_CART_HANDOFF_START_PREFIX, claimWebCartHandoff } =
-        await import("./web-storefront-handoff.server");
-      if (startPayload.startsWith(WEB_CART_HANDOFF_START_PREFIX)) {
-        const token = startPayload.slice(WEB_CART_HANDOFF_START_PREFIX.length);
-        const claimResult = await claimWebCartHandoff(from.id, token);
-        if (claimResult === "ok") webHandoffPendingCheckout = true;
-        else if (claimResult !== "missing") {
-          console.warn("[bot] web handoff claim", { telegram_id: from.id, claimResult, token });
-        }
-      }
-      await setState(from.id, {
-        ...user.state,
-        mode: "idle",
-        web_handoff_pending_checkout: webHandoffPendingCheckout,
-      });
+    const { amountDueNow } = await import("./fulfillment.server");
+    const amountDue = await amountDueNow({
+      total: Number(order.total),
+      fulfillment_kind: order.fulfillment_kind,
+    });
 
-      // Разовая настройка бота, не имеет отношения к языку покупателя —
-      // поэтому идёт до выбора языка и всегда по-русски: тому, кто это
-      // видит, ещё только предстоит открыть панель и выбрать язык магазина.
-      const s = await db();
-      const { data: setting } = await s
-        .from("app_settings")
-        .select("value")
-        .eq("key", "admin_chat_id")
-        .maybeSingle();
-      if (!setting?.value) {
-        // First user gets a hint with their chat id
+    if (isRk) {
+      const rk = await loadRobokassaSettings();
+      if (!rk.ready) {
         await tg("sendMessage", {
           chat_id,
-          text: `Привет! Это бот-каталог.\n\nВаш Telegram ID: <code>${from.id}</code>\nЕсли вы продавец — скопируйте его и вставьте в админ-панель → Настройки, чтобы получать уведомления о заказах.`,
-          parse_mode: "HTML",
+          text: m.robokassaUnavailable,
         });
-      }
-
-      // /start is also the language-change entry point. Never infer this from
-      // Telegram's device setting: the customer explicitly selects every time.
-      // Дальше — в обработчике locale: (welcome, оферта, страна, sendMain).
-      //
-      // Без модуля multi_language выбор языка не показывается вовсе — сразу
-      // подставляется locale по умолчанию (см. applyLocaleSelection), чтобы
-      // покупатель не выбирал то, чего продавец не оплатил.
-      if (await hasModule("multi_language")) {
-        await askLanguage(chat_id);
-      } else {
-        await applyLocaleSelection(chat_id, from.id, "ru", user);
-      }
-      return;
-    }
-    if (msg.text === "/id") {
-      await tg("sendMessage", { chat_id, text: m.idLabel(from.id) });
-      return;
-    }
-
-    // Contact share (optional — user can also type phone as text)
-    if (msg.contact && user.state?.mode === "awaiting_contact") {
-      await saveContactAndContinueCheckout(chat_id, user, msg.contact.phone_number);
-      return;
-    }
-
-    // Phone number typed as text during checkout
-    if (user.state?.mode === "awaiting_contact" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        if (msg.text === m.shareContactBtn) {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.shareContactHint,
-          });
-          return;
-        }
-
-        const phone = normalizePhone(msg.text);
-        if (!phone) {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.phoneParseFail,
-            parse_mode: "HTML",
-          });
-          return;
-        }
-        await saveContactAndContinueCheckout(chat_id, user, phone);
         return;
       }
+      await sendRobokassaPayLink({
+        chat_id,
+        telegram_id: from_id,
+        userState: user.state,
+        orderId,
+        displayNo,
+        total: amountDue,
+        currency: (order.currency as string) || "KZT",
+        rk,
+        locale,
+      });
+      return;
     }
 
-    // Payment proof (photo OR document).
-    // Robokassa sets mode=awaiting_payment; manual path uses awaiting_proof.
-    // Accept receipts in both modes, and for any open awaiting_payment order.
-    const proofModes = new Set(["awaiting_proof", "awaiting_payment"]);
-    let proofOrderId: number | undefined =
-      proofModes.has(String(user.state?.mode || "")) && user.state?.pending_order_id
-        ? Number(user.state.pending_order_id)
-        : undefined;
+    const { data: method } = await s
+      .from("payment_methods")
+      .select("instructions, qr_code_path")
+      .eq("country_code", order.country_code || "KZ")
+      .maybeSingle();
+    await startManualProofPath({
+      chat_id,
+      telegram_id: from_id,
+      userState: user.state,
+      orderId,
+      displayNo,
+      total: amountDue,
+      currency: (order.currency as string) || "KZT",
+      instructions: (method?.instructions as string) || m.defaultInstructions,
+      autoDeliver: true,
+      locale,
+      qrCodePath: method?.qr_code_path,
+      isPhysical: order.fulfillment_kind === "physical",
+    });
+    return;
+  }
 
-    /**
-     * Запасной путь: состояние потерялось, но заказ ждёт оплаты.
-     *
-     * Ветка нужна — состояние живёт в `bot_users.state`, и запись могла не
-     * пройти; без неё настоящий чек пропадал бы молча. Но она не привязана к
-     * шагу сценария, и до этого ограничения ловила **любое** фото от человека
-     * с открытым заказом: покупатель, бросивший заказ три недели назад и
-     * приславший сегодня скриншот с вопросом, переводил мёртвый заказ в
-     * «ждёт подтверждения», и продавцу прилетала кнопка «выдать».
-     *
-     * Окно в сутки разделяет эти случаи: чек присылают вскоре после оплаты,
-     * а вопрос со скриншотом приходит когда угодно. Заказы старше суток
-     * по-прежнему можно оплатить — но чек к ним привяжется только когда бот
-     * сам его попросил (mode = awaiting_proof/awaiting_payment выше).
-     */
-    if (!proofOrderId && (msg.photo || msg.document)) {
-      const s = await db();
+  if (data.startsWith("cat:root")) {
+    const parts = data.split(":");
+    return showCategories(chat_id, null, user.state?.country_code, Number(parts[2] || 0), locale);
+  }
+  if (data.startsWith("cat:")) {
+    const parts = data.split(":");
+    return showCategories(
+      chat_id,
+      parts[1],
+      user.state?.country_code,
+      Number(parts[2] || 0),
+      locale,
+    );
+  }
+  if (data.startsWith("prod:"))
+    return showProduct(chat_id, data.slice(5), user.state?.country_code, locale);
+  if (data.startsWith("searchmore:")) {
+    // Пагинация поиска: запрос берём из state.last_search
+    const offset = Number(data.slice(11)) || 0;
+    const query = user.state?.last_search;
+    if (!query) {
+      await tg("sendMessage", { chat_id, text: m.searchSessionExpired });
+      return;
+    }
+    return showSearch(chat_id, user, query, offset);
+  }
+  if (data.startsWith("add:")) {
+    // "add:<productId>" — товар без вариантов; "add:<productId>:<variantId>"
+    // — выбранный вариант (Ниши, Блок D, кнопка на карточке товара).
+    const [productId, variantId] = data.slice(4).split(":");
+    const addResult = await addToCart(from_id, productId, variantId || null);
+    const addText =
+      addResult === "ok"
+        ? m.addedToCart
+        : addResult === "mixed_cart"
+          ? m.productMixedCartMsg
+          : addResult === "digital_limit"
+            ? m.productDigitalLimitMsg
+            : addResult === "out_of_stock"
+              ? m.productOutOfStockMsg
+              : m.productUnavailable;
+    await tg("sendMessage", { chat_id, text: addText });
+    return;
+  }
+  if (data.startsWith("rem:")) {
+    const s = await db();
+    await s.from("cart_items").delete().eq("id", data.slice(4)).eq("telegram_id", from_id);
+    return showCart(chat_id, user);
+  }
+  if (data === "clear") {
+    const s = await db();
+    await s.from("cart_items").delete().eq("telegram_id", from_id);
+    await tg("sendMessage", { chat_id, text: m.cartCleared });
+    return;
+  }
+  if (data === "promo:enter") {
+    await setState(from_id, { ...user.state, mode: "awaiting_promo_code" });
+    await tg("sendMessage", { chat_id, text: m.promoCodePrompt });
+    return;
+  }
+  if (data === "promo:clear") {
+    const { promo_code: _promo_code, ...rest } = user.state ?? {};
+    await setState(from_id, rest);
+    await tg("sendMessage", { chat_id, text: m.promoCodeRemoved });
+    return showCart(chat_id, { ...user, state: rest });
+  }
+  if (data === "giftcert:enter") {
+    await setState(from_id, { ...user.state, mode: "awaiting_gift_certificate_code" });
+    await tg("sendMessage", { chat_id, text: m.giftCertificateCodePrompt });
+    return;
+  }
+  if (data === "giftcert:clear") {
+    const { gift_certificate_code: _gift_certificate_code, ...rest } = user.state ?? {};
+    await setState(from_id, rest);
+    await tg("sendMessage", { chat_id, text: m.giftCertificateRemoved });
+    return showCart(chat_id, { ...user, state: rest });
+  }
+  if (data === "points:use") {
+    const nextState = { ...user.state, use_points: true };
+    await setState(from_id, nextState);
+    return showCart(chat_id, { ...user, state: nextState });
+  }
+  if (data === "points:clear") {
+    const { use_points: _use_points, ...rest } = user.state ?? {};
+    await setState(from_id, rest);
+    return showCart(chat_id, { ...user, state: rest });
+  }
+  if (data.startsWith("resend:")) {
+    const orderId = Number(data.slice(7));
+    await tg("sendMessage", { chat_id, text: m.resendSent });
+    const { resendOrderFiles } = await import("./orders.server");
+    const result = await resendOrderFiles(orderId, from_id).catch((e) => {
+      console.error(`[bot] resendOrderFiles failed for order ${orderId}`, e);
+      return { ok: false as const, reason: "not_found" as const };
+    });
+    if (!result.ok || result.sent === 0) {
+      await tg("sendMessage", { chat_id, text: m.resendFailed });
+    }
+    return;
+  }
+  if (data.startsWith("rate:")) {
+    // hasModule — не только на кнопке в showMyOrders: старое сообщение с
+    // кнопкой «⭐ Оценить» остаётся рабочим в Telegram даже после того,
+    // как продавец отключил модуль. Проверяем здесь же, на самом
+    // действии, тем же приёмом, что и в awardPointsForDelivery.
+    if (!(await hasModule("review_request"))) return;
+    const orderId = Number(data.slice(5));
+    const { reviewableProductsForOrder } = await import("./reviews.server");
+    const products = await reviewableProductsForOrder(orderId, from_id);
+    if (products.length === 0) {
+      await tg("sendMessage", { chat_id, text: m.noReviewableProducts });
+      return;
+    }
+    if (products.length === 1) {
+      await tg("sendMessage", {
+        chat_id,
+        text: m.chooseRatingPrompt(products[0].name),
+        reply_markup: { inline_keyboard: [starButtons(products[0].product_id)] },
+      });
+      return;
+    }
+    await tg("sendMessage", {
+      chat_id,
+      text: m.chooseProductToRate,
+      reply_markup: {
+        inline_keyboard: products.map((p) => [
+          { text: p.name, callback_data: `rateproduct:${p.product_id}` },
+        ]),
+      },
+    });
+    return;
+  }
+  if (data.startsWith("rateproduct:")) {
+    if (!(await hasModule("review_request"))) return;
+    const productId = data.slice(12);
+    const { hasDeliveredPurchase } = await import("./reviews.server");
+    if (!(await hasDeliveredPurchase(from_id, productId))) {
+      await tg("sendMessage", { chat_id, text: m.reviewNotAllowed });
+      return;
+    }
+    const s = await db();
+    const { data: product } = await s
+      .from("products")
+      .select("name")
+      .eq("id", productId)
+      .maybeSingle();
+    await tg("sendMessage", {
+      chat_id,
+      text: m.chooseRatingPrompt(product?.name ?? ""),
+      reply_markup: { inline_keyboard: [starButtons(productId)] },
+    });
+    return;
+  }
+  if (data.startsWith("stars:")) {
+    if (!(await hasModule("review_request"))) return;
+    const [, productId, ratingRaw] = data.split(":");
+    const rating = Number(ratingRaw);
+    if (!isValidRating(rating)) return;
+    const { hasDeliveredPurchase, upsertReview } = await import("./reviews.server");
+    if (!(await hasDeliveredPurchase(from_id, productId))) {
+      await tg("sendMessage", { chat_id, text: m.reviewNotAllowed });
+      return;
+    }
+    await upsertReview(from_id, productId, rating, null);
+    await setState(from_id, {
+      ...user.state,
+      mode: "awaiting_review_comment",
+      review_product_id: productId,
+    });
+    await tg("sendMessage", {
+      chat_id,
+      text: m.reviewSaved,
+      reply_markup: {
+        inline_keyboard: [[{ text: m.reviewSkipBtn, callback_data: "reviewskip" }]],
+      },
+    });
+    return;
+  }
+  if (data === "reviewskip") {
+    const { mode: _mode, review_product_id: _rpid, ...rest } = user.state ?? {};
+    await setState(from_id, rest);
+    return;
+  }
+  // Кнопка из напоминания о брошенной корзине (Кейс 3, №6) — просто
+  // открывает корзину, как и текстовая кнопка "🛒 Корзина" меню.
+  if (data === "cart:show") {
+    return showCart(chat_id, user);
+  }
+  if (data === "checkout") {
+    try {
+      return await startCheckout(chat_id, user);
+    } catch (e: unknown) {
+      console.error(`[bot] checkout failed for telegram_id=${from_id}`, e);
+      await tg("sendMessage", {
+        chat_id,
+        text: "⚠️ Не удалось начать оформление заказа. Попробуйте ещё раз через минуту или напишите продавцу.",
+      }).catch(() => {});
+      return;
+    }
+  }
+  if (data.startsWith("country:")) return proceedToFulfillmentOrPlace(chat_id, user, data.slice(8));
+
+  if (data.startsWith("setcountry:")) {
+    const code = data.slice(11);
+    const s = await db();
+    const { data: countryMethod } = await s
+      .from("payment_methods")
+      .select("country_name")
+      .eq("country_code", code)
+      .maybeSingle();
+    await setState(from_id, {
+      ...user.state,
+      country_code: code,
+      country_name: countryMethod?.country_name,
+    });
+    await tg("sendMessage", {
+      chat_id,
+      text: m.countrySaved(countryMethod?.country_name as string),
+    });
+    await sendMain(chat_id, undefined, undefined, locale);
+    return;
+  }
+
+  if (data.startsWith("checkoutlang:")) {
+    const choice = data.slice("checkoutlang:".length);
+    if (!isDeliveryLangChoice(choice)) return;
+
+    const countryCode = user.state?.country_code;
+    if (!countryCode) {
+      // Состояние потерялось между сообщениями (например, сессия
+      // истекла) — переспрашиваем страну, а не падаем молча.
+      await askCountry(chat_id, from_id, true, locale);
+      return;
+    }
+
+    const nextState = { ...user.state, checkout_lang_choice: choice };
+    await setState(from_id, nextState);
+    if (cq.message?.message_id) {
+      await tg("editMessageReplyMarkup", {
+        chat_id,
+        message_id: cq.message.message_id,
+        reply_markup: { inline_keyboard: [] },
+      }).catch(() => {});
+    }
+    await placeOrder(chat_id, { ...user, state: nextState }, countryCode);
+    return;
+  }
+
+  if (data.startsWith("fulfilltype:")) {
+    // Guard по mode (Блок 4, находка 4.6) — тап по кнопке из старого
+    // сообщения (Telegram хранит инлайн-клавиатуры бессрочно) с новой
+    // корзиной/на другом шаге чекаута иначе тихо переписывал бы
+    // checkout_fulfillment_type поверх того, что реально происходит
+    // сейчас.
+    if (user.state?.mode !== "awaiting_fulfillment_type") return;
+    const typeRaw = data.slice("fulfilltype:".length);
+    if (typeRaw !== "pickup" && typeRaw !== "delivery") return;
+    const type: "pickup" | "delivery" = typeRaw;
+    if (cq.message?.message_id) {
+      await tg("editMessageReplyMarkup", {
+        chat_id,
+        message_id: cq.message.message_id,
+        reply_markup: { inline_keyboard: [] },
+      }).catch(() => {});
+    }
+    const nextState = { ...user.state, checkout_fulfillment_type: type };
+    await askFulfillmentDate(chat_id, from_id, nextState, locale);
+    return;
+  }
+
+  if (data.startsWith("zone:")) {
+    // Guard по mode (Блок 4, находка 4.6/4.7) — тап по старой кнопке
+    // зоны из awaiting_proof (уже другой заказ/шаг) иначе загонял бы
+    // покупателя обратно в awaiting_address, и следующее его сообщение
+    // (например, чек оплаты) съедалось бы как адрес доставки.
+    if (user.state?.mode !== "awaiting_delivery_zone") return;
+    const zoneId = data.slice("zone:".length);
+    if (cq.message?.message_id) {
+      await tg("editMessageReplyMarkup", {
+        chat_id,
+        message_id: cq.message.message_id,
+        reply_markup: { inline_keyboard: [] },
+      }).catch(() => {});
+    }
+    const s = await db();
+    const { data: zone } = await s
+      .from("delivery_zones")
+      .select("id, name, price")
+      .eq("id", zoneId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!zone) {
+      // Зона исчезла/скрыта между показом кнопок и тапом — переспрашиваем шаг.
+      await proceedToDeliveryZoneOrAddress(chat_id, from_id, user.state, locale);
+      return;
+    }
+    const nextState = {
+      ...user.state,
+      checkout_delivery_zone_id: zone.id,
+      checkout_delivery_zone_name: zone.name,
+      checkout_delivery_fee: Number(zone.price),
+      mode: "awaiting_address" as const,
+    };
+    await setState(from_id, nextState);
+    await tg("sendMessage", { chat_id, text: copy[locale].addressPrompt });
+    return;
+  }
+
+  if (data === "fulfillnote:skip") {
+    // Guard по mode (Блок 4, находка 4.6) — старая кнопка "Без
+    // комментария" с новой корзиной иначе создавала бы физический
+    // заказ с fulfillment_at = NULL, чего быть не должно (MIGRATION-49).
+    if (user.state?.mode !== "awaiting_fulfillment_note") return;
+    if (cq.message?.message_id) {
+      await tg("editMessageReplyMarkup", {
+        chat_id,
+        message_id: cq.message.message_id,
+        reply_markup: { inline_keyboard: [] },
+      }).catch(() => {});
+    }
+    const countryCode = user.state?.country_code;
+    if (!countryCode) {
+      await askCountry(chat_id, from_id, true, locale);
+      return;
+    }
+    const nextState = { ...user.state, mode: undefined };
+    await setState(from_id, nextState);
+    await placeOrder(chat_id, { ...user, state: nextState }, countryCode);
+    return;
+  }
+
+  if (data.startsWith("lang_") && isLocale(data.slice(5).split(":")[0])) {
+    const parts = data.split(":");
+    const lang = parts[0].slice(5) as Locale;
+    const orderId = Number(parts[1]);
+    const idx = Number(parts[2]);
+    const s = await db();
+    const { data: order } = await s
+      .from("orders")
+      .select("*, order_items(*)")
+      .eq("id", orderId)
+      .single();
+    if (!order) return;
+
+    // Security: verify the order belongs to the user clicking the button
+    if (order.telegram_id !== from_id) {
+      await tg("answerCallbackQuery", {
+        callback_query_id: cq.id,
+        text: m.accessDenied,
+      });
+      return;
+    }
+
+    // Sort items to match server delivery index logic
+    const items = ((order.order_items as OrderItem[]) || []).slice().sort((a, b) => {
+      const ai = String(a.id || "");
+      const bi = String(b.id || "");
+      return ai < bi ? -1 : ai > bi ? 1 : 0;
+    });
+
+    const item = items[idx];
+    if (!item?.id) return;
+
+    // Check if this language was already delivered
+    if (parseDeliveredLanguages(item.delivered_language).has(lang)) {
+      await tg("sendMessage", { chat_id, text: m.fileAlreadySent });
+      return;
+    }
+
+    const { sendMaterials } = await import("./orders.server");
+    const materials = materialsForOrderItem(item, lang);
+    const langLabel = `${localeFlags[lang]} ${localeNames[lang]}`;
+
+    let materialOk = true;
+    if (materials.length) {
+      await tg("sendMessage", {
+        chat_id,
+        text: m.loadingMaterials(langLabel),
+      });
+      // Always 1 copy — quantity is cart price, not file copies
+      const result = await sendMaterials(order.telegram_id, materials, item.name_snapshot, 1);
+      materialOk = result.outcome === "sent";
+      if (!materialOk) {
+        await tg("sendMessage", {
+          chat_id,
+          text: `⚠️ Не удалось отправить материал (${langLabel}) — продавец вышлет вручную.`,
+        });
+      }
+    } else {
+      await tg("sendMessage", {
+        chat_id,
+        text: m.materialNotConfigured(langLabel),
+      });
+    }
+
+    // Update delivered_language tracking — only on an actual send, so a
+    // failed attempt can still be retried by tapping the language button
+    // again instead of being silently marked done.
+    if (materialOk) {
+      await s
+        .from("order_items")
+        .update({ delivered_language: addDeliveredLanguage(item.delivered_language, lang) })
+        .eq("id", item.id);
+    }
+
+    // Edit the message to remove buttons
+    if (cq.message?.message_id) {
+      await tg("editMessageReplyMarkup", {
+        chat_id,
+        message_id: cq.message.message_id,
+        reply_markup: { inline_keyboard: [] },
+      });
+    }
+
+    return;
+  }
+
+  // Admin actions
+  if (data.startsWith("confirm:")) {
+    if (!(await requireShopAdmin(from_id, chat_id))) return;
+    const orderId = Number(data.slice(8));
+    const clicked = cq.message?.message_id
+      ? [{ chat_id: String(chat_id), message_id: cq.message.message_id }]
+      : [];
+    // Админу показываем сквозной номер этого бота, а не внутренний id.
+    const { data: ordRow } = await (
+      await db()
+    )
+      .from("orders")
+      .select("order_no, fulfillment_kind, total, status, paid_amount")
+      .eq("id", orderId)
+      .maybeSingle();
+    const shownNo = ordRow?.order_no ?? orderId;
+
+    if (ordRow?.fulfillment_kind === "physical") {
+      const { acceptOrder, amountDueNow, recordPayment, remainingDueNow } =
+        await import("./fulfillment.server");
+      try {
+        // "awaiting_payment" — покупатель ещё не присылал чек, продавец
+        // принимает на доверие: писать в paid_amount нечего (Блок 1,
+        // находка 1.2). Тот же приём, что в orders.functions.ts
+        // confirmOrder — статус смотрим ДО acceptOrder, она его меняет.
+        const hadProof = ordRow.status !== "awaiting_payment";
+        const result = await acceptOrder(orderId);
+        // alreadyAccepted — двойной тап по той же кнопке (сообщение уже
+        // не редактируется второй раз, но карточка могла остаться
+        // открытой у двух админов) — не задваиваем paid_amount (находка 1.1).
+        // remainingDueNow — «Внести оплату» в админке до этой кнопки.
+        if (!result.alreadyAccepted && hadProof) {
+          const due = remainingDueNow(
+            await amountDueNow({
+              total: Number(ordRow.total),
+              fulfillment_kind: ordRow.fulfillment_kind,
+            }),
+            ordRow.paid_amount,
+          );
+          if (due > 0) {
+            // recordPayment сама не бросает при исчерпанных попытках CAS —
+            // возвращает false (Блок 1, находка 1.8). .catch() ловит только
+            // исключения, false он пропускал молча.
+            const paid = await recordPayment(orderId, due).catch((e) => {
+              console.error("[bot] recordPayment failed", orderId, e);
+              return false;
+            });
+            if (!paid) console.error("[bot] recordPayment returned false", orderId);
+          }
+        }
+        await scheduleAdminOrderNotifyDismiss(orderId, clicked);
+        await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
+      } catch (e: unknown) {
+        await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
+      }
+      return;
+    }
+
+    await scheduleAdminOrderNotifyDismiss(orderId, clicked);
+    const statusRes = await tg("sendMessage", {
+      chat_id,
+      text: `⏳ Выдаю заказ #${shownNo}...`,
+    });
+    const statusId = collectTgMessageIds(statusRes.result)[0];
+    const finishAdminStatus = async (text: string) => {
+      if (statusId) {
+        await tg("editMessageText", { chat_id, message_id: statusId, text });
+        return;
+      }
+      await tg("sendMessage", { chat_id, text });
+    };
+    const { deliverOrder } = await import("./orders.server");
+    try {
+      const result = await deliverOrder(orderId);
+      if (result.alreadyDelivered) {
+        await finishAdminStatus(`ℹ️ Заказ #${shownNo} уже выдаётся или выдан.`);
+      } else if ("pending" in result && result.pending) {
+        await finishAdminStatus(
+          `📤 Заказ #${shownNo}: отправлено ${result.sent} из ${result.total}. Продолжаю рассылку — нажмите «Продолжить выдачу» в панели или подождите крон.`,
+        );
+      } else if (result.manualRequired) {
+        await finishAdminStatus(
+          `⚠️ Заказ #${shownNo} обработан, но часть материалов нужно выслать вручную — проверьте панель.`,
+        );
+      } else {
+        await finishAdminStatus(`✅ Заказ #${shownNo} выдан.`);
+      }
+    } catch (e: unknown) {
+      await finishAdminStatus(`Ошибка: ${errorMessage(e)}`);
+    }
+    return;
+  }
+  if (data.startsWith("reject:")) {
+    if (!(await requireShopAdmin(from_id, chat_id))) return;
+    const orderId = Number(data.slice(7));
+    const clicked = cq.message?.message_id
+      ? [{ chat_id: String(chat_id), message_id: cq.message.message_id }]
+      : [];
+    const s = await db();
+    const { rejectOrderSafely } = await import("./orders.server");
+    const claim = await rejectOrderSafely(orderId);
+    if (!claim.ok) {
+      await tg("sendMessage", {
+        chat_id,
+        text: `⚠️ Заказ #${orderId} нельзя отклонить: статус уже «${claim.status}».`,
+      });
+      return;
+    }
+    const order = claim.order;
+
+    // Пишем туда, откуда пришёл заказ: у покупателя из Instagram
+    // telegram_id синтетический, и прямая отправка улетала в пустоту —
+    // человек не узнавал об отказе и продолжал ждать материалы.
+    const { notifyOrderCustomer } = await import("./orders.server");
+    // Админу — сквозной номер этого бота (как и в confirm: выше);
+    // покупателю — замороженный при создании, MIGRATION-28, чтобы
+    // совпадал с тем, что он уже видел в переписке.
+    const shownNo = order?.order_no ?? orderId;
+    const customerDisplayNo = order?.display_no ?? order?.order_no ?? orderId;
+    const { data: buyer } = order?.telegram_id
+      ? await s.from("bot_users").select("state").eq("telegram_id", order.telegram_id).maybeSingle()
+      : { data: null };
+    const buyerLocale: Locale = (buyer?.state as BotUser["state"])?.locale ?? "ru";
+    const notified = await notifyOrderCustomer(
+      orderId,
+      copy[buyerLocale].rejectedNotice(customerDisplayNo),
+    );
+
+    await scheduleAdminOrderNotifyDismiss(orderId, clicked);
+    await tg("sendMessage", {
+      chat_id,
+      text: notified
+        ? `Заказ №${shownNo} отклонён, покупатель предупреждён.`
+        : `Заказ №${shownNo} отклонён. Сообщить покупателю не удалось — напишите ему сами.`,
+    });
+    return;
+  }
+  return;
+}
+
+/** Текст, фото и документы: message из handleUpdate (команды, шаги чекаута, чек оплаты, кнопки главного меню). */
+async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
+  const chat_id = msg.chat.id;
+  const from = msg.from;
+  if (!from) return;
+  if (await replyIfBlocked(chat_id, from.id)) return;
+
+  // Фото/документ приходят с `caption`, а не `text` — раньше перехват
+  // логировал такое сообщение как "[без текста]", и оператор не видел ни
+  // подписи, ни того, что это вообще вложение.
+  const attachmentLabel = msg.photo ? "📷 Фото" : msg.document ? "📎 Документ" : undefined;
+  const managerLogText = msg.text || msg.caption || attachmentLabel;
+  const managerIntercepted = await handleManagerChatInbound(from.id, managerLogText);
+
+  // Чек по заказу не должен потеряться только из-за того, что менеджер
+  // взял диалог на себя (Блок 2.1): раньше `return` здесь выполнялся
+  // безусловно, и вложение, отправленное во время перехвата, вообще не
+  // доходило до кода приёма чека ниже — заказ оставался неоплаченным, а
+  // покупатель думал, что чек отправлен. Условие то же самое, что и у
+  // обычной ветки приёма чека дальше по файлу: mode ожидания чека с
+  // привязанным заказом, либо любой открытый awaiting_payment заказ.
+  let interceptedButAwaitingProof = false;
+  if (managerIntercepted && (msg.photo || msg.document)) {
+    const s = await db();
+    const { data: buyer } = await s
+      .from("bot_users")
+      .select("state")
+      .eq("telegram_id", from.id)
+      .maybeSingle();
+    const state = buyer?.state as BotUser["state"] | undefined;
+    const proofModes = new Set(["awaiting_proof", "awaiting_payment"]);
+    if (state?.mode && proofModes.has(String(state.mode)) && state.pending_order_id) {
+      interceptedButAwaitingProof = true;
+    } else {
+      // То же окно, что и у запасного пути приёма чека ниже: иначе перехват
+      // пропускал бы дальше вложения по заказам, которые тот путь всё равно
+      // уже не примет.
       const since = new Date(Date.now() - PROOF_FALLBACK_WINDOW_MS).toISOString();
       const { data: openOrder } = await s
         .from("orders")
@@ -5401,299 +5258,367 @@ export async function handleUpdate(update: TelegramUpdate) {
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (openOrder?.id) proofOrderId = Number(openOrder.id);
+      interceptedButAwaitingProof = Boolean(openOrder?.id);
+    }
+  }
+
+  if (managerIntercepted && !interceptedButAwaitingProof) return;
+  if (await replyIfPaused(chat_id)) return;
+  const user = await upsertUser(from);
+  if (!user) return;
+  const locale: Locale = user.state?.locale ?? "ru";
+  const m = copy[locale];
+
+  // /start - special: also detect if sender is the admin and offer to bind
+  if (msg.text === "/start" || msg.text?.startsWith("/start ")) {
+    const startPayload = msg.text.slice("/start".length).trim();
+    let webHandoffPendingCheckout = false;
+    if (startPayload.startsWith("ref_") && (await hasModule("referral"))) {
+      const { registerReferral } = await import("./referrals.server");
+      await registerReferral(from.id, startPayload.slice(4)).catch((e) =>
+        console.error("[bot] registerReferral failed", e),
+      );
+    }
+    const { WEB_CART_HANDOFF_START_PREFIX, claimWebCartHandoff } =
+      await import("./web-storefront-handoff.server");
+    if (startPayload.startsWith(WEB_CART_HANDOFF_START_PREFIX)) {
+      const token = startPayload.slice(WEB_CART_HANDOFF_START_PREFIX.length);
+      const claimResult = await claimWebCartHandoff(from.id, token);
+      if (claimResult === "ok") webHandoffPendingCheckout = true;
+      else if (claimResult !== "missing") {
+        console.warn("[bot] web handoff claim", { telegram_id: from.id, claimResult, token });
+      }
+    }
+    await setState(from.id, {
+      ...user.state,
+      mode: "idle",
+      web_handoff_pending_checkout: webHandoffPendingCheckout,
+    });
+
+    // Разовая настройка бота, не имеет отношения к языку покупателя —
+    // поэтому идёт до выбора языка и всегда по-русски: тому, кто это
+    // видит, ещё только предстоит открыть панель и выбрать язык магазина.
+    const s = await db();
+    const { data: setting } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("key", "admin_chat_id")
+      .maybeSingle();
+    if (!setting?.value) {
+      // First user gets a hint with their chat id
+      await tg("sendMessage", {
+        chat_id,
+        text: `Привет! Это бот-каталог.\n\nВаш Telegram ID: <code>${from.id}</code>\nЕсли вы продавец — скопируйте его и вставьте в админ-панель → Настройки, чтобы получать уведомления о заказах.`,
+        parse_mode: "HTML",
+      });
     }
 
+    // /start is also the language-change entry point. Never infer this from
+    // Telegram's device setting: the customer explicitly selects every time.
+    // Дальше — в обработчике locale: (welcome, оферта, страна, sendMain).
+    //
+    // Без модуля multi_language выбор языка не показывается вовсе — сразу
+    // подставляется locale по умолчанию (см. applyLocaleSelection), чтобы
+    // покупатель не выбирал то, чего продавец не оплатил.
+    if (await hasModule("multi_language")) {
+      await askLanguage(chat_id);
+    } else {
+      await applyLocaleSelection(chat_id, from.id, "ru", user);
+    }
+    return;
+  }
+  if (msg.text === "/id") {
+    await tg("sendMessage", { chat_id, text: m.idLabel(from.id) });
+    return;
+  }
+
+  // Contact share (optional — user can also type phone as text)
+  if (msg.contact && user.state?.mode === "awaiting_contact") {
+    await saveContactAndContinueCheckout(chat_id, user, msg.contact.phone_number);
+    return;
+  }
+
+  // Phone number typed as text during checkout
+  if (user.state?.mode === "awaiting_contact" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      if (msg.text === m.shareContactBtn) {
+        await tg("sendMessage", {
+          chat_id,
+          text: m.shareContactHint,
+        });
+        return;
+      }
+
+      const phone = normalizePhone(msg.text);
+      if (!phone) {
+        await tg("sendMessage", {
+          chat_id,
+          text: m.phoneParseFail,
+          parse_mode: "HTML",
+        });
+        return;
+      }
+      await saveContactAndContinueCheckout(chat_id, user, phone);
+      return;
+    }
+  }
+
+  // Payment proof (photo OR document).
+  // Robokassa sets mode=awaiting_payment; manual path uses awaiting_proof.
+  // Accept receipts in both modes, and for any open awaiting_payment order.
+  const proofModes = new Set(["awaiting_proof", "awaiting_payment"]);
+  let proofOrderId: number | undefined =
+    proofModes.has(String(user.state?.mode || "")) && user.state?.pending_order_id
+      ? Number(user.state.pending_order_id)
+      : undefined;
+
+  /**
+   * Запасной путь: состояние потерялось, но заказ ждёт оплаты.
+   *
+   * Ветка нужна — состояние живёт в `bot_users.state`, и запись могла не
+   * пройти; без неё настоящий чек пропадал бы молча. Но она не привязана к
+   * шагу сценария, и до этого ограничения ловила **любое** фото от человека
+   * с открытым заказом: покупатель, бросивший заказ три недели назад и
+   * приславший сегодня скриншот с вопросом, переводил мёртвый заказ в
+   * «ждёт подтверждения», и продавцу прилетала кнопка «выдать».
+   *
+   * Окно в сутки разделяет эти случаи: чек присылают вскоре после оплаты,
+   * а вопрос со скриншотом приходит когда угодно. Заказы старше суток
+   * по-прежнему можно оплатить — но чек к ним привяжется только когда бот
+   * сам его попросил (mode = awaiting_proof/awaiting_payment выше).
+   */
+  if (!proofOrderId && (msg.photo || msg.document)) {
+    const s = await db();
+    const since = new Date(Date.now() - PROOF_FALLBACK_WINDOW_MS).toISOString();
+    const { data: openOrder } = await s
+      .from("orders")
+      .select("id")
+      .eq("telegram_id", from.id)
+      .eq("status", "awaiting_payment")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (openOrder?.id) proofOrderId = Number(openOrder.id);
+  }
+
+  if (
+    user.state?.mode === "awaiting_proof" &&
+    user.state.pending_order_id &&
+    !msg.photo &&
+    !msg.document
+  ) {
+    if (msg.text && MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      await tg("sendMessage", {
+        chat_id,
+        text: m.sendReceiptPrompt,
+      });
+      return;
+    }
+  }
+
+  if (proofOrderId && (msg.photo || msg.document)) {
+    const orderId = proofOrderId;
+
+    const sOrder = await db();
+    const { data: orderRow } = await sOrder
+      .from("orders")
+      .select(
+        "id, display_no, status, admin_note, country_code, telegram_id, total, currency, fulfillment_kind, paid_amount",
+      )
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (!orderRow || Number(orderRow.telegram_id) !== Number(from.id)) {
+      await tg("sendMessage", { chat_id, text: m.orderNotFound });
+      return;
+    }
+    // Тот же номер, что видел покупатель в «Заказ №X создан» — не живой
+    // order_no (его двигает ночная перенумерация), см. MIGRATION-28.
+    const displayNo = orderRow.display_no ?? user.state?.pending_display_no ?? orderId;
     if (
-      user.state?.mode === "awaiting_proof" &&
-      user.state.pending_order_id &&
-      !msg.photo &&
-      !msg.document
+      orderRow.status === "delivered" ||
+      orderRow.status === "rejected" ||
+      orderRow.status === "delivering" ||
+      // Физические статусы (Блок 6) не входили сюда изначально (Блок 3,
+      // находка 3.2): покупатель, уже принятый в работу, присылает ещё
+      // одно фото (например, референс торта) — а pending_order_id всё
+      // ещё указывает на этот заказ, и следующий блок пытался обработать
+      // фото как новый чек: либо откатывал accepted обратно в
+      // awaiting_confirmation/awaiting_payment (ручная/OCR-ветка ниже), либо
+      // при повторном accept удваивал paid_amount, пока не была добавлена
+      // защита alreadyAccepted (Блок 1, находка 1.1).
+      orderRow.status === "accepted" ||
+      orderRow.status === "in_production" ||
+      orderRow.status === "ready"
     ) {
-      if (msg.text && MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        await tg("sendMessage", {
-          chat_id,
-          text: m.sendReceiptPrompt,
-        });
-        return;
-      }
+      await tg("sendMessage", {
+        chat_id,
+        text: m.alreadyProcessed(displayNo),
+        reply_markup: await mainMenu(locale),
+      });
+      return;
     }
 
-    if (proofOrderId && (msg.photo || msg.document)) {
-      const orderId = proofOrderId;
+    const note = String(orderRow.admin_note || "");
+    const autoDeliver =
+      user.state?.proof_auto === true || note === "proof_auto" || note.startsWith("proof_auto");
 
-      const sOrder = await db();
-      const { data: orderRow } = await sOrder
-        .from("orders")
-        .select(
-          "id, display_no, status, admin_note, country_code, telegram_id, total, currency, fulfillment_kind, paid_amount",
-        )
-        .eq("id", orderId)
-        .maybeSingle();
+    // Определяем источник чека и расширение сохраняемого файла.
+    // Расширение важно: админ-панель определяет тип чека по расширению пути.
+    let proofFileId: string | null = null;
+    let proofKind: "photo" | "document" | null = null;
+    let dl: { bytes: Uint8Array; mime: string } | null = null;
+    let fileExt = "jpg";
 
-      if (!orderRow || Number(orderRow.telegram_id) !== Number(from.id)) {
-        await tg("sendMessage", { chat_id, text: m.orderNotFound });
-        return;
+    if (msg.photo) {
+      const biggest = msg.photo[msg.photo.length - 1];
+      proofFileId = biggest.file_id;
+      proofKind = "photo";
+      dl = await downloadTelegramFile(biggest.file_id);
+    } else if (msg.document) {
+      proofFileId = msg.document.file_id;
+      proofKind = "document";
+      dl = await downloadTelegramFile(msg.document.file_id);
+      const docName = (msg.document.file_name || "").toLowerCase();
+      const extMatch = docName.match(/\.([a-z0-9]{1,8})$/);
+      if (extMatch) fileExt = extMatch[1];
+      else if (msg.document.mime_type === "application/pdf") fileExt = "pdf";
+      else fileExt = "bin";
+    }
+
+    // Сохраняем чек в storage.
+    // Даже если storage недоступен — пересылаем file_id админу, чтобы чек не потерялся.
+    let proofSaved = false;
+    let proofPath: string | null = null;
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    if (dl) {
+      try {
+        const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+        if (!buckets?.some((b) => b.name === "payment-proofs")) {
+          await supabaseAdmin.storage.createBucket("payment-proofs", {
+            public: false,
+            fileSizeLimit: 20 * 1024 * 1024,
+          });
+        }
+      } catch (e) {
+        console.error("[bot] ensure payment-proofs bucket", e);
       }
-      // Тот же номер, что видел покупатель в «Заказ №X создан» — не живой
-      // order_no (его двигает ночная перенумерация), см. MIGRATION-28.
-      const displayNo = orderRow.display_no ?? user.state?.pending_display_no ?? orderId;
-      if (
-        orderRow.status === "delivered" ||
-        orderRow.status === "rejected" ||
-        orderRow.status === "delivering" ||
-        // Физические статусы (Блок 6) не входили сюда изначально (Блок 3,
-        // находка 3.2): покупатель, уже принятый в работу, присылает ещё
-        // одно фото (например, референс торта) — а pending_order_id всё
-        // ещё указывает на этот заказ, и следующий блок пытался обработать
-        // фото как новый чек: либо откатывал accepted обратно в
-        // awaiting_confirmation/awaiting_payment (ручная/OCR-ветка ниже), либо
-        // при повторном accept удваивал paid_amount, пока не была добавлена
-        // защита alreadyAccepted (Блок 1, находка 1.1).
-        orderRow.status === "accepted" ||
-        orderRow.status === "in_production" ||
-        orderRow.status === "ready"
-      ) {
+
+      // payment-proofs общий на все деплои (Storage не проходит через RLS) —
+      // bot_id-префикс не даёт чекам разных арендаторов оказаться в одной
+      // папке общего бакета (см. ANALYSIS.md, пятое обследование).
+      const key = `${process.env.BOT_ID?.trim() || "unknown"}/order-${orderId}/${Date.now()}.${fileExt}`;
+      const body = new Blob([dl.bytes as BlobPart], {
+        type: dl.mime || "application/octet-stream",
+      });
+      const upRes = await supabaseAdmin.storage.from("payment-proofs").upload(key, body, {
+        contentType: dl.mime || "application/octet-stream",
+        upsert: true,
+      });
+      if (!upRes.error) {
+        proofPath = key;
+        proofSaved = true;
+      } else {
+        console.error("[bot] payment-proofs upload failed", upRes.error);
+      }
+    } else {
+      console.error("[bot] failed to download proof from Telegram", { orderId, proofKind });
+    }
+
+    if (autoDeliver) {
+      // OCR check before auto-delivery
+      if (!dl) {
+        await setState(from.id, {
+          ...user.state,
+          mode: "awaiting_proof",
+          pending_order_id: orderId,
+          proof_auto: true,
+        });
         await tg("sendMessage", {
           chat_id,
-          text: m.alreadyProcessed(displayNo),
-          reply_markup: await mainMenu(locale),
+          text: m.fileDownloadFail,
         });
         return;
       }
 
-      const note = String(orderRow.admin_note || "");
-      const autoDeliver =
-        user.state?.proof_auto === true || note === "proof_auto" || note.startsWith("proof_auto");
+      // Same gate as verifyDirectReceipt (direct-purchase.server.ts) — this
+      // was the one auto-delivery path that spent the paid Vision quota
+      // and ran OCR regardless of whether the client's tariff still
+      // includes receipt_ocr. Falls into the same "manual review" branch
+      // the module's own ocr_unavailable case already handles.
+      const { verifyPaymentReceipt } = await import("./receipt-verify.server");
+      const { amountDueNow: ocrAmountDueNow } = await import("./fulfillment.server");
+      const ocrExpectedAmount = await ocrAmountDueNow({
+        total: Number(orderRow.total),
+        fulfillment_kind: orderRow.fulfillment_kind,
+      });
+      const verify: ReceiptVerifyResult = (await hasModule("receipt_ocr"))
+        ? await verifyPaymentReceipt({
+            bytes: dl.bytes,
+            mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
+            expectedAmount: ocrExpectedAmount,
+            currency: (orderRow.currency as string) || undefined,
+            orderId,
+          })
+        : { ok: false, reason: "ocr_unavailable", detail: "модуль receipt_ocr не подключён" };
 
-      // Определяем источник чека и расширение сохраняемого файла.
-      // Расширение важно: админ-панель определяет тип чека по расширению пути.
-      let proofFileId: string | null = null;
-      let proofKind: "photo" | "document" | null = null;
-      let dl: { bytes: Uint8Array; mime: string } | null = null;
-      let fileExt = "jpg";
-
-      if (msg.photo) {
-        const biggest = msg.photo[msg.photo.length - 1];
-        proofFileId = biggest.file_id;
-        proofKind = "photo";
-        dl = await downloadTelegramFile(biggest.file_id);
-      } else if (msg.document) {
-        proofFileId = msg.document.file_id;
-        proofKind = "document";
-        dl = await downloadTelegramFile(msg.document.file_id);
-        const docName = (msg.document.file_name || "").toLowerCase();
-        const extMatch = docName.match(/\.([a-z0-9]{1,8})$/);
-        if (extMatch) fileExt = extMatch[1];
-        else if (msg.document.mime_type === "application/pdf") fileExt = "pdf";
-        else fileExt = "bin";
-      }
-
-      // Сохраняем чек в storage.
-      // Даже если storage недоступен — пересылаем file_id админу, чтобы чек не потерялся.
-      let proofSaved = false;
-      let proofPath: string | null = null;
-      const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-      if (dl) {
-        try {
-          const { data: buckets } = await supabaseAdmin.storage.listBuckets();
-          if (!buckets?.some((b) => b.name === "payment-proofs")) {
-            await supabaseAdmin.storage.createBucket("payment-proofs", {
-              public: false,
-              fileSizeLimit: 20 * 1024 * 1024,
-            });
-          }
-        } catch (e) {
-          console.error("[bot] ensure payment-proofs bucket", e);
-        }
-
-        // payment-proofs общий на все деплои (Storage не проходит через RLS) —
-        // bot_id-префикс не даёт чекам разных арендаторов оказаться в одной
-        // папке общего бакета (см. ANALYSIS.md, пятое обследование).
-        const key = `${process.env.BOT_ID?.trim() || "unknown"}/order-${orderId}/${Date.now()}.${fileExt}`;
-        const body = new Blob([dl.bytes as BlobPart], {
-          type: dl.mime || "application/octet-stream",
+      if (!verify.ok && verify.reason === "not_receipt") {
+        // Keep order open; ask for a real receipt
+        await setState(from.id, {
+          ...user.state,
+          mode: "awaiting_proof",
+          pending_order_id: orderId,
+          proof_auto: true,
         });
-        const upRes = await supabaseAdmin.storage.from("payment-proofs").upload(key, body, {
-          contentType: dl.mime || "application/octet-stream",
-          upsert: true,
-        });
-        if (!upRes.error) {
-          proofPath = key;
-          proofSaved = true;
-        } else {
-          console.error("[bot] payment-proofs upload failed", upRes.error);
-        }
-      } else {
-        console.error("[bot] failed to download proof from Telegram", { orderId, proofKind });
-      }
-
-      if (autoDeliver) {
-        // OCR check before auto-delivery
-        if (!dl) {
-          await setState(from.id, {
-            ...user.state,
-            mode: "awaiting_proof",
-            pending_order_id: orderId,
-            proof_auto: true,
-          });
-          await tg("sendMessage", {
-            chat_id,
-            text: m.fileDownloadFail,
-          });
-          return;
-        }
-
-        // Same gate as verifyDirectReceipt (direct-purchase.server.ts) — this
-        // was the one auto-delivery path that spent the paid Vision quota
-        // and ran OCR regardless of whether the client's tariff still
-        // includes receipt_ocr. Falls into the same "manual review" branch
-        // the module's own ocr_unavailable case already handles.
-        const { verifyPaymentReceipt } = await import("./receipt-verify.server");
-        const { amountDueNow: ocrAmountDueNow } = await import("./fulfillment.server");
-        const ocrExpectedAmount = await ocrAmountDueNow({
-          total: Number(orderRow.total),
-          fulfillment_kind: orderRow.fulfillment_kind,
-        });
-        const verify: ReceiptVerifyResult = (await hasModule("receipt_ocr"))
-          ? await verifyPaymentReceipt({
-              bytes: dl.bytes,
-              mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
-              expectedAmount: ocrExpectedAmount,
-              currency: (orderRow.currency as string) || undefined,
-              orderId,
-            })
-          : { ok: false, reason: "ocr_unavailable", detail: "модуль receipt_ocr не подключён" };
-
-        if (!verify.ok && verify.reason === "not_receipt") {
-          // Keep order open; ask for a real receipt
-          await setState(from.id, {
-            ...user.state,
-            mode: "awaiting_proof",
-            pending_order_id: orderId,
-            proof_auto: true,
-          });
-          if (proofPath) {
-            await supabaseAdmin
-              .from("orders")
-              .update({
-                payment_proof_path: proofPath,
-                admin_note: note.startsWith("proof_auto") ? note : "proof_auto",
-                status: "awaiting_payment",
-              })
-              .eq("id", orderId);
-          }
-          await tg("sendMessage", {
-            chat_id,
-            text: m.notReceiptLike(displayNo),
-          });
-          return;
-        }
-
-        if (!verify.ok) {
-          // amount_mismatch or ocr_unavailable → manual review
-          await setState(from.id, {
-            ...user.state,
-            mode: "idle",
-            pending_order_id: undefined,
-            proof_auto: false,
-          });
+        if (proofPath) {
           await supabaseAdmin
             .from("orders")
             .update({
-              status: "awaiting_confirmation",
-              admin_note: `proof_auto; OCR: ${verify.detail}`.slice(0, 500),
-              ...(proofPath ? { payment_proof_path: proofPath } : {}),
+              payment_proof_path: proofPath,
+              admin_note: note.startsWith("proof_auto") ? note : "proof_auto",
+              status: "awaiting_payment",
             })
             .eq("id", orderId);
-
-          await tg("sendMessage", {
-            chat_id,
-            text: m.receiptManualReview(displayNo, orderRow.fulfillment_kind === "physical"),
-            reply_markup: await mainMenu(locale),
-          });
-          await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
-            reviewReason: verify.detail,
-          });
-          return;
         }
+        await tg("sendMessage", {
+          chat_id,
+          text: m.notReceiptLike(displayNo),
+        });
+        return;
+      }
 
+      if (!verify.ok) {
+        // amount_mismatch or ocr_unavailable → manual review
         await setState(from.id, {
           ...user.state,
           mode: "idle",
           pending_order_id: undefined,
           proof_auto: false,
         });
-
         await supabaseAdmin
           .from("orders")
           .update({
-            status: "awaiting_payment",
-            admin_note: `proof_auto; OCR ok amount=${verify.matchedAmount}`,
-            payment_proof_hash: verify.proofHash,
+            status: "awaiting_confirmation",
+            admin_note: `proof_auto; OCR: ${verify.detail}`.slice(0, 500),
             ...(proofPath ? { payment_proof_path: proofPath } : {}),
           })
           .eq("id", orderId);
 
         await tg("sendMessage", {
           chat_id,
-          text: m.receiptVerifiedDelivering(displayNo, orderRow.fulfillment_kind === "physical"),
+          text: m.receiptManualReview(displayNo, orderRow.fulfillment_kind === "physical"),
           reply_markup: await mainMenu(locale),
         });
-
-        try {
-          if (orderRow.fulfillment_kind === "physical") {
-            const { acceptOrder, recordPayment, remainingDueNow } =
-              await import("./fulfillment.server");
-            const result = await acceptOrder(orderId);
-            // ocrExpectedAmount уже посчитан выше той же amountDueNow() — то,
-            // что реально проверил OCR, и есть то, что реально внесено.
-            // !alreadyAccepted — не задваиваем при повторном срабатывании
-            // (например, покупатель прислал тот же чек дважды), Блок 1,
-            // находка 1.1. remainingDueNow — если продавец уже внесла сумму
-            // вручную, второй раз ту же цифру не пишем.
-            if (!result.alreadyAccepted) {
-              const due = remainingDueNow(ocrExpectedAmount, orderRow.paid_amount);
-              if (due > 0) {
-                const paid = await recordPayment(orderId, due).catch((e) => {
-                  console.error("[bot] recordPayment failed", orderId, e);
-                  return false;
-                });
-                if (!paid) console.error("[bot] recordPayment returned false", orderId);
-              }
-            }
-          } else {
-            const { deliverOrder } = await import("./orders.server");
-            await deliverOrder(orderId);
-          }
-        } catch (e: unknown) {
-          console.error("[bot] auto-deliver after proof failed", orderId, e);
-          await supabaseAdmin
-            .from("orders")
-            .update({ status: "awaiting_confirmation" })
-            .eq("id", orderId);
-          await tg("sendMessage", {
-            chat_id,
-            text: m.deliveryFailedAfterOcr(displayNo, orderRow.fulfillment_kind === "physical"),
-          });
-          await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
-            reviewReason: "Ошибка выдачи после успешного OCR",
-          });
-          return;
-        }
-        // Уведомление админу — за пределами try выше (Блок 3, находка 3.3):
-        // acceptOrder/recordPayment/deliverOrder к этому моменту уже
-        // отработали успешно, и сбой одной лишь отправки Telegram-сообщения
-        // (429/таймаут) не должен откатывать уже принятый и оплаченный
-        // заказ обратно в "awaiting_confirmation" — раньше откатывал, весь
-        // блок был одним try.
-        await notifyAdminNewOrder(orderId, proofFileId, proofKind, { autoDelivered: true }).catch(
-          (e) =>
-            console.error("[bot] notifyAdminNewOrder failed after successful accept", orderId, e),
-        );
+        await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
+          reviewReason: verify.detail,
+        });
         return;
       }
 
@@ -5704,158 +5629,175 @@ export async function handleUpdate(update: TelegramUpdate) {
         proof_auto: false,
       });
 
-      // Manual path: await seller confirmation
-      if (proofSaved && proofPath) {
-        await supabaseAdmin
-          .from("orders")
-          .update({ payment_proof_path: proofPath, status: "awaiting_confirmation" })
-          .eq("id", orderId);
-      } else {
+      await supabaseAdmin
+        .from("orders")
+        .update({
+          status: "awaiting_payment",
+          admin_note: `proof_auto; OCR ok amount=${verify.matchedAmount}`,
+          payment_proof_hash: verify.proofHash,
+          ...(proofPath ? { payment_proof_path: proofPath } : {}),
+        })
+        .eq("id", orderId);
+
+      await tg("sendMessage", {
+        chat_id,
+        text: m.receiptVerifiedDelivering(displayNo, orderRow.fulfillment_kind === "physical"),
+        reply_markup: await mainMenu(locale),
+      });
+
+      try {
+        if (orderRow.fulfillment_kind === "physical") {
+          const { acceptOrder, recordPayment, remainingDueNow } =
+            await import("./fulfillment.server");
+          const result = await acceptOrder(orderId);
+          // ocrExpectedAmount уже посчитан выше той же amountDueNow() — то,
+          // что реально проверил OCR, и есть то, что реально внесено.
+          // !alreadyAccepted — не задваиваем при повторном срабатывании
+          // (например, покупатель прислал тот же чек дважды), Блок 1,
+          // находка 1.1. remainingDueNow — если продавец уже внесла сумму
+          // вручную, второй раз ту же цифру не пишем.
+          if (!result.alreadyAccepted) {
+            const due = remainingDueNow(ocrExpectedAmount, orderRow.paid_amount);
+            if (due > 0) {
+              const paid = await recordPayment(orderId, due).catch((e) => {
+                console.error("[bot] recordPayment failed", orderId, e);
+                return false;
+              });
+              if (!paid) console.error("[bot] recordPayment returned false", orderId);
+            }
+          }
+        } else {
+          const { deliverOrder } = await import("./orders.server");
+          await deliverOrder(orderId);
+        }
+      } catch (e: unknown) {
+        console.error("[bot] auto-deliver after proof failed", orderId, e);
         await supabaseAdmin
           .from("orders")
           .update({ status: "awaiting_confirmation" })
           .eq("id", orderId);
-      }
-
-      if (proofSaved || proofFileId) {
         await tg("sendMessage", {
           chat_id,
-          text: proofSaved
-            ? m.receiptForwardedAwaitingConfirm(displayNo, orderRow.fulfillment_kind === "physical")
-            : m.receiptForwardedNoStorage(displayNo),
-          reply_markup: await mainMenu(locale),
+          text: m.deliveryFailedAfterOcr(displayNo, orderRow.fulfillment_kind === "physical"),
         });
-        await notifyAdminNewOrder(orderId, proofFileId, proofKind);
-      } else {
-        await tg("sendMessage", {
-          chat_id,
-          text: m.receiptSaveFailed(displayNo),
-          reply_markup: await mainMenu(locale),
+        await notifyAdminNewOrder(orderId, proofFileId, proofKind, {
+          reviewReason: "Ошибка выдачи после успешного OCR",
         });
-        await notifyAdminNewOrder(orderId, null, null);
+        return;
       }
+      // Уведомление админу — за пределами try выше (Блок 3, находка 3.3):
+      // acceptOrder/recordPayment/deliverOrder к этому моменту уже
+      // отработали успешно, и сбой одной лишь отправки Telegram-сообщения
+      // (429/таймаут) не должен откатывать уже принятый и оплаченный
+      // заказ обратно в "awaiting_confirmation" — раньше откатывал, весь
+      // блок был одним try.
+      await notifyAdminNewOrder(orderId, proofFileId, proofKind, { autoDelivered: true }).catch(
+        (e) =>
+          console.error("[bot] notifyAdminNewOrder failed after successful accept", orderId, e),
+      );
       return;
     }
 
-    // Способ получения физического заказа — текстовый фолбэк (Блок 4,
-    // находка 4.4). Раньше у этого шага не было своего mode вовсе (см.
-    // proceedToFulfillmentOrPlace), и покупатель, напечатавший "самовывоз"
-    // вместо тапа по кнопке, улетал в общий поиск товара с сообщением
-    // "ничего не найдено" — чекаут молча обрывался.
-    if (user.state?.mode === "awaiting_fulfillment_type" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        const { matchFulfillmentType } = await import("./direct-flow");
-        const type = matchFulfillmentType(msg.text);
-        if (!type) {
-          await tg("sendMessage", { chat_id, text: m.fulfillmentTypePrompt });
-          return;
-        }
-        const nextState = { ...user.state, checkout_fulfillment_type: type };
-        await askFulfillmentDate(chat_id, from.id, nextState, locale);
-        return;
-      }
+    await setState(from.id, {
+      ...user.state,
+      mode: "idle",
+      pending_order_id: undefined,
+      proof_auto: false,
+    });
+
+    // Manual path: await seller confirmation
+    if (proofSaved && proofPath) {
+      await supabaseAdmin
+        .from("orders")
+        .update({ payment_proof_path: proofPath, status: "awaiting_confirmation" })
+        .eq("id", orderId);
+    } else {
+      await supabaseAdmin
+        .from("orders")
+        .update({ status: "awaiting_confirmation" })
+        .eq("id", orderId);
     }
 
-    // Дата получения физического заказа (Ниши, Блок 8) — тот же escape hatch.
-    if (user.state?.mode === "awaiting_fulfillment_date" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        const {
-          parseFulfillmentDateInput,
-          maxLeadTimeDaysInCart,
-          todayInAppTZ,
-          addDaysToIsoDate,
-          isoDateToDisplay,
-        } = await import("./fulfillment.server");
-        const iso = parseFulfillmentDateInput(msg.text);
-        // Замороженная на шаге вопроса граница (Блок 4, находка 4.22) — не
-        // пересчитываем заново, чтобы не отклонить дату, которую сам бот
-        // только что назвал допустимой. Отсутствие в state — только для
-        // уже начатых до этой правки чекаутов, которым некуда было её
-        // положить; тогда считаем как раньше.
-        const minIso =
-          user.state?.checkout_min_fulfillment_date ??
-          addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(from.id));
-        if (!iso) {
-          await tg("sendMessage", { chat_id, text: m.fulfillmentDateInvalid });
-          return;
-        }
-        if (iso < minIso) {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.fulfillmentDateTooEarly(isoDateToDisplay(minIso)),
-          });
-          return;
-        }
-        const withDate = { ...user.state, checkout_fulfillment_at: iso };
-        if (withDate.checkout_fulfillment_type === "delivery") {
-          await proceedToDeliveryZoneOrAddress(chat_id, from.id, withDate, locale);
-        } else {
-          await setState(from.id, { ...withDate, mode: "awaiting_fulfillment_note" });
-          await tg("sendMessage", {
-            chat_id,
-            text: m.fulfillmentNotePrompt,
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: m.fulfillmentNoteSkipBtn, callback_data: "fulfillnote:skip" }],
-              ],
-            },
-          });
-        }
+    if (proofSaved || proofFileId) {
+      await tg("sendMessage", {
+        chat_id,
+        text: proofSaved
+          ? m.receiptForwardedAwaitingConfirm(displayNo, orderRow.fulfillment_kind === "physical")
+          : m.receiptForwardedNoStorage(displayNo),
+        reply_markup: await mainMenu(locale),
+      });
+      await notifyAdminNewOrder(orderId, proofFileId, proofKind);
+    } else {
+      await tg("sendMessage", {
+        chat_id,
+        text: m.receiptSaveFailed(displayNo),
+        reply_markup: await mainMenu(locale),
+      });
+      await notifyAdminNewOrder(orderId, null, null);
+    }
+    return;
+  }
+
+  // Способ получения физического заказа — текстовый фолбэк (Блок 4,
+  // находка 4.4). Раньше у этого шага не было своего mode вовсе (см.
+  // proceedToFulfillmentOrPlace), и покупатель, напечатавший "самовывоз"
+  // вместо тапа по кнопке, улетал в общий поиск товара с сообщением
+  // "ничего не найдено" — чекаут молча обрывался.
+  if (user.state?.mode === "awaiting_fulfillment_type" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const { matchFulfillmentType } = await import("./direct-flow");
+      const type = matchFulfillmentType(msg.text);
+      if (!type) {
+        await tg("sendMessage", { chat_id, text: m.fulfillmentTypePrompt });
         return;
       }
+      const nextState = { ...user.state, checkout_fulfillment_type: type };
+      await askFulfillmentDate(chat_id, from.id, nextState, locale);
+      return;
     }
+  }
 
-    // Зона доставки — ждём тап по кнопке; текстом можно попасть только
-    // названием зоны, набранным вручную (например, скопированным из другого
-    // чата), иначе просто переспрашиваем список кнопок.
-    if (user.state?.mode === "awaiting_delivery_zone" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        const { activeDeliveryZones } = await import("./fulfillment.server");
-        const { matchZone } = await import("./direct-flow");
-        const zones = await activeDeliveryZones();
-        // matchZone (Блок 4, находка 4.23) — тот же приём, что уже был у
-        // Direct: понимает порядковый номер и совпадение по началу названия,
-        // не только точное совпадение целиком.
-        const matched = matchZone(msg.text, zones);
-        const fullZone = matched ? zones.find((z) => z.id === matched.id) : null;
-        if (fullZone) {
-          const withZone = {
-            ...user.state,
-            checkout_delivery_zone_id: fullZone.id,
-            checkout_delivery_zone_name: fullZone.name,
-            checkout_delivery_fee: Number(fullZone.price),
-            mode: "awaiting_address" as const,
-          };
-          await setState(from.id, withZone);
-          await tg("sendMessage", { chat_id, text: m.addressPrompt });
-        } else {
-          await proceedToDeliveryZoneOrAddress(chat_id, from.id, user.state, locale);
-        }
+  // Дата получения физического заказа (Ниши, Блок 8) — тот же escape hatch.
+  if (user.state?.mode === "awaiting_fulfillment_date" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const {
+        parseFulfillmentDateInput,
+        maxLeadTimeDaysInCart,
+        todayInAppTZ,
+        addDaysToIsoDate,
+        isoDateToDisplay,
+      } = await import("./fulfillment.server");
+      const iso = parseFulfillmentDateInput(msg.text);
+      // Замороженная на шаге вопроса граница (Блок 4, находка 4.22) — не
+      // пересчитываем заново, чтобы не отклонить дату, которую сам бот
+      // только что назвал допустимой. Отсутствие в state — только для
+      // уже начатых до этой правки чекаутов, которым некуда было её
+      // положить; тогда считаем как раньше.
+      const minIso =
+        user.state?.checkout_min_fulfillment_date ??
+        addDaysToIsoDate(todayInAppTZ(), await maxLeadTimeDaysInCart(from.id));
+      if (!iso) {
+        await tg("sendMessage", { chat_id, text: m.fulfillmentDateInvalid });
         return;
       }
-    }
-
-    // Адрес доставки физического заказа — тот же escape hatch.
-    if (user.state?.mode === "awaiting_address" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
+      if (iso < minIso) {
+        await tg("sendMessage", {
+          chat_id,
+          text: m.fulfillmentDateTooEarly(isoDateToDisplay(minIso)),
+        });
+        return;
+      }
+      const withDate = { ...user.state, checkout_fulfillment_at: iso };
+      if (withDate.checkout_fulfillment_type === "delivery") {
+        await proceedToDeliveryZoneOrAddress(chat_id, from.id, withDate, locale);
       } else {
-        const withAddress = {
-          ...user.state,
-          checkout_fulfillment_address: msg.text.trim().slice(0, 500),
-          mode: "awaiting_fulfillment_note" as const,
-        };
-        await setState(from.id, withAddress);
+        await setState(from.id, { ...withDate, mode: "awaiting_fulfillment_note" });
         await tg("sendMessage", {
           chat_id,
           text: m.fulfillmentNotePrompt,
@@ -5865,179 +5807,235 @@ export async function handleUpdate(update: TelegramUpdate) {
             ],
           },
         });
-        return;
       }
-    }
-
-    // Комментарий к физическому заказу (надпись на торте и т.п.) — необязателен,
-    // кнопка «Без комментария» обрабатывается отдельно (fulfillnote:skip).
-    if (user.state?.mode === "awaiting_fulfillment_note" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        const countryCode = user.state?.country_code;
-        if (!countryCode) {
-          await askCountry(chat_id, from.id, true, locale);
-          return;
-        }
-        const withNote = {
-          ...user.state,
-          checkout_fulfillment_note: msg.text.trim().slice(0, 500),
-          mode: "idle" as const,
-        };
-        await setState(from.id, withNote);
-        await placeOrder(chat_id, { ...user, state: withNote }, countryCode);
-        return;
-      }
-    }
-
-    // Ввод промокода — тот же escape hatch, что у search/awaiting_contact:
-    // нажатие пункта меню не должно уйти в проверку кода буквально.
-    if (user.state?.mode === "awaiting_promo_code" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        const idleState = { ...user.state, mode: "idle" as const };
-        const found = await findValidPromoCode(msg.text);
-        if (!found.ok) {
-          await setState(from.id, idleState);
-          await tg("sendMessage", { chat_id, text: m.promoCodeInvalid });
-          return showCart(chat_id, { ...user, state: idleState });
-        }
-        const withPromo = { ...idleState, promo_code: normalizePromoCode(msg.text) };
-        await setState(from.id, withPromo);
-        return showCart(chat_id, { ...user, state: withPromo });
-      }
-    }
-
-    if (user.state?.mode === "awaiting_gift_certificate_code" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        const idleState = { ...user.state, mode: "idle" as const };
-        const found = await findValidGiftCertificate(msg.text);
-        if (!found.ok) {
-          await setState(from.id, idleState);
-          await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
-          return showCart(chat_id, { ...user, state: idleState });
-        }
-        const withCert = {
-          ...idleState,
-          gift_certificate_code: normalizeGiftCertificateCode(msg.text),
-        };
-        await setState(from.id, withCert);
-        return showCart(chat_id, { ...user, state: withCert });
-      }
-    }
-
-    if (user.state?.mode === "awaiting_review_comment" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        const productId = user.state.review_product_id;
-        const { mode: _mode, review_product_id: _rpid, ...rest } = user.state;
-        await setState(from.id, rest);
-        if (productId) {
-          const { updateReviewComment } = await import("./reviews.server");
-          await updateReviewComment(from.id, productId, msg.text).catch(() => {});
-        }
-        await tg("sendMessage", { chat_id, text: m.reviewCommentSaved });
-        return;
-      }
-    }
-
-    // Search text input — same escape hatch as awaiting_contact above: a
-    // menu button pressed while still in search mode used to be searched
-    // for literally ("📚 Каталог" → "ничего не найдено") instead of acting
-    // on it (Блок 4.3).
-    if (user.state?.mode === "search" && msg.text) {
-      if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
-        await setState(from.id, { ...user.state, mode: "idle" });
-        // Fallthrough to the main menu switch below
-      } else {
-        return showSearch(chat_id, user, msg.text);
-      }
-    }
-
-    const menuAction = canonicalMenuAction(msg.text);
-    if (
-      !user.state?.country_code &&
-      menuAction &&
-      ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(menuAction)
-    ) {
-      await askCountry(chat_id, from.id, false, locale);
       return;
     }
+  }
 
-    // Main menu buttons
-    switch (menuAction) {
-      case "📚 Каталог":
-        return showCategories(chat_id, null, user.state?.country_code, 0, locale);
-      case "🔍 Поиск":
-        await setState(from.id, { ...user.state, mode: "search" });
-        await tg("sendMessage", {
-          chat_id,
-          text: m.searchTypePrompt,
-        });
+  // Зона доставки — ждём тап по кнопке; текстом можно попасть только
+  // названием зоны, набранным вручную (например, скопированным из другого
+  // чата), иначе просто переспрашиваем список кнопок.
+  if (user.state?.mode === "awaiting_delivery_zone" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const { activeDeliveryZones } = await import("./fulfillment.server");
+      const { matchZone } = await import("./direct-flow");
+      const zones = await activeDeliveryZones();
+      // matchZone (Блок 4, находка 4.23) — тот же приём, что уже был у
+      // Direct: понимает порядковый номер и совпадение по началу названия,
+      // не только точное совпадение целиком.
+      const matched = matchZone(msg.text, zones);
+      const fullZone = matched ? zones.find((z) => z.id === matched.id) : null;
+      if (fullZone) {
+        const withZone = {
+          ...user.state,
+          checkout_delivery_zone_id: fullZone.id,
+          checkout_delivery_zone_name: fullZone.name,
+          checkout_delivery_fee: Number(fullZone.price),
+          mode: "awaiting_address" as const,
+        };
+        await setState(from.id, withZone);
+        await tg("sendMessage", { chat_id, text: m.addressPrompt });
+      } else {
+        await proceedToDeliveryZoneOrAddress(chat_id, from.id, user.state, locale);
+      }
+      return;
+    }
+  }
+
+  // Адрес доставки физического заказа — тот же escape hatch.
+  if (user.state?.mode === "awaiting_address" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const withAddress = {
+        ...user.state,
+        checkout_fulfillment_address: msg.text.trim().slice(0, 500),
+        mode: "awaiting_fulfillment_note" as const,
+      };
+      await setState(from.id, withAddress);
+      await tg("sendMessage", {
+        chat_id,
+        text: m.fulfillmentNotePrompt,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: m.fulfillmentNoteSkipBtn, callback_data: "fulfillnote:skip" }],
+          ],
+        },
+      });
+      return;
+    }
+  }
+
+  // Комментарий к физическому заказу (надпись на торте и т.п.) — необязателен,
+  // кнопка «Без комментария» обрабатывается отдельно (fulfillnote:skip).
+  if (user.state?.mode === "awaiting_fulfillment_note" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const countryCode = user.state?.country_code;
+      if (!countryCode) {
+        await askCountry(chat_id, from.id, true, locale);
         return;
-      case "🛒 Корзина":
-        return showCart(chat_id, user);
-      case "📋 Мои заказы":
-        return showMyOrders(chat_id, from.id, locale);
-      case "📖 Инструкция":
-        return sendInstruction(chat_id, locale);
-      case "ℹ️ Информация": {
-        const base = originFromState();
-        const { getCachedBotUrl } = await import("./bot-url.server");
-        const [botUrl, referralOn] = await Promise.all([getCachedBotUrl(), hasModule("referral")]);
+      }
+      const withNote = {
+        ...user.state,
+        checkout_fulfillment_note: msg.text.trim().slice(0, 500),
+        mode: "idle" as const,
+      };
+      await setState(from.id, withNote);
+      await placeOrder(chat_id, { ...user, state: withNote }, countryCode);
+      return;
+    }
+  }
+
+  // Ввод промокода — тот же escape hatch, что у search/awaiting_contact:
+  // нажатие пункта меню не должно уйти в проверку кода буквально.
+  if (user.state?.mode === "awaiting_promo_code" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const idleState = { ...user.state, mode: "idle" as const };
+      const found = await findValidPromoCode(msg.text);
+      if (!found.ok) {
+        await setState(from.id, idleState);
+        await tg("sendMessage", { chat_id, text: m.promoCodeInvalid });
+        return showCart(chat_id, { ...user, state: idleState });
+      }
+      const withPromo = { ...idleState, promo_code: normalizePromoCode(msg.text) };
+      await setState(from.id, withPromo);
+      return showCart(chat_id, { ...user, state: withPromo });
+    }
+  }
+
+  if (user.state?.mode === "awaiting_gift_certificate_code" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const idleState = { ...user.state, mode: "idle" as const };
+      const found = await findValidGiftCertificate(msg.text);
+      if (!found.ok) {
+        await setState(from.id, idleState);
+        await tg("sendMessage", { chat_id, text: m.giftCertificateInvalid });
+        return showCart(chat_id, { ...user, state: idleState });
+      }
+      const withCert = {
+        ...idleState,
+        gift_certificate_code: normalizeGiftCertificateCode(msg.text),
+      };
+      await setState(from.id, withCert);
+      return showCart(chat_id, { ...user, state: withCert });
+    }
+  }
+
+  if (user.state?.mode === "awaiting_review_comment" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      const productId = user.state.review_product_id;
+      const { mode: _mode, review_product_id: _rpid, ...rest } = user.state;
+      await setState(from.id, rest);
+      if (productId) {
+        const { updateReviewComment } = await import("./reviews.server");
+        await updateReviewComment(from.id, productId, msg.text).catch(() => {});
+      }
+      await tg("sendMessage", { chat_id, text: m.reviewCommentSaved });
+      return;
+    }
+  }
+
+  // Search text input — same escape hatch as awaiting_contact above: a
+  // menu button pressed while still in search mode used to be searched
+  // for literally ("📚 Каталог" → "ничего не найдено") instead of acting
+  // on it (Блок 4.3).
+  if (user.state?.mode === "search" && msg.text) {
+    if (MENU_ACTIONS.has(canonicalMenuAction(msg.text) ?? "")) {
+      await setState(from.id, { ...user.state, mode: "idle" });
+      // Fallthrough to the main menu switch below
+    } else {
+      return showSearch(chat_id, user, msg.text);
+    }
+  }
+
+  const menuAction = canonicalMenuAction(msg.text);
+  if (
+    !user.state?.country_code &&
+    menuAction &&
+    ["📚 Каталог", "🔍 Поиск", "🛒 Корзина", "📋 Мои заказы"].includes(menuAction)
+  ) {
+    await askCountry(chat_id, from.id, false, locale);
+    return;
+  }
+
+  // Main menu buttons
+  switch (menuAction) {
+    case "📚 Каталог":
+      return showCategories(chat_id, null, user.state?.country_code, 0, locale);
+    case "🔍 Поиск":
+      await setState(from.id, { ...user.state, mode: "search" });
+      await tg("sendMessage", {
+        chat_id,
+        text: m.searchTypePrompt,
+      });
+      return;
+    case "🛒 Корзина":
+      return showCart(chat_id, user);
+    case "📋 Мои заказы":
+      return showMyOrders(chat_id, from.id, locale);
+    case "📖 Инструкция":
+      return sendInstruction(chat_id, locale);
+    case "ℹ️ Информация": {
+      const base = originFromState();
+      const { getCachedBotUrl } = await import("./bot-url.server");
+      const [botUrl, referralOn] = await Promise.all([getCachedBotUrl(), hasModule("referral")]);
+      await tg("sendMessage", {
+        chat_id,
+        text: m.infoHeader + m.infoRequiredDocs + legalConsentHtml(base, locale),
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: m.offerBtn, url: `${base}/legal/offer` }],
+            [{ text: m.privacyBtn, url: `${base}/legal/privacy` }],
+            [{ text: m.requisitesBtn, url: `${base}/legal/requisites` }],
+            [{ text: m.aboutBtn, url: `${base}/legal/about` }],
+            ...(botUrl && referralOn
+              ? [[{ text: m.inviteFriendBtn, url: `${botUrl}?start=ref_${from.id}` }]]
+              : []),
+          ],
+        },
+        disable_web_page_preview: true,
+      });
+      return;
+    }
+    case "💬 Связаться с автором": {
+      const s = await db();
+      const { data: setting } = await s
+        .from("app_settings")
+        .select("value")
+        .eq("key", "admin_contact_link")
+        .maybeSingle();
+      if (setting?.value) {
         await tg("sendMessage", {
           chat_id,
-          text: m.infoHeader + m.infoRequiredDocs + legalConsentHtml(base, locale),
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: m.offerBtn, url: `${base}/legal/offer` }],
-              [{ text: m.privacyBtn, url: `${base}/legal/privacy` }],
-              [{ text: m.requisitesBtn, url: `${base}/legal/requisites` }],
-              [{ text: m.aboutBtn, url: `${base}/legal/about` }],
-              ...(botUrl && referralOn
-                ? [[{ text: m.inviteFriendBtn, url: `${botUrl}?start=ref_${from.id}` }]]
-                : []),
-            ],
-          },
+          text: m.contactUsePrefix(setting.value),
           disable_web_page_preview: true,
         });
-        return;
+      } else {
+        await tg("sendMessage", { chat_id, text: m.contactsNotSet });
       }
-      case "💬 Связаться с автором": {
-        const s = await db();
-        const { data: setting } = await s
-          .from("app_settings")
-          .select("value")
-          .eq("key", "admin_contact_link")
-          .maybeSingle();
-        if (setting?.value) {
-          await tg("sendMessage", {
-            chat_id,
-            text: m.contactUsePrefix(setting.value),
-            disable_web_page_preview: true,
-          });
-        } else {
-          await tg("sendMessage", { chat_id, text: m.contactsNotSet });
-        }
-        return;
-      }
+      return;
     }
-
-    // Fallback
-    await sendMain(chat_id, undefined, undefined, locale);
-  } catch (e: unknown) {
-    console.error("[bot] handleUpdate error", e);
   }
+
+  // Fallback
+  await sendMain(chat_id, undefined, undefined, locale);
 }
 
 /** Создать или обновить покупателя Telegram — для Mini App и внешних входов. */
