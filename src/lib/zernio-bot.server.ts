@@ -3102,286 +3102,18 @@ async function handlePurchaseFlow(params: {
 
   // ── Ждём чек ────────────────────────────────────────────────────────────
   if (state.mode === "awaiting_proof") {
-    if (!attachmentUrl) {
-      await flow.handleStepMiss({
-        user,
-        state,
-        text,
-        hint: copy.awaitingProofHint,
-        say,
-        locale,
-      });
-      return true;
-    }
-
-    /**
-     * Забираем шаг в обработку атомарно — до похода в сеть за вложением.
-     *
-     * Скачивание чека и загрузка в Storage — это реальное время, и если за
-     * него придёт второе вложение (человек прислал чек дважды, живой случай),
-     * второй вызов увидит тот же state.mode === "awaiting_proof" и ту же, ещё
-     * не очищенную корзину. Без захвата оба создали бы по заказу на одну и ту
-     * же покупку. См. claimAwaitingProof в direct-purchase.server.ts.
-     */
-    const claim = await flow.claimAwaitingProof(user.user_key);
-    if (!claim) {
-      // Это дубль того же входящего события или второе вложение, пришедшее в
-      // тот же момент. Первый вызов уже создаёт заказ; дубль не должен
-      // отправлять пользователю ложное «обрабатываю» и запускать ещё одну
-      // сетевую загрузку.
-      return true;
-    }
-
-    // Подтверждаем получение сразу после атомарного захвата. До создания заказа
-    // ещё есть несколько запросов к базе, а дальше — CDN, Storage и OCR. Если
-    // любой из них задержится, покупатель всё равно должен увидеть ответ, а не
-    // решить, что чек потерялся.
-    // `force` нужен намеренно: это подтверждение текущего чека, а не повтор
-    // одинакового ответа. Его доставка полезна, но не может быть условием
-    // создания заказа: исходящие сообщения Zernio иногда временно отвергает,
-    // тогда как сам входящий чек уже успешно дошёл до нас. Прерывание здесь
-    // оставляло покупателя без ответа и без заказа.
-    const receiptAckSent = await reply(
-      user,
+    return handleAwaitingProof({
       conversationId,
       accountId,
-      copy.receiptProcessing,
-      undefined,
-      true,
-    );
-    if (!receiptAckSent) {
-      console.error(
-        `[zernio-bot] receipt acknowledgement was not delivered for ${user.user_key}; continuing order creation`,
-      );
-    }
-
-    let order: Awaited<ReturnType<typeof flow.createOrderFromCart>>;
-    try {
-      order = await flow.createOrderFromCart({
-        user,
-        countryCode: claim.country_code!,
-        frozenPriced: claim.frozen_cart,
-        // Собраны шагами awaiting_fulfillment_* ДО этого момента (Ниши, Блок
-        // 8.3) — claim несёт полный DirectState, включая их. Digital-корзина
-        // никогда не проходит эти шаги, поэтому checkout_fulfillment_type
-        // остаётся не задан, и fulfillment корректно уходит как undefined.
-        fulfillment: claim.checkout_fulfillment_type
-          ? {
-              type: claim.checkout_fulfillment_type,
-              at: claim.checkout_fulfillment_at!,
-              address: claim.checkout_fulfillment_address,
-              note: claim.checkout_fulfillment_note,
-            }
-          : undefined,
-        // Зона доставки (Ниши, Блок B) — та же claim-запись несёт её, если
-        // шаг awaiting_delivery_zone был пройден (см. комментарий выше про
-        // fulfillment). Её цена уже сложена в frozen_cart.total выше по
-        // цепочке (sendDirectPaymentDetails), здесь только сама зона — для
-        // снимка delivery_zone_id/_name в orders.
-        deliveryZone: claim.checkout_delivery_zone_id
-          ? {
-              id: claim.checkout_delivery_zone_id,
-              name: claim.checkout_delivery_zone_name ?? "",
-              fee: claim.checkout_delivery_fee ?? 0,
-            }
-          : undefined,
-      });
-    } catch (error) {
-      console.error("[zernio-bot] failed to create direct order", error);
-      await flow.releaseAwaitingProof(user.user_key);
-      await say(copy.orderCreateFailed);
-      return true;
-    }
-    if (!order) {
-      // Заказ не создался — возвращаем пользователя на шаг с чеком. До этого
-      // уже был взят атомарный lock, и без отката следующий файл выглядел бы
-      // как второй чек в вечной обработке.
-      await flow.releaseAwaitingProof(user.user_key);
-      await say(copy.orderCreateFailed);
-      return true;
-    }
-
-    const s = await db();
-    const displayNo = order.order_no || order.id;
-    const email = user.email;
-    const platform = platformOf(user);
-    // Physical-заказу почта не нужна вовсе — она нужна была только чтобы
-    // дослать файлы письмом (см. deliverOrderByEmail, orders.server.ts).
-    // Полноценный чекаут физического заказа (дата/адрес) — Ниши, Блок 8.
-    //
-    // Блок 5, находка 5.8 (сознательно отложена) — mode: "awaiting_email"
-    // ниже ставится безусловно, ДО этой проверки; сейчас он корректно
-    // очищается на обоих выходах (успешная автовыдача и needsEmail===false
-    // ветка), но это по построению каждого выхода, а не по инварианту —
-    // новый ранний return в этом блоке в будущем мог бы оставить физический
-    // Direct-заказ висеть в awaiting_email. Полноценная защита — отдельный
-    // mode для физического пути (как уже есть в Telegram,
-    // awaiting_fulfillment_*), а не точечная правка.
-    const needsEmail = platform === "instagram" && order.fulfillment_kind !== "physical";
-
-    // Техническая блокировка нужна только до создания заказа. Переводим
-    // сценарий в нормальный пользовательский шаг до OCR и уведомлений: они
-    // могут быть медленными или временно недоступными, но не должны оставлять
-    // чат в processing_proof. Вложение уже сохранено, заказ уже создан.
-    await flow.setDirectState(user.user_key, {
-      mode: "awaiting_email",
-      pending_order_id: order.id,
-      // Заказ уже создан из этой заморозки — дальше она не нужна и не должна
-      // случайно попасть в следующую покупку того же покупателя.
-      frozen_cart: undefined,
-      ...(email ? { email_optional: true } : {}),
+      user,
+      text,
+      attachmentUrl,
+      flow,
+      copy,
+      locale,
+      say,
+      state,
     });
-
-    // Корзину освобождаем только после успешного заказа — иначе при сбое
-    // человек потерял бы всё, что набрал. Ошибка очистки не отменяет заказ и
-    // не должна останавливать его передачу на ручную проверку.
-    try {
-      await flow.clearCart(user);
-    } catch (error) {
-      console.error("[zernio-bot] failed to clear direct cart after order creation", error);
-    }
-
-    // Для ручной проверки критично не распознавание картинки, а сам заказ.
-    // Поэтому подтверждаем его и спрашиваем e-mail до загрузки вложения:
-    // CDN Instagram или Storage могут временно подвиснуть, но не должны
-    // заставлять покупателя ждать в тишине.
-    const askedForEmailImmediately = needsEmail && !email;
-    if (askedForEmailImmediately) {
-      await say(copy.receiptReceivedNeedEmail(displayNo));
-    }
-
-    // Файл всё равно пробуем сохранить к заказу, но лишь в пределах короткого
-    // окна. Если CDN/Storage недоступны, фото остаётся в Direct, а заказ уже
-    // создан и ждёт ручной проверки в админке.
-    const proofPath = await Promise.race([
-      flow.storeReceipt(attachmentUrl, user.user_key, {
-        platform: platformOf(user),
-        accountId,
-      }),
-      new Promise<null>((resolve) => setTimeout(resolve, 5_000)),
-    ]);
-    let created: { total: number | null; currency: string | null } | null = null;
-    if (proofPath) {
-      const { data } = await s
-        .from("orders")
-        .update({ payment_proof_path: proofPath.path })
-        .eq("id", order.id)
-        .select("total, currency")
-        .single();
-      created = data;
-    }
-
-    /**
-     * Распознаём чек сразу, пока байты под рукой.
-     *
-     * Это то, ради чего вообще стоит городить бота: если сумма в чеке сходится,
-     * материалы уходят сами и покупатель получает их через минуту, а не когда
-     * продавец доберётся до разбора. Не сошлось или не распознали — заказ
-     * уходит на ручную проверку с причиной, и продавец решает сам. Ошибка в эту
-     * сторону единственно верная: выдать по чужому чеку хуже, чем задержать
-     * выдачу на пару часов.
-     */
-    // amountDueNow(), не order.total напрямую — при payment_mode=deposit
-    // Telegram просит и сверяет только задаток, а Direct раньше всегда
-    // требовал (и сверял) полную сумму на той же настройке (Блок 1, находка
-    // 1.4): покупатель из Instagram/WhatsApp платил в 3+ раза больше, чем
-    // покупатель из Telegram, за тот же товар. on_receipt здесь по-прежнему
-    // не даёт настоящего "без чека" пути (Direct создаёт заказ только в
-    // ответ на уже присланный чек) — amountDueNow вернёт 0, автоматическое
-    // совпадение с реальной суммой в чеке не пройдёт, заказ уйдёт на ручную
-    // проверку продавцу; это тот же осознанный незакрытый разрыв, что и
-    // раньше, просто явный, а не тихая переплата.
-    const { amountDueNow } = await import("./fulfillment.server");
-    const expectedAmount = await amountDueNow({
-      total: Number(created?.total ?? order.total),
-      fulfillment_kind: order.fulfillment_kind,
-    });
-    const verdict = proofPath
-      ? await flow.verifyDirectReceipt({
-          bytes: proofPath.bytes,
-          mime: proofPath.mime,
-          expectedAmount,
-          currency: String(created?.currency ?? "KZT"),
-          orderId: order.id,
-        })
-      : {
-          autoDeliver: false,
-          note: `вложение не удалось быстро сохранить; проверить вручную в ${PLATFORM_LABEL[platform]}`,
-        };
-    await s
-      .from("orders")
-      .update({
-        admin_note: `${PLATFORM_LABEL[platform]}, чек: ${verdict.note}`.slice(0, 500),
-        ...(verdict.proofHash ? { payment_proof_hash: verdict.proofHash } : {}),
-      })
-      .eq("id", order.id);
-
-    // Instagram требует почту, WhatsApp выдаёт файлы прямо в чат.
-    if (verdict.autoDeliver && (!needsEmail || email)) {
-      if (email) await s.from("orders").update({ customer_email: email }).eq("id", order.id);
-      await flow.clearDirectFlow(user.user_key);
-      try {
-        if (order.fulfillment_kind === "physical") {
-          const { acceptOrder, recordPayment, remainingDueNow } =
-            await import("./fulfillment.server");
-          // alreadyAccepted — не задваиваем paid_amount при повторном
-          // срабатывании (Блок 1, находка 1.1). remainingDueNow — если
-          // продавец уже внесла сумму вручную до автоприёмки по чеку.
-          const result = await acceptOrder(order.id);
-          // expectedAmount уже посчитан через amountDueNow() выше — то, что
-          // реально проверил OCR (Блок 1, находка 1.4).
-          const due = remainingDueNow(expectedAmount, 0);
-          if (!result.alreadyAccepted && due > 0) {
-            const paid = await recordPayment(order.id, due).catch((e) => {
-              console.error("[zernio-bot] recordPayment failed", order.id, e);
-              return false;
-            });
-            if (!paid) console.error("[zernio-bot] recordPayment returned false", order.id);
-          }
-        } else {
-          const { deliverOrder } = await import("./orders.server");
-          await deliverOrder(order.id);
-        }
-        // Продавец должен знать о продаже, даже когда делать ничего не нужно.
-        await flow.notifyAdminAboutDirectOrder(order.id, displayNo, {
-          verdict: verdict.note,
-          needsAction: false,
-        });
-        return true; // о письме покупателю сообщает сама выдача
-      } catch (e) {
-        console.error("[zernio-bot] автовыдача не удалась, отдаём продавцу", e);
-        await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
-        await say(
-          needsEmail && email
-            ? copy.receiptReceivedKnownEmail(displayNo, email)
-            : order.fulfillment_kind === "physical"
-              ? copy.receiptReceivedPhysical(displayNo)
-              : copy.receiptReceivedWhatsApp(displayNo),
-        );
-        return true;
-      }
-    }
-
-    await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
-
-    if (!needsEmail) {
-      await flow.clearDirectFlow(user.user_key);
-      await say(
-        order.fulfillment_kind === "physical"
-          ? copy.receiptReceivedPhysical(displayNo)
-          : copy.receiptReceivedWhatsApp(displayNo),
-      );
-      return true;
-    }
-
-    if (email) {
-      await s.from("orders").update({ customer_email: email }).eq("id", order.id);
-      await say(copy.receiptReceivedAskEmailOptional(displayNo, email));
-      return true;
-    }
-
-    if (!askedForEmailImmediately) await say(copy.receiptReceivedNeedEmail(displayNo));
-    return true;
   }
 
   // ── Ждём страну ─────────────────────────────────────────────────────────
@@ -3575,131 +3307,17 @@ async function handlePurchaseFlow(params: {
 
   // ── Ждём почту ──────────────────────────────────────────────────────────
   if (state.mode === "awaiting_email") {
-    const email = flow.extractEmail(text);
-
-    /**
-     * Пришла ещё одна картинка вместо адреса — это второй чек, а не ошибка.
-     *
-     * Так и было при живой проверке: человек, уже отправив чек, прислал его
-     * ещё раз (или скриншот перевода вдогонку) — и получил «это не похоже на
-     * адрес почты». Ответ формально верный и совершенно бесполезный: человек
-     * прислал доказательство оплаты, а ему сказали, что он неправильно написал
-     * почту.
-     *
-     * Сохраняем вложение к тому же заказу, говорим продавцу и остаёмся на шаге
-     * почты — она всё ещё нужна, чтобы отправить материалы.
-     */
-    if (!email && attachmentUrl) {
-      const extra = await flow.storeReceipt(attachmentUrl, user.user_key, {
-        platform: platformOf(user),
-        accountId,
-      });
-      const s = await db();
-      if (extra && state.pending_order_id) {
-        const { data: order } = await s
-          .from("orders")
-          .select("payment_proof_path, order_no, admin_note")
-          .eq("id", state.pending_order_id)
-          .maybeSingle();
-
-        await s
-          .from("orders")
-          .update(
-            order?.payment_proof_path
-              ? {
-                  admin_note: `${order.admin_note ?? ""}; ещё один чек: ${extra.path}`.slice(
-                    0,
-                    500,
-                  ),
-                }
-              : { payment_proof_path: extra.path },
-          )
-          .eq("id", state.pending_order_id);
-
-        await flow.notifyAdminAboutQuestion({
-          question: `Прислал ещё один чек к заказу №${order?.order_no ?? state.pending_order_id}. Посмотрите вложения заказа.`,
-          senderName: user.first_name || "покупатель",
-          senderUsername: user.username || "",
-          platform: platformOf(user),
-        });
-      }
-      await say(copy.emailStepGotReceipt);
-      return true;
-    }
-
-    if (!email) {
-      /**
-       * Шаг был необязательным — адрес мы уже знали и лишь предложили его
-       * заменить. Значит, человек написал о чём-то другом: выходим из сценария
-       * и отдаём сообщение обычному разбору, а не требуем почту.
-       */
-      if (state.email_optional) {
-        await flow.clearDirectFlow(user.user_key);
-        return false;
-      }
-      await flow.handleStepMiss({
-        user,
-        state,
-        text,
-        hint: copy.emailHint,
-        say,
-        locale,
-      });
-      return true;
-    }
-    const s = await db();
-    await s.from("bot_users").update({ email }).eq("user_key", user.user_key);
-    if (state.pending_order_id) {
-      await s.from("orders").update({ customer_email: email }).eq("id", state.pending_order_id);
-    }
-    await flow.clearDirectFlow(user.user_key);
-
-    /**
-     * Чек уже проверен при получении, и вердикт лежит в заметке заказа. Если он
-     * сошёлся, ждать продавца незачем — адрес теперь известен, отдаём материалы
-     * сразу. Именно это и превращает бота из посредника в настоящую автовыдачу:
-     * человек получает файлы через минуту после оплаты, ночью и в выходной.
-     */
-    if (state.pending_order_id) {
-      const { data: order } = await s
-        .from("orders")
-        .select("admin_note, status")
-        .eq("id", state.pending_order_id)
-        .maybeSingle();
-
-      const verified = (order?.admin_note ?? "").includes("чек распознан");
-      if (verified && order?.status === "awaiting_confirmation") {
-        try {
-          const { deliverOrder } = await import("./orders.server");
-          await deliverOrder(state.pending_order_id);
-          const { data: shown } = await s
-            .from("orders")
-            .select("order_no")
-            .eq("id", state.pending_order_id)
-            .maybeSingle();
-          await flow.notifyAdminAboutDirectOrder(
-            state.pending_order_id,
-            shown?.order_no ?? state.pending_order_id,
-            { verdict: "распознан, выдано автоматически", needsAction: false },
-          );
-          return true; // о письме покупателю сообщает сама выдача
-        } catch (e) {
-          console.error("[zernio-bot] автовыдача после ввода почты не удалась", e);
-        }
-      }
-    }
-
-    /**
-     * Дальше разговор ведёт продавец, и это сказано прямо.
-     *
-     * Продавец боялась именно этого: человек оформил заказ, у него возник
-     * вопрос, а сообщение «прошло через бота» и до неё не дошло. Теперь после
-     * оформления бот выходит из сценария и по обычной переписке молчит —
-     * непрочитанное в Instagram снова видно, а покупатель предупреждён, что
-     * ответит живой человек, и не ждёт от бота невозможного.
-     */
-    await say(copy.emailSaved(email));
-    return true;
+    return handleAwaitingEmail({
+      accountId,
+      user,
+      text,
+      attachmentUrl,
+      flow,
+      copy,
+      locale,
+      say,
+      state,
+    });
   }
 
   /**
@@ -3714,6 +3332,48 @@ async function handlePurchaseFlow(params: {
    * случайная картинка, потеря невелика, а цена обратной ошибки — потерянная
    * оплата и разбирательство.
    */
+  return handlePurchaseFallback({
+    conversationId,
+    accountId,
+    user,
+    text,
+    attachmentUrl,
+    answersEverything,
+    flow,
+    classifyIncoming,
+    state,
+    copy,
+    say,
+  });
+}
+
+/** Вне сценария: чек «на опережение», номер товара, да/нет-ответ и передача продавцу — часть handlePurchaseFlow. */
+async function handlePurchaseFallback(ctx: {
+  conversationId: string;
+  accountId: string;
+  user: ZernioBotUser;
+  text: string;
+  attachmentUrl: string | undefined;
+  answersEverything: boolean;
+  flow: typeof import("./direct-purchase.server");
+  classifyIncoming: (typeof import("./direct-flow"))["classifyIncoming"];
+  state: ReturnType<(typeof import("./direct-purchase.server"))["readDirectState"]>;
+  copy: DirectCopy;
+  say: (message: string) => ReturnType<typeof reply>;
+}): Promise<boolean> {
+  const {
+    conversationId,
+    accountId,
+    user,
+    text,
+    attachmentUrl,
+    answersEverything,
+    flow,
+    classifyIncoming,
+    state,
+    copy,
+    say,
+  } = ctx;
   if (attachmentUrl) {
     const notifiedRecently =
       Boolean(state.notified_at) && Date.now() - Date.parse(state.notified_at!) < 60 * 60 * 1000;
@@ -3861,6 +3521,440 @@ async function handlePurchaseFlow(params: {
   }
 
   return false;
+}
+
+/** Шаг «ждём чек оплаты»: часть handlePurchaseFlow — атомарный захват, создание заказа, OCR, автовыдача. */
+async function handleAwaitingProof(ctx: {
+  conversationId: string;
+  accountId: string;
+  user: ZernioBotUser;
+  text: string;
+  attachmentUrl: string | undefined;
+  flow: typeof import("./direct-purchase.server");
+  copy: DirectCopy;
+  locale: Locale;
+  say: (message: string) => ReturnType<typeof reply>;
+  state: ReturnType<(typeof import("./direct-purchase.server"))["readDirectState"]>;
+}): Promise<true> {
+  const { conversationId, accountId, user, text, attachmentUrl, flow, copy, locale, say, state } =
+    ctx;
+  if (!attachmentUrl) {
+    await flow.handleStepMiss({
+      user,
+      state,
+      text,
+      hint: copy.awaitingProofHint,
+      say,
+      locale,
+    });
+    return true;
+  }
+
+  /**
+   * Забираем шаг в обработку атомарно — до похода в сеть за вложением.
+   *
+   * Скачивание чека и загрузка в Storage — это реальное время, и если за
+   * него придёт второе вложение (человек прислал чек дважды, живой случай),
+   * второй вызов увидит тот же state.mode === "awaiting_proof" и ту же, ещё
+   * не очищенную корзину. Без захвата оба создали бы по заказу на одну и ту
+   * же покупку. См. claimAwaitingProof в direct-purchase.server.ts.
+   */
+  const claim = await flow.claimAwaitingProof(user.user_key);
+  if (!claim) {
+    // Это дубль того же входящего события или второе вложение, пришедшее в
+    // тот же момент. Первый вызов уже создаёт заказ; дубль не должен
+    // отправлять пользователю ложное «обрабатываю» и запускать ещё одну
+    // сетевую загрузку.
+    return true;
+  }
+
+  // Подтверждаем получение сразу после атомарного захвата. До создания заказа
+  // ещё есть несколько запросов к базе, а дальше — CDN, Storage и OCR. Если
+  // любой из них задержится, покупатель всё равно должен увидеть ответ, а не
+  // решить, что чек потерялся.
+  // `force` нужен намеренно: это подтверждение текущего чека, а не повтор
+  // одинакового ответа. Его доставка полезна, но не может быть условием
+  // создания заказа: исходящие сообщения Zernio иногда временно отвергает,
+  // тогда как сам входящий чек уже успешно дошёл до нас. Прерывание здесь
+  // оставляло покупателя без ответа и без заказа.
+  const receiptAckSent = await reply(
+    user,
+    conversationId,
+    accountId,
+    copy.receiptProcessing,
+    undefined,
+    true,
+  );
+  if (!receiptAckSent) {
+    console.error(
+      `[zernio-bot] receipt acknowledgement was not delivered for ${user.user_key}; continuing order creation`,
+    );
+  }
+
+  let order: Awaited<ReturnType<typeof flow.createOrderFromCart>>;
+  try {
+    order = await flow.createOrderFromCart({
+      user,
+      countryCode: claim.country_code!,
+      frozenPriced: claim.frozen_cart,
+      // Собраны шагами awaiting_fulfillment_* ДО этого момента (Ниши, Блок
+      // 8.3) — claim несёт полный DirectState, включая их. Digital-корзина
+      // никогда не проходит эти шаги, поэтому checkout_fulfillment_type
+      // остаётся не задан, и fulfillment корректно уходит как undefined.
+      fulfillment: claim.checkout_fulfillment_type
+        ? {
+            type: claim.checkout_fulfillment_type,
+            at: claim.checkout_fulfillment_at!,
+            address: claim.checkout_fulfillment_address,
+            note: claim.checkout_fulfillment_note,
+          }
+        : undefined,
+      // Зона доставки (Ниши, Блок B) — та же claim-запись несёт её, если
+      // шаг awaiting_delivery_zone был пройден (см. комментарий выше про
+      // fulfillment). Её цена уже сложена в frozen_cart.total выше по
+      // цепочке (sendDirectPaymentDetails), здесь только сама зона — для
+      // снимка delivery_zone_id/_name в orders.
+      deliveryZone: claim.checkout_delivery_zone_id
+        ? {
+            id: claim.checkout_delivery_zone_id,
+            name: claim.checkout_delivery_zone_name ?? "",
+            fee: claim.checkout_delivery_fee ?? 0,
+          }
+        : undefined,
+    });
+  } catch (error) {
+    console.error("[zernio-bot] failed to create direct order", error);
+    await flow.releaseAwaitingProof(user.user_key);
+    await say(copy.orderCreateFailed);
+    return true;
+  }
+  if (!order) {
+    // Заказ не создался — возвращаем пользователя на шаг с чеком. До этого
+    // уже был взят атомарный lock, и без отката следующий файл выглядел бы
+    // как второй чек в вечной обработке.
+    await flow.releaseAwaitingProof(user.user_key);
+    await say(copy.orderCreateFailed);
+    return true;
+  }
+
+  const s = await db();
+  const displayNo = order.order_no || order.id;
+  const email = user.email;
+  const platform = platformOf(user);
+  // Physical-заказу почта не нужна вовсе — она нужна была только чтобы
+  // дослать файлы письмом (см. deliverOrderByEmail, orders.server.ts).
+  // Полноценный чекаут физического заказа (дата/адрес) — Ниши, Блок 8.
+  //
+  // Блок 5, находка 5.8 (сознательно отложена) — mode: "awaiting_email"
+  // ниже ставится безусловно, ДО этой проверки; сейчас он корректно
+  // очищается на обоих выходах (успешная автовыдача и needsEmail===false
+  // ветка), но это по построению каждого выхода, а не по инварианту —
+  // новый ранний return в этом блоке в будущем мог бы оставить физический
+  // Direct-заказ висеть в awaiting_email. Полноценная защита — отдельный
+  // mode для физического пути (как уже есть в Telegram,
+  // awaiting_fulfillment_*), а не точечная правка.
+  const needsEmail = platform === "instagram" && order.fulfillment_kind !== "physical";
+
+  // Техническая блокировка нужна только до создания заказа. Переводим
+  // сценарий в нормальный пользовательский шаг до OCR и уведомлений: они
+  // могут быть медленными или временно недоступными, но не должны оставлять
+  // чат в processing_proof. Вложение уже сохранено, заказ уже создан.
+  await flow.setDirectState(user.user_key, {
+    mode: "awaiting_email",
+    pending_order_id: order.id,
+    // Заказ уже создан из этой заморозки — дальше она не нужна и не должна
+    // случайно попасть в следующую покупку того же покупателя.
+    frozen_cart: undefined,
+    ...(email ? { email_optional: true } : {}),
+  });
+
+  // Корзину освобождаем только после успешного заказа — иначе при сбое
+  // человек потерял бы всё, что набрал. Ошибка очистки не отменяет заказ и
+  // не должна останавливать его передачу на ручную проверку.
+  try {
+    await flow.clearCart(user);
+  } catch (error) {
+    console.error("[zernio-bot] failed to clear direct cart after order creation", error);
+  }
+
+  // Для ручной проверки критично не распознавание картинки, а сам заказ.
+  // Поэтому подтверждаем его и спрашиваем e-mail до загрузки вложения:
+  // CDN Instagram или Storage могут временно подвиснуть, но не должны
+  // заставлять покупателя ждать в тишине.
+  const askedForEmailImmediately = needsEmail && !email;
+  if (askedForEmailImmediately) {
+    await say(copy.receiptReceivedNeedEmail(displayNo));
+  }
+
+  // Файл всё равно пробуем сохранить к заказу, но лишь в пределах короткого
+  // окна. Если CDN/Storage недоступны, фото остаётся в Direct, а заказ уже
+  // создан и ждёт ручной проверки в админке.
+  const proofPath = await Promise.race([
+    flow.storeReceipt(attachmentUrl, user.user_key, {
+      platform: platformOf(user),
+      accountId,
+    }),
+    new Promise<null>((resolve) => setTimeout(resolve, 5_000)),
+  ]);
+  let created: { total: number | null; currency: string | null } | null = null;
+  if (proofPath) {
+    const { data } = await s
+      .from("orders")
+      .update({ payment_proof_path: proofPath.path })
+      .eq("id", order.id)
+      .select("total, currency")
+      .single();
+    created = data;
+  }
+
+  /**
+   * Распознаём чек сразу, пока байты под рукой.
+   *
+   * Это то, ради чего вообще стоит городить бота: если сумма в чеке сходится,
+   * материалы уходят сами и покупатель получает их через минуту, а не когда
+   * продавец доберётся до разбора. Не сошлось или не распознали — заказ
+   * уходит на ручную проверку с причиной, и продавец решает сам. Ошибка в эту
+   * сторону единственно верная: выдать по чужому чеку хуже, чем задержать
+   * выдачу на пару часов.
+   */
+  // amountDueNow(), не order.total напрямую — при payment_mode=deposit
+  // Telegram просит и сверяет только задаток, а Direct раньше всегда
+  // требовал (и сверял) полную сумму на той же настройке (Блок 1, находка
+  // 1.4): покупатель из Instagram/WhatsApp платил в 3+ раза больше, чем
+  // покупатель из Telegram, за тот же товар. on_receipt здесь по-прежнему
+  // не даёт настоящего "без чека" пути (Direct создаёт заказ только в
+  // ответ на уже присланный чек) — amountDueNow вернёт 0, автоматическое
+  // совпадение с реальной суммой в чеке не пройдёт, заказ уйдёт на ручную
+  // проверку продавцу; это тот же осознанный незакрытый разрыв, что и
+  // раньше, просто явный, а не тихая переплата.
+  const { amountDueNow } = await import("./fulfillment.server");
+  const expectedAmount = await amountDueNow({
+    total: Number(created?.total ?? order.total),
+    fulfillment_kind: order.fulfillment_kind,
+  });
+  const verdict = proofPath
+    ? await flow.verifyDirectReceipt({
+        bytes: proofPath.bytes,
+        mime: proofPath.mime,
+        expectedAmount,
+        currency: String(created?.currency ?? "KZT"),
+        orderId: order.id,
+      })
+    : {
+        autoDeliver: false,
+        note: `вложение не удалось быстро сохранить; проверить вручную в ${PLATFORM_LABEL[platform]}`,
+      };
+  await s
+    .from("orders")
+    .update({
+      admin_note: `${PLATFORM_LABEL[platform]}, чек: ${verdict.note}`.slice(0, 500),
+      ...(verdict.proofHash ? { payment_proof_hash: verdict.proofHash } : {}),
+    })
+    .eq("id", order.id);
+
+  // Instagram требует почту, WhatsApp выдаёт файлы прямо в чат.
+  if (verdict.autoDeliver && (!needsEmail || email)) {
+    if (email) await s.from("orders").update({ customer_email: email }).eq("id", order.id);
+    await flow.clearDirectFlow(user.user_key);
+    try {
+      if (order.fulfillment_kind === "physical") {
+        const { acceptOrder, recordPayment, remainingDueNow } =
+          await import("./fulfillment.server");
+        // alreadyAccepted — не задваиваем paid_amount при повторном
+        // срабатывании (Блок 1, находка 1.1). remainingDueNow — если
+        // продавец уже внесла сумму вручную до автоприёмки по чеку.
+        const result = await acceptOrder(order.id);
+        // expectedAmount уже посчитан через amountDueNow() выше — то, что
+        // реально проверил OCR (Блок 1, находка 1.4).
+        const due = remainingDueNow(expectedAmount, 0);
+        if (!result.alreadyAccepted && due > 0) {
+          const paid = await recordPayment(order.id, due).catch((e) => {
+            console.error("[zernio-bot] recordPayment failed", order.id, e);
+            return false;
+          });
+          if (!paid) console.error("[zernio-bot] recordPayment returned false", order.id);
+        }
+      } else {
+        const { deliverOrder } = await import("./orders.server");
+        await deliverOrder(order.id);
+      }
+      // Продавец должен знать о продаже, даже когда делать ничего не нужно.
+      await flow.notifyAdminAboutDirectOrder(order.id, displayNo, {
+        verdict: verdict.note,
+        needsAction: false,
+      });
+      return true; // о письме покупателю сообщает сама выдача
+    } catch (e) {
+      console.error("[zernio-bot] автовыдача не удалась, отдаём продавцу", e);
+      await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
+      await say(
+        needsEmail && email
+          ? copy.receiptReceivedKnownEmail(displayNo, email)
+          : order.fulfillment_kind === "physical"
+            ? copy.receiptReceivedPhysical(displayNo)
+            : copy.receiptReceivedWhatsApp(displayNo),
+      );
+      return true;
+    }
+  }
+
+  await flow.notifyAdminAboutDirectOrder(order.id, displayNo, { verdict: verdict.note });
+
+  if (!needsEmail) {
+    await flow.clearDirectFlow(user.user_key);
+    await say(
+      order.fulfillment_kind === "physical"
+        ? copy.receiptReceivedPhysical(displayNo)
+        : copy.receiptReceivedWhatsApp(displayNo),
+    );
+    return true;
+  }
+
+  if (email) {
+    await s.from("orders").update({ customer_email: email }).eq("id", order.id);
+    await say(copy.receiptReceivedAskEmailOptional(displayNo, email));
+    return true;
+  }
+
+  if (!askedForEmailImmediately) await say(copy.receiptReceivedNeedEmail(displayNo));
+  return true;
+}
+
+/** Шаг «ждём e-mail для выдачи»: часть handlePurchaseFlow — сохранение почты, повторный чек, автовыдача после проверки. */
+async function handleAwaitingEmail(ctx: {
+  accountId: string;
+  user: ZernioBotUser;
+  text: string;
+  attachmentUrl: string | undefined;
+  flow: typeof import("./direct-purchase.server");
+  copy: DirectCopy;
+  locale: Locale;
+  say: (message: string) => ReturnType<typeof reply>;
+  state: ReturnType<(typeof import("./direct-purchase.server"))["readDirectState"]>;
+}): Promise<boolean> {
+  const { accountId, user, text, attachmentUrl, flow, copy, locale, say, state } = ctx;
+  const email = flow.extractEmail(text);
+
+  /**
+   * Пришла ещё одна картинка вместо адреса — это второй чек, а не ошибка.
+   *
+   * Так и было при живой проверке: человек, уже отправив чек, прислал его
+   * ещё раз (или скриншот перевода вдогонку) — и получил «это не похоже на
+   * адрес почты». Ответ формально верный и совершенно бесполезный: человек
+   * прислал доказательство оплаты, а ему сказали, что он неправильно написал
+   * почту.
+   *
+   * Сохраняем вложение к тому же заказу, говорим продавцу и остаёмся на шаге
+   * почты — она всё ещё нужна, чтобы отправить материалы.
+   */
+  if (!email && attachmentUrl) {
+    const extra = await flow.storeReceipt(attachmentUrl, user.user_key, {
+      platform: platformOf(user),
+      accountId,
+    });
+    const s = await db();
+    if (extra && state.pending_order_id) {
+      const { data: order } = await s
+        .from("orders")
+        .select("payment_proof_path, order_no, admin_note")
+        .eq("id", state.pending_order_id)
+        .maybeSingle();
+
+      await s
+        .from("orders")
+        .update(
+          order?.payment_proof_path
+            ? {
+                admin_note: `${order.admin_note ?? ""}; ещё один чек: ${extra.path}`.slice(0, 500),
+              }
+            : { payment_proof_path: extra.path },
+        )
+        .eq("id", state.pending_order_id);
+
+      await flow.notifyAdminAboutQuestion({
+        question: `Прислал ещё один чек к заказу №${order?.order_no ?? state.pending_order_id}. Посмотрите вложения заказа.`,
+        senderName: user.first_name || "покупатель",
+        senderUsername: user.username || "",
+        platform: platformOf(user),
+      });
+    }
+    await say(copy.emailStepGotReceipt);
+    return true;
+  }
+
+  if (!email) {
+    /**
+     * Шаг был необязательным — адрес мы уже знали и лишь предложили его
+     * заменить. Значит, человек написал о чём-то другом: выходим из сценария
+     * и отдаём сообщение обычному разбору, а не требуем почту.
+     */
+    if (state.email_optional) {
+      await flow.clearDirectFlow(user.user_key);
+      return false;
+    }
+    await flow.handleStepMiss({
+      user,
+      state,
+      text,
+      hint: copy.emailHint,
+      say,
+      locale,
+    });
+    return true;
+  }
+  const s = await db();
+  await s.from("bot_users").update({ email }).eq("user_key", user.user_key);
+  if (state.pending_order_id) {
+    await s.from("orders").update({ customer_email: email }).eq("id", state.pending_order_id);
+  }
+  await flow.clearDirectFlow(user.user_key);
+
+  /**
+   * Чек уже проверен при получении, и вердикт лежит в заметке заказа. Если он
+   * сошёлся, ждать продавца незачем — адрес теперь известен, отдаём материалы
+   * сразу. Именно это и превращает бота из посредника в настоящую автовыдачу:
+   * человек получает файлы через минуту после оплаты, ночью и в выходной.
+   */
+  if (state.pending_order_id) {
+    const { data: order } = await s
+      .from("orders")
+      .select("admin_note, status")
+      .eq("id", state.pending_order_id)
+      .maybeSingle();
+
+    const verified = (order?.admin_note ?? "").includes("чек распознан");
+    if (verified && order?.status === "awaiting_confirmation") {
+      try {
+        const { deliverOrder } = await import("./orders.server");
+        await deliverOrder(state.pending_order_id);
+        const { data: shown } = await s
+          .from("orders")
+          .select("order_no")
+          .eq("id", state.pending_order_id)
+          .maybeSingle();
+        await flow.notifyAdminAboutDirectOrder(
+          state.pending_order_id,
+          shown?.order_no ?? state.pending_order_id,
+          { verdict: "распознан, выдано автоматически", needsAction: false },
+        );
+        return true; // о письме покупателю сообщает сама выдача
+      } catch (e) {
+        console.error("[zernio-bot] автовыдача после ввода почты не удалась", e);
+      }
+    }
+  }
+
+  /**
+   * Дальше разговор ведёт продавец, и это сказано прямо.
+   *
+   * Продавец боялась именно этого: человек оформил заказ, у него возник
+   * вопрос, а сообщение «прошло через бота» и до неё не дошло. Теперь после
+   * оформления бот выходит из сценария и по обычной переписке молчит —
+   * непрочитанное в Instagram снова видно, а покупатель предупреждён, что
+   * ответит живой человек, и не ждёт от бота невозможного.
+   */
+  await say(copy.emailSaved(email));
+  return true;
 }
 
 /** Слова по умолчанию, которыми человек зовёт бота. Продавец может задать свои. */
