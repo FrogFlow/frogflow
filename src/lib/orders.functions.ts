@@ -119,17 +119,17 @@ export const confirmOrder = createServerFn({ method: "POST" })
         });
         if (!paid) console.error("[orders] recordPayment returned false", data.id);
       }
-      const { dismissAdminOrderNotifications } = await import("./admin-order-notify.server");
-      await dismissAdminOrderNotifications(data.id).catch((e) =>
-        console.error("[orders] dismiss admin notify failed", data.id, e),
+      const { scheduleAdminOrderNotifyDismiss } = await import("./admin-order-notify.server");
+      await scheduleAdminOrderNotifyDismiss(data.id).catch((e) =>
+        console.error("[orders] schedule admin notify dismiss failed", data.id, e),
       );
       return result;
     }
     const { deliverOrder } = await import("./orders.server");
     const delivered = await deliverOrder(data.id);
-    const { dismissAdminOrderNotifications } = await import("./admin-order-notify.server");
-    await dismissAdminOrderNotifications(data.id).catch((e) =>
-      console.error("[orders] dismiss admin notify failed", data.id, e),
+    const { scheduleAdminOrderNotifyDismiss } = await import("./admin-order-notify.server");
+    await scheduleAdminOrderNotifyDismiss(data.id).catch((e) =>
+      console.error("[orders] schedule admin notify dismiss failed", data.id, e),
     );
     return delivered;
   });
@@ -325,9 +325,9 @@ export const rejectOrder = createServerFn({ method: "POST" })
      * которых не будет. А отклонения тут обычное дело: чек нечитаемый, сумма не
      * та.
      */
-    const { dismissAdminOrderNotifications } = await import("./admin-order-notify.server");
-    await dismissAdminOrderNotifications(data.id).catch((e) =>
-      console.error("[orders] dismiss admin notify failed", data.id, e),
+    const { scheduleAdminOrderNotifyDismiss } = await import("./admin-order-notify.server");
+    await scheduleAdminOrderNotifyDismiss(data.id).catch((e) =>
+      console.error("[orders] schedule admin notify dismiss failed", data.id, e),
     );
     const notified = await notifyOrderCustomer(
       data.id,

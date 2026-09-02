@@ -13,8 +13,8 @@ import { isLocale, localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } fr
 import { currentVerticalDef } from "./verticals/vertical.server";
 import { collectTgMessageIds, type AdminNotifyTgRef } from "./admin-order-notify";
 import {
-  dismissAdminOrderNotifications,
   rememberAdminNotifyMessages,
+  scheduleAdminOrderNotifyDismiss,
 } from "./admin-order-notify.server";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
@@ -4193,8 +4193,14 @@ ${fulfillmentLine}
 
   for (const adminChatId of adminIds) {
     const refs: AdminNotifyTgRef[] = [];
-    const remember = (ids: number[]) => {
-      for (const message_id of ids) refs.push({ chat_id: String(adminChatId), message_id });
+    const remember = (ids: number[], buttons = false) => {
+      for (const message_id of ids) {
+        refs.push({
+          chat_id: String(adminChatId),
+          message_id,
+          ...(buttons ? { buttons: true } : {}),
+        });
+      }
     };
 
     // 1) Сводка + состав в одном сообщении, если влезает; иначе состав следом.
@@ -4206,7 +4212,7 @@ ${fulfillmentLine}
           parse_mode: "HTML",
           ...(reply_markup ? { reply_markup } : {}),
         });
-        remember(collectTgMessageIds(res.result));
+        remember(collectTgMessageIds(res.result), Boolean(reply_markup));
       } else {
         const res = await tg("sendMessage", {
           chat_id: adminChatId,
@@ -4214,7 +4220,7 @@ ${fulfillmentLine}
           parse_mode: "HTML",
           ...(reply_markup ? { reply_markup } : {}),
         });
-        remember(collectTgMessageIds(res.result));
+        remember(collectTgMessageIds(res.result), Boolean(reply_markup));
         if (itemsMessage) {
           remember(await sendLongHtmlMessage(adminChatId, itemsMessage));
         }
@@ -5100,7 +5106,7 @@ export async function handleUpdate(update: TelegramUpdate) {
               });
               if (!paid) console.error("[bot] recordPayment returned false", orderId);
             }
-            await dismissAdminOrderNotifications(orderId, clicked);
+            await scheduleAdminOrderNotifyDismiss(orderId, clicked);
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
           } catch (e: unknown) {
             await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
@@ -5108,7 +5114,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           return;
         }
 
-        await dismissAdminOrderNotifications(orderId, clicked);
+        await scheduleAdminOrderNotifyDismiss(orderId, clicked);
         const statusRes = await tg("sendMessage", {
           chat_id,
           text: `⏳ Выдаю заказ #${shownNo}...`,
@@ -5182,7 +5188,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           copy[buyerLocale].rejectedNotice(customerDisplayNo),
         );
 
-        await dismissAdminOrderNotifications(orderId, clicked);
+        await scheduleAdminOrderNotifyDismiss(orderId, clicked);
         await tg("sendMessage", {
           chat_id,
           text: notified

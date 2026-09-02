@@ -4,15 +4,11 @@ import { processBroadcastBatch } from "@/lib/broadcast.server";
 import { processPendingDeliveries } from "@/lib/orders.server";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
 import { isCronAuthorized } from "@/lib/cron-auth.server";
+import { flushDueAdminOrderNotifications } from "@/lib/admin-order-notify.server";
 
 /**
- * Рассылка + выдача отложенных заказов + подтверждение вебхука. Ретеншн
- * zernio_logs и добор зависших Instagram-событий раньше жили тоже здесь
- * (см. git-историю) — на Hobby второй внешний cron-вызов ради одной задачи
- * не окупался. На Vercel Pro лимита на число cron-заданий практически нет,
- * поэтому они вынесены в /api/cron/zernio-logs-prune и
- * /api/cron/zernio-retry — каждая задача теперь на своём расписании и не
- * может задержать самую частую и самую денежную часть крона.
+ * Рассылка + выдача отложенных заказов + подтверждение вебхука + удаление
+ * пачки админских уведомлений о заказе спустя 5 минут после принять/отклонить.
  */
 export const Route = createFileRoute("/api/cron/broadcast")({
   server: {
@@ -49,12 +45,24 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             deliveries = { error: errorMessage(e) || String(e) };
           }
 
+          let adminNotify:
+            | Awaited<ReturnType<typeof flushDueAdminOrderNotifications>>
+            | { error: string }
+            | undefined;
+          try {
+            adminNotify = await flushDueAdminOrderNotifications();
+          } catch (e: unknown) {
+            console.error("[cron/broadcast] admin notify dismiss", e);
+            adminNotify = { error: errorMessage(e) || String(e) };
+          }
+
           return Response.json({
             ok: true,
             webhook,
             processed: total,
             done,
             deliveries,
+            adminNotify,
             ...last,
           });
         } catch (e: unknown) {
