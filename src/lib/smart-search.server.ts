@@ -14,6 +14,15 @@
  */
 import { parseSmartSearchIds } from "./smart-search";
 import { hasModule } from "./modules/modules.server";
+import {
+  addDailySpend,
+  extractAnthropicUsage,
+  parseDailyCount,
+  parseDailySpend,
+  SMART_SEARCH_DAILY_LIMIT,
+  todayUtcDate,
+  type SmartSearchTokenUsage,
+} from "./smart-search-cost";
 
 const MODEL = "claude-haiku-4-5-20251001";
 /**
@@ -52,7 +61,7 @@ const TIMEOUT_MS = 40_000;
 // человек, слающий несовпадающие запросы подряд, накручивает продавцу
 // счёт без всякого ограничения.
 const COOLDOWN_SECONDS = 45;
-export const DAILY_LIMIT = 200;
+export const DAILY_LIMIT = SMART_SEARCH_DAILY_LIMIT;
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -79,7 +88,7 @@ export async function isSmartSearchEnabled(): Promise<boolean> {
 }
 
 function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayUtcDate();
 }
 
 /**
@@ -121,12 +130,21 @@ export function smartSearchDailyUsage(value: string | null | undefined): {
   date: string;
   count: number;
 } {
-  const today = new Date().toISOString().slice(0, 10);
-  const [storedDate, storedCountRaw] = (value ?? "").split(":");
-  return {
-    date: today,
-    count: storedDate === today ? Number(storedCountRaw) || 0 : 0,
-  };
+  const date = todayUtcDate();
+  return { date, count: parseDailyCount(value, date) };
+}
+
+async function recordSmartSearchSpend(usage: SmartSearchTokenUsage | null): Promise<void> {
+  if (!usage || (usage.inputTokens <= 0 && usage.outputTokens <= 0)) return;
+  try {
+    const s = await db();
+    const key = "smart_search_daily_spend";
+    const { data } = await s.from("app_settings").select("value").eq("key", key).maybeSingle();
+    const next = addDailySpend(parseDailySpend(data?.value), usage);
+    await s.from("app_settings").upsert({ key, value: JSON.stringify(next) });
+  } catch (e) {
+    console.error("[smart-search] failed to record spend", e);
+  }
 }
 
 async function checkAndConsumeDailyLimit(): Promise<boolean> {
@@ -236,10 +254,19 @@ export async function smartSearchProductIds(
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.error("[smart-search] Anthropic API error", res.status, body);
+      try {
+        await recordSmartSearchSpend(extractAnthropicUsage(JSON.parse(body)));
+      } catch {
+        /* error body is not always JSON */
+      }
       await recordSmartSearchError(`HTTP ${res.status}: ${body.slice(0, 300)}`);
       return null;
     }
-    const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const json = (await res.json()) as {
+      content?: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens?: number; output_tokens?: number };
+    };
+    await recordSmartSearchSpend(extractAnthropicUsage(json));
     const text = json.content?.find((b) => b.type === "text")?.text ?? "";
     const ids = parseSmartSearchIds(
       text,

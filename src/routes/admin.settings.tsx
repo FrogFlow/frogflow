@@ -22,6 +22,14 @@ import { resetAllData } from "@/lib/reset.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
 import { t, type Locale } from "@/lib/i18n";
 import { useModules } from "@/lib/modules/use-modules";
+import {
+  DEFAULT_USD_PER_REQUEST,
+  SMART_SEARCH_DAILY_LIMIT,
+  formatUsd,
+  parseDailyCount,
+  parseDailySpend,
+  parseUsdPerRequest,
+} from "@/lib/smart-search-cost";
 
 export const Route = createFileRoute("/admin/settings")({
   component: SettingsPage,
@@ -71,6 +79,10 @@ const copy: Record<
     smartSearchLastError: (detail: string) => string;
     smartSearchUsage: (used: number, limit: number) => string;
     smartSearchUsageHint: string;
+    smartSearchTokenSpend: (usd: string) => string;
+    smartSearchRateSpend: (rate: string, usd: string) => string;
+    smartSearchRateLabel: string;
+    smartSearchRateHint: string;
     webStorefrontTitle: string;
     webStorefrontHint: string;
     webStorefrontOpenBtn: string;
@@ -165,7 +177,12 @@ const copy: Record<
     smartSearchLastError: (detail: string) => `Последняя ошибка умного поиска: ${detail}`,
     smartSearchUsage: (used, limit) => `Сегодня: ${used} из ${limit} умных поисков`,
     smartSearchUsageHint:
-      "Считаются запросы, по которым обычный поиск ничего не нашёл — в боте и в Mini App. Это и есть расход.",
+      "Считаются запросы, по которым обычный поиск ничего не нашёл — в боте и в Mini App.",
+    smartSearchTokenSpend: (usd) => `По токенам Anthropic: ${usd}`,
+    smartSearchRateSpend: (rate, usd) => `По ставке ${rate} / запрос: ${usd}`,
+    smartSearchRateLabel: "Ставка, $ за один умный поиск",
+    smartSearchRateHint:
+      "$0.10 — запас на большой каталог. Реальный Haiku 4.5 обычно дешевле; его считает строка «по токенам».",
     webStorefrontTitle: "Публичная веб-витрина каталога",
     webStorefrontHint:
       "Публичная страница каталога — фото, названия, цены и рейтинг товаров, без входа. Купить с неё нельзя: кнопка на странице ведёт покупателя в сам бот. Дайте эту ссылку клиентам в шапке Instagram, рекламе и т.п.",
@@ -268,6 +285,11 @@ const copy: Record<
     smartSearchUsage: (used, limit) => `Бүгін: ${used} / ${limit} ақылды іздеу`,
     smartSearchUsageHint:
       "Қарапайым іздеу ештеңе таппаған сұраулар саналады — ботта және Mini App-та.",
+    smartSearchTokenSpend: (usd) => `Anthropic токендері бойынша: ${usd}`,
+    smartSearchRateSpend: (rate, usd) => `${rate} / сұрау мөлшерлемесімен: ${usd}`,
+    smartSearchRateLabel: "Мөлшерлеме, $ бір ақылды іздеуге",
+    smartSearchRateHint:
+      "$0.10 — үлкен каталогқа қор. Нақты Haiku 4.5 әдетте арзанырақ; оны «токендер» жолы есептейді.",
     webStorefrontTitle: "Каталогтың ашық веб-витринасы",
     webStorefrontHint:
       "Кірусіз қолжетімді каталог беті — фото, атаулар, бағалар және рейтинг. Одан сатып алу мүмкін емес: беттегі түйме сатып алушыны боттың өзіне апарады. Бұл сілтемені Instagram шапкасында, жарнамада және т.б. беріңіз.",
@@ -368,7 +390,12 @@ const copy: Record<
     smartSearchLastError: (detail: string) => `Last smart search error: ${detail}`,
     smartSearchUsage: (used, limit) => `Today: ${used} of ${limit} smart searches`,
     smartSearchUsageHint:
-      "Counts queries where regular search found nothing — in the bot and Mini App. This is the usage.",
+      "Counts queries where regular search found nothing — in the bot and Mini App.",
+    smartSearchTokenSpend: (usd) => `Anthropic tokens: ${usd}`,
+    smartSearchRateSpend: (rate, usd) => `At ${rate} / request: ${usd}`,
+    smartSearchRateLabel: "Rate, $ per smart search",
+    smartSearchRateHint:
+      "$0.10 is a ceiling for a large catalog. Real Haiku 4.5 is usually cheaper; that is the token line.",
     webStorefrontTitle: "Public catalog storefront",
     webStorefrontHint:
       "A no-login catalog page — photos, names, prices, and ratings. You can't buy from it: the page button sends the buyer into the bot itself. Share this link in your Instagram bio, ads, etc.",
@@ -472,6 +499,11 @@ const copy: Record<
     smartSearchUsage: (used, limit) => `Bugun: ${used} / ${limit} aqlli qidiruv`,
     smartSearchUsageHint:
       "Oddiy qidiruv hech narsa topmagan so‘rovlar sanaladi — botda va Mini App’da.",
+    smartSearchTokenSpend: (usd) => `Anthropic tokenlari: ${usd}`,
+    smartSearchRateSpend: (rate, usd) => `${rate} / so‘rov stavkasi: ${usd}`,
+    smartSearchRateLabel: "Stavka, $ bitta aqlli qidiruvga",
+    smartSearchRateHint:
+      "$0.10 — katta katalog uchun zaxira. Haqiqiy Haiku 4.5 odatda arzonroq; buni tokenlar qatori hisoblaydi.",
     webStorefrontTitle: "Katalogning ochiq veb-vitrinasi",
     webStorefrontHint:
       "Kirishsiz ochiladigan katalog sahifasi — fotolar, nomlar, narxlar va reyting. Undan xarid qilib bo‘lmaydi: sahifadagi tugma xaridorni to‘g‘ridan-to‘g‘ri botga yuboradi. Bu havolani Instagram bio, reklama va h.k.da bering.",
@@ -575,6 +607,9 @@ function SettingsPage() {
   const [smartSearchEnabled, setSmartSearchEnabled] = useState(false);
   const [smartSearchSaving, setSmartSearchSaving] = useState(false);
   const [smartSearchSaved, setSmartSearchSaved] = useState(false);
+  const [smartSearchRate, setSmartSearchRate] = useState(String(DEFAULT_USD_PER_REQUEST));
+  const [smartSearchRateSaving, setSmartSearchRateSaving] = useState(false);
+  const [smartSearchRateSaved, setSmartSearchRateSaved] = useState(false);
 
   const [instructionCaption, setInstructionCaption] = useState("");
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
@@ -596,6 +631,7 @@ function SettingsPage() {
     setLoyaltyEarnPercent(settings.data?.loyalty_earn_percent ?? "5");
     setCartReminderHours(settings.data?.cart_reminder_hours ?? "6");
     setSmartSearchEnabled(settings.data?.smart_search_enabled === "true");
+    setSmartSearchRate(String(parseUsdPerRequest(settings.data?.smart_search_usd_per_request)));
   }, [settings.data]);
 
   async function onSave() {
@@ -751,6 +787,23 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setCartReminderSaving(false);
+    }
+  }
+
+  async function onSaveSmartSearchRate() {
+    if (settings.isLoading) return;
+    setSmartSearchRateSaving(true);
+    try {
+      const value = String(parseUsdPerRequest(smartSearchRate));
+      await saveSetting({ data: { key: "smart_search_usd_per_request", value } });
+      setSmartSearchRate(value);
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setSmartSearchRateSaved(true);
+      setTimeout(() => setSmartSearchRateSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setSmartSearchRateSaving(false);
     }
   }
 
@@ -1191,15 +1244,51 @@ function SettingsPage() {
             {smartSearchSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
             <p className="text-sm">
               {tr.smartSearchUsage(
-                (() => {
-                  const today = new Date().toISOString().slice(0, 10);
-                  const [date, raw] = (settings.data?.smart_search_daily_count ?? "").split(":");
-                  return date === today ? Number(raw) || 0 : 0;
-                })(),
-                200,
+                parseDailyCount(settings.data?.smart_search_daily_count),
+                SMART_SEARCH_DAILY_LIMIT,
               )}
             </p>
+            <p className="text-sm">
+              {tr.smartSearchTokenSpend(
+                formatUsd(parseDailySpend(settings.data?.smart_search_daily_spend).usd),
+              )}
+            </p>
+            <p className="text-sm">
+              {tr.smartSearchRateSpend(
+                formatUsd(parseUsdPerRequest(smartSearchRate)),
+                formatUsd(
+                  parseUsdPerRequest(smartSearchRate) *
+                    parseDailyCount(settings.data?.smart_search_daily_count),
+                ),
+              )}
+            </p>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label htmlFor="smart-search-rate">{tr.smartSearchRateLabel}</Label>
+                <Input
+                  id="smart-search-rate"
+                  type="number"
+                  inputMode="decimal"
+                  min="0.001"
+                  max="10"
+                  step="0.01"
+                  value={smartSearchRate}
+                  onChange={(e) => setSmartSearchRate(e.target.value)}
+                  className="w-32"
+                />
+              </div>
+              <Button
+                onClick={() => void onSaveSmartSearchRate()}
+                disabled={smartSearchRateSaving || settings.isLoading}
+              >
+                {tr.save}
+              </Button>
+              {smartSearchRateSaved && (
+                <span className="text-sm text-green-600">{tr.savedLabel}</span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">{tr.smartSearchUsageHint}</p>
+            <p className="text-xs text-muted-foreground">{tr.smartSearchRateHint}</p>
             {settings.data?.smart_search_last_error ? (
               <p className="text-xs text-destructive">
                 {tr.smartSearchLastError(settings.data.smart_search_last_error)}
