@@ -154,7 +154,9 @@ function Dashboard() {
         {showReady && <Stat label={c.ready} value={ready} highlight={ready > 0} />}
         <Stat label={c.delivered} value={delivered} />
       </div>
-      {delivering > 0 && <p className="text-sm text-blue-700">{c.delivering(delivering)}</p>}
+      {delivering > 0 && !isPhysicalShop && (
+        <p className="text-sm text-blue-700">{c.delivering(delivering)}</p>
+      )}
       <div className="bg-card border rounded-lg p-4">
         <h2 className="font-medium mb-2">{c.howToTitle}</h2>
         <ol className="list-decimal pl-5 text-sm space-y-1 text-muted-foreground">

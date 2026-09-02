@@ -161,7 +161,9 @@ describe("includeOrderInAnalytics / analyticsRevenue — кондитерски�
   });
 
   it("физический заказ в работе входит с paid_amount — задаток виден до выдачи", () => {
-    expect(includeOrderInAnalytics({ status: "accepted", fulfillment_kind: "physical" })).toBe(true);
+    expect(includeOrderInAnalytics({ status: "accepted", fulfillment_kind: "physical" })).toBe(
+      true,
+    );
     expect(includeOrderInAnalytics({ status: "in_production", fulfillment_kind: "physical" })).toBe(
       true,
     );
@@ -188,5 +190,22 @@ describe("includeOrderInAnalytics / analyticsRevenue — кондитерски�
         paid_amount: 20000,
       }),
     ).toBe(20000);
+  });
+});
+
+describe("topProductsBySales — задаток масштабирует выручку позиции", () => {
+  it("при scale 0.3 строка 20000 даёт 6000, как сводка по paid_amount", () => {
+    const items: OrderItemForAnalytics[] = [
+      {
+        order_id: 1,
+        product_id: "cake",
+        name_snapshot: "Торт",
+        price_snapshot: 20000,
+        quantity: 1,
+      },
+    ];
+    const result = topProductsBySales(items, new Set([1]), 10, new Map([[1, 0.3]]));
+    expect(result[0].revenue).toBe(6000);
+    expect(result[0].unitsSold).toBe(1);
   });
 });

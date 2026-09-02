@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { confirmToast } from "@/lib/confirm-toast";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -263,6 +264,7 @@ function BotSettingsTab({
   settings?: Settings;
   onSave: (patch: SettingsPatch) => Promise<void>;
 }) {
+  const { isPhysicalShop } = useVertical();
   const [script, setScript] = useState<string | null>(null);
   const [startPrompt, setStartPrompt] = useState<string | null>(null);
   const [excludedPhones, setExcludedPhones] = useState<string | null>(null);
@@ -416,7 +418,11 @@ function BotSettingsTab({
               onBlur={() => {
                 if (script !== null && script !== settings.script) onSave({ script });
               }}
-              placeholder="Здравствуйте! Я бот магазина, помогу выбрать материал и оформить заказ."
+              placeholder={
+                isPhysicalShop
+                  ? "Здравствуйте! Я бот кондитерской, помогу выбрать торт и оформить заказ."
+                  : "Здравствуйте! Я бот магазина, помогу выбрать материал и оформить заказ."
+              }
             />
           </div>
         </CardContent>
@@ -436,6 +442,7 @@ function TemplatesTab({
   loading: boolean;
   onCreated: () => void;
 }) {
+  const { isPhysicalShop } = useVertical();
   const [name, setName] = useState("");
   const [language, setLanguage] = useState("ru");
   const [body, setBody] = useState("");
@@ -506,7 +513,11 @@ function TemplatesTab({
               rows={4}
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder="Здравствуйте! Ваш заказ готов, материалы отправлены."
+              placeholder={
+                isPhysicalShop
+                  ? "Здравствуйте! Ваш заказ готов, можно забирать."
+                  : "Здравствуйте! Ваш заказ готов, материалы отправлены."
+              }
             />
             <p className="text-xs text-muted-foreground">
               Латиница в нижнем регистре, цифры и подчёркивания в имени. Рекламный текст Meta в

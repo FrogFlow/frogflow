@@ -13,6 +13,8 @@ export type OrderForAnalytics = {
   points_used: number;
   gift_certificate_discount: number;
   created_at: string;
+  /** 1 = полная сумма (выдан); paid/total для задатка в работе. */
+  revenueScale?: number;
 };
 
 const PHYSICAL_IN_PROGRESS = new Set(["accepted", "in_production", "ready"]);
@@ -132,6 +134,7 @@ export function topProductsBySales(
   items: OrderItemForAnalytics[],
   revenueOrderIds: Set<number>,
   limit = 10,
+  revenueScaleByOrderId?: Map<number, number>,
 ): TopProduct[] {
   const byKey = new Map<string, TopProduct>();
   for (const it of items) {
@@ -139,7 +142,8 @@ export function topProductsBySales(
     const entry = byKey.get(key) ?? { key, name: it.name_snapshot, unitsSold: 0, revenue: 0 };
     entry.unitsSold += Number(it.quantity) || 0;
     if (revenueOrderIds.has(it.order_id)) {
-      entry.revenue += (Number(it.price_snapshot) || 0) * (Number(it.quantity) || 0);
+      const scale = revenueScaleByOrderId?.get(it.order_id) ?? 1;
+      entry.revenue += (Number(it.price_snapshot) || 0) * (Number(it.quantity) || 0) * scale;
     }
     byKey.set(key, entry);
   }

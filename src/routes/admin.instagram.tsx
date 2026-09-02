@@ -85,6 +85,7 @@ import { Badge } from "@/components-ui/badge";
 import type { ZernioDmButton, ZernioCommentAutomation } from "@/lib/zernio.server";
 import type { Json } from "@/integrations-supabase/types";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import type { Locale } from "@/lib/i18n";
 
 /** Безопасно достать строковое поле из Json-объекта (payload лога — Json, а не типизированная форма). */
@@ -177,6 +178,7 @@ const copy: Record<
     variationsPlaceholder: string;
     dmLabel: string;
     dmPlaceholder: string;
+    dmPlaceholderPhysical: string;
     dmButtonsLabel: (n: number) => string;
     addBtn: string;
     buttonTextPlaceholder: string;
@@ -404,6 +406,7 @@ const copy: Record<
     variationsPlaceholder: "Одна вариация на строку",
     dmLabel: "Личное сообщение (DM)",
     dmPlaceholder: "Привет! Вот ссылка на материал...",
+    dmPlaceholderPhysical: "Привет! Каталог тортов в боте — напишите, какую дату и вкус хотите.",
     dmButtonsLabel: (n) => `Кнопки в DM (${n}/3)`,
     addBtn: "+ Добавить",
     buttonTextPlaceholder: "Текст",
@@ -636,6 +639,7 @@ const copy: Record<
     variationsPlaceholder: "Жолға бір вариация",
     dmLabel: "Жеке хабарлама (DM)",
     dmPlaceholder: "Сәлем! Материалға сілтеме мына жерде...",
+    dmPlaceholderPhysical: "Сәлем! Торт каталогы ботта — күн мен дәмін жазыңыз.",
     dmButtonsLabel: (n) => `DM-дегі түймелер (${n}/3)`,
     addBtn: "+ Қосу",
     buttonTextPlaceholder: "Мәтін",
@@ -868,6 +872,8 @@ const copy: Record<
     variationsPlaceholder: "One variation per line",
     dmLabel: "Direct message (DM)",
     dmPlaceholder: "Hi! Here's the link to the material...",
+    dmPlaceholderPhysical:
+      "Hi! Cake catalog is in the bot — tell us the date and flavour you want.",
     dmButtonsLabel: (n) => `Buttons in DM (${n}/3)`,
     addBtn: "+ Add",
     buttonTextPlaceholder: "Text",
@@ -1100,6 +1106,7 @@ const copy: Record<
     variationsPlaceholder: "Har qatorga bitta variant",
     dmLabel: "Shaxsiy xabar (DM)",
     dmPlaceholder: "Salom! Material havolasi mana...",
+    dmPlaceholderPhysical: "Salom! Tort katalogi botda — sana va ta’mni yozing.",
     dmButtonsLabel: (n) => `DM’dagi tugmalar (${n}/3)`,
     addBtn: "+ Qo‘shish",
     buttonTextPlaceholder: "Matn",
@@ -1268,6 +1275,7 @@ export const Route = createFileRoute("/admin/instagram")({
 
 function AdminInstagramPage() {
   const { locale } = useAdminLocale();
+  const { isPhysicalShop } = useVertical();
   const tr = copy[locale];
   const qc = useQueryClient();
 
@@ -2285,7 +2293,7 @@ function AdminInstagramPage() {
                         <Textarea
                           value={dmText}
                           onChange={(e) => setDmText(e.target.value)}
-                          placeholder="Привет! Вот ссылка на материал..."
+                          placeholder={isPhysicalShop ? tr.dmPlaceholderPhysical : tr.dmPlaceholder}
                           rows={3}
                         />
 

@@ -17,6 +17,7 @@ import {
   clearLegalDocFn,
 } from "@/lib/settings.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/robokassa")({
@@ -42,13 +43,16 @@ const copy: Record<
     deleteBtn: string;
     privacyFileLabel: string;
     aboutLabel: string;
+    aboutLabelPhysical: string;
     saveDocsBtn: string;
     savedLabel: string;
     robokassaTitle: string;
     robokassaUrlLabel: string;
     robokassaRegionHint: string;
     robokassaEnableLabel: string;
+    robokassaEnableLabelPhysical: string;
     robokassaEnabledHint: string;
+    robokassaEnabledHintPhysical: string;
     merchantLoginLabel: string;
     merchantLoginPlaceholder: string;
     pass1Label: string;
@@ -81,14 +85,18 @@ const copy: Record<
     deleteBtn: "Удалить",
     privacyFileLabel: "Политика конфиденциальности (файл PDF / DOC / DOCX)",
     aboutLabel: "О продавце / авторе (HTML или текст)",
+    aboutLabelPhysical: "О продавце / кондитерской (HTML или текст)",
     saveDocsBtn: "Сохранить документы",
     savedLabel: "Сохранено ✓",
     robokassaTitle: "Robokassa",
     robokassaUrlLabel: "URL для кабинета Robokassa:",
     robokassaRegionHint: "ResultURL: метод POST, алгоритм хеша MD5. Регион: Robokassa.KZ.",
     robokassaEnableLabel: "Включить оплату через Robokassa (автовыдача файлов)",
+    robokassaEnableLabelPhysical: "Включить оплату через Robokassa (автоподтверждение оплаты)",
     robokassaEnabledHint:
       "При включении: RU, BY, OTHER — только чек с автовыдачей; KZ — выбор Robokassa или чек с автовыдачей; остальные страны — только Robokassa. При выключении все страны — чек с ручной проверкой. Автовыдача по чеку требует GOOGLE_VISION_API_KEY (OCR, сумма ±10%); без ключа чек уходит на ручную проверку.",
+    robokassaEnabledHintPhysical:
+      "При включении оплата картой подтверждается автоматически, заказ уходит в работу. При выключении — чек с ручной проверкой, затем «Принять заказ». OCR чека требует GOOGLE_VISION_API_KEY (сумма ±10%); без ключа чек уходит на ручную проверку.",
     merchantLoginLabel: "Идентификатор магазина (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Пароль #1 (боевой)",
@@ -120,14 +128,18 @@ const copy: Record<
     deleteBtn: "Жою",
     privacyFileLabel: "Құпиялылық саясаты (PDF / DOC / DOCX файл)",
     aboutLabel: "Сатушы / автор туралы (HTML немесе мәтін)",
+    aboutLabelPhysical: "Сатушы / кондитерлік туралы (HTML немесе мәтін)",
     saveDocsBtn: "Құжаттарды сақтау",
     savedLabel: "Сақталды ✓",
     robokassaTitle: "Robokassa",
     robokassaUrlLabel: "Robokassa кабинеті үшін URL:",
     robokassaRegionHint: "ResultURL: POST әдісі, MD5 хеш алгоритмі. Аймақ: Robokassa.KZ.",
     robokassaEnableLabel: "Robokassa арқылы төлемді қосу (файлдарды автоберу)",
+    robokassaEnableLabelPhysical: "Robokassa арқылы төлемді қосу (төлемді авторастау)",
     robokassaEnabledHint:
       "Қосылған кезде: RU, BY, OTHER — тек автобер чегі; KZ — Robokassa немесе автобер чегін таңдау; басқа елдер — тек Robokassa. Өшірулі кезде барлық елдерде — қолмен тексерілетін чек. Чек бойынша автобер GOOGLE_VISION_API_KEY талап етеді (OCR, сома ±10%); кілт болмаса чек қолмен тексеруге жіберіледі.",
+    robokassaEnabledHintPhysical:
+      "Қосылғанда картамен төлем автоматты расталады, тапсырыс жұмысқа кетеді. Өшірулі — қолмен тексерілетін чек, сосын «Қабылдау». OCR үшін GOOGLE_VISION_API_KEY (сома ±10%).",
     merchantLoginLabel: "Дүкен идентификаторы (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Құпия сөз №1 (боевой)",
@@ -159,14 +171,18 @@ const copy: Record<
     deleteBtn: "Delete",
     privacyFileLabel: "Privacy policy (PDF / DOC / DOCX file)",
     aboutLabel: "About the seller / author (HTML or text)",
+    aboutLabelPhysical: "About the seller / bakery (HTML or text)",
     saveDocsBtn: "Save documents",
     savedLabel: "Saved ✓",
     robokassaTitle: "Robokassa",
     robokassaUrlLabel: "URL for the Robokassa dashboard:",
     robokassaRegionHint: "ResultURL: POST method, MD5 hash algorithm. Region: Robokassa.KZ.",
     robokassaEnableLabel: "Enable payment via Robokassa (auto file delivery)",
+    robokassaEnableLabelPhysical: "Enable payment via Robokassa (auto payment confirmation)",
     robokassaEnabledHint:
       "When enabled: RU, BY, OTHER — receipt with auto-delivery only; KZ — choice of Robokassa or receipt with auto-delivery; other countries — Robokassa only. When disabled, all countries use a manually reviewed receipt. Auto-delivery by receipt requires GOOGLE_VISION_API_KEY (OCR, amount ±10%); without the key, receipts go to manual review.",
+    robokassaEnabledHintPhysical:
+      "When enabled, card payment is confirmed automatically and the order goes into production. When disabled — a manually reviewed receipt, then Accept order. Receipt OCR needs GOOGLE_VISION_API_KEY (amount ±10%).",
     merchantLoginLabel: "Shop identifier (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Password #1 (live)",
@@ -199,14 +215,19 @@ const copy: Record<
     deleteBtn: "O‘chirish",
     privacyFileLabel: "Maxfiylik siyosati (PDF / DOC / DOCX fayl)",
     aboutLabel: "Sotuvchi / muallif haqida (HTML yoki matn)",
+    aboutLabelPhysical: "Sotuvchi / qandolatxona haqida (HTML yoki matn)",
     saveDocsBtn: "Hujjatlarni saqlash",
     savedLabel: "Saqlandi ✓",
     robokassaTitle: "Robokassa",
     robokassaUrlLabel: "Robokassa kabineti uchun URL:",
     robokassaRegionHint: "ResultURL: POST usuli, MD5 xesh algoritmi. Hudud: Robokassa.KZ.",
     robokassaEnableLabel: "Robokassa orqali to‘lovni yoqish (fayllarni avtomatik berish)",
+    robokassaEnableLabelPhysical:
+      "Robokassa orqali to‘lovni yoqish (to‘lovni avtomatik tasdiqlash)",
     robokassaEnabledHint:
       "Yoqilgan bo‘lsa: RU, BY, OTHER — faqat avtomatik berish cheki; KZ — Robokassa yoki avtomatik berish chekini tanlash; boshqa mamlakatlar — faqat Robokassa. O‘chirilgan bo‘lsa barcha mamlakatlarda — qo‘lda tekshiriladigan chek. Chek bo‘yicha avtomatik berish GOOGLE_VISION_API_KEY talab qiladi (OCR, summa ±10%); kalit bo‘lmasa chek qo‘lda tekshirishga yuboriladi.",
+    robokassaEnabledHintPhysical:
+      "Yoqilganda karta to‘lovi avtomatik tasdiqlanadi, buyurtma ishga o‘tadi. O‘chirilganda — qo‘lda tekshiriladigan chek, keyin «Qabul qilish». OCR uchun GOOGLE_VISION_API_KEY (summa ±10%).",
     merchantLoginLabel: "Do‘kon identifikatori (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Parol #1 (jonli)",
@@ -227,6 +248,7 @@ const copy: Record<
 
 function RobokassaPage() {
   const { locale } = useAdminLocale();
+  const { isPhysicalShop } = useVertical();
   const tr = copy[locale];
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
@@ -441,7 +463,7 @@ function RobokassaPage() {
           )}
         </div>
         <div className="space-y-2">
-          <Label>{tr.aboutLabel}</Label>
+          <Label>{isPhysicalShop ? tr.aboutLabelPhysical : tr.aboutLabel}</Label>
           <Textarea
             rows={5}
             value={legalAbout}
@@ -468,9 +490,13 @@ function RobokassaPage() {
 
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <Checkbox checked={rkEnabled} onCheckedChange={(c) => setRkEnabled(!!c)} />
-          <span>{tr.robokassaEnableLabel}</span>
+          <span>{isPhysicalShop ? tr.robokassaEnableLabelPhysical : tr.robokassaEnableLabel}</span>
         </label>
-        {rkEnabled && <p className="text-xs text-muted-foreground">{tr.robokassaEnabledHint}</p>}
+        {rkEnabled && (
+          <p className="text-xs text-muted-foreground">
+            {isPhysicalShop ? tr.robokassaEnabledHintPhysical : tr.robokassaEnabledHint}
+          </p>
+        )}
 
         {rkEnabled && (
           <div className="space-y-4 pt-2 border-t border-border/50">

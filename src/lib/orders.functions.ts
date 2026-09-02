@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { fetchAll } from "./csv";
+import { fulfillmentTypePatch } from "./fulfillment-edit";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -203,9 +204,9 @@ export const recordManualPayment = createServerFn({ method: "POST" })
 /**
  * Исправить данные получения физического заказа (Блок 7, находка 7.1) —
  * покупательница позвонила перенести на субботу, продавцу нужно место
- * поправить в интерфейсе, а не в Supabase напрямую. Меняет только поля
- * получения, не трогает деньги/статус — для этого есть recordManualPayment/
- * advanceOrderFulfillment/rejectOrder.
+ * поправить в интерфейсе, а не в Supabase напрямую. Дата/адрес/комментарий
+ * не трогают деньги. Смена доставка → самовывоз снимает зону и комиссию
+ * с total, иначе «заберут сами», а в сумме остаётся плата за доставку.
  */
 export const updateOrderFulfillment = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
@@ -223,13 +224,31 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
     const { requireAdmin } = await import("./admin-session.server");
     await requireAdmin();
     const s = await db();
+    const { data: order, error: readErr } = await s
+      .from("orders")
+      .select("fulfillment_kind, fulfillment_type, delivery_fee, total")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!order) throw new Error("Заказ не найден");
+    if (order.fulfillment_kind !== "physical") {
+      throw new Error("Способ получения правится только у физического заказа");
+    }
+    const typePatch = fulfillmentTypePatch(
+      {
+        fulfillment_type: order.fulfillment_type,
+        delivery_fee: order.delivery_fee,
+        total: Number(order.total),
+      },
+      data.fulfillmentType,
+    );
     const { error } = await s
       .from("orders")
       .update({
         fulfillment_at: data.fulfillmentAt,
         fulfillment_address: data.address,
         fulfillment_note: data.note,
-        ...(data.fulfillmentType ? { fulfillment_type: data.fulfillmentType } : {}),
+        ...typePatch,
       })
       .eq("id", data.id);
     if (error) throw new Error(error.message);
@@ -251,12 +270,24 @@ export const advanceOrderFulfillment = createServerFn({ method: "POST" })
     // баллы/реферал, а ни один файл не отправлен.
     const { data: order, error } = await s
       .from("orders")
-      .select("fulfillment_kind")
+      .select("fulfillment_kind, status")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (order?.fulfillment_kind !== "physical") {
       throw new Error("Это не физический заказ — статус продвигается только у физических товаров");
+    }
+    // Физический заказ в "delivering" — обломок старого пути (выдача файлов).
+    // Кнопок производства на этом статусе не было; возвращаем в accepted,
+    // откуда кондитер ведёт дальше штатно.
+    if (order.status === "delivering") {
+      const { error: upErr } = await s
+        .from("orders")
+        .update({ status: "accepted" })
+        .eq("id", data.id)
+        .eq("status", "delivering");
+      if (upErr) throw new Error(upErr.message);
+      return { status: "accepted" as const };
     }
     const { advanceFulfillment } = await import("./fulfillment.server");
     return await advanceFulfillment(data.id);
@@ -268,6 +299,16 @@ export const revertOrderFulfillment = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { requireAdmin } = await import("./admin-session.server");
     await requireAdmin();
+    const s = await db();
+    const { data: order, error } = await s
+      .from("orders")
+      .select("fulfillment_kind")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (order?.fulfillment_kind !== "physical") {
+      throw new Error("Это не физический заказ — откат статуса только у физических товаров");
+    }
     const { revertFulfillment } = await import("./fulfillment.server");
     return await revertFulfillment(data.id);
   });

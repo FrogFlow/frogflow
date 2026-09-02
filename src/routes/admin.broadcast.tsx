@@ -31,6 +31,7 @@ import { getWhatsAppAccountsFn, getWhatsAppTemplatesFn } from "@/lib/whatsapp.fu
 import { listPaymentMethods } from "@/lib/payment-methods.functions";
 import { listProducts } from "@/lib/products.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import { useModules } from "@/lib/modules/use-modules";
 import type { Locale } from "@/lib/i18n";
 
@@ -59,6 +60,7 @@ const copy: Record<
     recipients: (n: string) => string;
     textLabel: string;
     textPlaceholder: string;
+    textPlaceholderPhysical: string;
     photosLabel: string;
     uploading: string;
     deleteTitle: string;
@@ -118,6 +120,7 @@ const copy: Record<
     recipients: (n) => `Получателей: ~${n}`,
     textLabel: "Текст (HTML: <b>, <i>)",
     textPlaceholder: "Здравствуйте! К 1 сентября подготовили новые материалы…",
+    textPlaceholderPhysical: "Здравствуйте! К праздникам подготовили новые торты и десерты…",
     photosLabel: "Фото (до 10, альбом)",
     uploading: "Загрузка…",
     deleteTitle: "Удалить",
@@ -185,6 +188,7 @@ const copy: Record<
     recipients: (n) => `Алушылар: ~${n}`,
     textLabel: "Мәтін (HTML: <b>, <i>)",
     textPlaceholder: "Сәлеметсіз бе! 1 қыркүйекке жаңа материалдар дайындадық…",
+    textPlaceholderPhysical: "Сәлеметсіз бе! Мерекеге жаңа торт пен десерттер дайындадық…",
     photosLabel: "Фото (10-ге дейін, альбом)",
     uploading: "Жүктелуде…",
     deleteTitle: "Жою",
@@ -251,6 +255,7 @@ const copy: Record<
     recipients: (n) => `Recipients: ~${n}`,
     textLabel: "Text (HTML: <b>, <i>)",
     textPlaceholder: "Hello! We've prepared new materials for the new school year…",
+    textPlaceholderPhysical: "Hello! We've prepared new cakes and desserts for the holidays…",
     photosLabel: "Photos (up to 10, album)",
     uploading: "Uploading…",
     deleteTitle: "Delete",
@@ -318,6 +323,7 @@ const copy: Record<
     recipients: (n) => `Qabul qiluvchilar: ~${n}`,
     textLabel: "Matn (HTML: <b>, <i>)",
     textPlaceholder: "Assalomu alaykum! 1-sentabrga yangi materiallar tayyorladik…",
+    textPlaceholderPhysical: "Assalomu alaykum! Bayramga yangi tort va desertlar tayyorladik…",
     photosLabel: "Fotolar (10 tagacha, albom)",
     uploading: "Yuklanmoqda…",
     deleteTitle: "O‘chirish",
@@ -374,6 +380,7 @@ const copy: Record<
 
 function BroadcastPage() {
   const { locale } = useAdminLocale();
+  const { isPhysicalShop } = useVertical();
   const tr = copy[locale];
   const qc = useQueryClient();
   const modules = useModules();
@@ -746,7 +753,7 @@ function BroadcastPage() {
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             rows={6}
-            placeholder={tr.textPlaceholder}
+            placeholder={isPhysicalShop ? tr.textPlaceholderPhysical : tr.textPlaceholder}
           />
           <EmojiInsertBar onInsert={insertEmoji} />
         </div>

@@ -27,6 +27,7 @@ import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
 import { useModules } from "@/lib/modules/use-modules";
 import { orderPlatform, type OrderPlatform } from "@/lib/order-platform";
+import { matchesPickupFilter, type PickupFilter } from "@/lib/pickup-filter";
 
 // Тип чека определяется по расширению сохранённого пути.
 // Фото показываем через <img>, PDF — через <iframe>, прочее — ссылкой на скачивание.
@@ -122,6 +123,7 @@ const copy: Record<
     pickupToday: string;
     pickupTomorrow: string;
     pickupOverdue: string;
+    pickupNoDate: string;
     noOrdersForPickupFilter: string;
     rejectAcceptedConfirm: (n: number) => string;
     editFulfillmentBtn: string;
@@ -129,6 +131,7 @@ const copy: Record<
     cancelBtn: string;
     dateLabel: string;
     noDateLabel: string;
+    recoverStuckBtn: string;
     addFundsBtn: string;
     addFundsPrompt: (remaining: number, currency: string) => string;
     addFundsInvalid: string;
@@ -224,6 +227,7 @@ const copy: Record<
     pickupToday: "📅 Сегодня",
     pickupTomorrow: "📅 Завтра",
     pickupOverdue: "⚠️ Просрочено",
+    pickupNoDate: "Без даты",
     noOrdersForPickupFilter: "По этому фильтру заказов нет.",
     rejectAcceptedConfirm: (n) =>
       `Отменить принятый заказ #${n}? Покупатель получит уведомление, деньги (если внесены) останутся в записи заказа — возврат не автоматизирован.`,
@@ -232,6 +236,7 @@ const copy: Record<
     cancelBtn: "Отмена",
     dateLabel: "Дата получения",
     noDateLabel: "Без даты",
+    recoverStuckBtn: "Вернуть в работу",
     addFundsBtn: "💰 Внести оплату",
     addFundsPrompt: (remaining, currency) => `Сколько внести (остаток ${remaining} ${currency})?`,
     addFundsInvalid: "Введите положительное число",
@@ -327,6 +332,7 @@ const copy: Record<
     pickupToday: "📅 Бүгін",
     pickupTomorrow: "📅 Ертең",
     pickupOverdue: "⚠️ Мерзімі өтті",
+    pickupNoDate: "Күнсіз",
     noOrdersForPickupFilter: "Бұл сүзгі бойынша тапсырыс жоқ.",
     rejectAcceptedConfirm: (n) =>
       `#${n} қабылданған тапсырысын болдырмайсыз ба? Сатып алушыға хабарланады, енгізілген ақша (болса) тапсырыс жазбасында қалады — қайтару автоматтандырылмаған.`,
@@ -335,6 +341,7 @@ const copy: Record<
     cancelBtn: "Бас тарту",
     dateLabel: "Алу күні",
     noDateLabel: "Күнсіз",
+    recoverStuckBtn: "Жұмысқа қайтару",
     addFundsBtn: "💰 Төлем енгізу",
     addFundsPrompt: (remaining, currency) =>
       `Қанша енгізу керек (қалдық ${remaining} ${currency})?`,
@@ -430,6 +437,7 @@ const copy: Record<
     pickupToday: "📅 Today",
     pickupTomorrow: "📅 Tomorrow",
     pickupOverdue: "⚠️ Overdue",
+    pickupNoDate: "No date",
     noOrdersForPickupFilter: "No orders match this filter.",
     rejectAcceptedConfirm: (n) =>
       `Cancel accepted order #${n}? The customer will be notified; any money already recorded stays on the order — refunds are not automated.`,
@@ -438,6 +446,7 @@ const copy: Record<
     cancelBtn: "Cancel",
     dateLabel: "Pickup/delivery date",
     noDateLabel: "No date",
+    recoverStuckBtn: "Return to production",
     addFundsBtn: "💰 Record payment",
     addFundsPrompt: (remaining, currency) =>
       `How much to record (balance ${remaining} ${currency})?`,
@@ -534,6 +543,7 @@ const copy: Record<
     pickupToday: "📅 Bugun",
     pickupTomorrow: "📅 Ertaga",
     pickupOverdue: "⚠️ Muddati o‘tgan",
+    pickupNoDate: "Sanasiz",
     noOrdersForPickupFilter: "Bu filtr bo‘yicha buyurtmalar yo‘q.",
     rejectAcceptedConfirm: (n) =>
       `#${n} qabul qilingan buyurtmani bekor qilasizmi? Xaridorga xabar beriladi, kiritilgan pul (bo‘lsa) buyurtma yozuvida qoladi — qaytarish avtomatlashtirilmagan.`,
@@ -542,6 +552,7 @@ const copy: Record<
     cancelBtn: "Bekor qilish",
     dateLabel: "Olish sanasi",
     noDateLabel: "Sanasiz",
+    recoverStuckBtn: "Ishga qaytarish",
     addFundsBtn: "💰 To‘lovni yozish",
     addFundsPrompt: (remaining, currency) =>
       `Qancha kiritish kerak (qoldiq ${remaining} ${currency})?`,
@@ -583,14 +594,7 @@ function OrdersPage() {
    * digital-клиентах эти кнопки лишние.
    */
   const hasPhysicalOrders = allOrders.some((o) => o.fulfillment_kind === "physical");
-  const [pickupFilter, setPickupFilter] = useState<"all" | "today" | "tomorrow" | "overdue">("all");
-  const OPEN_PHYSICAL_STATUSES = new Set([
-    "awaiting_payment",
-    "awaiting_confirmation",
-    "accepted",
-    "in_production",
-    "ready",
-  ]);
+  const [pickupFilter, setPickupFilter] = useState<PickupFilter>("all");
   // en-CA форматирует как YYYY-MM-DD — тот же приём, что todayInAppTZ() в
   // fulfillment.server.ts. Раньше здесь была d.toISOString().slice(0, 10) —
   // дата UTC-сервера, а не магазина: с 00:00 до ~06:00 по Алматы "Сегодня"
@@ -605,14 +609,7 @@ function OrdersPage() {
     pickupFilter === "all"
       ? platformFiltered
       : platformFiltered
-          .filter((o) => {
-            if (o.fulfillment_kind !== "physical") return false;
-            const day = fulfillmentDateOf(o);
-            if (pickupFilter === "today") return day === todayIso;
-            if (pickupFilter === "tomorrow") return day === tomorrowIso;
-            // overdue: дата получения в прошлом, а заказ ещё не закрыт
-            return !!day && day < todayIso && OPEN_PHYSICAL_STATUSES.has(o.status);
-          })
+          .filter((o) => matchesPickupFilter(o, pickupFilter, todayIso, tomorrowIso))
           .sort((a, b) => (fulfillmentDateOf(a) ?? "").localeCompare(fulfillmentDateOf(b) ?? ""));
 
   const counts = {
@@ -670,6 +667,7 @@ function OrdersPage() {
       if (result.status === "delivered") toast.success(tr.orderDelivered(displayNo));
       else if (result.status === "in_production") toast.success(tr.orderInProduction(displayNo));
       else if (result.status === "ready") toast.success(tr.orderReady(displayNo));
+      else if (result.status === "accepted") toast.success(tr.orderAccepted(displayNo));
     } catch (e: unknown) {
       toast.error(errorMessage(e));
     } finally {
@@ -918,6 +916,7 @@ function OrdersPage() {
               ["today", tr.pickupToday],
               ["tomorrow", tr.pickupTomorrow],
               ["overdue", tr.pickupOverdue],
+              ["nodate", tr.pickupNoDate],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -1009,7 +1008,7 @@ function OrdersPage() {
                 {/* Куда уйдут материалы после подтверждения. Для заказов из
                     Instagram это единственный способ выдачи, поэтому пустая
                     почта здесь — предупреждение, а не мелочь. */}
-                {platformOf(o) === "instagram" && (
+                {platformOf(o) === "instagram" && o.fulfillment_kind !== "physical" && (
                   <div className={o.customer_email ? "" : "text-amber-700"}>
                     ✉️ {o.customer_email || tr.noEmail}
                   </div>
@@ -1212,12 +1211,13 @@ function OrdersPage() {
               {o.fulfillment_kind === "physical" &&
                 (o.status === "accepted" ||
                   o.status === "in_production" ||
-                  o.status === "ready") && (
+                  o.status === "ready" ||
+                  o.status === "delivering") && (
                   <div className="flex flex-wrap gap-2 pt-2">
                     {/* "Назад" (Блок 3, находка 3.6) — только между
                         живыми статусами, не с delivered: тот переход
                         необратим (баллы/реферал/отзыв). */}
-                    {o.status !== "accepted" && (
+                    {o.status !== "accepted" && o.status !== "delivering" && (
                       <Button
                         variant="outline"
                         onClick={() => onRevert(o.id)}
@@ -1230,11 +1230,13 @@ function OrdersPage() {
                       onClick={() => onAdvance(o.id, o.order_no ?? o.id)}
                       disabled={busy === o.id}
                     >
-                      {o.status === "accepted"
-                        ? tr.advanceToProductionBtn
-                        : o.status === "in_production"
-                          ? tr.advanceToReadyBtn
-                          : tr.advanceToDeliveredBtn}
+                      {o.status === "delivering"
+                        ? tr.recoverStuckBtn
+                        : o.status === "accepted"
+                          ? tr.advanceToProductionBtn
+                          : o.status === "in_production"
+                            ? tr.advanceToReadyBtn
+                            : tr.advanceToDeliveredBtn}
                     </Button>
                     {/* Отмена уже принятого заказа (Блок 3, находка 3.1) —
                         раньше единственным выходом было "🗑️ Удалить" внизу

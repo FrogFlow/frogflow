@@ -57,15 +57,20 @@ async function loadAnalyticsData(): Promise<{
         .range(from, to),
     "заказы",
   );
-  const orders: OrderForAnalytics[] = rows.filter(includeOrderInAnalytics).map((o) => ({
-    id: o.id,
-    total: analyticsRevenue(o),
-    currency: o.currency,
-    discount_amount: o.discount_amount,
-    points_used: o.points_used,
-    gift_certificate_discount: o.gift_certificate_discount,
-    created_at: o.created_at,
-  }));
+  const orders: OrderForAnalytics[] = rows.filter(includeOrderInAnalytics).map((o) => {
+    const originalTotal = Number(o.total) || 0;
+    const revenue = analyticsRevenue(o);
+    return {
+      id: o.id,
+      total: revenue,
+      currency: o.currency,
+      discount_amount: o.discount_amount,
+      points_used: o.points_used,
+      gift_certificate_discount: o.gift_certificate_discount,
+      created_at: o.created_at,
+      revenueScale: originalTotal > 0 ? revenue / originalTotal : 1,
+    };
+  });
 
   const orderIds = orders.map((o) => o.id);
   const items = orderIds.length
@@ -113,7 +118,10 @@ export const getFinancialAnalytics = createServerFn({ method: "GET" }).handler(a
     // одной валюты считал бы штуки, проданные и в других валютах тоже
     // (topProductsBySales сам по себе валютно-нейтральный, см. его комментарий).
     const curItems = items.filter((it) => curOrderIds.has(it.order_id));
-    topProductsByCurrency[cur] = topProductsBySales(curItems, curOrderIds);
+    const scales = new Map(
+      orders.filter((o) => curOrderIds.has(o.id)).map((o) => [o.id, o.revenueScale ?? 1]),
+    );
+    topProductsByCurrency[cur] = topProductsBySales(curItems, curOrderIds, 10, scales);
   }
 
   return {
@@ -219,11 +227,15 @@ export const getFinancialAnalyticsConverted = createServerFn({ method: "GET" })
     const top10 = topProductsBySales(items, new Set());
     const top10Keys = new Set(top10.map((p) => p.key));
     const orderCurrency = new Map(orders.map((o) => [o.id, o.currency || "—"]));
+    const orderScale = new Map(orders.map((o) => [o.id, o.revenueScale ?? 1]));
     const revenueByProduct = new Map<string, number>();
     for (const it of items) {
       const key = it.product_id ?? `name:${it.name_snapshot}`;
       if (!top10Keys.has(key)) continue;
-      const amount = (Number(it.price_snapshot) || 0) * (Number(it.quantity) || 0);
+      const amount =
+        (Number(it.price_snapshot) || 0) *
+        (Number(it.quantity) || 0) *
+        (orderScale.get(it.order_id) ?? 1);
       if (!amount) continue;
       const cur = orderCurrency.get(it.order_id) ?? "—";
       const converted = cur === target ? amount : await convertAmount(amount, cur, target);

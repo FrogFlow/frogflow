@@ -15,6 +15,7 @@ import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/blocked")({
@@ -46,6 +47,7 @@ const copy: Record<
     selected: string;
     reasonLabel: string;
     reasonPlaceholder: string;
+    reasonPlaceholderPhysical: string;
     blockBtn: string;
     blockedTitle: (n: number) => string;
     empty: string;
@@ -72,6 +74,7 @@ const copy: Record<
     selected: "Выбран:",
     reasonLabel: "Причина (необязательно)",
     reasonPlaceholder: "Перепродажа материалов, пиратство…",
+    reasonPlaceholderPhysical: "Мошенничество, неявка…",
     blockBtn: "Заблокировать",
     blockedTitle: (n) => `Заблокированные (${n})`,
     empty: "Список пуст.",
@@ -98,6 +101,7 @@ const copy: Record<
     selected: "Таңдалды:",
     reasonLabel: "Себеп (міндетті емес)",
     reasonPlaceholder: "Материалдарды қайта сату, пиратство…",
+    reasonPlaceholderPhysical: "Алаяқтық, келмеу…",
     blockBtn: "Бұғаттау",
     blockedTitle: (n) => `Бұғатталғандар (${n})`,
     empty: "Тізім бос.",
@@ -124,6 +128,7 @@ const copy: Record<
     selected: "Selected:",
     reasonLabel: "Reason (optional)",
     reasonPlaceholder: "Reselling materials, piracy…",
+    reasonPlaceholderPhysical: "Fraud, no-show…",
     blockBtn: "Block",
     blockedTitle: (n) => `Blocked (${n})`,
     empty: "The list is empty.",
@@ -150,6 +155,7 @@ const copy: Record<
     selected: "Tanlandi:",
     reasonLabel: "Sabab (ixtiyoriy)",
     reasonPlaceholder: "Materiallarni qayta sotish, piratlik…",
+    reasonPlaceholderPhysical: "Firibgarlik, kelmaslik…",
     blockBtn: "Bloklash",
     blockedTitle: (n) => `Bloklanganlar (${n})`,
     empty: "Ro‘yxat bo‘sh.",
@@ -167,6 +173,7 @@ const copy: Record<
 
 function BlockedUsersPage() {
   const { locale } = useAdminLocale();
+  const { isPhysicalShop } = useVertical();
   const tr = copy[locale];
   const qc = useQueryClient();
   const blocked = useQuery({ queryKey: ["blocked_users"], queryFn: () => listBlockedUsersFn() });
@@ -319,7 +326,7 @@ function BlockedUsersPage() {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={2}
-            placeholder={tr.reasonPlaceholder}
+            placeholder={isPhysicalShop ? tr.reasonPlaceholderPhysical : tr.reasonPlaceholder}
           />
         </div>
         <Button onClick={onBlock} disabled={busy}>

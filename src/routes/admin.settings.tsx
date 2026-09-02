@@ -102,6 +102,7 @@ const copy: Record<
     deleteVideoBtn: string;
     captionLabel: string;
     captionPlaceholder: string;
+    captionPlaceholderPhysical: string;
     saveInstructionBtn: string;
     accessTitle: string;
     accessCreds: string;
@@ -144,7 +145,7 @@ const copy: Record<
     deliveryLangTimingBefore: "До оформления заказа",
     paymentModeTitle: "Оплата физических заказов",
     paymentModeHint:
-      "Как принимать оплату за товары, которые изготавливаются под заказ (не выдаются файлом мгновенно).",
+      "Как принимать оплату за торты и десерты на заказ: полностью вперёд, задатком или при получении.",
     fulfillmentOptionsTitle: "Способы получения",
     fulfillmentOptionsHint:
       "Какие способы получения предлагать покупателю физического товара. Выключить можно только один — оба сразу оставили бы чекаут без единого варианта.",
@@ -204,6 +205,7 @@ const copy: Record<
     deleteVideoBtn: "Удалить видео",
     captionLabel: "Текст под видео (как пользоваться / как оплата)",
     captionPlaceholder: "Кратко: каталог → корзина → оплата → чек…",
+    captionPlaceholderPhysical: "Кратко: каталог → корзина → дата получения → оплата…",
     saveInstructionBtn: "Сохранить текст инструкции",
     accessTitle: "Доступ в админ-панель",
     accessCreds: "Логин и пароль:",
@@ -248,7 +250,7 @@ const copy: Record<
     deliveryLangTimingBefore: "Тапсырысты ресімдеуден бұрын",
     paymentModeTitle: "Физикалық тапсырыстарды төлеу",
     paymentModeHint:
-      "Тапсырысқа арнап дайындалатын тауарлар үшін (файл ретінде бірден берілмейтін) төлемді қалай қабылдау керек.",
+      "Тапсырысқа арнап дайындалатын торт пен десерттер үшін төлем: толық алдын ала, алдын ала төлем немесе алу кезінде.",
     fulfillmentOptionsTitle: "Алу тәсілдері",
     fulfillmentOptionsHint:
       "Физикалық тауарды алу үшін қандай тәсілдерді ұсыну керек. Тек біреуін ғана өшіруге болады — екеуін бірден өшірсе, тапсырысты алудың жолы қалмайды.",
@@ -307,6 +309,7 @@ const copy: Record<
     deleteVideoBtn: "Видеоны жою",
     captionLabel: "Видео астындағы мәтін (қалай пайдалану / қалай төлеу)",
     captionPlaceholder: "Қысқаша: каталог → себет → төлем → чек…",
+    captionPlaceholderPhysical: "Қысқаша: каталог → себет → алу күні → төлем…",
     saveInstructionBtn: "Нұсқаулық мәтінін сақтау",
     accessTitle: "Әкімші панеліне қолжетімділік",
     accessCreds: "Логин мен құпия сөз:",
@@ -351,7 +354,7 @@ const copy: Record<
     deliveryLangTimingBefore: "Before placing the order",
     paymentModeTitle: "Payment for physical orders",
     paymentModeHint:
-      "How to accept payment for made-to-order items (not delivered as a file instantly).",
+      "How to accept payment for cakes and desserts to order: full upfront, a deposit, or on pickup/delivery.",
     fulfillmentOptionsTitle: "Pickup/delivery options",
     fulfillmentOptionsHint:
       "Which fulfillment options to offer buyers of physical items. Only one can be turned off — both off would leave checkout with no way to get the order.",
@@ -411,6 +414,7 @@ const copy: Record<
     deleteVideoBtn: "Delete video",
     captionLabel: "Text below the video (how to use / how to pay)",
     captionPlaceholder: "Briefly: catalog → cart → payment → receipt…",
+    captionPlaceholderPhysical: "Briefly: catalog → cart → pickup date → payment…",
     saveInstructionBtn: "Save instruction text",
     accessTitle: "Admin panel access",
     accessCreds: "Username and password:",
@@ -456,7 +460,7 @@ const copy: Record<
     deliveryLangTimingBefore: "Buyurtma berishdan oldin",
     paymentModeTitle: "Jismoniy buyurtmalar uchun to‘lov",
     paymentModeHint:
-      "Buyurtma bo‘yicha tayyorlanadigan tovarlar uchun (darhol fayl sifatida berilmaydigan) to‘lovni qanday qabul qilish.",
+      "Buyurtma bo‘yicha tort va desertlar uchun to‘lov: to‘liq oldindan, oldindan to‘lov yoki olishda.",
     fulfillmentOptionsTitle: "Olish usullari",
     fulfillmentOptionsHint:
       "Jismoniy tovarni olish uchun qaysi usullarni taklif qilish. Faqat bittasini o‘chirish mumkin — ikkalasini birdan o‘chirsangiz, buyurtmani olishning yo‘li qolmaydi.",
@@ -515,6 +519,7 @@ const copy: Record<
     deleteVideoBtn: "Videoni o‘chirish",
     captionLabel: "Video ostidagi matn (qanday foydalanish / qanday to‘lash)",
     captionPlaceholder: "Qisqacha: katalog → savat → to‘lov → chek…",
+    captionPlaceholderPhysical: "Qisqacha: katalog → savat → olish sanasi → to‘lov…",
     saveInstructionBtn: "Yo‘riqnoma matnini saqlash",
     accessTitle: "Admin paneliga kirish",
     accessCreds: "Login va parol:",
@@ -1275,7 +1280,7 @@ function SettingsPage() {
             rows={8}
             value={instructionCaption}
             onChange={(e) => setInstructionCaption(e.target.value)}
-            placeholder={tr.captionPlaceholder}
+            placeholder={isPhysicalShop ? tr.captionPlaceholderPhysical : tr.captionPlaceholder}
           />
         </div>
         <div className="flex items-center gap-2">

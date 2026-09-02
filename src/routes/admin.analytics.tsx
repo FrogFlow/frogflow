@@ -42,6 +42,7 @@ const copy: Record<
     piecesSuffix: string;
     revenueLabel: string;
     noOrders: string;
+    noOrdersPhysical: string;
     sectionTitle: (currency: string) => string;
     combinedTitle: string;
     combinedTabLabel: string;
@@ -68,6 +69,7 @@ const copy: Record<
     piecesSuffix: "шт.",
     revenueLabel: "Выручка",
     noOrders: "За этот период выданных заказов ещё не было.",
+    noOrdersPhysical: "За этот период заказов (выданных и в работе с задатком) ещё не было.",
     sectionTitle: (currency) => `Статистика в ${currency}`,
     combinedTitle: "Общий свод по всем валютам",
     combinedTabLabel: "Общий свод",
@@ -94,6 +96,8 @@ const copy: Record<
     piecesSuffix: "дана",
     revenueLabel: "Түсім",
     noOrders: "Бұл кезеңде әлі берілген тапсырыстар болған жоқ.",
+    noOrdersPhysical:
+      "Бұл кезеңде берілген және дайындалып жатқан (алдын ала төлеммен) тапсырыстар жоқ.",
     sectionTitle: (currency) => `${currency} валютасындағы статистика`,
     combinedTitle: "Барлық валюта бойынша жалпы қорытынды",
     combinedTabLabel: "Жалпы қорытынды",
@@ -120,6 +124,7 @@ const copy: Record<
     piecesSuffix: "pcs",
     revenueLabel: "Revenue",
     noOrders: "No delivered orders in this period yet.",
+    noOrdersPhysical: "No orders in this period yet (delivered or in production with a deposit).",
     sectionTitle: (currency) => `Stats in ${currency}`,
     combinedTitle: "Combined total across all currencies",
     combinedTabLabel: "Combined",
@@ -146,6 +151,8 @@ const copy: Record<
     piecesSuffix: "dona",
     revenueLabel: "Daromad",
     noOrders: "Bu davrda hali yetkazilgan buyurtmalar bo‘lmagan.",
+    noOrdersPhysical:
+      "Bu davrda yetkazilgan yoki oldindan to‘lovli ishlab chiqarishdagi buyurtmalar yo‘q.",
     sectionTitle: (currency) => `${currency} valyutasidagi statistika`,
     combinedTitle: "Barcha valyutalar bo‘yicha umumiy svod",
     combinedTabLabel: "Umumiy svod",
@@ -352,7 +359,9 @@ function AnalyticsPage() {
       </div>
 
       {!dominant || currencies.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{tr.noOrders}</p>
+        <p className="text-sm text-muted-foreground">
+          {isPhysicalShop ? tr.noOrdersPhysical : tr.noOrders}
+        </p>
       ) : (
         <Tabs defaultValue={dominant}>
           <TabsList className="flex-wrap h-auto">
