@@ -616,15 +616,18 @@ export async function processPendingDeliveries(limit = 3) {
 export async function resendOrderFiles(
   orderId: number,
   telegramId: number,
-): Promise<{ ok: true; sent: number } | { ok: false; reason: "not_found" | "not_delivered" }> {
+): Promise<
+  { ok: true; sent: number } | { ok: false; reason: "not_found" | "not_delivered" | "not_digital" }
+> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data: order } = await supabaseAdmin
     .from("orders")
-    .select("id, status, telegram_id, delivery_lang_choice, order_items(*)")
+    .select("id, status, telegram_id, delivery_lang_choice, fulfillment_kind, order_items(*)")
     .eq("id", orderId)
     .eq("telegram_id", telegramId)
     .maybeSingle();
   if (!order) return { ok: false, reason: "not_found" };
+  if (order.fulfillment_kind === "physical") return { ok: false, reason: "not_digital" };
   if (order.status !== "delivered") return { ok: false, reason: "not_delivered" };
 
   const items = (order.order_items as OrderItem[]) || [];

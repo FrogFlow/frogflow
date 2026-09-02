@@ -1,5 +1,6 @@
 import type { Locale } from "./i18n";
 import { miniAppStringsClientPack, resolveMiniAppLocale } from "./mini-app-i18n";
+import { currentVerticalDef } from "./verticals/vertical.server";
 
 /** Shared Mini App HTML shell, styles and client runtime. */
 export function wrapMiniAppPage(
@@ -10,6 +11,7 @@ export function wrapMiniAppPage(
 ): string {
   const lang = locale;
   const i18n = JSON.stringify(miniAppStringsClientPack(locale));
+  const physicalShop = currentVerticalDef().defaultFulfillment === "physical";
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -178,6 +180,7 @@ export function wrapMiniAppPage(
     }
     .card-price { font-weight: 700; margin-top: 0.35rem; color: var(--link); }
     .card-oos { font-size: 0.75rem; color: #c0392b; margin-top: 0.25rem; }
+    .card-lead { font-size: 0.75rem; color: var(--hint); margin-top: 0.25rem; }
     .variant-select {
       width: 100%;
       margin-top: 0.5rem;
@@ -391,8 +394,9 @@ export function wrapMiniAppPage(
   <script>
     window.__miniAppI18n = ${i18n};
     window.__miniAppLocale = "${lang}";
+    window.__miniAppPhysicalShop = ${physicalShop ? "true" : "false"};
   </script>
-  <script src="/mini-app-runtime?v=4"></script>
+  <script src="/mini-app-runtime?v=5"></script>
 </body>
 </html>`;
 }

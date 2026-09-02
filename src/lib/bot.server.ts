@@ -3015,7 +3015,7 @@ export type MiniAppPlaceOrderResult =
       qrImageUrl?: string;
       orderId: number;
     }
-  | { ok: true; type: "completed"; message: string; orderId: number }
+  | { ok: true; type: "completed"; message: string; orderId: number; stayOpen?: boolean }
   | { ok: false; error: string };
 
 async function miniAppAmountLabel(
@@ -3526,11 +3526,13 @@ async function placeOrderInner(
     await releaseOrderPlacement(telegram_id, user.state);
     if (miniApp) {
       const { miniAppStrings } = await import("./mini-app-i18n");
+      const s = miniAppStrings(locale);
       return {
         ok: true,
         type: "completed",
-        message: miniAppStrings(locale).orderComplete,
+        message: orderFulfillmentKind === "physical" ? s.orderCompletePhysical : s.orderComplete,
         orderId: order.id as number,
+        stayOpen: orderFulfillmentKind === "physical",
       };
     }
     return;
@@ -3557,6 +3559,7 @@ async function placeOrderInner(
         type: "completed",
         message: miniAppStrings(locale).orderOnReceipt,
         orderId: order.id as number,
+        stayOpen: true,
       };
     }
     return;

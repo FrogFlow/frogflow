@@ -2,6 +2,10 @@ import type { Json } from "@/integrations-supabase/types";
 import { imageUrl } from "@/lib/public-image";
 import { miniAppStrings } from "./mini-app-i18n";
 import type { Locale } from "./i18n";
+import { currentVertical } from "./verticals/vertical.server";
+
+export const MINI_APP_PRODUCT_SELECT =
+  "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, lead_time_days, fulfillment_kind, product_variants(id, name, price, sort_order)";
 
 export type MiniAppProduct = {
   id: string;
@@ -16,6 +20,8 @@ export type MiniAppProduct = {
   currency: string | null;
   country_prices: Json;
   stock_quantity: number | null;
+  lead_time_days?: number | null;
+  fulfillment_kind?: "digital" | "physical" | null;
   product_variants: Array<{
     id: string;
     name: string;
@@ -172,9 +178,7 @@ export async function loadMiniAppCatalogData(
   if (pageIds.length > 0) {
     const { data: productRows } = await supabaseAdmin
       .from("products")
-      .select(
-        "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
-      )
+      .select(MINI_APP_PRODUCT_SELECT)
       .in("id", pageIds)
       .eq("is_active", true);
     const byId = new Map(
@@ -240,6 +244,22 @@ export function productCategoryIds(p: MiniAppProduct): string[] {
   return (p.category_ids as string[] | null) ?? [];
 }
 
+export function miniAppEmptyThumbEmoji(
+  fulfillmentKind?: string | null,
+  vertical = currentVertical(),
+): string {
+  if (vertical === "confectionery") return "🎂";
+  return fulfillmentKind === "physical" ? "📦" : "🛍";
+}
+
+export function renderMiniAppLeadBadge(p: MiniAppProduct, locale: Locale): string {
+  if (p.fulfillment_kind !== "physical") return "";
+  const s = miniAppStrings(locale);
+  const days = p.lead_time_days;
+  const label = days && days > 0 ? s.leadTime(days) : s.inStock;
+  return `<div class="card-lead">${escapeMiniAppHtml(label)}</div>`;
+}
+
 export function renderMiniAppProductCard(
   p: MiniAppProduct,
   money: PricedProduct | undefined,
@@ -288,7 +308,7 @@ export function renderMiniAppProductCard(
 
   const thumbInner = img
     ? `<img src="${esc(img)}" alt="${esc(p.name)}" loading="lazy" />`
-    : `<span aria-hidden="true" style="font-size:2rem">🛍</span>`;
+    : `<span aria-hidden="true" style="font-size:2rem">${miniAppEmptyThumbEmoji(p.fulfillment_kind)}</span>`;
   const query = new URLSearchParams({ lang: locale });
   if (opts?.countryCode) query.set("country", opts.countryCode);
   if (opts?.catalogParams) query.set("back", opts.catalogParams);
@@ -311,6 +331,7 @@ export function renderMiniAppProductCard(
           : ""
       }
       ${p.description ? `<div class="card-desc">${esc(p.description)}</div>` : ""}
+      ${renderMiniAppLeadBadge(p, locale)}
       ${priceLabel ? `<div class="card-price">${esc(priceLabel)}</div>` : ""}
       ${actionsHtml}
     </div>

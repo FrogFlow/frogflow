@@ -521,7 +521,10 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     }
     var statuses = I.orderStatus || {};
     ordersEl.innerHTML = orders.map(function (order) {
-      var status = statuses[order.status] || order.status;
+      var physical = order.fulfillmentKind === "physical";
+      var status = physical && order.status === "delivering"
+        ? (t("physicalDelivering") || statuses[order.status] || order.status)
+        : (statuses[order.status] || order.status);
       var date = "";
       try {
         date = new Intl.DateTimeFormat(window.__miniAppLocale || "ru", {
@@ -534,7 +537,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         actions += "<button type=\\"button\\" data-order-resume=\\"" + Number(order.id) + "\\">" +
           escapeHtml(t("continuePayment")) + "</button>";
       }
-      if (order.status === "delivered" && order.fulfillmentKind !== "physical") {
+      if (order.status === "delivered" && !physical) {
         actions += "<button type=\\"button\\" data-order-resend=\\"" + Number(order.id) + "\\">" +
           escapeHtml(t("resendFiles")) + "</button>";
       }
@@ -542,11 +545,22 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         actions += "<a href=\\"" + escapeHtml(botUrl) + "\\" data-bot-link>" +
           escapeHtml(t("contactSupport")) + "</a>";
       }
+      var money = formatMoney(Number(order.total), order.currency);
+      var paid = Number(order.paidAmount || 0);
+      if (physical && paid > 0 && paid < Number(order.total)) {
+        money += " · " + t("paidLabel") + " " + formatMoney(paid, order.currency);
+      }
+      var fulfill = "";
+      if (order.fulfillmentType === "pickup") fulfill = t("pickup");
+      else if (order.fulfillmentType === "delivery") fulfill = t("delivery");
+      if (order.fulfillmentAt) {
+        fulfill = fulfill ? fulfill + " · " + order.fulfillmentAt : order.fulfillmentAt;
+      }
       return "<article class=\\"order-card\\"><div class=\\"order-head\\"><span>#" +
         Number(order.displayNo) + "</span><span>" + escapeHtml(status) + "</span></div>" +
         "<div class=\\"order-meta\\">" + escapeHtml(date) + " · " +
-        escapeHtml(formatMoney(Number(order.total), order.currency)) + "</div>" +
-        (order.fulfillmentAt ? "<div class=\\"order-meta\\">" + escapeHtml(order.fulfillmentAt) + "</div>" : "") +
+        escapeHtml(money) + "</div>" +
+        (fulfill ? "<div class=\\"order-meta\\">" + escapeHtml(fulfill) + "</div>" : "") +
         (actions ? "<div class=\\"order-actions\\">" + actions + "</div>" : "") +
         "</article>";
     }).join("");
@@ -619,7 +633,8 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         "</div>";
     } else if (step === "need_fulfillment_date") {
       html = "<p><strong>" + t("needFulfillmentDate") + "</strong></p><label>" + t("dateLabel") + "</label>" +
-        "<input type=\\"date\\" id=\\"mini-fulfill-date\\" min=\\"" + (data.minDate || "") + "\\" />" +
+        "<input type=\\"date\\" id=\\"mini-fulfill-date\\" min=\\"" + escapeHtml(data.minDate || "") +
+        "\\" value=\\"" + escapeHtml(data.minDate || "") + "\\" />" +
         "<div class=\\"checkout-actions\\"><button type=\\"button\\" class=\\"primary-btn\\" id=\\"mini-step-submit\\">" + t("continue") + "</button></div>";
     } else if (step === "need_delivery_zone") {
       html = "<p><strong>" + t("needDeliveryZone") + "</strong></p><label>" + t("needDeliveryZone") + "</label><select id=\\"mini-zone\\">" +
@@ -700,7 +715,9 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       html = "<p><strong>" + escapeHtml(data.message || t("orderComplete")) + "</strong></p>";
       checkoutForm.innerHTML = html;
       try { if (tg) tg.disableClosingConfirmation(); } catch (e) {}
-      setTimeout(function () { if (tg) tg.close(); }, 2500);
+      if (!data.stayOpen) {
+        setTimeout(function () { if (tg) tg.close(); }, 2500);
+      }
       return;
     }
     checkoutForm.innerHTML = html;
@@ -822,6 +839,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
             step: "completed",
             message: t("paymentConfirmed"),
             orderId: order.id,
+            stayOpen: order.fulfillmentKind === "physical" || window.__miniAppPhysicalShop,
           });
           refreshCart().catch(function () {});
           loadOrders();

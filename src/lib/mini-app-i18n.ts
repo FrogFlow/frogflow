@@ -61,7 +61,13 @@ export type MiniAppStrings = {
   amountToPay: (amount: string) => string;
   depositNow: (amount: string) => string;
   orderComplete: string;
+  orderCompletePhysical: string;
   orderOnReceipt: string;
+  leadTime: (days: number) => string;
+  inStock: string;
+  pagination: string;
+  paidLabel: string;
+  physicalDelivering: string;
   openPayment: string;
   sendProofInBot: string;
   continue: string;
@@ -146,7 +152,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pickup: "Самовывоз",
     delivery: "Доставка",
     needFulfillmentDate: "Дата получения",
-    dateLabel: "Дата (ГГГГ-ММ-ДД)",
+    dateLabel: "Дата",
     needDeliveryZone: "Зона доставки",
     chooseDeliveryLanguage: "Язык материалов",
     needAddress: "Адрес доставки",
@@ -159,7 +165,13 @@ const dict: Record<Locale, MiniAppStrings> = {
     amountToPay: (a) => `К оплате: ${a}`,
     depositNow: (a) => `Предоплата сейчас: ${a}`,
     orderComplete: "Заказ оформлен! Материалы придут в бот.",
+    orderCompletePhysical: "Заказ оформлен! Статус придёт в бот.",
     orderOnReceipt: "Заказ принят! Оплата при получении.",
+    leadTime: (days) => `Готовим ${days} дн.`,
+    inStock: "В наличии",
+    pagination: "Страницы",
+    paidLabel: "Оплачено",
+    physicalDelivering: "Готовится к выдаче",
     openPayment: "Перейти к оплате",
     sendProofInBot: "Если загрузка не сработала — отправьте чек в чат с ботом.",
     continue: "Продолжить",
@@ -251,7 +263,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pickup: "Өзі алып кету",
     delivery: "Жеткізу",
     needFulfillmentDate: "Алу күні",
-    dateLabel: "Күні (ЖЖЖЖ-АА-КК)",
+    dateLabel: "Күні",
     needDeliveryZone: "Жеткізу аймағы",
     chooseDeliveryLanguage: "Материалдар тілі",
     needAddress: "Жеткізу мекенжайы",
@@ -264,7 +276,13 @@ const dict: Record<Locale, MiniAppStrings> = {
     amountToPay: (a) => `Төлемге: ${a}`,
     depositNow: (a) => `Қазір алдын ала төлем: ${a}`,
     orderComplete: "Тапсырыс жасалды! Материалдар ботқа келеді.",
+    orderCompletePhysical: "Тапсырыс жасалды! Мәртебе ботқа келеді.",
     orderOnReceipt: "Тапсырыс қабылданды! Алу кезінде төлем.",
+    leadTime: (days) => `Дайындау: ${days} күн`,
+    inStock: "Қолда бар",
+    pagination: "Беттер",
+    paidLabel: "Төленді",
+    physicalDelivering: "Беруге дайындалуда",
     openPayment: "Төлемге өту",
     sendProofInBot: "Жүктеу істемесе — чекті бот чатына жіберіңіз.",
     continue: "Жалғастыру",
@@ -356,7 +374,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pickup: "Pickup",
     delivery: "Delivery",
     needFulfillmentDate: "Pickup/delivery date",
-    dateLabel: "Date (YYYY-MM-DD)",
+    dateLabel: "Date",
     needDeliveryZone: "Delivery zone",
     chooseDeliveryLanguage: "Material language",
     needAddress: "Delivery address",
@@ -369,7 +387,13 @@ const dict: Record<Locale, MiniAppStrings> = {
     amountToPay: (a) => `Amount due: ${a}`,
     depositNow: (a) => `Deposit due now: ${a}`,
     orderComplete: "Order placed! Files will arrive in the bot.",
+    orderCompletePhysical: "Order placed! Status updates will arrive in the bot.",
     orderOnReceipt: "Order accepted! Pay on receipt.",
+    leadTime: (days) => `Made to order: ${days} day${days === 1 ? "" : "s"}`,
+    inStock: "In stock",
+    pagination: "Pages",
+    paidLabel: "Paid",
+    physicalDelivering: "Being prepared",
     openPayment: "Go to payment",
     sendProofInBot: "If upload fails, send the receipt in the bot chat.",
     continue: "Continue",
@@ -461,7 +485,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     pickup: "O‘zi olib ketish",
     delivery: "Yetkazib berish",
     needFulfillmentDate: "Olish sanasi",
-    dateLabel: "Sana (YYYY-MM-DD)",
+    dateLabel: "Sana",
     needDeliveryZone: "Yetkazish zonasi",
     chooseDeliveryLanguage: "Materiallar tili",
     needAddress: "Yetkazish manzili",
@@ -474,7 +498,13 @@ const dict: Record<Locale, MiniAppStrings> = {
     amountToPay: (a) => `To‘lov: ${a}`,
     depositNow: (a) => `Hozirgi oldindan to‘lov: ${a}`,
     orderComplete: "Buyurtma qabul qilindi! Fayllar botga keladi.",
+    orderCompletePhysical: "Buyurtma qabul qilindi! Holat botga keladi.",
     orderOnReceipt: "Buyurtma qabul qilindi! Olishda to‘lash.",
+    leadTime: (days) => `Tayyorlash: ${days} kun`,
+    inStock: "Mavjud",
+    pagination: "Sahifalar",
+    paidLabel: "To‘langan",
+    physicalDelivering: "Berishga tayyorlanmoqda",
     openPayment: "To‘lovga o‘tish",
     sendProofInBot: "Yuklash ishlamasa — chekni bot chatiga yuboring.",
     continue: "Davom etish",
@@ -599,7 +629,12 @@ export function miniAppStringsClientPack(
     payRobokassa: s.payRobokassa,
     payManual: s.payManual,
     orderComplete: s.orderComplete,
+    orderCompletePhysical: s.orderCompletePhysical,
     orderOnReceipt: s.orderOnReceipt,
+    inStock: s.inStock,
+    pagination: s.pagination,
+    paidLabel: s.paidLabel,
+    physicalDelivering: s.physicalDelivering,
     openPayment: s.openPayment,
     sendProofInBot: s.sendProofInBot,
     continue: s.continue,

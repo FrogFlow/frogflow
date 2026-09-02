@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=4"');
+    expect(page).toContain('src="/mini-app-runtime?v=5"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -94,6 +94,11 @@ describe("Mini App production regressions", () => {
     (locale) => {
       const pack = miniAppStringsClientPack(locale);
       expect(pack.pay).toBeTruthy();
+      expect(pack.orderCompletePhysical).toBeTruthy();
+      expect(pack.physicalDelivering).toBeTruthy();
+      expect(pack.paidLabel).toBeTruthy();
+      expect(pack.pagination).toBeTruthy();
+      expect(pack.inStock).toBeTruthy();
       expect(pack.chooseDeliveryLanguage).toBeTruthy();
       expect(pack.invalidField).toBeTruthy();
       expect(pack.paymentUnavailable).toBeTruthy();
@@ -149,5 +154,32 @@ describe("Mini App production regressions", () => {
     expect(fn).toContain("countryChanged");
     expect(fn).toContain("delete nextState.checkout_fulfillment_type");
     expect(fn).toContain("delete nextState.checkout_delivery_zone_id");
+  });
+
+  it("skips delivery-language checkout for a physical cart", () => {
+    const checkout = source("src/lib/mini-app-checkout.server.ts");
+    const needs = checkout.slice(checkout.indexOf("export async function miniAppCheckoutNeeds"));
+    expect(needs).toContain('fulfillmentKind !== "physical"');
+    expect(needs).toContain('hasModule("multi_language")');
+  });
+
+  it("uses physical completion copy and keeps the Mini App open", () => {
+    const bot = source("src/lib/bot.server.ts");
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    expect(bot).toContain("orderCompletePhysical");
+    expect(bot).toContain('stayOpen: orderFulfillmentKind === "physical"');
+    expect(runtime).toContain("if (!data.stayOpen)");
+    expect(runtime).toContain('t("physicalDelivering")');
+    expect(runtime).toContain('t("paidLabel")');
+    expect(runtime).toContain('fulfillmentType === "pickup"');
+  });
+
+  it("does not resend files for physical orders", () => {
+    const orders = source("src/lib/orders.server.ts");
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    const resend = orders.slice(orders.indexOf("export async function resendOrderFiles"));
+    expect(resend).toContain('fulfillment_kind === "physical"');
+    expect(resend).toContain('reason: "not_digital"');
+    expect(runtime).toContain('order.status === "delivered" && !physical');
   });
 });

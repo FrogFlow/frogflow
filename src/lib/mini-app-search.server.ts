@@ -1,6 +1,7 @@
 import {
   escapeMiniAppHtml,
   filterMiniAppProductIds,
+  MINI_APP_PRODUCT_SELECT,
   miniAppProductSearchText,
   priceMiniAppProducts,
   renderMiniAppProductCard,
@@ -68,9 +69,7 @@ export async function miniAppSmartSearchHtml(params: {
 
   const { data: productRows } = await supabaseAdmin
     .from("products")
-    .select(
-      "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
-    )
+    .select(MINI_APP_PRODUCT_SELECT)
     .in("id", ids)
     .eq("is_active", true);
   const byId = new Map(

@@ -38,6 +38,7 @@ export type MiniAppCheckoutResponse = {
   message?: string;
   error?: string;
   orderId?: number;
+  stayOpen?: boolean;
 };
 
 async function db() {
@@ -225,7 +226,8 @@ export async function miniAppCheckoutNeeds(
     activeDeliveryZones,
   } = await import("./fulfillment.server");
 
-  if ((await cartFulfillmentKind(telegram_id)) === "physical") {
+  const fulfillmentKind = await cartFulfillmentKind(telegram_id);
+  if (fulfillmentKind === "physical") {
     const { pickup, delivery } = await fulfillmentOptionsEnabled();
     let effectiveType = state.checkout_fulfillment_type as string | undefined;
     if (!effectiveType) {
@@ -272,7 +274,11 @@ export async function miniAppCheckoutNeeds(
   }
 
   const { hasModule } = await import("./modules/modules.server");
-  if ((await hasModule("multi_language")) && !state.checkout_lang_choice) {
+  if (
+    fulfillmentKind !== "physical" &&
+    (await hasModule("multi_language")) &&
+    !state.checkout_lang_choice
+  ) {
     const { data: timing } = await s
       .from("app_settings")
       .select("value")
@@ -337,7 +343,12 @@ function mapPlaceOrderResult(
       orderId: result.orderId,
     };
   }
-  return { step: "completed", message: result.message, orderId: result.orderId };
+  return {
+    step: "completed",
+    message: result.message,
+    orderId: result.orderId,
+    stayOpen: result.stayOpen,
+  };
 }
 
 export async function miniAppDefaultCountryForCatalog(

@@ -111,7 +111,7 @@ export const Route = createFileRoute("/mini-app")({
         };
         const paginationHtml =
           pageCount > 1
-            ? `<nav class="pagination" aria-label="Pagination">
+            ? `<nav class="pagination" aria-label="${esc(s.pagination)}">
                 ${page > 1 ? paginationLink(page - 1, "←") : ""}
                 <span>${page} / ${pageCount}</span>
                 ${page < pageCount ? paginationLink(page + 1, "→") : ""}

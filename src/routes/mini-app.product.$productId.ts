@@ -3,8 +3,11 @@ import { isControlPlane } from "@/lib/control-plane.server";
 import {
   escapeMiniAppHtml,
   formatMiniAppMoney,
+  MINI_APP_PRODUCT_SELECT,
+  miniAppEmptyThumbEmoji,
   priceMiniAppProducts,
   renderMiniAppCartShell,
+  renderMiniAppLeadBadge,
   type MiniAppProduct,
 } from "@/lib/mini-app-catalog.server";
 import { miniAppStrings } from "@/lib/mini-app-i18n";
@@ -41,9 +44,7 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
 
         const { data: product, error } = await supabaseAdmin
           .from("products")
-          .select(
-            "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
-          )
+          .select(MINI_APP_PRODUCT_SELECT)
           .eq("id", productId)
           .eq("is_active", true)
           .maybeSingle();
@@ -74,7 +75,7 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
                     `<img src="${esc(imageUrl(im.image_path))}" alt="${esc(p.name)} — ${index + 1}" loading="lazy" />`,
                 )
                 .join("")
-            : `<div class="thumb" style="width:100%;max-height:280px"><span aria-hidden="true" style="font-size:3rem">🛍</span></div>`;
+            : `<div class="thumb" style="width:100%;max-height:280px"><span aria-hidden="true" style="font-size:3rem">${miniAppEmptyThumbEmoji(p.fulfillment_kind)}</span></div>`;
         const variants = (p.product_variants ?? [])
           .slice()
           .sort((a, b) => a.sort_order - b.sort_order);
@@ -135,6 +136,7 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
           <div class="pdp-body">
             ${rating}
             ${priceLabel ? `<div class="pdp-price">${esc(priceLabel)}</div>` : ""}
+            ${renderMiniAppLeadBadge(p, locale)}
             ${p.description ? `<h2 style="font-size:0.95rem;margin:1rem 0 0.35rem">${esc(s.description)}</h2><div class="pdp-desc">${esc(p.description)}</div>` : ""}
             <div style="margin-top:1rem">${actionsHtml}</div>
           </div>
