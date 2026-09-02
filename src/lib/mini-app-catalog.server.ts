@@ -63,7 +63,7 @@ export type MiniAppProductIndexRow = {
   description: string | null;
   keywords?: string | string[] | null;
   category_ids: Json;
-  fulfillment_kind?: "digital" | "physical" | null;
+  fulfillment_kind?: string | null;
   file_path?: string | null;
   file_name?: string | null;
   file_path_kz?: string | null;
