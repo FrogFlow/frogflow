@@ -39,6 +39,7 @@ describe("Mini App catalog filtering", () => {
   it("searches names, descriptions and variants across the full index", () => {
     expect(filterMiniAppProductIds(products, new Set(), "chocolate")).toEqual(["visible"]);
     expect(filterMiniAppProductIds(products, new Set(), "large")).toEqual(["visible"]);
+    expect(filterMiniAppProductIds(products, new Set(), "red cake")).toEqual(["visible"]);
   });
 
   it("keeps uncategorized products only in the unfiltered catalog", () => {

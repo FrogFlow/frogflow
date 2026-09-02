@@ -4,6 +4,7 @@ export type MiniAppStrings = {
   defaultShopName: string;
   emptyCatalog: string;
   searchPlaceholder: string;
+  searchEmpty: string;
   productsCount: (n: number) => string;
   allCategories: string;
   addToCart: string;
@@ -99,6 +100,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     defaultShopName: "Магазин",
     emptyCatalog: "Каталог пока пуст.",
     searchPlaceholder: "Поиск…",
+    searchEmpty: "Ничего не найдено.",
     productsCount: (n) => `${n} товаров`,
     allCategories: "Все",
     addToCart: "В корзину",
@@ -201,6 +203,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     defaultShopName: "Дүкен",
     emptyCatalog: "Каталог әзірге бос.",
     searchPlaceholder: "Іздеу…",
+    searchEmpty: "Ештеңе табылмады.",
     productsCount: (n) => `${n} тауар`,
     allCategories: "Барлығы",
     addToCart: "Себетке",
@@ -303,6 +306,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     defaultShopName: "Shop",
     emptyCatalog: "The catalog is empty.",
     searchPlaceholder: "Search…",
+    searchEmpty: "Nothing found.",
     productsCount: (n) => `${n} products`,
     allCategories: "All",
     addToCart: "Add to cart",
@@ -405,6 +409,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     defaultShopName: "Do‘kon",
     emptyCatalog: "Katalog hozircha bo‘sh.",
     searchPlaceholder: "Qidiruv…",
+    searchEmpty: "Hech narsa topilmadi.",
     productsCount: (n) => `${n} mahsulot`,
     allCategories: "Hammasi",
     addToCart: "Savatga",
@@ -531,6 +536,7 @@ export function miniAppStringsClientPack(
     defaultShopName: s.defaultShopName,
     emptyCatalog: s.emptyCatalog,
     searchPlaceholder: s.searchPlaceholder,
+    searchEmpty: s.searchEmpty,
     allCategories: s.allCategories,
     addToCart: s.addToCart,
     variant: s.variant,

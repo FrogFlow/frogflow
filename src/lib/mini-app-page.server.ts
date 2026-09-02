@@ -367,6 +367,11 @@ export function wrapMiniAppPage(
       background: var(--bg);
       border-radius: 10px;
     }
+    .manual-instructions a {
+      color: var(--link);
+      text-decoration: underline;
+      word-break: break-word;
+    }
     .manual-qr { max-width: 200px; margin: 0.5rem auto; display: block; border-radius: 8px; }
     .proof-preview { max-width: 100%; max-height: 220px; display: none; margin: 0.75rem auto; border-radius: 10px; object-fit: contain; }
     .proof-progress { width: 100%; margin-top: 0.75rem; display: none; }
@@ -387,7 +392,7 @@ export function wrapMiniAppPage(
     window.__miniAppI18n = ${i18n};
     window.__miniAppLocale = "${lang}";
   </script>
-  <script src="/mini-app-runtime?v=2"></script>
+  <script src="/mini-app-runtime?v=3"></script>
 </body>
 </html>`;
 }

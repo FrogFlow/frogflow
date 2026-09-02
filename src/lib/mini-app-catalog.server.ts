@@ -60,13 +60,14 @@ export function filterMiniAppProductIds(
   categoryId = "",
 ): string[] {
   const normalizedQuery = query.trim().toLocaleLowerCase().slice(0, 100);
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
   return products
     .filter((product) => {
       const catIds = (product.category_ids as string[] | null) ?? [];
       const visible = catIds.length === 0 || catIds.some((id) => !hiddenCategoryIds.has(id));
       if (!visible) return false;
       if (categoryId && !catIds.includes(categoryId)) return false;
-      if (!normalizedQuery) return true;
+      if (!tokens.length) return true;
       const haystack = [
         product.name,
         product.description ?? "",
@@ -74,7 +75,7 @@ export function filterMiniAppProductIds(
       ]
         .join(" ")
         .toLocaleLowerCase();
-      return haystack.includes(normalizedQuery);
+      return tokens.every((token) => haystack.includes(token));
     })
     .map((product) => product.id);
 }

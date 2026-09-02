@@ -93,7 +93,7 @@ export const Route = createFileRoute("/mini-app")({
           ${countryCode ? `<input type="hidden" name="country" value="${esc(countryCode)}" />` : ""}
           ${categoryId ? `<input type="hidden" name="category" value="${esc(categoryId)}" />` : ""}
           <label for="mini-search-server" style="position:absolute;left:-9999px">${esc(s.searchPlaceholder)}</label>
-          <input type="search" name="q" id="mini-search-server" class="search" value="${esc(searchQuery)}" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" />
+          <input type="search" name="q" id="mini-search-server" class="search" value="${esc(searchQuery)}" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" enterkeyhint="search" />
           <button type="submit" class="search-submit" aria-label="${esc(s.searchPlaceholder)}">⌕</button>
         </form>`;
         const pageCount = Math.max(1, Math.ceil(totalProducts / pageSize));

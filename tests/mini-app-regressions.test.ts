@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=2"');
+    expect(page).toContain('src="/mini-app-runtime?v=3"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -99,6 +99,7 @@ describe("Mini App production regressions", () => {
       expect(pack.paymentUnavailable).toBeTruthy();
       expect(pack.uploadReceipt).toBeTruthy();
       expect(pack.myOrders).toBeTruthy();
+      expect(pack.searchEmpty).toBeTruthy();
       expect(pack.waitingPayment).toBeTruthy();
       expect(pack.orderStatus).toBeTruthy();
     },
@@ -115,6 +116,22 @@ describe("Mini App production regressions", () => {
     expect(page).toContain('createFileRoute("/mini-app/orders")');
     expect(proof).toContain("processMiniAppPaymentProof");
     expect(orders).toContain("resendOrderFiles");
+  });
+
+  it("searches the catalog without dropping the Telegram WebView hash", () => {
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    expect(runtime).toContain("function loadCatalog");
+    expect(runtime).toContain('querySelector(".catalog-search")');
+    expect(runtime).toContain("e.preventDefault()");
+    expect(runtime).toContain("location.hash");
+  });
+
+  it("opens Kaspi and other payment URLs from manual instructions", () => {
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    expect(runtime).toContain("function linkifyPaymentInstructions");
+    expect(runtime).toContain("pay\\\\.kaspi\\\\.kz");
+    expect(runtime).toContain("openLink");
+    expect(runtime).toContain("instEl.innerHTML = linkifyPaymentInstructions");
   });
 
   it("clears fulfillment checkout state when Mini App country changes", () => {
