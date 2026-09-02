@@ -226,3 +226,14 @@ delivery_zone_name/delivery_fee/fulfillment_reminder_sent_at`,
 **56** (`MIGRATION-56-web-cart-handoff.sql`) — **применена** на боевой базе
 (2026-09-01, Management API + `scripts/apply-migration.mjs`). Таблица
 `web_cart_handoffs` — 7 колонок, индексы и RLS на месте.
+
+**57** (`MIGRATION-57-manual-order-cleanup-exemption.sql`) — **НЕ применена**,
+готова к применению. У этой сессии нет `SUPABASE_URL`/
+`SUPABASE_SERVICE_ROLE_KEY` в окружении, поэтому применить и подтвердить
+запросом к живой базе не удалось — сделать это должен тот, у кого есть
+доступ (`scripts/apply-migration.mjs`, см. раздел «Применение миграций»
+выше). Правка: `nightly_orders_maintenance()` больше не удаляет заказы
+с `platform = 'manual'` — ручной телефонный/директ-заказ (без даты
+получения и без оплаты, `createManualOrder`) раньше подходил под то же
+условие, что и реально брошенный бот-чекаут, и мог быть тихо стёрт через
+7 дней.
