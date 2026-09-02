@@ -241,6 +241,23 @@ describe("Mini App production regressions", () => {
     expect(runtime).toContain('order.status === "delivered" && !physical');
   });
 
+  /**
+   * Бэкенд (reviews.server.ts, /api/public/mini-app/orders.ts) разрешает
+   * оценку физического заказа без единой проверки fulfillment_kind — Mini
+   * App скрывала кнопку "Оценить" для него без причины (в отличие от кнопки
+   * повторной выдачи файлов выше, которой физический заказ действительно
+   * не касается).
+   */
+  it("offers rating for delivered physical orders, unlike file resend", () => {
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    const rateBlock = runtime.slice(
+      runtime.indexOf('var rateHtml = ""'),
+      runtime.indexOf("var digitalHint ="),
+    );
+    expect(rateBlock).toContain('reviewsEnabled && order.status === "delivered"');
+    expect(rateBlock).not.toContain('reviewsEnabled && order.status === "delivered" && !physical');
+  });
+
   it("ships a purchased-materials library, sort chips and bottom tabs", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const catalog = source("src/lib/mini-app-catalog.server.ts");

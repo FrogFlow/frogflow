@@ -586,7 +586,11 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           }).filter(Boolean).join("<br>") + "</div>"
         : "";
       var rateHtml = "";
-      if (reviewsEnabled && order.status === "delivered" && !physical) {
+      // Оценка физического заказа работает верно на бэкенде (reviews.server.ts
+      // не проверяет fulfillment_kind вообще) и в боте — Mini App скрывала
+      // кнопку без причины, оставляя покупателя торта без возможности
+      // оставить отзыв после доставки.
+      if (reviewsEnabled && order.status === "delivered") {
         rateHtml = items.map(function (item) {
           if (!item.productId) return "";
           var stars = "";
