@@ -507,7 +507,7 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
     const s = await db();
     const { data: order, error: readErr } = await s
       .from("orders")
-      .select("fulfillment_kind, fulfillment_type, delivery_fee, total")
+      .select("fulfillment_kind, fulfillment_type, delivery_fee, total, country_code")
       .eq("id", data.id)
       .maybeSingle();
     if (readErr) throw new Error(readErr.message);
@@ -527,7 +527,13 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
         .maybeSingle();
       if (zoneErr) throw new Error(zoneErr.message);
       if (!zoneRow) throw new Error("Зона доставки не найдена");
-      zone = { id: zoneRow.id, name: zoneRow.name, price: Number(zoneRow.price) || 0 };
+      // resolveDeliveryZoneFee, а не голое zoneRow.price: та же конвертация,
+      // что и в чекауте всех трёх каналов — комиссия зоны хранится в
+      // домашней валюте продавца, а order.total (в который она складывается
+      // ниже) уже в валюте покупателя этого заказа.
+      const { resolveDeliveryZoneFee } = await import("./pricing.server");
+      const fee = await resolveDeliveryZoneFee(Number(zoneRow.price) || 0, order.country_code);
+      zone = { id: zoneRow.id, name: zoneRow.name, price: fee.amount };
     }
     const typePatch = fulfillmentTypePatch(
       {
@@ -544,6 +550,13 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
         fulfillment_at: data.fulfillmentAt,
         fulfillment_address: data.address,
         fulfillment_note: data.note,
+        // Сбрасываем флаг напоминания безусловно, а не только когда дата
+        // реально сменилась: sendFulfillmentReminders (fulfillment-reminder.server.ts)
+        // построена на допущении "дата получения после оформления не
+        // меняется" и никогда не перезаписывает уже поставленный флаг —
+        // без сброса здесь перенос даты после уже отправленного
+        // напоминания навсегда лишал бы заказ нового напоминания.
+        fulfillment_reminder_sent_at: null,
         ...typePatch,
       })
       .eq("id", data.id);
