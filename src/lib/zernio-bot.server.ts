@@ -118,6 +118,9 @@ interface DirectCopy {
   btnCart: string;
   btnCheckout: string;
   productUnavailable: string;
+  /** Срок изготовления на карточке товара (Ниши) — тот же текст, что уже показывает Telegram-бот и Mini App; Direct раньше не показывал ни его, ни остаток вовсе. */
+  leadTimeLabel: (days: number) => string;
+  outOfStockLabel: string;
   productNoFiles: (name: string) => string;
   productMixedCart: (name: string) => string;
   cartEmptyHint: string;
@@ -230,6 +233,9 @@ const directCopy: Record<Locale, DirectCopy> = {
     btnCart: "Корзина",
     btnCheckout: "Оформить заказ",
     productUnavailable: "Этот материал больше недоступен.",
+    outOfStockLabel: "❌ Нет в наличии",
+    leadTimeLabel: (days) =>
+      `🕒 Готовим ${days} ${days % 10 === 1 && days % 100 !== 11 ? "день" : days % 10 >= 2 && days % 10 <= 4 && (days % 100 < 10 || days % 100 >= 20) ? "дня" : "дней"}`,
     productNoFiles: (name) =>
       `«${name}» сейчас недоступен для скачивания. Продавец подскажет, когда он появится.`,
     productMixedCart: (name) =>
@@ -386,6 +392,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     btnCart: "Себет",
     btnCheckout: "Тапсырысты рәсімдеу",
     productUnavailable: "Бұл материал енді қолжетімсіз.",
+    outOfStockLabel: "❌ Қоймада жоқ",
+    leadTimeLabel: (days) => `🕒 Дайындау мерзімі: ${days} күн`,
     productNoFiles: (name) =>
       `«${name}» қазір жүктеуге қолжетімсіз. Ол қашан пайда болатынын сатушы айтады.`,
     productMixedCart: (name) =>
@@ -541,6 +549,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     btnCart: "Cart",
     btnCheckout: "Place order",
     productUnavailable: "This material is no longer available.",
+    outOfStockLabel: "❌ Out of stock",
+    leadTimeLabel: (days) => `🕒 Made to order: ${days} day${days === 1 ? "" : "s"}`,
     productNoFiles: (name) =>
       `"${name}" isn't available for download right now. The seller will let you know when it's back.`,
     productMixedCart: (name) =>
@@ -694,6 +704,8 @@ const directCopy: Record<Locale, DirectCopy> = {
     btnCart: "Savat",
     btnCheckout: "Buyurtma berish",
     productUnavailable: "Bu material endi mavjud emas.",
+    outOfStockLabel: "❌ Sotuvda yo‘q",
+    leadTimeLabel: (days) => `🕒 Tayyorlash muddati: ${days} kun`,
     productNoFiles: (name) =>
       `«${name}» hozircha yuklab olish uchun mavjud emas. U qachon paydo bo‘lishini sotuvchi aytadi.`,
     productMixedCart: (name) =>
@@ -1973,7 +1985,7 @@ async function sendWhatsAppProductCard(
   const { data: product } = await s
     .from("products")
     .select(
-      "id, name, description, price, currency, country_prices, category_ids, is_active, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
+      "id, name, description, price, currency, country_prices, category_ids, is_active, lead_time_days, stock_quantity, product_images(image_path, sort_order), product_variants(id, name, price, sort_order)",
     )
     .eq("id", productId)
     .eq("is_active", true)
@@ -1983,6 +1995,22 @@ async function sendWhatsAppProductCard(
     await reply(user, conversationId, accountId, copy.productUnavailable);
     return;
   }
+
+  // Срок изготовления и остаток (Ниши) — карточка товара в Direct раньше
+  // не показывала ни то ни другое: покупатель узнавал, что торт готовится
+  // N дней или закончился, только пройдя весь чекаут. Тот же приём, что и
+  // в Telegram-боте/Mini App.
+  const { hasModule } = await import("./modules/modules.server");
+  const isOutOfStock =
+    (await hasModule("stock")) &&
+    product.stock_quantity !== undefined &&
+    product.stock_quantity !== null &&
+    product.stock_quantity <= 0;
+  const leadTimeLine =
+    product.lead_time_days && product.lead_time_days > 0
+      ? `\n${copy.leadTimeLabel(product.lead_time_days)}`
+      : "";
+  const outOfStockLine = isOutOfStock ? `\n${copy.outOfStockLabel}` : "";
 
   // Варианты (Ниши, Блок D) — простой список «1 кг»/«2 кг»: кнопка на
   // каждый вариант вместо одной «В корзину». Zernio ограничивает три
@@ -2023,7 +2051,7 @@ async function sendWhatsAppProductCard(
       ? `\n\n${String(product.description).slice(0, 600)}`
       : "";
     const text =
-      `📦 *${product.name}*${description}\n\n` +
+      `📦 *${product.name}*${description}${leadTimeLine}${outOfStockLine}\n\n` +
       flow.renderVariantPrompt(
         priced.map(({ v, money }) => ({ name: v.name, price: money.amount })),
         currency,
@@ -2064,8 +2092,8 @@ async function sendWhatsAppProductCard(
       : null;
   const description = product.description ? `\n\n${String(product.description).slice(0, 600)}` : "";
   const text = money
-    ? `📦 *${product.name}*\n💰 ${money.amount} ${money.currency}${description}`
-    : `📦 *${product.name}*${description}`;
+    ? `📦 *${product.name}*\n💰 ${money.amount} ${money.currency}${description}${leadTimeLine}${outOfStockLine}`
+    : `📦 *${product.name}*${description}${leadTimeLine}${outOfStockLine}`;
 
   if (photo) {
     /**
