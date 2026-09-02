@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=5"');
+    expect(page).toContain('src="/mini-app-runtime?v=6"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -94,6 +94,9 @@ describe("Mini App production regressions", () => {
     (locale) => {
       const pack = miniAppStringsClientPack(locale);
       expect(pack.pay).toBeTruthy();
+      expect(pack.filesAfterPayment).toBeTruthy();
+      expect(pack.allLanguages).toBeTruthy();
+      expect(pack.languagesLabel).toBeTruthy();
       expect(pack.orderCompletePhysical).toBeTruthy();
       expect(pack.physicalDelivering).toBeTruthy();
       expect(pack.paidLabel).toBeTruthy();
@@ -172,6 +175,20 @@ describe("Mini App production regressions", () => {
     expect(runtime).toContain('t("physicalDelivering")');
     expect(runtime).toContain('t("paidLabel")');
     expect(runtime).toContain('fulfillmentType === "pickup"');
+  });
+
+  it("shows material languages and all-languages price like the bot", () => {
+    const catalog = source("src/lib/mini-app-catalog.server.ts");
+    const checkout = source("src/lib/mini-app-checkout.server.ts");
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    const cart = source("src/lib/mini-app-cart.server.ts");
+    expect(catalog).toContain("renderMiniAppLangBadges");
+    expect(catalog).toContain("availableMaterialLanguages");
+    expect(checkout).toContain("allLanguages");
+    expect(checkout).not.toContain("All / Все");
+    expect(runtime).toContain("quantityLocked");
+    expect(runtime).toContain("productsCountSuffix");
+    expect(cart).toContain("quantityLocked");
   });
 
   it("does not resend files for physical orders", () => {

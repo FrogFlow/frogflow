@@ -39,6 +39,7 @@ export type MiniAppCheckoutResponse = {
   error?: string;
   orderId?: number;
   stayOpen?: boolean;
+  botUrl?: string;
 };
 
 async function db() {
@@ -66,7 +67,7 @@ export async function miniAppProcessCheckout(
 
   if (body.resume_payment === true) {
     const { completeMiniAppPayment } = await import("./bot.server");
-    return mapPlaceOrderResult(await completeMiniAppPayment(telegram_id));
+    return attachMiniAppBotUrl(mapPlaceOrderResult(await completeMiniAppPayment(telegram_id)));
   }
 
   if (body.contact_phone !== undefined) {
@@ -95,7 +96,9 @@ export async function miniAppProcessCheckout(
       return { step: "error", error: "invalid_payment_method" };
     }
     const { completeMiniAppPayment } = await import("./bot.server");
-    return mapPlaceOrderResult(await completeMiniAppPayment(telegram_id, body.payment_method));
+    return attachMiniAppBotUrl(
+      mapPlaceOrderResult(await completeMiniAppPayment(telegram_id, body.payment_method)),
+    );
   }
 
   const statePatch: Record<string, unknown> = {};
@@ -167,8 +170,9 @@ export async function miniAppProcessCheckout(
   if (needs) return needs;
 
   const { placeOrderForMiniApp } = await import("./bot.server");
-  const result = await placeOrderForMiniApp(telegram_id, body.payment_method);
-  return mapPlaceOrderResult(result);
+  return attachMiniAppBotUrl(
+    mapPlaceOrderResult(await placeOrderForMiniApp(telegram_id, body.payment_method)),
+  );
 }
 
 export async function miniAppCheckoutNeeds(
@@ -302,6 +306,8 @@ export async function miniAppCheckoutNeeds(
       }
       const languages = MATERIAL_LANGUAGES.filter((language) => available.has(language));
       if (languages.length > 1) {
+        const { miniAppStrings, resolveMiniAppLocale } = await import("./mini-app-i18n");
+        const locale = resolveMiniAppLocale(state.locale);
         return {
           step: "need_delivery_language",
           languages: [
@@ -309,7 +315,7 @@ export async function miniAppCheckoutNeeds(
               code,
               name: `${localeFlags[code]} ${localeNames[code]}`,
             })),
-            { code: "all", name: "🌐 All / Все" },
+            { code: "all", name: miniAppStrings(locale).allLanguages },
           ],
         };
       }
@@ -349,6 +355,21 @@ function mapPlaceOrderResult(
     orderId: result.orderId,
     stayOpen: result.stayOpen,
   };
+}
+
+async function attachMiniAppBotUrl(
+  response: MiniAppCheckoutResponse,
+): Promise<MiniAppCheckoutResponse> {
+  if (
+    response.step !== "completed" &&
+    response.step !== "robokassa" &&
+    response.step !== "manual_proof" &&
+    response.step !== "choose_payment"
+  ) {
+    return response;
+  }
+  const { getCachedBotUrl } = await import("./bot-url.server");
+  return { ...response, botUrl: (await getCachedBotUrl()) ?? undefined };
 }
 
 export async function miniAppDefaultCountryForCatalog(

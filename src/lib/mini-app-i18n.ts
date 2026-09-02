@@ -1,4 +1,5 @@
 import { isLocale, type Locale } from "./i18n";
+import { currentVertical } from "./verticals/vertical.server";
 
 export type MiniAppStrings = {
   defaultShopName: string;
@@ -9,6 +10,9 @@ export type MiniAppStrings = {
   searchingDeeper: string;
   productsCount: (n: number) => string;
   allCategories: string;
+  filesAfterPayment: string;
+  languagesLabel: string;
+  allLanguages: string;
   addToCart: string;
   variant: string;
   outOfStock: string;
@@ -106,13 +110,16 @@ export type MiniAppStrings = {
 const dict: Record<Locale, MiniAppStrings> = {
   ru: {
     defaultShopName: "Магазин",
-    emptyCatalog: "Каталог пока пуст.",
-    searchPlaceholder: "Поиск…",
-    searchEmpty: "Ничего не найдено.",
+    emptyCatalog: "Материалов пока нет.",
+    searchPlaceholder: "Поиск материала…",
+    searchEmpty: "Материал не найден.",
     categoryBack: "← Назад",
     searchingDeeper: "Ищу по смыслу…",
-    productsCount: (n) => `${n} товаров`,
+    productsCount: (n) => `${n} материалов`,
     allCategories: "Все",
+    filesAfterPayment: "Файл придёт в бот после оплаты",
+    languagesLabel: "Языки",
+    allLanguages: "🌐 Все языки (цена ×N)",
     addToCart: "В корзину",
     variant: "Вариант",
     outOfStock: "Нет в наличии",
@@ -217,13 +224,16 @@ const dict: Record<Locale, MiniAppStrings> = {
   },
   kk: {
     defaultShopName: "Дүкен",
-    emptyCatalog: "Каталог әзірге бос.",
-    searchPlaceholder: "Іздеу…",
-    searchEmpty: "Ештеңе табылмады.",
+    emptyCatalog: "Материалдар әзірге жоқ.",
+    searchPlaceholder: "Материал іздеу…",
+    searchEmpty: "Материал табылмады.",
     categoryBack: "← Артқа",
     searchingDeeper: "Мағынасы бойынша іздеу…",
-    productsCount: (n) => `${n} тауар`,
+    productsCount: (n) => `${n} материал`,
     allCategories: "Барлығы",
+    filesAfterPayment: "Файл төлемнен кейін ботқа келеді",
+    languagesLabel: "Тілдер",
+    allLanguages: "🌐 Барлық тілдер (баға ×N)",
     addToCart: "Себетке",
     variant: "Нұсқа",
     outOfStock: "Қолда жоқ",
@@ -328,13 +338,16 @@ const dict: Record<Locale, MiniAppStrings> = {
   },
   en: {
     defaultShopName: "Shop",
-    emptyCatalog: "The catalog is empty.",
-    searchPlaceholder: "Search…",
-    searchEmpty: "Nothing found.",
+    emptyCatalog: "No materials yet.",
+    searchPlaceholder: "Search materials…",
+    searchEmpty: "No materials found.",
     categoryBack: "← Back",
     searchingDeeper: "Searching by meaning…",
-    productsCount: (n) => `${n} products`,
+    productsCount: (n) => `${n} materials`,
     allCategories: "All",
+    filesAfterPayment: "The file arrives in the bot after payment",
+    languagesLabel: "Languages",
+    allLanguages: "🌐 All languages (price ×N)",
     addToCart: "Add to cart",
     variant: "Variant",
     outOfStock: "Out of stock",
@@ -439,13 +452,16 @@ const dict: Record<Locale, MiniAppStrings> = {
   },
   uz: {
     defaultShopName: "Do‘kon",
-    emptyCatalog: "Katalog hozircha bo‘sh.",
-    searchPlaceholder: "Qidiruv…",
-    searchEmpty: "Hech narsa topilmadi.",
+    emptyCatalog: "Materiallar hozircha yo‘q.",
+    searchPlaceholder: "Material qidirish…",
+    searchEmpty: "Material topilmadi.",
     categoryBack: "← Orqaga",
     searchingDeeper: "Ma’no bo‘yicha qidirilmoqda…",
-    productsCount: (n) => `${n} mahsulot`,
+    productsCount: (n) => `${n} material`,
     allCategories: "Hammasi",
+    filesAfterPayment: "Fayl to‘lovdan so‘ng botga keladi",
+    languagesLabel: "Tillar",
+    allLanguages: "🌐 Barcha tillar (narx ×N)",
     addToCart: "Savatga",
     variant: "Variant",
     outOfStock: "Mavjud emas",
@@ -558,8 +574,37 @@ export function miniAppLocaleFromTelegram(language_code?: string | null): Locale
   return "ru";
 }
 
+const confectioneryOverlay: Record<Locale, Partial<MiniAppStrings>> = {
+  ru: {
+    emptyCatalog: "Каталог пока пуст.",
+    searchPlaceholder: "Поиск…",
+    searchEmpty: "Ничего не найдено.",
+    productsCount: (n) => `${n} товаров`,
+  },
+  kk: {
+    emptyCatalog: "Каталог әзірге бос.",
+    searchPlaceholder: "Іздеу…",
+    searchEmpty: "Ештеңе табылмады.",
+    productsCount: (n) => `${n} тауар`,
+  },
+  en: {
+    emptyCatalog: "The catalog is empty.",
+    searchPlaceholder: "Search…",
+    searchEmpty: "Nothing found.",
+    productsCount: (n) => `${n} products`,
+  },
+  uz: {
+    emptyCatalog: "Katalog hozircha bo‘sh.",
+    searchPlaceholder: "Qidiruv…",
+    searchEmpty: "Hech narsa topilmadi.",
+    productsCount: (n) => `${n} mahsulot`,
+  },
+};
+
 export function miniAppStrings(locale: Locale): MiniAppStrings {
-  return dict[locale];
+  const s = dict[locale];
+  if (currentVertical() !== "confectionery") return s;
+  return { ...s, ...confectioneryOverlay[locale] };
 }
 
 export function miniAppStringsForLanguage(language_code?: string | null): MiniAppStrings {
@@ -580,6 +625,9 @@ export function miniAppStringsClientPack(
     categoryBack: s.categoryBack,
     searchingDeeper: s.searchingDeeper,
     allCategories: s.allCategories,
+    filesAfterPayment: s.filesAfterPayment,
+    languagesLabel: s.languagesLabel,
+    allLanguages: s.allLanguages,
     addToCart: s.addToCart,
     variant: s.variant,
     outOfStock: s.outOfStock,
@@ -668,14 +716,7 @@ export function miniAppStringsClientPack(
     paymentConfirmed: s.paymentConfirmed,
     filesResent: s.filesResent,
     orderStatus: s.orderStatus,
-    productsCountSuffix:
-      locale === "ru"
-        ? "товаров"
-        : locale === "kk"
-          ? "тауар"
-          : locale === "en"
-            ? "products"
-            : "mahsulot",
+    productsCountSuffix: s.productsCount(0).replace(/^\d+\s*/, ""),
   };
 }
 

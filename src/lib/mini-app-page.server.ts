@@ -181,6 +181,7 @@ export function wrapMiniAppPage(
     .card-price { font-weight: 700; margin-top: 0.35rem; color: var(--link); }
     .card-oos { font-size: 0.75rem; color: #c0392b; margin-top: 0.25rem; }
     .card-lead { font-size: 0.75rem; color: var(--hint); margin-top: 0.25rem; }
+    .card-langs { font-size: 0.9rem; margin-top: 0.3rem; letter-spacing: 0.04em; }
     .variant-select {
       width: 100%;
       margin-top: 0.5rem;
@@ -396,7 +397,7 @@ export function wrapMiniAppPage(
     window.__miniAppLocale = "${lang}";
     window.__miniAppPhysicalShop = ${physicalShop ? "true" : "false"};
   </script>
-  <script src="/mini-app-runtime?v=5"></script>
+  <script src="/mini-app-runtime?v=6"></script>
 </body>
 </html>`;
 }

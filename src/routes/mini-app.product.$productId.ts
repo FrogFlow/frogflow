@@ -7,6 +7,7 @@ import {
   miniAppEmptyThumbEmoji,
   priceMiniAppProducts,
   renderMiniAppCartShell,
+  renderMiniAppLangBadges,
   renderMiniAppLeadBadge,
   type MiniAppProduct,
 } from "@/lib/mini-app-catalog.server";
@@ -137,6 +138,11 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
             ${rating}
             ${priceLabel ? `<div class="pdp-price">${esc(priceLabel)}</div>` : ""}
             ${renderMiniAppLeadBadge(p, locale)}
+            ${
+              p.fulfillment_kind === "physical"
+                ? ""
+                : `${renderMiniAppLangBadges(p, true) ? `<div class="card-lead">${esc(s.languagesLabel)}</div>${renderMiniAppLangBadges(p, true)}` : ""}<div class="card-lead">${esc(s.filesAfterPayment)}</div>`
+            }
             ${p.description ? `<h2 style="font-size:0.95rem;margin:1rem 0 0.35rem">${esc(s.description)}</h2><div class="pdp-desc">${esc(p.description)}</div>` : ""}
             <div style="margin-top:1rem">${actionsHtml}</div>
           </div>

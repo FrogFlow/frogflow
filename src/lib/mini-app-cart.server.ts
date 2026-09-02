@@ -19,6 +19,7 @@ type CartListRow = {
     file_name_kz?: string | null;
     file_url?: string | null;
     file_url_kz?: string | null;
+    fulfillment_kind?: string | null;
     product_material_files?: Array<{
       language: string;
       file_path: string | null;
@@ -37,6 +38,7 @@ export type MiniAppCartLine = {
   name: string;
   line_total: number;
   currency: string;
+  quantityLocked: boolean;
 };
 
 async function db() {
@@ -93,7 +95,7 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
   const { data: items, error } = await s
     .from("cart_items")
     .select(
-      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)), product_variants(id, name, price)",
+      "id, quantity, product_variant_id, products(id, name, price, currency, country_prices, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)), product_variants(id, name, price)",
     )
     .eq("telegram_id", telegram_id);
   if (error) {
@@ -123,6 +125,7 @@ export async function listMiniAppCart(telegram_id: number): Promise<MiniAppCartL
       name: displayName,
       line_total: lineTotal,
       currency: money.currency,
+      quantityLocked: p.fulfillment_kind !== "physical",
     });
   }
   return lines;

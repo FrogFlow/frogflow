@@ -2,10 +2,12 @@ import type { Json } from "@/integrations-supabase/types";
 import { imageUrl } from "@/lib/public-image";
 import { miniAppStrings } from "./mini-app-i18n";
 import type { Locale } from "./i18n";
+import { localeFlags, localeNames } from "./i18n";
 import { currentVertical } from "./verticals/vertical.server";
+import { availableMaterialLanguages } from "./product-materials";
 
 export const MINI_APP_PRODUCT_SELECT =
-  "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, lead_time_days, fulfillment_kind, product_variants(id, name, price, sort_order)";
+  "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, lead_time_days, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(id, name, price, sort_order)";
 
 export type MiniAppProduct = {
   id: string;
@@ -22,6 +24,18 @@ export type MiniAppProduct = {
   stock_quantity: number | null;
   lead_time_days?: number | null;
   fulfillment_kind?: "digital" | "physical" | null;
+  file_path?: string | null;
+  file_name?: string | null;
+  file_path_kz?: string | null;
+  file_name_kz?: string | null;
+  file_url?: string | null;
+  file_url_kz?: string | null;
+  product_material_files?: Array<{
+    language?: string | null;
+    file_path?: string | null;
+    file_name?: string | null;
+    sort_order?: number | null;
+  }> | null;
   product_variants: Array<{
     id: string;
     name: string;
@@ -260,6 +274,16 @@ export function renderMiniAppLeadBadge(p: MiniAppProduct, locale: Locale): strin
   return `<div class="card-lead">${escapeMiniAppHtml(label)}</div>`;
 }
 
+export function renderMiniAppLangBadges(p: MiniAppProduct, named = false): string {
+  if (p.fulfillment_kind === "physical") return "";
+  const langs = availableMaterialLanguages(p);
+  if (!langs.length) return "";
+  const label = langs
+    .map((lang) => (named ? `${localeFlags[lang]} ${localeNames[lang]}` : localeFlags[lang]))
+    .join(named ? " · " : " ");
+  return `<div class="card-langs">${escapeMiniAppHtml(label)}</div>`;
+}
+
 export function renderMiniAppProductCard(
   p: MiniAppProduct,
   money: PricedProduct | undefined,
@@ -331,6 +355,7 @@ export function renderMiniAppProductCard(
           : ""
       }
       ${p.description ? `<div class="card-desc">${esc(p.description)}</div>` : ""}
+      ${renderMiniAppLangBadges(p)}
       ${renderMiniAppLeadBadge(p, locale)}
       ${priceLabel ? `<div class="card-price">${esc(priceLabel)}</div>` : ""}
       ${actionsHtml}

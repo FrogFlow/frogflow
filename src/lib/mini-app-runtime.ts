@@ -272,14 +272,17 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       return;
     }
     cartLines.innerHTML = state.items.map(function (it) {
+      var qtyHtml = it.quantityLocked
+        ? ""
+        : "<div class=\\"qty-controls\\">" +
+          "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-minus=\\"" + it.id + "\\" aria-label=\\"-\\"" + (quantityBusy[it.id] ? " disabled" : "") + ">−</button>" +
+          "<span>" + it.quantity + "</span>" +
+          "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-plus=\\"" + it.id + "\\" aria-label=\\"+\\"" + (quantityBusy[it.id] ? " disabled" : "") + ">+</button>" +
+          "</div>";
       return (
         "<div class=\\"cart-line\\">" +
         "<div class=\\"cart-line-info\\">" + escapeHtml(it.name) + " — " + escapeHtml(formatMoney(it.line_total, it.currency)) + "</div>" +
-        "<div class=\\"qty-controls\\">" +
-        "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-minus=\\"" + it.id + "\\" aria-label=\\"-\\"" + (quantityBusy[it.id] ? " disabled" : "") + ">−</button>" +
-        "<span>" + it.quantity + "</span>" +
-        "<button type=\\"button\\" class=\\"qty-btn\\" data-qty-plus=\\"" + it.id + "\\" aria-label=\\"+\\"" + (quantityBusy[it.id] ? " disabled" : "") + ">+</button>" +
-        "</div>" +
+        qtyHtml +
         "<button type=\\"button\\" class=\\"remove-btn\\" data-remove=\\"" + it.id + "\\">" + t("remove") + "</button>" +
         "</div>"
       );
@@ -713,10 +716,26 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       return;
     } else if (step === "completed") {
       html = "<p><strong>" + escapeHtml(data.message || t("orderComplete")) + "</strong></p>";
+      if (!data.stayOpen) {
+        html += "<p class=\\"checkout-hint\\">" + escapeHtml(t("filesAfterPayment")) + "</p>";
+      }
+      if (data.botUrl) {
+        html += "<a class=\\"primary-btn\\" href=\\"" + escapeHtml(data.botUrl) +
+          "\\" data-bot-link style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.75rem\\">" +
+          escapeHtml(t("contactSupport")) + "</a>";
+      }
       checkoutForm.innerHTML = html;
+      checkoutForm.querySelectorAll("[data-bot-link]").forEach(function (link) {
+        link.addEventListener("click", function (event) {
+          if (tg && tg.openTelegramLink) {
+            event.preventDefault();
+            tg.openTelegramLink(link.href);
+          }
+        });
+      });
       try { if (tg) tg.disableClosingConfirmation(); } catch (e) {}
       if (!data.stayOpen) {
-        setTimeout(function () { if (tg) tg.close(); }, 2500);
+        setTimeout(function () { if (tg) tg.close(); }, 4000);
       }
       return;
     }
@@ -840,6 +859,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
             message: t("paymentConfirmed"),
             orderId: order.id,
             stayOpen: order.fulfillmentKind === "physical" || window.__miniAppPhysicalShop,
+            botUrl: res.d.botUrl || "",
           });
           refreshCart().catch(function () {});
           loadOrders();
@@ -1154,7 +1174,12 @@ export const MINI_APP_RUNTIME_JS = `(function () {
             var grid = document.querySelector(".grid");
             if (grid) grid.innerHTML = res.d.html;
             var subtitle = document.querySelector(".subtitle");
-            if (subtitle) subtitle.textContent = String(res.d.total);
+            if (subtitle) {
+              var suffix = t("productsCountSuffix");
+              subtitle.textContent = suffix && suffix !== "productsCountSuffix"
+                ? (res.d.total + " " + suffix)
+                : String(res.d.total);
+            }
             setCartEnabled(!!initData());
             return;
           }

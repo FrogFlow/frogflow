@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   filterMiniAppProductIds,
   miniAppEmptyThumbEmoji,
+  renderMiniAppLangBadges,
   renderMiniAppLeadBadge,
   renderMiniAppProductCard,
   type MiniAppProduct,
   type MiniAppProductIndexRow,
 } from "../src/lib/mini-app-catalog.server";
+import { miniAppStrings } from "../src/lib/mini-app-i18n";
 
 const products: MiniAppProductIndexRow[] = [
   {
@@ -99,5 +101,48 @@ describe("Mini App physical catalog cards", () => {
     expect(miniAppEmptyThumbEmoji("digital")).toBe("🛍");
     expect(miniAppEmptyThumbEmoji("physical")).toBe("📦");
     expect(miniAppEmptyThumbEmoji("physical", "confectionery")).toBe("🎂");
+  });
+});
+
+const worksheet: MiniAppProduct = {
+  id: "ws",
+  name: "1 сентября",
+  description: "Оформление",
+  category_ids: ["grade1"],
+  rating_avg: 4.8,
+  rating_count: 12,
+  product_images: null,
+  price: 500,
+  currency: "KZT",
+  country_prices: null,
+  stock_quantity: null,
+  fulfillment_kind: "digital",
+  file_path: "materials/sept.pdf",
+  file_name: "sept.pdf",
+  file_path_kz: "materials/sept-kz.pdf",
+  file_name_kz: "sept-kz.pdf",
+  product_variants: null,
+};
+
+describe("Mini App didactic catalog cards", () => {
+  it("shows RU/KK flags for materials and hides them on cakes", () => {
+    const html = renderMiniAppProductCard(worksheet, undefined, false, "ru");
+    expect(html).toContain("🇷🇺");
+    expect(html).toContain("🇰🇿");
+    expect(renderMiniAppLangBadges(worksheet)).toContain("🇷🇺");
+    expect(renderMiniAppLangBadges({ ...worksheet, fulfillment_kind: "physical" })).toBe("");
+  });
+
+  it("counts materials, not generic products, on the digital vertical", () => {
+    const previous = process.env.VERTICAL;
+    try {
+      delete process.env.VERTICAL;
+      expect(miniAppStrings("ru").productsCount(3)).toBe("3 материалов");
+      expect(miniAppStrings("ru").filesAfterPayment).toContain("бот");
+      expect(miniAppStrings("ru").allLanguages).toContain("×N");
+    } finally {
+      if (previous === undefined) delete process.env.VERTICAL;
+      else process.env.VERTICAL = previous;
+    }
   });
 });
