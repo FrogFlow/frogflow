@@ -943,6 +943,17 @@ async function collectOrderFiles(
   items: OrderItem[],
 ): Promise<{ files: Array<{ name: string; url: string }>; missing: string[] }> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { hasModule } = await import("./modules/modules.server");
+  const { availableOrderItemLanguages } = await import("./product-materials");
+  // Instagram/WhatsApp не умеют спрашивать язык интерактивно (email — не
+  // диалог, а WhatsApp-выдача идёт вложением без кнопок) — но это довод за
+  // то, чтобы приложить ВСЕ купленные языки разом, а не за то, чтобы
+  // выбрать за покупателя один: materialsForOrderItemAnyLang раньше молча
+  // отдавала только первый существующий язык, и покупатель, оплативший
+  // материал на трёх языках, получал ровно один. Без модуля — как и в
+  // deliverOrder (Telegram) — доступен только ru, тем же порядком, что и
+  // раньше.
+  const multiLanguageOn = await hasModule("multi_language");
   const files: Array<{ name: string; url: string }> = [];
   const missing: string[] = [];
   for (const item of items) {
@@ -950,7 +961,10 @@ async function collectOrderFiles(
     // заказов заполнены только одиночные *_snapshot — разворачиваем оба вида
     // тем же помощником, что и выдача в Telegram, иначе часть файлов пропала
     // бы молча.
-    let materials: MaterialFile[] = materialsForOrderItemAnyLang(item);
+    const langs = multiLanguageOn ? availableOrderItemLanguages(item) : (["ru"] as Locale[]);
+    let materialsByLang: Array<{ lang: Locale; materials: MaterialFile[] }> = langs
+      .map((lang) => ({ lang, materials: materialsForOrderItem(item, lang) }))
+      .filter((entry) => entry.materials.length > 0);
 
     /**
      * Снимок пуст — берём файлы товара как они есть сейчас.
@@ -961,7 +975,7 @@ async function collectOrderFiles(
      * научился копировать product_material_files (см. product-materials.ts) —
      * заказ №484 в том числе: продавцу достаточно нажать «Выдать повторно».
      */
-    if (materials.length === 0 && item.product_id) {
+    if (materialsByLang.length === 0 && item.product_id) {
       const { materialsForProduct } = await import("./product-materials");
       const { data: product } = await supabaseAdmin
         .from("products")
@@ -970,49 +984,59 @@ async function collectOrderFiles(
         )
         .eq("id", item.product_id)
         .maybeSingle();
-      for (const lang of MATERIAL_LANGUAGES) {
-        materials = materialsForProduct(product, lang);
-        if (materials.length > 0) break;
-      }
-      if (materials.length > 0) {
+      const currentLangs = multiLanguageOn ? MATERIAL_LANGUAGES : (["ru"] as const);
+      materialsByLang = currentLangs
+        .map((lang) => ({ lang, materials: materialsForProduct(product, lang) }))
+        .filter((entry) => entry.materials.length > 0);
+      if (materialsByLang.length > 0) {
         console.warn(
           `[orders] заказ ${orderId}: снимок файлов пуст, отправляю текущие файлы товара ${item.product_id}`,
         );
       }
     }
 
-    for (const material of materials) {
-      // Готовая внешняя ссылка — отдаём как есть, подписывать нечего.
-      if (material.url) {
-        files.push({ name: material.name || item.name_snapshot || "Материал", url: material.url });
-        continue;
-      }
-      if (!material.path) continue;
-      /**
-       * `download` в подписи — не украшение.
-       *
-       * Без него ссылка отдаётся с `Content-Disposition: inline`, и покупатель
-       * попадает на страницу хранилища: PDF открывается прямо в браузере, а
-       * ZIP и вовсе показывается непонятной технической страницей. Человек
-       * ждал файл, а получил «ссылку на какую-то базу данных».
-       *
-       * С этим параметром сервер отдаёт вложение и подставляет то имя, что мы
-       * передали: покупатель видит «Пазлы БУКВЫ.pdf», а не `1782643012614-ni1xub.pdf`.
-       */
-      const displayName = material.name || item.name_snapshot || "Материал";
-      const { data: signed, error: signErr } = await supabaseAdmin.storage
-        .from("product-files")
-        .createSignedUrl(material.path, EMAIL_LINK_DAYS * 24 * 60 * 60, {
-          download: downloadFileName(displayName, material.path),
-        });
-      if (signed?.signedUrl) {
-        files.push({ name: displayName, url: signed.signedUrl });
-      } else {
-        console.error(
-          `[orders] заказ ${orderId}: не удалось подписать ссылку для «${displayName}»`,
-          signErr,
-        );
-        missing.push(displayName);
+    // Несколько языков у одной позиции — подписываем файл языковым флагом в
+    // имени (та же подпись, что и Telegram-выдача "все языки"), иначе
+    // покупатель получит два одинаково названных файла без возможности
+    // отличить один от другого.
+    const taggedName = (base: string, lang: Locale) =>
+      materialsByLang.length > 1 ? `${base} (${localeNames[lang]})` : base;
+
+    for (const { lang, materials } of materialsByLang) {
+      for (const material of materials) {
+        const baseName = material.name || item.name_snapshot || "Материал";
+        // Готовая внешняя ссылка — отдаём как есть, подписывать нечего.
+        if (material.url) {
+          files.push({ name: taggedName(baseName, lang), url: material.url });
+          continue;
+        }
+        if (!material.path) continue;
+        /**
+         * `download` в подписи — не украшение.
+         *
+         * Без него ссылка отдаётся с `Content-Disposition: inline`, и покупатель
+         * попадает на страницу хранилища: PDF открывается прямо в браузере, а
+         * ZIP и вовсе показывается непонятной технической страницей. Человек
+         * ждал файл, а получил «ссылку на какую-то базу данных».
+         *
+         * С этим параметром сервер отдаёт вложение и подставляет то имя, что мы
+         * передали: покупатель видит «Пазлы БУКВЫ.pdf», а не `1782643012614-ni1xub.pdf`.
+         */
+        const displayName = taggedName(baseName, lang);
+        const { data: signed, error: signErr } = await supabaseAdmin.storage
+          .from("product-files")
+          .createSignedUrl(material.path, EMAIL_LINK_DAYS * 24 * 60 * 60, {
+            download: downloadFileName(displayName, material.path),
+          });
+        if (signed?.signedUrl) {
+          files.push({ name: displayName, url: signed.signedUrl });
+        } else {
+          console.error(
+            `[orders] заказ ${orderId}: не удалось подписать ссылку для «${displayName}»`,
+            signErr,
+          );
+          missing.push(displayName);
+        }
       }
     }
   }
