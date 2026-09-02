@@ -55,7 +55,11 @@ async function fetchInternalSecret(botId: string): Promise<string | null> {
     // весь TTL вместо того, чтобы попробовать снова на следующем запросе.
     return null;
   }
-  const value = data.internal_secret || null;
+  // null здесь зарезервирован под "не удалось прочитать строку" (сбой выше) —
+  // NULL/пустая строка в самой колонке означают другое (секрет не настроен),
+  // поэтому схлопывать их в null тоже нельзя: authenticateInternalRequest
+  // иначе не отличил бы 500 (сбой БД) от 503 (секрет не задан).
+  const value = data.internal_secret ?? "";
   secretCache = { botId, value, expiresAt: Date.now() + SECRET_CACHE_TTL_MS };
   return value;
 }
