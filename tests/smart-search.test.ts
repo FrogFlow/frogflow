@@ -1,14 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { parseSmartSearchIds } from "../src/lib/smart-search";
 import {
-  DEFAULT_USD_PER_REQUEST,
   addDailySpend,
   estimateUsdFromTokens,
   extractAnthropicUsage,
   formatUsd,
   parseDailyCount,
   parseDailySpend,
-  parseUsdPerRequest,
 } from "../src/lib/smart-search-cost";
 
 const valid = ["aaa", "bbb", "ccc"];
@@ -47,15 +45,6 @@ describe("smart search cost", () => {
     expect(estimateUsdFromTokens({ inputTokens: 1_000_000, outputTokens: 0 })).toBe(1);
     expect(estimateUsdFromTokens({ inputTokens: 0, outputTokens: 1_000_000 })).toBe(5);
     expect(estimateUsdFromTokens({ inputTokens: 50_000, outputTokens: 2_000 })).toBeCloseTo(0.06);
-  });
-
-  it("парсит ставку за запрос, по умолчанию $0.10", () => {
-    expect(parseUsdPerRequest(undefined)).toBe(DEFAULT_USD_PER_REQUEST);
-    expect(parseUsdPerRequest("0.1")).toBe(0.1);
-    expect(parseUsdPerRequest("0,25")).toBe(0.25);
-    expect(parseUsdPerRequest("99")).toBe(10);
-    expect(parseUsdPerRequest("0")).toBe(DEFAULT_USD_PER_REQUEST);
-    expect(parseUsdPerRequest("")).toBe(DEFAULT_USD_PER_REQUEST);
   });
 
   it("сбрасывает дневной счётчик и расход на новую дату", () => {

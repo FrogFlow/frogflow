@@ -26,16 +26,6 @@ export function estimateUsdFromTokens(usage: SmartSearchTokenUsage): number {
   return (input * HAIKU_INPUT_USD_PER_MTOK + output * HAIKU_OUTPUT_USD_PER_MTOK) / 1_000_000;
 }
 
-export function parseUsdPerRequest(raw: string | null | undefined): number {
-  const parsed = Number(
-    String(raw ?? "")
-      .replace(",", ".")
-      .trim(),
-  );
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_USD_PER_REQUEST;
-  return Math.min(10, parsed);
-}
-
 export function parseDailyCount(raw: string | null | undefined, today = todayUtcDate()): number {
   const [storedDate, storedCountRaw] = (raw ?? "").split(":");
   return storedDate === today ? Number(storedCountRaw) || 0 : 0;
