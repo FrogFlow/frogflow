@@ -69,6 +69,8 @@ const copy: Record<
     smartSearchHint: string;
     smartSearchEnableLabel: string;
     smartSearchLastError: (detail: string) => string;
+    smartSearchUsage: (used: number, limit: number) => string;
+    smartSearchUsageHint: string;
     webStorefrontTitle: string;
     webStorefrontHint: string;
     webStorefrontOpenBtn: string;
@@ -161,6 +163,9 @@ const copy: Record<
       "Если обычный поиск ничего не нашёл, бот пробует понять запрос по смыслу через ИИ (например, «что-то на день рождения пятилетке»). Требует настроенный ANTHROPIC_API_KEY у деплоя — каждый такой запрос стоит денег, поэтому выключено по умолчанию.",
     smartSearchEnableLabel: "Включить умный поиск",
     smartSearchLastError: (detail: string) => `Последняя ошибка умного поиска: ${detail}`,
+    smartSearchUsage: (used, limit) => `Сегодня: ${used} из ${limit} умных поисков`,
+    smartSearchUsageHint:
+      "Считаются запросы, по которым обычный поиск ничего не нашёл — в боте и в Mini App. Это и есть расход.",
     webStorefrontTitle: "Публичная веб-витрина каталога",
     webStorefrontHint:
       "Публичная страница каталога — фото, названия, цены и рейтинг товаров, без входа. Купить с неё нельзя: кнопка на странице ведёт покупателя в сам бот. Дайте эту ссылку клиентам в шапке Instagram, рекламе и т.п.",
@@ -260,6 +265,9 @@ const copy: Record<
       "Әдеттегі іздеу ештеңе таппаса, бот сұранысты мағынасы бойынша ЖИ арқылы түсінуге тырысады (мысалы, «бес жасар балаға туған күнге бір нәрсе»). Деплойда ANTHROPIC_API_KEY бапталған болуы керек — әрбір осындай сұраныс ақылы, сондықтан әдепкі бойынша өшірулі.",
     smartSearchEnableLabel: "Ақылды іздеуді қосу",
     smartSearchLastError: (detail: string) => `Ақылды іздеудің соңғы қатесі: ${detail}`,
+    smartSearchUsage: (used, limit) => `Бүгін: ${used} / ${limit} ақылды іздеу`,
+    smartSearchUsageHint:
+      "Қарапайым іздеу ештеңе таппаған сұраулар саналады — ботта және Mini App-та.",
     webStorefrontTitle: "Каталогтың ашық веб-витринасы",
     webStorefrontHint:
       "Кірусіз қолжетімді каталог беті — фото, атаулар, бағалар және рейтинг. Одан сатып алу мүмкін емес: беттегі түйме сатып алушыны боттың өзіне апарады. Бұл сілтемені Instagram шапкасында, жарнамада және т.б. беріңіз.",
@@ -358,6 +366,9 @@ const copy: Record<
       "If regular search finds nothing, the bot tries to understand the query by meaning via AI (e.g. a birthday gift for a five-year-old). Requires ANTHROPIC_API_KEY configured on the deployment — each such query costs money, so it is off by default.",
     smartSearchEnableLabel: "Enable smart search",
     smartSearchLastError: (detail: string) => `Last smart search error: ${detail}`,
+    smartSearchUsage: (used, limit) => `Today: ${used} of ${limit} smart searches`,
+    smartSearchUsageHint:
+      "Counts queries where regular search found nothing — in the bot and Mini App. This is the usage.",
     webStorefrontTitle: "Public catalog storefront",
     webStorefrontHint:
       "A no-login catalog page — photos, names, prices, and ratings. You can't buy from it: the page button sends the buyer into the bot itself. Share this link in your Instagram bio, ads, etc.",
@@ -458,6 +469,9 @@ const copy: Record<
       "Agar oddiy qidiruv hech narsa topmasa, bot so‘rovni mazmuni bo‘yicha AI orqali tushunishga harakat qiladi (masalan, «besh yoshli bola uchun tug‘ilgan kunga narsa»). Deployda ANTHROPIC_API_KEY sozlangan bo‘lishi kerak — har bir bunday so‘rov pul talab qiladi, shuning uchun standart bo‘yicha o‘chirilgan.",
     smartSearchEnableLabel: "Aqlli qidiruvni yoqish",
     smartSearchLastError: (detail: string) => `Aqlli qidiruvning oxirgi xatosi: ${detail}`,
+    smartSearchUsage: (used, limit) => `Bugun: ${used} / ${limit} aqlli qidiruv`,
+    smartSearchUsageHint:
+      "Oddiy qidiruv hech narsa topmagan so‘rovlar sanaladi — botda va Mini App’da.",
     webStorefrontTitle: "Katalogning ochiq veb-vitrinasi",
     webStorefrontHint:
       "Kirishsiz ochiladigan katalog sahifasi — fotolar, nomlar, narxlar va reyting. Undan xarid qilib bo‘lmaydi: sahifadagi tugma xaridorni to‘g‘ridan-to‘g‘ri botga yuboradi. Bu havolani Instagram bio, reklama va h.k.da bering.",
@@ -1175,6 +1189,17 @@ function SettingsPage() {
               {tr.smartSearchEnableLabel}
             </label>
             {smartSearchSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+            <p className="text-sm">
+              {tr.smartSearchUsage(
+                (() => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const [date, raw] = (settings.data?.smart_search_daily_count ?? "").split(":");
+                  return date === today ? Number(raw) || 0 : 0;
+                })(),
+                200,
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground">{tr.smartSearchUsageHint}</p>
             {settings.data?.smart_search_last_error ? (
               <p className="text-xs text-destructive">
                 {tr.smartSearchLastError(settings.data.smart_search_last_error)}

@@ -5,6 +5,8 @@ export type MiniAppStrings = {
   emptyCatalog: string;
   searchPlaceholder: string;
   searchEmpty: string;
+  categoryBack: string;
+  searchingDeeper: string;
   productsCount: (n: number) => string;
   allCategories: string;
   addToCart: string;
@@ -101,6 +103,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyCatalog: "Каталог пока пуст.",
     searchPlaceholder: "Поиск…",
     searchEmpty: "Ничего не найдено.",
+    categoryBack: "← Назад",
+    searchingDeeper: "Ищу по смыслу…",
     productsCount: (n) => `${n} товаров`,
     allCategories: "Все",
     addToCart: "В корзину",
@@ -204,6 +208,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyCatalog: "Каталог әзірге бос.",
     searchPlaceholder: "Іздеу…",
     searchEmpty: "Ештеңе табылмады.",
+    categoryBack: "← Артқа",
+    searchingDeeper: "Мағынасы бойынша іздеу…",
     productsCount: (n) => `${n} тауар`,
     allCategories: "Барлығы",
     addToCart: "Себетке",
@@ -307,6 +313,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyCatalog: "The catalog is empty.",
     searchPlaceholder: "Search…",
     searchEmpty: "Nothing found.",
+    categoryBack: "← Back",
+    searchingDeeper: "Searching by meaning…",
     productsCount: (n) => `${n} products`,
     allCategories: "All",
     addToCart: "Add to cart",
@@ -410,6 +418,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyCatalog: "Katalog hozircha bo‘sh.",
     searchPlaceholder: "Qidiruv…",
     searchEmpty: "Hech narsa topilmadi.",
+    categoryBack: "← Orqaga",
+    searchingDeeper: "Ma’no bo‘yicha qidirilmoqda…",
     productsCount: (n) => `${n} mahsulot`,
     allCategories: "Hammasi",
     addToCart: "Savatga",
@@ -537,6 +547,8 @@ export function miniAppStringsClientPack(
     emptyCatalog: s.emptyCatalog,
     searchPlaceholder: s.searchPlaceholder,
     searchEmpty: s.searchEmpty,
+    categoryBack: s.categoryBack,
+    searchingDeeper: s.searchingDeeper,
     allCategories: s.allCategories,
     addToCart: s.addToCart,
     variant: s.variant,

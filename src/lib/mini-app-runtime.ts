@@ -1080,12 +1080,48 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (current && !incoming) current.remove();
     if (!current && incoming) {
       var grid = document.querySelector(".grid");
+      var searchBox = document.querySelector(".catalog-search");
       if (selector === ".pagination" && grid) grid.after(incoming.cloneNode(true));
+      if (selector === "#mini-categories" && searchBox) searchBox.after(incoming.cloneNode(true));
     }
+  }
+  function maybeSmartSearch(search, requestId) {
+    var url = new URL(search, location.origin);
+    var q = (url.searchParams.get("q") || "").trim();
+    if (!q || !initData()) return;
+    if (document.querySelectorAll(".grid .card").length) return;
+    showToast(t("searchingDeeper"));
+    fetch("/api/public/mini-app/search", {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        q: q,
+        category: url.searchParams.get("category") || "",
+        country: url.searchParams.get("country") || "",
+        lang: url.searchParams.get("lang") || "",
+      }),
+    })
+      .then(parseResponse)
+      .then(function (res) {
+        if (requestId !== catalogRequest) return;
+        if (!res.ok || !res.d || !res.d.html) return;
+        if (!res.d.total) return;
+        var grid = document.querySelector(".grid");
+        if (grid) grid.innerHTML = res.d.html;
+        var subtitle = document.querySelector(".subtitle");
+        if (subtitle) subtitle.textContent = res.d.total ? String(res.d.total) : "";
+        setCartEnabled(!!initData());
+      })
+      .catch(function () {});
   }
   function loadCatalog(search) {
     var id = ++catalogRequest;
-    return fetch(search, { headers: { Accept: "text/html" } })
+    return fetch(search, {
+      headers: {
+        Accept: "text/html",
+        "X-Telegram-Init-Data": initData(),
+      },
+    })
       .then(function (res) { return res.text(); })
       .then(function (html) {
         if (id !== catalogRequest) return;
@@ -1096,6 +1132,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         replaceNode("#mini-categories", nextDoc);
         history.replaceState(null, "", search + location.hash);
         setCartEnabled(!!initData());
+        maybeSmartSearch(search, id);
       })
       .catch(function () {
         showToast(t("networkError"));

@@ -39,7 +39,9 @@ export const Route = createFileRoute("/mini-app")({
 
         const {
           shopName,
-          categories,
+          categoryChips,
+          categoryParentId,
+          catalogLayout,
           visibleProducts,
           stockEnabled,
           totalProducts,
@@ -63,11 +65,17 @@ export const Route = createFileRoute("/mini-app")({
           return params;
         };
 
+        const backChip =
+          catalogLayout !== "flat" && categoryId
+            ? `<a class="cat-chip" href="/mini-app?${esc(catalogParams({ category: categoryParentId }).toString())}">${esc(s.categoryBack)}</a>`
+            : catalogLayout === "flat"
+              ? `<a class="cat-chip${categoryId ? "" : " active"}" href="/mini-app?${esc(catalogParams({ category: null }).toString())}" aria-current="${categoryId ? "false" : "page"}">${esc(s.allCategories)}</a>`
+              : "";
         const catChips =
-          categories.length > 0
+          categoryChips.length > 0 || backChip
             ? `<div class="cat-scroll" id="mini-categories">
-              <a class="cat-chip${categoryId ? "" : " active"}" href="/mini-app?${esc(catalogParams({ category: null }).toString())}" aria-current="${categoryId ? "false" : "page"}">${esc(s.allCategories)}</a>
-              ${categories
+              ${backChip}
+              ${categoryChips
                 .map(
                   (c) =>
                     `<a class="cat-chip${categoryId === c.id ? " active" : ""}" href="/mini-app?${esc(catalogParams({ category: c.id }).toString())}" aria-current="${categoryId === c.id ? "page" : "false"}">${esc(c.name)}</a>`,

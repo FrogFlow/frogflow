@@ -7,6 +7,7 @@ export type MiniAppProduct = {
   id: string;
   name: string;
   description: string | null;
+  keywords?: string | string[] | null;
   category_ids: Json;
   rating_avg: number | null;
   rating_count: number;
@@ -23,11 +24,18 @@ export type MiniAppProduct = {
   }> | null;
 };
 
-export type MiniAppCategory = { id: string; name: string };
+export type MiniAppCategory = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order?: number;
+  is_visible?: boolean;
+};
 export type MiniAppProductIndexRow = {
   id: string;
   name: string;
   description: string | null;
+  keywords?: string | string[] | null;
   category_ids: Json;
   product_variants: Array<{ name: string }> | null;
 };
@@ -53,29 +61,41 @@ export function formatMiniAppMoney(amount: number, currency: string): string {
   return cur === "KZT" ? `${value} ₸` : `${value} ${currency}`;
 }
 
+export function miniAppProductSearchText(
+  product: Pick<MiniAppProductIndexRow, "name" | "description" | "keywords" | "product_variants">,
+  locale?: string,
+): string {
+  const keywords = Array.isArray(product.keywords)
+    ? product.keywords.join(" ")
+    : (product.keywords ?? "");
+  return [
+    product.name,
+    product.description ?? "",
+    keywords,
+    ...(product.product_variants ?? []).map((variant) => variant.name),
+  ]
+    .join(" ")
+    .toLocaleLowerCase(locale);
+}
+
 export function filterMiniAppProductIds(
   products: MiniAppProductIndexRow[],
   hiddenCategoryIds: ReadonlySet<string>,
   query = "",
   categoryId = "",
+  categoryMatchIds?: ReadonlySet<string>,
 ): string[] {
   const normalizedQuery = query.trim().toLocaleLowerCase().slice(0, 100);
   const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  const matchIds = categoryMatchIds ?? (categoryId ? new Set([categoryId]) : null);
   return products
     .filter((product) => {
       const catIds = (product.category_ids as string[] | null) ?? [];
       const visible = catIds.length === 0 || catIds.some((id) => !hiddenCategoryIds.has(id));
       if (!visible) return false;
-      if (categoryId && !catIds.includes(categoryId)) return false;
+      if (matchIds && !catIds.some((id) => matchIds.has(id))) return false;
       if (!tokens.length) return true;
-      const haystack = [
-        product.name,
-        product.description ?? "",
-        ...(product.product_variants ?? []).map((variant) => variant.name),
-      ]
-        .join(" ")
-        .toLocaleLowerCase();
-      return tokens.every((token) => haystack.includes(token));
+      return tokens.every((token) => miniAppProductSearchText(product).includes(token));
     })
     .map((product) => product.id);
 }
@@ -95,33 +115,53 @@ export async function loadMiniAppCatalogData(
   const safePageSize = Math.max(20, Math.min(100, Math.floor(pageSize) || 80));
   const categoryId = (filters?.categoryId ?? "").trim();
 
-  const [{ data: shopSetting }, { data: cats }, { data: hiddenCats }, productIndex] =
-    await Promise.all([
-      supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
-      supabaseAdmin
-        .from("categories")
-        .select("id, name")
-        .eq("is_visible", true)
-        .order("sort_order")
-        .order("name"),
-      supabaseAdmin.from("categories").select("id").eq("is_visible", false),
-      fetchAll<MiniAppProductIndexRow>(
-        (from, to) =>
-          supabaseAdmin
-            .from("products")
-            .select("id, name, description, category_ids, product_variants(name)")
-            .eq("is_active", true)
-            .order("sort_order")
-            .order("name")
-            .range(from, to),
-        "индекс товаров mini-app",
-      ),
-    ]);
+  const [
+    { data: shopSetting },
+    { data: cats },
+    { data: hiddenCats },
+    { data: catalogSetting },
+    productIndex,
+  ] = await Promise.all([
+    supabaseAdmin.from("app_settings").select("value").eq("key", "shop_name").maybeSingle(),
+    supabaseAdmin
+      .from("categories")
+      .select("id, name, parent_id, sort_order, is_visible")
+      .eq("is_visible", true)
+      .order("sort_order")
+      .order("name"),
+    supabaseAdmin.from("categories").select("id").eq("is_visible", false),
+    supabaseAdmin.from("app_settings").select("value").eq("key", "mini_app_catalog").maybeSingle(),
+    fetchAll<MiniAppProductIndexRow>(
+      (from, to) =>
+        supabaseAdmin
+          .from("products")
+          .select("id, name, description, keywords, category_ids, product_variants(name)")
+          .eq("is_active", true)
+          .order("sort_order")
+          .order("name")
+          .range(from, to),
+      "индекс товаров mini-app",
+    ),
+  ]);
 
   const shopName = shopSetting?.value?.trim() || defaultShopName;
   const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
   const categories = (cats ?? []) as MiniAppCategory[];
-  const matchingIds = filterMiniAppProductIds(productIndex, hiddenIds, filters?.query, categoryId);
+  const { parseMiniAppCatalogSettings, descendantCategoryIds, resolveMiniAppCategoryChips } =
+    await import("./category-tree");
+  const catalogSettings = parseMiniAppCatalogSettings(catalogSetting?.value);
+  const categoryChips = resolveMiniAppCategoryChips(categories, catalogSettings, categoryId);
+  const categoryMatchIds =
+    categoryId && catalogSettings.layout !== "flat"
+      ? descendantCategoryIds(categoryId, categories)
+      : undefined;
+  const matchingIds = filterMiniAppProductIds(
+    productIndex,
+    hiddenIds,
+    filters?.query,
+    categoryId,
+    categoryMatchIds,
+  );
 
   const totalProducts = matchingIds.length;
   const pageCount = Math.max(1, Math.ceil(totalProducts / safePageSize));
@@ -133,7 +173,7 @@ export async function loadMiniAppCatalogData(
     const { data: productRows } = await supabaseAdmin
       .from("products")
       .select(
-        "id, name, description, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
+        "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, product_variants(id, name, price, sort_order)",
       )
       .in("id", pageIds)
       .eq("is_active", true);
@@ -148,6 +188,9 @@ export async function loadMiniAppCatalogData(
   return {
     shopName,
     categories,
+    categoryChips: categoryChips.chips,
+    categoryParentId: categoryChips.parentId,
+    catalogLayout: catalogSettings.layout,
     visibleProducts,
     stockEnabled,
     totalProducts,
@@ -257,9 +300,7 @@ export function renderMiniAppProductCard(
     ? `<a class="card-name card-link" href="${esc(detailHref)}">${esc(p.name)}</a>`
     : `<div class="card-name">${esc(p.name)}</div>`;
 
-  const searchText = [p.name, p.description ?? "", ...variants.map((v) => v.name)]
-    .join(" ")
-    .toLocaleLowerCase(locale);
+  const searchText = miniAppProductSearchText(p, locale);
   return `<div class="card${outOfStock ? " out-of-stock" : ""}" data-name="${esc(searchText)}" data-categories="${esc(catIds)}">
     ${thumbHtml}
     <div class="card-body">

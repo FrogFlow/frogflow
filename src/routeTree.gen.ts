@@ -75,6 +75,7 @@ import { Route as ApiPublicShopHandoffRouteImport } from './routes/api/public/sh
 import { Route as ApiPublicRobokassaSuccessRouteImport } from './routes/api/public/robokassa/success'
 import { Route as ApiPublicRobokassaResultRouteImport } from './routes/api/public/robokassa/result'
 import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/robokassa/fail'
+import { Route as ApiPublicMiniAppSearchRouteImport } from './routes/api/public/mini-app/search'
 import { Route as ApiPublicMiniAppProofRouteImport } from './routes/api/public/mini-app/proof'
 import { Route as ApiPublicMiniAppOrdersRouteImport } from './routes/api/public/mini-app/orders'
 import { Route as ApiPublicMiniAppCheckoutRouteImport } from './routes/api/public/mini-app/checkout'
@@ -420,6 +421,11 @@ const ApiPublicRobokassaFailRoute = ApiPublicRobokassaFailRouteImport.update({
   path: '/api/public/robokassa/fail',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicMiniAppSearchRoute = ApiPublicMiniAppSearchRouteImport.update({
+  id: '/api/public/mini-app/search',
+  path: '/api/public/mini-app/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicMiniAppProofRoute = ApiPublicMiniAppProofRouteImport.update({
   id: '/api/public/mini-app/proof',
   path: '/api/public/mini-app/proof',
@@ -515,6 +521,7 @@ export interface FileRoutesByFullPath {
   '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
   '/api/public/mini-app/orders': typeof ApiPublicMiniAppOrdersRoute
   '/api/public/mini-app/proof': typeof ApiPublicMiniAppProofRoute
+  '/api/public/mini-app/search': typeof ApiPublicMiniAppSearchRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
@@ -585,6 +592,7 @@ export interface FileRoutesByTo {
   '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
   '/api/public/mini-app/orders': typeof ApiPublicMiniAppOrdersRoute
   '/api/public/mini-app/proof': typeof ApiPublicMiniAppProofRoute
+  '/api/public/mini-app/search': typeof ApiPublicMiniAppSearchRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
@@ -660,6 +668,7 @@ export interface FileRoutesById {
   '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
   '/api/public/mini-app/orders': typeof ApiPublicMiniAppOrdersRoute
   '/api/public/mini-app/proof': typeof ApiPublicMiniAppProofRoute
+  '/api/public/mini-app/search': typeof ApiPublicMiniAppSearchRoute
   '/api/public/robokassa/fail': typeof ApiPublicRobokassaFailRoute
   '/api/public/robokassa/result': typeof ApiPublicRobokassaResultRoute
   '/api/public/robokassa/success': typeof ApiPublicRobokassaSuccessRoute
@@ -735,6 +744,7 @@ export interface FileRouteTypes {
     | '/api/public/mini-app/checkout'
     | '/api/public/mini-app/orders'
     | '/api/public/mini-app/proof'
+    | '/api/public/mini-app/search'
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
@@ -805,6 +815,7 @@ export interface FileRouteTypes {
     | '/api/public/mini-app/checkout'
     | '/api/public/mini-app/orders'
     | '/api/public/mini-app/proof'
+    | '/api/public/mini-app/search'
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
@@ -879,6 +890,7 @@ export interface FileRouteTypes {
     | '/api/public/mini-app/checkout'
     | '/api/public/mini-app/orders'
     | '/api/public/mini-app/proof'
+    | '/api/public/mini-app/search'
     | '/api/public/robokassa/fail'
     | '/api/public/robokassa/result'
     | '/api/public/robokassa/success'
@@ -922,6 +934,7 @@ export interface RootRouteChildren {
   ApiPublicMiniAppCheckoutRoute: typeof ApiPublicMiniAppCheckoutRoute
   ApiPublicMiniAppOrdersRoute: typeof ApiPublicMiniAppOrdersRoute
   ApiPublicMiniAppProofRoute: typeof ApiPublicMiniAppProofRoute
+  ApiPublicMiniAppSearchRoute: typeof ApiPublicMiniAppSearchRoute
   ApiPublicRobokassaFailRoute: typeof ApiPublicRobokassaFailRoute
   ApiPublicRobokassaResultRoute: typeof ApiPublicRobokassaResultRoute
   ApiPublicRobokassaSuccessRoute: typeof ApiPublicRobokassaSuccessRoute
@@ -1397,6 +1410,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRobokassaFailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/mini-app/search': {
+      id: '/api/public/mini-app/search'
+      path: '/api/public/mini-app/search'
+      fullPath: '/api/public/mini-app/search'
+      preLoaderRoute: typeof ApiPublicMiniAppSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/mini-app/proof': {
       id: '/api/public/mini-app/proof'
       path: '/api/public/mini-app/proof'
@@ -1585,6 +1605,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicMiniAppCheckoutRoute: ApiPublicMiniAppCheckoutRoute,
   ApiPublicMiniAppOrdersRoute: ApiPublicMiniAppOrdersRoute,
   ApiPublicMiniAppProofRoute: ApiPublicMiniAppProofRoute,
+  ApiPublicMiniAppSearchRoute: ApiPublicMiniAppSearchRoute,
   ApiPublicRobokassaFailRoute: ApiPublicRobokassaFailRoute,
   ApiPublicRobokassaResultRoute: ApiPublicRobokassaResultRoute,
   ApiPublicRobokassaSuccessRoute: ApiPublicRobokassaSuccessRoute,

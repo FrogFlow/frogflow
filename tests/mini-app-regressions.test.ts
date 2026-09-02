@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=3"');
+    expect(page).toContain('src="/mini-app-runtime?v=4"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -100,6 +100,8 @@ describe("Mini App production regressions", () => {
       expect(pack.uploadReceipt).toBeTruthy();
       expect(pack.myOrders).toBeTruthy();
       expect(pack.searchEmpty).toBeTruthy();
+      expect(pack.categoryBack).toBeTruthy();
+      expect(pack.searchingDeeper).toBeTruthy();
       expect(pack.waitingPayment).toBeTruthy();
       expect(pack.orderStatus).toBeTruthy();
     },
@@ -120,7 +122,8 @@ describe("Mini App production regressions", () => {
 
   it("searches the catalog without dropping the Telegram WebView hash", () => {
     const runtime = source("src/lib/mini-app-runtime.ts");
-    expect(runtime).toContain("function loadCatalog");
+    expect(runtime).toContain("/api/public/mini-app/search");
+    expect(runtime).toContain("maybeSmartSearch");
     expect(runtime).toContain('querySelector(".catalog-search")');
     expect(runtime).toContain("e.preventDefault()");
     expect(runtime).toContain("location.hash");

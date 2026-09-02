@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
@@ -11,13 +11,20 @@ import {
   setCategoryVisible,
   updateCategory,
 } from "@/lib/categories.functions";
-import { getCategoryPath, sortCategoriesTree } from "@/lib/category-tree";
+import { getSettings, saveSetting } from "@/lib/settings.functions";
+import {
+  getCategoryPath,
+  parseMiniAppCatalogSettings,
+  sortCategoriesTree,
+  type MiniAppCatalogLayout,
+} from "@/lib/category-tree";
 import { confirmToast } from "@/lib/confirm-toast";
 import { EmojiInsertBar, insertAtCursor } from "@/components-ui/emoji-insert-bar";
 import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { useModules } from "@/lib/modules/use-modules";
 
 export const Route = createFileRoute("/admin/categories")({
   component: CategoriesPage,
@@ -28,6 +35,16 @@ const copy: Record<
   {
     title: string;
     hint: string;
+    miniAppTitle: string;
+    miniAppHint: string;
+    miniAppLayoutLabel: string;
+    miniAppLayoutTree: string;
+    miniAppLayoutFlat: string;
+    miniAppLayoutCustom: string;
+    miniAppOrderHint: string;
+    miniAppSave: string;
+    miniAppSaved: string;
+    miniAppSaveError: (msg: string) => string;
     editingTitle: string;
     newTitle: string;
     name: string;
@@ -58,6 +75,18 @@ const copy: Record<
   ru: {
     title: "Категории",
     hint: "Скрытые категории не показываются в каталоге бота, но товары и файлы сохраняются. Удобно для сезонных папок (1 сентября, День учителя).",
+    miniAppTitle: "Категории в Mini App",
+    miniAppHint:
+      "В боте покупатель сначала видит корневые папки, затем подкатегории. Здесь можно оставить тот же порядок, показать все папки лентой или собрать свой набор именно для магазинчика.",
+    miniAppLayoutLabel: "Как показывать в Mini App",
+    miniAppLayoutTree: "Как в боте: сначала основные, внутри — подкатегории",
+    miniAppLayoutFlat: "Все категории одной лентой",
+    miniAppLayoutCustom: "Свой набор и порядок для Mini App",
+    miniAppOrderHint:
+      "Отметьте категории, которые будут на первом экране Mini App. Порядок — сверху вниз.",
+    miniAppSave: "Сохранить вид Mini App",
+    miniAppSaved: "Сохранено",
+    miniAppSaveError: (msg) => `Не удалось сохранить вид Mini App: ${msg}`,
     editingTitle: "Редактирование",
     newTitle: "Новая категория",
     name: "Название",
@@ -89,6 +118,18 @@ const copy: Record<
   kk: {
     title: "Санаттар",
     hint: "Жасырын санаттар бот каталогында көрсетілмейді, бірақ тауарлар мен файлдар сақталады. Маусымдық қалталар үшін ыңғайлы.",
+    miniAppTitle: "Mini App санаттары",
+    miniAppHint:
+      "Ботта алдымен түбір қалталар, сосын ішкі санаттар көрінеді. Mini App үшін сол тәртіпті қалдыруға, барлығын лентамен көрсетуге немесе өз жиынтықты жинауға болады.",
+    miniAppLayoutLabel: "Mini App-та қалай көрсету",
+    miniAppLayoutTree: "Боттағыдай: алдымен негізгі, ішінде — ішкі санаттар",
+    miniAppLayoutFlat: "Барлық санаттар бір лентада",
+    miniAppLayoutCustom: "Mini App үшін өз жиынтық пен тәртіп",
+    miniAppOrderHint:
+      "Mini App бірінші экранындағы санаттарды белгілеңіз. Тәртіп — жоғарыдан төмен.",
+    miniAppSave: "Mini App түрін сақтау",
+    miniAppSaved: "Сақталды",
+    miniAppSaveError: (msg) => `Mini App түрін сақтау мүмкін болмады: ${msg}`,
     editingTitle: "Өңдеу",
     newTitle: "Жаңа санат",
     name: "Атауы",
@@ -120,6 +161,17 @@ const copy: Record<
   en: {
     title: "Categories",
     hint: "Hidden categories don't show up in the bot's catalog, but their products and files are kept. Handy for seasonal folders (e.g. holiday sales).",
+    miniAppTitle: "Mini App categories",
+    miniAppHint:
+      "In the bot, buyers see root folders first, then subcategories. Keep that tree, show every folder in one row, or pick a custom Mini App set.",
+    miniAppLayoutLabel: "How to show categories in Mini App",
+    miniAppLayoutTree: "Same as the bot: mains first, subcategories inside",
+    miniAppLayoutFlat: "All categories in one row",
+    miniAppLayoutCustom: "Custom Mini App set and order",
+    miniAppOrderHint: "Tick the categories for the Mini App first screen. Order is top to bottom.",
+    miniAppSave: "Save Mini App layout",
+    miniAppSaved: "Saved",
+    miniAppSaveError: (msg) => `Could not save Mini App layout: ${msg}`,
     editingTitle: "Editing",
     newTitle: "New category",
     name: "Name",
@@ -151,6 +203,18 @@ const copy: Record<
   uz: {
     title: "Kategoriyalar",
     hint: "Yashirin kategoriyalar bot katalogida ko‘rsatilmaydi, lekin mahsulot va fayllar saqlanadi. Mavsumiy papkalar uchun qulay.",
+    miniAppTitle: "Mini App kategoriyalari",
+    miniAppHint:
+      "Botda avval ildiz papkalar, keyin ichki kategoriyalar ko‘rinadi. Mini App uchun shu tartibni qoldirish, hammasini lentada ko‘rsatish yoki o‘z to‘plamingizni yig‘ish mumkin.",
+    miniAppLayoutLabel: "Mini App’da qanday ko‘rsatish",
+    miniAppLayoutTree: "Botdagidek: avval asosiylar, ichida — ichki kategoriyalar",
+    miniAppLayoutFlat: "Barcha kategoriyalar bitta lentada",
+    miniAppLayoutCustom: "Mini App uchun o‘z to‘plam va tartib",
+    miniAppOrderHint:
+      "Mini App birinchi ekrani uchun kategoriyalarni belgilang. Tartib — yuqoridan pastga.",
+    miniAppSave: "Mini App ko‘rinishini saqlash",
+    miniAppSaved: "Saqlandi",
+    miniAppSaveError: (msg) => `Mini App ko‘rinishini saqlab bo‘lmadi: ${msg}`,
     editingTitle: "Tahrirlash",
     newTitle: "Yangi kategoriya",
     name: "Nomi",
@@ -193,13 +257,24 @@ function CategoriesPage() {
   const { locale } = useAdminLocale();
   const tr = copy[locale];
   const qc = useQueryClient();
+  const modules = useModules();
   const cats = useQuery({ queryKey: ["categories"], queryFn: () => listCategories() });
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const list = useMemo(() => sortCategoriesTree((cats.data ?? []) as Cat[]), [cats.data]);
   const [editing, setEditing] = useState<Cat | null>(null);
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string>("");
   const [isVisible, setIsVisible] = useState(true);
+  const [miniLayout, setMiniLayout] = useState<MiniAppCatalogLayout>("tree");
+  const [miniOrder, setMiniOrder] = useState<string[]>([]);
+  const [miniSaving, setMiniSaving] = useState(false);
+  const [miniSaved, setMiniSaved] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const parsed = parseMiniAppCatalogSettings(settings.data?.mini_app_catalog);
+    setMiniLayout(parsed.layout);
+    setMiniOrder(parsed.order);
+  }, [settings.data?.mini_app_catalog]);
   // Не только сама категория, но и все её потомки — иначе выбор родителя из
   // одной из них создаёт цикл в дереве (Блок 4.6, дублирует серверную
   // проверку в updateCategory ради того, чтобы такой вариант вообще не
@@ -275,6 +350,44 @@ function CategoriesPage() {
     } catch (e: unknown) {
       toast.error(tr.deleteError(errorMessage(e)));
     }
+  }
+
+  async function onSaveMiniAppLayout() {
+    setMiniSaving(true);
+    try {
+      await saveSetting({
+        data: {
+          key: "mini_app_catalog",
+          value: JSON.stringify({ layout: miniLayout, order: miniOrder }),
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setMiniSaved(true);
+      setTimeout(() => setMiniSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.miniAppSaveError(errorMessage(e)));
+    } finally {
+      setMiniSaving(false);
+    }
+  }
+
+  function toggleMiniOrder(id: string) {
+    setMiniOrder((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  }
+
+  function moveMiniOrder(id: string, delta: number) {
+    setMiniOrder((prev) => {
+      const index = prev.indexOf(id);
+      if (index < 0) return prev;
+      const next = [...prev];
+      const swap = index + delta;
+      if (swap < 0 || swap >= next.length) return prev;
+      const [item] = next.splice(index, 1);
+      next.splice(swap, 0, item);
+      return next;
+    });
   }
 
   async function onToggleVisible(c: Cat) {
@@ -412,6 +525,86 @@ function CategoriesPage() {
           </ul>
         </div>
       </div>
+      {modules.telegram_mini_app ? (
+        <div className="bg-card border rounded-lg p-4 space-y-3">
+          <h2 className="font-medium">{tr.miniAppTitle}</h2>
+          <p className="text-sm text-muted-foreground">{tr.miniAppHint}</p>
+          <Label>{tr.miniAppLayoutLabel}</Label>
+          <div className="space-y-2 text-sm">
+            {(
+              [
+                ["tree", tr.miniAppLayoutTree],
+                ["flat", tr.miniAppLayoutFlat],
+                ["custom", tr.miniAppLayoutCustom],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={value} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="mini-app-layout"
+                  checked={miniLayout === value}
+                  onChange={() => setMiniLayout(value)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+          {miniLayout === "custom" ? (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">{tr.miniAppOrderHint}</p>
+              <ul className="divide-y border rounded-md">
+                {[
+                  ...miniOrder
+                    .map((id) => list.find((item) => item.id === id))
+                    .filter((item): item is Cat => Boolean(item)),
+                  ...list.filter((item) => !miniOrder.includes(item.id)),
+                ].map((c) => {
+                  const selected = miniOrder.includes(c.id);
+                  return (
+                    <li key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleMiniOrder(c.id)}
+                      />
+                      <span className="flex-1 min-w-0 truncate">
+                        {depthPrefix(c)}
+                        {c.name}
+                      </span>
+                      {selected ? (
+                        <span className="flex gap-1 shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => moveMiniOrder(c.id, -1)}
+                          >
+                            ↑
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => moveMiniOrder(c.id, 1)}
+                          >
+                            ↓
+                          </Button>
+                        </span>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <Button onClick={onSaveMiniAppLayout} disabled={miniSaving || settings.isLoading}>
+              {tr.miniAppSave}
+            </Button>
+            {miniSaved ? <span className="text-sm text-green-600">{tr.miniAppSaved}</span> : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

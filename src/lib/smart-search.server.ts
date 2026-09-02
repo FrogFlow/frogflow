@@ -52,7 +52,7 @@ const TIMEOUT_MS = 40_000;
 // человек, слающий несовпадающие запросы подряд, накручивает продавцу
 // счёт без всякого ограничения.
 const COOLDOWN_SECONDS = 45;
-const DAILY_LIMIT = 200;
+export const DAILY_LIMIT = 200;
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -117,6 +117,18 @@ async function checkAndTouchCooldown(telegramId: number): Promise<boolean> {
  * очень редком случае, а не пробьёт его многократно). Дата в самом
  * значении — новый день сбрасывает счётчик сам, без отдельного крона.
  */
+export function smartSearchDailyUsage(value: string | null | undefined): {
+  date: string;
+  count: number;
+} {
+  const today = new Date().toISOString().slice(0, 10);
+  const [storedDate, storedCountRaw] = (value ?? "").split(":");
+  return {
+    date: today,
+    count: storedDate === today ? Number(storedCountRaw) || 0 : 0,
+  };
+}
+
 async function checkAndConsumeDailyLimit(): Promise<boolean> {
   const s = await db();
   const key = "smart_search_daily_count";

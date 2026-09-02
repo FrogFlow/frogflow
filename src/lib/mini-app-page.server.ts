@@ -392,7 +392,7 @@ export function wrapMiniAppPage(
     window.__miniAppI18n = ${i18n};
     window.__miniAppLocale = "${lang}";
   </script>
-  <script src="/mini-app-runtime?v=3"></script>
+  <script src="/mini-app-runtime?v=4"></script>
 </body>
 </html>`;
 }
