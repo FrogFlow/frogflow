@@ -3,9 +3,13 @@ import {
   collectMiniAppMaterialLanguages,
   filterMiniAppProductIds,
   miniAppEmptyThumbEmoji,
+  parseMiniAppSort,
+  renderMiniAppFileList,
   renderMiniAppLangBadges,
   renderMiniAppLeadBadge,
   renderMiniAppProductCard,
+  renderMiniAppTabBar,
+  sortMiniAppProductIds,
   type MiniAppProduct,
   type MiniAppProductIndexRow,
 } from "../src/lib/mini-app-catalog.server";
@@ -199,5 +203,64 @@ describe("Mini App didactic catalog cards", () => {
       if (previous === undefined) delete process.env.VERTICAL;
       else process.env.VERTICAL = previous;
     }
+  });
+
+  it("lists material files on the product page and keeps a library tab", () => {
+    const files = renderMiniAppFileList(worksheet, "ru");
+    expect(files).toContain("pdp-files");
+    expect(files).toContain("RU");
+    expect(files).toContain("KZ");
+    expect(files).toContain("sept.pdf");
+    expect(renderMiniAppFileList({ ...worksheet, fulfillment_kind: "physical" }, "ru")).toBe("");
+    const tabs = renderMiniAppTabBar("ru", "catalog", new URLSearchParams({ lang: "ru" }));
+    expect(tabs).toContain("/mini-app/library");
+    expect(tabs).toContain("Материалы");
+    expect(tabs).toContain("tab-bar");
+  });
+});
+
+describe("Mini App catalog sort", () => {
+  it("orders by popularity, recency and price", () => {
+    const rows: MiniAppProductIndexRow[] = [
+      {
+        id: "old",
+        name: "Old",
+        description: null,
+        category_ids: [],
+        price: 900,
+        created_at: "2024-01-01",
+        rating_avg: 5,
+        rating_count: 1,
+        product_variants: null,
+      },
+      {
+        id: "hit",
+        name: "Hit",
+        description: null,
+        category_ids: [],
+        price: 300,
+        created_at: "2025-01-01",
+        rating_avg: 4.2,
+        rating_count: 40,
+        product_variants: null,
+      },
+      {
+        id: "fresh",
+        name: "Fresh",
+        description: null,
+        category_ids: [],
+        price: 500,
+        created_at: "2026-01-01",
+        rating_avg: 0,
+        rating_count: 0,
+        product_variants: null,
+      },
+    ];
+    const ids = rows.map((row) => row.id);
+    expect(parseMiniAppSort("nope")).toBe("catalog");
+    expect(sortMiniAppProductIds(rows, ids, "catalog")).toEqual(ids);
+    expect(sortMiniAppProductIds(rows, ids, "popular")).toEqual(["hit", "old", "fresh"]);
+    expect(sortMiniAppProductIds(rows, ids, "new")).toEqual(["fresh", "hit", "old"]);
+    expect(sortMiniAppProductIds(rows, ids, "price")).toEqual(["hit", "fresh", "old"]);
   });
 });

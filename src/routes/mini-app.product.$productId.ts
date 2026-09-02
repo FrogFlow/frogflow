@@ -3,12 +3,16 @@ import { isControlPlane } from "@/lib/control-plane.server";
 import {
   escapeMiniAppHtml,
   formatMiniAppMoney,
+  loadRelatedMiniAppProducts,
   MINI_APP_PRODUCT_SELECT,
   miniAppEmptyThumbEmoji,
   priceMiniAppProducts,
   renderMiniAppCartShell,
+  renderMiniAppFileList,
   renderMiniAppLangBadges,
   renderMiniAppLeadBadge,
+  renderMiniAppReviews,
+  renderMiniAppTabBar,
   type MiniAppProduct,
 } from "@/lib/mini-app-catalog.server";
 import { miniAppStrings } from "@/lib/mini-app-i18n";
@@ -121,16 +125,21 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
         const backQuery = new URLSearchParams({ lang: locale });
         if (countryCode) backQuery.set("country", countryCode);
         const requestedBack = new URLSearchParams(url.searchParams.get("back") || "");
-        for (const key of ["q", "category", "page"]) {
+        for (const key of ["q", "category", "page", "mlang", "sort"]) {
           const value = requestedBack.get(key);
           if (value) backQuery.set(key, value.slice(0, 100));
         }
+        const { listPublicProductReviews } = await import("@/lib/reviews.server");
+        const [relatedHtml, reviews] = await Promise.all([
+          loadRelatedMiniAppProducts(p, countryCode, locale, backQuery.toString()),
+          listPublicProductReviews(p.id, 5),
+        ]);
         const productBody = `
           <header>
             <a class="back-link" href="/mini-app?${esc(backQuery.toString())}">${esc(s.backToCatalog)}</a>
             <div class="header-row">
               <h1>${esc(p.name)}</h1>
-              <a class="header-link" href="/mini-app/orders?${esc(backQuery.toString())}">${esc(s.myOrders)}</a>
+              <button type="button" class="header-link" data-share="${esc(p.name)}" style="border:none;background:none;cursor:pointer">${esc(s.shareMaterial)}</button>
             </div>
           </header>
           <div class="pdp-gallery">${gallery}</div>
@@ -141,12 +150,15 @@ export const Route = createFileRoute("/mini-app/product/$productId")({
             ${
               p.fulfillment_kind === "physical"
                 ? ""
-                : `${renderMiniAppLangBadges(p, true) ? `<div class="card-lead">${esc(s.languagesLabel)}</div>${renderMiniAppLangBadges(p, true)}` : ""}<div class="card-lead">${esc(s.filesAfterPayment)}</div>`
+                : `${renderMiniAppLangBadges(p, true) ? `<div class="card-lead">${esc(s.languagesLabel)}</div>${renderMiniAppLangBadges(p, true)}` : ""}<div class="card-lead">${esc(s.filesAfterPayment)}</div>${renderMiniAppFileList(p, locale)}`
             }
-            ${p.description ? `<h2 style="font-size:0.95rem;margin:1rem 0 0.35rem">${esc(s.description)}</h2><div class="pdp-desc">${esc(p.description)}</div>` : ""}
+            ${p.description ? `<h2>${esc(s.description)}</h2><div class="pdp-desc">${esc(p.description)}</div>` : ""}
+            ${renderMiniAppReviews(reviews, locale)}
             <div style="margin-top:1rem">${actionsHtml}</div>
           </div>
-          ${renderMiniAppCartShell(locale)}`;
+          ${relatedHtml}
+          ${renderMiniAppCartShell(locale)}
+          ${renderMiniAppTabBar(locale, "product", backQuery)}`;
         const needsContext = !url.searchParams.has("lang") || !url.searchParams.has("country");
         const bodyHtml = needsContext
           ? `<div id="mini-context-content" class="context-pending">${productBody}</div><div id="mini-context-loader" class="context-loader">${esc(s.loading)}</div>`

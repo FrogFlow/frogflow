@@ -222,6 +222,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
   var cartDiscounts = document.getElementById("mini-cart-discounts");
   var pendingPaymentEl = document.getElementById("mini-pending-payment");
   var ordersEl = document.getElementById("mini-orders");
+  var libraryEl = document.getElementById("mini-library");
   var checkoutForm = document.getElementById("mini-checkout-form");
   var cartTotalEl = document.getElementById("mini-cart-total");
   var cartCountEl = document.getElementById("mini-cart-count");
@@ -234,6 +235,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     currency: "KZT",
     summary: null,
     pendingPayment: null,
+    purchased: {},
   };
 
   function renderCart() {
@@ -809,10 +811,17 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       html = "<p><strong>" + escapeHtml(data.message || t("orderComplete")) + "</strong></p>";
       if (!window.__miniAppPhysicalShop) {
         html += "<p class=\\"checkout-hint\\">" + escapeHtml(t("filesAfterPayment")) + "</p>";
+        html += "<a class=\\"primary-btn\\" href=\\"/mini-app/library" + location.search +
+          "\\" style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.75rem\\">" +
+          escapeHtml(t("myMaterials")) + "</a>";
+        html += "<a class=\\"btn-secondary\\" href=\\"/mini-app/orders" + location.search +
+          "\\" style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.5rem\\">" +
+          escapeHtml(t("myOrders")) + "</a>";
+      } else {
+        html += "<a class=\\"primary-btn\\" href=\\"/mini-app/orders" + location.search +
+          "\\" style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.75rem\\">" +
+          escapeHtml(t("myOrders")) + "</a>";
       }
-      html += "<a class=\\"primary-btn\\" href=\\"/mini-app/orders" + location.search +
-        "\\" style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.75rem\\">" +
-        escapeHtml(t("myOrders")) + "</a>";
       if (data.botUrl) {
         html += "<a class=\\"btn-secondary\\" href=\\"" + escapeHtml(data.botUrl) +
           "\\" data-bot-link style=\\"display:block;text-align:center;text-decoration:none;margin-top:0.5rem\\">" +
@@ -953,6 +962,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           });
           refreshCart().catch(function () {});
           loadOrders();
+          loadLibrary();
         })
         .catch(function () {});
     }, 4000);
@@ -1100,6 +1110,10 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         if (res.d.step) {
           showCheckoutStep(res.d);
           showCartSheet();
+          if (res.d.step === "completed") {
+            loadLibrary();
+            loadOrders();
+          }
           return;
         }
         if (res.d.paymentUrl) {
@@ -1136,10 +1150,43 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       }
       return;
     }
+    var shareBtn = el.closest("[data-share]");
+    if (shareBtn) {
+      var shareText = shareBtn.getAttribute("data-share") || "";
+      var shareUrl = location.href;
+      e.preventDefault();
+      try {
+        bindTelegram();
+        if (tg && tg.openTelegramLink) {
+          tg.openTelegramLink(
+            "https://t.me/share/url?url=" + encodeURIComponent(shareUrl) +
+            "&text=" + encodeURIComponent(shareText),
+          );
+          return;
+        }
+      } catch (err) {}
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareText + "\\n" + shareUrl).then(function () {
+          showToast(t("copied"));
+        }).catch(function () { showToast(t("copied")); });
+      } else {
+        showToast(shareText);
+      }
+      return;
+    }
     var addBtn = el.closest(".add-btn");
     if (addBtn) {
       if (!initData()) {
         showToast(t("sessionNotReady"));
+        return;
+      }
+      if (addBtn.classList.contains("purchased")) {
+        var ownedOrder = addBtn.getAttribute("data-order-id");
+        if (libraryEl && ownedOrder) {
+          resendOrderFiles(Number(ownedOrder), addBtn);
+          return;
+        }
+        location.assign("/mini-app/library" + location.search + location.hash);
         return;
       }
       if (addBtn.classList.contains("in-cart")) {
@@ -1216,6 +1263,12 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       if (selector === "#mini-categories" && searchBox) searchBox.after(incoming.cloneNode(true));
       if (selector === "#mini-mlangs") {
         if (cats) cats.after(incoming.cloneNode(true));
+        else if (searchBox) searchBox.after(incoming.cloneNode(true));
+      }
+      if (selector === "#mini-sorts") {
+        var langs = document.querySelector("#mini-mlangs");
+        if (langs) langs.after(incoming.cloneNode(true));
+        else if (cats) cats.after(incoming.cloneNode(true));
         else if (searchBox) searchBox.after(incoming.cloneNode(true));
       }
     }
@@ -1306,6 +1359,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         replaceNode(".subtitle", nextDoc);
         replaceNode("#mini-categories", nextDoc);
         replaceNode("#mini-mlangs", nextDoc);
+        replaceNode("#mini-sorts", nextDoc);
         history.replaceState(null, "", search + location.hash);
         setCartEnabled(!!initData());
         maybeSmartSearch(search, id);
@@ -1468,11 +1522,23 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       var select = card ? card.querySelector(".variant-select") : null;
       var hasVariants = btn.getAttribute("data-has-variants") === "1";
       var variantId = select && select.value ? select.value : null;
+      var ownedOrder = productId && state.purchased[productId] ? state.purchased[productId] : "";
       var inCart = !!(productId && state.items.some(function (it) {
         if (it.product_id !== productId) return false;
         if (hasVariants) return variantId && it.product_variant_id === variantId;
         return true;
       }));
+      if (card && card.classList.contains("card")) card.classList.toggle("owned", !!ownedOrder);
+      if (ownedOrder && !window.__miniAppPhysicalShop) {
+        btn.classList.add("purchased");
+        btn.classList.remove("in-cart");
+        btn.setAttribute("data-order-id", String(ownedOrder));
+        btn.textContent = btn.closest("#mini-library") ? t("resendFiles") : t("purchased");
+        btn.disabled = !ready;
+        return;
+      }
+      btn.classList.remove("purchased");
+      btn.removeAttribute("data-order-id");
       btn.classList.toggle("in-cart", inCart);
       btn.textContent = inCart ? t("inCart") : t("addToCart");
       if (inCart) {
@@ -1487,6 +1553,57 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     });
   }
 
+  function loadLibrary() {
+    if (!initData() || window.__miniAppPhysicalShop) return Promise.resolve();
+    return fetch("/api/public/mini-app/library", { headers: apiHeaders() })
+      .then(parseResponse)
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.d && res.d.error ? res.d.error : "library_failed");
+        state.purchased = {};
+        (res.d.items || []).forEach(function (item) {
+          if (item.productId) state.purchased[item.productId] = item.lastOrderId;
+        });
+        renderLibrary(res.d.items || [], res.d.botUrl || "");
+        syncCartButtons();
+      })
+      .catch(function () {
+        if (libraryEl) libraryEl.innerHTML = "<p class=\\"empty\\">" + escapeHtml(t("networkError")) + "</p>";
+      });
+  }
+
+  function renderLibrary(items, botUrl) {
+    if (!libraryEl) return;
+    if (!items.length) {
+      libraryEl.innerHTML = "<p class=\\"empty\\">" + escapeHtml(t("emptyLibrary")) + "</p>";
+      return;
+    }
+    libraryEl.innerHTML = items.map(function (item) {
+      var thumb = item.image
+        ? "<img src=\\"" + escapeHtml(item.image) + "\\" alt=\\"\\" />"
+        : "<div class=\\"thumb\\" style=\\"width:56px;height:56px;border-radius:10px;flex-shrink:0\\">📄</div>";
+      var langs = (item.languages || []).map(function (code) {
+        return "<span class=\\"lang-chip\\">" + escapeHtml(code) + "</span>";
+      }).join("");
+      var href = "/mini-app/product/" + encodeURIComponent(item.productId) + location.search;
+      return "<article class=\\"library-card\\">" + thumb +
+        "<div class=\\"cart-line-info\\"><a class=\\"card-link\\" href=\\"" + escapeHtml(href) + "\\"><div class=\\"card-name\\">" +
+        escapeHtml(item.name) + "</div></a><div class=\\"card-langs\\">" + langs + "</div></div>" +
+        "<button type=\\"button\\" class=\\"add-btn purchased\\" data-product-id=\\"" + escapeHtml(item.productId) +
+        "\\" data-order-id=\\"" + Number(item.lastOrderId) + "\\">" + escapeHtml(t("resendFiles")) + "</button></article>";
+    }).join("") + (botUrl
+      ? "<p class=\\"checkout-hint\\" style=\\"padding:0 0.25rem\\"><a href=\\"" + escapeHtml(botUrl) +
+        "\\" data-bot-link>" + escapeHtml(t("contactSupport")) + "</a></p>"
+      : "");
+    libraryEl.querySelectorAll("[data-bot-link]").forEach(function (link) {
+      link.addEventListener("click", function (event) {
+        if (tg && tg.openTelegramLink) {
+          event.preventDefault();
+          tg.openTelegramLink(link.href);
+        }
+      });
+    });
+  }
+
   function boot() {
     if (initData()) {
       if (!cartReady) {
@@ -1497,6 +1614,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           if (!error || !error.auth) showToast(t("cartLoadFailed"));
         });
         loadOrders();
+        loadLibrary();
       }
       maybeSmartSearch(location.pathname + location.search, catalogRequest);
       return;
@@ -1514,6 +1632,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     if (document.visibilityState === "visible" && initData()) {
       refreshCart().catch(function () {});
       loadOrders();
+      loadLibrary();
     }
   });
   if (ordersEl) {

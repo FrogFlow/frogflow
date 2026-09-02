@@ -34,6 +34,23 @@ export async function hasDeliveredPurchase(
   return Boolean(item);
 }
 
+export async function listPublicProductReviews(
+  productId: string,
+  limit = 5,
+): Promise<Array<{ rating: number; comment: string | null }>> {
+  const s = await db();
+  const { data } = await s
+    .from("product_reviews")
+    .select("rating, comment")
+    .eq("product_id", productId)
+    .order("created_at", { ascending: false })
+    .limit(Math.max(1, Math.min(20, limit)));
+  return (data ?? []).map((row) => ({
+    rating: Number(row.rating),
+    comment: row.comment,
+  }));
+}
+
 /** Товары из заказа, которые можно оценить: реально доставленные, с именем для кнопки. */
 export async function reviewableProductsForOrder(
   orderId: number,

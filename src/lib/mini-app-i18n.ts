@@ -18,6 +18,22 @@ export type MiniAppStrings = {
   filesInBot: string;
   rateMaterial: string;
   rateThanks: string;
+  myMaterials: string;
+  emptyLibrary: string;
+  purchased: string;
+  moreInFolder: string;
+  sortCatalog: string;
+  sortPopular: string;
+  sortNew: string;
+  sortPrice: string;
+  filesIncluded: string;
+  reviewsTitle: string;
+  noReviews: string;
+  shareMaterial: string;
+  copied: string;
+  tabCatalog: string;
+  tabLibrary: string;
+  tabOrders: string;
   addToCart: string;
   variant: string;
   outOfStock: string;
@@ -130,6 +146,22 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Файлы отправлены в бот",
     rateMaterial: "Оценить материал",
     rateThanks: "Спасибо за оценку!",
+    myMaterials: "Мои материалы",
+    emptyLibrary: "Купленных материалов пока нет.",
+    purchased: "Куплено",
+    moreInFolder: "Ещё в этой папке",
+    sortCatalog: "Каталог",
+    sortPopular: "Популярные",
+    sortNew: "Новые",
+    sortPrice: "Цена",
+    filesIncluded: "Какие файлы придут",
+    reviewsTitle: "Оценки",
+    noReviews: "Оценок пока нет.",
+    shareMaterial: "Поделиться",
+    copied: "Скопировано",
+    tabCatalog: "Каталог",
+    tabLibrary: "Материалы",
+    tabOrders: "Заказы",
     addToCart: "В корзину",
     variant: "Вариант",
     outOfStock: "Нет в наличии",
@@ -249,6 +281,22 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Файлдар ботқа жіберілді",
     rateMaterial: "Материалды бағалау",
     rateThanks: "Бағалағаныңызға рақмет!",
+    myMaterials: "Менің материалдарым",
+    emptyLibrary: "Сатып алынған материалдар әзірге жоқ.",
+    purchased: "Сатып алынды",
+    moreInFolder: "Осы бумада тағы",
+    sortCatalog: "Каталог",
+    sortPopular: "Танымал",
+    sortNew: "Жаңа",
+    sortPrice: "Баға",
+    filesIncluded: "Қандай файлдар келеді",
+    reviewsTitle: "Бағалар",
+    noReviews: "Бағалар әзірге жоқ.",
+    shareMaterial: "Бөлісу",
+    copied: "Көшірілді",
+    tabCatalog: "Каталог",
+    tabLibrary: "Материалдар",
+    tabOrders: "Тапсырыстар",
     addToCart: "Себетке",
     variant: "Нұсқа",
     outOfStock: "Қолда жоқ",
@@ -368,6 +416,22 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Files were sent to the bot",
     rateMaterial: "Rate this material",
     rateThanks: "Thanks for the rating!",
+    myMaterials: "My materials",
+    emptyLibrary: "No purchased materials yet.",
+    purchased: "Purchased",
+    moreInFolder: "More in this folder",
+    sortCatalog: "Catalog",
+    sortPopular: "Popular",
+    sortNew: "New",
+    sortPrice: "Price",
+    filesIncluded: "Files you will get",
+    reviewsTitle: "Ratings",
+    noReviews: "No ratings yet.",
+    shareMaterial: "Share",
+    copied: "Copied",
+    tabCatalog: "Catalog",
+    tabLibrary: "Library",
+    tabOrders: "Orders",
     addToCart: "Add to cart",
     variant: "Variant",
     outOfStock: "Out of stock",
@@ -487,6 +551,22 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Fayllar botga yuborildi",
     rateMaterial: "Materialni baholash",
     rateThanks: "Bahongiz uchun rahmat!",
+    myMaterials: "Materiallarim",
+    emptyLibrary: "Sotib olingan materiallar hozircha yo‘q.",
+    purchased: "Sotib olingan",
+    moreInFolder: "Shu jildda yana",
+    sortCatalog: "Katalog",
+    sortPopular: "Mashhur",
+    sortNew: "Yangi",
+    sortPrice: "Narx",
+    filesIncluded: "Qaysi fayllar keladi",
+    reviewsTitle: "Baholar",
+    noReviews: "Baholar hozircha yo‘q.",
+    shareMaterial: "Ulashish",
+    copied: "Nusxa olindi",
+    tabCatalog: "Katalog",
+    tabLibrary: "Materiallar",
+    tabOrders: "Buyurtmalar",
     addToCart: "Savatga",
     variant: "Variant",
     outOfStock: "Mavjud emas",
@@ -658,6 +738,22 @@ export function miniAppStringsClientPack(
     filesInBot: s.filesInBot,
     rateMaterial: s.rateMaterial,
     rateThanks: s.rateThanks,
+    myMaterials: s.myMaterials,
+    emptyLibrary: s.emptyLibrary,
+    purchased: s.purchased,
+    moreInFolder: s.moreInFolder,
+    sortCatalog: s.sortCatalog,
+    sortPopular: s.sortPopular,
+    sortNew: s.sortNew,
+    sortPrice: s.sortPrice,
+    filesIncluded: s.filesIncluded,
+    reviewsTitle: s.reviewsTitle,
+    noReviews: s.noReviews,
+    shareMaterial: s.shareMaterial,
+    copied: s.copied,
+    tabCatalog: s.tabCatalog,
+    tabLibrary: s.tabLibrary,
+    tabOrders: s.tabOrders,
     addToCart: s.addToCart,
     variant: s.variant,
     outOfStock: s.outOfStock,

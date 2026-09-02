@@ -3,9 +3,12 @@ import { isControlPlane } from "@/lib/control-plane.server";
 import {
   escapeMiniAppHtml,
   loadMiniAppCatalogData,
+  parseMiniAppSort,
   priceMiniAppProducts,
   renderMiniAppCartShell,
   renderMiniAppProductCard,
+  renderMiniAppSortChips,
+  renderMiniAppTabBar,
 } from "@/lib/mini-app-catalog.server";
 import { MATERIAL_LANG_SHORT } from "@/lib/product-materials";
 import { isLocale } from "@/lib/i18n";
@@ -40,6 +43,7 @@ export const Route = createFileRoute("/mini-app")({
         const categoryId = (url.searchParams.get("category") || "").trim();
         const materialLangRaw = (url.searchParams.get("mlang") || "").trim().toLowerCase();
         const materialLang = isLocale(materialLangRaw) ? materialLangRaw : "";
+        const sort = parseMiniAppSort(url.searchParams.get("sort"));
 
         const {
           shopName,
@@ -56,6 +60,7 @@ export const Route = createFileRoute("/mini-app")({
           query: searchQuery,
           categoryId,
           materialLang,
+          sort,
         });
         const priced = await priceMiniAppProducts(visibleProducts, countryCode);
 
@@ -63,6 +68,7 @@ export const Route = createFileRoute("/mini-app")({
           page?: number;
           category?: string | null;
           mlang?: string | null;
+          sort?: string | null;
         }) => {
           const params = new URLSearchParams({ lang: locale });
           if (countryCode) params.set("country", countryCode);
@@ -71,6 +77,8 @@ export const Route = createFileRoute("/mini-app")({
           if (nextCategory) params.set("category", nextCategory);
           const nextLang = overrides?.mlang === undefined ? materialLang : overrides.mlang;
           if (nextLang) params.set("mlang", nextLang);
+          const nextSort = overrides?.sort === undefined ? sort : overrides.sort;
+          if (nextSort && nextSort !== "catalog") params.set("sort", nextSort);
           if (overrides?.page && overrides.page > 1) {
             params.set("page", String(overrides.page));
           }
@@ -125,6 +133,7 @@ export const Route = createFileRoute("/mini-app")({
           ${countryCode ? `<input type="hidden" name="country" value="${esc(countryCode)}" />` : ""}
           ${categoryId ? `<input type="hidden" name="category" value="${esc(categoryId)}" />` : ""}
           ${materialLang ? `<input type="hidden" name="mlang" value="${esc(materialLang)}" />` : ""}
+          ${sort !== "catalog" ? `<input type="hidden" name="sort" value="${esc(sort)}" />` : ""}
           <label for="mini-search-server" style="position:absolute;left:-9999px">${esc(s.searchPlaceholder)}</label>
           <input type="search" name="q" id="mini-search-server" class="search" value="${esc(searchQuery)}" placeholder="${esc(s.searchPlaceholder)}" autocomplete="off" enterkeyhint="search" />
           <button type="submit" class="search-submit" aria-label="${esc(s.searchPlaceholder)}">⌕</button>
@@ -154,9 +163,11 @@ export const Route = createFileRoute("/mini-app")({
           ${searchHtml}
           ${catChips}
           ${langChips}
+          ${renderMiniAppSortChips(locale, sort, catalogParams)}
           <div class="grid">${cardsHtml}</div>
           ${paginationHtml}
-          ${renderMiniAppCartShell(locale)}`;
+          ${renderMiniAppCartShell(locale)}
+          ${renderMiniAppTabBar(locale, "catalog", catalogParams())}`;
         const needsContext = !url.searchParams.has("lang") || !url.searchParams.has("country");
         const bodyHtml = needsContext
           ? `<div id="mini-context-content" class="context-pending">${catalogBody}</div><div id="mini-context-loader" class="context-loader">${esc(s.loading)}</div>`

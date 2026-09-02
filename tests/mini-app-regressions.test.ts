@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=7"');
+    expect(page).toContain('src="/mini-app-runtime?v=8"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -98,7 +98,10 @@ describe("Mini App production regressions", () => {
       expect(pack.materialLangAll).toBeTruthy();
       expect(pack.filesInBot).toBeTruthy();
       expect(pack.rateMaterial).toBeTruthy();
-      expect(pack.rateThanks).toBeTruthy();
+      expect(pack.myMaterials).toBeTruthy();
+      expect(pack.purchased).toBeTruthy();
+      expect(pack.tabLibrary).toBeTruthy();
+      expect(pack.sortPopular).toBeTruthy();
       expect(pack.allLanguages).toBeTruthy();
       expect(pack.languagesLabel).toBeTruthy();
       expect(pack.orderCompletePhysical).toBeTruthy();
@@ -236,5 +239,28 @@ describe("Mini App production regressions", () => {
     expect(resend).toContain('fulfillment_kind === "physical"');
     expect(resend).toContain('reason: "not_digital"');
     expect(runtime).toContain('order.status === "delivered" && !physical');
+  });
+
+  it("ships a purchased-materials library, sort chips and bottom tabs", () => {
+    const page = source("src/lib/mini-app-page.server.ts");
+    const catalog = source("src/lib/mini-app-catalog.server.ts");
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    const libraryPage = source("src/routes/mini-app.library.ts");
+    const libraryApi = source("src/routes/api/public/mini-app/library.ts");
+    const pdp = source("src/routes/mini-app.product.$productId.ts");
+    expect(page).toContain(".tab-bar");
+    expect(catalog).toContain("renderMiniAppTabBar");
+    expect(catalog).toContain("sortMiniAppProductIds");
+    expect(catalog).toContain("loadRelatedMiniAppProducts");
+    expect(catalog).toContain("renderMiniAppFileList");
+    expect(runtime).toContain("/api/public/mini-app/library");
+    expect(runtime).toContain("loadLibrary");
+    expect(runtime).toContain("purchased");
+    expect(runtime).toContain("data-share");
+    expect(libraryPage).toContain('createFileRoute("/mini-app/library")');
+    expect(libraryApi).toContain("listMiniAppLibrary");
+    expect(pdp).toContain("renderMiniAppFileList");
+    expect(pdp).toContain("loadRelatedMiniAppProducts");
+    expect(pdp).toContain("mlang");
   });
 });

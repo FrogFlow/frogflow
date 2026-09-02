@@ -12,7 +12,7 @@ import {
   wrapMiniAppPage,
 } from "@/lib/mini-app-page.server";
 
-export const Route = createFileRoute("/mini-app/orders")({
+export const Route = createFileRoute("/mini-app/library")({
   server: {
     handlers: {
       GET: async ({ request }) => {
@@ -25,20 +25,20 @@ export const Route = createFileRoute("/mini-app/orders")({
         const locale = miniAppLocaleFromQuery(url);
         const strings = miniAppStrings(locale);
         const escape = escapeMiniAppHtml;
-        const back = new URLSearchParams({ lang: locale });
+        const ctx = new URLSearchParams({ lang: locale });
         const country = (url.searchParams.get("country") || "").toUpperCase();
-        if (/^[A-Z]{2,8}$/.test(country)) back.set("country", country);
+        if (/^[A-Z]{2,8}$/.test(country)) ctx.set("country", country);
         const body = `
           <header>
-            <a class="back-link" href="/mini-app?${escape(back.toString())}">${escape(strings.backToCatalog)}</a>
-            <h1>${escape(strings.myOrders)}</h1>
+            <a class="back-link" href="/mini-app?${escape(ctx.toString())}">${escape(strings.backToCatalog)}</a>
+            <h1>${escape(strings.myMaterials)}</h1>
           </header>
-          <main id="mini-orders" class="orders-list" aria-live="polite">
+          <main id="mini-library" class="orders-list" aria-live="polite">
             <p class="empty">${escape(strings.loading)}</p>
           </main>
           ${renderMiniAppCartShell(locale)}
-          ${renderMiniAppTabBar(locale, "orders", back)}`;
-        return miniAppHtmlResponse(wrapMiniAppPage(strings.myOrders, body, locale));
+          ${renderMiniAppTabBar(locale, "library", ctx)}`;
+        return miniAppHtmlResponse(wrapMiniAppPage(strings.myMaterials, body, locale));
       },
     },
   },

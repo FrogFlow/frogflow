@@ -83,7 +83,7 @@ export function wrapMiniAppPage(
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
-      padding: 0 0 calc(5.5rem + env(safe-area-inset-bottom));
+      padding: 0 0 calc(8.75rem + env(safe-area-inset-bottom));
     }
     header {
       padding: 1rem 1rem 0.5rem;
@@ -253,8 +253,8 @@ export function wrapMiniAppPage(
       position: fixed;
       left: 0;
       right: 0;
-      bottom: 0;
-      padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+      bottom: calc(3.2rem + env(safe-area-inset-bottom));
+      padding: 0.75rem 1rem;
       background: var(--secondary);
       border-top: 1px solid var(--border);
       display: flex;
@@ -383,6 +383,73 @@ export function wrapMiniAppPage(
       background: var(--secondary);
     }
     .pdp-body { padding: 1rem; }
+    .pdp-body h2 { font-size: 0.95rem; margin: 1rem 0 0.35rem; }
+    .pdp-files ul, .pdp-reviews ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+    .pdp-files li, .pdp-reviews li { font-size: 0.85rem; color: var(--text); }
+    .pdp-review-stars { color: #f5a623; letter-spacing: 0.05em; }
+    .pdp-review-text { color: var(--hint); margin-top: 0.15rem; }
+    .related { padding: 0 0 1rem; }
+    .related h2 { font-size: 0.95rem; margin: 0 1rem 0.5rem; }
+    .related-grid { padding-top: 0; }
+    .tab-bar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 11;
+      display: flex;
+      background: var(--secondary);
+      border-top: 1px solid var(--border);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tab-bar a {
+      flex: 1;
+      text-align: center;
+      padding: 0.6rem 0.25rem 0.5rem;
+      color: var(--hint);
+      text-decoration: none;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .tab-bar a.active { color: var(--btn); }
+    .library-card {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      background: var(--secondary);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 0.75rem;
+    }
+    .library-card img {
+      width: 56px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .library-card .add-btn { width: auto; margin-top: 0; flex-shrink: 0; padding: 0.45rem 0.6rem; font-size: 0.75rem; }
+    .add-btn.purchased {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .card.owned .thumb { position: relative; }
+    .card.owned .thumb::after {
+      content: "✓";
+      position: absolute;
+      top: 0.35rem;
+      right: 0.35rem;
+      width: 1.25rem;
+      height: 1.25rem;
+      border-radius: 999px;
+      background: var(--btn);
+      color: var(--btn-text);
+      font-size: 0.7rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
     .pdp-price { font-size: 1.25rem; font-weight: 700; color: var(--link); margin: 0.5rem 0; }
     .pdp-desc { font-size: 0.95rem; line-height: 1.5; color: var(--text); }
     .pdp-rating { font-size: 0.85rem; color: var(--hint); margin-bottom: 0.5rem; }
@@ -452,7 +519,7 @@ export function wrapMiniAppPage(
     window.__miniAppLocale = "${lang}";
     window.__miniAppPhysicalShop = ${physicalShop ? "true" : "false"};
   </script>
-  <script src="/mini-app-runtime?v=7"></script>
+  <script src="/mini-app-runtime?v=8"></script>
 </body>
 </html>`;
 }

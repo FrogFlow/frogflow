@@ -9,7 +9,7 @@ let lastSweep = 0;
  * double taps and simple request floods.
  */
 export function consumeMiniAppRateLimit(
-  scope: "cart" | "checkout" | "proof" | "orders" | "search",
+  scope: "cart" | "checkout" | "proof" | "orders" | "search" | "library",
   telegramId: number,
 ): { ok: true } | { ok: false; retryAfter: number } {
   const now = Date.now();
@@ -19,11 +19,13 @@ export function consumeMiniAppRateLimit(
       ? 5
       : scope === "search"
         ? 8
-        : scope === "checkout"
-          ? 20
-          : scope === "orders"
-            ? 30
-            : 90;
+        : scope === "library"
+          ? 30
+          : scope === "checkout"
+            ? 20
+            : scope === "orders"
+              ? 30
+              : 90;
   const key = `${scope}:${telegramId}`;
 
   if (now - lastSweep > windowMs) {

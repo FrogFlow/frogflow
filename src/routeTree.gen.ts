@@ -20,6 +20,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as OperatorLoginRouteImport } from './routes/operator.login'
 import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
 import { Route as MiniAppOrdersRouteImport } from './routes/mini-app.orders'
+import { Route as MiniAppLibraryRouteImport } from './routes/mini-app.library'
 import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
 import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
 import { Route as AdminVipRouteImport } from './routes/admin.vip'
@@ -78,6 +79,7 @@ import { Route as ApiPublicRobokassaFailRouteImport } from './routes/api/public/
 import { Route as ApiPublicMiniAppSearchRouteImport } from './routes/api/public/mini-app/search'
 import { Route as ApiPublicMiniAppProofRouteImport } from './routes/api/public/mini-app/proof'
 import { Route as ApiPublicMiniAppOrdersRouteImport } from './routes/api/public/mini-app/orders'
+import { Route as ApiPublicMiniAppLibraryRouteImport } from './routes/api/public/mini-app/library'
 import { Route as ApiPublicMiniAppCheckoutRouteImport } from './routes/api/public/mini-app/checkout'
 import { Route as ApiPublicMiniAppCartRouteImport } from './routes/api/public/mini-app/cart'
 import { Route as ApiPublicImgSplatRouteImport } from './routes/api/public/img/$'
@@ -135,6 +137,11 @@ const OperatorAuthedRoute = OperatorAuthedRouteImport.update({
 const MiniAppOrdersRoute = MiniAppOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
+  getParentRoute: () => MiniAppRoute,
+} as any)
+const MiniAppLibraryRoute = MiniAppLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
   getParentRoute: () => MiniAppRoute,
 } as any)
 const LegalSlugRoute = LegalSlugRouteImport.update({
@@ -436,6 +443,11 @@ const ApiPublicMiniAppOrdersRoute = ApiPublicMiniAppOrdersRouteImport.update({
   path: '/api/public/mini-app/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicMiniAppLibraryRoute = ApiPublicMiniAppLibraryRouteImport.update({
+  id: '/api/public/mini-app/library',
+  path: '/api/public/mini-app/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicMiniAppCheckoutRoute =
   ApiPublicMiniAppCheckoutRouteImport.update({
     id: '/api/public/mini-app/checkout',
@@ -484,6 +496,7 @@ export interface FileRoutesByFullPath {
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
+  '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/login': typeof OperatorLoginRoute
   '/admin/': typeof AdminIndexRoute
@@ -519,6 +532,7 @@ export interface FileRoutesByFullPath {
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/mini-app/cart': typeof ApiPublicMiniAppCartRoute
   '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
+  '/api/public/mini-app/library': typeof ApiPublicMiniAppLibraryRoute
   '/api/public/mini-app/orders': typeof ApiPublicMiniAppOrdersRoute
   '/api/public/mini-app/proof': typeof ApiPublicMiniAppProofRoute
   '/api/public/mini-app/search': typeof ApiPublicMiniAppSearchRoute
@@ -556,6 +570,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
+  '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/login': typeof OperatorLoginRoute
   '/admin': typeof AdminIndexRoute
@@ -590,6 +605,7 @@ export interface FileRoutesByTo {
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/mini-app/cart': typeof ApiPublicMiniAppCartRoute
   '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
+  '/api/public/mini-app/library': typeof ApiPublicMiniAppLibraryRoute
   '/api/public/mini-app/orders': typeof ApiPublicMiniAppOrdersRoute
   '/api/public/mini-app/proof': typeof ApiPublicMiniAppProofRoute
   '/api/public/mini-app/search': typeof ApiPublicMiniAppSearchRoute
@@ -630,6 +646,7 @@ export interface FileRoutesById {
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
+  '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/_authed': typeof OperatorAuthedRouteWithChildren
   '/operator/login': typeof OperatorLoginRoute
@@ -666,6 +683,7 @@ export interface FileRoutesById {
   '/api/public/img/$': typeof ApiPublicImgSplatRoute
   '/api/public/mini-app/cart': typeof ApiPublicMiniAppCartRoute
   '/api/public/mini-app/checkout': typeof ApiPublicMiniAppCheckoutRoute
+  '/api/public/mini-app/library': typeof ApiPublicMiniAppLibraryRoute
   '/api/public/mini-app/orders': typeof ApiPublicMiniAppOrdersRoute
   '/api/public/mini-app/proof': typeof ApiPublicMiniAppProofRoute
   '/api/public/mini-app/search': typeof ApiPublicMiniAppSearchRoute
@@ -707,6 +725,7 @@ export interface FileRouteTypes {
     | '/admin/vip'
     | '/admin/whatsapp'
     | '/legal/$slug'
+    | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/login'
     | '/admin/'
@@ -742,6 +761,7 @@ export interface FileRouteTypes {
     | '/api/public/img/$'
     | '/api/public/mini-app/cart'
     | '/api/public/mini-app/checkout'
+    | '/api/public/mini-app/library'
     | '/api/public/mini-app/orders'
     | '/api/public/mini-app/proof'
     | '/api/public/mini-app/search'
@@ -779,6 +799,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/whatsapp'
     | '/legal/$slug'
+    | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/login'
     | '/admin'
@@ -813,6 +834,7 @@ export interface FileRouteTypes {
     | '/api/public/img/$'
     | '/api/public/mini-app/cart'
     | '/api/public/mini-app/checkout'
+    | '/api/public/mini-app/library'
     | '/api/public/mini-app/orders'
     | '/api/public/mini-app/proof'
     | '/api/public/mini-app/search'
@@ -852,6 +874,7 @@ export interface FileRouteTypes {
     | '/admin/vip'
     | '/admin/whatsapp'
     | '/legal/$slug'
+    | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/_authed'
     | '/operator/login'
@@ -888,6 +911,7 @@ export interface FileRouteTypes {
     | '/api/public/img/$'
     | '/api/public/mini-app/cart'
     | '/api/public/mini-app/checkout'
+    | '/api/public/mini-app/library'
     | '/api/public/mini-app/orders'
     | '/api/public/mini-app/proof'
     | '/api/public/mini-app/search'
@@ -932,6 +956,7 @@ export interface RootRouteChildren {
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
   ApiPublicMiniAppCartRoute: typeof ApiPublicMiniAppCartRoute
   ApiPublicMiniAppCheckoutRoute: typeof ApiPublicMiniAppCheckoutRoute
+  ApiPublicMiniAppLibraryRoute: typeof ApiPublicMiniAppLibraryRoute
   ApiPublicMiniAppOrdersRoute: typeof ApiPublicMiniAppOrdersRoute
   ApiPublicMiniAppProofRoute: typeof ApiPublicMiniAppProofRoute
   ApiPublicMiniAppSearchRoute: typeof ApiPublicMiniAppSearchRoute
@@ -1017,6 +1042,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/operator'
       preLoaderRoute: typeof OperatorAuthedRouteImport
       parentRoute: typeof OperatorRoute
+    }
+    '/mini-app/library': {
+      id: '/mini-app/library'
+      path: '/library'
+      fullPath: '/mini-app/library'
+      preLoaderRoute: typeof MiniAppLibraryRouteImport
+      parentRoute: typeof MiniAppRoute
     }
     '/mini-app/orders': {
       id: '/mini-app/orders'
@@ -1424,6 +1456,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicMiniAppProofRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/mini-app/library': {
+      id: '/api/public/mini-app/library'
+      path: '/api/public/mini-app/library'
+      fullPath: '/api/public/mini-app/library'
+      preLoaderRoute: typeof ApiPublicMiniAppLibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/mini-app/orders': {
       id: '/api/public/mini-app/orders'
       path: '/api/public/mini-app/orders'
@@ -1525,11 +1564,13 @@ const AdminRouteChildren: AdminRouteChildren = {
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface MiniAppRouteChildren {
+  MiniAppLibraryRoute: typeof MiniAppLibraryRoute
   MiniAppOrdersRoute: typeof MiniAppOrdersRoute
   MiniAppProductProductIdRoute: typeof MiniAppProductProductIdRoute
 }
 
 const MiniAppRouteChildren: MiniAppRouteChildren = {
+  MiniAppLibraryRoute: MiniAppLibraryRoute,
   MiniAppOrdersRoute: MiniAppOrdersRoute,
   MiniAppProductProductIdRoute: MiniAppProductProductIdRoute,
 }
@@ -1603,6 +1644,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
   ApiPublicMiniAppCartRoute: ApiPublicMiniAppCartRoute,
   ApiPublicMiniAppCheckoutRoute: ApiPublicMiniAppCheckoutRoute,
+  ApiPublicMiniAppLibraryRoute: ApiPublicMiniAppLibraryRoute,
   ApiPublicMiniAppOrdersRoute: ApiPublicMiniAppOrdersRoute,
   ApiPublicMiniAppProofRoute: ApiPublicMiniAppProofRoute,
   ApiPublicMiniAppSearchRoute: ApiPublicMiniAppSearchRoute,

@@ -5,12 +5,13 @@ import {
   availableMaterialLanguages,
   MATERIAL_LANG_SHORT,
   MATERIAL_LANGUAGES,
+  materialsForProduct,
 } from "./product-materials";
 import { isLocale, localeFlags, localeNames, type Locale } from "./i18n";
-import { currentVertical } from "./verticals/vertical.server";
+import { currentVertical, currentVerticalDef } from "./verticals/vertical.server";
 
 export const MINI_APP_INDEX_SELECT =
-  "id, name, description, keywords, category_ids, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(name)";
+  "id, name, description, keywords, category_ids, fulfillment_kind, price, created_at, rating_avg, rating_count, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(name)";
 
 export const MINI_APP_PRODUCT_SELECT =
   "id, name, description, keywords, category_ids, rating_avg, rating_count, product_images(image_path, sort_order), price, currency, country_prices, stock_quantity, lead_time_days, fulfillment_kind, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(id, name, price, sort_order)";
@@ -64,6 +65,10 @@ export type MiniAppProductIndexRow = {
   keywords?: string | string[] | null;
   category_ids: Json;
   fulfillment_kind?: string | null;
+  price?: number | string | null;
+  created_at?: string | null;
+  rating_avg?: number | null;
+  rating_count?: number | null;
   file_path?: string | null;
   file_name?: string | null;
   file_path_kz?: string | null;
@@ -157,11 +162,43 @@ export function collectMiniAppMaterialLanguages(
   return MATERIAL_LANGUAGES.filter((language) => found.has(language));
 }
 
+export const MINI_APP_SORTS = ["catalog", "popular", "new", "price"] as const;
+export type MiniAppCatalogSort = (typeof MINI_APP_SORTS)[number];
+
+export function parseMiniAppSort(value: unknown): MiniAppCatalogSort {
+  return (MINI_APP_SORTS as readonly string[]).includes(String(value))
+    ? (value as MiniAppCatalogSort)
+    : "catalog";
+}
+
+export function sortMiniAppProductIds(
+  products: MiniAppProductIndexRow[],
+  ids: string[],
+  sort: MiniAppCatalogSort,
+): string[] {
+  if (sort === "catalog" || ids.length < 2) return ids;
+  const byId = new Map(products.map((product) => [product.id, product]));
+  return ids.slice().sort((leftId, rightId) => {
+    const left = byId.get(leftId);
+    const right = byId.get(rightId);
+    if (!left || !right) return 0;
+    if (sort === "popular") {
+      const count = (right.rating_count ?? 0) - (left.rating_count ?? 0);
+      if (count) return count;
+      return (right.rating_avg ?? 0) - (left.rating_avg ?? 0);
+    }
+    if (sort === "new") {
+      return String(right.created_at ?? "").localeCompare(String(left.created_at ?? ""));
+    }
+    return Number(left.price ?? 0) - Number(right.price ?? 0);
+  });
+}
+
 export async function loadMiniAppCatalogData(
   defaultShopName = "Магазин",
   page = 1,
   pageSize = 80,
-  filters?: { query?: string; categoryId?: string; materialLang?: string },
+  filters?: { query?: string; categoryId?: string; materialLang?: string; sort?: string },
 ) {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
@@ -223,13 +260,17 @@ export async function loadMiniAppCatalogData(
     productIndex,
     new Set(matchingWithoutLang),
   );
-  const matchingIds = filterMiniAppProductIds(
+  const matchingIds = sortMiniAppProductIds(
     productIndex,
-    hiddenIds,
-    filters?.query,
-    categoryId,
-    categoryMatchIds,
-    filters?.materialLang,
+    filterMiniAppProductIds(
+      productIndex,
+      hiddenIds,
+      filters?.query,
+      categoryId,
+      categoryMatchIds,
+      filters?.materialLang,
+    ),
+    parseMiniAppSort(filters?.sort),
   );
 
   const totalProducts = matchingIds.length;
@@ -262,6 +303,7 @@ export async function loadMiniAppCatalogData(
     stockEnabled,
     totalProducts,
     materialLanguages,
+    sort: parseMiniAppSort(filters?.sort),
     page: actualPage,
     pageSize: safePageSize,
   };
@@ -335,6 +377,151 @@ export function renderMiniAppLangBadges(p: MiniAppProduct, named = false): strin
   return `<div class="card-langs">${langs
     .map((lang) => `<span class="lang-chip">${escapeMiniAppHtml(MATERIAL_LANG_SHORT[lang])}</span>`)
     .join("")}</div>`;
+}
+
+export function renderMiniAppFileList(p: MiniAppProduct, locale: Locale): string {
+  if (p.fulfillment_kind === "physical") return "";
+  const langs = availableMaterialLanguages(p);
+  if (!langs.length) return "";
+  const s = miniAppStrings(locale);
+  const items = langs
+    .map((lang) => {
+      const fileName = materialsForProduct(p, lang).find((file) => file.name)?.name;
+      return `<li><span class="lang-chip">${escapeMiniAppHtml(MATERIAL_LANG_SHORT[lang])}</span> ${escapeMiniAppHtml(fileName || localeNames[lang])}</li>`;
+    })
+    .join("");
+  return `<div class="pdp-files"><h2>${escapeMiniAppHtml(s.filesIncluded)}</h2><ul>${items}</ul></div>`;
+}
+
+export function renderMiniAppReviews(
+  reviews: Array<{ rating: number; comment: string | null }>,
+  locale: Locale,
+): string {
+  const s = miniAppStrings(locale);
+  if (!reviews.length) return "";
+  const items = reviews
+    .map((review) => {
+      const stars =
+        "★".repeat(Math.max(1, Math.min(5, review.rating))) +
+        "☆".repeat(5 - Math.max(1, Math.min(5, review.rating)));
+      const comment = review.comment?.trim()
+        ? `<div class="pdp-review-text">${escapeMiniAppHtml(review.comment.trim())}</div>`
+        : "";
+      return `<li><div class="pdp-review-stars">${escapeMiniAppHtml(stars)}</div>${comment}</li>`;
+    })
+    .join("");
+  return `<div class="pdp-reviews"><h2>${escapeMiniAppHtml(s.reviewsTitle)}</h2><ul>${items}</ul></div>`;
+}
+
+export function renderMiniAppTabBar(
+  locale: Locale,
+  active: "catalog" | "library" | "orders" | "product",
+  query: URLSearchParams,
+): string {
+  const s = miniAppStrings(locale);
+  const esc = escapeMiniAppHtml;
+  const ctx = new URLSearchParams();
+  const lang = query.get("lang");
+  const country = query.get("country");
+  if (lang) ctx.set("lang", lang);
+  else ctx.set("lang", locale);
+  if (country) ctx.set("country", country);
+  const qs = ctx.toString();
+  const physical = currentVerticalDef().defaultFulfillment === "physical";
+  const tabs = [
+    { id: "catalog" as const, href: `/mini-app?${qs}`, label: s.tabCatalog },
+    ...(!physical
+      ? [{ id: "library" as const, href: `/mini-app/library?${qs}`, label: s.tabLibrary }]
+      : []),
+    { id: "orders" as const, href: `/mini-app/orders?${qs}`, label: s.tabOrders },
+  ];
+  return `<nav class="tab-bar" aria-label="${esc(s.tabCatalog)}">
+    ${tabs
+      .map((tab) => {
+        const current = tab.id === active || (active === "product" && tab.id === "catalog");
+        return `<a class="${current ? "active" : ""}" href="${esc(tab.href)}" aria-current="${current ? "page" : "false"}">${esc(tab.label)}</a>`;
+      })
+      .join("")}
+  </nav>`;
+}
+
+export function renderMiniAppSortChips(
+  locale: Locale,
+  current: MiniAppCatalogSort,
+  catalogParams: (overrides?: { sort?: MiniAppCatalogSort | null }) => URLSearchParams,
+): string {
+  const s = miniAppStrings(locale);
+  const esc = escapeMiniAppHtml;
+  const chips: Array<{ id: MiniAppCatalogSort; label: string }> = [
+    { id: "catalog", label: s.sortCatalog },
+    { id: "popular", label: s.sortPopular },
+    { id: "new", label: s.sortNew },
+    { id: "price", label: s.sortPrice },
+  ];
+  return `<div class="cat-scroll" id="mini-sorts">
+    ${chips
+      .map((chip) => {
+        const params = catalogParams({ sort: chip.id === "catalog" ? null : chip.id });
+        return `<a class="cat-chip${current === chip.id ? " active" : ""}" href="/mini-app?${esc(params.toString())}" aria-current="${current === chip.id ? "page" : "false"}">${esc(chip.label)}</a>`;
+      })
+      .join("")}
+  </div>`;
+}
+
+export async function loadRelatedMiniAppProducts(
+  product: MiniAppProduct,
+  countryCode: string | null,
+  locale: Locale,
+  catalogParams: string,
+  limit = 6,
+): Promise<string> {
+  const categoryIds = productCategoryIds(product);
+  if (!categoryIds.length) return "";
+  const match = new Set(categoryIds);
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { hasModule } = await import("./modules/modules.server");
+  const { fetchAll } = await import("./csv");
+  const [stockEnabled, productIndex] = await Promise.all([
+    hasModule("stock"),
+    fetchAll<MiniAppProductIndexRow>(
+      (from, to) =>
+        supabaseAdmin
+          .from("products")
+          .select(MINI_APP_INDEX_SELECT)
+          .eq("is_active", true)
+          .order("sort_order")
+          .order("name")
+          .range(from, to),
+      "похожие товары mini-app",
+    ),
+  ]);
+  const relatedIds = filterMiniAppProductIds(productIndex, new Set(), "", "", match).filter(
+    (id) => id !== product.id,
+  );
+  const pageIds = relatedIds.slice(0, limit);
+  if (!pageIds.length) return "";
+  const { data: productRows } = await supabaseAdmin
+    .from("products")
+    .select(MINI_APP_PRODUCT_SELECT)
+    .in("id", pageIds)
+    .eq("is_active", true);
+  const byId = new Map(((productRows ?? []) as MiniAppProduct[]).map((row) => [row.id, row]));
+  const related = pageIds
+    .map((id) => byId.get(id))
+    .filter((row): row is MiniAppProduct => Boolean(row));
+  if (!related.length) return "";
+  const priced = await priceMiniAppProducts(related, countryCode);
+  const s = miniAppStrings(locale);
+  const cards = related
+    .map((row) =>
+      renderMiniAppProductCard(row, priced.get(row.id), stockEnabled, locale, {
+        linkToDetail: true,
+        countryCode,
+        catalogParams,
+      }),
+    )
+    .join("");
+  return `<section class="related"><h2>${escapeMiniAppHtml(s.moreInFolder)}</h2><div class="grid related-grid">${cards}</div></section>`;
 }
 
 export function renderMiniAppProductCard(
