@@ -14,7 +14,12 @@ export const getSettings = createServerFn({ method: "GET" }).handler(async () =>
   const { data, error } = await s.from("app_settings").select("*");
   if (error) throw new Error(error.message);
   const map: Record<string, string> = {};
-  for (const r of data ?? []) map[r.key as string] = (r.value as string) ?? "";
+  const { isAdminNotifySettingKey } = await import("./admin-order-notify");
+  for (const r of data ?? []) {
+    const key = r.key as string;
+    if (isAdminNotifySettingKey(key)) continue;
+    map[key] = (r.value as string) ?? "";
+  }
   return map;
 });
 

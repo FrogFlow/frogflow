@@ -11,6 +11,11 @@ import type { OrderItem } from "./orders.server";
 import type { ReceiptVerifyResult } from "./receipt-verify.server";
 import { isLocale, localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import { currentVerticalDef } from "./verticals/vertical.server";
+import { collectTgMessageIds, type AdminNotifyTgRef } from "./admin-order-notify";
+import {
+  dismissAdminOrderNotifications,
+  rememberAdminNotifyMessages,
+} from "./admin-order-notify.server";
 
 /** Товар с картинками — снимок ровно тех полей, что показывает карточка (sendProductCard). */
 type ProductCard = {
@@ -1960,15 +1965,17 @@ async function sendLongHtmlMessage(
   chat_id: number | string,
   text: string,
   replyMarkup?: { inline_keyboard: Array<Array<{ text: string; callback_data: string }>> },
-) {
+): Promise<number[]> {
+  const ids: number[] = [];
   if (text.length <= TELEGRAM_MESSAGE_MAX) {
-    await tg("sendMessage", {
+    const res = await tg("sendMessage", {
       chat_id,
       text,
       parse_mode: "HTML",
       ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     });
-    return;
+    ids.push(...collectTgMessageIds(res.result));
+    return ids;
   }
   const lines = text.split("\n");
   const chunks: string[] = [];
@@ -1985,13 +1992,15 @@ async function sendLongHtmlMessage(
   if (chunk) chunks.push(chunk);
   for (let i = 0; i < chunks.length; i++) {
     const isLast = i === chunks.length - 1;
-    await tg("sendMessage", {
+    const res = await tg("sendMessage", {
       chat_id,
       text: chunks[i],
       parse_mode: "HTML",
       ...(isLast && replyMarkup ? { reply_markup: replyMarkup } : {}),
     });
+    ids.push(...collectTgMessageIds(res.result));
   }
+  return ids;
 }
 
 /**
@@ -2005,21 +2014,27 @@ async function displayNoFor(orderId: number): Promise<number> {
   return data?.order_no ?? orderId;
 }
 
-async function sendCoverPreviews(adminChatId: string, displayNo: number, coverUrls: string[]) {
-  if (coverUrls.length === 0) return;
+async function sendCoverPreviews(
+  adminChatId: string,
+  displayNo: number,
+  coverUrls: string[],
+): Promise<number[]> {
+  if (coverUrls.length === 0) return [];
+  const ids: number[] = [];
   const shortCaption = `📦 <b>Материалы заказа #${displayNo}</b> (${coverUrls.length} шт.)`;
   for (let offset = 0; offset < coverUrls.length; offset += TELEGRAM_MEDIA_GROUP_MAX) {
     const batch = coverUrls.slice(offset, offset + TELEGRAM_MEDIA_GROUP_MAX);
     try {
       if (batch.length === 1) {
-        await tg("sendPhoto", {
+        const res = await tg("sendPhoto", {
           chat_id: adminChatId,
           photo: batch[0],
           caption: offset === 0 ? shortCaption : undefined,
           parse_mode: "HTML",
         });
+        ids.push(...collectTgMessageIds(res.result));
       } else {
-        await tg("sendMediaGroup", {
+        const res = await tg("sendMediaGroup", {
           chat_id: adminChatId,
           media: batch.map((u, idx) => ({
             type: "photo",
@@ -2027,12 +2042,14 @@ async function sendCoverPreviews(adminChatId: string, displayNo: number, coverUr
             ...(offset === 0 && idx === 0 ? { caption: shortCaption, parse_mode: "HTML" } : {}),
           })),
         });
+        ids.push(...collectTgMessageIds(res.result));
       }
     } catch (err) {
       console.error(`[bot] cover preview batch failed for order #${displayNo}`, err);
     }
     if (offset + TELEGRAM_MEDIA_GROUP_MAX < coverUrls.length) await sleep(300);
   }
+  return ids;
 }
 
 /**
@@ -4170,88 +4187,112 @@ ${fulfillmentLine}
           ],
         };
 
+  const combinedText = itemsMessage ? `${summaryText}\n\n${itemsMessage}` : summaryText;
+  const summaryFitsItems = combinedText.length <= TELEGRAM_MESSAGE_MAX;
+  const keepAfterDecision = autoDelivered || noPaymentNeeded;
+
   for (const adminChatId of adminIds) {
-    // 1) Главное: краткое уведомление с кнопками — отдельно от превью и чека.
+    const refs: AdminNotifyTgRef[] = [];
+    const remember = (ids: number[]) => {
+      for (const message_id of ids) refs.push({ chat_id: String(adminChatId), message_id });
+    };
+
+    // 1) Сводка + состав в одном сообщении, если влезает; иначе состав следом.
     try {
-      await tg("sendMessage", {
-        chat_id: adminChatId,
-        text: summaryText,
-        parse_mode: "HTML",
-        ...(reply_markup ? { reply_markup } : {}),
-      });
+      if (summaryFitsItems) {
+        const res = await tg("sendMessage", {
+          chat_id: adminChatId,
+          text: combinedText,
+          parse_mode: "HTML",
+          ...(reply_markup ? { reply_markup } : {}),
+        });
+        remember(collectTgMessageIds(res.result));
+      } else {
+        const res = await tg("sendMessage", {
+          chat_id: adminChatId,
+          text: summaryText,
+          parse_mode: "HTML",
+          ...(reply_markup ? { reply_markup } : {}),
+        });
+        remember(collectTgMessageIds(res.result));
+        if (itemsMessage) {
+          remember(await sendLongHtmlMessage(adminChatId, itemsMessage));
+        }
+      }
     } catch (err) {
       console.error(`[bot] failed to notify admin ${adminChatId} (summary)`, err);
     }
 
-    // 2) Полный список позиций — отдельным сообщением (без лимита caption 1024).
-    if (itemsMessage) {
-      try {
-        await sendLongHtmlMessage(adminChatId, itemsMessage);
-      } catch (err) {
-        console.error(`[bot] failed to notify admin ${adminChatId} (items list)`, err);
-      }
-    }
-
-    // 3) Чек оплаты — короткая подпись, без длинного списка товаров.
+    // 2) Чек — только когда он реально ожидается. Без предоплаты отдельное
+    // «чек не получен» только засоряет чат.
     const proofCaption = `🧾 <b>Чек оплаты — заказ #${displayNo}</b>`;
-    try {
-      if (proofFileId && proofKind === "document") {
-        await tg("sendDocument", {
-          chat_id: adminChatId,
-          document: proofFileId,
-          caption: proofCaption,
-          parse_mode: "HTML",
-        });
-      } else if (proofFileId) {
-        await tg("sendPhoto", {
-          chat_id: adminChatId,
-          photo: proofFileId,
-          caption: proofCaption,
-          parse_mode: "HTML",
-        });
-      } else if (order.payment_proof_path) {
-        const proofPath = String(order.payment_proof_path);
-        const { data: storedProof, error: proofDownloadError } = await s.storage
-          .from("payment-proofs")
-          .download(proofPath);
-        if (proofDownloadError || !storedProof) {
-          throw proofDownloadError ?? new Error("stored proof is empty");
-        }
-        const bytes = new Uint8Array(await storedProof.arrayBuffer());
-        const { mimeFromPath, paymentProofKind } = await import("./file-mime");
-        const { tgSendMultipart } = await import("./telegram.server");
-        const mime = mimeFromPath(proofPath, storedProof.type || "application/octet-stream");
-        const kind = paymentProofKind(proofPath);
-        await tgSendMultipart(
-          kind === "image" ? "sendPhoto" : "sendDocument",
-          {
+    if (!noPaymentNeeded) {
+      try {
+        if (proofFileId && proofKind === "document") {
+          const res = await tg("sendDocument", {
             chat_id: adminChatId,
+            document: proofFileId,
             caption: proofCaption,
             parse_mode: "HTML",
-          },
-          {
-            field: kind === "image" ? "photo" : "document",
-            filename: proofPath.split("/").pop() || "receipt",
-            bytes,
-            contentType: mime,
-          },
-        );
-      } else {
-        await tg("sendMessage", {
-          chat_id: adminChatId,
-          text: `${proofCaption}\n\n⚠️ <b>Чек не удалось получить автоматически</b> — запросите у покупателя.`,
-          parse_mode: "HTML",
-        });
+          });
+          remember(collectTgMessageIds(res.result));
+        } else if (proofFileId) {
+          const res = await tg("sendPhoto", {
+            chat_id: adminChatId,
+            photo: proofFileId,
+            caption: proofCaption,
+            parse_mode: "HTML",
+          });
+          remember(collectTgMessageIds(res.result));
+        } else if (order.payment_proof_path) {
+          const proofPath = String(order.payment_proof_path);
+          const { data: storedProof, error: proofDownloadError } = await s.storage
+            .from("payment-proofs")
+            .download(proofPath);
+          if (proofDownloadError || !storedProof) {
+            throw proofDownloadError ?? new Error("stored proof is empty");
+          }
+          const bytes = new Uint8Array(await storedProof.arrayBuffer());
+          const { mimeFromPath, paymentProofKind } = await import("./file-mime");
+          const { tgSendMultipart } = await import("./telegram.server");
+          const mime = mimeFromPath(proofPath, storedProof.type || "application/octet-stream");
+          const kind = paymentProofKind(proofPath);
+          const res = await tgSendMultipart(
+            kind === "image" ? "sendPhoto" : "sendDocument",
+            {
+              chat_id: adminChatId,
+              caption: proofCaption,
+              parse_mode: "HTML",
+            },
+            {
+              field: kind === "image" ? "photo" : "document",
+              filename: proofPath.split("/").pop() || "receipt",
+              bytes,
+              contentType: mime,
+            },
+          );
+          remember(collectTgMessageIds(res.result));
+        } else if (!autoDelivered) {
+          const res = await tg("sendMessage", {
+            chat_id: adminChatId,
+            text: `${proofCaption}\n\n⚠️ <b>Чек не удалось получить автоматически</b> — запросите у покупателя.`,
+            parse_mode: "HTML",
+          });
+          remember(collectTgMessageIds(res.result));
+        }
+      } catch (err) {
+        console.error(`[bot] failed to notify admin ${adminChatId} (proof)`, err);
       }
-    } catch (err) {
-      console.error(`[bot] failed to notify admin ${adminChatId} (proof)`, err);
     }
 
-    // 4) Превью обложек — опционально, батчами по 10 (лимит Telegram).
     try {
-      await sendCoverPreviews(adminChatId, displayNo as number, coverUrls);
+      remember(await sendCoverPreviews(adminChatId, displayNo as number, coverUrls));
     } catch (err) {
       console.error(`[bot] failed to notify admin ${adminChatId} (covers)`, err);
+    }
+
+    if (!keepAfterDecision) {
+      await rememberAdminNotifyMessages(orderId, refs);
     }
   }
 }
@@ -5020,13 +5061,9 @@ export async function handleUpdate(update: TelegramUpdate) {
       if (data.startsWith("confirm:")) {
         if (!(await requireShopAdmin(from_id, chat_id))) return;
         const orderId = Number(data.slice(8));
-        if (cq.message?.message_id) {
-          await tg("editMessageReplyMarkup", {
-            chat_id,
-            message_id: cq.message.message_id,
-            reply_markup: { inline_keyboard: [] },
-          });
-        }
+        const clicked = cq.message?.message_id
+          ? [{ chat_id: String(chat_id), message_id: cq.message.message_id }]
+          : [];
         // Админу показываем сквозной номер этого бота, а не внутренний id.
         const { data: ordRow } = await (
           await db()
@@ -5063,6 +5100,7 @@ export async function handleUpdate(update: TelegramUpdate) {
               });
               if (!paid) console.error("[bot] recordPayment returned false", orderId);
             }
+            await dismissAdminOrderNotifications(orderId, clicked);
             await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} принят в работу.` });
           } catch (e: unknown) {
             await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
@@ -5070,36 +5108,46 @@ export async function handleUpdate(update: TelegramUpdate) {
           return;
         }
 
-        await tg("sendMessage", { chat_id, text: `⏳ Выдаю заказ #${shownNo}...` });
+        await dismissAdminOrderNotifications(orderId, clicked);
+        const statusRes = await tg("sendMessage", {
+          chat_id,
+          text: `⏳ Выдаю заказ #${shownNo}...`,
+        });
+        const statusId = collectTgMessageIds(statusRes.result)[0];
+        const finishAdminStatus = async (text: string) => {
+          if (statusId) {
+            await tg("editMessageText", { chat_id, message_id: statusId, text });
+            return;
+          }
+          await tg("sendMessage", { chat_id, text });
+        };
         const { deliverOrder } = await import("./orders.server");
         try {
           const result = await deliverOrder(orderId);
           if (result.alreadyDelivered) {
-            await tg("sendMessage", {
-              chat_id,
-              text: `ℹ️ Заказ #${shownNo} уже выдаётся или выдан.`,
-            });
+            await finishAdminStatus(`ℹ️ Заказ #${shownNo} уже выдаётся или выдан.`);
           } else if ("pending" in result && result.pending) {
-            await tg("sendMessage", {
-              chat_id,
-              text: `📤 Заказ #${shownNo}: отправлено ${result.sent} из ${result.total}. Продолжаю рассылку — нажмите «Продолжить выдачу» в панели или подождите крон.`,
-            });
+            await finishAdminStatus(
+              `📤 Заказ #${shownNo}: отправлено ${result.sent} из ${result.total}. Продолжаю рассылку — нажмите «Продолжить выдачу» в панели или подождите крон.`,
+            );
           } else if (result.manualRequired) {
-            await tg("sendMessage", {
-              chat_id,
-              text: `⚠️ Заказ #${shownNo} обработан, но часть материалов нужно выслать вручную — проверьте панель.`,
-            });
+            await finishAdminStatus(
+              `⚠️ Заказ #${shownNo} обработан, но часть материалов нужно выслать вручную — проверьте панель.`,
+            );
           } else {
-            await tg("sendMessage", { chat_id, text: `✅ Заказ #${shownNo} выдан.` });
+            await finishAdminStatus(`✅ Заказ #${shownNo} выдан.`);
           }
         } catch (e: unknown) {
-          await tg("sendMessage", { chat_id, text: `Ошибка: ${errorMessage(e)}` });
+          await finishAdminStatus(`Ошибка: ${errorMessage(e)}`);
         }
         return;
       }
       if (data.startsWith("reject:")) {
         if (!(await requireShopAdmin(from_id, chat_id))) return;
         const orderId = Number(data.slice(7));
+        const clicked = cq.message?.message_id
+          ? [{ chat_id: String(chat_id), message_id: cq.message.message_id }]
+          : [];
         const s = await db();
         const { rejectOrderSafely } = await import("./orders.server");
         const claim = await rejectOrderSafely(orderId);
@@ -5134,6 +5182,7 @@ export async function handleUpdate(update: TelegramUpdate) {
           copy[buyerLocale].rejectedNotice(customerDisplayNo),
         );
 
+        await dismissAdminOrderNotifications(orderId, clicked);
         await tg("sendMessage", {
           chat_id,
           text: notified

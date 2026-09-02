@@ -119,10 +119,19 @@ export const confirmOrder = createServerFn({ method: "POST" })
         });
         if (!paid) console.error("[orders] recordPayment returned false", data.id);
       }
+      const { dismissAdminOrderNotifications } = await import("./admin-order-notify.server");
+      await dismissAdminOrderNotifications(data.id).catch((e) =>
+        console.error("[orders] dismiss admin notify failed", data.id, e),
+      );
       return result;
     }
     const { deliverOrder } = await import("./orders.server");
-    return await deliverOrder(data.id);
+    const delivered = await deliverOrder(data.id);
+    const { dismissAdminOrderNotifications } = await import("./admin-order-notify.server");
+    await dismissAdminOrderNotifications(data.id).catch((e) =>
+      console.error("[orders] dismiss admin notify failed", data.id, e),
+    );
+    return delivered;
   });
 
 /**
@@ -316,6 +325,10 @@ export const rejectOrder = createServerFn({ method: "POST" })
      * которых не будет. А отклонения тут обычное дело: чек нечитаемый, сумма не
      * та.
      */
+    const { dismissAdminOrderNotifications } = await import("./admin-order-notify.server");
+    await dismissAdminOrderNotifications(data.id).catch((e) =>
+      console.error("[orders] dismiss admin notify failed", data.id, e),
+    );
     const notified = await notifyOrderCustomer(
       data.id,
       `❌ Ваш заказ №${order?.order_no ?? data.id} отклонён.\n${data.note ? `\nПричина: ${data.note}\n` : ""}\nЕсли это ошибка — напишите продавцу.`,
