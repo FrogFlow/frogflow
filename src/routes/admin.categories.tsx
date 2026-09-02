@@ -367,8 +367,7 @@ function CategoriesPage() {
   }
 
   async function onDelete(id: string) {
-    if (!(await confirmToast(isPhysicalShop ? tr.confirmDeletePhysical : tr.confirmDelete)))
-      return;
+    if (!(await confirmToast(isPhysicalShop ? tr.confirmDeletePhysical : tr.confirmDelete))) return;
     try {
       await deleteCategory({ data: { id } });
       qc.invalidateQueries({ queryKey: ["categories"] });

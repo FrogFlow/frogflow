@@ -229,9 +229,7 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
         fulfillment_at: data.fulfillmentAt,
         fulfillment_address: data.address,
         fulfillment_note: data.note,
-        ...(data.fulfillmentType
-          ? { fulfillment_type: data.fulfillmentType }
-          : {}),
+        ...(data.fulfillmentType ? { fulfillment_type: data.fulfillmentType } : {}),
       })
       .eq("id", data.id);
     if (error) throw new Error(error.message);

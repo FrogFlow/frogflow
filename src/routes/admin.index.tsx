@@ -90,7 +90,7 @@ const copy: Record<
     step4:
       'With Robokassa disabled: check the screenshot and click "Confirm". With it enabled — for RU/BY/OTHER/KZ the receipt may release the files right away (a notification with no button); other countries go through Robokassa.',
     step4Physical:
-      'In Settings set the deposit and pickup/delivery, in Delivery zones — areas. In Orders: Accept → In production → Ready → Delivered.',
+      "In Settings set the deposit and pickup/delivery, in Delivery zones — areas. In Orders: Accept → In production → Ready → Delivered.",
   },
   uz: {
     title: "Boshqaruv paneli",

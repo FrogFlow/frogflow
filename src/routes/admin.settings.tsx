@@ -937,122 +937,126 @@ function SettingsPage() {
       </div>
 
       {!isPhysicalShop && (
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="delivery-lang-timing"
-              checked={deliveryLangTiming === "after"}
-              disabled={deliveryLangTimingSaving}
-              onChange={() => onSaveDeliveryLangTiming("after")}
-            />
-            {tr.deliveryLangTimingAfter}
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="delivery-lang-timing"
-              checked={deliveryLangTiming === "before"}
-              disabled={deliveryLangTimingSaving}
-              onChange={() => onSaveDeliveryLangTiming("before")}
-            />
-            {tr.deliveryLangTimingBefore}
-          </label>
+        <div className="bg-card border rounded-lg p-4 space-y-3">
+          <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
+          <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="delivery-lang-timing"
+                checked={deliveryLangTiming === "after"}
+                disabled={deliveryLangTimingSaving}
+                onChange={() => onSaveDeliveryLangTiming("after")}
+              />
+              {tr.deliveryLangTimingAfter}
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="delivery-lang-timing"
+                checked={deliveryLangTiming === "before"}
+                disabled={deliveryLangTimingSaving}
+                onChange={() => onSaveDeliveryLangTiming("before")}
+              />
+              {tr.deliveryLangTimingBefore}
+            </label>
+          </div>
+          {deliveryLangTimingSaved && (
+            <span className="text-sm text-green-600">{tr.savedLabel}</span>
+          )}
         </div>
-        {deliveryLangTimingSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-      </div>
       )}
 
       {isPhysicalShop && (
-      <>
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="payment-mode"
-              checked={paymentMode === "full"}
-              disabled={paymentModeSaving}
-              onChange={() => onSavePaymentMode("full")}
-            />
-            {tr.paymentModeFull}
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="payment-mode"
-              checked={paymentMode === "deposit"}
-              disabled={paymentModeSaving}
-              onChange={() => onSavePaymentMode("deposit")}
-            />
-            {tr.paymentModeDeposit}
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="radio"
-              name="payment-mode"
-              checked={paymentMode === "on_receipt"}
-              disabled={paymentModeSaving}
-              onChange={() => onSavePaymentMode("on_receipt")}
-            />
-            {tr.paymentModeOnReceipt}
-          </label>
-        </div>
-        {paymentModeSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-        {paymentMode === "deposit" && (
-          <div className="flex items-end gap-2 pt-2">
-            <div className="space-y-2">
-              <Label>{tr.depositPercentLabel}</Label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={depositPercent}
-                onChange={(e) => setDepositPercent(e.target.value)}
-                className="w-32"
-              />
+        <>
+          <div className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
+            <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="payment-mode"
+                  checked={paymentMode === "full"}
+                  disabled={paymentModeSaving}
+                  onChange={() => onSavePaymentMode("full")}
+                />
+                {tr.paymentModeFull}
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="payment-mode"
+                  checked={paymentMode === "deposit"}
+                  disabled={paymentModeSaving}
+                  onChange={() => onSavePaymentMode("deposit")}
+                />
+                {tr.paymentModeDeposit}
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="payment-mode"
+                  checked={paymentMode === "on_receipt"}
+                  disabled={paymentModeSaving}
+                  onChange={() => onSavePaymentMode("on_receipt")}
+                />
+                {tr.paymentModeOnReceipt}
+              </label>
             </div>
-            <Button
-              onClick={onSaveDepositPercent}
-              disabled={depositPercentSaving || settings.isLoading}
-            >
-              {tr.save}
-            </Button>
-            {depositPercentSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+            {paymentModeSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+            {paymentMode === "deposit" && (
+              <div className="flex items-end gap-2 pt-2">
+                <div className="space-y-2">
+                  <Label>{tr.depositPercentLabel}</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={depositPercent}
+                    onChange={(e) => setDepositPercent(e.target.value)}
+                    className="w-32"
+                  />
+                </div>
+                <Button
+                  onClick={onSaveDepositPercent}
+                  disabled={depositPercentSaving || settings.isLoading}
+                >
+                  {tr.save}
+                </Button>
+                {depositPercentSaved && (
+                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                )}
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.fulfillmentOptionsTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.fulfillmentOptionsHint}</p>
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={pickupEnabled}
-              disabled={fulfillmentOptionsSaving}
-              onChange={(e) => onSaveFulfillmentOption("pickup", e.target.checked)}
-            />
-            {tr.fulfillmentOptionsPickup}
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={deliveryEnabled}
-              disabled={fulfillmentOptionsSaving}
-              onChange={(e) => onSaveFulfillmentOption("delivery", e.target.checked)}
-            />
-            {tr.fulfillmentOptionsDelivery}
-          </label>
-        </div>
-      </div>
-      </>
+          <div className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="text-lg font-semibold">{tr.fulfillmentOptionsTitle}</h2>
+            <p className="text-xs text-muted-foreground">{tr.fulfillmentOptionsHint}</p>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pickupEnabled}
+                  disabled={fulfillmentOptionsSaving}
+                  onChange={(e) => onSaveFulfillmentOption("pickup", e.target.checked)}
+                />
+                {tr.fulfillmentOptionsPickup}
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deliveryEnabled}
+                  disabled={fulfillmentOptionsSaving}
+                  onChange={(e) => onSaveFulfillmentOption("delivery", e.target.checked)}
+                />
+                {tr.fulfillmentOptionsDelivery}
+              </label>
+            </div>
+          </div>
+        </>
       )}
 
       <div className="bg-card border rounded-lg p-4 space-y-3">

@@ -631,7 +631,9 @@ function OrdersPage() {
 
   async function onConfirm(id: number, displayNo: number, isPhysical: boolean) {
     if (
-      !(await confirmToast(isPhysical ? tr.acceptOrderMsg(displayNo) : tr.confirmOrderMsg(displayNo)))
+      !(await confirmToast(
+        isPhysical ? tr.acceptOrderMsg(displayNo) : tr.confirmOrderMsg(displayNo),
+      ))
     )
       return;
     setBusy(id);

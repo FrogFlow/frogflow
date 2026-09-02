@@ -331,7 +331,8 @@ const copy: Record<
     nothingFound: "Ештеңе табылмады",
     descriptionLabel: "Сипаттама (Robokassa модерациясы үшін міндетті)",
     descriptionPlaceholder: "Сатып алушыға арналған материалдың толық сипаттамасы",
-    descriptionPlaceholderPhysical: "Сатып алушыға арналған торт немесе десерттің толық сипаттамасы",
+    descriptionPlaceholderPhysical:
+      "Сатып алушыға арналған торт немесе десерттің толық сипаттамасы",
     descriptionHint: "Тауар/қызметтің толық сипаттамасын толтыру ұсынылады.",
     keywordsLabel: "Кілт сөздер (іздеу үшін, бос орын немесе үтірмен)",
     price: "Баға",
@@ -951,21 +952,21 @@ function ProductsPage() {
               />
             </div>
             {modules.stock && (
-            <div className="space-y-2">
-              <Label>{tr.stockQuantity}</Label>
-              <Input
-                type="number"
-                min={0}
-                value={editing.stock_quantity ?? ""}
-                placeholder={tr.stockQuantityPlaceholder}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    stock_quantity: e.target.value === "" ? null : Number(e.target.value),
-                  })
-                }
-              />
-            </div>
+              <div className="space-y-2">
+                <Label>{tr.stockQuantity}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editing.stock_quantity ?? ""}
+                  placeholder={tr.stockQuantityPlaceholder}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      stock_quantity: e.target.value === "" ? null : Number(e.target.value),
+                    })
+                  }
+                />
+              </div>
             )}
             <div className="space-y-2">
               <Label>{tr.fulfillmentKindLabel}</Label>
