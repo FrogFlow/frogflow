@@ -2219,59 +2219,10 @@ export async function importCartItemsForHandoff(
   return { imported, skipped };
 }
 
-/**
- * Списывает остаток атомарно (CAS по stock_quantity, с повторами — в
- * отличие от used_count промокода это ресурс без единственного владельца
- * "первый выигрывает", гонка при высоком спросе более вероятна). null у
- * товара — остаток не отслеживается, всегда доступно. false после
- * исчерпания попыток — вызывающий код (placeOrderInner) откатывает уже
- * списанные позиции той же корзины через restoreStock().
- */
-async function decrementStock(productId: string, qty: number): Promise<boolean> {
-  const s = await db();
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: product } = await s
-      .from("products")
-      .select("stock_quantity")
-      .eq("id", productId)
-      .maybeSingle();
-    if (!product || product.stock_quantity === null) return true;
-    if (product.stock_quantity < qty) return false;
-    const { data: updated } = await s
-      .from("products")
-      .update({ stock_quantity: product.stock_quantity - qty })
-      .eq("id", productId)
-      .eq("stock_quantity", product.stock_quantity)
-      .select("id")
-      .maybeSingle();
-    if (updated) return true;
-  }
-  return false;
-}
-
-/** Возвращает остаток, списанный decrementStock() ранее в той же попытке оформления. */
-async function restoreStock(productId: string, qty: number): Promise<void> {
-  const s = await db();
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { data: product } = await s
-      .from("products")
-      .select("stock_quantity")
-      .eq("id", productId)
-      .maybeSingle();
-    if (!product || product.stock_quantity === null) return;
-    const { data: updated } = await s
-      .from("products")
-      .update({ stock_quantity: product.stock_quantity + qty })
-      .eq("id", productId)
-      .eq("stock_quantity", product.stock_quantity)
-      .select("id")
-      .maybeSingle();
-    if (updated) return;
-  }
-  // Исчерпали попытки — best-effort, как и остальные CAS в этом файле.
-  // Расхождение требует пяти гонок подряд на одном товаре, крайне
-  // маловероятно; не блокируем оформление ради отката остатка.
-}
+// decrementStock/restoreStock переехали в fulfillment.server.ts — общие для
+// Telegram (placeOrderInner ниже) и Instagram/WhatsApp Direct
+// (createOrderFromCart, direct-purchase.server.ts), которая раньше остаток
+// не проверяла вовсе (Блок 4, находка 4.12).
 
 async function showCart(chat_id: number, user: BotUser) {
   const locale: Locale = user.state?.locale ?? "ru";
@@ -3198,6 +3149,10 @@ async function placeOrderInner(
   // списанный остаток обратно. Пустой массив, если модуль stock выключен —
   // восстанавливать нечего, вызов restoreStock по пустому списку безвреден.
   const reservedStock: Array<{ productId: string; qty: number }> = [];
+  // Импорт здесь, а не внутри if ниже: restoreStock ещё понадобится в
+  // остальных ранних return этой функции (промокод, гонка сертификата,
+  // сбой вставки заказа) — все они за пределами этого блока.
+  const { decrementStock, restoreStock } = await import("./fulfillment.server");
   if (await hasModule("stock")) {
     for (const it of items) {
       if (!it.products) continue;
@@ -6462,6 +6417,7 @@ export async function cancelMiniAppPendingPayment(
     .maybeSingle();
   if (!cancelled) return "already_processed";
 
+  const { restoreStock } = await import("./fulfillment.server");
   for (const item of order.order_items ?? []) {
     if (item.product_id) {
       await restoreStock(String(item.product_id), Number(item.quantity) || 0);

@@ -1559,6 +1559,26 @@ export async function createOrderFromCart(params: {
     ? priced.total
     : priced.total + (params.deliveryZone?.fee ?? 0);
 
+  // Складской учёт (Блок 4, находка 4.12) — раньше Direct не проверял и не
+  // списывал остаток вообще: товар с модулем "stock" можно было продать в
+  // минус бесконечно через Instagram/WhatsApp, хотя Telegram и Mini App
+  // (общий placeOrderInner) это делают. Тот же приём CAS-списания с откатом,
+  // что и в placeOrderInner — decrementStock/restoreStock теперь общие для
+  // обоих каналов (fulfillment.server.ts).
+  const { hasModule } = await import("./modules/modules.server");
+  const { decrementStock, restoreStock } = await import("./fulfillment.server");
+  const reservedStock: Array<{ productId: string; qty: number }> = [];
+  if (await hasModule("stock")) {
+    for (const line of priced.lines) {
+      const ok = await decrementStock(line.productId, line.quantity);
+      if (!ok) {
+        for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+        return null;
+      }
+      reservedStock.push({ productId: line.productId, qty: line.quantity });
+    }
+  }
+
   const platform: ZernioPlatform = params.user.platform === "whatsapp" ? "whatsapp" : "instagram";
   const customerLabel =
     platform === "whatsapp" ? "Покупатель из WhatsApp" : "Покупатель из Instagram";
@@ -1610,6 +1630,7 @@ export async function createOrderFromCart(params: {
 
   if (error || !order) {
     console.error("[direct] create order from cart failed", error);
+    for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     return null;
   }
 
@@ -1667,6 +1688,7 @@ export async function createOrderFromCart(params: {
   if (itemsError) {
     console.error("[direct] create order items failed", itemsError);
     await s.from("orders").delete().eq("id", order.id);
+    for (const r of reservedStock) await restoreStock(r.productId, r.qty);
     return null;
   }
 

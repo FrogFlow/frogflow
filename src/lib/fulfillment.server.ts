@@ -6,6 +6,64 @@ import { isLocale } from "./i18n";
 export { addDaysToIsoDate };
 
 /**
+ * Списывает остаток атомарно (CAS по stock_quantity, с повторами — в
+ * отличие от used_count промокода это ресурс без единственного владельца
+ * "первый выигрывает", гонка при высоком спросе более вероятна). null у
+ * товара — остаток не отслеживается, всегда доступно. false после
+ * исчерпания попыток — вызывающий код откатывает уже списанные позиции той
+ * же корзины через restoreStock().
+ *
+ * Общая для Telegram (placeOrderInner) и Instagram/WhatsApp Direct
+ * (createOrderFromCart) — раньше жила только в bot.server.ts, и Direct
+ * вообще не проверял остаток при оформлении (Блок 4, находка 4.12).
+ */
+export async function decrementStock(productId: string, qty: number): Promise<boolean> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: product } = await supabaseAdmin
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", productId)
+      .maybeSingle();
+    if (!product || product.stock_quantity === null) return true;
+    if (product.stock_quantity < qty) return false;
+    const { data: updated } = await supabaseAdmin
+      .from("products")
+      .update({ stock_quantity: product.stock_quantity - qty })
+      .eq("id", productId)
+      .eq("stock_quantity", product.stock_quantity)
+      .select("id")
+      .maybeSingle();
+    if (updated) return true;
+  }
+  return false;
+}
+
+/** Возвращает остаток, списанный decrementStock() ранее в той же попытке оформления. */
+export async function restoreStock(productId: string, qty: number): Promise<void> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: product } = await supabaseAdmin
+      .from("products")
+      .select("stock_quantity")
+      .eq("id", productId)
+      .maybeSingle();
+    if (!product || product.stock_quantity === null) return;
+    const { data: updated } = await supabaseAdmin
+      .from("products")
+      .update({ stock_quantity: product.stock_quantity + qty })
+      .eq("id", productId)
+      .eq("stock_quantity", product.stock_quantity)
+      .select("id")
+      .maybeSingle();
+    if (updated) return;
+  }
+  // Исчерпали попытки — best-effort, как и остальные CAS в этом файле.
+  // Расхождение требует пяти гонок подряд на одном товаре, крайне
+  // маловероятно, а неудача отката не должна ронять сам возврат в корзину.
+}
+
+/**
  * Статусная машина физического заказа (Ниши, Блок 6) — сосед orders.server.ts,
  * а не правка внутри: deliverOrder остаётся функцией отправки файлов и не
  * знает о физических заказах вовсе.

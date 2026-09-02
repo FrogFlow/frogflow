@@ -90,6 +90,8 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
   beforeAll(async () => {
     const { resetPricingCache } = await import("../src/lib/pricing.server");
     resetPricingCache();
+    const { resetModuleCache } = await import("../src/lib/modules/modules.server");
+    resetModuleCache();
 
     const s = await client();
 
@@ -99,9 +101,19 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
     // Строку арендатора заводим под service_role (bots закрыт для tenant_bot
     // на INSERT), дальше сам код под проверкой работает уже ключом
     // арендатора — как в проде.
+    //
+    // modules.stock: true — товары этого арендатора не задают stock_quantity
+    // (остаётся NULL, "не отслеживается"), так что включённый модуль ничего
+    // не меняет для остальных тестов файла; нужен только тестам ниже
+    // ("createOrderFromCart — складской учёт").
     const { data: bot, error: botErr } = await s
       .from("bots")
-      .insert({ bot_name: `${TAG} bot`, owner_id: crypto.randomUUID(), status: "active" })
+      .insert({
+        bot_name: `${TAG} bot`,
+        owner_id: crypto.randomUUID(),
+        status: "active",
+        modules: { stock: true },
+      })
       .select("id")
       .single();
     if (botErr || !bot)
@@ -578,6 +590,160 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
           quantity: 1,
         }),
       ]);
+    });
+  });
+
+  /**
+   * Блок 4, находка 4.12: createOrderFromCart раньше не читал stock_quantity
+   * вообще — товар с включённым модулем "stock" можно было продать в минус
+   * бесконечно через Instagram/WhatsApp, хотя Telegram/Mini App (общий
+   * placeOrderInner) списывают остаток атомарно. decrementStock/restoreStock
+   * теперь общие для обоих каналов (fulfillment.server.ts) — здесь
+   * проверяется именно склейка с Direct-путём, не сам CAS (он уже проверен
+   * настоящей гонкой в placeOrderInner-эквивалентных тестах бота).
+   */
+  describe("createOrderFromCart — складской учёт (Блок 4, находка 4.12)", () => {
+    let stockProductId: string;
+    let outOfStockProductId: string;
+
+    beforeAll(async () => {
+      const s = await client();
+      const { data: stockProduct, error: stockErr } = await s
+        .from("products")
+        .insert({
+          bot_id: botId,
+          name: `${TAG} торт с остатком`,
+          description: "тестовый товар с ограниченным остатком",
+          keywords: "",
+          price: BASE_PRICE,
+          currency: CURRENCY,
+          category_ids: [],
+          fulfillment_kind: "physical",
+          stock_quantity: 2,
+          is_active: true,
+        })
+        .select("id")
+        .single();
+      if (stockErr || !stockProduct)
+        throw new Error(`не удалось создать товар с остатком: ${stockErr?.message}`);
+      stockProductId = stockProduct.id;
+
+      const { data: outOfStockProduct, error: outErr } = await s
+        .from("products")
+        .insert({
+          bot_id: botId,
+          name: `${TAG} раскупленный торт`,
+          description: "тестовый товар без остатка",
+          keywords: "",
+          price: BASE_PRICE,
+          currency: CURRENCY,
+          category_ids: [],
+          fulfillment_kind: "physical",
+          stock_quantity: 0,
+          is_active: true,
+        })
+        .select("id")
+        .single();
+      if (outErr || !outOfStockProduct)
+        throw new Error(`не удалось создать раскупленный товар: ${outErr?.message}`);
+      outOfStockProductId = outOfStockProduct.id;
+    });
+
+    afterAll(async () => {
+      const s = await client();
+      if (stockProductId) await s.from("products").delete().eq("id", stockProductId);
+      if (outOfStockProductId) await s.from("products").delete().eq("id", outOfStockProductId);
+    });
+
+    it("успешное оформление списывает остаток атомарно", async () => {
+      const { addToCart, createOrderFromCart, clearCart } =
+        await import("../src/lib/direct-purchase.server");
+      await clearCart({ telegram_id: TELEGRAM_ID });
+      await addToCart({ telegram_id: TELEGRAM_ID, user_key: USER_KEY }, stockProductId, null);
+
+      const order = await createOrderFromCart({
+        user: {
+          telegram_id: TELEGRAM_ID,
+          user_key: USER_KEY,
+          username: null,
+          first_name: "Тестовый покупатель",
+        },
+        countryCode: FAKE_COUNTRY,
+      });
+      expect(order).not.toBeNull();
+      orderIds.push(order!.id);
+
+      const s = await client();
+      const { data: product } = await s
+        .from("products")
+        .select("stock_quantity")
+        .eq("id", stockProductId)
+        .single();
+      expect(product!.stock_quantity).toBe(1);
+    });
+
+    it("недостаточный остаток — заказ не создаётся, остаток не трогается", async () => {
+      const { addToCart, createOrderFromCart, clearCart } =
+        await import("../src/lib/direct-purchase.server");
+      await clearCart({ telegram_id: TELEGRAM_ID });
+      await addToCart({ telegram_id: TELEGRAM_ID, user_key: USER_KEY }, outOfStockProductId, null);
+
+      const order = await createOrderFromCart({
+        user: {
+          telegram_id: TELEGRAM_ID,
+          user_key: USER_KEY,
+          username: null,
+          first_name: "Тестовый покупатель",
+        },
+        countryCode: FAKE_COUNTRY,
+      });
+      expect(order).toBeNull();
+
+      const s = await client();
+      const { data: product } = await s
+        .from("products")
+        .select("stock_quantity")
+        .eq("id", outOfStockProductId)
+        .single();
+      expect(product!.stock_quantity).toBe(0);
+    });
+
+    /**
+     * Корзина из двух позиций: первая — остаток есть, вторая — раскуплена.
+     * Первая обязана откатиться обратно, а не остаться списанной впустую
+     * ради заказа, который в итоге не создался целиком.
+     */
+    it("раскупленная вторая позиция — откатывает остаток уже списанной первой", async () => {
+      const { addToCart, createOrderFromCart, clearCart } =
+        await import("../src/lib/direct-purchase.server");
+      await clearCart({ telegram_id: TELEGRAM_ID });
+      await addToCart({ telegram_id: TELEGRAM_ID, user_key: USER_KEY }, stockProductId, null);
+      await addToCart({ telegram_id: TELEGRAM_ID, user_key: USER_KEY }, outOfStockProductId, null);
+
+      const s = await client();
+      const { data: before } = await s
+        .from("products")
+        .select("stock_quantity")
+        .eq("id", stockProductId)
+        .single();
+
+      const order = await createOrderFromCart({
+        user: {
+          telegram_id: TELEGRAM_ID,
+          user_key: USER_KEY,
+          username: null,
+          first_name: "Тестовый покупатель",
+        },
+        countryCode: FAKE_COUNTRY,
+      });
+      expect(order).toBeNull();
+
+      const { data: after } = await s
+        .from("products")
+        .select("stock_quantity")
+        .eq("id", stockProductId)
+        .single();
+      expect(after!.stock_quantity).toBe(before!.stock_quantity);
     });
   });
 });
