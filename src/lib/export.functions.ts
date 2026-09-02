@@ -76,13 +76,14 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
       fulfillment_type: string | null;
       fulfillment_at: string | null;
       fulfillment_address: string | null;
+      fulfillment_note: string | null;
       delivery_zone_name: string | null;
       delivery_fee: number | null;
     }>((from, to) => {
       let q = s
         .from("orders")
         .select(
-          "order_no, id, created_at, status, total, paid_amount, currency, display_name, username, telegram_id, contact, country_name, admin_note, fulfillment_kind, fulfillment_type, fulfillment_at, fulfillment_address, delivery_zone_name, delivery_fee",
+          "order_no, id, created_at, status, total, paid_amount, currency, display_name, username, telegram_id, contact, country_name, admin_note, fulfillment_kind, fulfillment_type, fulfillment_at, fulfillment_address, fulfillment_note, delivery_zone_name, delivery_fee",
         )
         .order("created_at", { ascending: false })
         .range(from, to);
@@ -111,6 +112,7 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
         "Способ",
         "Дата получения",
         "Адрес",
+        "Комментарий покупателя",
         "Зона доставки",
         "Комиссия доставки",
       ],
@@ -135,6 +137,7 @@ export const exportOrdersCsvFn = createServerFn({ method: "POST" })
             : "",
         o.fulfillment_at ? isoDate(o.fulfillment_at) : "",
         o.fulfillment_address ?? "",
+        o.fulfillment_note ?? "",
         o.delivery_zone_name ?? "",
         o.delivery_fee ?? "",
       ]),

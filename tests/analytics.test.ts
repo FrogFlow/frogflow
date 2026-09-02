@@ -5,6 +5,8 @@ import {
   orderedCurrencies,
   dailyRevenue,
   topProductsBySales,
+  includeOrderInAnalytics,
+  analyticsRevenue,
   type OrderForAnalytics,
   type OrderItemForAnalytics,
 } from "../src/lib/analytics";
@@ -137,5 +139,54 @@ describe("topProductsBySales", () => {
       quantity: 15 - i,
     }));
     expect(topProductsBySales(items, new Set([1])).length).toBe(10);
+  });
+});
+
+describe("includeOrderInAnalytics / analyticsRevenue — кондитерские задатки", () => {
+  it("цифровой заказ в аналитике только после выдачи, сумма = total", () => {
+    expect(includeOrderInAnalytics({ status: "delivered", fulfillment_kind: "digital" })).toBe(
+      true,
+    );
+    expect(
+      includeOrderInAnalytics({ status: "awaiting_confirmation", fulfillment_kind: "digital" }),
+    ).toBe(false);
+    expect(
+      analyticsRevenue({
+        total: 5000,
+        status: "delivered",
+        fulfillment_kind: "digital",
+        paid_amount: 5000,
+      }),
+    ).toBe(5000);
+  });
+
+  it("физический заказ в работе входит с paid_amount — задаток виден до выдачи", () => {
+    expect(includeOrderInAnalytics({ status: "accepted", fulfillment_kind: "physical" })).toBe(true);
+    expect(includeOrderInAnalytics({ status: "in_production", fulfillment_kind: "physical" })).toBe(
+      true,
+    );
+    expect(includeOrderInAnalytics({ status: "ready", fulfillment_kind: "physical" })).toBe(true);
+    expect(
+      includeOrderInAnalytics({ status: "awaiting_confirmation", fulfillment_kind: "physical" }),
+    ).toBe(false);
+    expect(
+      analyticsRevenue({
+        total: 20000,
+        status: "in_production",
+        fulfillment_kind: "physical",
+        paid_amount: 6000,
+      }),
+    ).toBe(6000);
+  });
+
+  it("выданный физический заказ считает полный total, не задаток", () => {
+    expect(
+      analyticsRevenue({
+        total: 20000,
+        status: "delivered",
+        fulfillment_kind: "physical",
+        paid_amount: 20000,
+      }),
+    ).toBe(20000);
   });
 });

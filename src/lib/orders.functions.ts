@@ -48,20 +48,41 @@ export const getDashboardStats = createServerFn({ method: "GET" }).handler(async
     return count ?? 0;
   };
 
-  // inProduction — Блок 6, находка 6.4: главный экран считал только
-  // awaiting_*/delivered/delivering, физическая производственная очередь
-  // (accepted/in_production/ready) была ему не видна вовсе — «47 тортов в
-  // работе» показывались как «Ждут подтверждения 0».
-  const [products, total, awaiting, delivered, delivering, inProduction] = await Promise.all([
+  // Очереди дашборда для кондитера: оплата ≠ подтверждение, «в работе» ≠
+  // «готов к выдаче». Раньше awaiting мешал awaiting_payment с
+  // awaiting_confirmation, а inProduction захватывал ready — готовый торт
+  // выглядел как ещё пекущийся.
+  const [
+    products,
+    total,
+    awaitingPayment,
+    awaitingConfirmation,
+    delivered,
+    delivering,
+    inProduction,
+    ready,
+  ] = await Promise.all([
     countProducts(),
     countOrders(),
-    countOrders(["awaiting_payment", "awaiting_confirmation"]),
+    countOrders(["awaiting_payment"]),
+    countOrders(["awaiting_confirmation"]),
     countOrders(["delivered"]),
     countOrders(["delivering"]),
-    countOrders(["accepted", "in_production", "ready"]),
+    countOrders(["accepted", "in_production"]),
+    countOrders(["ready"]),
   ]);
 
-  return { products, total, awaiting, delivered, delivering, inProduction };
+  return {
+    products,
+    total,
+    awaiting: awaitingConfirmation,
+    awaitingPayment,
+    awaitingConfirmation,
+    delivered,
+    delivering,
+    inProduction,
+    ready,
+  };
 });
 
 export const getOrder = createServerFn({ method: "GET" })
@@ -194,6 +215,7 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
         fulfillmentAt: z.string().min(1).nullable(),
         address: z.string().max(500).nullable(),
         note: z.string().max(500).nullable(),
+        fulfillmentType: z.enum(["pickup", "delivery"]).nullable().optional(),
       })
       .parse(d),
   )
@@ -207,6 +229,9 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
         fulfillment_at: data.fulfillmentAt,
         fulfillment_address: data.address,
         fulfillment_note: data.note,
+        ...(data.fulfillmentType
+          ? { fulfillment_type: data.fulfillmentType }
+          : {}),
       })
       .eq("id", data.id);
     if (error) throw new Error(error.message);

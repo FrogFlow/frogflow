@@ -89,7 +89,12 @@ const copy: Record<
     unsupportedFormat: string;
     downloadReceipt: string;
     confirmOrderMsg: (n: number) => string;
+    acceptOrderMsg: (n: number) => string;
     alreadyDelivered: (n: number) => string;
+    alreadyAccepted: (n: number) => string;
+    orderAccepted: (n: number) => string;
+    orderInProduction: (n: number) => string;
+    orderReady: (n: number) => string;
     redeliverConfirm: (n: number) => string;
     continueConfirm: (n: number) => string;
     batchSent: (sent: number) => string;
@@ -180,7 +185,12 @@ const copy: Record<
     unsupportedFormat: "Формат не поддерживается для предпросмотра.",
     downloadReceipt: "📥 Скачать чек",
     confirmOrderMsg: (n) => `Подтвердить оплату заказа #${n} и выдать файлы?`,
+    acceptOrderMsg: (n) => `Принять заказ #${n} в работу?`,
     alreadyDelivered: (n) => `Заказ #${n} уже выдаётся или выдан.`,
+    alreadyAccepted: (n) => `Заказ #${n} уже принят в работу.`,
+    orderAccepted: (n) => `Заказ #${n} принят в работу.`,
+    orderInProduction: (n) => `Заказ #${n} переведён в производство.`,
+    orderReady: (n) => `Заказ #${n} отмечен как готов.`,
     redeliverConfirm: (n) => `Отправить файлы заказа #${n} покупателю ещё раз?`,
     continueConfirm: (n) => `Продолжить выдачу файлов заказа #${n}? (следующая порция)`,
     batchSent: (sent) =>
@@ -277,7 +287,12 @@ const copy: Record<
     unsupportedFormat: "Алдын ала қарау үшін формат қолдау таппайды.",
     downloadReceipt: "📥 Чекті жүктеп алу",
     confirmOrderMsg: (n) => `#${n} тапсырысының төлемін растап, файлдарды беру керек пе?`,
+    acceptOrderMsg: (n) => `#${n} тапсырысын жұмысқа қабылдайсыз ба?`,
     alreadyDelivered: (n) => `#${n} тапсырысы қазірдің өзінде беріліп жатыр немесе берілді.`,
+    alreadyAccepted: (n) => `#${n} тапсырысы қазірдің өзінде жұмысқа қабылданған.`,
+    orderAccepted: (n) => `#${n} тапсырысы жұмысқа қабылданды.`,
+    orderInProduction: (n) => `#${n} тапсырысы дайындауға берілді.`,
+    orderReady: (n) => `#${n} тапсырысы дайын деп белгіленді.`,
     redeliverConfirm: (n) => `#${n} тапсырысының файлдарын сатып алушыға тағы жіберу керек пе?`,
     continueConfirm: (n) =>
       `#${n} тапсырысының файлдарын беруді жалғастыру керек пе? (келесі порция)`,
@@ -376,7 +391,12 @@ const copy: Record<
     unsupportedFormat: "This format can't be previewed.",
     downloadReceipt: "📥 Download receipt",
     confirmOrderMsg: (n) => `Confirm payment for order #${n} and deliver the files?`,
+    acceptOrderMsg: (n) => `Accept order #${n} into production?`,
     alreadyDelivered: (n) => `Order #${n} is already being delivered or has been delivered.`,
+    alreadyAccepted: (n) => `Order #${n} is already accepted.`,
+    orderAccepted: (n) => `Order #${n} accepted.`,
+    orderInProduction: (n) => `Order #${n} moved to production.`,
+    orderReady: (n) => `Order #${n} marked ready.`,
     redeliverConfirm: (n) => `Resend order #${n}'s files to the customer?`,
     continueConfirm: (n) => `Continue delivering order #${n}'s files? (next batch)`,
     batchSent: (sent) =>
@@ -474,7 +494,12 @@ const copy: Record<
     unsupportedFormat: "Bu format oldindan ko‘rish uchun qo‘llab-quvvatlanmaydi.",
     downloadReceipt: "📥 Chekni yuklab olish",
     confirmOrderMsg: (n) => `#${n} buyurtmaning to‘lovini tasdiqlab, fayllarni berasizmi?`,
+    acceptOrderMsg: (n) => `#${n} buyurtmani ishga qabul qilasizmi?`,
     alreadyDelivered: (n) => `#${n} buyurtma allaqachon berilmoqda yoki berilgan.`,
+    alreadyAccepted: (n) => `#${n} buyurtma allaqachon ishga qabul qilingan.`,
+    orderAccepted: (n) => `#${n} buyurtma ishga qabul qilindi.`,
+    orderInProduction: (n) => `#${n} buyurtma tayyorlashga o‘tkazildi.`,
+    orderReady: (n) => `#${n} buyurtma tayyor deb belgilandi.`,
     redeliverConfirm: (n) => `#${n} buyurtmaning fayllarini xaridorga yana yuborasizmi?`,
     continueConfirm: (n) =>
       `#${n} buyurtmaning fayllarini berishni davom ettirasizmi? (keyingi qism)`,
@@ -604,8 +629,11 @@ function OrdersPage() {
     ...(modules.wa_shop || counts.whatsapp > 0 ? ([["whatsapp", "WhatsApp"]] as const) : []),
   ];
 
-  async function onConfirm(id: number, displayNo: number) {
-    if (!(await confirmToast(tr.confirmOrderMsg(displayNo)))) return;
+  async function onConfirm(id: number, displayNo: number, isPhysical: boolean) {
+    if (
+      !(await confirmToast(isPhysical ? tr.acceptOrderMsg(displayNo) : tr.confirmOrderMsg(displayNo)))
+    )
+      return;
     setBusy(id);
     try {
       const result = await confirmOrder({ data: { id } });
@@ -614,13 +642,17 @@ function OrdersPage() {
       // физический заказ отвечает { alreadyAccepted }, у цифрового — форма
       // deliverOrder ниже. Подробный статус физического заказа — Блок 9.
       if ("alreadyAccepted" in result) {
-        if (result.alreadyAccepted) toast.success(tr.alreadyDelivered(displayNo));
+        toast.success(
+          result.alreadyAccepted ? tr.alreadyAccepted(displayNo) : tr.orderAccepted(displayNo),
+        );
       } else if ("alreadyDelivered" in result && result.alreadyDelivered) {
         toast.success(tr.alreadyDelivered(displayNo));
       } else if ("pending" in result && result.pending) {
         toast.success(tr.batchSent(result.sent));
       } else if ("manualRequired" in result && result.manualRequired) {
         toast.warning(tr.manualRequired(displayNo));
+      } else {
+        toast.success(tr.orderDelivered(displayNo));
       }
     } catch (e: unknown) {
       toast.error(errorMessage(e));
@@ -634,6 +666,8 @@ function OrdersPage() {
       const result = await advanceOrderFulfillment({ data: { id } });
       qc.invalidateQueries({ queryKey: ["orders"] });
       if (result.status === "delivered") toast.success(tr.orderDelivered(displayNo));
+      else if (result.status === "in_production") toast.success(tr.orderInProduction(displayNo));
+      else if (result.status === "ready") toast.success(tr.orderReady(displayNo));
     } catch (e: unknown) {
       toast.error(errorMessage(e));
     } finally {
@@ -812,6 +846,7 @@ function OrdersPage() {
     fulfillmentAt: string;
     address: string;
     note: string;
+    fulfillmentType: "pickup" | "delivery";
   } | null>(null);
 
   function onStartEdit(o: {
@@ -819,12 +854,14 @@ function OrdersPage() {
     fulfillment_at: string | null;
     fulfillment_address: string | null;
     fulfillment_note: string | null;
+    fulfillment_type: string | null;
   }) {
     setEditing({
       id: o.id,
       fulfillmentAt: o.fulfillment_at ? String(o.fulfillment_at).slice(0, 10) : "",
       address: o.fulfillment_address ?? "",
       note: o.fulfillment_note ?? "",
+      fulfillmentType: o.fulfillment_type === "delivery" ? "delivery" : "pickup",
     });
   }
 
@@ -838,6 +875,7 @@ function OrdersPage() {
           fulfillmentAt: editing.fulfillmentAt || null,
           address: editing.address.trim() || null,
           note: editing.note.trim() || null,
+          fulfillmentType: editing.fulfillmentType,
         },
       });
       qc.invalidateQueries({ queryKey: ["orders"] });
@@ -1044,6 +1082,24 @@ function OrdersPage() {
                 {o.fulfillment_kind === "physical" && editing?.id === o.id && (
                   <div className="space-y-2 rounded-md border p-3 bg-muted/30">
                     <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground block">
+                        {tr.fulfillmentTypePickup} / {tr.fulfillmentTypeDelivery}
+                      </label>
+                      <select
+                        className="border rounded-md h-8 px-2 text-sm bg-background"
+                        value={editing.fulfillmentType}
+                        onChange={(e) =>
+                          setEditing({
+                            ...editing,
+                            fulfillmentType: e.target.value as "pickup" | "delivery",
+                          })
+                        }
+                      >
+                        <option value="pickup">{tr.fulfillmentTypePickup}</option>
+                        <option value="delivery">{tr.fulfillmentTypeDelivery}</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
                       <label className="text-xs text-muted-foreground block">{tr.dateLabel}</label>
                       <Input
                         type="date"
@@ -1103,7 +1159,7 @@ function OrdersPage() {
                   {tr.viewScreenshot}
                 </button>
               )}
-              {o.status === "delivering" && (
+              {o.status === "delivering" && o.fulfillment_kind !== "physical" && (
                 <div className="space-y-2 pt-2">
                   <p className="text-sm text-blue-700">{tr.deliveringHint}</p>
                   <div className="flex flex-wrap gap-2">
@@ -1135,7 +1191,9 @@ function OrdersPage() {
                     </Button>
                   )}
                   <Button
-                    onClick={() => onConfirm(o.id, o.order_no ?? o.id)}
+                    onClick={() =>
+                      onConfirm(o.id, o.order_no ?? o.id, o.fulfillment_kind === "physical")
+                    }
                     disabled={busy === o.id}
                   >
                     {o.fulfillment_kind === "physical" ? tr.acceptOrderBtn : tr.confirmAndDeliver}

@@ -22,6 +22,8 @@ import { resetAllData } from "@/lib/reset.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
 import { t, type Locale } from "@/lib/i18n";
 import { useModules } from "@/lib/modules/use-modules";
+import { useVertical } from "@/lib/verticals/use-vertical";
+import { VERTICALS } from "@/lib/verticals/registry";
 import {
   DEFAULT_USD_PER_REQUEST,
   SMART_SEARCH_DAILY_LIMIT,
@@ -43,7 +45,7 @@ const copy: Record<
     recipientsHint: string;
     contactLabel: string;
     contactPlaceholder: string;
-    contactHint: string;
+    contactHint: (btn: string) => string;
     save: string;
     savedLabel: string;
     deliveryLangTimingTitle: string;
@@ -62,6 +64,7 @@ const copy: Record<
     paymentModeDeposit: string;
     paymentModeOnReceipt: string;
     depositPercentLabel: string;
+    depositPercentInvalid: string;
     referralTitle: string;
     referralHint: string;
     referralPercentLabel: string;
@@ -130,8 +133,8 @@ const copy: Record<
       "Выберите роли из списка или впишите ID вручную (через запятую). Уведомления будут приходить всем указанным получателям.",
     contactLabel: "Ваш контакт для связи (кнопка в боте)",
     contactPlaceholder: "например, @my_username или ссылка на WhatsApp",
-    contactHint:
-      "Эта ссылка или текст будет показываться пользователям при нажатии на кнопку «💬 Связаться с автором».",
+    contactHint: (btn) =>
+      `Эта ссылка или текст будет показываться пользователям при нажатии на кнопку «${btn}».`,
     save: "Сохранить",
     savedLabel: "Сохранено ✓",
     deliveryLangTimingTitle: "Когда спрашивать язык материалов",
@@ -153,6 +156,7 @@ const copy: Record<
     paymentModeDeposit: "Задаток, остаток при получении",
     paymentModeOnReceipt: "Оплата при получении",
     depositPercentLabel: "Размер задатка, % от суммы",
+    depositPercentInvalid: "Укажите число от 1 до 100.",
     referralTitle: "Реферальная программа",
     referralHint:
       "Покупатель делится персональной ссылкой из раздела «ℹ️ Информация». Новый пользователь по ссылке сразу получает одноразовый промокод; когда он получает первую покупку — такой же промокод получает пригласивший.",
@@ -233,8 +237,8 @@ const copy: Record<
       "Тізімнен рөлдерді таңдаңыз немесе ID-ді қолмен енгізіңіз (үтірмен). Хабарламалар барлық көрсетілген алушыларға келеді.",
     contactLabel: "Байланысу үшін контактіңіз (ботта түйме)",
     contactPlaceholder: "мысалы, @my_username немесе WhatsApp сілтемесі",
-    contactHint:
-      "«💬 Автормен байланысу» түймесін басқанда пайдаланушыларға осы сілтеме немесе мәтін көрсетіледі.",
+    contactHint: (btn) =>
+      `«${btn}» түймесін басқанда пайдаланушыларға осы сілтеме немесе мәтін көрсетіледі.`,
     save: "Сақтау",
     savedLabel: "Сақталды ✓",
     deliveryLangTimingTitle: "Материал тілін қашан сұрау керек",
@@ -256,6 +260,7 @@ const copy: Record<
     paymentModeDeposit: "Алдын ала төлем, қалғаны алу кезінде",
     paymentModeOnReceipt: "Алу кезінде төлеу",
     depositPercentLabel: "Алдын ала төлем мөлшері, сомадан %",
+    depositPercentInvalid: "1-ден 100-ге дейінгі санды көрсетіңіз.",
     referralTitle: "Реферал бағдарламасы",
     referralHint:
       "Сатып алушы «ℹ️ Ақпарат» бөлімінен жеке сілтемесімен бөліседі. Сілтеме бойынша жаңа пайдаланушы бірден бір реттік промокод алады; ол алғаш рет сатып алғанда — шақырған адам да сондай промокод алады.",
@@ -336,7 +341,7 @@ const copy: Record<
       "Pick roles from the list or type IDs manually (comma-separated). Notifications will be sent to every recipient listed.",
     contactLabel: "Your contact (button shown in the bot)",
     contactPlaceholder: "e.g. @my_username or a WhatsApp link",
-    contactHint: 'This link or text is shown to users when they tap "💬 Contact the author".',
+    contactHint: (btn) => `This link or text is shown to users when they tap "${btn}".`,
     save: "Save",
     savedLabel: "Saved ✓",
     deliveryLangTimingTitle: "When to ask for material language",
@@ -358,6 +363,7 @@ const copy: Record<
     paymentModeDeposit: "Deposit, balance on pickup/delivery",
     paymentModeOnReceipt: "Payment on pickup/delivery",
     depositPercentLabel: "Deposit size, % of total",
+    depositPercentInvalid: "Enter a number from 1 to 100.",
     referralTitle: "Referral program",
     referralHint:
       'The buyer shares their personal link from the "ℹ️ Info" section. A new user gets a one-time promo code right away; when they get their first purchase, the referrer gets the same kind of promo code.',
@@ -439,8 +445,8 @@ const copy: Record<
       "Ro‘yxatdan rollarni tanlang yoki ID’larni qo‘lda kiriting (vergul bilan). Xabarnomalar barcha ko‘rsatilgan qabul qiluvchilarga keladi.",
     contactLabel: "Aloqa uchun kontaktingiz (botdagi tugma)",
     contactPlaceholder: "masalan, @my_username yoki WhatsApp havolasi",
-    contactHint:
-      "«💬 Muallif bilan bog‘lanish» tugmasi bosilganda foydalanuvchilarga shu havola yoki matn ko‘rsatiladi.",
+    contactHint: (btn) =>
+      `«${btn}» tugmasi bosilganda foydalanuvchilarga shu havola yoki matn ko‘rsatiladi.`,
     save: "Saqlash",
     savedLabel: "Saqlandi ✓",
     deliveryLangTimingTitle: "Material tilini qachon so‘rash kerak",
@@ -462,6 +468,7 @@ const copy: Record<
     paymentModeDeposit: "Oldindan to‘lov, qolgani olishda",
     paymentModeOnReceipt: "Olishda to‘lash",
     depositPercentLabel: "Oldindan to‘lov miqdori, summadan %",
+    depositPercentInvalid: "1 dan 100 gacha son kiriting.",
     referralTitle: "Referal dasturi",
     referralHint:
       "Xaridor «ℹ️ Ma’lumot» bo‘limidan shaxsiy havolasini ulashadi. Havola bo‘yicha yangi foydalanuvchi darhol bir martalik promokod oladi; u birinchi xaridni amalga oshirganda — taklif qilgan kishi ham xuddi shunday promokod oladi.",
@@ -536,6 +543,8 @@ function SettingsPage() {
   const { locale } = useAdminLocale();
   const tr = copy[locale];
   const modules = useModules();
+  const { vertical, isPhysicalShop } = useVertical();
+  const contactBtn = VERTICALS[vertical].locales[locale].contactBtn;
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const shopUrl = useQuery({
@@ -698,7 +707,7 @@ function SettingsPage() {
     // не тот процент.
     const pct = Number(depositPercent.trim());
     if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
-      toast.error(tr.saveError(tr.unknownError));
+      toast.error(tr.depositPercentInvalid);
       return;
     }
     setDepositPercentSaving(true);
@@ -917,7 +926,7 @@ function SettingsPage() {
             onChange={(e) => setAdminContactLink(e.target.value)}
             placeholder={tr.contactPlaceholder}
           />
-          <p className="text-xs text-muted-foreground">{tr.contactHint}</p>
+          <p className="text-xs text-muted-foreground">{tr.contactHint(contactBtn)}</p>
         </div>
         <div className="flex items-center gap-2 pt-2">
           <Button onClick={onSave} disabled={settings.isLoading}>
@@ -927,6 +936,7 @@ function SettingsPage() {
         </div>
       </div>
 
+      {!isPhysicalShop && (
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
         <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
@@ -954,7 +964,9 @@ function SettingsPage() {
         </div>
         {deliveryLangTimingSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
       </div>
+      )}
 
+      {isPhysicalShop && (
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
         <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
@@ -1039,6 +1051,7 @@ function SettingsPage() {
           </label>
         </div>
       </div>
+      )}
 
       <div className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold">{tr.referralTitle}</h2>

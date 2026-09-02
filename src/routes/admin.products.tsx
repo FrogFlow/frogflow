@@ -1,4 +1,4 @@
-import { createFileRoute, useRouteContext } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { confirmToast } from "@/lib/confirm-toast";
@@ -18,6 +18,8 @@ import {
 import { listPaymentMethods } from "@/lib/payment-methods.functions";
 import { filterCategoriesByQuery, getCategoryPath, sortCategoriesTree } from "@/lib/category-tree";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { useModules } from "@/lib/modules/use-modules";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import { localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/products")({
@@ -180,6 +182,7 @@ const copy: Record<
     nothingFound: string;
     descriptionLabel: string;
     descriptionPlaceholder: string;
+    descriptionPlaceholderPhysical: string;
     descriptionHint: string;
     keywordsLabel: string;
     price: string;
@@ -216,6 +219,7 @@ const copy: Record<
     saving: string;
     cancel: string;
     searchLabel: string;
+    searchLabelPhysical: string;
     searchPlaceholder: string;
     foundCount: (found: number, total: number) => string;
     noProductsYet: string;
@@ -252,6 +256,7 @@ const copy: Record<
     nothingFound: "Ничего не найдено",
     descriptionLabel: "Описание (обязательно для модерации Robokassa)",
     descriptionPlaceholder: "Подробное описание материала для покупателя",
+    descriptionPlaceholderPhysical: "Подробное описание торта или десерта для покупателя",
     descriptionHint: "Рекомендуется заполнить подробное описание товара/услуги.",
     keywordsLabel: "Ключевые слова (для поиска, через пробел или запятую)",
     price: "Цена",
@@ -291,6 +296,7 @@ const copy: Record<
     saving: "Сохранение...",
     cancel: "Отмена",
     searchLabel: "🔍 Поиск по материалам",
+    searchLabelPhysical: "🔍 Поиск по товарам",
     searchPlaceholder: "Название, ключевое слово или описание…",
     foundCount: (found, total) => `Найдено: ${found} из ${total}`,
     noProductsYet: "Пока нет товаров.",
@@ -325,6 +331,7 @@ const copy: Record<
     nothingFound: "Ештеңе табылмады",
     descriptionLabel: "Сипаттама (Robokassa модерациясы үшін міндетті)",
     descriptionPlaceholder: "Сатып алушыға арналған материалдың толық сипаттамасы",
+    descriptionPlaceholderPhysical: "Сатып алушыға арналған торт немесе десерттің толық сипаттамасы",
     descriptionHint: "Тауар/қызметтің толық сипаттамасын толтыру ұсынылады.",
     keywordsLabel: "Кілт сөздер (іздеу үшін, бос орын немесе үтірмен)",
     price: "Баға",
@@ -362,6 +369,7 @@ const copy: Record<
     saving: "Сақталуда...",
     cancel: "Бас тарту",
     searchLabel: "🔍 Материалдар бойынша іздеу",
+    searchLabelPhysical: "🔍 Тауарлар бойынша іздеу",
     searchPlaceholder: "Атауы, кілт сөз немесе сипаттама…",
     foundCount: (found, total) => `Табылды: ${found} / ${total}`,
     noProductsYet: "Әзірге тауарлар жоқ.",
@@ -396,6 +404,7 @@ const copy: Record<
     nothingFound: "Nothing found",
     descriptionLabel: "Description (required for Robokassa moderation)",
     descriptionPlaceholder: "A detailed description of the material for the buyer",
+    descriptionPlaceholderPhysical: "A detailed description of the cake or dessert for the buyer",
     descriptionHint: "It's recommended to fill in a detailed product/service description.",
     keywordsLabel: "Keywords (for search, space- or comma-separated)",
     price: "Price",
@@ -434,6 +443,7 @@ const copy: Record<
     saving: "Saving...",
     cancel: "Cancel",
     searchLabel: "🔍 Search materials",
+    searchLabelPhysical: "🔍 Search products",
     searchPlaceholder: "Name, keyword, or description…",
     foundCount: (found, total) => `Found: ${found} of ${total}`,
     noProductsYet: "No products yet.",
@@ -468,6 +478,7 @@ const copy: Record<
     nothingFound: "Hech narsa topilmadi",
     descriptionLabel: "Tavsif (Robokassa moderatsiyasi uchun majburiy)",
     descriptionPlaceholder: "Xaridor uchun material haqida batafsil tavsif",
+    descriptionPlaceholderPhysical: "Xaridor uchun tort yoki desert haqida batafsil tavsif",
     descriptionHint: "Mahsulot/xizmatning batafsil tavsifini to‘ldirish tavsiya etiladi.",
     keywordsLabel: "Kalit so‘zlar (qidiruv uchun, probel yoki vergul bilan)",
     price: "Narx",
@@ -507,6 +518,7 @@ const copy: Record<
     saving: "Saqlanmoqda...",
     cancel: "Bekor qilish",
     searchLabel: "🔍 Materiallar bo‘yicha qidiruv",
+    searchLabelPhysical: "🔍 Mahsulotlar bo‘yicha qidiruv",
     searchPlaceholder: "Nomi, kalit so‘z yoki tavsif…",
     foundCount: (found, total) => `Topildi: ${found} / ${total}`,
     noProductsYet: "Hozircha mahsulotlar yo‘q.",
@@ -584,6 +596,8 @@ function MaterialFilesList({
 function ProductsPage() {
   const { locale } = useAdminLocale();
   const tr = copy[locale];
+  const modules = useModules();
+  const { defaultFulfillmentKind, isPhysicalShop } = useVertical();
   const qc = useQueryClient();
   const products = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
   const cats = useQuery({ queryKey: ["cats-flat"], queryFn: () => listCategoriesForProducts() });
@@ -611,7 +625,6 @@ function ProductsPage() {
     Partial<Record<Locale, UploadStatus | null>>
   >({});
   const [saving, setSaving] = useState(false);
-  const { defaultFulfillmentKind } = useRouteContext({ from: "__root__" });
 
   const catsTree = useMemo(() => sortCategoriesTree(cats.data ?? []), [cats.data]);
   const catsFiltered = useMemo(
@@ -892,7 +905,11 @@ function ProductsPage() {
               rows={4}
               value={editing.description}
               onChange={(e) => setEditing({ ...editing, description: e.target.value })}
-              placeholder={tr.descriptionPlaceholder}
+              placeholder={
+                isPhysicalShop || editing.fulfillment_kind === "physical"
+                  ? tr.descriptionPlaceholderPhysical
+                  : tr.descriptionPlaceholder
+              }
             />
             {!editing.description.trim() && (
               <p className="text-xs text-amber-600">{tr.descriptionHint}</p>
@@ -933,6 +950,7 @@ function ProductsPage() {
                 onChange={(e) => setEditing({ ...editing, sort_order: Number(e.target.value) })}
               />
             </div>
+            {modules.stock && (
             <div className="space-y-2">
               <Label>{tr.stockQuantity}</Label>
               <Input
@@ -948,6 +966,7 @@ function ProductsPage() {
                 }
               />
             </div>
+            )}
             <div className="space-y-2">
               <Label>{tr.fulfillmentKindLabel}</Label>
               <select
@@ -1211,7 +1230,7 @@ function ProductsPage() {
       ) : (
         <>
           <div className="bg-card border rounded-lg p-4 space-y-3">
-            <Label>{tr.searchLabel}</Label>
+            <Label>{isPhysicalShop ? tr.searchLabelPhysical : tr.searchLabel}</Label>
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}

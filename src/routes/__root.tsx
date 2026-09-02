@@ -85,22 +85,19 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Telegram-каталог — админ-панель" },
       {
         name: "description",
-        content:
-          "Telegram-бот для продажи цифровых учебных материалов: каталог и обработка заказов.",
+        content: "Telegram-бот: каталог, оплата и обработка заказов.",
       },
       { property: "og:title", content: "Telegram-каталог — админ-панель" },
       {
         property: "og:description",
-        content:
-          "Telegram-бот для продажи цифровых учебных материалов: каталог и обработка заказов.",
+        content: "Telegram-бот: каталог, оплата и обработка заказов.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: "Telegram-каталог — админ-панель" },
       {
         name: "twitter:description",
-        content:
-          "Telegram-бот для продажи цифровых учебных материалов: каталог и обработка заказов.",
+        content: "Telegram-бот: каталог, оплата и обработка заказов.",
       },
     ],
     links: [

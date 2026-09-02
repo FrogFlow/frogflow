@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components-ui/dropdown-menu";
 import { useModules } from "@/lib/modules/use-modules";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import { localeNames, SUPPORTED_LOCALES, t, type Locale } from "@/lib/i18n";
 import { AdminLocaleContext } from "@/lib/admin-locale";
 import { useEffect, useState } from "react";
@@ -39,6 +40,7 @@ function AdminLayout() {
   const router = useRouter();
   const logout = useServerFn(adminLogout);
   const modules = useModules();
+  const { isPhysicalShop, verticalTitle } = useVertical();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [locale, setLocale] = useState<Locale>("ru");
   useEffect(() => {
@@ -66,8 +68,13 @@ function AdminLayout() {
               рос с каждым новым модулем.
             */}
             <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1">
-              <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground">
+              <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground flex items-center gap-2">
                 {t("adminPanel", locale)}
+                {isPhysicalShop && verticalTitle && (
+                  <span className="normal-case font-medium text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    {verticalTitle}
+                  </span>
+                )}
               </div>
               <NavLink to="/admin">{t("dashboard", locale)}</NavLink>
 
@@ -103,18 +110,11 @@ function AdminLayout() {
                 <GroupLink to="/admin/robokassa" locked={!modules.robokassa} locale={locale}>
                   Robokassa
                 </GroupLink>
-                {/*
-                  Блок 9, находка 9.2 (сознательно отложена) — этот пункт не
-                  гейтится ничем, в отличие от соседней Robokassa
-                  (locked={!modules.robokassa}): семь чисто цифровых клиентов
-                  видят бесполезный для них раздел. Гейтинг по нише требует
-                  прокинуть currentVertical() (registry.ts) в клиентскую
-                  часть админки — сейчас она нигде туда не экспонирована,
-                  это отдельная инфраструктурная правка, а не точечная.
-                */}
-                <GroupLink to="/admin/delivery-zones" locale={locale}>
-                  {t("deliveryZones", locale)}
-                </GroupLink>
+                {isPhysicalShop && (
+                  <GroupLink to="/admin/delivery-zones" locale={locale}>
+                    {t("deliveryZones", locale)}
+                  </GroupLink>
+                )}
               </GroupNav>
 
               <GroupNav

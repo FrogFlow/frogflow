@@ -8,6 +8,8 @@ import {
   orderedCurrencies,
   dailyRevenue,
   topProductsBySales,
+  includeOrderInAnalytics,
+  analyticsRevenue,
   type OrderForAnalytics,
   type OrderItemForAnalytics,
   type TopProduct,
@@ -25,6 +27,10 @@ const WINDOW_DAYS = 90;
  * позиции. `fetchAll` вместо простого select с limit — PostgREST молча
  * обрывает выдачу на 1000 строк (см. csv.ts), а заказов за 90 дней у живого
  * магазина вполне может быть больше.
+ *
+ * В выборку входят выданные заказы и живая производственная очередь
+ * физических (accepted/in_production/ready): иначе задаток по торту
+ * невидим в аналитике неделями. Сумма мапится через analyticsRevenue.
  */
 async function loadAnalyticsData(): Promise<{
   orders: OrderForAnalytics[];
@@ -33,19 +39,33 @@ async function loadAnalyticsData(): Promise<{
   const s = await db();
   const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  const orders = await fetchAll<OrderForAnalytics>(
+  type OrderRow = OrderForAnalytics & {
+    status: string;
+    fulfillment_kind: string | null;
+    paid_amount: number | null;
+  };
+  const rows = await fetchAll<OrderRow>(
     (from, to) =>
       s
         .from("orders")
         .select(
-          "id, total, currency, discount_amount, points_used, gift_certificate_discount, created_at",
+          "id, total, currency, discount_amount, points_used, gift_certificate_discount, created_at, status, fulfillment_kind, paid_amount",
         )
-        .eq("status", "delivered")
+        .in("status", ["delivered", "accepted", "in_production", "ready"])
         .gte("created_at", since)
         .order("created_at", { ascending: false })
         .range(from, to),
     "заказы",
   );
+  const orders: OrderForAnalytics[] = rows.filter(includeOrderInAnalytics).map((o) => ({
+    id: o.id,
+    total: analyticsRevenue(o),
+    currency: o.currency,
+    discount_amount: o.discount_amount,
+    points_used: o.points_used,
+    gift_certificate_discount: o.gift_certificate_discount,
+    created_at: o.created_at,
+  }));
 
   const orderIds = orders.map((o) => o.id);
   const items = orderIds.length

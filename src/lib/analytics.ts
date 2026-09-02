@@ -15,6 +15,32 @@ export type OrderForAnalytics = {
   created_at: string;
 };
 
+const PHYSICAL_IN_PROGRESS = new Set(["accepted", "in_production", "ready"]);
+
+/**
+ * Какие заказы входят в финансовую аналитику. Цифровые — только выданные
+ * (как раньше). Физические ещё и живая производственная очередь: задаток
+ * по торту, который три недели «в работе», иначе невидим до выдачи.
+ */
+export function includeOrderInAnalytics(o: {
+  status: string;
+  fulfillment_kind?: string | null;
+}): boolean {
+  if (o.status === "delivered") return true;
+  return o.fulfillment_kind === "physical" && PHYSICAL_IN_PROGRESS.has(o.status);
+}
+
+/** Сумма, которую аналитика считает выручкой по одному заказу. */
+export function analyticsRevenue(o: {
+  total: number;
+  status: string;
+  fulfillment_kind?: string | null;
+  paid_amount?: number | null;
+}): number {
+  if (o.status === "delivered") return Number(o.total) || 0;
+  return Number(o.paid_amount) || 0;
+}
+
 export type CurrencySummary = { revenue: number; ordersCount: number; discountsGiven: number };
 
 export function summarizeByCurrency(orders: OrderForAnalytics[]): Record<string, CurrencySummary> {

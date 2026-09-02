@@ -25,6 +25,7 @@ import type { Locale } from "@/lib/i18n";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { useModules } from "@/lib/modules/use-modules";
+import { useVertical } from "@/lib/verticals/use-vertical";
 
 export const Route = createFileRoute("/admin/categories")({
   component: CategoriesPage,
@@ -35,6 +36,7 @@ const copy: Record<
   {
     title: string;
     hint: string;
+    hintPhysical: string;
     miniAppTitle: string;
     miniAppHint: string;
     miniAppLayoutLabel: string;
@@ -49,6 +51,7 @@ const copy: Record<
     newTitle: string;
     name: string;
     namePlaceholder: string;
+    namePlaceholderPhysical: string;
     emojiHint: string;
     parentLabel: string;
     rootOption: string;
@@ -67,6 +70,7 @@ const copy: Record<
     editShort: string;
     deleteShort: string;
     confirmDelete: string;
+    confirmDeletePhysical: string;
     saveError: (msg: string) => string;
     deleteError: (msg: string) => string;
     toggleError: (msg: string) => string;
@@ -75,6 +79,8 @@ const copy: Record<
   ru: {
     title: "Категории",
     hint: "Скрытые категории не показываются в каталоге бота, но товары и файлы сохраняются. Удобно для сезонных папок (1 сентября, День учителя).",
+    hintPhysical:
+      "Скрытые категории не показываются в каталоге бота, но товары сохраняются. Удобно для сезонных папок (Новый год, 8 марта).",
     miniAppTitle: "Категории в Mini App",
     miniAppHint:
       "В боте покупатель сначала видит корневые папки, затем подкатегории. Здесь можно оставить тот же порядок, показать все папки лентой или собрать свой набор именно для магазинчика.",
@@ -91,6 +97,7 @@ const copy: Record<
     newTitle: "Новая категория",
     name: "Название",
     namePlaceholder: "Например: 📐 Математика",
+    namePlaceholderPhysical: "Например: 🎂 Торты",
     emojiHint:
       "Эмодзи в названии отображаются в кнопках каталога бота. На ПК — кликните ниже или Win+. / Ctrl+Cmd+Space.",
     parentLabel: "Родительская категория",
@@ -111,6 +118,8 @@ const copy: Record<
     deleteShort: "Удал.",
     confirmDelete:
       "Удалить категорию? Подкатегории тоже удалятся. Товары и файлы останутся; связь с этой папкой снимется.",
+    confirmDeletePhysical:
+      "Удалить категорию? Подкатегории тоже удалятся. Товары останутся; связь с этой папкой снимется.",
     saveError: (msg) => `Не удалось сохранить категорию: ${msg}`,
     deleteError: (msg) => `Не удалось удалить категорию: ${msg}`,
     toggleError: (msg) => `Не удалось изменить видимость: ${msg}`,
@@ -118,6 +127,8 @@ const copy: Record<
   kk: {
     title: "Санаттар",
     hint: "Жасырын санаттар бот каталогында көрсетілмейді, бірақ тауарлар мен файлдар сақталады. Маусымдық қалталар үшін ыңғайлы.",
+    hintPhysical:
+      "Жасырын санаттар бот каталогында көрсетілмейді, бірақ тауарлар сақталады. Маусымдық қалталар үшін ыңғайлы.",
     miniAppTitle: "Mini App санаттары",
     miniAppHint:
       "Ботта алдымен түбір қалталар, сосын ішкі санаттар көрінеді. Mini App үшін сол тәртіпті қалдыруға, барлығын лентамен көрсетуге немесе өз жиынтықты жинауға болады.",
@@ -134,6 +145,7 @@ const copy: Record<
     newTitle: "Жаңа санат",
     name: "Атауы",
     namePlaceholder: "Мысалы: 📐 Математика",
+    namePlaceholderPhysical: "Мысалы: 🎂 Торттар",
     emojiHint:
       "Атаудағы эмодзи бот каталогының түймелерінде көрсетіледі. ПК-де — төменнен басыңыз немесе Win+. / Ctrl+Cmd+Space.",
     parentLabel: "Аталық санат",
@@ -154,6 +166,8 @@ const copy: Record<
     deleteShort: "Жою",
     confirmDelete:
       "Санатты жою керек пе? Ішкі санаттар да жойылады. Тауарлар мен файлдар сақталады; бұл қалтамен байланыс алынады.",
+    confirmDeletePhysical:
+      "Санатты жою керек пе? Ішкі санаттар да жойылады. Тауарлар сақталады; бұл қалтамен байланыс алынады.",
     saveError: (msg) => `Санатты сақтау мүмкін болмады: ${msg}`,
     deleteError: (msg) => `Санатты жою мүмкін болмады: ${msg}`,
     toggleError: (msg) => `Көріну параметрін өзгерту мүмкін болмады: ${msg}`,
@@ -161,6 +175,8 @@ const copy: Record<
   en: {
     title: "Categories",
     hint: "Hidden categories don't show up in the bot's catalog, but their products and files are kept. Handy for seasonal folders (e.g. holiday sales).",
+    hintPhysical:
+      "Hidden categories don't show up in the bot's catalog, but their products are kept. Handy for seasonal folders (New Year, 8 March).",
     miniAppTitle: "Mini App categories",
     miniAppHint:
       "In the bot, buyers see root folders first, then subcategories. Keep that tree, show every folder in one row, or pick a custom Mini App set.",
@@ -176,6 +192,7 @@ const copy: Record<
     newTitle: "New category",
     name: "Name",
     namePlaceholder: "e.g. 📐 Math",
+    namePlaceholderPhysical: "e.g. 🎂 Cakes",
     emojiHint:
       "Emoji in the name show up on the bot catalog's buttons. On desktop — click below or Win+. / Ctrl+Cmd+Space.",
     parentLabel: "Parent category",
@@ -196,6 +213,8 @@ const copy: Record<
     deleteShort: "Delete",
     confirmDelete:
       "Delete this category? Subcategories will be deleted too. Products and files are kept; their link to this folder is removed.",
+    confirmDeletePhysical:
+      "Delete this category? Subcategories will be deleted too. Products are kept; their link to this folder is removed.",
     saveError: (msg) => `Failed to save the category: ${msg}`,
     deleteError: (msg) => `Failed to delete the category: ${msg}`,
     toggleError: (msg) => `Failed to change visibility: ${msg}`,
@@ -203,6 +222,8 @@ const copy: Record<
   uz: {
     title: "Kategoriyalar",
     hint: "Yashirin kategoriyalar bot katalogida ko‘rsatilmaydi, lekin mahsulot va fayllar saqlanadi. Mavsumiy papkalar uchun qulay.",
+    hintPhysical:
+      "Yashirin kategoriyalar bot katalogida ko‘rsatilmaydi, lekin mahsulotlar saqlanadi. Mavsumiy papkalar uchun qulay.",
     miniAppTitle: "Mini App kategoriyalari",
     miniAppHint:
       "Botda avval ildiz papkalar, keyin ichki kategoriyalar ko‘rinadi. Mini App uchun shu tartibni qoldirish, hammasini lentada ko‘rsatish yoki o‘z to‘plamingizni yig‘ish mumkin.",
@@ -219,6 +240,7 @@ const copy: Record<
     newTitle: "Yangi kategoriya",
     name: "Nomi",
     namePlaceholder: "Masalan: 📐 Matematika",
+    namePlaceholderPhysical: "Masalan: 🎂 Tortlar",
     emojiHint:
       "Nomdagi emoji bot katalogi tugmalarida ko‘rinadi. Kompyuterda — pastda bosing yoki Win+. / Ctrl+Cmd+Space.",
     parentLabel: "Ota kategoriya",
@@ -239,6 +261,8 @@ const copy: Record<
     deleteShort: "O‘chir.",
     confirmDelete:
       "Kategoriyani o‘chirasizmi? Quyi kategoriyalar ham o‘chadi. Mahsulot va fayllar saqlanadi; ular bu papka bilan bog‘lanishdan chiqadi.",
+    confirmDeletePhysical:
+      "Kategoriyani o‘chirasizmi? Quyi kategoriyalar ham o‘chadi. Mahsulotlar saqlanadi; ular bu papka bilan bog‘lanishdan chiqadi.",
     saveError: (msg) => `Kategoriyani saqlab bo‘lmadi: ${msg}`,
     deleteError: (msg) => `Kategoriyani o‘chirib bo‘lmadi: ${msg}`,
     toggleError: (msg) => `Ko‘rinishni o‘zgartirib bo‘lmadi: ${msg}`,
@@ -256,6 +280,7 @@ type Cat = {
 function CategoriesPage() {
   const { locale } = useAdminLocale();
   const tr = copy[locale];
+  const { isPhysicalShop } = useVertical();
   const qc = useQueryClient();
   const modules = useModules();
   const cats = useQuery({ queryKey: ["categories"], queryFn: () => listCategories() });
@@ -342,7 +367,8 @@ function CategoriesPage() {
   }
 
   async function onDelete(id: string) {
-    if (!(await confirmToast(tr.confirmDelete))) return;
+    if (!(await confirmToast(isPhysicalShop ? tr.confirmDeletePhysical : tr.confirmDelete)))
+      return;
     try {
       await deleteCategory({ data: { id } });
       qc.invalidateQueries({ queryKey: ["categories"] });
@@ -415,7 +441,7 @@ function CategoriesPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">{tr.title}</h1>
-      <p className="text-sm text-muted-foreground">{tr.hint}</p>
+      <p className="text-sm text-muted-foreground">{isPhysicalShop ? tr.hintPhysical : tr.hint}</p>
       <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-card border rounded-lg p-4 space-y-3">
           <h2 className="font-medium">{editing ? tr.editingTitle : tr.newTitle}</h2>
@@ -425,7 +451,7 @@ function CategoriesPage() {
               ref={nameInputRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={tr.namePlaceholder}
+              placeholder={isPhysicalShop ? tr.namePlaceholderPhysical : tr.namePlaceholder}
             />
             <p className="text-xs text-muted-foreground">{tr.emojiHint}</p>
             <EmojiInsertBar onInsert={insertEmoji} />

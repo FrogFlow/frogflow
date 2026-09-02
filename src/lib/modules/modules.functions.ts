@@ -1,14 +1,26 @@
 import { createServerFn } from "@tanstack/react-start";
 import { loadModules, botStatus, pausedMessage, emptyModules } from "./modules.server";
-import { currentVerticalDef } from "@/lib/verticals/vertical.server";
+import { currentVertical, currentVerticalDef } from "@/lib/verticals/vertical.server";
+
+function verticalContext() {
+  const vertical = currentVertical();
+  const def = currentVerticalDef();
+  return {
+    vertical,
+    verticalTitle: def.title,
+    defaultFulfillmentKind: def.defaultFulfillment,
+  };
+}
 
 /** Loaded once per navigation by the root route and put into router context — see __root.tsx. */
 export const getRuntimeModulesFn = createServerFn({ method: "GET" }).handler(async () => {
   // Ниша деплоя (VERTICAL) решает, что по умолчанию выбрано в форме товара
   // при создании — см. lib/verticals/registry.ts. Читается здесь, а не
   // напрямую в компоненте: currentVerticalDef() смотрит process.env, который
-  // на клиенте недоступен.
-  const defaultFulfillmentKind = currentVerticalDef().defaultFulfillment;
+  // на клиенте недоступен. vertical/verticalTitle — тот же источник: без них
+  // клиентская админка не может спрятать «язык материалов» и подписать
+  // кнопку контакта «Связаться с кондитерской».
+  const niche = verticalContext();
   // Панель оператора — не деплой клиента: у неё нет своей строки в `bots`, нет
   // BOT_ID и нет ключа арендатора. Модули там неприменимы, а не «выключены»,
   // поэтому отдаём нейтральное значение, не заглядывая в базу. Для клиентского
@@ -20,7 +32,7 @@ export const getRuntimeModulesFn = createServerFn({ method: "GET" }).handler(asy
       status: "active" as const,
       pausedMessage: "",
       isPanel: true,
-      defaultFulfillmentKind,
+      ...niche,
     };
   }
   const [modules, status, paused] = await Promise.all([
@@ -28,5 +40,5 @@ export const getRuntimeModulesFn = createServerFn({ method: "GET" }).handler(asy
     botStatus(),
     pausedMessage(),
   ]);
-  return { modules, status, pausedMessage: paused, isPanel: false, defaultFulfillmentKind };
+  return { modules, status, pausedMessage: paused, isPanel: false, ...niche };
 });

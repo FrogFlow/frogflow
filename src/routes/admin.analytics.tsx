@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { errorMessage } from "@/lib/error-message";
 import { getFinancialAnalytics, getFinancialAnalyticsConverted } from "@/lib/analytics.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { useVertical } from "@/lib/verticals/use-vertical";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/analytics")({
@@ -27,6 +28,7 @@ const copy: Record<
   {
     title: string;
     hint: (days: number) => string;
+    hintPhysical: (days: number) => string;
     loading: string;
     loadError: (msg: string) => string;
     revenue30: string;
@@ -51,6 +53,8 @@ const copy: Record<
   ru: {
     title: "Финансовая аналитика",
     hint: (days) => `За последние 30 и ${days} дней, только выданные заказы.`,
+    hintPhysical: (days) =>
+      `За последние 30 и ${days} дней: выданные заказы целиком и задатки по заказам в работе.`,
     loading: "Загрузка…",
     loadError: (msg) => `Не удалось загрузить аналитику: ${msg}`,
     revenue30: "Выручка за 30 дней",
@@ -75,6 +79,8 @@ const copy: Record<
   kk: {
     title: "Қаржылық аналитика",
     hint: (days) => `Соңғы 30 және ${days} күн, тек берілген тапсырыстар.`,
+    hintPhysical: (days) =>
+      `Соңғы 30 және ${days} күн: берілген тапсырыстар толық және дайындалып жатқандардың алдын ала төлемі.`,
     loading: "Жүктелуде…",
     loadError: (msg) => `Аналитиканы жүктеу мүмкін болмады: ${msg}`,
     revenue30: "30 күндегі түсім",
@@ -99,6 +105,8 @@ const copy: Record<
   en: {
     title: "Financial analytics",
     hint: (days) => `Last 30 and ${days} days, delivered orders only.`,
+    hintPhysical: (days) =>
+      `Last 30 and ${days} days: delivered orders in full plus deposits on orders still in production.`,
     loading: "Loading…",
     loadError: (msg) => `Failed to load analytics: ${msg}`,
     revenue30: "Revenue, 30 days",
@@ -123,6 +131,8 @@ const copy: Record<
   uz: {
     title: "Moliyaviy tahlil",
     hint: (days) => `Oxirgi 30 va ${days} kun, faqat yetkazilgan buyurtmalar.`,
+    hintPhysical: (days) =>
+      `Oxirgi 30 va ${days} kun: yetkazilgan buyurtmalar to‘liq va ishlab chiqarishdagi oldindan to‘lovlar.`,
     loading: "Yuklanmoqda…",
     loadError: (msg) => `Tahlilni yuklab bo‘lmadi: ${msg}`,
     revenue30: "30 kunlik daromad",
@@ -312,6 +322,7 @@ function CombinedSection({
 
 function AnalyticsPage() {
   const { locale } = useAdminLocale();
+  const { isPhysicalShop } = useVertical();
   const tr = copy[locale];
   const analytics = useQuery({
     queryKey: ["financial-analytics"],
@@ -335,7 +346,9 @@ function AnalyticsPage() {
     <div className="space-y-10">
       <div>
         <h1 className="text-2xl font-semibold">{tr.title}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{tr.hint(data?.windowDays ?? 90)}</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          {(isPhysicalShop ? tr.hintPhysical : tr.hint)(data?.windowDays ?? 90)}
+        </p>
       </div>
 
       {!dominant || currencies.length === 0 ? (
