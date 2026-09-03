@@ -24,10 +24,20 @@ type IndexRow = {
 
 let indexStore: IndexRow[] = [];
 let productStore: Array<Record<string, unknown>> = [];
+let hiddenCategoryStore: string[] = [];
 
 vi.mock("../src/integrations-supabase/client.server", () => ({
   supabaseAdmin: {
     from: (table: string) => {
+      if (table === "categories") {
+        return {
+          select: (_cols: string) => ({
+            eq: async (_c: string, _v: unknown) => ({
+              data: hiddenCategoryStore.map((id) => ({ id })),
+            }),
+          }),
+        };
+      }
       if (table !== "products") throw new Error(`неожиданная таблица в моке: ${table}`);
       return {
         select: (_cols: string) => ({
@@ -98,6 +108,7 @@ function makeFullProduct(id: string, categoryIds: string[]) {
 beforeEach(() => {
   indexStore = [];
   productStore = [];
+  hiddenCategoryStore = [];
 });
 
 describe("loadRelatedMiniAppProducts", () => {
@@ -134,6 +145,27 @@ describe("loadRelatedMiniAppProducts", () => {
     expect(html).toContain("Ещё в этой папке");
     expect(html).toContain("Материал same-cat");
     expect(html).not.toContain("Материал other-cat");
+  });
+
+  /**
+   * [Учителя-HIGH] Товар только из скрытой категории не найти обычным
+   * каталогом/поиском, но раньше он всё равно мог всплыть в блоке
+   * "похожие" на карточке любого другого товара — filterMiniAppProductIds
+   * звался с new Set() вместо реального списка скрытых категорий.
+   */
+  it("товар из скрытой категории не попадает в похожие", async () => {
+    const target = makeFullProduct("target", []);
+    indexStore = [
+      makeIndexRow("target", []),
+      makeIndexRow("visible", []),
+      makeIndexRow("hidden", ["archive"]),
+    ];
+    productStore = [makeFullProduct("visible", []), makeFullProduct("hidden", ["archive"])];
+    hiddenCategoryStore = ["archive"];
+    const { loadRelatedMiniAppProducts } = await import("../src/lib/mini-app-catalog.server");
+    const html = await loadRelatedMiniAppProducts(target as never, null, "ru", "");
+    expect(html).toContain("Материал visible");
+    expect(html).not.toContain("Материал hidden");
   });
 
   it("нет ни одного другого товара в каталоге — секция не рендерится вовсе", async () => {

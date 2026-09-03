@@ -508,22 +508,29 @@ export async function loadRelatedMiniAppProducts(
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
   const { fetchAll } = await import("./csv");
-  const [stockEnabled, multiLanguageEnabled, productIndex] = await Promise.all([
-    hasModule("stock"),
-    hasModule("multi_language"),
-    fetchAll<MiniAppProductIndexRow>(
-      (from, to) =>
-        supabaseAdmin
-          .from("products")
-          .select(MINI_APP_INDEX_SELECT)
-          .eq("is_active", true)
-          .order("sort_order")
-          .order("name")
-          .range(from, to),
-      "похожие товары mini-app",
-    ),
-  ]);
-  const relatedIds = filterMiniAppProductIds(productIndex, new Set(), "", "", match).filter(
+  const [{ data: hiddenCats }, stockEnabled, multiLanguageEnabled, productIndex] =
+    await Promise.all([
+      supabaseAdmin.from("categories").select("id").eq("is_visible", false),
+      hasModule("stock"),
+      hasModule("multi_language"),
+      fetchAll<MiniAppProductIndexRow>(
+        (from, to) =>
+          supabaseAdmin
+            .from("products")
+            .select(MINI_APP_INDEX_SELECT)
+            .eq("is_active", true)
+            .order("sort_order")
+            .order("name")
+            .range(from, to),
+        "похожие товары mini-app",
+      ),
+    ]);
+  // hiddenIds, а не new Set() (Учителя-HIGH): раньше "похожие" не исключали
+  // товары из скрытых категорий вовсе — такой товар не найти через обычный
+  // каталог/поиск, но он мог всплыть в блоке "похожие" на карточке любого
+  // другого товара той же (не скрытой) категории.
+  const hiddenIds = new Set((hiddenCats ?? []).map((c) => c.id as string));
+  const relatedIds = filterMiniAppProductIds(productIndex, hiddenIds, "", "", match).filter(
     (id) => id !== product.id,
   );
   const pageIds = relatedIds.slice(0, limit);
