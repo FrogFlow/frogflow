@@ -238,6 +238,15 @@ export const confirmOrder = createServerFn({ method: "POST" })
  * минус и не даёт превысить total — сумма "к доплате" считается на клиенте
  * из total-paid_amount, но сервер всё равно перепроверяет сам, без доверия
  * к присланному числу.
+ *
+ * fulfillment_kind раньше запрашивался, но никогда не проверялся — кнопка
+ * «Внести оплату» в admin.orders.tsx рендерится для любого заказа с
+ * paid_amount < total, без учёта статуса. Без гейта продавец мог случайно
+ * записать платёж на уже отклонённый (rejected) заказ — деньги повисали на
+ * мёртвой записи, а remainingDueNow ни разу больше её не увидит. Задаток/
+ * доплата наличными — сценарий только физических заказов (Ниши, Блок 7):
+ * цифровые оплачиваются полностью до выдачи материалов, у них здесь взяться
+ * нечему.
  */
 export const recordManualPayment = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
@@ -249,11 +258,17 @@ export const recordManualPayment = createServerFn({ method: "POST" })
     const s = await db();
     const { data: order, error } = await s
       .from("orders")
-      .select("total, paid_amount, fulfillment_kind")
+      .select("total, paid_amount, fulfillment_kind, status")
       .eq("id", data.id)
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!order) throw new Error("Заказ не найден");
+    if (order.status === "rejected") {
+      throw new Error("Заказ отклонён — оплата по нему не принимается");
+    }
+    if (order.fulfillment_kind !== "physical") {
+      throw new Error("Ручное внесение оплаты доступно только для физических заказов");
+    }
     const remaining = Number(order.total) - (Number(order.paid_amount) || 0);
     if (data.amount > remaining + 0.01) {
       throw new Error(`Сумма больше остатка: осталось внести ${remaining.toFixed(2)}`);
