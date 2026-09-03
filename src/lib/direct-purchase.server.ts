@@ -1523,6 +1523,8 @@ export async function createOrderFromCart(params: {
     platform?: string | null;
     username: string | null;
     first_name: string | null;
+    /** Known email — written into orders.customer_email at creation time. */
+    email?: string | null;
   };
   countryCode: string;
   /**
@@ -1637,6 +1639,7 @@ export async function createOrderFromCart(params: {
       currency,
       status: "awaiting_confirmation",
       fulfillment_kind: orderFulfillmentKind,
+      ...(params.user.email ? { customer_email: params.user.email } : {}),
       fulfillment_type: params.fulfillment?.type ?? null,
       fulfillment_at: params.fulfillment?.at ?? null,
       fulfillment_address: params.fulfillment?.address ?? null,
