@@ -27,6 +27,7 @@ import { getRevenueSummaryFn, getRevenueByMonthFn } from "@/lib/operator/subscri
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
+import { verticalDef } from "@/lib/verticals/registry";
 import {
   Select,
   SelectContent,
@@ -762,6 +763,16 @@ function OperatorClientsPage() {
                       {bot.archived_at && (
                         <Badge variant="outline" className="ml-2">
                           в архиве
+                        </Badge>
+                      )}
+                      {/* Ниша не показана в списке клиентов, хотя listBots
+                          уже выбирает эту колонку (Блок 11, находка 11.6) —
+                          "digital" не показываем: это умолчание для деплоя
+                          без явно заданной ниши, отдельный бейдж на каждой
+                          строке был бы шумом. */}
+                      {bot.vertical !== "digital" && (
+                        <Badge variant="outline" className="ml-2">
+                          {verticalDef(bot.vertical).title}
                         </Badge>
                       )}
                       {bot.tags.length > 0 && (
