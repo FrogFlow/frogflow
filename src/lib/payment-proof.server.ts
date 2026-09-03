@@ -307,7 +307,15 @@ export async function processMiniAppPaymentProof(params: {
       const { acceptOrder, recordPayment, remainingDueNow } = await import("./fulfillment.server");
       const accepted = await acceptOrder(orderId);
       const due = remainingDueNow(expectedAmount, order.paid_amount);
-      if (!accepted.alreadyAccepted && due > 0) await recordPayment(orderId, due);
+      if (!accepted.alreadyAccepted && due > 0) {
+        const paid = await recordPayment(orderId, due).catch((e) => {
+          logger.error("payment_proof.record_payment_failed", { err: e, order_id: orderId });
+          return false;
+        });
+        if (!paid) {
+          logger.error("payment_proof.record_payment_returned_false", { order_id: orderId });
+        }
+      }
     } else {
       const { deliverOrder } = await import("./orders.server");
       await deliverOrder(orderId);
