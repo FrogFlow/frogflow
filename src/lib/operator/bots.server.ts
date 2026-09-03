@@ -546,7 +546,7 @@ export async function checkReadiness(botId: string): Promise<Readiness> {
   const s = await db();
   const { data, error } = await s
     .from("bots")
-    .select("app_url, internal_secret, bot_name")
+    .select("app_url, internal_secret, bot_name, modules")
     .eq("id", botId)
     .single();
   if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
@@ -655,6 +655,52 @@ export async function checkReadiness(botId: string): Promise<Readiness> {
             ? `установлен, но в очереди ${queued} — апдейты не разбираются`
             : `${r.bot_username ? "@" + r.bot_username + ", " : ""}очередь пуста`,
       });
+    }
+  }
+
+  /**
+   * Direct может молчать при живом Telegram: вебхук Zernio не самолечился.
+   * Это видно по журналу событий, даже если деплой ещё на старой версии
+   * и не отдаёт пункты «Webhook Instagram» / «Входящие Direct».
+   */
+  const modules = (data.modules && typeof data.modules === "object" ? data.modules : {}) as Record<
+    string,
+    boolean
+  >;
+  if (
+    modules.instagram === true &&
+    !checks.some((c) => c.name === "Входящие Direct" || c.name === "Webhook Instagram")
+  ) {
+    const { data: lastDm } = await s
+      .from("zernio_logs")
+      .select("created_at")
+      .eq("bot_id", botId)
+      .eq("event_type", "message.received")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!lastDm?.created_at) {
+      checks.push({
+        name: "Instagram Direct",
+        level: "warn",
+        detail: "в журнале нет входящих — webhook ещё не принимал сообщений",
+      });
+    } else {
+      const ageHours = (Date.now() - new Date(lastDm.created_at).getTime()) / 3_600_000;
+      const when = new Date(lastDm.created_at).toISOString().slice(0, 16).replace("T", " ");
+      if (ageHours > 72) {
+        checks.push({
+          name: "Instagram Direct",
+          level: "fail",
+          detail: `молчит ${Math.floor(ageHours / 24)} дн. (последнее входящее ${when} UTC). Нажмите «Проставить вебхук» или переподключите Instagram.`,
+        });
+      } else if (ageHours > 24) {
+        checks.push({
+          name: "Instagram Direct",
+          level: "warn",
+          detail: `последнее входящее ${Math.floor(ageHours)} ч. назад (${when} UTC)`,
+        });
+      }
     }
   }
 

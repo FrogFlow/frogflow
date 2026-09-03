@@ -598,6 +598,204 @@ const ZERNIO_WEBHOOK_NAME = "Store Webhook";
 const LEGACY_ZERNIO_WEBHOOK_NAME = "Instagram Store Webhook";
 
 /**
+ * Только то, что действительно обрабатывается — первое правило из
+ * руководства Zernio по вебхукам.
+ *
+ * `account.disconnected` подписан отдельно от общего правила «только то,
+ * что обрабатывается»: истёкший или отозванный токен иначе означает, что бот
+ * молча перестаёт отвечать, и продавец узнаёт об этом только от расстроенного
+ * покупателя.
+ *
+ * `whatsapp.template.status_updated` — вердикт ревью Meta по шаблону.
+ * Документация Zernio прямо просит не опрашивать список шаблонов ради
+ * этого.
+ */
+export const ZERNIO_WEBHOOK_EVENTS = [
+  "message.received",
+  "account.disconnected",
+  "whatsapp.template.status_updated",
+] as const;
+
+export type ZernioWebhookRecord = {
+  _id?: string;
+  id?: string;
+  url?: string;
+  name?: string;
+  events?: string[];
+  isActive?: boolean;
+  active?: boolean;
+};
+
+export type ZernioWebhookFit = "missing" | "stale" | "ok";
+
+function zernioWebhookIsActive(webhook: ZernioWebhookRecord): boolean {
+  if (webhook.isActive === false || webhook.active === false) return false;
+  return true;
+}
+
+export function findZernioStoreWebhook(
+  webhooks: ZernioWebhookRecord[],
+  expectedUrl: string,
+): ZernioWebhookRecord | undefined {
+  return webhooks.find(
+    (webhook) =>
+      webhook.url === expectedUrl ||
+      webhook.name === ZERNIO_WEBHOOK_NAME ||
+      webhook.name === LEGACY_ZERNIO_WEBHOOK_NAME,
+  );
+}
+
+/**
+ * Нужно ли трогать запись вебхука. Чистая функция — её можно проверить
+ * тестом без ключа Zernio.
+ *
+ * `stale` — запись есть, но указывает не сюда, выключена или не слушает
+ * входящие Direct. Именно это выглядит как «бот в инсте не отвечает на
+ * /start», пока Comment-to-DM автоматизации Zernio продолжают слать первое
+ * сообщение из комментария.
+ */
+export function describeZernioWebhookFit(
+  webhooks: ZernioWebhookRecord[],
+  expectedUrl: string,
+): { fit: ZernioWebhookFit; current?: ZernioWebhookRecord } {
+  const current = findZernioStoreWebhook(webhooks, expectedUrl);
+  if (!current) return { fit: "missing" };
+  const events = current.events ?? [];
+  const listensForDm = events.includes("message.received");
+  if (!zernioWebhookIsActive(current) || current.url !== expectedUrl || !listensForDm) {
+    return { fit: "stale", current };
+  }
+  return { fit: "ok", current };
+}
+
+export type ZernioAccountSummary = {
+  username: string;
+  platform: string;
+  expired: boolean;
+};
+
+function summarizeZernioAccounts(accounts: ZernioAccount[]): ZernioAccountSummary[] {
+  return accounts.map((account) => ({
+    username: account.username || account.name || account._id,
+    platform: account.platform || "unknown",
+    expired: account.isExpired === true,
+  }));
+}
+
+export type ZernioConnectionReport = {
+  expectedUrl: string;
+  currentUrl: string | null;
+  fit: ZernioWebhookFit;
+  accounts: ZernioAccountSummary[];
+  error?: string;
+};
+
+async function readZernioWebhookSettings(): Promise<ZernioWebhookRecord[]> {
+  const current = await zernioRequest<{ webhooks?: ZernioWebhookRecord[] }>("/webhooks/settings");
+  return current.webhooks || [];
+}
+
+/**
+ * Состояние подключения глазами Zernio — без записи. Диагностика и панель
+ * оператора смотрят сюда, чтобы отличить «вебхук снят» от «аккаунт Instagram
+ * истёк» и от «события просто не приходят».
+ */
+export async function inspectZernioConnection(): Promise<ZernioConnectionReport> {
+  const { appOrigin } = await import("./app-origin.server");
+  const origin = appOrigin();
+  const expectedUrl = origin ? `${origin}/api/public/zernio/webhook` : "";
+  try {
+    const [webhooks, accounts] = await Promise.all([
+      readZernioWebhookSettings(),
+      listZernioAccounts(),
+    ]);
+    const { fit, current } = describeZernioWebhookFit(webhooks, expectedUrl);
+    return {
+      expectedUrl,
+      currentUrl: current?.url || null,
+      fit,
+      accounts: summarizeZernioAccounts(accounts),
+    };
+  } catch (e) {
+    return {
+      expectedUrl,
+      currentUrl: null,
+      fit: "missing",
+      accounts: [],
+      error: errorMessage(e),
+    };
+  }
+}
+
+export type EnsureZernioWebhookResult = {
+  ok: boolean;
+  action: "skipped" | "unchanged" | "set" | "error";
+  url?: string;
+  previousUrl?: string | null;
+  accounts?: ZernioAccountSummary[];
+  error?: string;
+};
+
+/**
+ * Самовосстановление вебхука Zernio — тот же приём, что `ensureTelegramWebhook`.
+ *
+ * Telegram чинится на каждом тике cron. Zernio до этого чинился только кнопкой
+ * в админке Instagram, поэтому снятая или переехавшая запись молчала сутками:
+ * Comment-to-DM продолжал слать первое сообщение из поста, а /start в Direct
+ * уже не доходил до магазина.
+ */
+export async function ensureZernioWebhook(): Promise<EnsureZernioWebhookResult> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("instagram")) && !(await hasModule("whatsapp"))) {
+    return { ok: true, action: "skipped" };
+  }
+  if (!process.env.ZERNIO_API_KEY?.trim()) {
+    return { ok: false, action: "error", error: "ZERNIO_API_KEY не задан" };
+  }
+
+  const { appOrigin } = await import("./app-origin.server");
+  const origin = appOrigin();
+  if (!origin) {
+    return { ok: false, action: "error", error: "PUBLIC_APP_URL не задан в этом деплое" };
+  }
+  const expectedUrl = `${origin}/api/public/zernio/webhook`;
+
+  let webhooks: ZernioWebhookRecord[];
+  try {
+    webhooks = await readZernioWebhookSettings();
+  } catch (e) {
+    return { ok: false, action: "error", error: errorMessage(e) };
+  }
+
+  const { fit, current } = describeZernioWebhookFit(webhooks, expectedUrl);
+  const accounts = summarizeZernioAccounts(await listZernioAccounts());
+
+  if (fit === "ok") {
+    return { ok: true, action: "unchanged", url: expectedUrl, previousUrl: current?.url, accounts };
+  }
+
+  const registered = await registerZernioWebhook(expectedUrl);
+  if (!registered.ok) {
+    return {
+      ok: false,
+      action: "error",
+      url: expectedUrl,
+      previousUrl: current?.url ?? null,
+      accounts,
+      error: registered.error,
+    };
+  }
+  console.log("[zernio] webhook restored", { previousUrl: current?.url ?? null, expectedUrl, fit });
+  return {
+    ok: true,
+    action: "set",
+    url: expectedUrl,
+    previousUrl: current?.url ?? null,
+    accounts,
+  };
+}
+
+/**
  * Зарегистрировать Webhook в Zernio на наш публичный эндпоинт.
  */
 export async function registerZernioWebhook(
@@ -608,9 +806,6 @@ export async function registerZernioWebhook(
     if (!secret)
       return { ok: false, error: "Не задана переменная окружения ZERNIO_WEBHOOK_SECRET." };
     /**
-     * Только то, что действительно обрабатывается — первое правило из
-     * руководства Zernio по вебхукам, и здесь оно нарушалось дороже всего.
-     *
      * Подписка была на десять событий при двух обработчиках, причём один из них
      * (`comment.received`) сводился к console.log: комментарии закрывают родные
      * Comment-to-DM автоматизации Zernio, наше участие там не требуется. При
@@ -621,22 +816,10 @@ export async function registerZernioWebhook(
      * Статистика по комментариям в админке от этого не пострадала: она читается
      * из `rule.stats` в ответе Zernio (см. getInstagramDashboardFn), а не из
      * наших логов.
-     *
-     * `account.disconnected` подписан отдельно от общего правила «только то,
-     * что обрабатывается»: обработчик у него теперь есть
-     * (handleZernioAccountDisconnected в zernio-bot.server.ts) — истёкший
-     * или отозванный токен иначе означает, что бот молча перестаёт отвечать,
-     * и продавец узнаёт об этом только от расстроенного покупателя.
      */
-    /**
-     * `whatsapp.template.status_updated` — вердикт ревью Meta по шаблону.
-     * Документация Zernio прямо просит не опрашивать список шаблонов ради
-     * этого: ревью идёт до 24 часов, и опрос всё равно означал бы либо
-     * задержку, либо холостые запросы. Событие приходит само.
-     */
-    const events = ["message.received", "account.disconnected", "whatsapp.template.status_updated"];
+    const events = [...ZERNIO_WEBHOOK_EVENTS];
     const current = await zernioRequest<{
-      webhooks?: Array<{ _id?: string; id?: string; url?: string; name?: string }>;
+      webhooks?: ZernioWebhookRecord[];
     }>("/webhooks/settings");
     /**
      * Вебхуки у Zernio общие на команду, а не на платформу: один эндпоинт
@@ -648,12 +831,7 @@ export async function registerZernioWebhook(
      * завели бы вторую запись на тот же URL — то есть каждое событие
      * приходило бы дважды.
      */
-    const existing = (current.webhooks || []).find(
-      (webhook) =>
-        webhook.url === webhookUrl ||
-        webhook.name === ZERNIO_WEBHOOK_NAME ||
-        webhook.name === LEGACY_ZERNIO_WEBHOOK_NAME,
-    );
+    const existing = findZernioStoreWebhook(current.webhooks || [], webhookUrl);
     const response = await zernioRequest<{ success?: boolean; error?: string }>(
       "/webhooks/settings",
       {

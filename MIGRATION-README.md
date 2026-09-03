@@ -227,33 +227,30 @@ delivery_zone_name/delivery_fee/fulfillment_reminder_sent_at`,
 (2026-09-01, Management API + `scripts/apply-migration.mjs`). Таблица
 `web_cart_handoffs` — 7 колонок, индексы и RLS на месте.
 
-**57** (`MIGRATION-57-manual-order-cleanup-exemption.sql`) — **НЕ применена**,
-готова к применению. У этой сессии нет `SUPABASE_URL`/
-`SUPABASE_SERVICE_ROLE_KEY` в окружении, поэтому применить и подтвердить
-запросом к живой базе не удалось — сделать это должен тот, у кого есть
-доступ (`scripts/apply-migration.mjs`, см. раздел «Применение миграций»
-выше). Правка: `nightly_orders_maintenance()` больше не удаляет заказы
-с `platform = 'manual'` — ручной телефонный/директ-заказ (без даты
-получения и без оплаты, `createManualOrder`) раньше подходил под то же
-условие, что и реально брошенный бот-чекаут, и мог быть тихо стёрт через
-7 дней.
+**57** (`MIGRATION-57-manual-order-cleanup-exemption.sql`) — **применена**
+на боевой базе (2026-09-03, Management API + `scripts/apply-migration.mjs`).
+Подтверждено чтением `pg_get_functiondef('public.nightly_orders_maintenance')`:
+в DELETE есть `AND platform <> 'manual'`. Правка: `nightly_orders_maintenance()`
+больше не удаляет заказы с `platform = 'manual'` — ручной телефонный/директ-заказ
+(без даты получения и без оплаты, `createManualOrder`) раньше подходил под то же
+условие, что и реально брошенный бот-чекаут, и мог быть тихо стёрт через 7 дней.
 
-**58** (`MIGRATION-58-subscription-invoices.sql`) — **НЕ применена**, готова
-к применению. Той же причине, что и 57 — нет доступа к боевой базе в этой
-сессии. Новая фича: счета на оплату подписки, которые оператор выставляет
-владельцу бота через его же бота (панель `/operator/invoices`, реквизиты
-оператора, чек владелец шлёт обратно фото/документом в свой чат — тот же
-приём, что и обычный чек по заказу). Две новые таблицы:
-`operator_settings` (реквизиты оператора, RLS без единой политики — как у
-`subscription_payments`, недоступна ни одному клиентскому деплою) и
-`subscription_invoices` (рабочий статус одного счёта — `sent` →
-`proof_uploaded` → `paid`/`rejected`/`cancelled`; `tenant_bot` видит и
-обновляет только свой bot_id, заводит и удаляет счета только оператор).
+**58** (`MIGRATION-58-subscription-invoices.sql`) — **применена** на боевой базе
+(2026-09-03, Management API + `scripts/apply-migration.mjs`). Подтверждено
+`--check`: `operator_settings` — 2 колонки (`key`, `value`);
+`subscription_invoices` — 13 колонок (`id`, `bot_id`, `amount`, `currency`,
+`note`, `requisites_snapshot`, `status`, `proof_path`, `proof_uploaded_at`,
+`created_at`, `created_by`, `confirmed_at`, `reject_reason`).
+`scripts/sync-db-types.mjs` против живой базы: типы уже совпадают.
+Новая фича: счета на оплату подписки, которые оператор выставляет владельцу
+бота через его же бота (панель `/operator/invoices`, реквизиты оператора, чек
+владелец шлёт обратно фото/документом в свой чат — тот же приём, что и обычный
+чек по заказу). Две новые таблицы: `operator_settings` (реквизиты оператора,
+RLS без единой политики — как у `subscription_payments`, недоступна ни одному
+клиентскому деплою) и `subscription_invoices` (рабочий статус одного счёта —
+`sent` → `proof_uploaded` → `paid`/`rejected`/`cancelled`; `tenant_bot` видит
+и обновляет только свой bot_id, заводит и удаляет счета только оператор).
 Подтверждение счёта (`confirmInvoice`, `invoices.server.ts`) не изобретает
 новую бухгалтерию — оно вызывает уже существующий `addPayment`
 (`subscriptions.server.ts`), который пишет в `subscription_payments`, и
-дату подписки по-прежнему двигает только триггер MIGRATION-09. Код (панель,
-`bot.server.ts`) написан и типизирован против ручного описания схемы в
-`src/integrations-supabase/types.ts` — тот, кто применяет миграцию, должен
-затем сверить типы командой генерации типов Supabase и поправить их при
-расхождении.
+дату подписки по-прежнему двигает только триггер MIGRATION-09.

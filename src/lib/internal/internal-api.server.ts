@@ -132,7 +132,7 @@ export async function notifyOwner(text: string): Promise<NotifyOwnerResult> {
 
 /** Один бот арендатора: магазинный или VIP. */
 export type WebhookBotResult = {
-  name: "SHOP" | "VIP";
+  name: "SHOP" | "VIP" | "ZERNIO";
   ok: boolean;
   /** Куда направлен вебхук; пусто, если поставить не удалось. */
   url: string;
@@ -248,6 +248,57 @@ export async function setOwnWebhook(): Promise<WebhookActionResult> {
       bots,
     };
   }
+
+  /**
+   * Instagram/WhatsApp живут отдельным вебхуком у Zernio. Кнопка «Проставить
+   * вебхук» и cron раньше чинили только Telegram — Direct мог молчать неделями
+   * при живом Telegram. Если модуль канала включён, чиним и эту запись.
+   */
+  try {
+    const { ensureZernioWebhook } = await import("../zernio.server");
+    const zernio = await ensureZernioWebhook();
+    if (zernio.action !== "skipped") {
+      const expired = (zernio.accounts ?? []).filter((account) => account.expired);
+      const zernioOk = zernio.ok && expired.length === 0;
+      const detail = !zernio.ok
+        ? zernio.error || "не удалось зарегистрировать"
+        : expired.length > 0
+          ? `вебхук ${zernio.action === "set" ? "проставлен" : "на месте"}, но истёк токен: ${expired
+              .map((account) => account.username)
+              .join(", ")}`
+          : zernio.action === "set"
+            ? "проставлен"
+            : "уже на месте";
+      bots.push({
+        name: "ZERNIO",
+        ok: zernioOk,
+        url: zernio.url || "",
+        detail,
+      });
+      if (!zernioOk) {
+        return {
+          ok: false,
+          status: 502,
+          message: bots.map((b) => `${b.name}: ${b.detail}`).join(" · "),
+          bots,
+        };
+      }
+    }
+  } catch (e: unknown) {
+    bots.push({
+      name: "ZERNIO",
+      ok: false,
+      url: "",
+      detail: `Не удалось проверить Instagram webhook: ${errorMessage(e)}`,
+    });
+    return {
+      ok: false,
+      status: 502,
+      message: bots.map((b) => `${b.name}: ${b.detail}`).join(" · "),
+      bots,
+    };
+  }
+
   // url — магазинный бот: панель показывает его как основной адрес.
   return { ok: true, url: bots[0]!.url, bots };
 }
