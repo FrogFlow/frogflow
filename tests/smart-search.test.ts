@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { parseSmartSearchIds } from "../src/lib/smart-search";
 import {
   addDailySpend,
@@ -8,6 +8,7 @@ import {
   parseDailyCount,
   parseDailySpend,
 } from "../src/lib/smart-search-cost";
+import { smartSearchProductIds } from "../src/lib/smart-search.server";
 
 const valid = ["aaa", "bbb", "ccc"];
 
@@ -88,5 +89,64 @@ describe("smart search cost", () => {
     expect(formatUsd(0)).toBe("$0.00");
     expect(formatUsd(0.0032)).toBe("$0.0032");
     expect(formatUsd(1.2)).toBe("$1.20");
+  });
+});
+
+/**
+ * Раньше промпт всегда говорил "товар в интернет-магазине" одинаково для
+ * обеих ниш платформы — учителя ищут по предмету/классу/теме урока,
+ * кондитерская по поводу/начинке/оформлению, и общая формулировка не давала
+ * модели контекста домена, в котором вообще происходит поиск.
+ */
+describe("smartSearchProductIds — промпт учитывает нишу (Учителя, находка про generic-промпт)", () => {
+  const originalApiKey = process.env.ANTHROPIC_API_KEY;
+  const originalVertical = process.env.VERTICAL;
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = "test-key";
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    if (originalApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalApiKey;
+    if (originalVertical === undefined) delete process.env.VERTICAL;
+    else process.env.VERTICAL = originalVertical;
+  });
+
+  function mockFetchCapturingBody(capture: { body?: string }) {
+    global.fetch = vi.fn(async (_url, init) => {
+      capture.body = String(init?.body ?? "");
+      return new Response(
+        JSON.stringify({
+          content: [{ type: "text", text: '{"ids":[]}' }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+  }
+
+  it("digital (умолчание, VERTICAL не задан) — промпт про учебные материалы", async () => {
+    delete process.env.VERTICAL;
+    const capture: { body?: string } = {};
+    mockFetchCapturingBody(capture);
+    await smartSearchProductIds("тесты по алгебре для 7 класса", [
+      { id: "p1", name: "Тест", description: null, keywords: null },
+    ]);
+    expect(capture.body).toContain("учебный материал");
+    expect(capture.body).not.toContain("кондитерской");
+  });
+
+  it("confectionery — промпт про торты и десерты", async () => {
+    process.env.VERTICAL = "confectionery";
+    const capture: { body?: string } = {};
+    mockFetchCapturingBody(capture);
+    await smartSearchProductIds("что-то на день рождения пятилетке", [
+      { id: "p1", name: "Торт", description: null, keywords: null },
+    ]);
+    expect(capture.body).toContain("кондитерской");
+    expect(capture.body).not.toContain("учебный материал");
   });
 });
