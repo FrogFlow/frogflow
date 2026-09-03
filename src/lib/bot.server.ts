@@ -5397,6 +5397,102 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
     if (openOrder?.id) proofOrderId = Number(openOrder.id);
   }
 
+  /**
+   * Чек по счёту оператора (subscription_invoices, MIGRATION-58) — оператор
+   * выставляет владельцу бота счёт в своих реквизитах через панель, тот
+   * приходит владельцу текстом от этого же бота (см. invoices.server.ts,
+   * createInvoice → notify-owner), и владелец отвечает боту фото/документом,
+   * тем же жестом, что и покупатель с чеком по заказу. Проверяем ТОЛЬКО
+   * когда нет активного заказа, ждущего чек (proofOrderId выше) — иначе
+   * фото владельца, тестирующего собственный чекаут как покупатель, попало
+   * бы сюда вместо настоящего заказа.
+   */
+  if (!proofOrderId && (msg.photo || msg.document)) {
+    const sInv = await db();
+    const { data: ownerBot } = await sInv
+      .from("bots")
+      .select("owner_telegram_id")
+      .eq("id", process.env.BOT_ID?.trim() || "")
+      .maybeSingle();
+    if (ownerBot?.owner_telegram_id && Number(ownerBot.owner_telegram_id) === Number(from.id)) {
+      const { data: invoice } = await sInv
+        .from("subscription_invoices")
+        .select("id")
+        .eq("status", "sent")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (invoice) {
+        let invDl: { bytes: Uint8Array; mime: string } | null = null;
+        let invExt = "jpg";
+        if (msg.photo) {
+          const biggest = msg.photo[msg.photo.length - 1];
+          invDl = await downloadTelegramFile(biggest.file_id);
+        } else if (msg.document) {
+          invDl = await downloadTelegramFile(msg.document.file_id);
+          const docName = (msg.document.file_name || "").toLowerCase();
+          const extMatch = docName.match(/\.([a-z0-9]{1,8})$/);
+          if (extMatch) invExt = extMatch[1]!;
+          else if (msg.document.mime_type === "application/pdf") invExt = "pdf";
+          else invExt = "bin";
+        }
+        if (!invDl) {
+          await tg("sendMessage", {
+            chat_id,
+            text: "Не удалось скачать файл из Telegram, попробуйте отправить ещё раз.",
+          });
+          return;
+        }
+        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+        try {
+          const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+          if (!buckets?.some((b) => b.name === "payment-proofs")) {
+            await supabaseAdmin.storage.createBucket("payment-proofs", {
+              public: false,
+              fileSizeLimit: 20 * 1024 * 1024,
+            });
+          }
+        } catch (e) {
+          console.error("[bot] ensure payment-proofs bucket (invoice)", e);
+        }
+        // Тот же общий бакет "payment-proofs", что и чеки заказов — bot_id-
+        // префикс изолирует арендаторов (Storage не проходит через RLS), а
+        // отдельная папка invoice-<id> не даёт перепутать с чеками заказов.
+        const invKey = `${process.env.BOT_ID?.trim() || "unknown"}/invoice-${invoice.id}/${Date.now()}.${invExt}`;
+        const invBody = new Blob([invDl.bytes as BlobPart], {
+          type: invDl.mime || "application/octet-stream",
+        });
+        const invUpRes = await supabaseAdmin.storage
+          .from("payment-proofs")
+          .upload(invKey, invBody, {
+            contentType: invDl.mime || "application/octet-stream",
+            upsert: true,
+          });
+        if (invUpRes.error) {
+          console.error("[bot] invoice proof upload failed", invUpRes.error);
+          await tg("sendMessage", {
+            chat_id,
+            text: "Не удалось сохранить чек, попробуйте отправить ещё раз.",
+          });
+          return;
+        }
+        await sInv
+          .from("subscription_invoices")
+          .update({
+            status: "proof_uploaded",
+            proof_path: invKey,
+            proof_uploaded_at: new Date().toISOString(),
+          })
+          .eq("id", invoice.id);
+        await tg("sendMessage", {
+          chat_id,
+          text: "Чек получен, спасибо! Ожидайте подтверждения оплаты.",
+        });
+        return;
+      }
+    }
+  }
+
   if (
     user.state?.mode === "awaiting_proof" &&
     user.state.pending_order_id &&

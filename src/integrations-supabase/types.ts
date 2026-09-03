@@ -209,6 +209,77 @@ export type Database = {
           },
         ];
       };
+      operator_settings: {
+        Row: {
+          key: string;
+          value: string | null;
+        };
+        Insert: {
+          key: string;
+          value?: string | null;
+        };
+        Update: {
+          key?: string;
+          value?: string | null;
+        };
+        Relationships: [];
+      };
+      subscription_invoices: {
+        Row: {
+          id: string;
+          bot_id: string;
+          amount: number;
+          currency: string;
+          note: string | null;
+          requisites_snapshot: string;
+          status: string;
+          proof_path: string | null;
+          proof_uploaded_at: string | null;
+          created_at: string;
+          created_by: string | null;
+          confirmed_at: string | null;
+          reject_reason: string | null;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          amount: number;
+          currency?: string;
+          note?: string | null;
+          requisites_snapshot: string;
+          status?: string;
+          proof_path?: string | null;
+          proof_uploaded_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          confirmed_at?: string | null;
+          reject_reason?: string | null;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          amount?: number;
+          currency?: string;
+          note?: string | null;
+          requisites_snapshot?: string;
+          status?: string;
+          proof_path?: string | null;
+          proof_uploaded_at?: string | null;
+          created_at?: string;
+          created_by?: string | null;
+          confirmed_at?: string | null;
+          reject_reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "subscription_invoices_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       operator_login_attempts: {
         Row: {
           id: string;

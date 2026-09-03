@@ -64,6 +64,7 @@ import { Route as MiniAppProductProductIdRouteImport } from './routes/mini-app.p
 import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
 import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
 import { Route as OperatorAuthedBroadcastRouteImport } from './routes/operator._authed.broadcast'
+import { Route as OperatorAuthedInvoicesRouteImport } from './routes/operator._authed.invoices'
 import { Route as OperatorAuthedJournalRouteImport } from './routes/operator._authed.journal'
 import { Route as OperatorAuthedOnboardRouteImport } from './routes/operator._authed.onboard'
 import { Route as OperatorAuthedRequestsRouteImport } from './routes/operator._authed.requests'
@@ -363,6 +364,11 @@ const OperatorAuthedBroadcastRoute = OperatorAuthedBroadcastRouteImport.update({
   path: '/broadcast',
   getParentRoute: () => OperatorAuthedRoute,
 } as any)
+const OperatorAuthedInvoicesRoute = OperatorAuthedInvoicesRouteImport.update({
+  id: '/invoices',
+  path: '/invoices',
+  getParentRoute: () => OperatorAuthedRoute,
+} as any)
 const OperatorAuthedJournalRoute = OperatorAuthedJournalRouteImport.update({
   id: '/journal',
   path: '/journal',
@@ -523,6 +529,7 @@ export interface FileRoutesByFullPath {
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/invoices': typeof OperatorAuthedInvoicesRoute
   '/operator/journal': typeof OperatorAuthedJournalRoute
   '/operator/onboard': typeof OperatorAuthedOnboardRoute
   '/operator/requests': typeof OperatorAuthedRequestsRoute
@@ -597,6 +604,7 @@ export interface FileRoutesByTo {
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/invoices': typeof OperatorAuthedInvoicesRoute
   '/operator/journal': typeof OperatorAuthedJournalRoute
   '/operator/onboard': typeof OperatorAuthedOnboardRoute
   '/operator/requests': typeof OperatorAuthedRequestsRoute
@@ -674,6 +682,7 @@ export interface FileRoutesById {
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/_authed/broadcast': typeof OperatorAuthedBroadcastRoute
+  '/operator/_authed/invoices': typeof OperatorAuthedInvoicesRoute
   '/operator/_authed/journal': typeof OperatorAuthedJournalRoute
   '/operator/_authed/onboard': typeof OperatorAuthedOnboardRoute
   '/operator/_authed/requests': typeof OperatorAuthedRequestsRoute
@@ -752,6 +761,7 @@ export interface FileRouteTypes {
     | '/mini-app/product/$productId'
     | '/operator/$botId'
     | '/operator/broadcast'
+    | '/operator/invoices'
     | '/operator/journal'
     | '/operator/onboard'
     | '/operator/requests'
@@ -826,6 +836,7 @@ export interface FileRouteTypes {
     | '/mini-app/product/$productId'
     | '/operator/$botId'
     | '/operator/broadcast'
+    | '/operator/invoices'
     | '/operator/journal'
     | '/operator/onboard'
     | '/operator/requests'
@@ -902,6 +913,7 @@ export interface FileRouteTypes {
     | '/mini-app/product/$productId'
     | '/operator/_authed/$botId'
     | '/operator/_authed/broadcast'
+    | '/operator/_authed/invoices'
     | '/operator/_authed/journal'
     | '/operator/_authed/onboard'
     | '/operator/_authed/requests'
@@ -1358,6 +1370,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OperatorAuthedBroadcastRouteImport
       parentRoute: typeof OperatorAuthedRoute
     }
+    '/operator/_authed/invoices': {
+      id: '/operator/_authed/invoices'
+      path: '/invoices'
+      fullPath: '/operator/invoices'
+      preLoaderRoute: typeof OperatorAuthedInvoicesRouteImport
+      parentRoute: typeof OperatorAuthedRoute
+    }
     '/operator/_authed/journal': {
       id: '/operator/_authed/journal'
       path: '/journal'
@@ -1581,6 +1600,7 @@ const MiniAppRouteWithChildren =
 interface OperatorAuthedRouteChildren {
   OperatorAuthedBotIdRoute: typeof OperatorAuthedBotIdRoute
   OperatorAuthedBroadcastRoute: typeof OperatorAuthedBroadcastRoute
+  OperatorAuthedInvoicesRoute: typeof OperatorAuthedInvoicesRoute
   OperatorAuthedJournalRoute: typeof OperatorAuthedJournalRoute
   OperatorAuthedOnboardRoute: typeof OperatorAuthedOnboardRoute
   OperatorAuthedRequestsRoute: typeof OperatorAuthedRequestsRoute
@@ -1590,6 +1610,7 @@ interface OperatorAuthedRouteChildren {
 const OperatorAuthedRouteChildren: OperatorAuthedRouteChildren = {
   OperatorAuthedBotIdRoute: OperatorAuthedBotIdRoute,
   OperatorAuthedBroadcastRoute: OperatorAuthedBroadcastRoute,
+  OperatorAuthedInvoicesRoute: OperatorAuthedInvoicesRoute,
   OperatorAuthedJournalRoute: OperatorAuthedJournalRoute,
   OperatorAuthedOnboardRoute: OperatorAuthedOnboardRoute,
   OperatorAuthedRequestsRoute: OperatorAuthedRequestsRoute,
