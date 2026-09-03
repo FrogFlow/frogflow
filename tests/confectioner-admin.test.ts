@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fulfillmentTypePatch } from "../src/lib/fulfillment-edit";
+import { fulfillmentTotalBelowPaid, fulfillmentTypePatch } from "../src/lib/fulfillment-edit";
 import { matchesPickupFilter } from "../src/lib/pickup-filter";
 import { remainingDueNow } from "../src/lib/fulfillment.server";
 import { addDaysToIsoDate } from "../src/lib/datetime";
@@ -89,6 +89,37 @@ describe("fulfillmentTypePatch — доставка ↔ самовывоз", () 
       delivery_fee: 2500,
       total: 22500,
     });
+  });
+});
+
+/**
+ * [Кондитеры-HIGH] orders_paid_amount_le_total (MIGRATION-55) запрещает
+ * paid_amount > total. updateOrderFulfillment раньше не проверял это перед
+ * тем, как fulfillmentTypePatch снимал комиссию зоны с total — заказ,
+ * оплаченный вместе с доставкой, при переключении на самовывоз падал бы
+ * сырой ошибкой CHECK-constraint вместо понятного сообщения.
+ */
+describe("fulfillmentTotalBelowPaid", () => {
+  it("оплачено больше нового total — блокирует смену", () => {
+    const patch = fulfillmentTypePatch(
+      { fulfillment_type: "delivery", delivery_fee: 1500, total: 21500 },
+      "pickup",
+    );
+    expect(fulfillmentTotalBelowPaid(patch, 21500)).toBe(true);
+    expect(fulfillmentTotalBelowPaid(patch, 20001)).toBe(true);
+  });
+
+  it("оплачено не больше нового total — разрешает смену", () => {
+    const patch = fulfillmentTypePatch(
+      { fulfillment_type: "delivery", delivery_fee: 1500, total: 21500 },
+      "pickup",
+    );
+    expect(fulfillmentTotalBelowPaid(patch, 20000)).toBe(false);
+    expect(fulfillmentTotalBelowPaid(patch, 0)).toBe(false);
+  });
+
+  it("patch без total (тип не менялся) — ничего не блокирует", () => {
+    expect(fulfillmentTotalBelowPaid({}, 99999)).toBe(false);
   });
 });
 

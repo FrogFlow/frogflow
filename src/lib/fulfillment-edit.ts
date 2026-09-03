@@ -49,3 +49,15 @@ export function fulfillmentTypePatch(
   }
   return patch;
 }
+
+/**
+ * orders_paid_amount_le_total (MIGRATION-55): доставка → самовывоз снимает
+ * комиссию зоны с total (fulfillmentTypePatch выше). Если покупатель уже
+ * оплатил заказ вместе с этой комиссией, новый total может оказаться меньше
+ * paid_amount — без этой проверки апдейт падал бы сырой ошибкой
+ * CHECK-constraint из Postgres вместо понятного сообщения админу. Возврат
+ * разницы делается вручную вне системы.
+ */
+export function fulfillmentTotalBelowPaid(patch: { total?: number }, paidAmount: number): boolean {
+  return patch.total !== undefined && patch.total < paidAmount;
+}

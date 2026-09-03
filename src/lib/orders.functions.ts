@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { fetchAll } from "./csv";
-import { fulfillmentTypePatch } from "./fulfillment-edit";
+import { fulfillmentTotalBelowPaid, fulfillmentTypePatch } from "./fulfillment-edit";
 import {
   manualCustomerTelegramId,
   manualCustomerUserKey,
@@ -560,7 +560,7 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
     const { data: order, error: readErr } = await s
       .from("orders")
       .select(
-        "fulfillment_kind, fulfillment_type, delivery_fee, total, country_code, order_items(products(lead_time_days))",
+        "fulfillment_kind, fulfillment_type, delivery_fee, total, paid_amount, country_code, order_items(products(lead_time_days))",
       )
       .eq("id", data.id)
       .maybeSingle();
@@ -619,6 +619,11 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
       data.fulfillmentType,
       zone,
     );
+    if (fulfillmentTotalBelowPaid(typePatch, Number(order.paid_amount) || 0)) {
+      throw new Error(
+        "Нельзя снять комиссию доставки — заказ уже оплачен на сумму больше нового итога. Сначала оформите возврат разницы покупателю.",
+      );
+    }
     const { error } = await s
       .from("orders")
       .update({
