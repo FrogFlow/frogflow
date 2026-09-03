@@ -420,6 +420,34 @@ export async function deliverOrder(
           const result = await sendMaterials(fresh.telegram_id, materials, item.name_snapshot, 1);
           itemOutcome = result.outcome;
           failReason = result.reason;
+        } else if (parseDeliveredLanguages(item.delivered_language).size > 0) {
+          // Позиция уже была выдана раньше, и записано, каким языком(-ами)
+          // (Учителя, admin "Отправить файлы ещё раз" → deliverOrder(force)):
+          // при delivery_lang_timing = "during" (самый частый сценарий,
+          // спрашивается по каждой позиции на выдаче) принудительная
+          // повторная выдача раньше всегда попадала в ветку ниже и заново
+          // спрашивала покупателя, какой язык он хочет, даже если тот уже
+          // один раз ответил на этот же вопрос — resendOrderFiles (ниже,
+          // самообслуживание "Мои покупки") этой ошибки уже не повторяет.
+          const deliveredLangs = [...parseDeliveredLanguages(item.delivered_language)];
+          let allOk = true;
+          for (const lang of deliveredLangs) {
+            const materials = materialsForOrderItem(item, lang);
+            if (materials.length === 0) continue;
+            const result = await sendMaterials(
+              fresh.telegram_id,
+              materials,
+              deliveredLangs.length > 1
+                ? `${item.name_snapshot} (${localeNames[lang]})`
+                : item.name_snapshot,
+              1,
+            );
+            if (result.outcome !== "sent") {
+              allOk = false;
+              failReason = result.reason;
+            }
+          }
+          itemOutcome = allOk ? "sent" : "failed_retry";
         } else if (availableLangs.length > 1) {
           const pickRes = await tg("sendMessage", {
             chat_id: fresh.telegram_id,

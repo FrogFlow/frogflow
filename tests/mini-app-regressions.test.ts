@@ -255,6 +255,29 @@ describe("Mini App production regressions", () => {
   });
 
   /**
+   * [Учителя-HIGH] Кнопка "Отправить файлы ещё раз" в админке (redeliverOrder
+   * → deliverOrder({force:true})) раньше всегда попадала в ветку "спросить
+   * язык заново" для позиций без delivery_lang_choice (delivery_lang_timing
+   * = "during", самый частый сценарий) — даже если язык для этой позиции уже
+   * был один раз выбран и записан в delivered_language при первой выдаче.
+   * Покупатель получал повторный вопрос "на каком языке" вместо простого
+   * повторного файла. Ветка на parseDeliveredLanguages должна идти РАНЬШЕ
+   * ветки с переспросом (availableLangs.length > 1), иначе она мертва.
+   */
+  it("redelivers a per-item language choice instead of asking again", () => {
+    const orders = source("src/lib/orders.server.ts");
+    const deliver = orders.slice(
+      orders.indexOf("export async function deliverOrder"),
+      orders.indexOf("export async function deliverOrder") + 12000,
+    );
+    const reuseIdx = deliver.indexOf("parseDeliveredLanguages(item.delivered_language).size > 0");
+    const askAgainIdx = deliver.indexOf("text: `📚 Материал");
+    expect(reuseIdx).toBeGreaterThan(-1);
+    expect(askAgainIdx).toBeGreaterThan(-1);
+    expect(reuseIdx).toBeLessThan(askAgainIdx);
+  });
+
+  /**
    * Бэкенд (reviews.server.ts, /api/public/mini-app/orders.ts) разрешает
    * оценку физического заказа без единой проверки fulfillment_kind — Mini
    * App скрывала кнопку "Оценить" для него без причины (в отличие от кнопки
