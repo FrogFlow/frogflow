@@ -1304,16 +1304,16 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
 
   // A CMD button in a Zernio automation carries its command in the postback
   // payload, while `message.text` contains the visible label (for example,
-  // «старт»). Treat a `/start` payload exactly like a manually typed command.
-  const isStartPostback = postbackPayload?.trim().toLowerCase() === "/start";
-  const effectiveText = isStartPostback ? "/start" : text;
-  const plainText = effectiveText.trim().toLowerCase();
-  const isStartCommand = plainText === "/start";
+  // «купить»). Instagram always shows that label in the chat — the command
+  // itself is hidden. Treat `/start`, `start`, and a trigger-word payload
+  // as an explicit shop start; a typed «купить» without a postback is not.
+  const triggerWords = parseTriggerWords(setting("triggers"));
+  const { resolveWhatsAppStartPrompt, whatsappActivationAction, isZernioStartIntent } =
+    await import("./whatsapp-activation");
+  const isStartCommand = isZernioStartIntent(text, postbackPayload, triggerWords);
+  const effectiveText = isStartCommand ? "/start" : text;
   const startFlow = await import("./direct-purchase.server");
   const directState = startFlow.readDirectState(user.state);
-
-  const { resolveWhatsAppStartPrompt, whatsappActivationAction } =
-    await import("./whatsapp-activation");
   const hasIncomingContent = Boolean(
     text.trim() ||
     postbackPayload ||
@@ -1351,8 +1351,6 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     return;
   }
   if (activationAction === "wait") return;
-
-  const triggerWords = parseTriggerWords(setting("triggers"));
 
   /**
    * Чем новый покупатель будит бота.
@@ -1460,7 +1458,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * сценарий ниже.
    */
   const isStepAnswer = postbackPayload?.startsWith(STEP_PREFIX) ?? false;
-  if (postbackPayload !== null && !isStepAnswer && !isStartPostback) {
+  if (postbackPayload !== null && !isStepAnswer && !isStartCommand) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
 
     // «В корзину» — та же торговля, что и сама корзина, и гаснет вместе с ней.

@@ -186,6 +186,7 @@ const copy: Record<
     buttonCmdType: string;
     buttonUrlPlaceholder: string;
     buttonCmdPlaceholder: string;
+    buttonCmdHint: string;
     linkTrackingLabel: string;
     activeLabel: string;
     saving: string;
@@ -414,7 +415,9 @@ const copy: Record<
     buttonUrlType: "🔗 URL",
     buttonCmdType: "🤖 CMD",
     buttonUrlPlaceholder: "https://...",
-    buttonCmdPlaceholder: "Команда, например BUY_NOW",
+    buttonCmdPlaceholder: "Команда, например /start",
+    buttonCmdHint:
+      "В чате Instagram появится текст кнопки. Команда уйдёт скрыто — для запуска магазина укажите /start.",
     linkTrackingLabel: "Трекинг ссылок",
     activeLabel: "Активно",
     saving: "Сохранение...",
@@ -648,7 +651,9 @@ const copy: Record<
     buttonUrlType: "🔗 URL",
     buttonCmdType: "🤖 CMD",
     buttonUrlPlaceholder: "https://...",
-    buttonCmdPlaceholder: "Команда, мысалы BUY_NOW",
+    buttonCmdPlaceholder: "Команда, мысалы /start",
+    buttonCmdHint:
+      "Instagram чатта түйме мәтіні көрінеді. Команда жасырын кетеді — дүкенді ашу үшін /start деп жазыңыз.",
     linkTrackingLabel: "Сілтемелерді бақылау",
     activeLabel: "Белсенді",
     saving: "Сақталуда...",
@@ -883,7 +888,9 @@ const copy: Record<
     buttonUrlType: "🔗 URL",
     buttonCmdType: "🤖 CMD",
     buttonUrlPlaceholder: "https://...",
-    buttonCmdPlaceholder: "Command, e.g. BUY_NOW",
+    buttonCmdPlaceholder: "Command, e.g. /start",
+    buttonCmdHint:
+      "Instagram shows the button label in the chat. The command is sent hidden — use /start to open the shop.",
     linkTrackingLabel: "Link tracking",
     activeLabel: "Active",
     saving: "Saving...",
@@ -1117,7 +1124,9 @@ const copy: Record<
     buttonUrlType: "🔗 URL",
     buttonCmdType: "🤖 CMD",
     buttonUrlPlaceholder: "https://...",
-    buttonCmdPlaceholder: "Buyruq, masalan BUY_NOW",
+    buttonCmdPlaceholder: "Buyruq, masalan /start",
+    buttonCmdHint:
+      "Instagram chatida tugma matni ko‘rinadi. Buyruq yashirin ketadi — do‘konni ochish uchun /start yozing.",
     linkTrackingLabel: "Havolalarni kuzatish",
     activeLabel: "Faol",
     saving: "Saqlanmoqda...",
@@ -2358,9 +2367,12 @@ function AdminInstagramPage() {
                                       onChange={(e) =>
                                         handleUpdateButton(i, "payload", e.target.value)
                                       }
-                                      placeholder="Команда, например BUY_NOW"
+                                      placeholder={tr.buttonCmdPlaceholder}
                                       className="h-7 text-[11px] col-span-2"
                                     />
+                                    <p className="col-span-2 text-[10px] text-muted-foreground leading-snug">
+                                      {tr.buttonCmdHint}
+                                    </p>
                                   )}
                                 </div>
                                 <Button
