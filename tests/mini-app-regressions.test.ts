@@ -301,6 +301,29 @@ describe("Mini App production regressions", () => {
   });
 
   /**
+   * [Кондитеры-HIGH] Instagram/WhatsApp Direct показывали "❌ Нет в
+   * наличии" рядом с рабочей кнопкой "В корзину" — остаток проверяется
+   * только на оформлении заказа (после отправки чека), не на карточке/в
+   * выдаче поиска. Кнопки покупки должны прятаться при isOutOfStock, как и
+   * в Telegram (bot.server.ts sendProductCard).
+   */
+  it("hides Direct purchase buttons for out-of-stock products, on the card and in search results", () => {
+    const zernio = source("src/lib/zernio-bot.server.ts");
+    const card = zernio.slice(
+      zernio.indexOf("async function sendWhatsAppProductCard"),
+      zernio.indexOf("async function sendWhatsAppProductCard") + 6000,
+    );
+    expect(card).toContain("const buttons: ZernioDmButton[] = isOutOfStock");
+    expect(card).toContain("variants.length > 3 && !isOutOfStock");
+    const results = zernio.slice(
+      zernio.indexOf("async function sendInteractiveProductResults"),
+      zernio.indexOf("async function sendInteractiveProductResults") + 6000,
+    );
+    expect(results).toContain("stock_quantity");
+    expect(results).toContain("buttons: isOutOfStock");
+  });
+
+  /**
    * Бэкенд (reviews.server.ts, /api/public/mini-app/orders.ts) разрешает
    * оценку физического заказа без единой проверки fulfillment_kind — Mini
    * App скрывала кнопку "Оценить" для него без причины (в отличие от кнопки

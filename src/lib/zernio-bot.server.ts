@@ -2039,7 +2039,10 @@ async function sendWhatsAppProductCard(
 
   const { sendZernioInboxMessage } = await import("./zernio.server");
 
-  if (variants.length > 3) {
+  // isOutOfStock: не уходим в интерактивный числовой выбор варианта
+  // (mode: "awaiting_variant_choice") — покупатель ответил бы номером на
+  // товар, который всё равно нельзя купить.
+  if (variants.length > 3 && !isOutOfStock) {
     const priced = await Promise.all(
       variants.map(async (v) => ({
         v,
@@ -2072,8 +2075,17 @@ async function sendWhatsAppProductCard(
     return;
   }
 
-  const buttons: ZernioDmButton[] =
-    variants.length > 0
+  // Нет в наличии — ни одной кнопки покупки (тот же приём, что и в
+  // Telegram-боте, sendProductCard: reply_markup пустой при outOfStock).
+  // Раньше карточка Direct показывала "❌ Нет в наличии" и рабочую кнопку
+  // "В корзину" рядом — остаток проверяется только на оформлении заказа
+  // (после чека), так что товар всё равно добавлялся бы в корзину и
+  // покупатель узнавал о нехватке остатка уже после отправки чека.
+  // Остаток общий на товар, не на вариант (см. комментарий в
+  // bot.server.ts sendProductCard), поэтому гейт закрывает и варианты.
+  const buttons: ZernioDmButton[] = isOutOfStock
+    ? []
+    : variants.length > 0
       ? await Promise.all(
           variants.map(async (v) => {
             const money = await flow.resolveProductPrice(product, state.country_code ?? null, v);
@@ -2143,7 +2155,7 @@ async function sendInteractiveProductResults(
     // (Ниши, Блок D) — узнать, есть ли у товара варианты (id достаточно, сами
     // варианты выбираются на полной карточке).
     .select(
-      "id, name, price, currency, country_prices, description, is_active, product_variants(id)",
+      "id, name, price, currency, country_prices, description, is_active, stock_quantity, product_variants(id)",
     )
     .eq("is_active", true)
     .or(`name.ilike.%${query}%,description.ilike.%${query}%,keywords.ilike.%${query}%`)
@@ -2205,37 +2217,55 @@ async function sendInteractiveProductResults(
   // защиту от повторов их не гоняем: тексты и так все разные.
   await sendZernioInboxMessage(conversationId, accountId, copy.searchFoundCount(products.length));
   const country = state.country_code ?? null;
+  // Остаток (Ниши) — этот путь (карточка результата поиска в Instagram) не
+  // вёл на полную карточку товара и потому не был закрыт тем же гейтом, что
+  // и sendWhatsAppProductCard: раньше "❌ Нет в наличии" в выдаче поиска не
+  // показывалось вовсе, а кнопка "В корзину" на самом деле работала.
+  const { hasModule } = await import("./modules/modules.server");
+  const stockOn = await hasModule("stock");
   for (const product of products) {
     const description = product.description ? `\n${String(product.description).slice(0, 180)}` : "";
+    const isOutOfStock = stockOn && product.stock_quantity != null && product.stock_quantity <= 0;
+    const outOfStockLine = isOutOfStock ? `\n${copy.outOfStockLabel}` : "";
     // Товар с вариантами (Ниши, Блок D) — здесь неоткуда взять, какой вариант
     // выбрать (это отдельное сообщение без кнопок на каждый вариант, лимит
     // Zernio — три на сообщение, а тут уже занято «Корзиной»), поэтому ведём
     // на полную карточку (PROD_PREFIX → sendWhatsAppProductCard), где выбор
-    // варианта уже решён кнопками/пронумерованным списком.
+    // варианта уже решён кнопками/пронумерованным списком, и где остаток
+    // (общий на товар, не на вариант) уже проверен.
     const hasVariants = (product.product_variants?.length ?? 0) > 0;
     if (hasVariants) {
-      await sendZernioInboxMessage(conversationId, accountId, `📌 ${product.name}${description}`, {
-        buttons: [
-          {
-            type: "postback",
-            title: copy.btnChooseVariant,
-            payload: `${PROD_PREFIX}${product.id}`,
-          },
-          { type: "postback", title: copy.btnCart, payload: "CART" },
-        ],
-      });
+      await sendZernioInboxMessage(
+        conversationId,
+        accountId,
+        `📌 ${product.name}${description}${outOfStockLine}`,
+        {
+          buttons: isOutOfStock
+            ? [{ type: "postback", title: copy.btnCart, payload: "CART" }]
+            : [
+                {
+                  type: "postback",
+                  title: copy.btnChooseVariant,
+                  payload: `${PROD_PREFIX}${product.id}`,
+                },
+                { type: "postback", title: copy.btnCart, payload: "CART" },
+              ],
+        },
+      );
       continue;
     }
     const money = await flow.resolveProductPrice(product, country);
     await sendZernioInboxMessage(
       conversationId,
       accountId,
-      `📌 ${product.name}\n💰 ${money.amount} ${money.currency}${description}`,
+      `📌 ${product.name}\n💰 ${money.amount} ${money.currency}${description}${outOfStockLine}`,
       {
-        buttons: [
-          { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
-          { type: "postback", title: copy.btnCart, payload: "CART" },
-        ],
+        buttons: isOutOfStock
+          ? [{ type: "postback", title: copy.btnCart, payload: "CART" }]
+          : [
+              { type: "postback", title: copy.btnAddToCart, payload: `BUY:${product.id}` },
+              { type: "postback", title: copy.btnCart, payload: "CART" },
+            ],
       },
     );
   }
