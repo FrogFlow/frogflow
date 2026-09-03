@@ -9,7 +9,7 @@ let lastSweep = 0;
  * double taps and simple request floods.
  */
 export function consumeMiniAppRateLimit(
-  scope: "cart" | "checkout" | "proof" | "orders" | "search" | "library",
+  scope: "cart" | "checkout" | "proof" | "orders" | "orders_poll" | "search" | "library",
   telegramId: number,
 ): { ok: true } | { ok: false; retryAfter: number } {
   const now = Date.now();
@@ -25,7 +25,13 @@ export function consumeMiniAppRateLimit(
             ? 20
             : scope === "orders"
               ? 30
-              : 90;
+              : scope === "orders_poll"
+                ? // startPaymentPolling бьёт сюда раз в 4с (15/мин) — свой бюджет,
+                  // отдельный от "orders" вкладки заказов (Учителя, находка о
+                  // коллизии): иначе фоновый опрос платежа съедал лимит вкладки,
+                  // и покупатель видел ошибку от собственного открытия «Заказов».
+                  20
+                : 90;
   const key = `${scope}:${telegramId}`;
 
   if (now - lastSweep > windowMs) {

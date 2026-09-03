@@ -943,7 +943,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         return;
       }
       if (!initData() || document.visibilityState !== "visible") return;
-      fetch("/api/public/mini-app/orders", { headers: apiHeaders() })
+      fetch("/api/public/mini-app/orders?poll=1", { headers: apiHeaders() })
         .then(parseResponse)
         .then(function (res) {
           if (!res.ok || !paymentPollOrderId) return;

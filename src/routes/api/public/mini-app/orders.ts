@@ -5,8 +5,13 @@ import { consumeMiniAppRateLimit } from "@/lib/mini-app-rate-limit.server";
 import { getCachedBotUrl } from "@/lib/bot-url.server";
 import { isValidRating } from "@/lib/reviews";
 
-function limited(telegramId: number): Response | null {
-  const limit = consumeMiniAppRateLimit("orders", telegramId);
+// startPaymentPolling (mini-app-runtime.ts) бьёт этот же эндпоинт раз в 4с
+// фоном, пока ждёт подтверждения оплаты — без отдельного бюджета он делил
+// одну и ту же корзину лимита с открытием вкладки «Заказы» самим
+// покупателем, и фоновый опрос мог выесть лимит раньше, чем покупатель
+// успевал сам обновить список (Учителя, находка о коллизии лимитов).
+function limited(telegramId: number, isPoll: boolean): Response | null {
+  const limit = consumeMiniAppRateLimit(isPoll ? "orders_poll" : "orders", telegramId);
   return limit.ok
     ? null
     : Response.json(
@@ -41,7 +46,8 @@ export const Route = createFileRoute("/api/public/mini-app/orders")({
         if (!auth.ok) {
           return Response.json({ error: auth.error }, { status: auth.status });
         }
-        const rateResponse = limited(auth.user.id);
+        const isPoll = new URL(request.url).searchParams.get("poll") === "1";
+        const rateResponse = limited(auth.user.id, isPoll);
         if (rateResponse) return rateResponse;
 
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -109,7 +115,7 @@ export const Route = createFileRoute("/api/public/mini-app/orders")({
         if (!auth.ok) {
           return Response.json({ error: auth.error }, { status: auth.status });
         }
-        const rateResponse = limited(auth.user.id);
+        const rateResponse = limited(auth.user.id, false);
         if (rateResponse) return rateResponse;
         let body: {
           action?: string;

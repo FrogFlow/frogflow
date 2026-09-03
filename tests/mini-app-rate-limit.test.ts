@@ -27,4 +27,29 @@ describe("Mini App rate limiting", () => {
     }
     expect(consumeMiniAppRateLimit("proof", telegramId).ok).toBe(false);
   });
+
+  /**
+   * Учителя, находка о коллизии лимитов: startPaymentPolling бьёт
+   * /api/public/mini-app/orders?poll=1 раз в 4с фоном, пока ждёт оплату, —
+   * без отдельного бюджета это делило одну корзину с открытием вкладки
+   * «Заказы» самим покупателем, и фоновый опрос мог выесть весь лимит
+   * "orders" раньше, чем покупатель успевал сам обновить список.
+   */
+  it("orders_poll имеет свой бюджет, не деля лимит со вкладкой «Заказы»", () => {
+    const telegramId = 9_000_000_007;
+    for (let i = 0; i < 30; i++) {
+      expect(consumeMiniAppRateLimit("orders", telegramId).ok).toBe(true);
+    }
+    expect(consumeMiniAppRateLimit("orders", telegramId).ok).toBe(false);
+    // "orders" исчерпан — но фоновый опрос платежа под своим scope всё ещё работает.
+    expect(consumeMiniAppRateLimit("orders_poll", telegramId).ok).toBe(true);
+  });
+
+  it("orders_poll тоже ограничен — не безлимитный фон", () => {
+    const telegramId = 9_000_000_009;
+    for (let i = 0; i < 20; i++) {
+      expect(consumeMiniAppRateLimit("orders_poll", telegramId).ok).toBe(true);
+    }
+    expect(consumeMiniAppRateLimit("orders_poll", telegramId).ok).toBe(false);
+  });
 });
