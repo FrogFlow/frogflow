@@ -16,6 +16,16 @@ type LibraryOrderRow = {
   order_items: Array<{ product_id: string | null; name_snapshot: string | null }> | null;
 };
 
+// Не постраничная выдача — вся страница /mini-app/library рендерится разом,
+// без пагинации в UI (в отличие от каталога, где 80 карточек — предел
+// одной СТРАНИЦЫ). Здесь 80 ограничивало число ПРОСМОТРЕННЫХ заказов, а
+// не отдельных товаров: покупатель больше чем с 80 заказами терял старые
+// материалы из "Моих материалов" насовсем — они просто не попадали в
+// выборку и дедупликация по товару их не видела. Один покупатель с тысячами
+// заказов в этой нише маловероятен, так что высокий предел закрывает
+// практический случай, не требуя постраничного UI.
+const LIBRARY_ORDERS_SCAN_LIMIT = 1000;
+
 export async function listMiniAppLibrary(telegramId: number): Promise<MiniAppLibraryItem[]> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data: orders } = await supabaseAdmin
@@ -24,7 +34,7 @@ export async function listMiniAppLibrary(telegramId: number): Promise<MiniAppLib
     .eq("telegram_id", telegramId)
     .eq("status", "delivered")
     .order("created_at", { ascending: false })
-    .limit(80);
+    .limit(LIBRARY_ORDERS_SCAN_LIMIT);
   const byProduct = new Map<string, MiniAppLibraryItem>();
   for (const order of (orders ?? []) as LibraryOrderRow[]) {
     if (order.fulfillment_kind === "physical") continue;
