@@ -57,17 +57,28 @@ export const saveDeliveryZone = createServerFn({ method: "POST" })
  * этих заказов не пострадает от самого удаления (delivery_zone_name —
  * снимок на момент выбора, а не живая ссылка), но продавец должен видеть,
  * скольких открытых заказов это касается, прежде чем нажать "Удалить".
+ *
+ * Без брошенных чекаутов, которые всё равно уйдут ближайшей ночной уборкой
+ * (nightly_orders_maintenance, MIGRATION-57) — иначе продавец видел
+ * пугающее число и откладывал удаление мёртвой зоны, хотя реальных заказов
+ * на ней не было ни одного. Условие OR — точное отрицание DELETE-условия
+ * той же функции: заказ учитывается, если НЕ выполняется одновременно всё
+ * из «старый + без даты получения + не ручной ввод».
  */
 export const countOrdersUsingZone = createServerFn({ method: "GET" })
   .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await requireAdmin();
     const s = await db();
+    const staleCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const { count, error } = await s
       .from("orders")
       .select("*", { count: "exact", head: true })
       .eq("delivery_zone_id", data.id)
-      .not("status", "in", "(delivered,rejected)");
+      .not("status", "in", "(delivered,rejected)")
+      .or(
+        `status.not.in.(awaiting_confirmation,awaiting_payment),created_at.gte.${staleCutoff},fulfillment_at.not.is.null,platform.eq.manual`,
+      );
     if (error) throw new Error(error.message);
     return { count: count ?? 0 };
   });
