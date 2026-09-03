@@ -476,8 +476,15 @@ export async function loadRelatedMiniAppProducts(
   limit = 6,
 ): Promise<string> {
   const categoryIds = productCategoryIds(product);
-  if (!categoryIds.length) return "";
-  const match = new Set(categoryIds);
+  // Без категории раньше секция вообще не рендерилась — товар без категории
+  // (не редкость: категории необязательны при создании) никогда не получал
+  // блок "похожие", даже когда в каталоге есть на что посмотреть (Учителя,
+  // находка про похожие материалы без fallback). match=undefined в
+  // filterMiniAppProductIds означает "без фильтра по категории", а не "не
+  // найдено ничего" — тем самым fallback превращается в "весь каталог по
+  // порядку витрины", и заголовок секции меняется на нейтральный (не
+  // "Ещё в этой папке" — папки-то и нет).
+  const match = categoryIds.length ? new Set(categoryIds) : undefined;
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
   const { fetchAll } = await import("./csv");
@@ -521,7 +528,8 @@ export async function loadRelatedMiniAppProducts(
       }),
     )
     .join("");
-  return `<section class="related"><h2>${escapeMiniAppHtml(s.moreInFolder)}</h2><div class="grid related-grid">${cards}</div></section>`;
+  const heading = categoryIds.length ? s.moreInFolder : s.youMayAlsoLike;
+  return `<section class="related"><h2>${escapeMiniAppHtml(heading)}</h2><div class="grid related-grid">${cards}</div></section>`;
 }
 
 export function renderMiniAppProductCard(

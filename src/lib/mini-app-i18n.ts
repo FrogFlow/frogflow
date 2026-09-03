@@ -22,6 +22,7 @@ export type MiniAppStrings = {
   emptyLibrary: string;
   purchased: string;
   moreInFolder: string;
+  youMayAlsoLike: string;
   sortCatalog: string;
   sortPopular: string;
   sortNew: string;
@@ -150,6 +151,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyLibrary: "Купленных материалов пока нет.",
     purchased: "Куплено",
     moreInFolder: "Ещё в этой папке",
+    youMayAlsoLike: "Может понравиться",
     sortCatalog: "Каталог",
     sortPopular: "Популярные",
     sortNew: "Новые",
@@ -285,6 +287,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyLibrary: "Сатып алынған материалдар әзірге жоқ.",
     purchased: "Сатып алынды",
     moreInFolder: "Осы бумада тағы",
+    youMayAlsoLike: "Ұнауы мүмкін",
     sortCatalog: "Каталог",
     sortPopular: "Танымал",
     sortNew: "Жаңа",
@@ -420,6 +423,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyLibrary: "No purchased materials yet.",
     purchased: "Purchased",
     moreInFolder: "More in this folder",
+    youMayAlsoLike: "You may also like",
     sortCatalog: "Catalog",
     sortPopular: "Popular",
     sortNew: "New",
@@ -555,6 +559,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     emptyLibrary: "Sotib olingan materiallar hozircha yo‘q.",
     purchased: "Sotib olingan",
     moreInFolder: "Shu jildda yana",
+    youMayAlsoLike: "Sizga yoqishi mumkin",
     sortCatalog: "Katalog",
     sortPopular: "Mashhur",
     sortNew: "Yangi",
