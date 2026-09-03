@@ -164,6 +164,8 @@ interface DirectCopy {
   fulfillmentAddressPrompt: string;
   fulfillmentNotePrompt: string;
   fulfillmentNoteSkipBtn: string;
+  emailBeforeProofAsk: string;
+  emailBeforeProofHint: string;
   amountDue: (amount: number, currency: string) => string;
   sendProofHint: string;
   cancelled: string;
@@ -295,6 +297,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentNotePrompt:
       "Комментарий к заказу (например, надпись на торте)? Если не нужен — нажмите «Без комментария».",
     fulfillmentNoteSkipBtn: "Без комментария",
+    emailBeforeProofAsk:
+      "На какую почту прислать материалы после оплаты?\n\n" +
+      "Пожалуйста, проверьте адрес: без лишних пробелов и ошибок — например anna@mail.ru",
+    emailBeforeProofHint:
+      "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\n" +
+      "Чтобы выйти, напишите «отмена».",
     amountDue: (amount, currency) => `К оплате: ${amount} ${currency}\n`,
     sendProofHint: "После оплаты пришлите чек сюда — картинкой или файлом.",
     cancelled:
@@ -454,6 +462,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentNotePrompt:
       "Тапсырысқа түсініктеме (мысалы, тортқа жазу)? Қажет болмаса — «Түсініктемесіз» батырмасын басыңыз.",
     fulfillmentNoteSkipBtn: "Түсініктемесіз",
+    emailBeforeProofAsk:
+      "Төлегеннен кейін материалдарды қай поштаға жіберейік?\n\n" +
+      "Мекен-жайды тексеріңіз: бос орынсыз және қатесіз — мысалы anna@mail.ru",
+    emailBeforeProofHint:
+      "Бұл пошта мекен-жайына ұқсамайды. Толық жазыңыз, мысалы anna@mail.ru\n\n" +
+      "Шығу үшін «отмена» деп жазыңыз.",
     amountDue: (amount, currency) => `Төлеуге: ${amount} ${currency}\n`,
     sendProofHint: "Төлегеннен кейін чекті осында жіберіңіз — суретпен немесе файлмен.",
     cancelled: "Болдырмадым, себет бос. Дайын болғанда материал нөмірін жазыңыз — мысалы «018».",
@@ -611,6 +625,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentNotePrompt:
       'Any note for the order (e.g. a cake inscription)? If not needed, tap "No note".',
     fulfillmentNoteSkipBtn: "No note",
+    emailBeforeProofAsk:
+      "What email should we send the materials to after payment?\n\n" +
+      "Please double-check the address — e.g. anna@mail.ru",
+    emailBeforeProofHint:
+      "That doesn't look like an email address. Please type it in full, e.g. anna@mail.ru\n\n" +
+      "To cancel, type \"cancel\".",
     amountDue: (amount, currency) => `Total due: ${amount} ${currency}\n`,
     sendProofHint: "After paying, send the receipt here — as a photo or a file.",
     cancelled:
@@ -767,6 +787,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     fulfillmentNotePrompt:
       "Buyurtmaga izoh (masalan, tortga yozuv)? Kerak bo‘lmasa — «Izohsiz» tugmasini bosing.",
     fulfillmentNoteSkipBtn: "Izohsiz",
+    emailBeforeProofAsk:
+      "To’lovdan so’ng materiallarni qaysi pochtaga yuboramiz?\n\n" +
+      "Manzilni tekshirib ko’ring — masalan anna@mail.ru",
+    emailBeforeProofHint:
+      "Bu pochta manziliga o’xshamaydi. To’liq yozing, masalan anna@mail.ru\n\n" +
+      "Chiqish uchun «отмена» deb yozing.",
     amountDue: (amount, currency) => `To‘lov uchun: ${amount} ${currency}\n`,
     sendProofHint: "To‘lovdan so‘ng chekni shu yerga yuboring — surat yoki fayl sifatida.",
     cancelled:
@@ -2601,15 +2627,24 @@ async function sendDirectPaymentDetails(params: {
       ? await amountDueNow({ total: fullAmount, fulfillment_kind: "physical" })
       : fullAmount;
 
+  const frozenCart = { lines: pricedLines, total: fullAmount, currency, mixedCurrency: false as const };
+  const needsEmailBeforeProof =
+    platformOf(user) === "instagram" && !isPhysicalCart && !user.email;
+
+  if (needsEmailBeforeProof) {
+    await flow.setDirectState(user.user_key, {
+      mode: "awaiting_email_before_proof",
+      country_code: country.code,
+      frozen_cart: frozenCart,
+    });
+    await say(copy.emailBeforeProofAsk);
+    return;
+  }
+
   await flow.setDirectState(user.user_key, {
     mode: "awaiting_proof",
     country_code: country.code,
-    // total здесь — полная цена (см. выше), не amountDue: это то, что
-    // попадёт в orders.total. Сколько реально просить сейчас, заказ
-    // пересчитает сам через amountDueNow() в момент проверки чека (Блок 2.6).
-    // mixedCurrency всегда false здесь: раньше по коду уже отбит ранний
-    // выход на true.
-    frozen_cart: { lines: pricedLines, total: fullAmount, currency, mixedCurrency: false },
+    frozen_cart: frozenCart,
   });
 
   await say(
@@ -3171,6 +3206,41 @@ async function handlePurchaseFlow(params: {
     }
 
     await sendCart(conversationId, accountId, user);
+    return true;
+  }
+
+  // ── Ждём почту перед чеком (Instagram, цифровой заказ, почты ещё нет) ──
+  if (state.mode === "awaiting_email_before_proof" && !attachmentUrl) {
+    const preEmail = flow.extractEmail(text);
+    if (!preEmail) {
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint: copy.emailBeforeProofHint,
+        say,
+        locale,
+      });
+      return true;
+    }
+    const s = await db();
+    await s.from("bot_users").update({ email: preEmail }).eq("user_key", user.user_key);
+    const userWithEmail = Object.assign({}, user, { email: preEmail });
+
+    const options = await flow.listCountries();
+    const country = options.find((o) => o.code === state.country_code);
+    if (!country) {
+      await flow.clearDirectFlow(user.user_key);
+      await sendCart(conversationId, accountId, userWithEmail);
+      return true;
+    }
+    await sendDirectPaymentDetails({
+      conversationId,
+      accountId,
+      user: userWithEmail,
+      country,
+      remembered: true,
+    });
     return true;
   }
 

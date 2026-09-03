@@ -48,6 +48,7 @@ export type DirectMode =
   | "awaiting_address"
   | "awaiting_fulfillment_note"
   | "awaiting_variant_choice"
+  | "awaiting_email_before_proof"
   | "awaiting_proof"
   | "processing_proof"
   | "awaiting_email"
