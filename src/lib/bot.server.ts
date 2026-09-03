@@ -2124,6 +2124,18 @@ async function addToCart(
   // поддерживается — у них разные машины выдачи (Ниши, Блок 6). Проверяем
   // ДО вставки, а не разбираем после.
   const incomingKind = product.fulfillment_kind === "physical" ? "physical" : "digital";
+
+  // Цифровой товар без единого прикреплённого файла (Учителя, находка
+  // CRIT-1) — Direct-канал этот случай уже закрыл (productHasFiles,
+  // direct-purchase.server.ts), а здесь, в основном канале продаж, такой
+  // товар можно было положить в корзину, оплатить, и deliverOrder
+  // (orders.server.ts) молча закрывал заказ как "выдан" при нуле файлов —
+  // покупатель платил и не получал ничего, продавец не видел ни следа.
+  // Проверяем на входе в корзину, а не после оплаты — тем же приёмом.
+  if (incomingKind === "digital") {
+    const { productHasFiles } = await import("./direct-purchase.server");
+    if (!(await productHasFiles(product_id))) return "unavailable";
+  }
   const { data: other } = await s
     .from("cart_items")
     .select("products(fulfillment_kind)")

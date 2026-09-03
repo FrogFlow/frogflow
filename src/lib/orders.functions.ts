@@ -325,7 +325,8 @@ export const createManualOrder = createServerFn({ method: "POST" })
     await requireAdmin();
     const s = await db();
     const { randomUUID } = await import("node:crypto");
-    const { materialsForProduct, availableMaterialLanguages } = await import("./product-materials");
+    const { materialsForProduct, availableMaterialLanguages, hasAnyMaterial } =
+      await import("./product-materials");
 
     if (data.fulfillmentType === "delivery" && !data.deliveryZoneId) {
       throw new Error("Для доставки выберите зону");
@@ -354,6 +355,15 @@ export const createManualOrder = createServerFn({ method: "POST" })
     for (const it of data.items) {
       const p = byId.get(it.productId);
       if (!p || !p.is_active) throw new Error("Товар не найден или скрыт");
+      // Та же защита, что и у addToCart в bot.server.ts и productHasFiles в
+      // Direct (Учителя, находка CRIT-1) — ручной заказ на цифровой товар
+      // без единого файла раньше проходил и на выдаче молча закрывался как
+      // "sent" при нуле файлов.
+      if (p.fulfillment_kind !== "physical" && !hasAnyMaterial(p)) {
+        throw new Error(
+          `У «${p.name}» нет ни одного прикреплённого файла — сначала загрузите материал`,
+        );
+      }
       const variants = (p.product_variants ?? []) as Array<{
         id: string;
         name: string;
