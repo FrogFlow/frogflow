@@ -532,9 +532,12 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
     z
       .object({
         id: z.number().int(),
-        fulfillmentAt: z.string().min(1).nullable(),
-        address: z.string().max(500).nullable(),
-        note: z.string().max(500).nullable(),
+        fulfillmentAt: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable(),
+        address: z.string().trim().max(500).nullable(),
+        note: z.string().trim().max(500).nullable(),
         fulfillmentType: z.enum(["pickup", "delivery"]).nullable().optional(),
         deliveryZoneId: z.string().uuid().nullable().optional(),
       })
