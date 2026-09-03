@@ -14,6 +14,13 @@ async function db() {
   return supabaseAdmin;
 }
 
+/** Самая ранняя допустимая дата получения при заданном сроке изготовления — тот же расчёт, что и maxLeadTimeDaysInCart в чекауте. */
+async function minFulfillmentDate(maxLeadDays: number): Promise<string> {
+  const { todayInAppTZ } = await import("./fulfillment.server");
+  const { addDaysToIsoDate } = await import("./datetime");
+  return addDaysToIsoDate(todayInAppTZ(), maxLeadDays);
+}
+
 type AdminDb = Awaited<ReturnType<typeof db>>;
 
 async function decrementProductStock(s: AdminDb, productId: string, qty: number): Promise<boolean> {
@@ -328,7 +335,7 @@ export const createManualOrder = createServerFn({ method: "POST" })
     const { data: products, error: prodErr } = await s
       .from("products")
       .select(
-        "id, name, price, currency, is_active, fulfillment_kind, stock_quantity, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(id, name, price)",
+        "id, name, price, currency, is_active, fulfillment_kind, stock_quantity, lead_time_days, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(id, name, price)",
       )
       .in("id", productIds);
     if (prodErr) throw new Error(prodErr.message);
@@ -382,6 +389,23 @@ export const createManualOrder = createServerFn({ method: "POST" })
       throw new Error("В одном заказе нельзя смешивать торты и цифровые товары");
     }
     const fulfillmentKind = kinds.has("physical") ? "physical" : "digital";
+
+    // Тот же минимальный срок изготовления, что и в обычном чекауте всех
+    // трёх каналов (maxLeadTimeDaysInCart + todayInAppTZ): ручной ввод не
+    // должен позволять поставить дату получения раньше, чем товар физически
+    // успеют сделать — иначе кондитерская обязуется перед клиентом на бумаге
+    // раньше, чем реально может.
+    if (fulfillmentKind === "physical" && data.fulfillmentAt) {
+      const maxLeadDays = Math.max(0, ...lines.map((l) => Number(l.product.lead_time_days) || 0));
+      if (maxLeadDays > 0) {
+        const minIso = await minFulfillmentDate(maxLeadDays);
+        if (data.fulfillmentAt < minIso) {
+          throw new Error(
+            `Слишком ранняя дата получения — минимальный срок изготовления ${maxLeadDays} дн., доступно с ${minIso}`,
+          );
+        }
+      }
+    }
 
     let deliveryFee = 0;
     let deliveryZoneName: string | null = null;
@@ -522,13 +546,36 @@ export const updateOrderFulfillment = createServerFn({ method: "POST" })
     const s = await db();
     const { data: order, error: readErr } = await s
       .from("orders")
-      .select("fulfillment_kind, fulfillment_type, delivery_fee, total, country_code")
+      .select(
+        "fulfillment_kind, fulfillment_type, delivery_fee, total, country_code, order_items(products(lead_time_days))",
+      )
       .eq("id", data.id)
       .maybeSingle();
     if (readErr) throw new Error(readErr.message);
     if (!order) throw new Error("Заказ не найден");
     if (order.fulfillment_kind !== "physical") {
       throw new Error("Способ получения правится только у физического заказа");
+    }
+    // Тот же минимальный срок изготовления, что и при первичном оформлении
+    // (createManualOrder выше, чекаут всех трёх каналов) — перенос даты не
+    // должен позволять поставить её раньше, чем товар физически успеют
+    // сделать заново.
+    if (data.fulfillmentAt) {
+      const items =
+        (order as { order_items?: Array<{ products?: { lead_time_days?: number | null } }> })
+          .order_items ?? [];
+      const maxLeadDays = Math.max(
+        0,
+        ...items.map((it) => Number(it.products?.lead_time_days) || 0),
+      );
+      if (maxLeadDays > 0) {
+        const minIso = await minFulfillmentDate(maxLeadDays);
+        if (data.fulfillmentAt < minIso) {
+          throw new Error(
+            `Слишком ранняя дата получения — минимальный срок изготовления ${maxLeadDays} дн., доступно с ${minIso}`,
+          );
+        }
+      }
     }
     let zone: { id: string; name: string; price: number } | null = null;
     if (data.fulfillmentType === "delivery") {
