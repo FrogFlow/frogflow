@@ -18,6 +18,9 @@ export type MiniAppStrings = {
   filesInBot: string;
   rateMaterial: string;
   rateThanks: string;
+  reviewCommentPlaceholder: string;
+  reviewCommentSend: string;
+  reviewCommentSaved: string;
   myMaterials: string;
   emptyLibrary: string;
   purchased: string;
@@ -147,6 +150,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Файлы отправлены в бот",
     rateMaterial: "Оценить материал",
     rateThanks: "Спасибо за оценку!",
+    reviewCommentPlaceholder: "Напишите комментарий (необязательно)",
+    reviewCommentSend: "Отправить",
+    reviewCommentSaved: "Комментарий сохранён",
     myMaterials: "Мои материалы",
     emptyLibrary: "Купленных материалов пока нет.",
     purchased: "Куплено",
@@ -283,6 +289,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Файлдар ботқа жіберілді",
     rateMaterial: "Материалды бағалау",
     rateThanks: "Бағалағаныңызға рақмет!",
+    reviewCommentPlaceholder: "Пікір жазыңыз (міндетті емес)",
+    reviewCommentSend: "Жіберу",
+    reviewCommentSaved: "Пікір сақталды",
     myMaterials: "Менің материалдарым",
     emptyLibrary: "Сатып алынған материалдар әзірге жоқ.",
     purchased: "Сатып алынды",
@@ -419,6 +428,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Files were sent to the bot",
     rateMaterial: "Rate this material",
     rateThanks: "Thanks for the rating!",
+    reviewCommentPlaceholder: "Write a comment (optional)",
+    reviewCommentSend: "Send",
+    reviewCommentSaved: "Comment saved",
     myMaterials: "My materials",
     emptyLibrary: "No purchased materials yet.",
     purchased: "Purchased",
@@ -555,6 +567,9 @@ const dict: Record<Locale, MiniAppStrings> = {
     filesInBot: "Fayllar botga yuborildi",
     rateMaterial: "Materialni baholash",
     rateThanks: "Bahongiz uchun rahmat!",
+    reviewCommentPlaceholder: "Izoh yozing (ixtiyoriy)",
+    reviewCommentSend: "Yuborish",
+    reviewCommentSaved: "Izoh saqlandi",
     myMaterials: "Materiallarim",
     emptyLibrary: "Sotib olingan materiallar hozircha yo‘q.",
     purchased: "Sotib olingan",
@@ -743,6 +758,9 @@ export function miniAppStringsClientPack(
     filesInBot: s.filesInBot,
     rateMaterial: s.rateMaterial,
     rateThanks: s.rateThanks,
+    reviewCommentPlaceholder: s.reviewCommentPlaceholder,
+    reviewCommentSend: s.reviewCommentSend,
+    reviewCommentSaved: s.reviewCommentSaved,
     myMaterials: s.myMaterials,
     emptyLibrary: s.emptyLibrary,
     purchased: s.purchased,

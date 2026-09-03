@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=8"');
+    expect(page).toContain('src="/mini-app-runtime?v=9"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -137,6 +137,19 @@ describe("Mini App production regressions", () => {
     expect(orders).toContain("delivery_lang_choice");
     expect(runtime).toContain("rateMaterial");
     expect(runtime).toContain("filesInBot");
+  });
+
+  it("lets a reviewer add a free-text comment after the star rating (Учителя, отзывы без комментариев)", () => {
+    const runtime = source("src/lib/mini-app-runtime.ts");
+    const orders = source("src/routes/api/public/mini-app/orders.ts");
+    const pack = miniAppStringsClientPack("ru");
+    expect(runtime).toContain("showReviewCommentForm");
+    expect(runtime).toContain('action: "comment"');
+    expect(orders).toContain('action === "comment"');
+    expect(orders).toContain("updateReviewComment");
+    expect(pack.reviewCommentPlaceholder).toBeTruthy();
+    expect(pack.reviewCommentSend).toBeTruthy();
+    expect(pack.reviewCommentSaved).toBeTruthy();
   });
 
   it("searches the catalog without dropping the Telegram WebView hash", () => {

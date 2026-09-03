@@ -508,6 +508,19 @@ export function wrapMiniAppPage(
     .order-stars { display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem; margin-top: 0.45rem; font-size: 0.8rem; color: var(--hint); }
     .star-btn { border: none; background: none; font-size: 1.15rem; line-height: 1; cursor: pointer; padding: 0 0.08rem; color: var(--hint); }
     .star-btn.active { color: #f5a623; }
+    .review-comment-form { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.4rem; }
+    .review-comment-form textarea {
+      width: 100%;
+      min-height: 3rem;
+      resize: vertical;
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .review-comment-form button { align-self: flex-end; padding: 0.4rem 0.8rem; }
   </style>
   ${extraHead ?? ""}
 </head>
@@ -519,7 +532,7 @@ export function wrapMiniAppPage(
     window.__miniAppLocale = "${lang}";
     window.__miniAppPhysicalShop = ${physicalShop ? "true" : "false"};
   </script>
-  <script src="/mini-app-runtime?v=8"></script>
+  <script src="/mini-app-runtime?v=9"></script>
 </body>
 </html>`;
 }

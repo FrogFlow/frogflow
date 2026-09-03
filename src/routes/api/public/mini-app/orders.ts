@@ -122,6 +122,7 @@ export const Route = createFileRoute("/api/public/mini-app/orders")({
           order_id?: number;
           product_id?: string;
           rating?: number;
+          comment?: string;
         };
         try {
           body = (await request.json()) as typeof body;
@@ -148,6 +149,36 @@ export const Route = createFileRoute("/api/public/mini-app/orders")({
           const ok = await upsertReview(auth.user.id, productId, rating, null);
           if (!ok) return Response.json({ error: "rate_failed" }, { status: 500 });
           return Response.json({ ok: true, rating });
+        }
+
+        // Оценка звёздами и комментарий — два отдельных запроса, тем же
+        // двухшаговым сценарием, что и в Telegram-боте (bot.server.ts,
+        // reviewSaved/awaiting_review_comment): звёзды упсертятся сразу по
+        // тапу, комментарий необязателен и дописывается отдельно.
+        // updateReviewComment для этого уже существовал в reviews.server.ts,
+        // но Mini App никогда его не вызывал — отзыв можно было оставить
+        // только оценкой, без единого слова текста (Учителя, находка про
+        // отзывы без комментариев).
+        if (body.action === "comment") {
+          const { hasModule } = await import("@/lib/modules/modules.server");
+          if (!(await hasModule("review_request"))) {
+            return Response.json({ error: "reviews_disabled" }, { status: 400 });
+          }
+          const orderId = Number(body.order_id);
+          const productId = typeof body.product_id === "string" ? body.product_id.trim() : "";
+          const comment = typeof body.comment === "string" ? body.comment.trim().slice(0, 500) : "";
+          if (!Number.isInteger(orderId) || !productId || !comment) {
+            return Response.json({ error: "invalid_action" }, { status: 400 });
+          }
+          const { reviewableProductsForOrder, updateReviewComment } =
+            await import("@/lib/reviews.server");
+          const reviewable = await reviewableProductsForOrder(orderId, auth.user.id);
+          if (!reviewable.some((item) => item.product_id === productId)) {
+            return Response.json({ error: "not_allowed" }, { status: 400 });
+          }
+          const ok = await updateReviewComment(auth.user.id, productId, comment);
+          if (!ok) return Response.json({ error: "comment_failed" }, { status: 500 });
+          return Response.json({ ok: true });
         }
 
         if (body.action !== "resend" || !Number.isInteger(Number(body.order_id))) {

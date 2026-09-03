@@ -691,6 +691,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           btn.classList.toggle("active", Number(btn.getAttribute("data-rate")) <= rating);
         });
         showToast(t("rateThanks"));
+        showReviewCommentForm(row, orderId, productId);
       })
       .catch(function () { showToast(t("networkError")); })
       .finally(function () {
@@ -698,6 +699,57 @@ export const MINI_APP_RUNTIME_JS = `(function () {
           btn.disabled = false;
         });
       });
+  }
+
+  // Раньше отзыв в Mini App был только звёздами — ни одного места для текста
+  // комментария, в отличие от бота (reviewSaved/awaiting_review_comment в
+  // bot.server.ts), где после оценки предлагается написать комментарий
+  // (Учителя, находка про отзывы без комментариев). updateReviewComment на
+  // сервере для этого уже существовал, просто никогда не вызывался отсюда.
+  // DOM-узлы, а не строка HTML — сама оценка строится конкатенацией строк,
+  // но здесь это лишний риск ошибиться в экранировании кавычек без пользы.
+  function showReviewCommentForm(row, orderId, productId) {
+    if (row.querySelector(".review-comment-form")) return;
+    var wrap = document.createElement("div");
+    wrap.className = "review-comment-form";
+    var ta = document.createElement("textarea");
+    ta.maxLength = 500;
+    ta.placeholder = t("reviewCommentPlaceholder");
+    var sendBtn = document.createElement("button");
+    sendBtn.type = "button";
+    sendBtn.textContent = t("reviewCommentSend");
+    sendBtn.addEventListener("click", function () {
+      var text = ta.value.trim();
+      if (!text) return;
+      sendBtn.disabled = true;
+      fetch("/api/public/mini-app/orders", {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          action: "comment",
+          order_id: orderId,
+          product_id: productId,
+          comment: text,
+        }),
+      })
+        .then(parseResponse)
+        .then(function (res) {
+          if (res.ok) {
+            wrap.remove();
+            showToast(t("reviewCommentSaved"));
+          } else {
+            showToast(t("checkoutFailed"));
+            sendBtn.disabled = false;
+          }
+        })
+        .catch(function () {
+          showToast(t("networkError"));
+          sendBtn.disabled = false;
+        });
+    });
+    wrap.appendChild(ta);
+    wrap.appendChild(sendBtn);
+    row.appendChild(wrap);
   }
 
   function clearCheckoutForm() {
