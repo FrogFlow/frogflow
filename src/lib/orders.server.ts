@@ -193,6 +193,46 @@ export async function rejectOrderSafely(orderId: number, note?: string | null) {
 }
 
 /**
+ * Сообщение «заказ выдан» уходит раньше смены статуса.
+ *
+ * Иначе панель уже зелёная, а покупатель не видит надписи — так вышло
+ * с заказом №588: файл (или выбор языка) отработал, статус стал
+ * `delivered`, а `sendMessage` после этого не дошёл.
+ */
+export async function announceAndCloseDeliveredOrder(params: {
+  orderId: number;
+  telegramId: number;
+  text: string;
+}): Promise<boolean> {
+  const ack = await tg("sendMessage", { chat_id: params.telegramId, text: params.text });
+  if (!ack?.ok) {
+    console.error("[orders] customer delivery ack failed", params.orderId, ack);
+    return false;
+  }
+
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data: finished } = await supabaseAdmin
+    .from("orders")
+    .update({ status: "delivered" })
+    .eq("id", params.orderId)
+    .eq("status", "delivering")
+    .select("id")
+    .maybeSingle();
+
+  if (finished) {
+    const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
+    await rewardReferralIfFirstDelivery(params.telegramId).catch((e) =>
+      console.error("[orders] rewardReferralIfFirstDelivery failed", e),
+    );
+    const { awardPointsForDelivery } = await import("./loyalty.server");
+    await awardPointsForDelivery(params.orderId, params.telegramId).catch((e) =>
+      console.error("[orders] awardPointsForDelivery failed", e),
+    );
+  }
+  return true;
+}
+
+/**
  * Deliver product files as Telegram documents in batches.
  * Each item is claimed with compare-and-swap so parallel cron/admin cannot double-send.
  * Digital goods: always 1 file copy (quantity is for price only).
@@ -646,29 +686,26 @@ export async function deliverOrder(
       return itemNeedsLanguageChoice({ ...it, delivered_language: delivered }, multiLanguageOn);
     });
     if (after?.status === "delivering" && doneIdx >= items.length && !stillAwaitingLangChoice) {
-      const { data: finished } = await supabaseAdmin
-        .from("orders")
-        .update({ status: "delivered" })
-        .eq("id", orderId)
-        .eq("status", "delivering")
-        .gte("delivery_index", items.length)
-        .select("id")
-        .maybeSingle();
-
-      if (finished) {
-        const displayNo = after.display_no ?? after.order_no ?? orderId;
-        const text = everManualRequired
-          ? `🙏 Оплата по заказу #${displayNo} подтверждена. Часть материалов продавец вышлет вручную — ожидайте, пожалуйста.`
-          : `🙏 Спасибо за покупку! Заказ #${displayNo} выдан (${items.length} материалов). Если что-то не так — напишите продавцу.`;
-        await tg("sendMessage", { chat_id: after.telegram_id, text });
-        const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
-        await rewardReferralIfFirstDelivery(after.telegram_id).catch((e) =>
-          console.error("[orders] rewardReferralIfFirstDelivery failed", e),
-        );
-        const { awardPointsForDelivery } = await import("./loyalty.server");
-        await awardPointsForDelivery(orderId, after.telegram_id).catch((e) =>
-          console.error("[orders] awardPointsForDelivery failed", e),
-        );
+      const displayNo = after.display_no ?? after.order_no ?? orderId;
+      const text = everManualRequired
+        ? `🙏 Оплата по заказу #${displayNo} подтверждена. Часть материалов продавец вышлет вручную — ожидайте, пожалуйста.`
+        : `🙏 Спасибо за покупку! Заказ #${displayNo} выдан (${items.length} материалов). Если что-то не так — напишите продавцу.`;
+      // Сначала сообщение покупателю, потом статус «выдан». Иначе панель
+      // показывает выдачу, а в чате тишина — заказ №588, сентябрь 2026.
+      const closed = await announceAndCloseDeliveredOrder({
+        orderId,
+        telegramId: after.telegram_id,
+        text,
+      });
+      if (!closed) {
+        return {
+          ok: true as const,
+          pending: true,
+          sent,
+          next: doneIdx,
+          total: items.length,
+          manualRequired: everManualRequired,
+        };
       }
       return {
         ok: true as const,
