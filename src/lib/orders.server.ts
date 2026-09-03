@@ -4,6 +4,8 @@ import type { Locale } from "./i18n";
 import { localeNames, localeFlags } from "./i18n";
 import {
   MATERIAL_LANGUAGES,
+  addDeliveredLanguage,
+  itemNeedsLanguageChoice,
   legacyAsMaterials,
   materialsForOrderItem,
   materialsForOrderItemAnyLang,
@@ -377,7 +379,11 @@ export async function deliverOrder(
       // ещё раз (сеть моргнула, Telegram на секунду отклонил запрос);
       // "failed_manual" — повторять бессмысленно (файл пуст, слишком велик,
       // хранилище не отдаёт), это работа для продавца, а не для крона.
-      let itemOutcome: "sent" | "failed_retry" | "failed_manual" = "sent";
+      // "lang_pending" — покупателю отправлен только вопрос "на каком
+      // языке", а не сам файл (Учителя-HIGH): позиция помечается не как
+      // выданная, чтобы заказ не закрылся "Заказ выдан!" раньше, чем
+      // покупатель реально получит файл.
+      let itemOutcome: "sent" | "failed_retry" | "failed_manual" | "lang_pending" = "sent";
       let failReason: string | undefined;
       try {
         if (availableLangs.length === 0) {
@@ -410,16 +416,34 @@ export async function deliverOrder(
             }
           }
           itemOutcome = allOk ? "sent" : "failed_retry";
+          // Записываем, что реально отправлено (Учителя-HIGH) — иначе
+          // финальная проверка "не осталось ли ещё не выбранных языков"
+          // ниже не отличит эту позицию от той, что ещё ждёт ответа
+          // покупателя в ветке "спросить язык".
+          if (itemOutcome === "sent" && item.id) {
+            await supabaseAdmin
+              .from("order_items")
+              .update({ delivered_language: availableLangs.join(",") })
+              .eq("id", item.id);
+          }
         } else if (langChoice) {
           // Конкретный язык выбран заранее — если у этой позиции его нет
           // (у другой позиции корзины он был), берём любой доступный вместо
           // того, чтобы переспрашивать после оплаты.
-          const materials = availableLangs.includes(langChoice)
-            ? materialsForOrderItem(item, langChoice)
-            : materialsForOrderItemAnyLang(item);
+          const sentLang = availableLangs.includes(langChoice) ? langChoice : availableLangs[0];
+          const materials = materialsForOrderItem(item, sentLang);
           const result = await sendMaterials(fresh.telegram_id, materials, item.name_snapshot, 1);
           itemOutcome = result.outcome;
           failReason = result.reason;
+          // См. комментарий в ветке "все языки" выше.
+          if (itemOutcome === "sent" && item.id) {
+            await supabaseAdmin
+              .from("order_items")
+              .update({
+                delivered_language: addDeliveredLanguage(item.delivered_language, sentLang),
+              })
+              .eq("id", item.id);
+          }
         } else if (parseDeliveredLanguages(item.delivered_language).size > 0) {
           // Позиция уже была выдана раньше, и записано, каким языком(-ами)
           // (Учителя, admin "Отправить файлы ещё раз" → deliverOrder(force)):
@@ -462,7 +486,9 @@ export async function deliverOrder(
               ],
             },
           });
-          if (!pickRes?.ok) {
+          if (pickRes?.ok) {
+            itemOutcome = "lang_pending";
+          } else {
             itemOutcome = "failed_retry";
             console.error("[orders] language-pick message failed", pickRes);
           }
@@ -482,6 +508,18 @@ export async function deliverOrder(
         sent++;
         // Индекс уже сдвинут на idx+1 выше — сбрасываем счётчик попыток, чтобы
         // он не переносился со сбоя прошлого материала на следующий.
+        if (fresh.delivery_retry_count) {
+          await supabaseAdmin.from("orders").update({ delivery_retry_count: 0 }).eq("id", orderId);
+        }
+        if (n + 1 < BATCH_SIZE && idx + 1 < items.length) await sleep(ITEM_DELAY_MS);
+        continue;
+      }
+
+      if (itemOutcome === "lang_pending") {
+        // Не increment sent — файл ещё не ушёл, только вопрос "на каком
+        // языке". delivery_index уже сдвинут (не переспрашиваем это же
+        // повторно), а финальную проверку "точно всё выдано" ниже делаем
+        // по свежему item.delivered_language, а не по этому счётчику.
         if (fresh.delivery_retry_count) {
           await supabaseAdmin.from("orders").update({ delivery_retry_count: 0 }).eq("id", orderId);
         }
@@ -587,7 +625,27 @@ export async function deliverOrder(
 
     const doneIdx = Number(after?.delivery_index) || 0;
     const everManualRequired = manualRequired || Boolean(after?.admin_note?.trim());
-    if (after?.status === "delivering" && doneIdx >= items.length) {
+    // Учителя-HIGH: doneIdx >= items.length раньше само по себе значило
+    // "заказ выдан" — но позиция, для которой отправлен только вопрос
+    // "на каком языке" (ветка "lang_pending" выше), тоже сдвигает индекс,
+    // хотя файл ещё не ушёл. Перечитываем delivered_language свежо (могло
+    // измениться в предыдущем проходе или через кнопку lang_ в bot.server.ts)
+    // и не закрываем заказ, пока такая позиция остаётся без ответа.
+    const { data: freshItems } = await supabaseAdmin
+      .from("order_items")
+      .select("id, delivered_language")
+      .eq("order_id", orderId);
+    const freshDeliveredById = new Map(
+      (freshItems ?? []).map((r) => [r.id as string, r.delivered_language as string | null]),
+    );
+    const stillAwaitingLangChoice = items.some((it) => {
+      const itId = it.id ?? "";
+      const delivered = freshDeliveredById.has(itId)
+        ? freshDeliveredById.get(itId)
+        : it.delivered_language;
+      return itemNeedsLanguageChoice({ ...it, delivered_language: delivered }, multiLanguageOn);
+    });
+    if (after?.status === "delivering" && doneIdx >= items.length && !stillAwaitingLangChoice) {
       const { data: finished } = await supabaseAdmin
         .from("orders")
         .update({ status: "delivered" })
@@ -623,7 +681,8 @@ export async function deliverOrder(
 
     return {
       ok: true as const,
-      pending: after?.status === "delivering" && doneIdx < items.length,
+      pending:
+        after?.status === "delivering" && (doneIdx < items.length || stillAwaitingLangChoice),
       sent,
       next: doneIdx,
       total: items.length,

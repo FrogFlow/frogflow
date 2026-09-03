@@ -2474,6 +2474,7 @@ import {
   materialsForOrderItem,
   parseDeliveredLanguages,
   addDeliveredLanguage,
+  itemNeedsLanguageChoice,
   isDeliveryLangChoice,
   deliveryPriceMultiplier,
   type DeliveryLangChoice,
@@ -5086,10 +5087,51 @@ async function handleCallbackQuery(cq: TelegramCallbackQuery): Promise<void> {
     // failed attempt can still be retried by tapping the language button
     // again instead of being silently marked done.
     if (materialOk) {
+      const updatedDeliveredLanguage = addDeliveredLanguage(item.delivered_language, lang);
       await s
         .from("order_items")
-        .update({ delivered_language: addDeliveredLanguage(item.delivered_language, lang) })
+        .update({ delivered_language: updatedDeliveredLanguage })
         .eq("id", item.id);
+
+      // Учителя-HIGH: deliverOrder (orders.server.ts) сдвигает delivery_index
+      // мимо позиции, ждущей выбора языка (иначе выдача зависла бы), и сам
+      // не может узнать, что покупатель наконец ответил — эта проверка
+      // видит только его событие. Заказ считается выданным, только если ни
+      // у одной позиции с несколькими доступными языками delivered_language
+      // всё ещё не пуст; раньше заказ закрывался "Заказ выдан!" сразу же,
+      // как только был отправлен сам вопрос "на каком языке", а не файл.
+      if (order.status === "delivering") {
+        const { hasModule } = await import("./modules/modules.server");
+        const multiLanguageOn = await hasModule("multi_language");
+        const stillPending = items.some((it) => {
+          const delivered = it.id === item.id ? updatedDeliveredLanguage : it.delivered_language;
+          return itemNeedsLanguageChoice({ ...it, delivered_language: delivered }, multiLanguageOn);
+        });
+        if (!stillPending) {
+          const { data: finished } = await s
+            .from("orders")
+            .update({ status: "delivered" })
+            .eq("id", orderId)
+            .eq("status", "delivering")
+            .select("id")
+            .maybeSingle();
+          if (finished) {
+            const displayNo = order.display_no ?? order.order_no ?? orderId;
+            await tg("sendMessage", {
+              chat_id,
+              text: `🙏 Спасибо за покупку! Заказ #${displayNo} выдан. Если что-то не так — напишите продавцу.`,
+            });
+            const { rewardReferralIfFirstDelivery } = await import("./referrals.server");
+            await rewardReferralIfFirstDelivery(order.telegram_id).catch((e) =>
+              console.error("[bot] rewardReferralIfFirstDelivery failed", e),
+            );
+            const { awardPointsForDelivery } = await import("./loyalty.server");
+            await awardPointsForDelivery(orderId, order.telegram_id).catch((e) =>
+              console.error("[bot] awardPointsForDelivery failed", e),
+            );
+          }
+        }
+      }
     }
 
     // Edit the message to remove buttons

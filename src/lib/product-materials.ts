@@ -225,6 +225,31 @@ export function addDeliveredLanguage(raw: string | null | undefined, lang: Local
 }
 
 /**
+ * Позиция реально ждёт выбора языка от покупателя — доступно больше
+ * одного языка, и ни один ещё не отмечен как отправленный.
+ *
+ * Общая проверка для orders.server.ts (deliverOrder — решает, можно ли
+ * закрыть заказ статусом "delivered") и bot.server.ts (обработчик "lang_"
+ * — решает, стал ли этот ответ покупателя последним недостающим). Раньше
+ * каждое место просто продвигало delivery_index сразу после отправки
+ * вопроса "на каком языке" и не отличало "вопрос отправлен" от "файл
+ * реально ушёл" — заказ закрывался "Заказ выдан!" раньше, чем покупатель
+ * успевал ответить (Учителя-HIGH).
+ */
+export function itemNeedsLanguageChoice(
+  item: (OrderItemWithMaterials & { delivered_language?: string | null }) | null | undefined,
+  multiLanguageOn: boolean,
+): boolean {
+  const availableLangs: Locale[] = multiLanguageOn
+    ? availableOrderItemLanguages(item)
+    : materialsForOrderItem(item, "ru").length > 0
+      ? ["ru"]
+      : [];
+  if (availableLangs.length <= 1) return false;
+  return parseDeliveredLanguages(item?.delivered_language).size === 0;
+}
+
+/**
  * Выбор языка ДО оформления заказа (настройка `delivery_lang_timing` =
  * "before") — либо конкретный язык, либо «все доступные» (`"all"`),
  * который ставит цену позиции ×N по числу реально заведённых у товара

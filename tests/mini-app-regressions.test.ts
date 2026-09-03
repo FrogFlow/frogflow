@@ -268,7 +268,7 @@ describe("Mini App production regressions", () => {
     const orders = source("src/lib/orders.server.ts");
     const deliver = orders.slice(
       orders.indexOf("export async function deliverOrder"),
-      orders.indexOf("export async function deliverOrder") + 12000,
+      orders.indexOf("export async function deliverOrder") + 16000,
     );
     const reuseIdx = deliver.indexOf("parseDeliveredLanguages(item.delivered_language).size > 0");
     const askAgainIdx = deliver.indexOf("text: `📚 Материал");
@@ -321,6 +321,30 @@ describe("Mini App production regressions", () => {
     );
     expect(results).toContain("stock_quantity");
     expect(results).toContain("buttons: isOutOfStock");
+  });
+
+  /**
+   * [Учителя-HIGH] deliverOrder закрывал заказ "Заказ выдан!" сразу же,
+   * как только позиции с несколькими языками отправлялся сам вопрос "на
+   * каком языке" — не дожидаясь, пока покупатель на него ответит.
+   * itemNeedsLanguageChoice (product-materials.ts) — общая проверка,
+   * должна использоваться и при закрытии заказа в deliverOrder, и при
+   * ответе покупателя в обработчике "lang_" (который теперь сам обязан
+   * закрыть заказ, если это был последний недостающий ответ — deliverOrder
+   * узнать об этом сам не может).
+   */
+  it("does not close an order as delivered while a language choice is still pending", () => {
+    const orders = source("src/lib/orders.server.ts");
+    const bot = source("src/lib/bot.server.ts");
+    expect(orders).toContain('"lang_pending"');
+    expect(orders).toContain("stillAwaitingLangChoice");
+    expect(orders).toContain("doneIdx >= items.length && !stillAwaitingLangChoice");
+    const langHandlerStart = bot.indexOf('data.startsWith("lang_") && isLocale(');
+    const langHandler = bot.slice(langHandlerStart, langHandlerStart + 4500);
+    expect(langHandler).toContain("itemNeedsLanguageChoice");
+    expect(langHandler).toContain('status: "delivered"');
+    expect(langHandler).toContain("rewardReferralIfFirstDelivery");
+    expect(langHandler).toContain("awardPointsForDelivery");
   });
 
   /**

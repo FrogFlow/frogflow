@@ -8,6 +8,7 @@ import {
   availableOrderItemLanguages,
   parseDeliveredLanguages,
   addDeliveredLanguage,
+  itemNeedsLanguageChoice,
   isDeliveryLangChoice,
   deliveryPriceMultiplier,
 } from "../src/lib/product-materials";
@@ -190,6 +191,50 @@ describe("parseDeliveredLanguages / addDeliveredLanguage", () => {
     expect(addDeliveredLanguage("ru", "kk")).toBe("ru,kk");
     // Уже отмеченный язык не дублируется.
     expect(addDeliveredLanguage("ru,kk", "ru")).toBe("ru,kk");
+  });
+});
+
+/**
+ * [Учителя-HIGH] Позиция с несколькими языками, для которой отправлен
+ * только вопрос "на каком языке" (а не сам файл), раньше засчитывалась в
+ * "заказ полностью выдан" — покупатель видел "Заказ выдан! Спасибо за
+ * покупку!" раньше, чем успевал ответить, и мог решить, что уже получил
+ * файл, хотя delivered_language оставался пустым. itemNeedsLanguageChoice
+ * — общая проверка для deliverOrder (orders.server.ts) и обработчика
+ * "lang_" (bot.server.ts), которая должна отличать "ещё не выбрано" от
+ * "выбор не нужен" и от "уже выбрано".
+ */
+describe("itemNeedsLanguageChoice", () => {
+  const twoLangItem = {
+    material_files_by_lang: {
+      ru: [{ path: "r.pdf", name: "R", url: null }],
+      kk: [{ path: "k.pdf", name: "K", url: null }],
+    },
+  };
+  const oneLangItem = {
+    material_files_by_lang: { ru: [{ path: "r.pdf", name: "R", url: null }] },
+  };
+
+  it("несколько языков, ничего ещё не выбрано — ждёт выбора", () => {
+    expect(itemNeedsLanguageChoice(twoLangItem, true)).toBe(true);
+    expect(itemNeedsLanguageChoice({ ...twoLangItem, delivered_language: null }, true)).toBe(true);
+  });
+
+  it("несколько языков, один уже отмечен как выданный — выбор больше не нужен", () => {
+    expect(itemNeedsLanguageChoice({ ...twoLangItem, delivered_language: "kk" }, true)).toBe(false);
+  });
+
+  it("один доступный язык — выбирать нечего, вопрос не нужен", () => {
+    expect(itemNeedsLanguageChoice(oneLangItem, true)).toBe(false);
+  });
+
+  it("модуль multi_language выключен — считаем только ru, даже если у товара есть kk", () => {
+    expect(itemNeedsLanguageChoice(twoLangItem, false)).toBe(false);
+  });
+
+  it("товар без файлов вовсе — не блокирует выдачу вопросом о языке", () => {
+    expect(itemNeedsLanguageChoice({}, true)).toBe(false);
+    expect(itemNeedsLanguageChoice(null, true)).toBe(false);
   });
 });
 
