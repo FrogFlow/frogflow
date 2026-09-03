@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ensureTelegramWebhook } from "@/lib/webhook-ensure.server";
 import { isCronAuthorized } from "@/lib/cron-auth.server";
+import { errorMessage } from "@/lib/error-message";
 
 /**
  * Часовой независимый self-heal вебхука — подстраховка сверх той же проверки,
@@ -22,7 +23,15 @@ export const Route = createFileRoute("/api/cron/ensure-webhook")({
           return new Response("Unauthorized", { status: 401 });
         }
         const result = await ensureTelegramWebhook();
-        return Response.json(result, { status: result.ok ? 200 : 500 });
+        const { ensureZernioWebhook } = await import("@/lib/zernio.server");
+        let zernio: Awaited<ReturnType<typeof ensureZernioWebhook>>;
+        try {
+          zernio = await ensureZernioWebhook();
+        } catch (e: unknown) {
+          zernio = { ok: false, action: "error", error: errorMessage(e) };
+        }
+        const ok = result.ok && (zernio.action === "skipped" || zernio.ok);
+        return Response.json({ ...result, zernio }, { status: ok ? 200 : 500 });
       },
     },
   },

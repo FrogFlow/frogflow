@@ -267,6 +267,100 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
         ? "задан"
         : "Instagram включён, но секрет webhook не задан — подпись событий нельзя проверить",
     );
+
+    /**
+     * Переменные могут быть на месте, а Direct всё равно молчит: вебхук в
+     * Zernio снят, аккаунт истёк, либо события просто перестали доезжать.
+     * Это как раз кейс aa_teach_ в сентябре 2026 — Comment-to-DM жил, /start
+     * в директ нет. Смотрим живое состояние, а не только env.
+     */
+    if (has(process.env.ZERNIO_API_KEY)) {
+      const { inspectZernioConnection } = await import("../zernio.server");
+      const connection = await inspectZernioConnection();
+      if (connection.error) {
+        add(
+          "Подключение Instagram",
+          "fail",
+          `сервис интеграции не ответил: ${connection.error}`,
+        );
+      } else {
+        const expired = connection.accounts.filter((account) => account.expired);
+        const igAccounts = connection.accounts.filter((account) => account.platform === "instagram");
+        if (connection.fit === "ok") {
+          add(
+            "Webhook Instagram",
+            "ok",
+            connection.currentUrl ? `слушает ${connection.currentUrl}` : "зарегистрирован",
+          );
+        } else {
+          add(
+            "Webhook Instagram",
+            "fail",
+            connection.fit === "missing"
+              ? "запись webhook в интеграции отсутствует — Direct не получает /start"
+              : `webhook указывает на ${connection.currentUrl || "другой адрес"} — нужен адрес этого деплоя`,
+          );
+        }
+        if (igAccounts.length === 0) {
+          add(
+            "Аккаунт Instagram",
+            "fail",
+            "к профилю интеграции не привязан ни один Instagram-аккаунт",
+          );
+        } else if (expired.length > 0) {
+          add(
+            "Аккаунт Instagram",
+            "fail",
+            `истёк токен: ${expired.map((account) => account.username).join(", ")} — нужно переподключить в админке`,
+          );
+        } else {
+          add(
+            "Аккаунт Instagram",
+            "ok",
+            igAccounts.map((account) => account.username).join(", "),
+          );
+        }
+      }
+
+      try {
+        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+        const { data: lastDm } = await supabaseAdmin
+          .from("zernio_logs")
+          .select("created_at")
+          .eq("event_type", "message.received")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!lastDm?.created_at) {
+          add(
+            "Входящие Direct",
+            "warn",
+            "в журнале ещё нет ни одного входящего сообщения",
+          );
+        } else {
+          const ageHours = (Date.now() - new Date(lastDm.created_at).getTime()) / 3_600_000;
+          const when = new Date(lastDm.created_at).toISOString().slice(0, 16).replace("T", " ");
+          if (ageHours > 72) {
+            add(
+              "Входящие Direct",
+              "fail",
+              `последнее входящее ${Math.floor(ageHours / 24)} дн. назад (${when} UTC) — webhook, скорее всего, не доставляет события`,
+            );
+          } else if (ageHours > 24) {
+            add(
+              "Входящие Direct",
+              "warn",
+              `последнее входящее ${Math.floor(ageHours)} ч. назад (${when} UTC)`,
+            );
+          } else {
+            add("Входящие Direct", "ok", `последнее входящее ${when} UTC`);
+          }
+        }
+      } catch (e: unknown) {
+        const { errorMessage } = await import("../error-message");
+        add("Входящие Direct", "warn", `не удалось прочитать журнал: ${errorMessage(e)}`);
+      }
+    }
   }
   if (modules.receipt_ocr) {
     add(
