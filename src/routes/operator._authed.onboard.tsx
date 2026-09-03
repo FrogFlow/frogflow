@@ -163,6 +163,18 @@ function OnboardPage() {
 
   const total = modules.reduce((sum, k) => sum + (moduleDef(k).price ?? 0), 0);
 
+  // Ниша сама модули не включает (11.5) — выбор ниши только подсказывает
+  // пресет отдельной кнопкой "Как у ниши". Продавец физической ниши без
+  // клика по ней рискует уйти в деплой без stock/multi_currency, ни разу
+  // не заметив, что что-то не так, — тихая рассинхронизация, не ошибка
+  // с сообщением. Автовключение модулей — решение продавца/оператора,
+  // не наше молчаливое умолчание, поэтому здесь только явная подсказка.
+  const nichePreset = presetForVertical(vertical);
+  const nicheModulesApplied =
+    nichePreset.length === modules.length && nichePreset.every((k) => modules.includes(k));
+  const nicheHintVisible =
+    verticalDef(vertical).suggestedModules.length > 0 && !nicheModulesApplied;
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
@@ -254,7 +266,8 @@ function OnboardPage() {
             </Select>
             <p className="text-xs text-muted-foreground">
               Тексты и умолчания бота (каталог, оплата, выдача заказа) — по этой нише. Попадёт в
-              блок переменных как <code>VERTICAL=</code>, менять в Vercel руками не нужно.
+              блок переменных как <code>VERTICAL=</code>, менять в Vercel руками не нужно. Модули
+              ниша сама не включает — их нужно выбрать отдельно в разделе «Модули» ниже.
             </p>
           </div>
           <label className="flex items-start gap-2 text-sm cursor-pointer">
@@ -330,6 +343,16 @@ function OnboardPage() {
               Разово: {total.toLocaleString("ru-RU")} ₸
             </span>
           </div>
+          {nicheHintVisible && (
+            <p className="text-xs bg-amber-50 text-amber-900 border border-amber-200 rounded-md px-3 py-2">
+              Выбранная ниша «{verticalDef(vertical).title}» обычно включает:{" "}
+              {verticalDef(vertical)
+                .suggestedModules.map((k) => moduleDef(k).title)
+                .join(", ")}
+              . Модули ниша не подключает сама — нажмите «Как у ниши «{verticalDef(vertical).title}
+              »» ниже, если это подходит клиенту.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             {PRESETS.map((preset) => {
               const active =
