@@ -278,14 +278,12 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
       const { inspectZernioConnection } = await import("../zernio.server");
       const connection = await inspectZernioConnection();
       if (connection.error) {
-        add(
-          "Подключение Instagram",
-          "fail",
-          `сервис интеграции не ответил: ${connection.error}`,
-        );
+        add("Подключение Instagram", "fail", `сервис интеграции не ответил: ${connection.error}`);
       } else {
         const expired = connection.accounts.filter((account) => account.expired);
-        const igAccounts = connection.accounts.filter((account) => account.platform === "instagram");
+        const igAccounts = connection.accounts.filter(
+          (account) => account.platform === "instagram",
+        );
         if (connection.fit === "ok") {
           add(
             "Webhook Instagram",
@@ -314,11 +312,7 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
             `истёк токен: ${expired.map((account) => account.username).join(", ")} — нужно переподключить в админке`,
           );
         } else {
-          add(
-            "Аккаунт Instagram",
-            "ok",
-            igAccounts.map((account) => account.username).join(", "),
-          );
+          add("Аккаунт Instagram", "ok", igAccounts.map((account) => account.username).join(", "));
         }
       }
 
@@ -332,11 +326,7 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
           .limit(1)
           .maybeSingle();
         if (!lastDm?.created_at) {
-          add(
-            "Входящие Direct",
-            "warn",
-            "в журнале ещё нет ни одного входящего сообщения",
-          );
+          add("Входящие Direct", "warn", "в журнале ещё нет ни одного входящего сообщения");
         } else {
           const ageHours = (Date.now() - new Date(lastDm.created_at).getTime()) / 3_600_000;
           const when = new Date(lastDm.created_at).toISOString().slice(0, 16).replace("T", " ");

@@ -663,9 +663,10 @@ export async function checkReadiness(botId: string): Promise<Readiness> {
    * Это видно по журналу событий, даже если деплой ещё на старой версии
    * и не отдаёт пункты «Webhook Instagram» / «Входящие Direct».
    */
-  const modules = (
-    data.modules && typeof data.modules === "object" ? data.modules : {}
-  ) as Record<string, boolean>;
+  const modules = (data.modules && typeof data.modules === "object" ? data.modules : {}) as Record<
+    string,
+    boolean
+  >;
   if (
     modules.instagram === true &&
     !checks.some((c) => c.name === "Входящие Direct" || c.name === "Webhook Instagram")
