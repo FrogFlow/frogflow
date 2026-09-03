@@ -2362,17 +2362,19 @@ function AdminInstagramPage() {
                                       className="h-7 text-[11px] col-span-2"
                                     />
                                   ) : (
-                                    <Input
-                                      value={btn.payload}
-                                      onChange={(e) =>
-                                        handleUpdateButton(i, "payload", e.target.value)
-                                      }
-                                      placeholder={tr.buttonCmdPlaceholder}
-                                      className="h-7 text-[11px] col-span-2"
-                                    />
-                                    <p className="col-span-2 text-[10px] text-muted-foreground leading-snug">
-                                      {tr.buttonCmdHint}
-                                    </p>
+                                    <>
+                                      <Input
+                                        value={btn.payload}
+                                        onChange={(e) =>
+                                          handleUpdateButton(i, "payload", e.target.value)
+                                        }
+                                        placeholder={tr.buttonCmdPlaceholder}
+                                        className="h-7 text-[11px] col-span-2"
+                                      />
+                                      <p className="col-span-2 text-[10px] text-muted-foreground leading-snug">
+                                        {tr.buttonCmdHint}
+                                      </p>
+                                    </>
                                   )}
                                 </div>
                                 <Button
