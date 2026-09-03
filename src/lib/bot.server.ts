@@ -2118,6 +2118,22 @@ async function addToCart(
       .eq("product_id", product_id)
       .maybeSingle();
     if (!variant) return "unavailable";
+  } else {
+    // Тот же класс риска (Блок D, находка H8): callback_data «add:<id>» без
+    // варианта — законная форма только для товара без вариантов вовсе.
+    // Для товара С вариантами карточка (sendProductCard выше) никогда не
+    // рисует такую кнопку, но callback_data приходит от клиента и её можно
+    // подделать (произвольный callback_query в обход реально показанной
+    // клавиатуры) — без этой проверки resolvePrice ниже посчитал бы по
+    // products.price, служебной «цене от», а не по цене конкретного
+    // варианта.
+    const { data: anyVariant } = await s
+      .from("product_variants")
+      .select("id")
+      .eq("product_id", product_id)
+      .limit(1)
+      .maybeSingle();
+    if (anyVariant) return "unavailable";
   }
 
   // Смешанная корзина (физический товар + цифровой материал) не

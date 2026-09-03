@@ -1314,6 +1314,18 @@ export async function addToCart(
       .eq("product_id", productId)
       .maybeSingle();
     if (!variant) return;
+  } else {
+    // Тот же класс риска, что и в Telegram (bot.server.ts addToCart, находка
+    // H8): postback без варианта — законная форма только для товара без
+    // вариантов вовсе. Без этой проверки resolvePrice ниже считал бы по
+    // products.price, служебной «цене от», а не по цене реального варианта.
+    const { data: anyVariant } = await s
+      .from("product_variants")
+      .select("id")
+      .eq("product_id", productId)
+      .limit(1)
+      .maybeSingle();
+    if (anyVariant) return;
   }
 
   // Строка корзины — по товару И варианту: у одного товара может быть

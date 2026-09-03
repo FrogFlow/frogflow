@@ -591,6 +591,22 @@ describe.skipIf(!ready)("createOrderFromCart и claimAwaitingProof (нужна �
         }),
       ]);
     });
+
+    /**
+     * [Кондитеры-HIGH] postback от клиента можно подделать, минуя реально
+     * показанную клавиатуру (там для товара с вариантами всегда есть
+     * variantId). Без варианта товар с вариантами не должен вообще попасть
+     * в корзину — иначе createOrderFromCart посчитал бы его по
+     * products.price, служебной «цене от», а не по цене варианта.
+     */
+    it("товар с вариантами без выбранного варианта в корзину не попадает", async () => {
+      const { addToCart, readCart, clearCart } = await import("../src/lib/direct-purchase.server");
+      await clearCart({ telegram_id: TELEGRAM_ID });
+      await addToCart({ telegram_id: TELEGRAM_ID, user_key: USER_KEY }, variantProductId, null);
+      const cart = await readCart({ telegram_id: TELEGRAM_ID });
+      expect(cart).toHaveLength(0);
+      await clearCart({ telegram_id: TELEGRAM_ID });
+    });
   });
 
   /**
