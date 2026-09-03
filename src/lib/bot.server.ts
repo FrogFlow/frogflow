@@ -5247,7 +5247,43 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
   }
 
   if (managerIntercepted && !interceptedButAwaitingProof) return;
-  if (await replyIfPaused(chat_id)) return;
+
+  // Счёт на подписку (subscription_invoices, MIGRATION-58) должен приниматься
+  // от владельца именно тогда, когда бот приостановлен за просрочку — это и
+  // есть единственный настоящий сценарий, ради которого счёт вообще
+  // выставляется. Без этой проверки replyIfPaused ниже обрывал бы разговор
+  // раньше, чем чек по счёту дойдёт до кода приёма (три независимых прохода
+  // аудита нашли этот же баг). Считаем здесь один раз и переиспользуем ниже,
+  // а не запрашиваем bots/subscription_invoices ещё раз на том же апдейте.
+  let ownerPendingInvoiceId: string | null = null;
+  if (msg.photo || msg.document) {
+    const sOwnerCheck = await db();
+    const { data: ownerBotRow } = await sOwnerCheck
+      .from("bots")
+      .select("owner_telegram_id")
+      .eq("id", process.env.BOT_ID?.trim() || "")
+      .maybeSingle();
+    if (
+      ownerBotRow?.owner_telegram_id &&
+      Number(ownerBotRow.owner_telegram_id) === Number(from.id)
+    ) {
+      // Старейший открытый счёт — если их несколько, логично считать чек
+      // относящимся к тому, что выставлен раньше (Кондитеры/платформа,
+      // находка про гонку двух счетов: было "самый свежий", что чаще
+      // ошибалось, если оператор успел выставить второй счёт по другому
+      // поводу, пока первый ещё ждал оплаты).
+      const { data: pendingInvoice } = await sOwnerCheck
+        .from("subscription_invoices")
+        .select("id")
+        .eq("status", "sent")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      ownerPendingInvoiceId = pendingInvoice?.id ?? null;
+    }
+  }
+
+  if (!ownerPendingInvoiceId && (await replyIfPaused(chat_id))) return;
   const user = await upsertUser(from);
   if (!user) return;
   const locale: Locale = user.state?.locale ?? "ru";
@@ -5405,92 +5441,107 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
    * тем же жестом, что и покупатель с чеком по заказу. Проверяем ТОЛЬКО
    * когда нет активного заказа, ждущего чек (proofOrderId выше) — иначе
    * фото владельца, тестирующего собственный чекаут как покупатель, попало
-   * бы сюда вместо настоящего заказа.
+   * бы сюда вместо настоящего заказа. ownerPendingInvoiceId уже вычислен
+   * выше (для обхода replyIfPaused) — повторно bots/subscription_invoices
+   * здесь не запрашиваем.
    */
-  if (!proofOrderId && (msg.photo || msg.document)) {
+  if (!proofOrderId && ownerPendingInvoiceId && (msg.photo || msg.document)) {
     const sInv = await db();
-    const { data: ownerBot } = await sInv
-      .from("bots")
-      .select("owner_telegram_id")
-      .eq("id", process.env.BOT_ID?.trim() || "")
-      .maybeSingle();
-    if (ownerBot?.owner_telegram_id && Number(ownerBot.owner_telegram_id) === Number(from.id)) {
-      const { data: invoice } = await sInv
-        .from("subscription_invoices")
-        .select("id")
-        .eq("status", "sent")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (invoice) {
-        let invDl: { bytes: Uint8Array; mime: string } | null = null;
-        let invExt = "jpg";
-        if (msg.photo) {
-          const biggest = msg.photo[msg.photo.length - 1];
-          invDl = await downloadTelegramFile(biggest.file_id);
-        } else if (msg.document) {
-          invDl = await downloadTelegramFile(msg.document.file_id);
-          const docName = (msg.document.file_name || "").toLowerCase();
-          const extMatch = docName.match(/\.([a-z0-9]{1,8})$/);
-          if (extMatch) invExt = extMatch[1]!;
-          else if (msg.document.mime_type === "application/pdf") invExt = "pdf";
-          else invExt = "bin";
-        }
-        if (!invDl) {
-          await tg("sendMessage", {
-            chat_id,
-            text: "Не удалось скачать файл из Telegram, попробуйте отправить ещё раз.",
-          });
-          return;
-        }
-        const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-        try {
-          const { data: buckets } = await supabaseAdmin.storage.listBuckets();
-          if (!buckets?.some((b) => b.name === "payment-proofs")) {
-            await supabaseAdmin.storage.createBucket("payment-proofs", {
-              public: false,
-              fileSizeLimit: 20 * 1024 * 1024,
-            });
-          }
-        } catch (e) {
-          console.error("[bot] ensure payment-proofs bucket (invoice)", e);
-        }
-        // Тот же общий бакет "payment-proofs", что и чеки заказов — bot_id-
-        // префикс изолирует арендаторов (Storage не проходит через RLS), а
-        // отдельная папка invoice-<id> не даёт перепутать с чеками заказов.
-        const invKey = `${process.env.BOT_ID?.trim() || "unknown"}/invoice-${invoice.id}/${Date.now()}.${invExt}`;
-        const invBody = new Blob([invDl.bytes as BlobPart], {
-          type: invDl.mime || "application/octet-stream",
-        });
-        const invUpRes = await supabaseAdmin.storage
-          .from("payment-proofs")
-          .upload(invKey, invBody, {
-            contentType: invDl.mime || "application/octet-stream",
-            upsert: true,
-          });
-        if (invUpRes.error) {
-          console.error("[bot] invoice proof upload failed", invUpRes.error);
-          await tg("sendMessage", {
-            chat_id,
-            text: "Не удалось сохранить чек, попробуйте отправить ещё раз.",
-          });
-          return;
-        }
-        await sInv
-          .from("subscription_invoices")
-          .update({
-            status: "proof_uploaded",
-            proof_path: invKey,
-            proof_uploaded_at: new Date().toISOString(),
-          })
-          .eq("id", invoice.id);
-        await tg("sendMessage", {
-          chat_id,
-          text: "Чек получен, спасибо! Ожидайте подтверждения оплаты.",
-        });
-        return;
-      }
+    const invoiceId = ownerPendingInvoiceId;
+    let invDl: { bytes: Uint8Array; mime: string } | null = null;
+    let invExt = "jpg";
+    if (msg.photo && msg.photo.length > 0) {
+      const biggest = msg.photo[msg.photo.length - 1]!;
+      invDl = await downloadTelegramFile(biggest.file_id);
+    } else if (msg.document) {
+      invDl = await downloadTelegramFile(msg.document.file_id);
+      const docName = (msg.document.file_name || "").toLowerCase();
+      const extMatch = docName.match(/\.([a-z0-9]{1,8})$/);
+      if (extMatch) invExt = extMatch[1]!;
+      else if (msg.document.mime_type === "application/pdf") invExt = "pdf";
+      else invExt = "bin";
     }
+    if (!invDl) {
+      await tg("sendMessage", {
+        chat_id,
+        text: "Не удалось скачать файл из Telegram, попробуйте отправить ещё раз.",
+      });
+      return;
+    }
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    try {
+      const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+      if (!buckets?.some((b) => b.name === "payment-proofs")) {
+        await supabaseAdmin.storage.createBucket("payment-proofs", {
+          public: false,
+          fileSizeLimit: 20 * 1024 * 1024,
+        });
+      }
+    } catch (e) {
+      console.error("[bot] ensure payment-proofs bucket (invoice)", e);
+    }
+    // Тот же общий бакет "payment-proofs", что и чеки заказов — bot_id-
+    // префикс изолирует арендаторов (Storage не проходит через RLS), а
+    // отдельная папка invoice-<id> не даёт перепутать с чеками заказов.
+    const invKey = `${process.env.BOT_ID?.trim() || "unknown"}/invoice-${invoiceId}/${Date.now()}.${invExt}`;
+    const invBody = new Blob([invDl.bytes as BlobPart], {
+      type: invDl.mime || "application/octet-stream",
+    });
+    const invUpRes = await supabaseAdmin.storage.from("payment-proofs").upload(invKey, invBody, {
+      contentType: invDl.mime || "application/octet-stream",
+      upsert: true,
+    });
+    if (invUpRes.error) {
+      console.error("[bot] invoice proof upload failed", invUpRes.error);
+      await tg("sendMessage", {
+        chat_id,
+        text: "Не удалось сохранить чек, попробуйте отправить ещё раз.",
+      });
+      return;
+    }
+    // Читаем сумму/назначение перед подтверждением — владелец должен сразу
+    // увидеть, к какому именно счёту привязался чек, и заметить подмену,
+    // если выставлено несколько счетов одновременно (Кондитеры/платформа,
+    // находка про гонку счетов).
+    const { data: invoiceRow } = await sInv
+      .from("subscription_invoices")
+      .select("amount, currency, note")
+      .eq("id", invoiceId)
+      .maybeSingle();
+    // .eq("status", "sent") + проверка возвращённой строки — не просто
+    // отсутствие ошибки: PostgREST не считает 0 обновлённых строк ошибкой,
+    // а без этой проверки бот сказал бы "чек получен" даже когда гонка
+    // (второе фото почти одновременно с первым) уже перевела счёт в другой
+    // статус и обновление никого не задело.
+    const { data: invUpdated, error: invUpdateErr } = await sInv
+      .from("subscription_invoices")
+      .update({
+        status: "proof_uploaded",
+        proof_path: invKey,
+        proof_uploaded_at: new Date().toISOString(),
+      })
+      .eq("id", invoiceId)
+      .eq("status", "sent")
+      .select("id")
+      .maybeSingle();
+    if (invUpdateErr || !invUpdated) {
+      if (invUpdateErr) console.error("[bot] invoice status update failed", invUpdateErr);
+      await tg("sendMessage", {
+        chat_id,
+        text: "Не удалось привязать чек к счёту, попробуйте отправить ещё раз.",
+      });
+      return;
+    }
+    const invoiceSummary = invoiceRow
+      ? `${invoiceRow.amount} ${invoiceRow.currency}${invoiceRow.note ? ` — ${invoiceRow.note}` : ""}`
+      : null;
+    await tg("sendMessage", {
+      chat_id,
+      text: invoiceSummary
+        ? `Чек получен по счёту на ${invoiceSummary}. Ожидайте подтверждения оплаты.`
+        : "Чек получен, спасибо! Ожидайте подтверждения оплаты.",
+    });
+    return;
   }
 
   if (
