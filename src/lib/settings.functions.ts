@@ -20,6 +20,13 @@ export const getSettings = createServerFn({ method: "GET" }).handler(async () =>
     if (isAdminNotifySettingKey(key)) continue;
     map[key] = (r.value as string) ?? "";
   }
+  // Не хранится в app_settings — вычисляется на каждый запрос, как
+  // getShopUrl/getMiniAppUrl/getAppTimeZone выше: панель включает "Умный
+  // поиск" переключателем без единого сигнала о том, настроен ли на
+  // деплое сам ANTHROPIC_API_KEY (isSmartSearchEnabled, smart-search.server.ts,
+  // молча возвращает false без него) — продавец включал тумблер, видел
+  // "Сохранено" и не понимал, почему поиск не работает (Учителя-HIGH).
+  map.smart_search_api_key_configured = process.env.ANTHROPIC_API_KEY?.trim() ? "true" : "false";
   return map;
 });
 

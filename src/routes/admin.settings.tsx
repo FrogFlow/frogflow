@@ -81,6 +81,7 @@ const copy: Record<
     smartSearchUsage: (used: number, limit: number) => string;
     smartSearchUsageHint: string;
     smartSearchRateSpend: (rate: string, usd: string) => string;
+    smartSearchApiKeyMissing: string;
     webStorefrontTitle: string;
     webStorefrontHint: string;
     webStorefrontOpenBtn: string;
@@ -179,6 +180,8 @@ const copy: Record<
     smartSearchUsageHint:
       "Считаются запросы, по которым обычный поиск ничего не нашёл — в боте и в Mini App.",
     smartSearchRateSpend: (rate, usd) => `По ставке ${rate} / запрос: ${usd}`,
+    smartSearchApiKeyMissing:
+      "⚠️ На этом деплое не настроен ANTHROPIC_API_KEY — включённый выше переключатель ничего не изменит: умный поиск не заработает, пока ключ не добавят в переменные окружения.",
     webStorefrontTitle: "Публичная веб-витрина каталога",
     webStorefrontHint:
       "Публичная страница каталога — фото, названия, цены и рейтинг товаров, без входа. Купить с неё нельзя: кнопка на странице ведёт покупателя в сам бот. Дайте эту ссылку клиентам в шапке Instagram, рекламе и т.п.",
@@ -284,6 +287,8 @@ const copy: Record<
     smartSearchUsageHint:
       "Қарапайым іздеу ештеңе таппаған сұраулар саналады — ботта және Mini App-та.",
     smartSearchRateSpend: (rate, usd) => `${rate} / сұрау мөлшерлемесімен: ${usd}`,
+    smartSearchApiKeyMissing:
+      "⚠️ Бұл деплойда ANTHROPIC_API_KEY бапталмаған — жоғарыдағы қосқыш ешнәрсені өзгертпейді: кілт орта айнымалыларына қосылмайынша ақылды іздеу жұмыс істемейді.",
     webStorefrontTitle: "Каталогтың ашық веб-витринасы",
     webStorefrontHint:
       "Кірусіз қолжетімді каталог беті — фото, атаулар, бағалар және рейтинг. Одан сатып алу мүмкін емес: беттегі түйме сатып алушыны боттың өзіне апарады. Бұл сілтемені Instagram шапкасында, жарнамада және т.б. беріңіз.",
@@ -388,6 +393,8 @@ const copy: Record<
     smartSearchUsageHint:
       "Counts queries where regular search found nothing — in the bot and Mini App.",
     smartSearchRateSpend: (rate, usd) => `At ${rate} / request: ${usd}`,
+    smartSearchApiKeyMissing:
+      "⚠️ ANTHROPIC_API_KEY is not configured on this deployment — the toggle above won't change anything: smart search won't work until the key is added to the environment variables.",
     webStorefrontTitle: "Public catalog storefront",
     webStorefrontHint:
       "A no-login catalog page — photos, names, prices, and ratings. You can't buy from it: the page button sends the buyer into the bot itself. Share this link in your Instagram bio, ads, etc.",
@@ -494,6 +501,8 @@ const copy: Record<
     smartSearchUsageHint:
       "Oddiy qidiruv hech narsa topmagan so‘rovlar sanaladi — botda va Mini App’da.",
     smartSearchRateSpend: (rate, usd) => `${rate} / so‘rov stavkasi: ${usd}`,
+    smartSearchApiKeyMissing:
+      "⚠️ Bu deployda ANTHROPIC_API_KEY sozlanmagan — yuqoridagi tugmacha hech narsani o‘zgartirmaydi: kalit muhit o‘zgaruvchilariga qo‘shilmaguncha aqlli qidiruv ishlamaydi.",
     webStorefrontTitle: "Katalogning ochiq veb-vitrinasi",
     webStorefrontHint:
       "Kirishsiz ochiladigan katalog sahifasi — fotolar, nomlar, narxlar va reyting. Undan xarid qilib bo‘lmaydi: sahifadagi tugma xaridorni to‘g‘ridan-to‘g‘ri botga yuboradi. Bu havolani Instagram bio, reklama va h.k.da bering.",
@@ -1214,6 +1223,9 @@ function SettingsPage() {
         <p className="text-xs text-muted-foreground">{tr.smartSearchHint}</p>
         {modules.smart_search ? (
           <>
+            {settings.data?.smart_search_api_key_configured === "false" && (
+              <p className="text-sm text-destructive">{tr.smartSearchApiKeyMissing}</p>
+            )}
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
