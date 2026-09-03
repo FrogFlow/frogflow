@@ -52,6 +52,7 @@ export const Route = createFileRoute("/mini-app")({
           catalogLayout,
           visibleProducts,
           stockEnabled,
+          multiLanguageEnabled,
           totalProducts,
           materialLanguages,
           page,
@@ -123,6 +124,7 @@ export const Route = createFileRoute("/mini-app")({
                     linkToDetail: true,
                     countryCode,
                     catalogParams: catalogParams({ page }).toString(),
+                    multiLanguageEnabled,
                   }),
                 )
                 .join("")

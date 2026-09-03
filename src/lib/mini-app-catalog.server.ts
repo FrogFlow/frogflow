@@ -205,6 +205,15 @@ export async function loadMiniAppCatalogData(
   const { fetchAll } = await import("./csv");
 
   const stockEnabled = await hasModule("stock");
+  // Без модуля multi_language выдача всегда шлёт только ru (orders.server.ts,
+  // deliverOrder) — тот же гейт, что уже стоит на множителе "все языки" в
+  // чекауте (bot.server.ts, mini-app-checkout.server.ts). До этой правки
+  // фильтр по языку и бейджи "RU/KZ/EN/UZ" были видны и работали независимо
+  // от модуля: покупатель мог отфильтровать каталог по "KZ", увидеть карточку
+  // с бейджем "KZ" и купить, ожидая казахский файл — а получал либо русский
+  // без объяснения, либо (если ru-файла у товара вообще нет) пустую выдачу
+  // (Учителя, находка CRIT-2).
+  const multiLanguageEnabled = await hasModule("multi_language");
   const safePage = Math.max(1, Math.floor(page) || 1);
   const safePageSize = Math.max(20, Math.min(100, Math.floor(pageSize) || 80));
   const categoryId = (filters?.categoryId ?? "").trim();
@@ -256,10 +265,12 @@ export async function loadMiniAppCatalogData(
     categoryId,
     categoryMatchIds,
   );
-  const materialLanguages = collectMiniAppMaterialLanguages(
-    productIndex,
-    new Set(matchingWithoutLang),
-  );
+  // Пустой список чипсов и игнорируемый ?mlang= — без модуля фильтр по
+  // языку не показываем и не применяем вовсе, а не просто прячем кнопку:
+  // прямая ссылка с ?mlang=kk иначе продолжала бы фильтровать каталог.
+  const materialLanguages = multiLanguageEnabled
+    ? collectMiniAppMaterialLanguages(productIndex, new Set(matchingWithoutLang))
+    : [];
   const matchingIds = sortMiniAppProductIds(
     productIndex,
     filterMiniAppProductIds(
@@ -268,7 +279,7 @@ export async function loadMiniAppCatalogData(
       filters?.query,
       categoryId,
       categoryMatchIds,
-      filters?.materialLang,
+      multiLanguageEnabled ? filters?.materialLang : undefined,
     ),
     parseMiniAppSort(filters?.sort),
   );
@@ -301,6 +312,7 @@ export async function loadMiniAppCatalogData(
     catalogLayout: catalogSettings.layout,
     visibleProducts,
     stockEnabled,
+    multiLanguageEnabled,
     totalProducts,
     materialLanguages,
     sort: parseMiniAppSort(filters?.sort),
@@ -366,8 +378,16 @@ export function renderMiniAppLeadBadge(p: MiniAppProduct, locale: Locale): strin
   return `<div class="card-lead">${escapeMiniAppHtml(label)}</div>`;
 }
 
-export function renderMiniAppLangBadges(p: MiniAppProduct, named = false): string {
+export function renderMiniAppLangBadges(
+  p: MiniAppProduct,
+  named = false,
+  multiLanguageEnabled = true,
+): string {
   if (p.fulfillment_kind === "physical") return "";
+  // Без модуля выдача всегда шлёт только ru (orders.server.ts) — бейдж
+  // "KZ"/"EN" на карточке без модуля был бы обещанием, которое выдача не
+  // выполняет (Учителя, находка CRIT-2).
+  if (!multiLanguageEnabled) return "";
   const langs = availableMaterialLanguages(p);
   if (!langs.length) return "";
   if (named) {
@@ -488,8 +508,9 @@ export async function loadRelatedMiniAppProducts(
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
   const { fetchAll } = await import("./csv");
-  const [stockEnabled, productIndex] = await Promise.all([
+  const [stockEnabled, multiLanguageEnabled, productIndex] = await Promise.all([
     hasModule("stock"),
+    hasModule("multi_language"),
     fetchAll<MiniAppProductIndexRow>(
       (from, to) =>
         supabaseAdmin
@@ -525,6 +546,7 @@ export async function loadRelatedMiniAppProducts(
         linkToDetail: true,
         countryCode,
         catalogParams,
+        multiLanguageEnabled,
       }),
     )
     .join("");
@@ -541,6 +563,7 @@ export function renderMiniAppProductCard(
     linkToDetail?: boolean;
     countryCode?: string | null;
     catalogParams?: string;
+    multiLanguageEnabled?: boolean;
   },
 ): string {
   const s = miniAppStrings(locale);
@@ -602,7 +625,7 @@ export function renderMiniAppProductCard(
           ? `<div class="pdp-rating">${esc(s.rating(String(p.rating_avg), p.rating_count))}</div>`
           : ""
       }
-      ${renderMiniAppLangBadges(p)}
+      ${renderMiniAppLangBadges(p, false, opts?.multiLanguageEnabled ?? true)}
       ${renderMiniAppLeadBadge(p, locale)}
       <div class="card-footer">
         ${priceLabel ? `<div class="card-price">${esc(priceLabel)}</div>` : ""}

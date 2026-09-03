@@ -146,6 +146,22 @@ describe("Mini App didactic catalog cards", () => {
     expect(renderMiniAppLangBadges({ ...worksheet, fulfillment_kind: "physical" })).toBe("");
   });
 
+  it("[Учителя-CRIT] hides language badges when the multi_language module is off", () => {
+    expect(renderMiniAppLangBadges(worksheet, false, false)).toBe("");
+    expect(renderMiniAppLangBadges(worksheet, true, false)).toBe("");
+    expect(renderMiniAppLangBadges(worksheet, false, true)).toContain("lang-chip");
+
+    const htmlEnabled = renderMiniAppProductCard(worksheet, undefined, false, "ru", {
+      multiLanguageEnabled: true,
+    });
+    expect(htmlEnabled).toContain("lang-chip");
+
+    const htmlDisabled = renderMiniAppProductCard(worksheet, undefined, false, "ru", {
+      multiLanguageEnabled: false,
+    });
+    expect(htmlDisabled).not.toContain("lang-chip");
+  });
+
   it("filters materials by language and keeps chips for the unfiltered set", () => {
     const ruOnly: MiniAppProductIndexRow = {
       id: "ru-only",
