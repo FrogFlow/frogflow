@@ -8,6 +8,7 @@ import { botStatus, pausedMessage, hasModule } from "./modules/modules.server";
 import { isTelegramAdmin, parseNotifyAdminIds } from "./telegram-webhook.server";
 import type { Json } from "@/integrations-supabase/types";
 import type { OrderItem } from "./orders.server";
+import { instagramDigitalMissingEmail } from "./order-platform";
 import type { ReceiptVerifyResult } from "./receipt-verify.server";
 import { isLocale, localeNames, localeFlags, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import { currentVerticalDef } from "./verticals/vertical.server";
@@ -5158,10 +5159,45 @@ async function handleCallbackQuery(cq: TelegramCallbackQuery): Promise<void> {
       await db()
     )
       .from("orders")
-      .select("order_no, fulfillment_kind, total, status, paid_amount")
+      .select(
+        "order_no, fulfillment_kind, total, status, paid_amount, platform, customer_email, user_key",
+      )
       .eq("id", orderId)
       .maybeSingle();
     const shownNo = ordRow?.order_no ?? orderId;
+
+    /**
+     * Instagram-цифровой заказ рождается на чеке, почту спрашивают после.
+     * Если снять кнопки и вызвать deliverOrder сейчас, выдача бросит
+     * «нет почты», статус откатится, а уведомление уже исчезнет — продавец
+     * останется с одной панелью. Кнопки оставляем, пока адрес не появится
+     * (на заказе или в профиле покупателя).
+     */
+    if (ordRow && instagramDigitalMissingEmail(ordRow)) {
+      let email = "";
+      if (ordRow.user_key) {
+        const { data: buyer } = await (
+          await db()
+        )
+          .from("bot_users")
+          .select("email")
+          .eq("user_key", ordRow.user_key)
+          .maybeSingle();
+        email = buyer?.email?.trim() || "";
+        if (email) {
+          await (await db()).from("orders").update({ customer_email: email }).eq("id", orderId);
+        }
+      }
+      if (!email) {
+        await tg("sendMessage", {
+          chat_id,
+          text:
+            `⏳ Заказ #${shownNo} ещё нельзя выдать: покупатель не указал почту. ` +
+            `Кнопки остаются — нажмите снова, когда адрес придёт, либо впишите почту в панели.`,
+        });
+        return;
+      }
+    }
 
     if (ordRow?.fulfillment_kind === "physical") {
       const { acceptOrder, amountDueNow, recordPayment, remainingDueNow } =

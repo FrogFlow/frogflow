@@ -4006,24 +4006,34 @@ async function handleAwaitingEmail(ctx: {
       .maybeSingle();
 
     const verified = (order?.admin_note ?? "").includes("чек распознан");
+    const { data: shown } = await s
+      .from("orders")
+      .select("order_no")
+      .eq("id", state.pending_order_id)
+      .maybeSingle();
+    const displayNo = shown?.order_no ?? state.pending_order_id;
     if (verified && order?.status === "awaiting_confirmation") {
       try {
         const { deliverOrder } = await import("./orders.server");
         await deliverOrder(state.pending_order_id);
-        const { data: shown } = await s
-          .from("orders")
-          .select("order_no")
-          .eq("id", state.pending_order_id)
-          .maybeSingle();
-        await flow.notifyAdminAboutDirectOrder(
-          state.pending_order_id,
-          shown?.order_no ?? state.pending_order_id,
-          { verdict: "распознан, выдано автоматически", needsAction: false },
-        );
+        await flow.notifyAdminAboutDirectOrder(state.pending_order_id, displayNo, {
+          verdict: "распознан, выдано автоматически",
+          needsAction: false,
+        });
         return true; // о письме покупателю сообщает сама выдача
       } catch (e) {
         console.error("[zernio-bot] автовыдача после ввода почты не удалась", e);
+        await flow.notifyAdminAboutDirectOrder(state.pending_order_id, displayNo, {
+          verdict: `почта ${email}, автовыдача не удалась — выдайте вручную`,
+        });
+        await say(copy.emailSaved(email));
+        return true;
       }
+    }
+    if (order?.status === "awaiting_confirmation") {
+      await flow.notifyAdminAboutDirectOrder(state.pending_order_id, displayNo, {
+        verdict: `почта ${email} — можно выдавать`,
+      });
     }
   }
 

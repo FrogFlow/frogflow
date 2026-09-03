@@ -11,6 +11,7 @@ import {
 import { isLocale, type Locale } from "./i18n";
 import type { Json } from "@/integrations-supabase/types";
 import { PLATFORM_LABEL } from "./zernio-platform";
+import { instagramDigitalMissingEmail } from "./order-platform";
 
 /**
  * Сценарий покупки в Instagram Direct: номер товара → страна → реквизиты →
@@ -884,7 +885,7 @@ export async function notifyAdminAboutDirectOrder(
   const { data: order } = await s
     .from("orders")
     .select(
-      "platform, total, currency, username, display_name, payment_proof_path, fulfillment_kind, fulfillment_type, fulfillment_at, fulfillment_address, fulfillment_note, delivery_zone_name, order_items(name_snapshot, price_snapshot, quantity)",
+      "platform, total, currency, username, display_name, customer_email, payment_proof_path, fulfillment_kind, fulfillment_type, fulfillment_at, fulfillment_address, fulfillment_note, delivery_zone_name, order_items(name_snapshot, price_snapshot, quantity)",
     )
     .eq("id", orderId)
     .maybeSingle();
@@ -934,9 +935,16 @@ export async function notifyAdminAboutDirectOrder(
       // они были захардкожены под цифровую выдачу («материалы уйдут на
       // почту/в WhatsApp», «✅ Подтвердить и выдать») даже для торта.
       const confirmLabel = isPhysical ? "✅ Принять заказ" : "✅ Подтвердить и выдать";
+      const waitingForEmail = instagramDigitalMissingEmail({
+        platform,
+        fulfillment_kind: order?.fulfillment_kind,
+        customer_email: order?.customer_email,
+      });
       const actionHint = isPhysical
         ? "Сверьте чек и нажмите кнопку ниже, чтобы принять заказ в работу."
-        : `Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю ${deliveryTarget}.`;
+        : waitingForEmail
+          ? "Покупатель ещё не указал почту — файлы уйдут письмом. «Выдать» сработает, когда адрес появится (кнопки не пропадут). Почту можно вписать и в панели."
+          : `Сверьте чек и нажмите кнопку ниже — материалы уйдут покупателю ${deliveryTarget}.`;
       const doneHint = isPhysical
         ? "Заказ уже принят в работу — делать ничего не нужно."
         : `Материалы уже отправлены покупателю ${deliveryTarget} — делать ничего не нужно.`;
