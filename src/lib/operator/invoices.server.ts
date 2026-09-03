@@ -213,23 +213,46 @@ export async function confirmInvoice(
   }
 
   const s = await db();
-  const { error } = await s
+  // Атомарный "захват" счёта условным UPDATE — вторая одновременная попытка
+  // подтвердить тот же счёт (двойной клик, два оператора разом) не пройдёт
+  // мимо этого условия, потому что статус уже не "sent"/"proof_uploaded"
+  // (находка аудита H7: раньше проверка статуса и запись были раздельными
+  // операциями, и гонка давала два платежа за один счёт). Если addPayment
+  // ниже упадёт — статус откатывается обратно, а не застревает в "paid" без
+  // реального платежа (находка C4: раньше addPayment вызывался ПОСЛЕ
+  // пометки "paid", и любой сбой — например, невалидный период — оставлял
+  // счёт в терминальном статусе, который confirmInvoice/rejectInvoice/
+  // cancelInvoice больше не соглашались трогать; починить можно было
+  // только SQL-ом напрямую в боевой базе).
+  const { data: claimed, error: claimErr } = await s
     .from("subscription_invoices")
     .update({ status: "paid", confirmed_at: new Date().toISOString() })
-    .eq("id", invoiceId);
-  if (error) throw new Error(`Не удалось подтвердить счёт: ${error.message}`);
+    .eq("id", invoiceId)
+    .in("status", ["sent", "proof_uploaded"])
+    .select("id")
+    .maybeSingle();
+  if (claimErr) throw new Error(`Не удалось подтвердить счёт: ${claimErr.message}`);
+  if (!claimed) throw new Error("Счёт уже обработан — обновите список");
 
-  await addPayment(
-    invoice.bot_id,
-    {
-      period_start: periodStart,
-      period_end: periodEnd,
-      amount: invoice.amount,
-      currency: invoice.currency,
-      note: invoice.note ? `Счёт: ${invoice.note}` : "По счёту из панели оператора",
-    },
-    actor,
-  );
+  try {
+    await addPayment(
+      invoice.bot_id,
+      {
+        period_start: periodStart,
+        period_end: periodEnd,
+        amount: invoice.amount,
+        currency: invoice.currency,
+        note: invoice.note ? `Счёт: ${invoice.note}` : "По счёту из панели оператора",
+      },
+      actor,
+    );
+  } catch (e) {
+    await s
+      .from("subscription_invoices")
+      .update({ status: invoice.status, confirmed_at: null })
+      .eq("id", invoiceId);
+    throw e;
+  }
 
   await logEvent(invoice.bot_id, actor, "payment", {
     action: "invoice_confirmed",

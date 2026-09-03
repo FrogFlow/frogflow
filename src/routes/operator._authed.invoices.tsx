@@ -5,6 +5,7 @@ import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { listBotsFn } from "@/lib/operator/bots.functions";
+import { getSubscriptionFn } from "@/lib/operator/subscriptions.functions";
 import {
   getPayoutRequisitesFn,
   setPayoutRequisitesFn,
@@ -45,11 +46,27 @@ const STATUS_LABEL: Record<
   cancelled: { text: "Отменён", variant: "outline" },
 };
 
-/** Сегодня → +30 дней в ГГГГ-ММ-ГГ — умолчание для формы подтверждения, оператор может поправить. */
-function defaultPeriod(): { start: string; end: string } {
-  const start = new Date();
-  const end = new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000);
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+/**
+ * Начало периода — со дня после уже оплаченной даты, если она в будущем,
+ * иначе от сегодня; конец — +1 месяц минус день. Тот же расчёт, что и у
+ * onQuickExtend в карточке клиента ($botId.tsx) — раньше здесь было жёстко
+ * "сегодня → +30 дней" без учёта уже оплаченного периода (находка аудита
+ * H4/M7): клиент, оплативший счёт заранее, получал на 1-2 недели меньше,
+ * чем заплатил, потому что MAX(period_end) — триггер MIGRATION-09 — брал
+ * более раннюю дату, чем та, что уже стояла в bots.subscription_expires_at.
+ */
+function defaultPeriod(currentExpiresAt: string | null): { start: string; end: string } {
+  const now = new Date();
+  const currentExpiry = currentExpiresAt ? new Date(currentExpiresAt) : null;
+  const start =
+    currentExpiry && currentExpiry.getTime() > now.getTime()
+      ? new Date(currentExpiry.getTime() + 86_400_000)
+      : now;
+  const end = new Date(start);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  end.setUTCDate(end.getUTCDate() - 1);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { start: iso(start), end: iso(end) };
 }
 
 function RequisitesEditor() {
@@ -191,14 +208,23 @@ function CreateInvoiceForm() {
 }
 
 function ConfirmForm({ invoice, onDone }: { invoice: SubscriptionInvoice; onDone: () => void }) {
-  const [period, setPeriod] = useState(defaultPeriod());
+  const subscription = useQuery({
+    queryKey: ["operator_subscription", invoice.bot_id],
+    queryFn: () => getSubscriptionFn({ data: { botId: invoice.bot_id } }),
+  });
+  const [period, setPeriod] = useState<{ start: string; end: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const shownPeriod = period ?? defaultPeriod(subscription.data?.expiresAt ?? null);
 
   async function onConfirm() {
     setBusy(true);
     try {
       await confirmInvoiceFn({
-        data: { invoiceId: invoice.id, periodStart: period.start, periodEnd: period.end },
+        data: {
+          invoiceId: invoice.id,
+          periodStart: shownPeriod.start,
+          periodEnd: shownPeriod.end,
+        },
       });
       toast.success("Счёт подтверждён, платёж записан в подписку");
       onDone();
@@ -215,8 +241,8 @@ function ConfirmForm({ invoice, onDone }: { invoice: SubscriptionInvoice; onDone
         <Label className="text-xs">Период с</Label>
         <Input
           type="date"
-          value={period.start}
-          onChange={(e) => setPeriod((p) => ({ ...p, start: e.target.value }))}
+          value={shownPeriod.start}
+          onChange={(e) => setPeriod({ ...shownPeriod, start: e.target.value })}
           className="h-8"
         />
       </div>
@@ -224,12 +250,12 @@ function ConfirmForm({ invoice, onDone }: { invoice: SubscriptionInvoice; onDone
         <Label className="text-xs">по</Label>
         <Input
           type="date"
-          value={period.end}
-          onChange={(e) => setPeriod((p) => ({ ...p, end: e.target.value }))}
+          value={shownPeriod.end}
+          onChange={(e) => setPeriod({ ...shownPeriod, end: e.target.value })}
           className="h-8"
         />
       </div>
-      <Button size="sm" onClick={onConfirm} disabled={busy}>
+      <Button size="sm" onClick={onConfirm} disabled={busy || subscription.isLoading}>
         {busy ? "…" : "Подтвердить оплату"}
       </Button>
     </div>

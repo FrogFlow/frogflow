@@ -268,3 +268,17 @@ SECURITY` и без единой политики. `ALTER DEFAULT PRIVILEGES` и
 под service_role панели — ни один клиентский деплой сюда не должен
 обращаться вовсе, поэтому таблица закрыта начисто, тем же приёмом, что
 и `subscription_payments`/`operator_settings`: RLS без единой политики.
+
+**60** (`MIGRATION-60-subscription-invoices-column-grants.sql`) — **НЕ
+применена**, готова к применению. Та же причина — нет доступа к боевой
+базе в этой сессии. Находка того же аудита (H5): политика
+`tenant_uploads_invoice_proof` (MIGRATION-58) фильтрует UPDATE по
+`bot_id`, но не по колонкам — `ALTER DEFAULT PRIVILEGES` из MIGRATION-02
+выдал `tenant_bot` UPDATE на всю таблицу, и владелец бота (у которого
+`SUPABASE_TENANT_KEY` лежит в его собственном Vercel) мог поставить
+своему же счёту `amount = 1` до подтверждения — `confirmInvoice` читает
+`amount` из базы и передаёт его в `addPayment`, то есть в
+`subscription_payments` и отчётность оператора попала бы сумма, которую
+задал клиент. Сузили грант до трёх колонок, которые действительно нужны
+коду `bot.server.ts` (приём чека): `status`, `proof_path`,
+`proof_uploaded_at`. RLS-политика по `bot_id` не менялась.

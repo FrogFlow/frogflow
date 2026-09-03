@@ -141,13 +141,39 @@ vi.mock("../src/integrations-supabase/client.server", () => ({
             };
             return builder;
           },
-          update: (patch: Partial<InvoiceRow>) => ({
-            eq: async (_c: string, id: string) => {
-              const row = invoicesStore.find((r) => r.id === id);
-              if (row) Object.assign(row, patch);
-              return { error: row ? null : new Error("not found") };
-            },
-          }),
+          update: (patch: Partial<InvoiceRow>) => {
+            let filtered = invoicesStore;
+            let applied = false;
+            const apply = () => {
+              if (applied) return;
+              applied = true;
+              for (const row of filtered) Object.assign(row, patch);
+            };
+            const builder = {
+              eq: (col: string, value: string) => {
+                filtered = filtered.filter((r) => (r as Record<string, unknown>)[col] === value);
+                return builder;
+              },
+              in: (col: string, values: string[]) => {
+                filtered = filtered.filter((r) =>
+                  values.includes((r as Record<string, unknown>)[col] as string),
+                );
+                return builder;
+              },
+              select: (_cols: string) => ({
+                maybeSingle: async () => {
+                  apply();
+                  const row = filtered[0];
+                  return { data: row ? { id: row.id } : null, error: null };
+                },
+              }),
+              then: (resolve: (v: { error: null }) => void) => {
+                apply();
+                resolve({ error: null });
+              },
+            };
+            return builder;
+          },
         };
       }
       throw new Error(`неожиданная таблица в моке: ${table}`);
@@ -260,6 +286,51 @@ describe("confirmInvoice", () => {
       confirmInvoice(created.invoice.id, "2026-02-01", "2026-02-28", "operator"),
     ).rejects.toThrow(/paid/);
     expect(addPaymentMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Находка аудита C4: раньше счёт помечался "paid" ДО addPayment — при
+   * сбое (например, невалидный период) деньги "терялись": addPayment не
+   * выполнялся, а счёт уже не давал себя подтвердить/отклонить/отменить
+   * повторно, потому что видел терминальный статус.
+   */
+  it("если addPayment падает — статус откатывается, счёт остаётся подтверждаемым", async () => {
+    const { setPayoutRequisites, createInvoice, confirmInvoice, listInvoices } =
+      await import("../src/lib/operator/invoices.server");
+    await setPayoutRequisites("Реквизиты");
+    const created = await createInvoice("bot-1", 1000, "KZT", null, "operator");
+
+    addPaymentMock.mockRejectedValueOnce(new Error("Конец периода раньше начала"));
+    await expect(
+      confirmInvoice(created.invoice.id, "2026-02-01", "2026-01-01", "operator"),
+    ).rejects.toThrow(/Конец периода/);
+
+    const [after] = await listInvoices("bot-1");
+    expect(after!.status).toBe("sent");
+    expect(after!.confirmed_at).toBeNull();
+
+    // Повторное подтверждение с корректным периодом проходит — счёт не застрял.
+    await confirmInvoice(created.invoice.id, "2026-01-01", "2026-01-31", "operator");
+    const [again] = await listInvoices("bot-1");
+    expect(again!.status).toBe("paid");
+  });
+
+  /**
+   * Находка аудита H7: проверка статуса и запись были раздельными операциями
+   * — двойной клик по "Подтвердить" (или два оператора одновременно) давал
+   * два платежа за один и тот же счёт.
+   */
+  it("двойное подтверждение подряд не задваивает addPayment", async () => {
+    const { setPayoutRequisites, createInvoice, confirmInvoice } =
+      await import("../src/lib/operator/invoices.server");
+    await setPayoutRequisites("Реквизиты");
+    const created = await createInvoice("bot-1", 1000, "KZT", null, "operator");
+
+    await confirmInvoice(created.invoice.id, "2026-01-01", "2026-01-31", "operator");
+    await expect(
+      confirmInvoice(created.invoice.id, "2026-01-01", "2026-01-31", "operator"),
+    ).rejects.toThrow(/paid/);
+    expect(addPaymentMock).toHaveBeenCalledTimes(1);
   });
 });
 
