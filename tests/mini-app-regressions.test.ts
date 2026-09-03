@@ -278,6 +278,29 @@ describe("Mini App production regressions", () => {
   });
 
   /**
+   * [Учителя-HIGH] askDeliveryLanguage (вопрос "на каком языке доставить"
+   * ДО оформления, delivery_lang_timing=before) не выставлял mode, и
+   * обработчик "checkoutlang:" не проверял его — тап по кнопке из старого
+   * сообщения (Telegram хранит инлайн-клавиатуры бессрочно) на другом шаге
+   * чекаута безусловно звал placeOrder(). У соседних fulfilltype:/zone:
+   * ровно такой же guard уже стоит (Блок 4, находка 4.6/4.7).
+   */
+  it("guards the delivery-language callback against a stale button, like fulfilltype:/zone:", () => {
+    const bot = source("src/lib/bot.server.ts");
+    expect(bot).toContain('"awaiting_delivery_lang"');
+    const before = bot.slice(
+      bot.indexOf("async function proceedToLanguageOrPlace"),
+      bot.indexOf("async function proceedToLanguageOrPlace") + 800,
+    );
+    expect(before).toContain('mode: "awaiting_delivery_lang"');
+    const handler = bot.slice(
+      bot.indexOf('data.startsWith("checkoutlang:")'),
+      bot.indexOf('data.startsWith("checkoutlang:")') + 400,
+    );
+    expect(handler).toContain('user.state?.mode !== "awaiting_delivery_lang"');
+  });
+
+  /**
    * Бэкенд (reviews.server.ts, /api/public/mini-app/orders.ts) разрешает
    * оценку физического заказа без единой проверки fulfillment_kind — Mini
    * App скрывала кнопку "Оценить" для него без причины (в отличие от кнопки

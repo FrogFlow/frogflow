@@ -118,7 +118,8 @@ type BotUser = {
       | "awaiting_fulfillment_date"
       | "awaiting_delivery_zone"
       | "awaiting_address"
-      | "awaiting_fulfillment_note";
+      | "awaiting_fulfillment_note"
+      | "awaiting_delivery_lang";
     /** Списать баллы при оформлении — переключатель, не текстовый ввод. */
     use_points?: boolean;
     /** Товар, для которого только что поставлена оценка и ждём комментарий. */
@@ -2538,7 +2539,13 @@ async function proceedToLanguageOrPlace(chat_id: number, user: BotUser, country_
   if (await shouldAskDeliveryLangBeforeOrder()) {
     const langs = await deliveryLangChoicesForCart(telegram_id);
     if (langs.length > 1) {
-      const nextState = { ...user.state, country_code };
+      // mode: "awaiting_delivery_lang" (Блок 4, находка H7) — та же защита
+      // от тапа по старой кнопке, что и у fulfilltype:/zone: ниже: без него
+      // checkoutlang: не отличал реально показанные кнопки от инлайн-
+      // клавиатуры прошлого оформления (Telegram хранит их бессрочно) и
+      // безусловно звал placeOrder, даже если покупатель сейчас на другом
+      // шаге или с другой корзиной.
+      const nextState = { ...user.state, country_code, mode: "awaiting_delivery_lang" as const };
       await setState(telegram_id, nextState);
       await askDeliveryLanguage(chat_id, langs, locale);
       return;
@@ -4894,6 +4901,12 @@ async function handleCallbackQuery(cq: TelegramCallbackQuery): Promise<void> {
   }
 
   if (data.startsWith("checkoutlang:")) {
+    // Guard по mode (Блок 4, находка H7) — тот же приём, что у
+    // fulfilltype:/zone: ниже: тап по кнопке из старого сообщения (Telegram
+    // хранит инлайн-клавиатуры бессрочно) с новой корзиной/на другом шаге
+    // иначе безусловно звал placeOrder поверх того, что реально происходит
+    // сейчас.
+    if (user.state?.mode !== "awaiting_delivery_lang") return;
     const choice = data.slice("checkoutlang:".length);
     if (!isDeliveryLangChoice(choice)) return;
 
