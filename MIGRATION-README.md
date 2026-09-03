@@ -254,3 +254,17 @@ RLS без единой политики — как у `subscription_payments`, 
 новую бухгалтерию — оно вызывает уже существующий `addPayment`
 (`subscriptions.server.ts`), который пишет в `subscription_payments`, и
 дату подписки по-прежнему двигает только триггер MIGRATION-09.
+
+**59** (`MIGRATION-59-bot-health-snapshots-rls.sql`) — **НЕ применена**,
+готова к применению. У этой сессии нет `SUPABASE_URL`/
+`SUPABASE_SERVICE_ROLE_KEY` в окружении. Находка нового аудита (блок
+"панель оператора и платформа"): `bot_health_snapshots` (MIGRATION-48) —
+единственная таблица, заведённая после MIGRATION-02 без `ENABLE ROW LEVEL
+SECURITY` и без единой политики. `ALTER DEFAULT PRIVILEGES` из MIGRATION-02
+выдал `tenant_bot` полный CRUD на все будущие таблицы, и без RLS эти
+гранты действовали без ограничений — любой клиентский деплой мог
+прочитать (и стереть/подделать) историю падений всех клиентов платформы
+разом. И чтение, и запись в проекте идут только из `src/lib/operator/**`
+под service_role панели — ни один клиентский деплой сюда не должен
+обращаться вовсе, поэтому таблица закрыта начисто, тем же приёмом, что
+и `subscription_payments`/`operator_settings`: RLS без единой политики.
