@@ -152,11 +152,33 @@ export async function rejectOrderSafely(orderId: number, note?: string | null) {
     .update({ status: "rejected", ...(note !== undefined ? { admin_note: note } : {}) })
     .eq("id", orderId)
     .in("status", [...REJECTABLE_STATUSES])
-    .select("order_no, display_no, telegram_id")
+    .select("order_no, display_no, telegram_id, fulfillment_kind")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (order) return { ok: true as const, order };
+  if (order) {
+    // Остаток списывается при оформлении (placeOrderInner) и до сих пор
+    // нигде не возвращался при отклонении — stock_quantity монотонно
+    // убывал (Кондитеры, находка C4): пять покупателей оформили по
+    // остатку, у двоих чек оказался нечитаемым, продавец отклонил — а
+    // остаток так и оставался списанным под них, хотя реально ничего не
+    // продано. Гейт hasModule("stock") — тот же, что и у самого списания.
+    const { hasModule } = await import("./modules/modules.server");
+    if (order.fulfillment_kind === "physical" && (await hasModule("stock"))) {
+      const { data: items } = await supabaseAdmin
+        .from("order_items")
+        .select("product_id, quantity")
+        .eq("order_id", orderId);
+      const { restoreStock } = await import("./fulfillment.server");
+      for (const item of items ?? []) {
+        if (!item.product_id) continue;
+        await restoreStock(item.product_id, Number(item.quantity) || 0).catch((e) =>
+          console.error("[orders] restoreStock on reject failed", orderId, item.product_id, e),
+        );
+      }
+    }
+    return { ok: true as const, order };
+  }
 
   const { data: existing, error: readErr } = await supabaseAdmin
     .from("orders")

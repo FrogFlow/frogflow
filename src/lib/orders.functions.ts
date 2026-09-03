@@ -810,7 +810,7 @@ export const deleteOrder = createServerFn({ method: "POST" })
     // она сохраняет строку и её paid_amount.
     const { data: order, error: readErr } = await s
       .from("orders")
-      .select("paid_amount")
+      .select("paid_amount, fulfillment_kind")
       .eq("id", data.id)
       .maybeSingle();
     if (readErr) throw new Error(readErr.message);
@@ -818,6 +818,21 @@ export const deleteOrder = createServerFn({ method: "POST" })
       throw new Error(
         "У заказа есть внесённая оплата — удалять нельзя, иначе пропадёт запись о деньгах. Отклоните заказ вместо удаления.",
       );
+    }
+    // Остаток списывается при оформлении и до сих пор нигде не
+    // возвращался при удалении заказа (Кондитеры, находка C4) —
+    // stock_quantity монотонно убывал. Читаем позиции ДО удаления
+    // order_items ниже.
+    const { hasModule } = await import("./modules/modules.server");
+    if (order?.fulfillment_kind === "physical" && (await hasModule("stock"))) {
+      const { data: items } = await s
+        .from("order_items")
+        .select("product_id, quantity")
+        .eq("order_id", data.id);
+      for (const item of items ?? []) {
+        if (!item.product_id) continue;
+        await restoreProductStock(s, item.product_id, Number(item.quantity) || 0);
+      }
     }
     await s.from("order_items").delete().eq("order_id", data.id);
     const { error } = await s.from("orders").delete().eq("id", data.id);
