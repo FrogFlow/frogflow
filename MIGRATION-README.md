@@ -255,51 +255,31 @@ RLS без единой политики — как у `subscription_payments`, 
 (`subscriptions.server.ts`), который пишет в `subscription_payments`, и
 дату подписки по-прежнему двигает только триггер MIGRATION-09.
 
-**59** (`MIGRATION-59-bot-health-snapshots-rls.sql`) — **НЕ применена**,
-готова к применению. У этой сессии нет `SUPABASE_URL`/
-`SUPABASE_SERVICE_ROLE_KEY` в окружении. Находка нового аудита (блок
-"панель оператора и платформа"): `bot_health_snapshots` (MIGRATION-48) —
-единственная таблица, заведённая после MIGRATION-02 без `ENABLE ROW LEVEL
-SECURITY` и без единой политики. `ALTER DEFAULT PRIVILEGES` из MIGRATION-02
-выдал `tenant_bot` полный CRUD на все будущие таблицы, и без RLS эти
-гранты действовали без ограничений — любой клиентский деплой мог
-прочитать (и стереть/подделать) историю падений всех клиентов платформы
-разом. И чтение, и запись в проекте идут только из `src/lib/operator/**`
-под service_role панели — ни один клиентский деплой сюда не должен
-обращаться вовсе, поэтому таблица закрыта начисто, тем же приёмом, что
-и `subscription_payments`/`operator_settings`: RLS без единой политики.
+**59** (`MIGRATION-59-bot-health-snapshots-rls.sql`) — **применена**
+на боевой базе (2026-09-03, Management API + `scripts/apply-migration.mjs`).
+Подтверждено: `bot_health_snapshots.relrowsecurity = true`, политик нет.
+`bot_health_snapshots` (MIGRATION-48) — единственная таблица, заведённая
+после MIGRATION-02 без `ENABLE ROW LEVEL SECURITY`. Без RLS гранты
+`tenant_bot` действовали без ограничений — клиентский деплой мог читать
+и править историю падений всех клиентов. Таблица закрыта начисто, тем же
+приёмом, что и `subscription_payments`/`operator_settings`: RLS без
+единой политики. Панель под `service_role` читает и пишет как раньше.
 
-**60** (`MIGRATION-60-subscription-invoices-column-grants.sql`) — **НЕ
-применена**, готова к применению. Та же причина — нет доступа к боевой
-базе в этой сессии. Находка того же аудита (H5): политика
-`tenant_uploads_invoice_proof` (MIGRATION-58) фильтрует UPDATE по
-`bot_id`, но не по колонкам — `ALTER DEFAULT PRIVILEGES` из MIGRATION-02
-выдал `tenant_bot` UPDATE на всю таблицу, и владелец бота (у которого
-`SUPABASE_TENANT_KEY` лежит в его собственном Vercel) мог поставить
-своему же счёту `amount = 1` до подтверждения — `confirmInvoice` читает
-`amount` из базы и передаёт его в `addPayment`, то есть в
-`subscription_payments` и отчётность оператора попала бы сумма, которую
-задал клиент. Сузили грант до трёх колонок, которые действительно нужны
-коду `bot.server.ts` (приём чека): `status`, `proof_path`,
-`proof_uploaded_at`. RLS-политика по `bot_id` не менялась.
+**60** (`MIGRATION-60-subscription-invoices-column-grants.sql`) — **применена**
+на боевой базе (2026-09-03, Management API + `scripts/apply-migration.mjs`).
+Подтверждено: у `tenant_bot` UPDATE только на `status`, `proof_path`,
+`proof_uploaded_at`; табличного UPDATE нет. Политика
+`tenant_uploads_invoice_proof` фильтровала UPDATE по `bot_id`, но не по
+колонкам — владелец бота мог поставить своему счёту `amount = 1` до
+подтверждения, и `confirmInvoice` утащил бы эту сумму в
+`subscription_payments`. RLS по `bot_id` не менялась.
 
-**61** (`MIGRATION-61-nightly-cleanup-protect-paid-orders.sql`) — **НЕ
-применена**, готова к применению. Та же причина — нет доступа к боевой
-базе в этой сессии. Находка нового аудита (Кондитеры, C2):
-`nightly_orders_maintenance()` удаляет физический заказ без даты
-получения через 7 дней — решение MIGRATION-55 сознательное и
-задокументированное ("реально брошенный чекаут"), но оно предполагает,
-что NULL-дата у физического заказа гарантированно значит "покупатель
-не дошёл до оплаты". Это не гарантировано кодом:
-`claim.checkout_fulfillment_at!` в `zernio-bot.server.ts` (Direct-канал)
-— TypeScript non-null assertion, ничего не проверяющая в рантайме — при
-потере/гонке состояния может уйти как `undefined` в заказ, у которого
-чек уже прислан и `paid_amount` уже стоит. Такой заказ удалялся бы
-вместе с чеком и записью об оплате, без единого следа. Правка не меняет
-уже принятое решение про NULL-дату — уточняет его тем же критерием,
-что и в комментарии MIGRATION-55 ("реально брошенный" = "ничего не
-заплачено и чек не присылали"): добавлены `AND payment_proof_path IS
-NULL AND COALESCE(paid_amount, 0) = 0`. Корневую причину (сам non-null
-assertion в zernio-bot.server.ts) эта миграция не устраняет — только
-не даёт единственному известному пока сценарию её проявления стереть
-деньги покупателя.
+**61** (`MIGRATION-61-nightly-cleanup-protect-paid-orders.sql`) — **применена**
+на боевой базе (2026-09-03, Management API + `scripts/apply-migration.mjs`).
+Подтверждено чтением `pg_get_functiondef('public.nightly_orders_maintenance')`:
+в DELETE есть `AND platform <> 'manual'`, `AND payment_proof_path IS NULL`
+и `AND COALESCE(paid_amount, 0) = 0`. Ночная чистка по-прежнему убирает
+брошенный чекаут старше 7 дней, но больше не трогает заказ, по которому
+уже есть чек или ненулевой `paid_amount` — даже если у физического заказа
+потерялась `fulfillment_at`. Корневую причину (non-null assertion в
+`zernio-bot.server.ts`) эта миграция не устраняет.
