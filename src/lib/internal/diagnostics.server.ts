@@ -326,6 +326,37 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
       }
 
       try {
+        const { listCommentAutomations } = await import("../zernio.server");
+        const { automations } = await listCommentAutomations();
+        const active = automations.filter((a) => a.isActive !== false);
+        if (automations.length === 0) {
+          add(
+            "Comment-to-DM",
+            "fail",
+            "в Zernio нет ни одной автоматизации — комментарий под постом не откроет Direct",
+          );
+        } else {
+          const lines = automations.map((a) => {
+            const words =
+              a.keywords?.length ? a.keywords.join(", ") : "любой комментарий";
+            const target = a.platformPostId ? "конкретный пост" : "все посты";
+            const mode = a.matchMode || "contains";
+            const on = a.isActive === false ? "выкл" : "вкл";
+            const sent = a.stats?.dmsSent ?? a.stats?.triggered ?? 0;
+            return `${on}, ${target}, ${mode}: ${words} (${a.name || "без имени"}, ушло ${sent})`;
+          });
+          add(
+            "Comment-to-DM",
+            active.length === 0 ? "fail" : "ok",
+            `${active.length} из ${automations.length} активны. ${lines.join(" · ")}`,
+          );
+        }
+      } catch (e: unknown) {
+        const { errorMessage } = await import("../error-message");
+        add("Comment-to-DM", "warn", `не удалось прочитать автоматизации: ${errorMessage(e)}`);
+      }
+
+      try {
         const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
         const { data: lastDm } = await supabaseAdmin
           .from("zernio_logs")
