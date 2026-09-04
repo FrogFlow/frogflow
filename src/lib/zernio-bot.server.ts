@@ -218,8 +218,7 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Теперь введите КОД материала, который хотите приобрести.",
     catalogNumberHint:
       "🔴❗️Код указан в самом первом сообщении.\nВведите его только ЦИФРАМИ.\n\nПосле этого сможете оформить заказ и увидеть цену в вашей валюте. 💳",
-    catalogBotLink: (link) =>
-      `А чтобы посмотреть весь каталог, поискать по теме и получить файлы, заходите в наш бот: ${link}`,
+    catalogBotLink: (link) => `Наш бот: ${link}`,
     searchNoResults: (query, link) =>
       `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог в нашем боте: ${link}`,
     searchFoundCount: (n) => `🔎 Нашли ${n} вариантов:`,
@@ -385,8 +384,7 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Енді сатып алғыңыз келетін материалдың КОДын енгізіңіз.",
     catalogNumberHint:
       "🔴❗️Код ең бірінші хабарламада көрсетілген.\nОны тек ЦИФРМЕН енгізіңіз.\n\nОсыдан кейін тапсырысты рәсімдеп, бағаны өз валютаңызда көресіз. 💳",
-    catalogBotLink: (link) =>
-      `Толық каталогты көру, тақырып бойынша іздеу және файлдарды алу үшін біздің боттан өтіңіз: ${link}`,
+    catalogBotLink: (link) => `Біздің бот: ${link}`,
     searchNoResults: (query, link) =>
       `«${query}» бойынша ештеңе табылмады. Басқа сөзбен көріңіз немесе боттағы каталогты ашыңыз: ${link}`,
     searchFoundCount: (n) => `🔎 ${n} нұсқа таптық:`,
@@ -549,8 +547,7 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Now enter the CODE of the material you want to buy.",
     catalogNumberHint:
       "🔴❗️The code is in the very first message.\nEnter it in DIGITS only.\n\nAfter that you can place the order and see the price in your currency. 💳",
-    catalogBotLink: (link) =>
-      `To browse the full catalog, search by topic, and get the files, check out our bot: ${link}`,
+    catalogBotLink: (link) => `Our bot: ${link}`,
     searchNoResults: (query, link) =>
       `Nothing found for "${query}". Try another word, or open the catalog in our bot: ${link}`,
     searchFoundCount: (n) => `🔎 Found ${n} matching items:`,
@@ -713,8 +710,7 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Endi sotib olmoqchi bo‘lgan materialning KODini kiriting.",
     catalogNumberHint:
       "🔴❗️Kod eng birinchi xabarda ko‘rsatilgan.\nUni faqat RAQAMLAR bilan kiriting.\n\nShundan so‘ng buyurtmani rasmiylashtirib, narxni o‘z valyutangizda ko‘rasiz. 💳",
-    catalogBotLink: (link) =>
-      `To‘liq katalogni ko‘rish, mavzu bo‘yicha qidirish va fayllarni olish uchun botimizga o‘ting: ${link}`,
+    catalogBotLink: (link) => `Botimiz: ${link}`,
     searchNoResults: (query, link) =>
       `«${query}» bo‘yicha hech narsa topilmadi. Boshqa so‘z bilan urinib ko‘ring yoki botimizdagi katalogni oching: ${link}`,
     searchFoundCount: (n) => `🔎 ${n} ta variant topildi:`,
