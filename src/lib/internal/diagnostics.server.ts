@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 /**
  * Самодиагностика клиентского деплоя: что у него настроено, а что нет.
  *
@@ -32,6 +34,13 @@ export type Diagnostics = {
 };
 
 const has = (v: string | undefined) => Boolean(v && v.trim());
+
+/** Короткий отпечаток секрета — чтобы сравнить два деплоя, не показывая ключ. */
+function secretFingerprint(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return createHash("sha256").update(trimmed).digest("hex").slice(0, 8);
+}
 
 /** Разбирает payload JWT, ничего не проверяя криптографически: нужен только claim. */
 function jwtPayload(token: string): Record<string, unknown> | null {
@@ -208,7 +217,7 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
       "Ключ Instagram API",
       has(process.env.ZERNIO_API_KEY) ? "ok" : "fail",
       has(process.env.ZERNIO_API_KEY)
-        ? "задан"
+        ? `задан, отпечаток ${secretFingerprint(process.env.ZERNIO_API_KEY)}`
         : "модуль Instagram включён, а ключ сервиса не задан",
     );
   }
@@ -257,7 +266,7 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
       "Профиль Instagram",
       has(process.env.ZERNIO_PROFILE_ID) ? "ok" : "fail",
       has(process.env.ZERNIO_PROFILE_ID)
-        ? "задан"
+        ? `задан, отпечаток ${secretFingerprint(process.env.ZERNIO_PROFILE_ID)}`
         : "Instagram включён, но профиль интеграции не задан — webhook будет отключён для безопасности",
     );
     add(
