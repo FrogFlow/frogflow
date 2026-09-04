@@ -1795,6 +1795,9 @@ function AdminInstagramPage() {
   const [clickTag, setClickTag] = useState("");
   const [savingAuto, setSavingAuto] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [automationSearch, setAutomationSearch] = useState("");
+  const [automationPage, setAutomationPage] = useState(1);
+  const AUTOMATIONS_PAGE_SIZE = 8;
   const [originalPlatformPostId, setOriginalPlatformPostId] = useState<string | null>(null);
   const [originalTrigger, setOriginalTrigger] = useState<"comment" | "story_reply">("comment");
   const [syncUrlOpen, setSyncUrlOpen] = useState(false);
@@ -2106,6 +2109,32 @@ function AdminInstagramPage() {
   const automations = automationsQuery.data?.automations || [];
   const logs = logsQuery.data?.logs || [];
   const posts = postsQuery.data?.posts || [];
+
+  // Список правил не пагинировался вовсе — 20+ карточек подряд растягивают
+  // страницу без конца, и найти одно старое правило среди них можно было
+  // только скроллом. Поиск сужает список, пагинация ограничивает высоту.
+  const automationSearchQuery = automationSearch.trim().toLowerCase();
+  const filteredAutomations = automationSearchQuery
+    ? automations.filter(
+        (a) =>
+          (a.name || "").toLowerCase().includes(automationSearchQuery) ||
+          (a.keywords || []).some((k) => k.toLowerCase().includes(automationSearchQuery)) ||
+          (a.platformPostId || "").toLowerCase().includes(automationSearchQuery),
+      )
+    : automations;
+  const automationPageCount = Math.max(
+    1,
+    Math.ceil(filteredAutomations.length / AUTOMATIONS_PAGE_SIZE),
+  );
+  const safeAutomationPage = Math.min(automationPage, automationPageCount);
+  const pagedAutomations = filteredAutomations.slice(
+    (safeAutomationPage - 1) * AUTOMATIONS_PAGE_SIZE,
+    safeAutomationPage * AUTOMATIONS_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setAutomationPage(1);
+  }, [automationSearchQuery]);
 
   const existingAutoForPost =
     postId !== "ALL_POSTS"
@@ -2701,8 +2730,18 @@ function AdminInstagramPage() {
 
             {/* List Side */}
             <div className="lg:col-span-7 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-lg">Активные правила ({automations.length})</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-bold text-lg shrink-0">
+                  {tr.activeRulesTitle(automations.length)}
+                </h3>
+                {automations.length > AUTOMATIONS_PAGE_SIZE && (
+                  <Input
+                    value={automationSearch}
+                    onChange={(e) => setAutomationSearch(e.target.value)}
+                    placeholder="Поиск по названию, слову, посту…"
+                    className="max-w-[240px] h-8 text-sm"
+                  />
+                )}
               </div>
 
               {automationsQuery.isLoading ? (
@@ -2723,9 +2762,13 @@ function AdminInstagramPage() {
                     Создайте свое первое правило в панели слева
                   </p>
                 </div>
+              ) : filteredAutomations.length === 0 ? (
+                <div className="border-2 border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground bg-muted/10">
+                  Ничего не найдено по запросу «{automationSearch}»
+                </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {automations.map((auto: ZernioCommentAutomation) => (
+                  {pagedAutomations.map((auto: ZernioCommentAutomation) => (
                     <Card
                       key={auto.id}
                       className={`transition-all ${auto.isActive ? "border-l-4 border-l-primary" : "opacity-70"}`}
@@ -2818,6 +2861,29 @@ function AdminInstagramPage() {
                       </CardContent>
                     </Card>
                   ))}
+                </div>
+              )}
+              {automationPageCount > 1 && (
+                <div className="flex items-center justify-center gap-3 text-sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safeAutomationPage <= 1}
+                    onClick={() => setAutomationPage((p) => Math.max(1, p - 1))}
+                  >
+                    ←
+                  </Button>
+                  <span className="text-muted-foreground">
+                    {safeAutomationPage} / {automationPageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safeAutomationPage >= automationPageCount}
+                    onClick={() => setAutomationPage((p) => Math.min(automationPageCount, p + 1))}
+                  >
+                    →
+                  </Button>
                 </div>
               )}
             </div>
