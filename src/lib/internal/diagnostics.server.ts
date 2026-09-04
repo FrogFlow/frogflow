@@ -351,6 +351,34 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
             `${active.length} из ${automations.length} активны. ${lines.join(" · ")}`,
           );
         }
+
+        const yearRules = automations.filter((a) =>
+          (a.keywords || []).some((k) => k.toLowerCase() === "год"),
+        );
+        if (yearRules.length) {
+          const { getCommentAutomationLogs } = await import("../zernio.server");
+          const details = [];
+          for (const a of yearRules) {
+            const id = String(a.id || a._id || "");
+            const logs = id ? (await getCommentAutomationLogs(id)).logs.slice(0, 5) : [];
+            const logPreview = logs.map((row) => {
+              const status = String(row.status ?? row.result ?? row.event ?? "");
+              const when = String(row.createdAt ?? row.created_at ?? row.at ?? "");
+              const comment = String(
+                row.comment ?? row.commentText ?? row.text ?? row.keyword ?? "",
+              ).slice(0, 40);
+              return `${when.slice(0, 19)} ${status} ${comment}`.trim();
+            });
+            details.push(
+              `${a.name}: post=${a.platformPostId ? "да" : "нет"}, ` +
+                `публичный ответ=${a.commentReply?.trim() ? "да" : "нет"}, ` +
+                `DM=${a.dmMessage?.trim() ? "да" : "нет"}, ` +
+                `audience=${JSON.stringify(a.audience ?? "default")}, ` +
+                `последние: ${logPreview.join(" | ") || "логов нет"}`,
+            );
+          }
+          add("Правило «год»", "ok", details.join(" · "));
+        }
       } catch (e: unknown) {
         const { errorMessage } = await import("../error-message");
         add("Comment-to-DM", "warn", `не удалось прочитать автоматизации: ${errorMessage(e)}`);
