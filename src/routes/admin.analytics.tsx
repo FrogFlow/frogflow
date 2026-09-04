@@ -54,10 +54,10 @@ const copy: Record<
     combinedTargetLabel: string;
     unconvertedWarning: (list: string) => string;
     customersTitle: string;
-    customersHint: (days: number) => string;
-    uniqueCustomersLabel: string;
-    repeatCustomersLabel: string;
-    repeatRateLabel: string;
+    customersHint: string;
+    uniqueCustomersLabel: (days: number) => string;
+    repeatCustomersLabel: (days: number) => string;
+    repeatRateLabel: (days: number) => string;
   }
 > = {
   ru: {
@@ -89,10 +89,10 @@ const copy: Record<
     unconvertedWarning: (list) =>
       `Не удалось пересчитать курс для: ${list} — эти суммы не вошли в свод ниже.`,
     customersTitle: "Покупатели",
-    customersHint: (days) => `За последние ${days} дней, по всем каналам продаж вместе.`,
-    uniqueCustomersLabel: "Уникальных покупателей",
-    repeatCustomersLabel: "Купили повторно",
-    repeatRateLabel: "Доля повторных",
+    customersHint: "По всем каналам продаж вместе (Telegram/Instagram/WhatsApp).",
+    uniqueCustomersLabel: (days) => `Уникальных покупателей за ${days} дней`,
+    repeatCustomersLabel: (days) => `Купили повторно за ${days} дней`,
+    repeatRateLabel: (days) => `Доля повторных за ${days} дней`,
   },
   kk: {
     title: "Қаржылық аналитика",
@@ -124,10 +124,10 @@ const copy: Record<
     unconvertedWarning: (list) =>
       `Бағамды қайта есептеу мүмкін болмады: ${list} — бұл сомалар төмендегі қорытындыға кірмеді.`,
     customersTitle: "Сатып алушылар",
-    customersHint: (days) => `Соңғы ${days} күнде, барлық сату арналары бойынша бірге.`,
-    uniqueCustomersLabel: "Бірегей сатып алушылар",
-    repeatCustomersLabel: "Қайта сатып алғандар",
-    repeatRateLabel: "Қайталанатындар үлесі",
+    customersHint: "Барлық сату арналары бойынша бірге (Telegram/Instagram/WhatsApp).",
+    uniqueCustomersLabel: (days) => `${days} күндегі бірегей сатып алушылар`,
+    repeatCustomersLabel: (days) => `${days} күнде қайта сатып алғандар`,
+    repeatRateLabel: (days) => `${days} күндегі қайталанатындар үлесі`,
   },
   en: {
     title: "Financial analytics",
@@ -158,10 +158,10 @@ const copy: Record<
     unconvertedWarning: (list) =>
       `Couldn't convert the rate for: ${list} — those amounts are not included in the total below.`,
     customersTitle: "Customers",
-    customersHint: (days) => `Last ${days} days, across all sales channels combined.`,
-    uniqueCustomersLabel: "Unique customers",
-    repeatCustomersLabel: "Repeat buyers",
-    repeatRateLabel: "Repeat rate",
+    customersHint: "Across all sales channels combined (Telegram/Instagram/WhatsApp).",
+    uniqueCustomersLabel: (days) => `Unique customers, ${days} days`,
+    repeatCustomersLabel: (days) => `Repeat buyers, ${days} days`,
+    repeatRateLabel: (days) => `Repeat rate, ${days} days`,
   },
   uz: {
     title: "Moliyaviy tahlil",
@@ -193,10 +193,10 @@ const copy: Record<
     unconvertedWarning: (list) =>
       `Kursni qayta hisoblab bo‘lmadi: ${list} — bu summalar quyidagi svodga kirmagan.`,
     customersTitle: "Xaridorlar",
-    customersHint: (days) => `Oxirgi ${days} kunda, barcha sotuv kanallari bo‘yicha birgalikda.`,
-    uniqueCustomersLabel: "Noyob xaridorlar",
-    repeatCustomersLabel: "Qayta xarid qilganlar",
-    repeatRateLabel: "Qaytalanuvchilar ulushi",
+    customersHint: "Barcha sotuv kanallari bo‘yicha birgalikda (Telegram/Instagram/WhatsApp).",
+    uniqueCustomersLabel: (days) => `${days} kunlik noyob xaridorlar`,
+    repeatCustomersLabel: (days) => `${days} kunda qayta xarid qilganlar`,
+    repeatRateLabel: (days) => `${days} kunlik qaytalanuvchilar ulushi`,
   },
 };
 
@@ -325,30 +325,46 @@ function CurrencyBlock({
  * валютах, либо занижать счёт внутри одной вкладки). Показывается один раз
  * над вкладками, а не внутри CurrencyBlock.
  */
-function CustomersSection({
+function CustomersStatRow({
   customers,
-  windowDays,
+  days,
   tr,
 }: {
   customers: CustomerSummary;
-  windowDays: number;
+  days: number;
   tr: (typeof copy)["ru"];
 }) {
   const repeatRate = customers.uniqueCustomers
     ? Math.round((customers.repeatCustomers / customers.uniqueCustomers) * 100)
     : 0;
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <Stat label={tr.uniqueCustomersLabel(days)} value={String(customers.uniqueCustomers)} />
+      <Stat label={tr.repeatCustomersLabel(days)} value={String(customers.repeatCustomers)} />
+      <Stat label={tr.repeatRateLabel(days)} value={`${repeatRate}%`} />
+    </div>
+  );
+}
 
+function CustomersSection({
+  customers30,
+  customers90,
+  windowDays,
+  tr,
+}: {
+  customers30: CustomerSummary;
+  customers90: CustomerSummary;
+  windowDays: number;
+  tr: (typeof copy)["ru"];
+}) {
   return (
     <div className="space-y-3">
       <div>
         <h2 className="text-lg font-semibold">{tr.customersTitle}</h2>
-        <p className="text-sm text-muted-foreground mt-1">{tr.customersHint(windowDays)}</p>
+        <p className="text-sm text-muted-foreground mt-1">{tr.customersHint}</p>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Stat label={tr.uniqueCustomersLabel} value={String(customers.uniqueCustomers)} />
-        <Stat label={tr.repeatCustomersLabel} value={String(customers.repeatCustomers)} />
-        <Stat label={tr.repeatRateLabel} value={`${repeatRate}%`} />
-      </div>
+      <CustomersStatRow customers={customers30} days={30} tr={tr} />
+      <CustomersStatRow customers={customers90} days={windowDays} tr={tr} />
     </div>
   );
 }
@@ -460,7 +476,12 @@ function AnalyticsPage() {
         </p>
       ) : (
         <>
-          <CustomersSection customers={data.customers30} windowDays={30} tr={tr} />
+          <CustomersSection
+            customers30={data.customers30}
+            customers90={data.customers90}
+            windowDays={data.windowDays}
+            tr={tr}
+          />
           <Tabs defaultValue={dominant}>
             <TabsList className="flex-wrap h-auto">
               {currencies.map((cur) => (
