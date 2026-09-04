@@ -351,13 +351,18 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
           );
         }
 
-        const yearRules = automations.filter((a) =>
-          (a.keywords || []).some((k) => k.toLowerCase() === "год"),
-        );
-        if (yearRules.length) {
+        // Подробный разбор по каждому активному правилу — не только «год»
+        // (изначально этот блок был написан под одно конкретное правило,
+        // разобранное вживую, и остался бы бесполезен для любого другого
+        // ключевого слова). Оператор чаще всего открывает "Готовность"
+        // именно потому, что автоматизация под конкретным ключевым словом
+        // не сработала — ей и нужна эта детализация, а не только сводная
+        // строка выше.
+        const rulesToInspect = automations.filter((a) => a.isActive !== false);
+        if (rulesToInspect.length) {
           const { getCommentAutomationLogs } = await import("../zernio.server");
           const details = [];
-          for (const a of yearRules) {
+          for (const a of rulesToInspect) {
             const id = String(a.id || a._id || "");
             const logs = id ? (await getCommentAutomationLogs(id)).logs.slice(0, 5) : [];
             const logPreview = logs.map((row) => {
@@ -368,15 +373,16 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
               ).slice(0, 40);
               return `${when.slice(0, 19)} ${status} ${comment}`.trim();
             });
+            const words = a.keywords?.length ? a.keywords.join(", ") : "любой комментарий";
             details.push(
-              `${a.name}: post=${a.platformPostId ? "да" : "нет"}, ` +
+              `${a.name} (${words}): post=${a.platformPostId ? "да" : "нет"}, ` +
                 `публичный ответ=${a.commentReply?.trim() ? "да" : "нет"}, ` +
                 `DM=${a.dmMessage?.trim() ? "да" : "нет"}, ` +
                 `audience=${JSON.stringify(a.audience ?? "default")}, ` +
                 `последние: ${logPreview.join(" | ") || "логов нет"}`,
             );
           }
-          add("Правило «год»", "ok", details.join(" · "));
+          add("Правила Comment-to-DM: подробности", "ok", details.join(" · "));
         }
       } catch (e: unknown) {
         const { errorMessage } = await import("../error-message");
