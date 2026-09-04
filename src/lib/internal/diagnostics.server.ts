@@ -337,8 +337,7 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
           );
         } else {
           const lines = automations.map((a) => {
-            const words =
-              a.keywords?.length ? a.keywords.join(", ") : "любой комментарий";
+            const words = a.keywords?.length ? a.keywords.join(", ") : "любой комментарий";
             const target = a.platformPostId ? "конкретный пост" : "все посты";
             const mode = a.matchMode || "contains";
             const on = a.isActive === false ? "выкл" : "вкл";

@@ -634,7 +634,7 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Please double-check the address — e.g. anna@mail.ru",
     emailBeforeProofHint:
       "That doesn't look like an email address. Please type it in full, e.g. anna@mail.ru\n\n" +
-      "To cancel, type \"cancel\".",
+      'To cancel, type "cancel".',
     amountDue: (amount, currency) => `Total due: ${amount} ${currency}\n`,
     sendProofHint: "After paying, send the receipt here — as a photo or a file.",
     cancelled:
@@ -2632,9 +2632,13 @@ async function sendDirectPaymentDetails(params: {
       ? await amountDueNow({ total: fullAmount, fulfillment_kind: "physical" })
       : fullAmount;
 
-  const frozenCart = { lines: pricedLines, total: fullAmount, currency, mixedCurrency: false as const };
-  const needsEmailBeforeProof =
-    platformOf(user) === "instagram" && !isPhysicalCart && !user.email;
+  const frozenCart = {
+    lines: pricedLines,
+    total: fullAmount,
+    currency,
+    mixedCurrency: false as const,
+  };
+  const needsEmailBeforeProof = platformOf(user) === "instagram" && !isPhysicalCart && !user.email;
 
   if (needsEmailBeforeProof) {
     await flow.setDirectState(user.user_key, {

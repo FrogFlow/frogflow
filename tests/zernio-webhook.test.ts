@@ -70,9 +70,9 @@ describe("isOtherStoreWebhook", () => {
   const expected = "https://aatech-pi.vercel.app/api/public/zernio/webhook";
 
   it("detects another FrogFlow deploy holding the shared Zernio webhook", () => {
-    expect(isOtherStoreWebhook("https://test-con.vercel.app/api/public/zernio/webhook", expected)).toBe(
-      true,
-    );
+    expect(
+      isOtherStoreWebhook("https://test-con.vercel.app/api/public/zernio/webhook", expected),
+    ).toBe(true);
   });
 
   it("does not treat this deploy or a non-store URL as foreign", () => {

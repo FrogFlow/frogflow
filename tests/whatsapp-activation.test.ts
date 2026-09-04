@@ -163,9 +163,9 @@ describe("Instagram CMD start intent", () => {
   });
 
   it("ignores native Zernio ACT:: buttons and ordinary chat", () => {
-    expect(isZernioStartIntent("Я подписался", "ACT::cc82e5ebd3b465e3243fde66982ba8d0", triggers)).toBe(
-      false,
-    );
+    expect(
+      isZernioStartIntent("Я подписался", "ACT::cc82e5ebd3b465e3243fde66982ba8d0", triggers),
+    ).toBe(false);
     expect(isZernioStartIntent("привет", null, triggers)).toBe(false);
   });
 });

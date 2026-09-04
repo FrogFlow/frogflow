@@ -339,12 +339,20 @@ describe("Mini App production regressions", () => {
     expect(orders).toContain('"lang_pending"');
     expect(orders).toContain("stillAwaitingLangChoice");
     expect(orders).toContain("doneIdx >= items.length && !stillAwaitingLangChoice");
+    // Закрытие заказа (status delivered + сообщение покупателю + реферальные/
+    // баллы) — общая функция announceAndCloseDeliveredOrder, которую зовут и
+    // deliverOrder, и обработчик "lang_" ниже.
+    const closeFn = orders.slice(
+      orders.indexOf("export async function announceAndCloseDeliveredOrder"),
+      orders.indexOf("export async function announceAndCloseDeliveredOrder") + 1200,
+    );
+    expect(closeFn).toContain('status: "delivered"');
+    expect(closeFn).toContain("rewardReferralIfFirstDelivery");
+    expect(closeFn).toContain("awardPointsForDelivery");
     const langHandlerStart = bot.indexOf('data.startsWith("lang_") && isLocale(');
     const langHandler = bot.slice(langHandlerStart, langHandlerStart + 4500);
     expect(langHandler).toContain("itemNeedsLanguageChoice");
-    expect(langHandler).toContain('status: "delivered"');
-    expect(langHandler).toContain("rewardReferralIfFirstDelivery");
-    expect(langHandler).toContain("awardPointsForDelivery");
+    expect(langHandler).toContain("announceAndCloseDeliveredOrder");
   });
 
   /**

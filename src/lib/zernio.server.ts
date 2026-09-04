@@ -173,6 +173,15 @@ export type ZernioCommentAutomation = {
     linkClicks?: number;
     read?: number;
   };
+  /**
+   * Форма поля не подтверждена документацией/логами Zernio (в отличие от
+   * остальных полей выше) — только читается для диагностики (см.
+   * diagnostics.server.ts, правило «год»), в решениях не участвует. `Json`,
+   * а не `unknown` — значение уходит клиенту через createServerFn
+   * (instagram.functions.ts), а его сериализуемость должна быть доказуема
+   * статически.
+   */
+  audience?: Json;
 };
 
 /**
@@ -765,9 +774,9 @@ export type EnsureZernioWebhookResult = {
  * Comment-to-DM продолжал слать первое сообщение из поста, а /start в Direct
  * уже не доходил до магазина.
  */
-export async function ensureZernioWebhook(
-  options?: { force?: boolean },
-): Promise<EnsureZernioWebhookResult> {
+export async function ensureZernioWebhook(options?: {
+  force?: boolean;
+}): Promise<EnsureZernioWebhookResult> {
   const { hasModule } = await import("./modules/modules.server");
   if (!(await hasModule("instagram")) && !(await hasModule("whatsapp"))) {
     return { ok: true, action: "skipped" };
@@ -796,11 +805,7 @@ export async function ensureZernioWebhook(
   if (fit === "ok") {
     return { ok: true, action: "unchanged", url: expectedUrl, previousUrl: current?.url, accounts };
   }
-  if (
-    !options?.force &&
-    current?.url &&
-    isOtherStoreWebhook(current.url, expectedUrl)
-  ) {
+  if (!options?.force && current?.url && isOtherStoreWebhook(current.url, expectedUrl)) {
     console.warn("[zernio] webhook belongs to another deploy — not stealing", {
       currentUrl: current.url,
       expectedUrl,

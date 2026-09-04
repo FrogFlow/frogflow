@@ -24,5 +24,5 @@ export function instagramDigitalMissingEmail(order: {
 }): boolean {
   if (order.platform !== "instagram") return false;
   if (order.fulfillment_kind === "physical") return false;
-  return !Boolean(order.customer_email?.trim());
+  return !order.customer_email?.trim();
 }
