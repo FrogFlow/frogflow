@@ -289,6 +289,7 @@ const copy: Record<
     disconnecting: string;
     disconnectBtn: string;
     noAccountsConnected: string;
+    postNotSyncedYet: string;
     dialogFallback: string;
     sendErrorFallback: string;
     directBotEnabledMsg: string;
@@ -522,6 +523,8 @@ const copy: Record<
     disconnecting: "Отключение...",
     disconnectBtn: "🔓 Отключить аккаунт",
     noAccountsConnected: "Нет подключенных аккаунтов",
+    postNotSyncedYet:
+      "Этот пост ещё не проиндексирован Zernio — привязка к нему сейчас сохранится с внутренним ID Zernio вместо настоящего ID публикации, и комментарии под постом не будут его находить. Нажмите «Обновить список постов» и подождите немного, потом выберите пост заново.",
     dialogFallback: "Диалог",
     sendErrorFallback: "Не удалось отправить сообщение. Повторите попытку.",
     directBotEnabledMsg: "✅ Автоответчик Direct включён.",
@@ -758,6 +761,8 @@ const copy: Record<
     disconnecting: "Ажыратылуда...",
     disconnectBtn: "🔓 Аккаунтты ажырату",
     noAccountsConnected: "Қосылған аккаунттар жоқ",
+    postNotSyncedYet:
+      "Бұл пост әлі Zernio-да индекстелмеген — қазір байланыстырсаңыз, нақты жариялау ID-ы орнына Zernio-ның ішкі ID-ы сақталады, және пост астындағы пікірлер оны таппайды. «Пост тізімін жаңарту» түймесін басып, күте тұрып, постты қайта таңдаңыз.",
     dialogFallback: "Диалог",
     sendErrorFallback: "Хабарлама жіберілмеді. Қайта көріңіз.",
     directBotEnabledMsg: "✅ Direct автожауап беруші қосылды.",
@@ -995,6 +1000,8 @@ const copy: Record<
     disconnecting: "Disconnecting...",
     disconnectBtn: "🔓 Disconnect account",
     noAccountsConnected: "No accounts connected",
+    postNotSyncedYet:
+      "This post hasn't been indexed by Zernio yet — binding it now would save Zernio's internal ID instead of the real post ID, and comments on the post won't match it. Click \"Refresh post list\", wait a moment, then pick the post again.",
     dialogFallback: "Conversation",
     sendErrorFallback: "Failed to send the message. Try again.",
     directBotEnabledMsg: "✅ Direct auto-reply enabled.",
@@ -1232,6 +1239,8 @@ const copy: Record<
     disconnecting: "Uzilmoqda...",
     disconnectBtn: "🔓 Akkauntni uzish",
     noAccountsConnected: "Ulangan akkauntlar yo‘q",
+    postNotSyncedYet:
+      "Bu post hali Zernio tomonidan indekslanmagan — hozir bog‘lasangiz, haqiqiy post ID o‘rniga Zernio-ning ichki ID-i saqlanadi, va post ostidagi izohlar uni topmaydi. «Postlar ro‘yxatini yangilash» tugmasini bosing, biroz kuting va postni qayta tanlang.",
     dialogFallback: "Suhbat",
     sendErrorFallback: "Xabarni yuborib bo‘lmadi. Qayta urinib ko‘ring.",
     directBotEnabledMsg: "✅ Direct avtojavob beruvchi yoqildi.",
@@ -1695,15 +1704,27 @@ function AdminInstagramPage() {
     }
     const acc = accountsQuery.data.accounts[0];
 
+    const posts = postsQuery.data?.posts || [];
+    const selectedPost = posts.find((p) => (p.platformPostId || p._id || p.id) === postId);
+
+    // Пост может попасть в список ДО того, как его успела проиндексировать
+    // аналитика Zernio — тогда platformPostId (настоящий ID публикации,
+    // обязательный для сопоставления комментариев) у него ещё не заполнен,
+    // и раньше форма молча подставляла postId.trim() — внутренний ID
+    // Zernio, а не реальный ID поста. Автоматизация сохранялась, выглядела
+    // рабочей (пост "выбран", правило активно), но комментарии под этим
+    // постом никогда не находили её — а нашли только по факту от продавца.
+    if (postId && postId !== "ALL_POSTS" && !selectedPost?.platformPostId) {
+      toast.warning(tr.postNotSyncedYet);
+      return;
+    }
+
     setSavingAuto(true);
     try {
       const keywords = keywordsStr
         .split(",")
         .map((k) => k.trim())
         .filter(Boolean);
-
-      const posts = postsQuery.data?.posts || [];
-      const selectedPost = posts.find((p) => (p.platformPostId || p._id || p.id) === postId);
 
       const automationData = {
         id: editingId || undefined,
@@ -1718,10 +1739,7 @@ function AdminInstagramPage() {
         matchMode: "contains" as const,
         dmMessage: dmText,
         commentReply: replyText,
-        platformPostId:
-          postId && postId !== "ALL_POSTS"
-            ? selectedPost?.platformPostId || postId.trim()
-            : undefined,
+        platformPostId: postId && postId !== "ALL_POSTS" ? selectedPost?.platformPostId : undefined,
         postId:
           postId && postId !== "ALL_POSTS"
             ? selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || undefined
