@@ -22,6 +22,8 @@ export const Route = createFileRoute("/admin/analytics")({
 type CurrencySummary = { revenue: number; ordersCount: number; discountsGiven: number };
 type TopProduct = { key: string; name: string; unitsSold: number; revenue: number };
 type DailyPoint = { date: string; revenue: number };
+type DailyOrderPoint = { date: string; count: number };
+type CustomerSummary = { uniqueCustomers: number; repeatCustomers: number };
 
 const copy: Record<
   Locale,
@@ -37,6 +39,8 @@ const copy: Record<
     discounts30: string;
     revenue90: string;
     dailyChartTitle: string;
+    dailyOrdersChartTitle: string;
+    ordersCountLabel: string;
     topProductsTitle: string;
     unitsSoldLabel: string;
     piecesSuffix: string;
@@ -49,6 +53,11 @@ const copy: Record<
     combinedHint: string;
     combinedTargetLabel: string;
     unconvertedWarning: (list: string) => string;
+    customersTitle: string;
+    customersHint: (days: number) => string;
+    uniqueCustomersLabel: string;
+    repeatCustomersLabel: string;
+    repeatRateLabel: string;
   }
 > = {
   ru: {
@@ -64,6 +73,8 @@ const copy: Record<
     discounts30: "Скидок отдано (промо+баллы+сертификаты)",
     revenue90: "Выручка за 90 дней",
     dailyChartTitle: "Выручка по дням (30 дней)",
+    dailyOrdersChartTitle: "Заказов по дням (30 дней)",
+    ordersCountLabel: "Заказов",
     topProductsTitle: "Топ товаров по продажам (90 дней)",
     unitsSoldLabel: "Продано, шт.",
     piecesSuffix: "шт.",
@@ -77,6 +88,11 @@ const copy: Record<
     combinedTargetLabel: "Пересчитать в:",
     unconvertedWarning: (list) =>
       `Не удалось пересчитать курс для: ${list} — эти суммы не вошли в свод ниже.`,
+    customersTitle: "Покупатели",
+    customersHint: (days) => `За последние ${days} дней, по всем каналам продаж вместе.`,
+    uniqueCustomersLabel: "Уникальных покупателей",
+    repeatCustomersLabel: "Купили повторно",
+    repeatRateLabel: "Доля повторных",
   },
   kk: {
     title: "Қаржылық аналитика",
@@ -91,6 +107,8 @@ const copy: Record<
     discounts30: "Берілген жеңілдіктер (промо+баллдар+сертификаттар)",
     revenue90: "90 күндегі түсім",
     dailyChartTitle: "Күндік түсім (30 күн)",
+    dailyOrdersChartTitle: "Күндік тапсырыстар саны (30 күн)",
+    ordersCountLabel: "Тапсырыстар",
     topProductsTitle: "Сатылым бойынша топ тауарлар (90 күн)",
     unitsSoldLabel: "Сатылды, дана",
     piecesSuffix: "дана",
@@ -105,6 +123,11 @@ const copy: Record<
     combinedTargetLabel: "Мына валютаға қайта есептеу:",
     unconvertedWarning: (list) =>
       `Бағамды қайта есептеу мүмкін болмады: ${list} — бұл сомалар төмендегі қорытындыға кірмеді.`,
+    customersTitle: "Сатып алушылар",
+    customersHint: (days) => `Соңғы ${days} күнде, барлық сату арналары бойынша бірге.`,
+    uniqueCustomersLabel: "Бірегей сатып алушылар",
+    repeatCustomersLabel: "Қайта сатып алғандар",
+    repeatRateLabel: "Қайталанатындар үлесі",
   },
   en: {
     title: "Financial analytics",
@@ -119,6 +142,8 @@ const copy: Record<
     discounts30: "Discounts given (promo+points+certificates)",
     revenue90: "Revenue, 90 days",
     dailyChartTitle: "Daily revenue (30 days)",
+    dailyOrdersChartTitle: "Daily orders (30 days)",
+    ordersCountLabel: "Orders",
     topProductsTitle: "Top-selling products (90 days)",
     unitsSoldLabel: "Units sold",
     piecesSuffix: "pcs",
@@ -132,6 +157,11 @@ const copy: Record<
     combinedTargetLabel: "Convert into:",
     unconvertedWarning: (list) =>
       `Couldn't convert the rate for: ${list} — those amounts are not included in the total below.`,
+    customersTitle: "Customers",
+    customersHint: (days) => `Last ${days} days, across all sales channels combined.`,
+    uniqueCustomersLabel: "Unique customers",
+    repeatCustomersLabel: "Repeat buyers",
+    repeatRateLabel: "Repeat rate",
   },
   uz: {
     title: "Moliyaviy tahlil",
@@ -146,6 +176,8 @@ const copy: Record<
     discounts30: "Berilgan chegirmalar (promo+ballar+sertifikatlar)",
     revenue90: "90 kunlik daromad",
     dailyChartTitle: "Kunlik daromad (30 kun)",
+    dailyOrdersChartTitle: "Kunlik buyurtmalar soni (30 kun)",
+    ordersCountLabel: "Buyurtmalar",
     topProductsTitle: "Eng ko‘p sotilgan mahsulotlar (90 kun)",
     unitsSoldLabel: "Sotilgan, dona",
     piecesSuffix: "dona",
@@ -160,6 +192,11 @@ const copy: Record<
     combinedTargetLabel: "Shu valyutaga o‘tkazish:",
     unconvertedWarning: (list) =>
       `Kursni qayta hisoblab bo‘lmadi: ${list} — bu summalar quyidagi svodga kirmagan.`,
+    customersTitle: "Xaridorlar",
+    customersHint: (days) => `Oxirgi ${days} kunda, barcha sotuv kanallari bo‘yicha birgalikda.`,
+    uniqueCustomersLabel: "Noyob xaridorlar",
+    repeatCustomersLabel: "Qayta xarid qilganlar",
+    repeatRateLabel: "Qaytalanuvchilar ulushi",
   },
 };
 
@@ -190,6 +227,7 @@ function CurrencyBlock({
   summary30,
   summary90,
   daily,
+  dailyOrders,
   topProducts,
   tr,
 }: {
@@ -198,11 +236,15 @@ function CurrencyBlock({
   summary30: CurrencySummary;
   summary90: CurrencySummary | undefined;
   daily: DailyPoint[];
+  dailyOrders: DailyOrderPoint[];
   topProducts: TopProduct[];
   tr: (typeof copy)["ru"];
 }) {
   const chartConfig: ChartConfig = {
     revenue: { label: tr.revenueLabel, color: "var(--chart-1)" },
+  };
+  const ordersChartConfig: ChartConfig = {
+    count: { label: tr.ordersCountLabel, color: "var(--chart-2)" },
   };
 
   return (
@@ -242,6 +284,24 @@ function CurrencyBlock({
         </ChartContainer>
       </div>
 
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h3 className="font-medium">{tr.dailyOrdersChartTitle}</h3>
+        <ChartContainer config={ordersChartConfig} className="h-64 w-full">
+          <BarChart data={dailyOrders}>
+            <CartesianGrid vertical={false} />
+            <XAxis
+              dataKey="date"
+              tickFormatter={(v: string) => v.slice(5)}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis tickLine={false} axisLine={false} width={40} allowDecimals={false} />
+            <ChartTooltip content={<ChartTooltipContent />} />
+            <Bar dataKey="count" fill="var(--color-count)" radius={4} />
+          </BarChart>
+        </ChartContainer>
+      </div>
+
       <div className="bg-card border rounded-lg divide-y">
         <h3 className="font-medium p-4 pb-0">{tr.topProductsTitle}</h3>
         {topProducts.map((p) => (
@@ -253,6 +313,41 @@ function CurrencyBlock({
             <div className="text-sm font-medium shrink-0">{formatMoney(p.revenue, currency)}</div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Уникальные/повторные покупатели — глобально по всем валютам разом
+ * (user_key общий для каналов, а не для валюты, так что делить эту цифру по
+ * вкладкам валют означало бы либо задваивать покупателя, купившего в двух
+ * валютах, либо занижать счёт внутри одной вкладки). Показывается один раз
+ * над вкладками, а не внутри CurrencyBlock.
+ */
+function CustomersSection({
+  customers,
+  windowDays,
+  tr,
+}: {
+  customers: CustomerSummary;
+  windowDays: number;
+  tr: (typeof copy)["ru"];
+}) {
+  const repeatRate = customers.uniqueCustomers
+    ? Math.round((customers.repeatCustomers / customers.uniqueCustomers) * 100)
+    : 0;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">{tr.customersTitle}</h2>
+        <p className="text-sm text-muted-foreground mt-1">{tr.customersHint(windowDays)}</p>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <Stat label={tr.uniqueCustomersLabel} value={String(customers.uniqueCustomers)} />
+        <Stat label={tr.repeatCustomersLabel} value={String(customers.repeatCustomers)} />
+        <Stat label={tr.repeatRateLabel} value={`${repeatRate}%`} />
       </div>
     </div>
   );
@@ -318,6 +413,7 @@ function CombinedSection({
             summary30={converted.data.summary30}
             summary90={converted.data.summary90}
             daily={converted.data.dailyRevenue}
+            dailyOrders={converted.data.dailyOrders}
             topProducts={converted.data.topProducts}
             tr={tr}
           />
@@ -363,34 +459,38 @@ function AnalyticsPage() {
           {isPhysicalShop ? tr.noOrdersPhysical : tr.noOrders}
         </p>
       ) : (
-        <Tabs defaultValue={dominant}>
-          <TabsList className="flex-wrap h-auto">
+        <>
+          <CustomersSection customers={data.customers30} windowDays={30} tr={tr} />
+          <Tabs defaultValue={dominant}>
+            <TabsList className="flex-wrap h-auto">
+              {currencies.map((cur) => (
+                <TabsTrigger key={cur} value={cur}>
+                  {cur}
+                </TabsTrigger>
+              ))}
+              <TabsTrigger value="__combined">{tr.combinedTabLabel}</TabsTrigger>
+            </TabsList>
+
             {currencies.map((cur) => (
-              <TabsTrigger key={cur} value={cur}>
-                {cur}
-              </TabsTrigger>
+              <TabsContent key={cur} value={cur} className="space-y-4 pt-4">
+                <CurrencyBlock
+                  title=""
+                  currency={cur}
+                  summary30={data.summary30[cur]}
+                  summary90={data.summary90[cur]}
+                  daily={data.dailyRevenueByCurrency[cur] ?? []}
+                  dailyOrders={data.dailyOrdersByCurrency[cur] ?? []}
+                  topProducts={data.topProductsByCurrency[cur] ?? []}
+                  tr={tr}
+                />
+              </TabsContent>
             ))}
-            <TabsTrigger value="__combined">{tr.combinedTabLabel}</TabsTrigger>
-          </TabsList>
 
-          {currencies.map((cur) => (
-            <TabsContent key={cur} value={cur} className="space-y-4 pt-4">
-              <CurrencyBlock
-                title=""
-                currency={cur}
-                summary30={data.summary30[cur]}
-                summary90={data.summary90[cur]}
-                daily={data.dailyRevenueByCurrency[cur] ?? []}
-                topProducts={data.topProductsByCurrency[cur] ?? []}
-                tr={tr}
-              />
+            <TabsContent value="__combined" className="space-y-4 pt-4">
+              <CombinedSection currencies={currencies} defaultTarget={dominant} tr={tr} />
             </TabsContent>
-          ))}
-
-          <TabsContent value="__combined" className="space-y-4 pt-4">
-            <CombinedSection currencies={currencies} defaultTarget={dominant} tr={tr} />
-          </TabsContent>
-        </Tabs>
+          </Tabs>
+        </>
       )}
     </div>
   );

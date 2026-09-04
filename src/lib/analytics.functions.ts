@@ -8,6 +8,8 @@ import {
   dominantCurrency,
   orderedCurrencies,
   dailyRevenue,
+  dailyOrderCounts,
+  summarizeCustomers,
   topProductsBySales,
   includeOrderInAnalytics,
   analyticsRevenue,
@@ -50,7 +52,7 @@ async function loadAnalyticsData(): Promise<{
       s
         .from("orders")
         .select(
-          "id, total, currency, discount_amount, points_used, gift_certificate_discount, created_at, status, fulfillment_kind, paid_amount",
+          "id, total, currency, discount_amount, points_used, gift_certificate_discount, created_at, status, fulfillment_kind, paid_amount, user_key",
         )
         .in("status", ["delivered", "accepted", "in_production", "ready"])
         .gte("created_at", since)
@@ -69,6 +71,7 @@ async function loadAnalyticsData(): Promise<{
       points_used: o.points_used,
       gift_certificate_discount: o.gift_certificate_discount,
       created_at: o.created_at,
+      user_key: o.user_key,
       revenueScale: originalTotal > 0 ? revenue / originalTotal : 1,
     };
   });
@@ -108,12 +111,16 @@ export const getFinancialAnalytics = createServerFn({ method: "GET" }).handler(a
   const summary30 = summarizeByCurrency(orders30);
   const summary90 = summarizeByCurrency(orders);
   const currencies = orderedCurrencies(summary90, dominant);
+  const customers30 = summarizeCustomers(orders30);
+  const customers90 = summarizeCustomers(orders);
 
   const dailyRevenueByCurrency: Record<string, Array<{ date: string; revenue: number }>> = {};
+  const dailyOrdersByCurrency: Record<string, Array<{ date: string; count: number }>> = {};
   const topProductsByCurrency: Record<string, TopProduct[]> = {};
   for (const cur of currencies) {
     const curOrders30 = orders30.filter((o) => (o.currency || "—") === cur);
     dailyRevenueByCurrency[cur] = dailyRevenue(curOrders30, 30, now, tz);
+    dailyOrdersByCurrency[cur] = dailyOrderCounts(curOrders30, 30, now, tz);
 
     const curOrderIds = new Set(orders.filter((o) => (o.currency || "—") === cur).map((o) => o.id));
     // Позиции тоже отфильтрованы по валюте — иначе unitsSold внутри секции
@@ -132,7 +139,10 @@ export const getFinancialAnalytics = createServerFn({ method: "GET" }).handler(a
     currencies,
     summary30,
     summary90,
+    customers30,
+    customers90,
     dailyRevenueByCurrency,
+    dailyOrdersByCurrency,
     topProductsByCurrency,
   };
 });
@@ -223,6 +233,9 @@ export const getFinancialAnalyticsConverted = createServerFn({ method: "GET" })
       date: d.date,
       revenue: dailyByDate.get(d.date) ?? 0,
     }));
+    // Число заказов в день не зависит от валюты — считаем по всем 30-дневным
+    // заказам разом, конвертация не нужна.
+    const dailyOrdersConverted = dailyOrderCounts(orders30, 30, now, tz);
 
     // Топ товаров: штуки — валютно-нейтральный ранкинг (как и раньше), а
     // выручку на топ-10 досчитываем по всем валютам и переводим в target —
@@ -260,6 +273,7 @@ export const getFinancialAnalyticsConverted = createServerFn({ method: "GET" })
       summary30: converted30,
       summary90: converted90,
       dailyRevenue: dailyRevenueConverted,
+      dailyOrders: dailyOrdersConverted,
       topProducts: topProductsConverted,
       unconverted: [...unconverted],
     };

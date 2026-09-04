@@ -15,6 +15,8 @@ export type OrderForAnalytics = {
   points_used: number;
   gift_certificate_discount: number;
   created_at: string;
+  /** Сквозной идентификатор покупателя — общий для Telegram/Instagram/WhatsApp (см. zernioCustomerId). */
+  user_key?: string | null;
   /** 1 = полная сумма (выдан); paid/total для задатка в работе. */
   revenueScale?: number;
 };
@@ -122,6 +124,48 @@ export function toShopDateKey(iso: string, timeZone: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
   return d.toLocaleDateString("en-CA", { timeZone });
+}
+
+/** Число заказов по дням — тот же принцип, что и dailyRevenue, но штуки, не деньги. */
+export function dailyOrderCounts(
+  orders: OrderForAnalytics[],
+  days: number,
+  now: Date,
+  timeZone = "UTC",
+): Array<{ date: string; count: number }> {
+  const byDay = new Map<string, number>();
+  for (const o of orders) {
+    const day = toShopDateKey(o.created_at, timeZone);
+    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  }
+  const todayKey = now.toLocaleDateString("en-CA", { timeZone });
+  const result: Array<{ date: string; count: number }> = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const key = addDaysToIsoDate(todayKey, -i);
+    result.push({ date: key, count: byDay.get(key) ?? 0 });
+  }
+  return result;
+}
+
+export type CustomerSummary = { uniqueCustomers: number; repeatCustomers: number };
+
+/**
+ * Уникальные и повторные покупатели за период — по user_key, общему для всех
+ * каналов (Telegram/Instagram/WhatsApp). Заказ без user_key (не должно
+ * случаться, но на всякий случай) считается отдельным покупателем по id
+ * заказа, а не схлопывается с остальными безымянными в одного.
+ */
+export function summarizeCustomers(orders: OrderForAnalytics[]): CustomerSummary {
+  const counts = new Map<string, number>();
+  for (const o of orders) {
+    const key = o.user_key || `order:${o.id}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  let repeatCustomers = 0;
+  for (const count of counts.values()) {
+    if (count >= 2) repeatCustomers += 1;
+  }
+  return { uniqueCustomers: counts.size, repeatCustomers };
 }
 
 export type OrderItemForAnalytics = {
