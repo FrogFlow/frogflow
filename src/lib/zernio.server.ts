@@ -1357,14 +1357,15 @@ export async function getCommentAutomationLogs(
 
 export type ZernioInstagramComment = {
   id?: string;
-  _id?: string;
-  commentId?: string;
-  text?: string;
   message?: string;
-  from?: { id?: string; username?: string; name?: string };
-  username?: string;
-  createdAt?: string;
-  timestamp?: string;
+  createdTime?: string;
+  from?: { id?: string; name?: string; username?: string; isOwner?: boolean };
+  likeCount?: number;
+  replyCount?: number;
+  platform?: string;
+  url?: string | null;
+  canReply?: boolean;
+  isHidden?: boolean;
 };
 
 /**
@@ -1372,27 +1373,22 @@ export type ZernioInstagramComment = {
  * перестал отвечать под конкретным постом (см. диагностику "Правила
  * Comment-to-DM: подробности"), а старые комментарии остались без ответа.
  *
- * Форма ответа не проверена вживую — своя обработка комментариев раньше в
- * этом коде существовала (см. комментарий выше про replyToInstagramComment/
- * sendInstagramPrivateReply), её убрали, и до этой правки ничего не читало
- * список комментариев обратно. Разбор ниже — лучшее предположение по форме,
- * которой Zernio пользуется в родственных ответах (id/_id, text/message,
- * from.username, createdAt/timestamp); `raw` возвращается рядом на случай,
- * если предположение неверное — первый же реальный вызов это покажет.
+ * GET /inbox/comments/{postId} — «Get post comments», accountId строго
+ * query-параметром (не телом): POST на тот же путь — это отдельная ручка
+ * «Reply to comment», которая публикует новый комментарий/ответ на живом
+ * посте. Форма подтверждена по документации Zernio (см. Response Body
+ * раздела "Get post comments"); `raw` возвращается рядом для отладки на
+ * случай реального расхождения.
  */
 export async function listInstagramComments(
   postId: string,
   accountId: string,
 ): Promise<{ comments: ZernioInstagramComment[]; raw: Json }> {
   const res = await zernioRequest<Json>(`/inbox/comments/${encodeURIComponent(postId)}`, {
-    method: "POST",
-    body: { accountId },
+    method: "GET",
+    query: { accountId },
   });
-  const list = Array.isArray(res)
-    ? res
-    : res && typeof res === "object"
-      ? ((res as Record<string, Json>).comments ?? (res as Record<string, Json>).data ?? [])
-      : [];
+  const list = res && typeof res === "object" ? ((res as Record<string, Json>).comments ?? []) : [];
   return { comments: (Array.isArray(list) ? list : []) as ZernioInstagramComment[], raw: res };
 }
 
@@ -1401,8 +1397,12 @@ export async function listInstagramComments(
  * Comment-to-DM пропустил. Для человека, который раньше не писал в директ
  * (наш случай — холодный охват), Instagram кладёт такое сообщение в «Запросы
  * на сообщения», и там нужен button-template (`buttons`), а не голый текст —
- * quickReplies там не отображаются (см. комментарий у списка неиспользуемых
- * ручек выше). idempotencyKey свой, не через idempotencyKeyFor: тот привязан
+ * quickReplies там не отображаются (подтверждено документацией Zernio:
+ * `buttons` и `quickReplies` взаимоисключающие, только `buttons` виден в
+ * «Запросах на сообщения»). Ограничение платформы: один приватный ответ на
+ * комментарий и не позже 7 дней с момента комментария — отсюда свой
+ * idempotency-ключ ниже, а не только платформенное ограничение.
+ * idempotencyKey свой, не через idempotencyKeyFor: тот привязан
  * к контексту обрабатываемого вебхук-события (AsyncLocalStorage) и здесь,
  * при отправке вручную из панели, всегда пуст — вне события повтор
  * осмысленный и не должен подавляться (см. zernio-event-context.server.ts).

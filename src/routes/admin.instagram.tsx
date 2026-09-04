@@ -1344,10 +1344,10 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     try {
       const res = await listPostCommentsFn({ data: { postId: postId.trim(), accountId } });
       const parsed = (res.comments || []).map((c, i) => ({
-        id: String(c.id || c._id || c.commentId || i),
-        username: String(c.from?.username || c.username || c.from?.name || "—"),
-        text: String(c.text || c.message || ""),
-        when: String(c.createdAt || c.timestamp || ""),
+        id: String(c.id ?? i),
+        username: String(c.from?.username || c.from?.name || "—"),
+        text: String(c.message || ""),
+        when: String(c.createdTime || ""),
       }));
       setComments(parsed);
       setRawPreview(JSON.stringify(res.raw, null, 2).slice(0, 4000));
