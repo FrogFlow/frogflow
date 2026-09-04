@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { verifyZernioWebhookSignature } from "../src/routes/api/public/zernio/webhook";
-import { describeZernioWebhookFit } from "../src/lib/zernio.server";
+import { describeZernioWebhookFit, isOtherStoreWebhook } from "../src/lib/zernio.server";
 
 describe("verifyZernioWebhookSignature", () => {
   const body = JSON.stringify({ id: "event-1", event: "message.received" });
@@ -63,5 +63,21 @@ describe("describeZernioWebhookFit", () => {
       isActive: true,
     };
     expect(describeZernioWebhookFit([current], expected)).toEqual({ fit: "ok", current });
+  });
+});
+
+describe("isOtherStoreWebhook", () => {
+  const expected = "https://aatech-pi.vercel.app/api/public/zernio/webhook";
+
+  it("detects another FrogFlow deploy holding the shared Zernio webhook", () => {
+    expect(isOtherStoreWebhook("https://test-con.vercel.app/api/public/zernio/webhook", expected)).toBe(
+      true,
+    );
+  });
+
+  it("does not treat this deploy or a non-store URL as foreign", () => {
+    expect(isOtherStoreWebhook(expected, expected)).toBe(false);
+    expect(isOtherStoreWebhook("https://hooks.zernio.io/custom", expected)).toBe(false);
+    expect(isOtherStoreWebhook(undefined, expected)).toBe(false);
   });
 });

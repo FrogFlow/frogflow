@@ -628,6 +628,27 @@ export type ZernioWebhookRecord = {
 
 export type ZernioWebhookFit = "missing" | "stale" | "ok";
 
+/**
+ * Чужой FrogFlow-деплой уже держит store-webhook.
+ *
+ * У Zernio один webhook на команду: почасовой ensure на каждом деплое с
+ * общим ключом перетягивает URL на себя. Comment-to-DM живёт, а Direct
+ * «не срабатывает» — события уезжают на test-con / saltanat / развивашку.
+ * Крон не должен отбирать чужую запись; ручная кнопка «Проставить вебхук»
+ * по-прежнему переписывает (force).
+ */
+export function isOtherStoreWebhook(currentUrl: string | undefined, expectedUrl: string): boolean {
+  if (!currentUrl) return false;
+  try {
+    const current = new URL(currentUrl);
+    const expected = new URL(expectedUrl);
+    if (!/\/api\/public\/zernio\/webhook\/?$/.test(current.pathname)) return false;
+    return current.origin !== expected.origin;
+  } catch {
+    return false;
+  }
+}
+
 function zernioWebhookIsActive(webhook: ZernioWebhookRecord): boolean {
   if (webhook.isActive === false || webhook.active === false) return false;
   return true;
@@ -744,7 +765,9 @@ export type EnsureZernioWebhookResult = {
  * Comment-to-DM продолжал слать первое сообщение из поста, а /start в Direct
  * уже не доходил до магазина.
  */
-export async function ensureZernioWebhook(): Promise<EnsureZernioWebhookResult> {
+export async function ensureZernioWebhook(
+  options?: { force?: boolean },
+): Promise<EnsureZernioWebhookResult> {
   const { hasModule } = await import("./modules/modules.server");
   if (!(await hasModule("instagram")) && !(await hasModule("whatsapp"))) {
     return { ok: true, action: "skipped" };
@@ -772,6 +795,24 @@ export async function ensureZernioWebhook(): Promise<EnsureZernioWebhookResult> 
 
   if (fit === "ok") {
     return { ok: true, action: "unchanged", url: expectedUrl, previousUrl: current?.url, accounts };
+  }
+  if (
+    !options?.force &&
+    current?.url &&
+    isOtherStoreWebhook(current.url, expectedUrl)
+  ) {
+    console.warn("[zernio] webhook belongs to another deploy — not stealing", {
+      currentUrl: current.url,
+      expectedUrl,
+    });
+    return {
+      ok: true,
+      action: "skipped",
+      url: current.url,
+      previousUrl: current.url,
+      accounts,
+      error: `общий ключ Zernio: webhook слушает ${current.url}`,
+    };
   }
 
   const registered = await registerZernioWebhook(expectedUrl);

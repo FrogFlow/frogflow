@@ -256,7 +256,7 @@ export async function setOwnWebhook(): Promise<WebhookActionResult> {
    */
   try {
     const { ensureZernioWebhook } = await import("../zernio.server");
-    const zernio = await ensureZernioWebhook();
+    const zernio = await ensureZernioWebhook({ force: true });
     if (zernio.action !== "skipped") {
       const expired = (zernio.accounts ?? []).filter((account) => account.expired);
       const zernioOk = zernio.ok && expired.length === 0;
