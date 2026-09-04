@@ -6,6 +6,8 @@ import {
   productNumberFromKeywords,
   matchCountry,
   matchLocalePick,
+  isLocalePickEcho,
+  LOCALE_PICK_ECHO_MS,
   matchFulfillmentType,
   extractEmail,
   isAffirmative,
@@ -159,6 +161,30 @@ describe("matchLocalePick", () => {
     expect(matchLocalePick("")).toBeNull();
     // Двух букв мало: под них подошло бы слишком многое.
     expect(matchLocalePick("ру")).toBeNull();
+  });
+});
+
+describe("isLocalePickEcho", () => {
+  const pickedAt = "2026-09-04T08:00:00.000Z";
+  const t0 = Date.parse(pickedAt);
+
+  it("повтор «1» или названия языка сразу после выбора — не номер товара", () => {
+    expect(isLocalePickEcho("1", pickedAt, t0 + 1_000)).toBe(true);
+    expect(isLocalePickEcho("русский", pickedAt, t0 + 1_000)).toBe(true);
+    expect(isLocalePickEcho("2", pickedAt, t0 + 1_000)).toBe(true);
+  });
+
+  it("после окна снова можно писать короткий номер", () => {
+    expect(isLocalePickEcho("1", pickedAt, t0 + LOCALE_PICK_ECHO_MS)).toBe(false);
+  });
+
+  it("настоящий код материала из публикации не считается эхом языка", () => {
+    expect(isLocalePickEcho("401", pickedAt, t0 + 1_000)).toBe(false);
+    expect(isLocalePickEcho("018", pickedAt, t0 + 1_000)).toBe(false);
+  });
+
+  it("без метки выбора языка короткий номер остаётся номером товара", () => {
+    expect(isLocalePickEcho("1", undefined, t0)).toBe(false);
   });
 });
 

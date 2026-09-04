@@ -187,6 +187,20 @@ export function matchLocalePick(text: string): Locale | null {
   return null;
 }
 
+/** Повтор цифры из списка языков сразу после выбора — не номер товара. */
+export const LOCALE_PICK_ECHO_MS = 2 * 60 * 1000;
+
+export function isLocalePickEcho(
+  text: string,
+  localePickedAt: string | undefined,
+  now = Date.now(),
+): boolean {
+  if (!matchLocalePick(text)) return false;
+  const at = Date.parse(localePickedAt ?? "");
+  if (!Number.isFinite(at)) return false;
+  return now - at >= 0 && now - at < LOCALE_PICK_ECHO_MS;
+}
+
 export type CountryOption = { code: string; name: string };
 
 /**

@@ -85,6 +85,7 @@ type OrderStatusKey =
 
 interface DirectCopy {
   languageSaved: string;
+  localePickEcho: string;
   greetingFull: (name: string) => string;
   greetingShort: string;
   catalogIntro: string;
@@ -207,6 +208,8 @@ interface DirectCopy {
 const directCopy: Record<Locale, DirectCopy> = {
   ru: {
     languageSaved: "✅ Язык сохранён.",
+    localePickEcho:
+      "Язык уже выбран. Напишите номер материала из публикации — например «018» или «401», а не цифру из списка языков.",
     greetingFull: (name) =>
       `Здравствуйте, ${name}! 👋\n\n` +
       "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
@@ -372,6 +375,8 @@ const directCopy: Record<Locale, DirectCopy> = {
   },
   kk: {
     languageSaved: "✅ Тіл сақталды.",
+    localePickEcho:
+      "Тіл таңдалды. Жарияланымдағы материал нөмірін жазыңыз — мысалы «018» немесе «401», тіл тізіміндегі цифр емес.",
     greetingFull: (name) =>
       `Сәлеметсіз бе, ${name}! 👋\n\n` +
       "Сұрағыңызды сатушыға жеткіздім — дәл осында жауап береді.\n\n" +
@@ -534,6 +539,8 @@ const directCopy: Record<Locale, DirectCopy> = {
   },
   en: {
     languageSaved: "✅ Language saved.",
+    localePickEcho:
+      "Language is already set. Send the material number from the post — e.g. “018” or “401” — not the number from the language list.",
     greetingFull: (name) =>
       `Hi, ${name}! 👋\n\n` +
       "I've passed your question to the seller — they'll reply right here.\n\n" +
@@ -696,6 +703,8 @@ const directCopy: Record<Locale, DirectCopy> = {
   },
   uz: {
     languageSaved: "✅ Til saqlandi.",
+    localePickEcho:
+      "Til allaqachon tanlangan. Postdagi material raqamini yozing — masalan «018» yoki «401», til ro‘yxatidagi raqam emas.",
     greetingFull: (name) =>
       `Salom, ${name}! 👋\n\n` +
       "Savolingizni sotuvchiga yetkazdim — shu yerda javob beradi.\n\n" +
@@ -2987,6 +2996,7 @@ async function handlePurchaseFlow(params: {
   const {
     classifyIncoming,
     isCancel,
+    isLocalePickEcho,
     isPaymentComplaint,
     matchDirectCommand,
     matchLocalePick,
@@ -3043,7 +3053,10 @@ async function handlePurchaseFlow(params: {
       if (misses >= flow.MAX_STEP_MISSES) {
         // Не упорствуем: дальше отвечаем по-русски — как отвечали до появления
         // локализации, — а не держим человека на нераспознанном шаге вечно.
-        await flow.setDirectState(user.user_key, { locale: "ru" });
+        await flow.setDirectState(user.user_key, {
+          locale: "ru",
+          locale_picked_at: new Date().toISOString(),
+        });
         await flow.clearDirectFlow(user.user_key);
         await sendCatalogMenu(conversationId, accountId, user);
         return true;
@@ -3053,7 +3066,10 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    await flow.setDirectState(user.user_key, { locale: picked });
+    await flow.setDirectState(user.user_key, {
+      locale: picked,
+      locale_picked_at: new Date().toISOString(),
+    });
     await flow.clearDirectFlow(user.user_key);
     await say(directCopy[picked].languageSaved);
     await sendCatalogMenu(conversationId, accountId, {
@@ -3492,6 +3508,7 @@ async function handlePurchaseFlow(params: {
     answersEverything,
     flow,
     classifyIncoming,
+    isLocalePickEcho,
     state,
     copy,
     say,
@@ -3508,6 +3525,7 @@ async function handlePurchaseFallback(ctx: {
   answersEverything: boolean;
   flow: typeof import("./direct-purchase.server");
   classifyIncoming: (typeof import("./direct-flow"))["classifyIncoming"];
+  isLocalePickEcho: (typeof import("./direct-flow"))["isLocalePickEcho"];
   state: ReturnType<(typeof import("./direct-purchase.server"))["readDirectState"]>;
   copy: DirectCopy;
   say: (message: string) => ReturnType<typeof reply>;
@@ -3521,6 +3539,7 @@ async function handlePurchaseFallback(ctx: {
     answersEverything,
     flow,
     classifyIncoming,
+    isLocalePickEcho,
     state,
     copy,
     say,
@@ -3555,6 +3574,19 @@ async function handlePurchaseFallback(ctx: {
 
   // ── Сценарий не начат: разбираем свободную реплику ──────────────────────
   if (!text.trim()) return false;
+
+  /**
+   * Повтор цифры из списка языков сразу после выбора — не код материала.
+   *
+   * Живой случай Educational: два человека выбрали язык («1» / «русский»),
+   * затем ещё раз написали «1», и бот воспринял её как товар 001. Настоящие
+   * номера из публикаций трёхзначные («018», «401») `matchLocalePick` не
+   * принимает, поэтому Comment-to-DM с кодом материала после языка не ломается.
+   */
+  if (isLocalePickEcho(text, state.locale_picked_at)) {
+    await say(copy.localePickEcho);
+    return true;
+  }
 
   const incoming = classifyIncoming(text);
 
