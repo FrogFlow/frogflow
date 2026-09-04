@@ -1382,9 +1382,11 @@ export type ZernioInstagramComment = {
  */
 export async function listInstagramComments(
   postId: string,
+  accountId: string,
 ): Promise<{ comments: ZernioInstagramComment[]; raw: Json }> {
   const res = await zernioRequest<Json>(`/inbox/comments/${encodeURIComponent(postId)}`, {
     method: "POST",
+    body: { accountId },
   });
   const list = Array.isArray(res)
     ? res
@@ -1411,6 +1413,7 @@ export async function listInstagramComments(
 export async function sendCommentPrivateReply(
   postId: string,
   commentId: string,
+  accountId: string,
   message: string,
   buttons: ZernioDmButton[],
 ): Promise<{ ok: boolean; error?: string }> {
@@ -1419,7 +1422,7 @@ export async function sendCommentPrivateReply(
       `/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/private-reply`,
       {
         method: "POST",
-        body: { message, buttons: buttons.slice(0, 3) },
+        body: { accountId, message, buttons: buttons.slice(0, 3) },
         idempotencyKey: `catchup-reply:${postId}:${commentId}`,
       },
     );

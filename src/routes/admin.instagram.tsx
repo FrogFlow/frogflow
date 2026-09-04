@@ -1316,7 +1316,7 @@ type CatchupComment = {
  * (instagram.functions.ts), так что даже "выбрать все" уходит партиями, а
  * не одним запросом на сотню человек.
  */
-function CatchupReplySection() {
+function CatchupReplySection({ accountId }: { accountId: string | null }) {
   const [postId, setPostId] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
   const [comments, setComments] = useState<CatchupComment[] | null>(null);
@@ -1333,12 +1333,16 @@ function CatchupReplySection() {
 
   async function onLoadComments() {
     if (!postId.trim()) return;
+    if (!accountId) {
+      toast.warning("Нет подключённого Instagram-аккаунта.");
+      return;
+    }
     setLoadingComments(true);
     setComments(null);
     setSelected(new Set());
     setResults([]);
     try {
-      const res = await listPostCommentsFn({ data: { postId: postId.trim() } });
+      const res = await listPostCommentsFn({ data: { postId: postId.trim(), accountId } });
       const parsed = (res.comments || []).map((c, i) => ({
         id: String(c.id || c._id || c.commentId || i),
         username: String(c.from?.username || c.username || c.from?.name || "—"),
@@ -1376,7 +1380,7 @@ function CatchupReplySection() {
   }
 
   async function onSend() {
-    if (!postId.trim() || !message.trim() || selected.size === 0) return;
+    if (!postId.trim() || !message.trim() || selected.size === 0 || !accountId) return;
     setSending(true);
     setResults([]);
     const ids = Array.from(selected);
@@ -1394,7 +1398,13 @@ function CatchupReplySection() {
         const chunk = ids.slice(i, i + CHUNK);
         setSendProgress({ done: i, total: ids.length });
         const res = await sendCatchupPrivateRepliesFn({
-          data: { postId: postId.trim(), commentIds: chunk, message: message.trim(), buttons },
+          data: {
+            postId: postId.trim(),
+            accountId,
+            commentIds: chunk,
+            message: message.trim(),
+            buttons,
+          },
         });
         allResults.push(...res.results);
         setResults([...allResults]);
@@ -2888,7 +2898,7 @@ function AdminInstagramPage() {
               )}
             </div>
           </div>
-          <CatchupReplySection />
+          <CatchupReplySection accountId={acc?._id ?? null} />
         </TabsContent>
 
         {/* PUBLISH TAB */}

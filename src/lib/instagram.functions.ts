@@ -586,11 +586,13 @@ export const getAutomationLogsFn = createServerFn({ method: "GET" })
  * проверена вживую, см. комментарий у listInstagramComments.
  */
 export const listPostCommentsFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ postId: z.string().min(1) }).parse(d))
+  .validator((d: unknown) =>
+    z.object({ postId: z.string().min(1), accountId: z.string().min(1) }).parse(d),
+  )
   .handler(async ({ data }) => {
     const { listInstagramComments } = await import("./zernio.server");
     await requireAdminWithModule();
-    return await listInstagramComments(data.postId);
+    return await listInstagramComments(data.postId, data.accountId);
   });
 
 const CatchupButtonSchema = z.object({
@@ -618,6 +620,7 @@ export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
     z
       .object({
         postId: z.string().min(1),
+        accountId: z.string().min(1),
         commentIds: z.array(z.string().min(1)).min(1).max(25),
         message: z.string().min(1),
         buttons: z.array(CatchupButtonSchema).max(3).optional(),
@@ -632,6 +635,7 @@ export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
       const result = await sendCommentPrivateReply(
         data.postId,
         commentId,
+        data.accountId,
         data.message,
         data.buttons ?? [],
       );
