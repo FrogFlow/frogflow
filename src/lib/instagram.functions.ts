@@ -577,6 +577,69 @@ export const getAutomationLogsFn = createServerFn({ method: "GET" })
     return await getCommentAutomationLogs(data.id);
   });
 
+/**
+ * Комментарии под постом — для догоняющей рассылки, когда Comment-to-DM
+ * перестал отвечать под конкретным постом (диагностика "Готовность" в
+ * операторской панели это обнаруживает — обрыв виден по последней дате в
+ * логах правила при живом аккаунте и работающих правилах на других постах).
+ * `raw` возвращается как есть — форма ответа Zernio по этому эндпоинту не
+ * проверена вживую, см. комментарий у listInstagramComments.
+ */
+export const listPostCommentsFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ postId: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { listInstagramComments } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return await listInstagramComments(data.postId);
+  });
+
+const CatchupButtonSchema = z.object({
+  type: z.enum(["url", "postback", "phone"]),
+  title: z.string().min(1),
+  url: z.string().optional(),
+  payload: z.string().optional(),
+  phone: z.string().optional(),
+});
+
+/**
+ * Догоняющая рассылка приватными ответами по явно выбранным комментариям —
+ * не «на все посты сразу», а на конкретный список id, который явно передал
+ * оператор (см. UI: сначала пробуют на нескольких, потом на всех сразу —
+ * жёсткий потолок на вызов не даёт ни одному клику отправить больше 25 за
+ * раз, даже если сама панель выбрала «все»).
+ *
+ * Идёт последовательно, не Promise.all — так же, как sendZernioInboxMessage
+ * в цикле рассылки (broadcast.server.ts): параллельный залп по чужому API
+ * рискует упереться в его собственный rate limit, а последовательные вызовы
+ * с этим уже никогда не сталкивались.
+ */
+export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        postId: z.string().min(1),
+        commentIds: z.array(z.string().min(1)).min(1).max(25),
+        message: z.string().min(1),
+        buttons: z.array(CatchupButtonSchema).max(3).optional(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { sendCommentPrivateReply } = await import("./zernio.server");
+    await requireAdminWithModule();
+    const results: Array<{ commentId: string; ok: boolean; error?: string }> = [];
+    for (const commentId of data.commentIds) {
+      const result = await sendCommentPrivateReply(
+        data.postId,
+        commentId,
+        data.message,
+        data.buttons ?? [],
+      );
+      results.push({ commentId, ...result });
+    }
+    return { results };
+  });
+
 // ─── Webhook logs (наша БД) ───────────────────────────────────────────────────
 
 export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(async () => {

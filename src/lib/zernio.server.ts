@@ -1355,6 +1355,81 @@ export async function getCommentAutomationLogs(
   }
 }
 
+export type ZernioInstagramComment = {
+  id?: string;
+  _id?: string;
+  commentId?: string;
+  text?: string;
+  message?: string;
+  from?: { id?: string; username?: string; name?: string };
+  username?: string;
+  createdAt?: string;
+  timestamp?: string;
+};
+
+/**
+ * Комментарии под постом — для догоняющей рассылки, когда Comment-to-DM
+ * перестал отвечать под конкретным постом (см. диагностику "Правила
+ * Comment-to-DM: подробности"), а старые комментарии остались без ответа.
+ *
+ * Форма ответа не проверена вживую — своя обработка комментариев раньше в
+ * этом коде существовала (см. комментарий выше про replyToInstagramComment/
+ * sendInstagramPrivateReply), её убрали, и до этой правки ничего не читало
+ * список комментариев обратно. Разбор ниже — лучшее предположение по форме,
+ * которой Zernio пользуется в родственных ответах (id/_id, text/message,
+ * from.username, createdAt/timestamp); `raw` возвращается рядом на случай,
+ * если предположение неверное — первый же реальный вызов это покажет.
+ */
+export async function listInstagramComments(
+  postId: string,
+): Promise<{ comments: ZernioInstagramComment[]; raw: Json }> {
+  const res = await zernioRequest<Json>(`/inbox/comments/${encodeURIComponent(postId)}`, {
+    method: "POST",
+  });
+  const list = Array.isArray(res)
+    ? res
+    : res && typeof res === "object"
+      ? ((res as Record<string, Json>).comments ?? (res as Record<string, Json>).data ?? [])
+      : [];
+  return { comments: (Array.isArray(list) ? list : []) as ZernioInstagramComment[], raw: res };
+}
+
+/**
+ * Приватный ответ на конкретный комментарий — догоняющая рассылка тем, кого
+ * Comment-to-DM пропустил. Для человека, который раньше не писал в директ
+ * (наш случай — холодный охват), Instagram кладёт такое сообщение в «Запросы
+ * на сообщения», и там нужен button-template (`buttons`), а не голый текст —
+ * quickReplies там не отображаются (см. комментарий у списка неиспользуемых
+ * ручек выше). idempotencyKey свой, не через idempotencyKeyFor: тот привязан
+ * к контексту обрабатываемого вебхук-события (AsyncLocalStorage) и здесь,
+ * при отправке вручную из панели, всегда пуст — вне события повтор
+ * осмысленный и не должен подавляться (см. zernio-event-context.server.ts).
+ * Массовая рассылка — другое дело: тут повтор одного и того же (postId,
+ * commentId) почти наверняка случайный (двойной клик, ретрай сети), и
+ * дублировать сообщение реальному человеку не нужно.
+ */
+export async function sendCommentPrivateReply(
+  postId: string,
+  commentId: string,
+  message: string,
+  buttons: ZernioDmButton[],
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await zernioRequest(
+      `/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/private-reply`,
+      {
+        method: "POST",
+        body: { message, buttons: buttons.slice(0, 3) },
+        idempotencyKey: `catchup-reply:${postId}:${commentId}`,
+      },
+    );
+    return { ok: true };
+  } catch (e) {
+    console.error(`[zernio] sendCommentPrivateReply failed for comment ${commentId}`, e);
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
 /**
  * Получить список постов (для выбора Post ID в автоответах)
  */

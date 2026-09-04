@@ -40,6 +40,8 @@ import {
   saveInstagramDirectBotScopeFn,
   getInstagramDirectBotTriggersFn,
   saveInstagramDirectBotTriggersFn,
+  listPostCommentsFn,
+  sendCatchupPrivateRepliesFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -1296,6 +1298,249 @@ export const Route = createFileRoute("/admin/instagram")({
   head: () => ({ meta: [{ title: "Instagram" }] }),
   component: AdminInstagramPage,
 });
+
+type CatchupComment = {
+  id: string;
+  username: string;
+  text: string;
+  when: string;
+};
+
+/**
+ * Догоняющая рассылка приватными ответами по комментариям, которые
+ * Comment-to-DM пропустил (обрыв доставки под конкретным постом — см.
+ * диагностику "Готовность" → "Правила Comment-to-DM: подробности").
+ *
+ * Сначала выбор вручную (проверить на 2-3), потом чекбокс "выбрать все" —
+ * само же ограничение в 25 за один вызов держит sendCatchupPrivateRepliesFn
+ * (instagram.functions.ts), так что даже "выбрать все" уходит партиями, а
+ * не одним запросом на сотню человек.
+ */
+function CatchupReplySection() {
+  const [postId, setPostId] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [comments, setComments] = useState<CatchupComment[] | null>(null);
+  const [rawPreview, setRawPreview] = useState<string>("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [message, setMessage] = useState("");
+  const [buttonTitle, setButtonTitle] = useState("");
+  const [buttonUrl, setButtonUrl] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendProgress, setSendProgress] = useState<{ done: number; total: number } | null>(null);
+  const [results, setResults] = useState<Array<{ commentId: string; ok: boolean; error?: string }>>(
+    [],
+  );
+
+  async function onLoadComments() {
+    if (!postId.trim()) return;
+    setLoadingComments(true);
+    setComments(null);
+    setSelected(new Set());
+    setResults([]);
+    try {
+      const res = await listPostCommentsFn({ data: { postId: postId.trim() } });
+      const parsed = (res.comments || []).map((c, i) => ({
+        id: String(c.id || c._id || c.commentId || i),
+        username: String(c.from?.username || c.username || c.from?.name || "—"),
+        text: String(c.text || c.message || ""),
+        when: String(c.createdAt || c.timestamp || ""),
+      }));
+      setComments(parsed);
+      setRawPreview(JSON.stringify(res.raw, null, 2).slice(0, 4000));
+      if (parsed.length === 0) {
+        toast.warning(
+          "Комментарии не пришли или форма ответа Zernio не совпала с ожидаемой — смотри «сырой ответ» ниже.",
+        );
+      }
+    } catch (e: unknown) {
+      toast.error(`Не удалось загрузить комментарии: ${errorMessage(e)}`);
+    } finally {
+      setLoadingComments(false);
+    }
+  }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (!comments) return;
+    setSelected((prev) =>
+      prev.size === comments.length ? new Set() : new Set(comments.map((c) => c.id)),
+    );
+  }
+
+  async function onSend() {
+    if (!postId.trim() || !message.trim() || selected.size === 0) return;
+    setSending(true);
+    setResults([]);
+    const ids = Array.from(selected);
+    const buttons: ZernioDmButton[] = buttonTitle.trim()
+      ? [
+          buttonUrl.trim()
+            ? { type: "url", title: buttonTitle.trim(), url: buttonUrl.trim() }
+            : { type: "postback", title: buttonTitle.trim(), payload: buttonTitle.trim() },
+        ]
+      : [];
+    const CHUNK = 25;
+    const allResults: Array<{ commentId: string; ok: boolean; error?: string }> = [];
+    try {
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        setSendProgress({ done: i, total: ids.length });
+        const res = await sendCatchupPrivateRepliesFn({
+          data: { postId: postId.trim(), commentIds: chunk, message: message.trim(), buttons },
+        });
+        allResults.push(...res.results);
+        setResults([...allResults]);
+      }
+      setSendProgress({ done: ids.length, total: ids.length });
+      const failed = allResults.filter((r) => !r.ok).length;
+      if (failed === 0) toast.success(`Отправлено: ${allResults.length}`);
+      else toast.warning(`Отправлено: ${allResults.length - failed}, ошибок: ${failed}`);
+    } catch (e: unknown) {
+      toast.error(`Рассылка прервалась: ${errorMessage(e)}`);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Card className="max-w-3xl border-amber-200">
+      <CardHeader>
+        <CardTitle className="text-base">Догоняющая рассылка по комментариям</CardTitle>
+        <CardDescription>
+          На случай, если Comment-to-DM перестал отвечать под конкретным постом (см. «Готовность» →
+          «Правила Comment-to-DM: подробности»): найти пропущенные комментарии и ответить им
+          приватным сообщением вручную. Для тех, кто раньше не писал в директ, Instagram требует
+          сообщение с кнопкой (Message Request) — обычный текст там не отображается. У Instagram
+          есть ограничение по давности комментария для приватного ответа — самые старые могут не
+          отправиться, это ограничение платформы, не панели.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Post ID (тот же, что указан как «Target» у автоматизации)</Label>
+          <div className="flex gap-2">
+            <Input
+              value={postId}
+              onChange={(e) => setPostId(e.target.value)}
+              placeholder="platformPostId"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onLoadComments}
+              disabled={loadingComments || !postId.trim()}
+            >
+              {loadingComments ? "Загрузка…" : "Загрузить комментарии"}
+            </Button>
+          </div>
+        </div>
+
+        {comments && (
+          <>
+            <div className="space-y-2">
+              <Label>Сообщение</Label>
+              <Textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={3}
+                placeholder="Текст, который получит каждый выбранный"
+              />
+              <div className="grid gap-2 md:grid-cols-2">
+                <Input
+                  value={buttonTitle}
+                  onChange={(e) => setButtonTitle(e.target.value)}
+                  placeholder="Текст кнопки (обязательно для холодного охвата)"
+                />
+                <Input
+                  value={buttonUrl}
+                  onChange={(e) => setButtonUrl(e.target.value)}
+                  placeholder="Ссылка кнопки (пусто — кнопка-postback)"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Checkbox
+                  checked={comments.length > 0 && selected.size === comments.length}
+                  onCheckedChange={toggleAll}
+                />
+                Выбрать все ({comments.length})
+              </label>
+              <span className="text-muted-foreground">Выбрано: {selected.size}</span>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto rounded-md border divide-y">
+              {comments.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">Комментарии не найдены.</p>
+              ) : (
+                comments.map((c) => {
+                  const result = results.find((r) => r.commentId === c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      className="flex items-start gap-2 p-2 text-sm cursor-pointer hover:bg-muted/30"
+                    >
+                      <Checkbox
+                        checked={selected.has(c.id)}
+                        onCheckedChange={() => toggleOne(c.id)}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{c.username}</span>
+                          <span className="text-[10px] text-muted-foreground">{c.when}</span>
+                          {result && (
+                            <span
+                              className={
+                                result.ok ? "text-green-600 text-xs" : "text-red-600 text-xs"
+                              }
+                            >
+                              {result.ok ? "✓ отправлено" : `✗ ${result.error || "ошибка"}`}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-muted-foreground truncate">{c.text}</div>
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <Button
+              type="button"
+              onClick={onSend}
+              disabled={sending || selected.size === 0 || !message.trim()}
+            >
+              {sending
+                ? `Отправляю… ${sendProgress ? `${sendProgress.done}/${sendProgress.total}` : ""}`
+                : `Отправить выбранным (${selected.size})`}
+            </Button>
+
+            {rawPreview && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted-foreground">
+                  Сырой ответ Zernio (если список выше пустой или выглядит неверно)
+                </summary>
+                <pre className="mt-1 max-h-60 overflow-auto rounded bg-muted/50 p-2">
+                  {rawPreview}
+                </pre>
+              </details>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function AdminInstagramPage() {
   const { locale } = useAdminLocale();
@@ -2577,6 +2822,7 @@ function AdminInstagramPage() {
               )}
             </div>
           </div>
+          <CatchupReplySection />
         </TabsContent>
 
         {/* PUBLISH TAB */}
