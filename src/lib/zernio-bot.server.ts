@@ -215,9 +215,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Передал ваш вопрос продавцу — он ответит здесь же.\n\n" +
       "Если хотите что-то купить прямо сейчас, напишите номер товара из публикации — например «196».",
     greetingShort: "Передал ваш вопрос продавцу — он ответит здесь же.",
-    catalogIntro: "Здесь можно оформить заказ по номеру материала.",
+    catalogIntro: "Теперь введите КОД материала, который хотите приобрести.",
     catalogNumberHint:
-      "Напишите номер из публикации — например «018», — и я подскажу, как оплатить.",
+      "🔴❗️Код указан в самом первом сообщении.\nВведите его только ЦИФРАМИ.\n\nПосле этого сможете оформить заказ и увидеть цену в вашей валюте. 💳",
     catalogBotLink: (link) =>
       `А чтобы посмотреть весь каталог, поискать по теме и получить файлы, заходите в наш бот: ${link}`,
     searchNoResults: (query, link) =>
@@ -382,9 +382,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Сұрағыңызды сатушыға жеткіздім — дәл осында жауап береді.\n\n" +
       "Егер қазір бірдеңе сатып алғыңыз келсе, жарияланымдағы тауар нөмірін жазыңыз — мысалы «196».",
     greetingShort: "Сұрағыңызды сатушыға жеткіздім — дәл осында жауап береді.",
-    catalogIntro: "Мұнда материал нөмірі бойынша тапсырыс беруге болады.",
+    catalogIntro: "Енді сатып алғыңыз келетін материалдың КОДын енгізіңіз.",
     catalogNumberHint:
-      "Жарияланымдағы нөмірді жазыңыз — мысалы «018», — қалай төлеу керегін айтамын.",
+      "🔴❗️Код ең бірінші хабарламада көрсетілген.\nОны тек ЦИФРМЕН енгізіңіз.\n\nОсыдан кейін тапсырысты рәсімдеп, бағаны өз валютаңызда көресіз. 💳",
     catalogBotLink: (link) =>
       `Толық каталогты көру, тақырып бойынша іздеу және файлдарды алу үшін біздің боттан өтіңіз: ${link}`,
     searchNoResults: (query, link) =>
@@ -546,9 +546,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       "I've passed your question to the seller — they'll reply right here.\n\n" +
       'If you\'d like to order something right now, send the item number from the post — for example "196".',
     greetingShort: "I've passed your question to the seller — they'll reply right here.",
-    catalogIntro: "Here you can place an order using the material's number.",
+    catalogIntro: "Now enter the CODE of the material you want to buy.",
     catalogNumberHint:
-      'Send the number from the post — for example "018" — and I\'ll tell you how to pay.',
+      "🔴❗️The code is in the very first message.\nEnter it in DIGITS only.\n\nAfter that you can place the order and see the price in your currency. 💳",
     catalogBotLink: (link) =>
       `To browse the full catalog, search by topic, and get the files, check out our bot: ${link}`,
     searchNoResults: (query, link) =>
@@ -710,9 +710,9 @@ const directCopy: Record<Locale, DirectCopy> = {
       "Savolingizni sotuvchiga yetkazdim — shu yerda javob beradi.\n\n" +
       "Agar hozir biror narsa buyurtma qilmoqchi bo‘lsangiz, e’londagi mahsulot raqamini yozing — masalan, «196».",
     greetingShort: "Savolingizni sotuvchiga yetkazdim — shu yerda javob beradi.",
-    catalogIntro: "Bu yerda material raqami orqali buyurtma berish mumkin.",
+    catalogIntro: "Endi sotib olmoqchi bo‘lgan materialning KODini kiriting.",
     catalogNumberHint:
-      "E’londagi raqamni yozing — masalan, «018», — qanday to‘lash kerakligini aytaman.",
+      "🔴❗️Kod eng birinchi xabarda ko‘rsatilgan.\nUni faqat RAQAMLAR bilan kiriting.\n\nShundan so‘ng buyurtmani rasmiylashtirib, narxni o‘z valyutangizda ko‘rasiz. 💳",
     catalogBotLink: (link) =>
       `To‘liq katalogni ko‘rish, mavzu bo‘yicha qidirish va fayllarni olish uchun botimizga o‘ting: ${link}`,
     searchNoResults: (query, link) =>
