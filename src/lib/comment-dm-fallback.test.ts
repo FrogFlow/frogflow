@@ -3,6 +3,8 @@ import {
   commentMatchesAutomation,
   commentAgeVerdict,
   annotateCommentStatus,
+  commentPrivateReplyBlockReason,
+  explainInstagramPrivateReplyError,
   FALLBACK_MIN_AGE_MS,
   FALLBACK_MAX_AGE_MS,
 } from "./comment-dm-fallback";
@@ -127,5 +129,68 @@ describe("annotateCommentStatus", () => {
     expect(annotateCommentStatus({ id: "c-new", message: "год" }, automation, sent, failed)).toBe(
       "missing",
     );
+  });
+});
+
+describe("commentPrivateReplyBlockReason", () => {
+  const now = new Date("2026-09-05T12:00:00Z");
+
+  it("ответ в ветке — Instagram не принимает private reply", () => {
+    expect(
+      commentPrivateReplyBlockReason(
+        {
+          parentId: "parent-1",
+          createdTime: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+        },
+        now,
+      ),
+    ).toBe("nested");
+  });
+
+  it("canReply=false — не пытаемся", () => {
+    expect(
+      commentPrivateReplyBlockReason(
+        { createdTime: new Date(now.getTime() - 60 * 60 * 1000).toISOString(), canReply: false },
+        now,
+      ),
+    ).toBe("cannot_reply");
+  });
+
+  it("старше 7 дней — не пытаемся", () => {
+    expect(
+      commentPrivateReplyBlockReason(
+        { createdTime: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000).toISOString() },
+        now,
+      ),
+    ).toBe("too_old");
+  });
+
+  it("обычный свежий комментарий к посту — можно слать", () => {
+    expect(
+      commentPrivateReplyBlockReason(
+        { createdTime: new Date(now.getTime() - 60 * 60 * 1000).toISOString(), canReply: true },
+        now,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("explainInstagramPrivateReplyError", () => {
+  it("2534066 не читается как «переподключите Instagram»", () => {
+    const explained = explainInstagramPrivateReplyError(
+      'Zernio API Error 403: {"error":"Please check if access token has enough IG permissions granular scopes for IG private reply. Or, verify if the comment ID is valid","error_subcode":2534066}',
+    );
+    expect(explained).toMatch(/2534066/);
+    expect(explained).toMatch(/не «отвалились права у всего аккаунта»/);
+    expect(explained).not.toMatch(/переподключ/i);
+  });
+
+  it("окно 7 дней и повторный private reply получают короткий текст", () => {
+    expect(explainInstagramPrivateReplyError("comment older than 7 days")).toMatch(/7 дней/);
+    expect(explainInstagramPrivateReplyError("already sent a private reply")).toMatch(/уже уходил/);
+  });
+
+  it("незнакомый текст оставляем как есть", () => {
+    expect(explainInstagramPrivateReplyError("rate limited")).toBe("rate limited");
   });
 });

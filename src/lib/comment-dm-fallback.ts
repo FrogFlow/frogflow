@@ -93,3 +93,67 @@ export function annotateCommentStatus(
   if (id && failedCommentIds.has(id)) return "failed";
   return "missing";
 }
+
+/**
+ * Почему Instagram отклонит private-reply ещё до вызова.
+ *
+ * 2534066 от Meta звучит как «проверьте права токена», но на живом аккаунте
+ * (другие посты продолжают получать штатный Comment-to-DM) это почти всегда
+ * невалидный для private-reply комментарий: ответ в ветке, старше 7 дней,
+ * или Instagram сам помечает canReply=false. Не тратим на них ни ручную
+ * рассылку, ни слоты fallback-крона.
+ */
+export type PrivateReplyBlockReason = "nested" | "too_old" | "cannot_reply";
+
+export function commentPrivateReplyBlockReason(
+  comment: { parentId?: string | null; createdTime?: string; canReply?: boolean },
+  now: Date,
+): PrivateReplyBlockReason | null {
+  if (comment.parentId) return "nested";
+  if (comment.canReply === false) return "cannot_reply";
+  if (commentAgeVerdict(comment.createdTime ?? "", now) === "too_old") return "too_old";
+  return null;
+}
+
+/**
+ * Переводит сырой отказ Zernio/Meta по private-reply в текст, который можно
+ * показать оператору. 2534066 специально не читаем как «переподключите
+ * Instagram»: на aa_teach_ в сентябре 2026 живые правила на других постах
+ * продолжали слать DM в ту же минуту, когда догоняющая рассылка ловила
+ * этот код на одном Target.
+ */
+export function explainInstagramPrivateReplyError(raw: string): string {
+  const text = raw.toLowerCase();
+  if (
+    text.includes("2534066") ||
+    text.includes("granular scopes") ||
+    text.includes("comment id is valid")
+  ) {
+    return (
+      "Instagram отклонил private reply для этого комментария (код 2534066). " +
+      "Это не «отвалились права у всего аккаунта»: на других постах живая автоматизация " +
+      "продолжает слать DM. Обычно так бывает, если комментарий — ответ в ветке, ему больше " +
+      "7 дней, или Post ID в запросе не тот media ID, на котором Instagram принимает " +
+      "приватный ответ (список комментариев Zernio при этом всё равно открывается). " +
+      "Попробуйте публичный ответ на этот же комментарий: если он уйдёт — ID живой, " +
+      "ломается только private reply."
+    );
+  }
+  if (text.includes("2534025") || text.includes("older than") || /\b7\s*day/.test(text)) {
+    return "Instagram не принимает приватный ответ: комментарию больше 7 дней.";
+  }
+  if (
+    text.includes("2534023") ||
+    text.includes("privatereplyconsumed") ||
+    text.includes("already sent a private reply")
+  ) {
+    return "На этот комментарий приватный ответ уже уходил — Instagram даёт только один.";
+  }
+  if (text.includes("1545133")) {
+    return (
+      "Instagram с конца августа 2026 не принимает кнопки и вложения в первом DM тем, " +
+      "кто не подписан. Отправьте голый текст без кнопки."
+    );
+  }
+  return raw;
+}

@@ -613,10 +613,11 @@ export const listPostCommentsFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { listInstagramComments, listCommentAutomations, getCommentAutomationLogs } =
       await import("./zernio.server");
-    const { annotateCommentStatus } = await import("./comment-dm-fallback");
+    const { annotateCommentStatus, commentPrivateReplyBlockReason } =
+      await import("./comment-dm-fallback");
     await requireAdminWithModule();
 
-    const [{ comments, raw }, { automations }] = await Promise.all([
+    const [{ comments, raw, resolvedPostId }, { automations }] = await Promise.all([
       listInstagramComments(data.postId, data.accountId),
       listCommentAutomations(),
     ]);
@@ -641,12 +642,14 @@ export const listPostCommentsFn = createServerFn({ method: "POST" })
       }
     }
 
+    const now = new Date();
     const annotated = comments.map((c) => ({
       ...c,
       replyStatus: annotateCommentStatus(c, automation, sentIds, failedIds),
+      privateReplyBlockReason: commentPrivateReplyBlockReason(c, now),
     }));
 
-    return { comments: annotated, raw, hasAutomation: !!automation };
+    return { comments: annotated, raw, hasAutomation: !!automation, resolvedPostId };
   });
 
 const CatchupButtonSchema = z.object({

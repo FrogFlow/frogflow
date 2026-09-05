@@ -1435,10 +1435,11 @@ const COMMENTS_MAX_PAGES = 20;
 export async function listInstagramComments(
   postId: string,
   accountId: string,
-): Promise<{ comments: ZernioInstagramComment[]; raw: Json }> {
+): Promise<{ comments: ZernioInstagramComment[]; raw: Json; resolvedPostId: string | null }> {
   const allComments: ZernioInstagramComment[] = [];
   let cursor: string | undefined;
   let lastRaw: Json = null;
+  let resolvedPostId: string | null = null;
 
   for (let page = 0; page < COMMENTS_MAX_PAGES; page++) {
     const query: Record<string, string> = { accountId };
@@ -1451,6 +1452,15 @@ export async function listInstagramComments(
     lastRaw = res;
 
     const obj = res && typeof res === "object" ? (res as Record<string, Json>) : {};
+    if (!resolvedPostId) {
+      const meta =
+        obj.meta && typeof obj.meta === "object" && !Array.isArray(obj.meta)
+          ? (obj.meta as Record<string, Json>)
+          : null;
+      if (typeof meta?.postId === "string" && meta.postId.trim()) {
+        resolvedPostId = meta.postId.trim();
+      }
+    }
     const list = Array.isArray(obj.comments) ? obj.comments : [];
     allComments.push(...(list as ZernioInstagramComment[]));
 
@@ -1463,7 +1473,7 @@ export async function listInstagramComments(
     cursor = nextCursor;
   }
 
-  return { comments: allComments, raw: lastRaw };
+  return { comments: allComments, raw: lastRaw, resolvedPostId };
 }
 
 /**
@@ -1510,7 +1520,8 @@ export async function sendCommentPrivateReply(
     return { ok: true };
   } catch (e) {
     console.error(`[zernio] sendCommentPrivateReply failed for comment ${commentId}`, e);
-    return { ok: false, error: errorMessage(e) };
+    const { explainInstagramPrivateReplyError } = await import("./comment-dm-fallback");
+    return { ok: false, error: explainInstagramPrivateReplyError(errorMessage(e)) };
   }
 }
 

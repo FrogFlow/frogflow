@@ -1317,6 +1317,8 @@ export const Route = createFileRoute("/admin/instagram")({
 
 type CatchupReplyStatus = "owner" | "sent" | "failed" | "no_match" | "no_automation" | "missing";
 
+type CatchupBlockReason = "nested" | "too_old" | "cannot_reply";
+
 type CatchupComment = {
   id: string;
   username: string;
@@ -1325,6 +1327,24 @@ type CatchupComment = {
   replyStatus: CatchupReplyStatus;
   /** Ответ на другой комментарий, а не комментарий к самому посту (parentId у Zernio). */
   isNestedReply: boolean;
+  /** Instagram отклонит private-reply ещё до вызова — таких не выбираем сами. */
+  privateReplyBlockReason: CatchupBlockReason | null;
+};
+
+const CATCHUP_BLOCK_BADGE: Record<CatchupBlockReason, { label: string; title: string }> = {
+  nested: {
+    label: "ответ в ветке — private reply нельзя",
+    title:
+      "Instagram принимает приватный ответ только на комментарий к самому посту, не на ответ в ветке.",
+  },
+  too_old: {
+    label: "старше 7 дней — окно Instagram закрыто",
+    title: "Приватный ответ можно отправить только в течение 7 дней после комментария.",
+  },
+  cannot_reply: {
+    label: "Instagram запретил ответ",
+    title: "У комментария canReply=false — платформа сама не даёт на него ответить.",
+  },
 };
 
 const CATCHUP_STATUS_BADGE: Record<CatchupReplyStatus, { label: string; className: string }> = {
@@ -1337,7 +1357,11 @@ const CATCHUP_STATUS_BADGE: Record<CatchupReplyStatus, { label: string; classNam
 };
 
 /** Комментарии, которым реально нужен ручной ответ, — выбираются по умолчанию, остальные оператор добавляет сам. */
-function catchupNeedsReply(status: CatchupReplyStatus): boolean {
+function catchupNeedsReply(
+  status: CatchupReplyStatus,
+  blockReason: CatchupBlockReason | null,
+): boolean {
+  if (blockReason) return false;
   return status === "missing" || status === "failed";
 }
 
@@ -1378,6 +1402,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
   const [commentReplyResults, setCommentReplyResults] = useState<
     Array<{ commentId: string; ok: boolean; error?: string }>
   >([]);
+  const [resolvedPostId, setResolvedPostId] = useState<string | null>(null);
 
   async function onLoadComments() {
     if (!postId.trim()) return;
@@ -1391,6 +1416,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     setSelected(new Set());
     setResults([]);
     setCommentReplyResults([]);
+    setResolvedPostId(null);
     try {
       const res = await listPostCommentsFn({ data: { postId: postId.trim(), accountId } });
       const parsed: CatchupComment[] = (res.comments || []).map((c, i) => ({
@@ -1400,9 +1426,17 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
         when: String(c.createdTime || ""),
         replyStatus: (c.replyStatus as CatchupReplyStatus) || "no_automation",
         isNestedReply: !!c.parentId,
+        privateReplyBlockReason: (c.privateReplyBlockReason as CatchupBlockReason | null) ?? null,
       }));
       setComments(parsed);
-      setSelected(new Set(parsed.filter((c) => catchupNeedsReply(c.replyStatus)).map((c) => c.id)));
+      setResolvedPostId(res.resolvedPostId ?? null);
+      setSelected(
+        new Set(
+          parsed
+            .filter((c) => catchupNeedsReply(c.replyStatus, c.privateReplyBlockReason))
+            .map((c) => c.id),
+        ),
+      );
       setRawPreview(JSON.stringify(res.raw, null, 2).slice(0, 4000));
       if (parsed.length === 0) {
         toast.warning(
@@ -1603,12 +1637,39 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
               <p className="text-xs text-muted-foreground">
                 Похоже, пропущено или упало с ошибкой:{" "}
                 <span className="font-medium text-foreground">
-                  {comments.filter((c) => catchupNeedsReply(c.replyStatus)).length}
+                  {
+                    comments.filter((c) =>
+                      catchupNeedsReply(c.replyStatus, c.privateReplyBlockReason),
+                    ).length
+                  }
                 </span>{" "}
                 из {comments.length} — они выбраны ниже, остальные (уже отвечено / не то ключевое
-                слово / наш же комментарий) можно добавить вручную.
+                слово / наш же комментарий / Instagram не примет private reply) можно добавить
+                вручную.
               </p>
             )}
+
+            {resolvedPostId && resolvedPostId !== postId.trim() && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Zernio открыл комментарии как пост{" "}
+                <span className="font-mono">{resolvedPostId}</span>, а в поле указан{" "}
+                <span className="font-mono">{postId.trim()}</span>. Если это id комментария, а не
+                публикации, список ниже — ветка ответов, и private reply на них Instagram отклонит с
+                кодом 2534066. Возьмите Target у правила или platformPostId из списка постов после
+                «Обновить».
+              </p>
+            )}
+
+            {comments.length > 0 &&
+              comments.filter((c) => c.privateReplyBlockReason === "nested").length >
+                comments.length / 2 && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
+                  Больше половины строк — ответы в ветке, не комментарии к посту. Так бывает, если в
+                  Post ID попал id комментария: Zernio тогда отдаёт реплаи. На них Instagram не
+                  принимает private reply (тот самый 2534066 про «права / невалидный comment ID»),
+                  хотя на других постах живая автоматизация работает.
+                </p>
+              )}
 
             {comments.length > 0 && (
               <Input
@@ -1662,7 +1723,15 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
                               {CATCHUP_STATUS_BADGE[c.replyStatus].label}
                             </span>
                           )}
-                          {c.isNestedReply && (
+                          {c.privateReplyBlockReason && (
+                            <span
+                              className="text-[10px] text-amber-800"
+                              title={CATCHUP_BLOCK_BADGE[c.privateReplyBlockReason].title}
+                            >
+                              {CATCHUP_BLOCK_BADGE[c.privateReplyBlockReason].label}
+                            </span>
+                          )}
+                          {c.isNestedReply && !c.privateReplyBlockReason && (
                             <span
                               className="text-[10px] text-amber-700"
                               title="Это ответ на чужой комментарий, а не комментарий к посту. Приватный ответ на такие Instagram принимает не всегда."
@@ -1700,6 +1769,16 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
                 })
               )}
             </div>
+
+            {results.some((r) => !r.ok && /2534066|не «отвалились права/i.test(r.error || "")) && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Ошибка 2534066 звучит как «проверьте права токена», но на этом аккаунте другие посты
+                продолжают получать штатный Comment-to-DM. Instagram отклонил именно этот comment ID
+                для private reply. Проверьте: не ветка ли это, не старше ли 7 дней, и тот ли Target
+                (настоящий media ID). Публичный ответ ниже — быстрая проверка: если он уходит, ID
+                комментария живой.
+              </p>
+            )}
 
             <Button
               type="button"

@@ -1,4 +1,8 @@
-import { commentMatchesAutomation, commentAgeVerdict } from "./comment-dm-fallback";
+import {
+  commentMatchesAutomation,
+  commentAgeVerdict,
+  commentPrivateReplyBlockReason,
+} from "./comment-dm-fallback";
 
 /** Потолок правил за один проход крона — по числу их обычно не больше ~20-30 на аккаунт. */
 const MAX_AUTOMATIONS_PER_RUN = 20;
@@ -112,6 +116,9 @@ export async function runCommentDmFallback(): Promise<{
 
         const verdict = commentAgeVerdict(comment.createdTime ?? "", now);
         if (verdict !== "eligible") continue; // "too_new" — дать Zernio шанс; "too_old" — вне 7-дневного окна
+        // 2534066 на вложенных / canReply=false сжигал все 15 слотов прохода
+        // на одном посте, и остальные правила в этом тике не проверялись.
+        if (commentPrivateReplyBlockReason(comment, now)) continue;
 
         if (sendsThisRun >= MAX_SENDS_PER_RUN) continue; // остальное — в следующий проход через 15 минут
 
