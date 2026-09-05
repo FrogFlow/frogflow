@@ -3,6 +3,7 @@
  */
 import type { Json } from "@/integrations-supabase/types";
 import { errorMessage } from "@/lib/error-message";
+import { pickZernioPostId } from "./zernio-post-ids";
 import { isZernioPlatform, type ZernioPlatform } from "./zernio-platform";
 
 // Канал — общий словарь для серверного слоя и разбора событий, живёт в
@@ -13,8 +14,8 @@ export { isZernioPlatform, ZERNIO_PLATFORMS, type ZernioPlatform } from "./zerni
 /**
  * Пост/сторис из ответа Zernio — намеренно не полный тип.
  *
- * listZernioPosts сводит 4 разных эндпоинта (analytics, posts,
- * posts/sync-external, stories), у каждого своя, местами непересекающаяся
+ * listZernioPosts сводит 5 разных эндпоинтов (analytics, posts,
+ * posts/sync-external, posts?source=external, stories), у каждого своя, местами непересекающаяся
  * форма полей, и функция сама достраивает вычисляемые поля (`_thumbnail`,
  * `_date`, `_zernioPostId`…). Индексная сигнатура вместо перечисления всех
  * настоящих полей Zernio — они нигде не документированы исчерпывающе, а
@@ -1566,8 +1567,8 @@ export async function postCommentReply(
  */
 export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> {
   try {
-    const [analyticsResult, externalResult, zernioResult, storiesResult] = await Promise.allSettled(
-      [
+    const [analyticsResult, externalResult, zernioResult, externalCatalogResult, storiesResult] =
+      await Promise.allSettled([
         // This endpoint is the authoritative source for the native Instagram media
         // ID: platformAnalytics[].platformPostId. /posts may expose only a Zernio ID.
         zernioRequest<{ posts?: ZernioPost[] }>(`/analytics`, {
@@ -1585,17 +1586,24 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
         zernioRequest<{ posts: ZernioPost[] }>(`/posts`, {
           query: { accountId, source: "zernio", limit: "50" },
         }),
+        // sync-external отдаёт platformPostId, но не id записи в Zernio.
+        // Comment-to-DM без этого id правило сохраняет, а комментарии не
+        // подписывает. Каталог external — откуда его взять после синка.
+        zernioRequest<{ posts?: ZernioPost[] }>(`/posts`, {
+          query: { accountId, source: "external", limit: "50" },
+        }),
         // Active stories are intentionally not returned by GET /posts.
         zernioRequest<{ stories?: ZernioPost[] }>(
           `/accounts/${encodeURIComponent(accountId)}/instagram/stories`,
         ),
-      ],
-    );
+      ]);
     const analyticsRes =
       analyticsResult.status === "fulfilled" ? analyticsResult.value : { posts: [] };
     const externalRes =
       externalResult.status === "fulfilled" ? externalResult.value : { posts: [] };
     const zernioRes = zernioResult.status === "fulfilled" ? zernioResult.value : { posts: [] };
+    const externalCatalogRes =
+      externalCatalogResult.status === "fulfilled" ? externalCatalogResult.value : { posts: [] };
     const storiesRes = storiesResult.status === "fulfilled" ? storiesResult.value : { stories: [] };
     if (storiesResult.status === "rejected")
       console.warn("[zernio] unable to load active Instagram stories", storiesResult.reason);
@@ -1625,10 +1633,30 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
       const platformData = findPlatform(asPosts(post.platformAnalytics));
       return {
         ...post,
-        _zernioPostId: post.latePostId || post.postId || post._id || post.id || null,
+        _zernioPostId: pickZernioPostId(post),
         platformPostId: platformData?.platformPostId || post.platformPostId || null,
+        mediaProductType: post.mediaProductType || platformData?.mediaProductType || null,
+        mediaType: post.mediaType || platformData?.mediaType || null,
       };
     });
+    // GET /posts?source=external знает _id записи, sync-external — нет.
+    // Собираем platformPostId → zernio postId, чтобы свежий рилс из синка
+    // не ушёл в правило без обязательного postId.
+    const zernioIdByPlatformPostId = new Map<string, string>();
+    for (const catalogPost of [
+      ...(externalCatalogRes.posts || []),
+      ...(zernioRes.posts || []),
+      ...(analyticsRes.posts || []),
+    ]) {
+      const platformData = findPlatform(asPosts(catalogPost.platformAnalytics));
+      const platformId = asText(
+        platformData?.platformPostId ||
+          findPlatform(asPosts(catalogPost.platforms))?.platformPostId ||
+          catalogPost.platformPostId,
+      );
+      const zernioId = pickZernioPostId(catalogPost);
+      if (platformId && zernioId) zernioIdByPlatformPostId.set(platformId, zernioId);
+    }
     // Analytics is authoritative and already contains the platform media ID, so
     // it's the base list. But analytics indexing can itself lag a freshly
     // synced post, so any externally-synced post analytics doesn't have yet
@@ -1667,13 +1695,22 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
       const platformAnalytics = findPlatform(asPosts(p.platformAnalytics));
       const platformTarget = findPlatform(asPosts(p.platforms));
       const metadata = asPost(p.metadata);
-      p._zernioPostId = p._zernioPostId || p.latePostId || p._id || p.id || p.postId || null;
       p.platformPostId =
         platformAnalytics?.platformPostId ||
         platformTarget?.platformPostId ||
         p.platformPostId ||
         metadata.platformPostId ||
         null;
+      const platformIdText = asText(p.platformPostId);
+      p._zernioPostId =
+        pickZernioPostId(p) ||
+        (platformIdText ? zernioIdByPlatformPostId.get(platformIdText) || null : null);
+      p.mediaProductType =
+        p.mediaProductType ||
+        platformAnalytics?.mediaProductType ||
+        metadata.mediaProductType ||
+        null;
+      p.mediaType = p.mediaType || platformAnalytics?.mediaType || metadata.mediaType || null;
       const id = p.platformPostId || p._zernioPostId;
       if (id && !seen.has(id)) {
         seen.add(id);
@@ -1708,8 +1745,11 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
             ? timestamp * 1000
             : timestamp;
 
-        // Zernio can return the same Instagram media from separate analytics
-        // records. Their internal IDs differ, so also deduplicate by content.
+        // Один и тот же media id из analytics и sync не дублируем (`seen`
+        // выше). Отдельный fingerprint по подписи/дате как раз вреден:
+        // фото и рилс одной публикации часто с одним текстом в один день —
+        // второй пропадали из селекта, и в правило уходил id фото, а
+        // комментарии пишут под рилсом.
         const parsedDate = asDate(p._date);
         const dateKey =
           parsedDate && !Number.isNaN(parsedDate.getTime())
@@ -1721,8 +1761,10 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
           .toLowerCase();
         const mediaKey = p.platformPostUrl || p.permalink || p._thumbnail || "";
         const fingerprint = `${dateKey}|${textKey}|${mediaKey}`;
-        if (fingerprint !== "||" && seenPostFingerprints.has(fingerprint)) continue;
-        seenPostFingerprints.add(fingerprint);
+        if (!p.platformPostId && fingerprint !== "||" && seenPostFingerprints.has(fingerprint)) {
+          continue;
+        }
+        if (!p.platformPostId && fingerprint !== "||") seenPostFingerprints.add(fingerprint);
 
         // Mark if it's a story
         p._isStory = p.type === "story" || metadata.type === "story" || !!metadata.story_id;
@@ -1761,5 +1803,7 @@ export async function syncExternalPostByUrl(
     "/posts/sync-external",
     { method: "POST", body: { accountId, url } },
   );
-  return { found: res.found === true, post: res.post ?? null };
+  const post = res.post ?? null;
+  if (post) post._zernioPostId = pickZernioPostId(post);
+  return { found: res.found === true, post };
 }

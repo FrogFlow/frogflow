@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
+import { describePostMediaKind, isZernioObjectId } from "@/lib/zernio-post-ids";
 import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -294,6 +295,7 @@ const copy: Record<
     disconnectBtn: string;
     noAccountsConnected: string;
     postNotSyncedYet: string;
+    postMissingZernioId: string;
     dmsFailedLabel: string;
     dmsFailedHint: string;
     dialogFallback: string;
@@ -531,6 +533,8 @@ const copy: Record<
     noAccountsConnected: "Нет подключенных аккаунтов",
     postNotSyncedYet:
       "Этот пост ещё не проиндексирован Zernio — привязка к нему сейчас сохранится с внутренним ID Zernio вместо настоящего ID публикации, и комментарии под постом не будут его находить. Нажмите «Обновить список постов» и подождите немного, потом выберите пост заново.",
+    postMissingZernioId:
+      "У выбранного поста нет id записи в Zernio — правило сохранится, но комментарии под рилсом его не найдут. Вставьте ссылку именно на рилс (не на фото с той же публикации) и выберите пост заново.",
     dmsFailedLabel: "не доставлено",
     dmsFailedHint:
       "Комментарий сматчился (сработал триггер), но саму DM Zernio отправить не смог — сравните с «сработало»: если не доставлено доходит до этого числа, правило видит комментарии, проблема в отправке (лимит/окно/блок получателя), а не в привязке к посту.",
@@ -772,6 +776,8 @@ const copy: Record<
     noAccountsConnected: "Қосылған аккаунттар жоқ",
     postNotSyncedYet:
       "Бұл пост әлі Zernio-да индекстелмеген — қазір байланыстырсаңыз, нақты жариялау ID-ы орнына Zernio-ның ішкі ID-ы сақталады, және пост астындағы пікірлер оны таппайды. «Пост тізімін жаңарту» түймесін басып, күте тұрып, постты қайта таңдаңыз.",
+    postMissingZernioId:
+      "Таңдалған постта Zernio жазбасының id-ы жоқ — ереже сақталады, бірақ рилс астындағы пікірлер оны таппайды. Дәл рилстің сілтемесін қойыңыз (сол жарияланымның фотосы емес) және постты қайта таңдаңыз.",
     dmsFailedLabel: "жеткізілмеді",
     dmsFailedHint:
       "Комментарий сәйкес келді (триггер іске қосылды), бірақ Zernio DM-ды жібере алмады — «іске қосылды» санымен салыстырыңыз: егер жеткізілмегендер саны соған тең болса, ереже пікірлерді көреді, мәселе жіберуде (лимит/терезе/алушы бұғатталған), пікірлерге байланыста емес.",
@@ -1014,6 +1020,8 @@ const copy: Record<
     noAccountsConnected: "No accounts connected",
     postNotSyncedYet:
       "This post hasn't been indexed by Zernio yet — binding it now would save Zernio's internal ID instead of the real post ID, and comments on the post won't match it. Click \"Refresh post list\", wait a moment, then pick the post again.",
+    postMissingZernioId:
+      "This post has no Zernio record id — the rule would save, but comments on the reel won't match it. Paste the reel URL (not the photo from the same publication) and pick the post again.",
     dmsFailedLabel: "not delivered",
     dmsFailedHint:
       'The comment matched (trigger fired), but Zernio couldn\'t send the DM itself — compare with "triggered": if not-delivered tracks that number, the rule sees the comments fine and the problem is in sending (rate limit/window/blocked recipient), not in the post binding.',
@@ -1256,6 +1264,8 @@ const copy: Record<
     noAccountsConnected: "Ulangan akkauntlar yo‘q",
     postNotSyncedYet:
       "Bu post hali Zernio tomonidan indekslanmagan — hozir bog‘lasangiz, haqiqiy post ID o‘rniga Zernio-ning ichki ID-i saqlanadi, va post ostidagi izohlar uni topmaydi. «Postlar ro‘yxatini yangilash» tugmasini bosing, biroz kuting va postni qayta tanlang.",
+    postMissingZernioId:
+      "Tanlangan postda Zernio yozuvi id yo‘q — qoida saqlanadi, lekin rils ostidagi izohlar uni topmaydi. Aynan rils havolasini qo‘ying (shu nashr fotosini emas) va postni qayta tanlang.",
     dmsFailedLabel: "yetkazilmadi",
     dmsFailedHint:
       "Izoh mos keldi (trigger ishga tushdi), lekin Zernio DM-ni yubora olmadi — «ishga tushdi» soniga solishtiring: agar yetkazilmagan shu songa yetsa, qoida izohlarni ko‘ryapti, muammo yuborishda (limit/oyna/qabul qiluvchi bloklangan), post biriktirishda emas.",
@@ -2116,6 +2126,7 @@ function AdminInstagramPage() {
   const [automationPage, setAutomationPage] = useState(1);
   const AUTOMATIONS_PAGE_SIZE = 8;
   const [originalPlatformPostId, setOriginalPlatformPostId] = useState<string | null>(null);
+  const [originalPostId, setOriginalPostId] = useState<string | null>(null);
   const [originalTrigger, setOriginalTrigger] = useState<"comment" | "story_reply">("comment");
   const [syncUrlOpen, setSyncUrlOpen] = useState(false);
   const [syncUrlValue, setSyncUrlValue] = useState("");
@@ -2283,6 +2294,13 @@ function AdminInstagramPage() {
       toast.warning(tr.postNotSyncedYet);
       return;
     }
+    const zernioPostId = selectedPost
+      ? String(selectedPost._zernioPostId || selectedPost._id || selectedPost.id || "")
+      : "";
+    if (postId && postId !== "ALL_POSTS" && !isZernioObjectId(zernioPostId)) {
+      toast.warning(tr.postMissingZernioId);
+      return;
+    }
 
     setSavingAuto(true);
     try {
@@ -2294,6 +2312,7 @@ function AdminInstagramPage() {
       const automationData = {
         id: editingId || undefined,
         originalPlatformPostId,
+        originalPostId,
         originalTrigger,
         accountId: acc._id,
         profileId: typeof acc.profileId === "string" ? acc.profileId : acc.profileId?._id || "",
@@ -2305,10 +2324,7 @@ function AdminInstagramPage() {
         dmMessage: dmText,
         commentReply: replyText,
         platformPostId: postId && postId !== "ALL_POSTS" ? selectedPost?.platformPostId : undefined,
-        postId:
-          postId && postId !== "ALL_POSTS"
-            ? selectedPost?._zernioPostId || selectedPost?._id || selectedPost?.id || undefined
-            : undefined,
+        postId: postId && postId !== "ALL_POSTS" ? zernioPostId : undefined,
         postTitle: selectedPost
           ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500)
           : undefined,
@@ -2365,12 +2381,14 @@ function AdminInstagramPage() {
     setClickTag("");
     setEditingId(null);
     setOriginalPlatformPostId(null);
+    setOriginalPostId(null);
     setOriginalTrigger("comment");
   };
 
   const handleEditAutomation = (auto: ZernioCommentAutomation) => {
     setEditingId(auto.id || null);
     setOriginalPlatformPostId(auto.platformPostId || null);
+    setOriginalPostId(auto.postId || null);
     setOriginalTrigger(auto.trigger || "comment");
     setTitle(auto.name || "");
     setKeywordsStr(auto.keywords?.join(", ") || "");
@@ -2457,6 +2475,10 @@ function AdminInstagramPage() {
     postId !== "ALL_POSTS"
       ? automations.find((a) => a.platformPostId === postId && a.id !== editingId)
       : null;
+  const selectedPostForHint =
+    postId && postId !== "ALL_POSTS"
+      ? posts.find((p) => (p.platformPostId || p._id || p.id) === postId)
+      : undefined;
 
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-8 pb-20">
@@ -2792,6 +2814,14 @@ function AdminInstagramPage() {
                                   <div className="flex flex-col min-w-0 text-left">
                                     <span className="text-[9px] text-muted-foreground font-bold uppercase">
                                       {formatPostDate(p._date)}
+                                      {describePostMediaKind(p)
+                                        ? ` · ${describePostMediaKind(p)}`
+                                        : ""}
+                                      {isZernioObjectId(
+                                        String(p._zernioPostId || p._id || p.id || ""),
+                                      )
+                                        ? ""
+                                        : " · нет id Zernio"}
                                     </span>
                                     <span className="text-xs truncate font-medium">
                                       {String(
@@ -2806,6 +2836,27 @@ function AdminInstagramPage() {
                             ))}
                         </SelectContent>
                       </Select>
+                      {postId && postId !== "ALL_POSTS" && selectedPostForHint ? (
+                        <p className="text-[10px] text-muted-foreground font-mono break-all">
+                          Instagram: {String(selectedPostForHint.platformPostId || "—")}
+                          {" · "}
+                          Zernio:{" "}
+                          {isZernioObjectId(
+                            String(
+                              selectedPostForHint._zernioPostId ||
+                                selectedPostForHint._id ||
+                                selectedPostForHint.id ||
+                                "",
+                            ),
+                          )
+                            ? String(
+                                selectedPostForHint._zernioPostId ||
+                                  selectedPostForHint._id ||
+                                  selectedPostForHint.id,
+                              )
+                            : "нет — вставьте ссылку на рилс"}
+                        </p>
+                      ) : null}
                       {syncUrlOpen ? (
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1.5">
@@ -3148,6 +3199,13 @@ function AdminInstagramPage() {
                             {auto.platformPostId && (
                               <div className="text-[10px] bg-muted/50 px-2 py-1 rounded inline-block mt-1 truncate max-w-full">
                                 Target: {auto.platformPostId}
+                                {auto.postId ? ` · Zernio: ${auto.postId}` : ""}
+                                {!isZernioObjectId(auto.postId) ? (
+                                  <span className="text-amber-700">
+                                    {" "}
+                                    — нет id записи Zernio, комментарии этот Target не найдут
+                                  </span>
+                                ) : null}
                               </div>
                             )}
                           </div>

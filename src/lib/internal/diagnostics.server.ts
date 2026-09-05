@@ -361,6 +361,7 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
         const rulesToInspect = automations.filter((a) => a.isActive !== false);
         if (rulesToInspect.length) {
           const { getCommentAutomationLogs } = await import("../zernio.server");
+          const { describeAutomationTargetIds } = await import("../zernio-post-ids");
           const details = [];
           for (const a of rulesToInspect) {
             const id = String(a.id || a._id || "");
@@ -380,10 +381,8 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
             });
             const words = a.keywords?.length ? a.keywords.join(", ") : "любой комментарий";
             details.push(
-              `${a.name} (${words}): post=${a.platformPostId ? "да" : "нет"}, ` +
-                `публичный ответ=${a.commentReply?.trim() ? "да" : "нет"}, ` +
-                `DM=${a.dmMessage?.trim() ? "да" : "нет"}, ` +
-                `audience=${JSON.stringify(a.audience ?? "default")}, ` +
+              `${a.name} (${words}): ${describeAutomationTargetIds(a.platformPostId, a.postId)} ` +
+                `ушло=${a.stats?.dmsSent ?? a.stats?.triggered ?? 0}, ` +
                 `последние: ${logPreview.join(" | ") || "логов нет"}`,
             );
           }

@@ -438,6 +438,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
       .object({
         id: z.string().optional(),
         originalPlatformPostId: z.string().optional().nullable(),
+        originalPostId: z.string().optional().nullable(),
         originalTrigger: z.enum(["comment", "story_reply"]).optional(),
         accountId: z.string().min(1, "Укажите accountId"),
         profileId: z.unknown().optional(),
@@ -484,6 +485,14 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         "Выбран ID аккаунта вместо ID публикации. Обновите список и выберите пост заново.",
       );
     }
+    const { isInstagramMediaId, isZernioObjectId } = await import("./zernio-post-ids");
+    if (data.platformPostId) {
+      if (!data.postId || isInstagramMediaId(data.postId) || !isZernioObjectId(data.postId)) {
+        throw new Error(
+          "У выбранного поста нет id записи в Zernio — правило сохранится, но комментарии под ним не найдут его. Вставьте ссылку на рилс (не на фото с той же публикации) и выберите пост заново.",
+        );
+      }
+    }
 
     let profileId = typeof data.profileId === "string" ? data.profileId : "";
     if (!profileId) {
@@ -494,6 +503,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     const {
       id: automationId,
       originalPlatformPostId,
+      originalPostId,
       originalTrigger,
       replyToAll,
       ...automationData
@@ -520,6 +530,9 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     };
     // Zernio PATCH cannot change platformPostId, postId, or trigger. If those
     // fields are unchanged, preserve the rule and its statistics with PATCH.
+    // postId сравниваем отдельно: Target (Instagram id) мог остаться тем же,
+    // а id записи Zernio — нет. Тогда правило нужно пересоздать, иначе
+    // движок так и будет смотреть не ту запись.
     // "Все посты" приходит как null с фронта (original) и как undefined из
     // формы сохранения (platformPostId) — это одно и то же «нет поста», но
     // `null !== undefined`, и без нормализации это ложно читалось как смена
@@ -529,6 +542,7 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     if (automationId) {
       if (
         normalizePostId(originalPlatformPostId) === normalizePostId(data.platformPostId) &&
+        normalizePostId(originalPostId) === normalizePostId(data.postId) &&
         (originalTrigger || "comment") === data.trigger
       ) {
         return await updateCommentAutomation(automationId, automation);
