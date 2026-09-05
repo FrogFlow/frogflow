@@ -330,6 +330,79 @@ export type Database = {
           },
         ];
       };
+      // MIGRATION-63. Лиды для собственного отдела продаж FrogFlow (панель
+      // /operator/leads) — не применена к живой базе (нет доступа), ручной
+      // патч по той же причине, что и у comment_dm_fallback_sends выше:
+      // sync-db-types.mjs подтягивает только уже известные ему таблицы.
+      sales_leads: {
+        Row: {
+          id: string;
+          created_at: string;
+          updated_at: string;
+          business_name: string;
+          niche: string | null;
+          city: string | null;
+          website_url: string | null;
+          instagram_handle: string | null;
+          phone: string | null;
+          email: string | null;
+          signals: string | null;
+          source: string;
+          stage: string;
+          score: number | null;
+          score_reason: string | null;
+          draft_message: string | null;
+          notes: string | null;
+          created_by: string | null;
+          contacted_at: string | null;
+          replied_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          business_name: string;
+          niche?: string | null;
+          city?: string | null;
+          website_url?: string | null;
+          instagram_handle?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          signals?: string | null;
+          source?: string;
+          stage?: string;
+          score?: number | null;
+          score_reason?: string | null;
+          draft_message?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          contacted_at?: string | null;
+          replied_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          business_name?: string;
+          niche?: string | null;
+          city?: string | null;
+          website_url?: string | null;
+          instagram_handle?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          signals?: string | null;
+          source?: string;
+          stage?: string;
+          score?: number | null;
+          score_reason?: string | null;
+          draft_message?: string | null;
+          notes?: string | null;
+          created_by?: string | null;
+          contacted_at?: string | null;
+          replied_at?: string | null;
+        };
+        Relationships: [];
+      };
       operator_login_attempts: {
         Row: {
           id: string;

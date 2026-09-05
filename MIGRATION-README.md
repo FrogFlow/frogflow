@@ -283,3 +283,12 @@ RLS без единой политики — как у `subscription_payments`, 
 уже есть чек или ненулевой `paid_amount` — даже если у физического заказа
 потерялась `fulfillment_at`. Корневую причину (non-null assertion в
 `zernio-bot.server.ts`) эта миграция не устраняет.
+
+**63** (`MIGRATION-63-sales-leads.sql`) — не применена в этой среде (нет
+доступа к боевой БД). Таблица `sales_leads` — лиды для собственного отдела
+продаж FrogFlow (панель `/operator/leads`), платформенная, без `bot_id`,
+тем же приёмом, что `operator_settings`/`subscription_invoices`: RLS без
+единой политики, видна только `service_role` панели оператора. Пайплайн
+`new → qualified/rejected → contacted → replied → hot → converted/lost`;
+`score`/`score_reason`/`draft_message` — совет от ИИ (Anthropic), стадию
+всегда двигает оператор вручную.

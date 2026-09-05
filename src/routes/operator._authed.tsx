@@ -41,6 +41,7 @@ function OperatorLayout() {
             <RequestsNavLink />
             <NavLink to="/operator/broadcast">Рассылка</NavLink>
             <NavLink to="/operator/invoices">Счета</NavLink>
+            <NavLink to="/operator/leads">Лиды</NavLink>
             <NavLink to="/operator/journal">Журнал</NavLink>
           </div>
           <Button
