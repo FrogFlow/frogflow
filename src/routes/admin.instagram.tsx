@@ -1323,6 +1323,8 @@ type CatchupComment = {
   text: string;
   when: string;
   replyStatus: CatchupReplyStatus;
+  /** Ответ на другой комментарий, а не комментарий к самому посту (parentId у Zernio). */
+  isNestedReply: boolean;
 };
 
 const CATCHUP_STATUS_BADGE: Record<CatchupReplyStatus, { label: string; className: string }> = {
@@ -1397,6 +1399,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
         text: String(c.message || ""),
         when: String(c.createdTime || ""),
         replyStatus: (c.replyStatus as CatchupReplyStatus) || "no_automation",
+        isNestedReply: !!c.parentId,
       }));
       setComments(parsed);
       setSelected(new Set(parsed.filter((c) => catchupNeedsReply(c.replyStatus)).map((c) => c.id)));
@@ -1659,6 +1662,14 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
                               {CATCHUP_STATUS_BADGE[c.replyStatus].label}
                             </span>
                           )}
+                          {c.isNestedReply && (
+                            <span
+                              className="text-[10px] text-amber-700"
+                              title="Это ответ на чужой комментарий, а не комментарий к посту. Приватный ответ на такие Instagram принимает не всегда."
+                            >
+                              ответ на комментарий
+                            </span>
+                          )}
                           {result && (
                             <span
                               className={
@@ -1799,10 +1810,19 @@ function AdminInstagramPage() {
   // пробы — хотя лежала в этих логах с самого начала.
   const [logsAutomationId, setLogsAutomationId] = useState<string | null>(null);
   const [logsOnlyFailed, setLogsOnlyFailed] = useState(false);
+  const [logsPage, setLogsPage] = useState(0);
+  const LOGS_PAGE_SIZE = 100;
   const automationLogsQuery = useQuery({
-    queryKey: ["ig_automation_logs", logsAutomationId, logsOnlyFailed],
+    queryKey: ["ig_automation_logs", logsAutomationId, logsOnlyFailed, logsPage],
     queryFn: () =>
-      getAutomationLogsFn({ data: { id: logsAutomationId!, onlyFailed: logsOnlyFailed } }),
+      getAutomationLogsFn({
+        data: {
+          id: logsAutomationId!,
+          onlyFailed: logsOnlyFailed,
+          limit: LOGS_PAGE_SIZE,
+          skip: logsPage * LOGS_PAGE_SIZE,
+        },
+      }),
     enabled: !!logsAutomationId,
   });
   const dashboardQuery = useQuery({
@@ -3056,11 +3076,12 @@ function AdminInstagramPage() {
                               size="icon"
                               className="h-8 w-8"
                               title="История срабатываний: кому ушла DM, а кому нет и почему"
-                              onClick={() =>
+                              onClick={() => {
+                                setLogsPage(0);
                                 setLogsAutomationId((prev) =>
                                   prev === auto.id ? null : (auto.id ?? null),
-                                )
-                              }
+                                );
+                              }}
                             >
                               <History className="w-4 h-4" />
                             </Button>
@@ -3103,13 +3124,18 @@ function AdminInstagramPage() {
                               <label className="flex items-center gap-2 text-[11px] cursor-pointer">
                                 <Checkbox
                                   checked={logsOnlyFailed}
-                                  onCheckedChange={(v) => setLogsOnlyFailed(!!v)}
+                                  onCheckedChange={(v) => {
+                                    setLogsPage(0);
+                                    setLogsOnlyFailed(!!v);
+                                  }}
                                 />
                                 Только не доставленные
                               </label>
                               <span className="text-[10px] text-muted-foreground">
-                                показаны последние {automationLogsQuery.data?.logs?.length ?? 0} из{" "}
-                                {auto.stats?.triggered ?? 0}
+                                {logsPage * LOGS_PAGE_SIZE + 1}–
+                                {logsPage * LOGS_PAGE_SIZE +
+                                  (automationLogsQuery.data?.logs?.length ?? 0)}{" "}
+                                из {auto.stats?.triggered ?? 0}
                               </span>
                             </div>
                             {automationLogsQuery.isLoading ? (
@@ -3154,6 +3180,33 @@ function AdminInstagramPage() {
                                     </div>
                                   );
                                 })}
+                              </div>
+                            )}
+                            {(logsPage > 0 ||
+                              (automationLogsQuery.data?.logs?.length ?? 0) === LOGS_PAGE_SIZE) && (
+                              <div className="flex items-center justify-center gap-3 pt-2 text-[11px]">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7"
+                                  disabled={logsPage === 0 || automationLogsQuery.isFetching}
+                                  onClick={() => setLogsPage((p) => Math.max(0, p - 1))}
+                                >
+                                  ← новее
+                                </Button>
+                                <span className="text-muted-foreground">стр. {logsPage + 1}</span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7"
+                                  disabled={
+                                    (automationLogsQuery.data?.logs?.length ?? 0) <
+                                      LOGS_PAGE_SIZE || automationLogsQuery.isFetching
+                                  }
+                                  onClick={() => setLogsPage((p) => p + 1)}
+                                >
+                                  старее →
+                                </Button>
                               </div>
                             )}
                           </div>

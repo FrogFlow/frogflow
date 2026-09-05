@@ -1349,7 +1349,7 @@ export async function deleteCommentAutomation(automationId: string): Promise<{ o
  */
 export async function getCommentAutomationLogs(
   automationId: string,
-  options: { limit?: number; status?: "sent" | "failed" | "skipped" } = {},
+  options: { limit?: number; skip?: number; status?: "sent" | "failed" | "skipped" } = {},
 ): Promise<{ logs: Record<string, Json>[] }> {
   try {
     // limit/status — параметры самого Zernio (его собственная база логов, не
@@ -1359,6 +1359,7 @@ export async function getCommentAutomationLogs(
     // тысяч успешных не найти вообще.
     const query: Record<string, string> = {};
     if (options.limit) query.limit = String(options.limit);
+    if (options.skip) query.skip = String(options.skip);
     if (options.status) query.status = options.status;
 
     const res = await zernioRequest<{ logs: Record<string, Json>[] }>(
@@ -1383,6 +1384,8 @@ export type ZernioInstagramComment = {
   url?: string | null;
   canReply?: boolean;
   isHidden?: boolean;
+  /** Задан у вложенного ответа на другой комментарий (а не комментария к самому посту). */
+  parentId?: string | null;
 };
 
 /**

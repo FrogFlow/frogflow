@@ -578,6 +578,7 @@ export const getAutomationLogsFn = createServerFn({ method: "GET" })
       .object({
         id: z.string(),
         limit: z.number().int().min(1).max(500).optional(),
+        skip: z.number().int().min(0).optional(),
         onlyFailed: z.boolean().optional(),
       })
       .parse(d),
@@ -587,6 +588,7 @@ export const getAutomationLogsFn = createServerFn({ method: "GET" })
     await requireAdminWithModule();
     return await getCommentAutomationLogs(data.id, {
       limit: data.limit ?? 100,
+      skip: data.skip,
       status: data.onlyFailed ? "failed" : undefined,
     });
   });
