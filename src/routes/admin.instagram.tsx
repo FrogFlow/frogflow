@@ -43,6 +43,7 @@ import {
   listPostCommentsFn,
   sendCatchupPrivateRepliesFn,
   sendCatchupCommentRepliesFn,
+  getAutomationLogsFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -1791,6 +1792,17 @@ function AdminInstagramPage() {
     queryFn: () => getInstagramConversationsFn({ data: { accountId: acc?._id } }),
     enabled: !!acc?._id,
   });
+  // Логи срабатываний правила — Zernio пишет по каждому комментарию, ушла ли
+  // DM и с какой ошибкой, если не ушла. Панель этого не показывала вовсе
+  // (getAutomationLogsFn был написан, но нигде не вызывался), и причина
+  // молчания автоматизации была видна только через поддержку или ручные
+  // пробы — хотя лежала в этих логах с самого начала.
+  const [logsAutomationId, setLogsAutomationId] = useState<string | null>(null);
+  const automationLogsQuery = useQuery({
+    queryKey: ["ig_automation_logs", logsAutomationId],
+    queryFn: () => getAutomationLogsFn({ data: { id: logsAutomationId! } }),
+    enabled: !!logsAutomationId,
+  });
   const dashboardQuery = useQuery({
     queryKey: ["ig_dashboard"],
     queryFn: () => getInstagramDashboardFn(),
@@ -3041,6 +3053,19 @@ function AdminInstagramPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
+                              title="История срабатываний: кому ушла DM, а кому нет и почему"
+                              onClick={() =>
+                                setLogsAutomationId((prev) =>
+                                  prev === auto.id ? null : (auto.id ?? null),
+                                )
+                              }
+                            >
+                              <History className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
                               onClick={() => handleEditAutomation(auto)}
                             >
                               <Settings2 className="w-4 h-4" />
@@ -3069,6 +3094,50 @@ function AdminInstagramPage() {
                             </Button>
                           </div>
                         </div>
+
+                        {logsAutomationId === auto.id && (
+                          <div className="mt-3 border-t pt-3 space-y-1">
+                            {automationLogsQuery.isLoading ? (
+                              <p className="text-xs text-muted-foreground">Загрузка истории…</p>
+                            ) : automationLogsQuery.isError ? (
+                              <p className="text-xs text-destructive">
+                                {errorMessage(automationLogsQuery.error)}
+                              </p>
+                            ) : (automationLogsQuery.data?.logs?.length ?? 0) === 0 ? (
+                              <p className="text-xs text-muted-foreground">
+                                Срабатываний нет — Zernio ни разу не увидел подходящий комментарий
+                                под этим постом.
+                              </p>
+                            ) : (
+                              automationLogsQuery.data?.logs?.slice(0, 20).map((row, i) => {
+                                const status = String(row.status ?? "");
+                                const error = String(row.error ?? "");
+                                const when = String(row.createdAt ?? "").slice(0, 19);
+                                const who = String(row.commenterName ?? row.commentId ?? "");
+                                return (
+                                  <div key={String(row.id ?? i)} className="text-[11px]">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-muted-foreground">{when}</span>
+                                      <span className="font-medium truncate">{who}</span>
+                                      <span
+                                        className={
+                                          status === "sent"
+                                            ? "text-green-600"
+                                            : status === "failed"
+                                              ? "text-red-600 font-medium"
+                                              : "text-muted-foreground"
+                                        }
+                                      >
+                                        DM: {status || "—"}
+                                      </span>
+                                    </div>
+                                    {error && <div className="text-red-600 break-all">{error}</div>}
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   ))}

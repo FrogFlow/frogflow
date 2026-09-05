@@ -371,7 +371,12 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
               const comment = String(
                 row.comment ?? row.commentText ?? row.text ?? row.keyword ?? "",
               ).slice(0, 40);
-              return `${when.slice(0, 19)} ${status} ${comment}`.trim();
+              // Причина неудачи — то единственное, что объясняет молчание
+              // правила (например, отказ Meta по правам на приватный ответ).
+              // Без неё виден только статус "failed", по которому ничего не
+              // сделать: именно этого не хватило, когда правило замолчало.
+              const error = String(row.error ?? "").slice(0, 120);
+              return `${when.slice(0, 19)} ${status} ${comment}${error ? ` — ${error}` : ""}`.trim();
             });
             const words = a.keywords?.length ? a.keywords.join(", ") : "любой комментарий";
             details.push(
