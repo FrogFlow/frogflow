@@ -3674,6 +3674,16 @@ function AdminInstagramPage() {
                                 : "недоступна"}
                               .
                             </p>
+                            {(accountHealthQuery.data.health.permissions?.missingRequired?.length ??
+                              0) > 0 && (
+                              <p className="text-red-700">
+                                Не хватает прав:{" "}
+                                {accountHealthQuery.data.health.permissions?.missingRequired?.join(
+                                  ", ",
+                                )}{" "}
+                                — переподключите аккаунт, чтобы Instagram запросил их заново.
+                              </p>
+                            )}
                             {accountHealthQuery.data.health.issues
                               ?.slice(0, 2)
                               .map((issue: string) => (
