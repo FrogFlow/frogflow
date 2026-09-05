@@ -1800,23 +1800,56 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
  * и отвечает по ОДНОМУ посту напрямую, без верхнего среза по времени/лимиту.
  * `res.postId` в ответе — уже канонический id записи Zernio, а не эхо
  * входного значения.
+ *
+ * Заодно несёт диагностику ограничения самого Reels: документация Zernio
+ * прямо называет один документированный случай, когда Instagram не отдаёт
+ * длительность видео (`videoDurationSeconds: null`) — "reels with
+ * copyrighted audio". Живая проверка: два независимых инструмента (наш и
+ * сторонний, с разным кодом) одинаково не смогли ответить именно на одном
+ * конкретном Reels, при исправно работающих остальных постах того же
+ * аккаунта — то есть ограничение не в коде ни одного из них, а в самом
+ * объекте на стороне Meta. Отсутствие этого поля у видео — конкретный,
+ * проверяемый признак именно такого ограничения, а не праздная догадка.
  */
 export async function resolveZernioPostId(
   platformPostId: string,
   accountId: string,
-): Promise<{ zernioPostId: string | null; postTitle: string | null }> {
+): Promise<{
+  zernioPostId: string | null;
+  postTitle: string | null;
+  mediaType: string | null;
+  hasVideoDurationField: boolean;
+  videoDurationSeconds: number | null;
+}> {
   try {
-    const res = await zernioRequest<{ postId?: string; content?: string }>("/analytics", {
+    const res = await zernioRequest<{
+      postId?: string;
+      content?: string;
+      mediaType?: string | null;
+      analytics?: { videoDurationSeconds?: number | null };
+    }>("/analytics", {
       query: { postId: platformPostId, accountId },
     });
     const id = String(res.postId || "");
     return {
       zernioPostId: isZernioObjectId(id) ? id : null,
       postTitle: typeof res.content === "string" ? res.content : null,
+      mediaType: typeof res.mediaType === "string" ? res.mediaType : null,
+      hasVideoDurationField: !!res.analytics && "videoDurationSeconds" in res.analytics,
+      videoDurationSeconds:
+        typeof res.analytics?.videoDurationSeconds === "number"
+          ? res.analytics.videoDurationSeconds
+          : null,
     };
   } catch (e) {
     console.error("[zernio] resolveZernioPostId error", e);
-    return { zernioPostId: null, postTitle: null };
+    return {
+      zernioPostId: null,
+      postTitle: null,
+      mediaType: null,
+      hasVideoDurationField: false,
+      videoDurationSeconds: null,
+    };
   }
 }
 

@@ -70,6 +70,7 @@ import {
   Pause,
   ExternalLink,
   History,
+  Video,
   Eye,
   Info,
   CalendarClock,
@@ -1917,6 +1918,26 @@ function AdminInstagramPage() {
       }),
     enabled: !!logsAutomationId,
   });
+  // Проверка ограничения самого поста — Zernio не отдаёт длительность
+  // видео (videoDurationSeconds), когда у Reels лицензированное
+  // (авторское) аудио, и это документированная причина, по которой
+  // Instagram может урезать доступ именно к этому объекту, а не к
+  // аккаунту целиком. Живая проверка: два независимых инструмента с
+  // разным кодом (наш и сторонний) одинаково не смогли ответить именно
+  // на одном Reels при исправно работающих остальных постах — то есть
+  // дело не в коде ни одного из них.
+  const [restrictionCheck, setRestrictionCheck] = useState<{
+    automationId: string;
+    platformPostId: string;
+  } | null>(null);
+  const restrictionCheckQuery = useQuery({
+    queryKey: ["ig_restriction_check", restrictionCheck?.platformPostId],
+    queryFn: () =>
+      resolveZernioPostIdFn({
+        data: { platformPostId: restrictionCheck!.platformPostId, accountId: acc!._id },
+      }),
+    enabled: !!restrictionCheck && !!acc?._id,
+  });
   const dashboardQuery = useQuery({
     queryKey: ["ig_dashboard"],
     queryFn: () => getInstagramDashboardFn(),
@@ -3252,6 +3273,26 @@ function AdminInstagramPage() {
                             >
                               <History className="w-4 h-4" />
                             </Button>
+                            {auto.platformPostId && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                title="Проверить, не ограничивает ли Instagram именно этот Reels (например, из-за лицензированного аудио)"
+                                onClick={() =>
+                                  setRestrictionCheck((prev) =>
+                                    prev?.automationId === auto.id
+                                      ? null
+                                      : {
+                                          automationId: auto.id!,
+                                          platformPostId: auto.platformPostId!,
+                                        },
+                                  )
+                                }
+                              >
+                                <Video className="w-4 h-4" />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -3376,6 +3417,45 @@ function AdminInstagramPage() {
                                 </Button>
                               </div>
                             )}
+                          </div>
+                        )}
+
+                        {restrictionCheck?.automationId === auto.id && (
+                          <div className="mt-3 border-t pt-3 text-[11px] space-y-1">
+                            {restrictionCheckQuery.isLoading ? (
+                              <p className="text-muted-foreground">Проверяю…</p>
+                            ) : restrictionCheckQuery.isError ? (
+                              <p className="text-destructive">
+                                {errorMessage(restrictionCheckQuery.error)}
+                              </p>
+                            ) : restrictionCheckQuery.data ? (
+                              <>
+                                <p className="text-muted-foreground">
+                                  Тип медиа: {restrictionCheckQuery.data.mediaType || "неизвестно"}
+                                </p>
+                                {restrictionCheckQuery.data.hasVideoDurationField &&
+                                restrictionCheckQuery.data.videoDurationSeconds === null ? (
+                                  <p className="text-red-700 font-medium">
+                                    Instagram не отдаёт длительность видео — по документации Zernio
+                                    так бывает у Reels с лицензированным (авторским) аудио, из-за
+                                    которого платформа может урезать доступ именно к этому посту.
+                                    Проверьте у клиента: чья музыка стоит на видео — оригинальный
+                                    звук/библиотека Instagram или чужая дорожка.
+                                  </p>
+                                ) : restrictionCheckQuery.data.hasVideoDurationField ? (
+                                  <p className="text-green-700">
+                                    Длительность видео доступна ({" "}
+                                    {restrictionCheckQuery.data.videoDurationSeconds} сек) — этот
+                                    конкретный признак ограничения не подтвердился.
+                                  </p>
+                                ) : (
+                                  <p className="text-muted-foreground">
+                                    Не видео (или Zernio не вернул это поле для данного типа медиа)
+                                    — признак неприменим.
+                                  </p>
+                                )}
+                              </>
+                            ) : null}
                           </div>
                         )}
                       </CardContent>
