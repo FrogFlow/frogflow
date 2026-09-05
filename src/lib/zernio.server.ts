@@ -1496,6 +1496,42 @@ export async function sendCommentPrivateReply(
 }
 
 /**
+ * Публичный ответ на конкретный комментарий — POST /inbox/comments/{postId}
+ * с commentId в теле (см. комментарий у listInstagramComments: тот же путь
+ * без commentId в теле — это публикация НОВОГО комментария на посте, а не
+ * ответ на существующий; отсюда обязательный commentId ниже). Ручная
+ * догоняющая рассылка в панели — оператор явно выбирает, кому ответить
+ * публично, комментарий за комментарием. Fallback-крон (comment-dm-fallback.server.ts)
+ * сознательно этого не делает вовсе: там нет человека, который смотрит на
+ * каждый комментарий перед отправкой, а ошибочный лишний публичный
+ * комментарий на живом посте клиента заметнее и необратимее лишнего DM.
+ * Здесь этот риск снят подтверждением оператора, поэтому доступно.
+ *
+ * Публичные ответы у Zernio не документированы как "один на комментарий" (в
+ * отличие от private-reply) — случайный повтор реально создал бы видимый
+ * дублирующий комментарий, поэтому свой idempotency-ключ на (postId,
+ * commentId), тот же приём, что и у private-reply.
+ */
+export async function postCommentReply(
+  postId: string,
+  commentId: string,
+  accountId: string,
+  message: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await zernioRequest(`/inbox/comments/${encodeURIComponent(postId)}`, {
+      method: "POST",
+      body: { accountId, message, commentId },
+      idempotencyKey: `catchup-public-reply:${postId}:${commentId}`,
+    });
+    return { ok: true };
+  } catch (e) {
+    console.error(`[zernio] postCommentReply failed for comment ${commentId}`, e);
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+/**
  * Получить список постов (для выбора Post ID в автоответах)
  */
 export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> {

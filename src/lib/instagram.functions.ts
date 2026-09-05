@@ -682,6 +682,36 @@ export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
     return { results };
   });
 
+/**
+ * Догоняющая рассылка ПУБЛИЧНЫМИ ответами в комментариях — параллель
+ * sendCatchupPrivateRepliesFn выше, тот же принцип (явный список id,
+ * потолок в 25 за вызов, последовательные вызовы, не Promise.all). Отдельная
+ * ручка, а не флаг у sendCatchupPrivateRepliesFn: DM и публичный ответ —
+ * независимые действия оператора (см. postCommentReply в zernio.server.ts —
+ * почему это доступно тут, а не в fallback-кроне), у каждого свой текст.
+ */
+export const sendCatchupCommentRepliesFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        postId: z.string().min(1),
+        accountId: z.string().min(1),
+        commentIds: z.array(z.string().min(1)).min(1).max(25),
+        message: z.string().min(1),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { postCommentReply } = await import("./zernio.server");
+    await requireAdminWithModule();
+    const results: Array<{ commentId: string; ok: boolean; error?: string }> = [];
+    for (const commentId of data.commentIds) {
+      const result = await postCommentReply(data.postId, commentId, data.accountId, data.message);
+      results.push({ commentId, ...result });
+    }
+    return { results };
+  });
+
 // ─── Webhook logs (наша БД) ───────────────────────────────────────────────────
 
 export const getInstagramLogsFn = createServerFn({ method: "GET" }).handler(async () => {

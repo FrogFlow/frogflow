@@ -42,6 +42,7 @@ import {
   saveInstagramDirectBotTriggersFn,
   listPostCommentsFn,
   sendCatchupPrivateRepliesFn,
+  sendCatchupCommentRepliesFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -1363,6 +1364,18 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     [],
   );
 
+  // Публичный ответ в комментариях — независимое от DM действие (свой текст,
+  // своя отправка), см. postCommentReply в zernio.server.ts.
+  const [commentReplyMessage, setCommentReplyMessage] = useState("");
+  const [commentReplySending, setCommentReplySending] = useState(false);
+  const [commentReplyProgress, setCommentReplyProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const [commentReplyResults, setCommentReplyResults] = useState<
+    Array<{ commentId: string; ok: boolean; error?: string }>
+  >([]);
+
   async function onLoadComments() {
     if (!postId.trim()) return;
     if (!accountId) {
@@ -1374,6 +1387,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     setCommentSearch("");
     setSelected(new Set());
     setResults([]);
+    setCommentReplyResults([]);
     try {
       const res = await listPostCommentsFn({ data: { postId: postId.trim(), accountId } });
       const parsed: CatchupComment[] = (res.comments || []).map((c, i) => ({
@@ -1440,6 +1454,15 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
 
   async function onSend() {
     if (!postId.trim() || !message.trim() || selected.size === 0 || !accountId) return;
+    // Zernio/Instagram отклоняют кнопку-ссылку, если url не настоящий адрес
+    // (например, относительный путь вроде "/start") — 400 приходил бы на
+    // каждый выбранный комментарий разом. Проверяем раньше, чем жечь вызовы.
+    if (buttonUrl.trim() && !/^https?:\/\//i.test(buttonUrl.trim())) {
+      toast.warning(
+        "Ссылка кнопки должна быть полным адресом, начинающимся с https:// — иначе Zernio её отклонит. Нужна кнопка без ссылки? Оставьте это поле пустым.",
+      );
+      return;
+    }
     setSending(true);
     setResults([]);
     const ids = Array.from(selected);
@@ -1476,6 +1499,42 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
       toast.error(`Рассылка прервалась: ${errorMessage(e)}`);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function onSendCommentReply() {
+    if (!postId.trim() || !commentReplyMessage.trim() || selected.size === 0 || !accountId) return;
+    setCommentReplySending(true);
+    setCommentReplyResults([]);
+    const ids = Array.from(selected);
+    const CHUNK = 25;
+    const allResults: Array<{ commentId: string; ok: boolean; error?: string }> = [];
+    try {
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        setCommentReplyProgress({ done: i, total: ids.length });
+        const res = await sendCatchupCommentRepliesFn({
+          data: {
+            postId: postId.trim(),
+            accountId,
+            commentIds: chunk,
+            message: commentReplyMessage.trim(),
+          },
+        });
+        allResults.push(...res.results);
+        setCommentReplyResults([...allResults]);
+      }
+      setCommentReplyProgress({ done: ids.length, total: ids.length });
+      const failed = allResults.filter((r) => !r.ok).length;
+      if (failed === 0) toast.success(`Отправлено ответов в комментариях: ${allResults.length}`);
+      else
+        toast.warning(
+          `Отправлено ответов в комментариях: ${allResults.length - failed}, ошибок: ${failed}`,
+        );
+    } catch (e: unknown) {
+      toast.error(`Рассылка ответов прервалась: ${errorMessage(e)}`);
+    } finally {
+      setCommentReplySending(false);
     }
   }
 
@@ -1531,7 +1590,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
                 <Input
                   value={buttonUrl}
                   onChange={(e) => setButtonUrl(e.target.value)}
-                  placeholder="Ссылка кнопки (пусто — кнопка-postback)"
+                  placeholder="https://... (пусто — кнопка-postback, без ссылки)"
                 />
               </div>
             </div>
@@ -1578,6 +1637,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
               ) : (
                 filteredComments.map((c) => {
                   const result = results.find((r) => r.commentId === c.id);
+                  const commentReplyResult = commentReplyResults.find((r) => r.commentId === c.id);
                   return (
                     <label
                       key={c.id}
@@ -1604,7 +1664,20 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
                                 result.ok ? "text-green-600 text-xs" : "text-red-600 text-xs"
                               }
                             >
-                              {result.ok ? "✓ отправлено" : `✗ ${result.error || "ошибка"}`}
+                              {result.ok ? "✓ DM отправлено" : `✗ DM: ${result.error || "ошибка"}`}
+                            </span>
+                          )}
+                          {commentReplyResult && (
+                            <span
+                              className={
+                                commentReplyResult.ok
+                                  ? "text-green-600 text-xs"
+                                  : "text-red-600 text-xs"
+                              }
+                            >
+                              {commentReplyResult.ok
+                                ? "✓ ответ в комментариях"
+                                : `✗ комментарий: ${commentReplyResult.error || "ошибка"}`}
                             </span>
                           )}
                         </div>
@@ -1623,8 +1696,36 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
             >
               {sending
                 ? `Отправляю… ${sendProgress ? `${sendProgress.done}/${sendProgress.total}` : ""}`
-                : `Отправить выбранным (${selected.size})`}
+                : `Отправить DM выбранным (${selected.size})`}
             </Button>
+
+            <div className="space-y-2 border-t pt-4">
+              <Label>Публичный ответ в комментариях (отдельно от DM выше)</Label>
+              <p className="text-xs text-muted-foreground">
+                Виден всем под постом и необратим сразу после отправки (можно только удалить
+                вручную) — в отличие от DM, ошибка здесь заметнее. Проверьте текст перед отправкой.
+              </p>
+              <Textarea
+                value={commentReplyMessage}
+                onChange={(e) => setCommentReplyMessage(e.target.value)}
+                rows={2}
+                placeholder="Текст публичного ответа на каждый выбранный комментарий"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onSendCommentReply}
+                disabled={commentReplySending || selected.size === 0 || !commentReplyMessage.trim()}
+              >
+                {commentReplySending
+                  ? `Отправляю… ${
+                      commentReplyProgress
+                        ? `${commentReplyProgress.done}/${commentReplyProgress.total}`
+                        : ""
+                    }`
+                  : `Ответить в комментариях выбранным (${selected.size})`}
+              </Button>
+            </div>
 
             {rawPreview && (
               <details className="text-xs">
