@@ -45,7 +45,7 @@ describe("commentAgeVerdict", () => {
   const now = new Date("2026-01-15T12:00:00Z");
 
   it("слишком новый комментарий — даём Zernio шанс сработать первым", () => {
-    const justNow = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+    const justNow = new Date(now.getTime() - 60 * 1000).toISOString();
     expect(commentAgeVerdict(justNow, now)).toBe("too_new");
   });
 
