@@ -292,6 +292,8 @@ const copy: Record<
     disconnectBtn: string;
     noAccountsConnected: string;
     postNotSyncedYet: string;
+    dmsFailedLabel: string;
+    dmsFailedHint: string;
     dialogFallback: string;
     sendErrorFallback: string;
     directBotEnabledMsg: string;
@@ -527,6 +529,9 @@ const copy: Record<
     noAccountsConnected: "Нет подключенных аккаунтов",
     postNotSyncedYet:
       "Этот пост ещё не проиндексирован Zernio — привязка к нему сейчас сохранится с внутренним ID Zernio вместо настоящего ID публикации, и комментарии под постом не будут его находить. Нажмите «Обновить список постов» и подождите немного, потом выберите пост заново.",
+    dmsFailedLabel: "не доставлено",
+    dmsFailedHint:
+      "Комментарий сматчился (сработал триггер), но саму DM Zernio отправить не смог — сравните с «сработало»: если не доставлено доходит до этого числа, правило видит комментарии, проблема в отправке (лимит/окно/блок получателя), а не в привязке к посту.",
     dialogFallback: "Диалог",
     sendErrorFallback: "Не удалось отправить сообщение. Повторите попытку.",
     directBotEnabledMsg: "✅ Автоответчик Direct включён.",
@@ -765,6 +770,9 @@ const copy: Record<
     noAccountsConnected: "Қосылған аккаунттар жоқ",
     postNotSyncedYet:
       "Бұл пост әлі Zernio-да индекстелмеген — қазір байланыстырсаңыз, нақты жариялау ID-ы орнына Zernio-ның ішкі ID-ы сақталады, және пост астындағы пікірлер оны таппайды. «Пост тізімін жаңарту» түймесін басып, күте тұрып, постты қайта таңдаңыз.",
+    dmsFailedLabel: "жеткізілмеді",
+    dmsFailedHint:
+      "Комментарий сәйкес келді (триггер іске қосылды), бірақ Zernio DM-ды жібере алмады — «іске қосылды» санымен салыстырыңыз: егер жеткізілмегендер саны соған тең болса, ереже пікірлерді көреді, мәселе жіберуде (лимит/терезе/алушы бұғатталған), пікірлерге байланыста емес.",
     dialogFallback: "Диалог",
     sendErrorFallback: "Хабарлама жіберілмеді. Қайта көріңіз.",
     directBotEnabledMsg: "✅ Direct автожауап беруші қосылды.",
@@ -1004,6 +1012,9 @@ const copy: Record<
     noAccountsConnected: "No accounts connected",
     postNotSyncedYet:
       "This post hasn't been indexed by Zernio yet — binding it now would save Zernio's internal ID instead of the real post ID, and comments on the post won't match it. Click \"Refresh post list\", wait a moment, then pick the post again.",
+    dmsFailedLabel: "not delivered",
+    dmsFailedHint:
+      'The comment matched (trigger fired), but Zernio couldn\'t send the DM itself — compare with "triggered": if not-delivered tracks that number, the rule sees the comments fine and the problem is in sending (rate limit/window/blocked recipient), not in the post binding.',
     dialogFallback: "Conversation",
     sendErrorFallback: "Failed to send the message. Try again.",
     directBotEnabledMsg: "✅ Direct auto-reply enabled.",
@@ -1243,6 +1254,9 @@ const copy: Record<
     noAccountsConnected: "Ulangan akkauntlar yo‘q",
     postNotSyncedYet:
       "Bu post hali Zernio tomonidan indekslanmagan — hozir bog‘lasangiz, haqiqiy post ID o‘rniga Zernio-ning ichki ID-i saqlanadi, va post ostidagi izohlar uni topmaydi. «Postlar ro‘yxatini yangilash» tugmasini bosing, biroz kuting va postni qayta tanlang.",
+    dmsFailedLabel: "yetkazilmadi",
+    dmsFailedHint:
+      "Izoh mos keldi (trigger ishga tushdi), lekin Zernio DM-ni yubora olmadi — «ishga tushdi» soniga solishtiring: agar yetkazilmagan shu songa yetsa, qoida izohlarni ko‘ryapti, muammo yuborishda (limit/oyna/qabul qiluvchi bloklangan), post biriktirishda emas.",
     dialogFallback: "Suhbat",
     sendErrorFallback: "Xabarni yuborib bo‘lmadi. Qayta urinib ko‘ring.",
     directBotEnabledMsg: "✅ Direct avtojavob beruvchi yoqildi.",
@@ -2806,6 +2820,15 @@ function AdminInstagramPage() {
                               <span className="flex items-center gap-1">
                                 <Zap className="w-3 h-3" /> {auto.stats?.triggered || 0}
                               </span>
+                              {(auto.stats?.dmsFailed || 0) > 0 && (
+                                <span
+                                  className="flex items-center gap-1 text-red-600 font-medium"
+                                  title={tr.dmsFailedHint}
+                                >
+                                  <XCircle className="w-3 h-3" /> {auto.stats?.dmsFailed}{" "}
+                                  {tr.dmsFailedLabel}
+                                </span>
+                              )}
                               {(auto.stats?.linkClicks || 0) > 0 && (
                                 <span className="flex items-center gap-1 text-blue-600 font-medium">
                                   <ExternalLink className="w-3 h-3" /> {auto.stats?.linkClicks}{" "}
