@@ -1480,11 +1480,18 @@ export async function sendCommentPrivateReply(
   buttons: ZernioDmButton[],
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    // Zernio отклоняет buttons: [] как невалидное значение ("Too small:
+    // expected array to have >=1 items") — поле нужно либо не передавать
+    // вовсе (голый текст), либо с хотя бы одной кнопкой, но никогда пустым.
+    const trimmedButtons = buttons.slice(0, 3);
+    const body: Record<string, unknown> = { accountId, message };
+    if (trimmedButtons.length > 0) body.buttons = trimmedButtons;
+
     await zernioRequest(
       `/inbox/comments/${encodeURIComponent(postId)}/${encodeURIComponent(commentId)}/private-reply`,
       {
         method: "POST",
-        body: { accountId, message, buttons: buttons.slice(0, 3) },
+        body,
         idempotencyKey: `catchup-reply:${postId}:${commentId}`,
       },
     );
