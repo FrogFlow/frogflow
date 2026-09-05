@@ -1313,12 +1313,29 @@ export const Route = createFileRoute("/admin/instagram")({
   component: AdminInstagramPage,
 });
 
+type CatchupReplyStatus = "owner" | "sent" | "failed" | "no_match" | "no_automation" | "missing";
+
 type CatchupComment = {
   id: string;
   username: string;
   text: string;
   when: string;
+  replyStatus: CatchupReplyStatus;
 };
+
+const CATCHUP_STATUS_BADGE: Record<CatchupReplyStatus, { label: string; className: string }> = {
+  owner: { label: "наш комментарий", className: "text-muted-foreground" },
+  sent: { label: "уже отвечено", className: "text-green-600" },
+  failed: { label: "ошибка отправки у Zernio", className: "text-red-600 font-medium" },
+  no_match: { label: "не подходит по ключевым словам", className: "text-muted-foreground" },
+  no_automation: { label: "нет правила на этот пост", className: "text-muted-foreground" },
+  missing: { label: "похоже, пропущено", className: "text-red-600 font-medium" },
+};
+
+/** Комментарии, которым реально нужен ручной ответ, — выбираются по умолчанию, остальные оператор добавляет сам. */
+function catchupNeedsReply(status: CatchupReplyStatus): boolean {
+  return status === "missing" || status === "failed";
+}
 
 /**
  * Догоняющая рассылка приватными ответами по комментариям, которые
@@ -1357,17 +1374,23 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     setResults([]);
     try {
       const res = await listPostCommentsFn({ data: { postId: postId.trim(), accountId } });
-      const parsed = (res.comments || []).map((c, i) => ({
+      const parsed: CatchupComment[] = (res.comments || []).map((c, i) => ({
         id: String(c.id ?? i),
         username: String(c.from?.username || c.from?.name || "—"),
         text: String(c.message || ""),
         when: String(c.createdTime || ""),
+        replyStatus: (c.replyStatus as CatchupReplyStatus) || "no_automation",
       }));
       setComments(parsed);
+      setSelected(new Set(parsed.filter((c) => catchupNeedsReply(c.replyStatus)).map((c) => c.id)));
       setRawPreview(JSON.stringify(res.raw, null, 2).slice(0, 4000));
       if (parsed.length === 0) {
         toast.warning(
           "Комментарии не пришли или форма ответа Zernio не совпала с ожидаемой — смотри «сырой ответ» ниже.",
+        );
+      } else if (!res.hasAutomation) {
+        toast.warning(
+          "К этому посту не привязано активное правило Comment-to-DM — статусы «пропущено/ошибка» определить нельзя, выбирайте вручную.",
         );
       }
     } catch (e: unknown) {
@@ -1491,6 +1514,17 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
               </div>
             </div>
 
+            {comments.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Похоже, пропущено или упало с ошибкой:{" "}
+                <span className="font-medium text-foreground">
+                  {comments.filter((c) => catchupNeedsReply(c.replyStatus)).length}
+                </span>{" "}
+                из {comments.length} — они выбраны ниже, остальные (уже отвечено / не то ключевое
+                слово / наш же комментарий) можно добавить вручную.
+              </p>
+            )}
+
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
@@ -1518,9 +1552,16 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
                         onCheckedChange={() => toggleOne(c.id)}
                       />
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium">{c.username}</span>
                           <span className="text-[10px] text-muted-foreground">{c.when}</span>
+                          {!result && (
+                            <span
+                              className={`text-[10px] ${CATCHUP_STATUS_BADGE[c.replyStatus].className}`}
+                            >
+                              {CATCHUP_STATUS_BADGE[c.replyStatus].label}
+                            </span>
+                          )}
                           {result && (
                             <span
                               className={

@@ -582,17 +582,55 @@ export const getAutomationLogsFn = createServerFn({ method: "GET" })
  * перестал отвечать под конкретным постом (диагностика "Готовность" в
  * операторской панели это обнаруживает — обрыв виден по последней дате в
  * логах правила при живом аккаунте и работающих правилах на других постах).
- * `raw` возвращается как есть — форма ответа Zernio по этому эндпоинту не
- * проверена вживую, см. комментарий у listInstagramComments.
+ *
+ * Каждый комментарий размечен `replyStatus` (см. comment-dm-fallback.ts) —
+ * без этого панель просто вываливала все комментарии поста подряд, и
+ * оператор не мог понять, кому из них правило уже ответило, кому не должно
+ * было (не то ключевое слово), а кому должно было, но почему-то не ответило.
+ * Та же классификация, что использует автоматический fallback-крон
+ * (comment-dm-fallback.server.ts) — один источник правды на оба пути.
  */
 export const listPostCommentsFn = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
     z.object({ postId: z.string().min(1), accountId: z.string().min(1) }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { listInstagramComments } = await import("./zernio.server");
+    const { listInstagramComments, listCommentAutomations, getCommentAutomationLogs } =
+      await import("./zernio.server");
+    const { annotateCommentStatus } = await import("./comment-dm-fallback");
     await requireAdminWithModule();
-    return await listInstagramComments(data.postId, data.accountId);
+
+    const [{ comments, raw }, { automations }] = await Promise.all([
+      listInstagramComments(data.postId, data.accountId),
+      listCommentAutomations(),
+    ]);
+
+    const automation =
+      automations.find(
+        (a) =>
+          a.isActive !== false && a.trigger !== "story_reply" && a.platformPostId === data.postId,
+      ) ?? null;
+
+    const sentIds = new Set<string>();
+    const failedIds = new Set<string>();
+    const automationId = automation ? String(automation.id || automation._id || "") : "";
+    if (automationId) {
+      const { logs } = await getCommentAutomationLogs(automationId, { limit: 200 });
+      for (const row of logs) {
+        const id = String(row.commentId ?? "");
+        if (!id) continue;
+        const status = String(row.status ?? "");
+        if (status === "sent") sentIds.add(id);
+        else if (status === "failed") failedIds.add(id);
+      }
+    }
+
+    const annotated = comments.map((c) => ({
+      ...c,
+      replyStatus: annotateCommentStatus(c, automation, sentIds, failedIds),
+    }));
+
+    return { comments: annotated, raw, hasAutomation: !!automation };
   });
 
 const CatchupButtonSchema = z.object({

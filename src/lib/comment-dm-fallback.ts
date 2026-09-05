@@ -59,3 +59,37 @@ export function commentAgeVerdict(createdTimeIso: string, now: Date): CommentAge
   if (age > FALLBACK_MAX_AGE_MS) return "too_old";
   return "eligible";
 }
+
+/**
+ * Статус комментария относительно правила Comment-to-DM — общий для
+ * автоматического крона (comment-dm-fallback.server.ts) и ручной догоняющей
+ * рассылки в панели (instagram.functions.ts: listPostCommentsFn). Раньше
+ * панель просто выгружала ВСЕ комментарии поста без разбора — оператор видел
+ * 25 комментариев без единой подсказки, кому из них правило уже ответило,
+ * кому не должно было (не то ключевое слово), а кому должно было, но
+ * почему-то не ответило. Эта функция и есть та подсказка.
+ */
+export type CommentReplyStatus =
+  | "owner" // комментарий самого аккаунта (наш же публичный ответ) — не адресат
+  | "sent" // Zernio отправил DM, есть запись в логах правила
+  | "failed" // Zernio пытался отправить DM и не смог (см. логи правила)
+  | "no_match" // под пост есть активное правило, но ключевые слова не совпали
+  | "no_automation" // под этим постом вообще нет активного per-post правила
+  | "missing"; // подходит под правило, но ни sent, ни failed в логах — похоже, пропущено
+
+export function annotateCommentStatus(
+  comment: { id?: string; message?: string; from?: { isOwner?: boolean } },
+  automation: { keywords: string[]; matchMode?: "exact" | "contains" } | null,
+  sentCommentIds: Set<string>,
+  failedCommentIds: Set<string>,
+): CommentReplyStatus {
+  if (comment.from?.isOwner) return "owner";
+  const id = comment.id ?? "";
+  if (id && sentCommentIds.has(id)) return "sent";
+  if (!automation) return "no_automation";
+  if (!commentMatchesAutomation(comment.message ?? "", automation.keywords, automation.matchMode)) {
+    return "no_match";
+  }
+  if (id && failedCommentIds.has(id)) return "failed";
+  return "missing";
+}

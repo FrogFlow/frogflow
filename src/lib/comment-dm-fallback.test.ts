@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   commentMatchesAutomation,
   commentAgeVerdict,
+  annotateCommentStatus,
   FALLBACK_MIN_AGE_MS,
   FALLBACK_MAX_AGE_MS,
 } from "./comment-dm-fallback";
@@ -72,5 +73,59 @@ describe("commentAgeVerdict", () => {
     expect(commentAgeVerdict(justOverMin, now)).toBe("eligible");
     expect(commentAgeVerdict(justUnderMax, now)).toBe("eligible");
     expect(commentAgeVerdict(justOverMax, now)).toBe("too_old");
+  });
+});
+
+/**
+ * Это ровно то, что видит оператор в панели догоняющей рассылки: список
+ * комментариев без этой классификации выглядит как непонятный шум ("25
+ * комментариев, хз какого качества, откуда они и почему без ответа —
+ * непонятно"). Ошибка здесь — неверная подсказка оператору, кому реально
+ * нужен ручной ответ.
+ */
+describe("annotateCommentStatus", () => {
+  const automation = { keywords: ["год"], matchMode: "contains" as const };
+  const sent = new Set(["c-sent"]);
+  const failed = new Set(["c-failed"]);
+
+  it("комментарий от самого аккаунта — не адресат", () => {
+    expect(
+      annotateCommentStatus(
+        { id: "c1", message: "год", from: { isOwner: true } },
+        automation,
+        sent,
+        failed,
+      ),
+    ).toBe("owner");
+  });
+
+  it("уже отправлено Zernio — есть в логах со статусом sent", () => {
+    expect(annotateCommentStatus({ id: "c-sent", message: "год" }, automation, sent, failed)).toBe(
+      "sent",
+    );
+  });
+
+  it("нет привязанного правила к посту вовсе", () => {
+    expect(annotateCommentStatus({ id: "c1", message: "год" }, null, sent, failed)).toBe(
+      "no_automation",
+    );
+  });
+
+  it("правило есть, но ключевое слово не совпало", () => {
+    expect(
+      annotateCommentStatus({ id: "c1", message: "просто спасибо" }, automation, sent, failed),
+    ).toBe("no_match");
+  });
+
+  it("совпало, Zernio пытался и провалил отправку — есть в логах со статусом failed", () => {
+    expect(
+      annotateCommentStatus({ id: "c-failed", message: "год" }, automation, sent, failed),
+    ).toBe("failed");
+  });
+
+  it("совпало, но нигде в логах не встречается — похоже, пропущено", () => {
+    expect(annotateCommentStatus({ id: "c-new", message: "год" }, automation, sent, failed)).toBe(
+      "missing",
+    );
   });
 });
