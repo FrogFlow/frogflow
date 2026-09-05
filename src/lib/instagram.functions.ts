@@ -567,14 +567,28 @@ export const toggleAutomationFn = createServerFn({ method: "POST" })
   });
 
 /**
- * Получить логи конкретной автоматизации из Zernio API
+ * Логи конкретной автоматизации: по каждому подошедшему комментарию — ушла
+ * ли DM и с какой ошибкой, если нет. `onlyFailed` фильтрует на стороне
+ * Zernio (query status=failed): у живого правила бывает под две тысячи
+ * записей, и пара неудачных среди них иначе не находится вовсе.
  */
 export const getAutomationLogsFn = createServerFn({ method: "GET" })
-  .validator((d: unknown) => z.object({ id: z.string() }).parse(d))
+  .validator((d: unknown) =>
+    z
+      .object({
+        id: z.string(),
+        limit: z.number().int().min(1).max(500).optional(),
+        onlyFailed: z.boolean().optional(),
+      })
+      .parse(d),
+  )
   .handler(async ({ data }) => {
     const { getCommentAutomationLogs } = await import("./zernio.server");
     await requireAdminWithModule();
-    return await getCommentAutomationLogs(data.id);
+    return await getCommentAutomationLogs(data.id, {
+      limit: data.limit ?? 100,
+      status: data.onlyFailed ? "failed" : undefined,
+    });
   });
 
 /**

@@ -1349,12 +1349,21 @@ export async function deleteCommentAutomation(automationId: string): Promise<{ o
  */
 export async function getCommentAutomationLogs(
   automationId: string,
-  options: { limit?: number } = {},
+  options: { limit?: number; status?: "sent" | "failed" | "skipped" } = {},
 ): Promise<{ logs: Record<string, Json>[] }> {
   try {
+    // limit/status — параметры самого Zernio (его собственная база логов, не
+    // проксирование в Meta), в отличие от limit у списка комментариев,
+    // который Instagram отклонял (см. listInstagramComments): передавать их
+    // здесь безопасно. Без status две неудачные отправки среди полутора
+    // тысяч успешных не найти вообще.
+    const query: Record<string, string> = {};
+    if (options.limit) query.limit = String(options.limit);
+    if (options.status) query.status = options.status;
+
     const res = await zernioRequest<{ logs: Record<string, Json>[] }>(
       `/comment-automations/${automationId}/logs`,
-      options.limit ? { query: { limit: String(options.limit) } } : {},
+      Object.keys(query).length ? { query } : {},
     );
     return { logs: res.logs || [] };
   } catch (e) {

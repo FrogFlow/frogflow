@@ -1798,9 +1798,11 @@ function AdminInstagramPage() {
   // молчания автоматизации была видна только через поддержку или ручные
   // пробы — хотя лежала в этих логах с самого начала.
   const [logsAutomationId, setLogsAutomationId] = useState<string | null>(null);
+  const [logsOnlyFailed, setLogsOnlyFailed] = useState(false);
   const automationLogsQuery = useQuery({
-    queryKey: ["ig_automation_logs", logsAutomationId],
-    queryFn: () => getAutomationLogsFn({ data: { id: logsAutomationId! } }),
+    queryKey: ["ig_automation_logs", logsAutomationId, logsOnlyFailed],
+    queryFn: () =>
+      getAutomationLogsFn({ data: { id: logsAutomationId!, onlyFailed: logsOnlyFailed } }),
     enabled: !!logsAutomationId,
   });
   const dashboardQuery = useQuery({
@@ -3097,6 +3099,19 @@ function AdminInstagramPage() {
 
                         {logsAutomationId === auto.id && (
                           <div className="mt-3 border-t pt-3 space-y-1">
+                            <div className="flex items-center justify-between gap-2 pb-1">
+                              <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+                                <Checkbox
+                                  checked={logsOnlyFailed}
+                                  onCheckedChange={(v) => setLogsOnlyFailed(!!v)}
+                                />
+                                Только не доставленные
+                              </label>
+                              <span className="text-[10px] text-muted-foreground">
+                                показаны последние {automationLogsQuery.data?.logs?.length ?? 0} из{" "}
+                                {auto.stats?.triggered ?? 0}
+                              </span>
+                            </div>
                             {automationLogsQuery.isLoading ? (
                               <p className="text-xs text-muted-foreground">Загрузка истории…</p>
                             ) : automationLogsQuery.isError ? (
@@ -3105,36 +3120,41 @@ function AdminInstagramPage() {
                               </p>
                             ) : (automationLogsQuery.data?.logs?.length ?? 0) === 0 ? (
                               <p className="text-xs text-muted-foreground">
-                                Срабатываний нет — Zernio ни разу не увидел подходящий комментарий
-                                под этим постом.
+                                {logsOnlyFailed
+                                  ? "Неудачных отправок нет."
+                                  : "Срабатываний нет — Zernio ни разу не увидел подходящий комментарий под этим постом."}
                               </p>
                             ) : (
-                              automationLogsQuery.data?.logs?.slice(0, 20).map((row, i) => {
-                                const status = String(row.status ?? "");
-                                const error = String(row.error ?? "");
-                                const when = String(row.createdAt ?? "").slice(0, 19);
-                                const who = String(row.commenterName ?? row.commentId ?? "");
-                                return (
-                                  <div key={String(row.id ?? i)} className="text-[11px]">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="text-muted-foreground">{when}</span>
-                                      <span className="font-medium truncate">{who}</span>
-                                      <span
-                                        className={
-                                          status === "sent"
-                                            ? "text-green-600"
-                                            : status === "failed"
-                                              ? "text-red-600 font-medium"
-                                              : "text-muted-foreground"
-                                        }
-                                      >
-                                        DM: {status || "—"}
-                                      </span>
+                              <div className="max-h-64 overflow-y-auto space-y-1">
+                                {automationLogsQuery.data?.logs?.map((row, i) => {
+                                  const status = String(row.status ?? "");
+                                  const error = String(row.error ?? "");
+                                  const when = String(row.createdAt ?? "").slice(0, 19);
+                                  const who = String(row.commenterName ?? row.commentId ?? "");
+                                  return (
+                                    <div key={String(row.id ?? i)} className="text-[11px]">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-muted-foreground">{when}</span>
+                                        <span className="font-medium truncate">{who}</span>
+                                        <span
+                                          className={
+                                            status === "sent"
+                                              ? "text-green-600"
+                                              : status === "failed"
+                                                ? "text-red-600 font-medium"
+                                                : "text-muted-foreground"
+                                          }
+                                        >
+                                          DM: {status || "—"}
+                                        </span>
+                                      </div>
+                                      {error && (
+                                        <div className="text-red-600 break-all">{error}</div>
+                                      )}
                                     </div>
-                                    {error && <div className="text-red-600 break-all">{error}</div>}
-                                  </div>
-                                );
-                              })
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
                         )}
