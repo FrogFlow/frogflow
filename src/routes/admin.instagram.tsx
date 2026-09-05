@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
-import { describePostMediaKind, isZernioObjectId } from "@/lib/zernio-post-ids";
+import { describePostMediaKind, isZernioObjectId, isInstagramMediaId } from "@/lib/zernio-post-ids";
 import { confirmToast } from "@/lib/confirm-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
@@ -45,6 +45,7 @@ import {
   sendCatchupPrivateRepliesFn,
   sendCatchupCommentRepliesFn,
   getAutomationLogsFn,
+  resolveZernioPostIdFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -2283,6 +2284,22 @@ function AdminInstagramPage() {
     const posts = postsQuery.data?.posts || [];
     const selectedPost = posts.find((p) => (p.platformPostId || p._id || p.id) === postId);
 
+    // Пост может выпасть из этого списка — getZernioPostsFn отдаёт не более
+    // 50 постов на источник, отсортированных по дате, и у аккаунта с
+    // историей длиннее полусотни старый Reel в это окно не попадёт, хотя
+    // Zernio прекрасно знает его id (комментарии по нему читаются в
+    // догоняющей рассылке безо всякого списка). Резолвим напрямую по
+    // одному посту, прежде чем сразу блокировать сохранение — иначе
+    // редактирование правила на таком посте выглядит как «ничего не
+    // изменилось», хотя причина в нашем же списке, а не в самой автоматизации.
+    let fallbackZernioPostId: string | null = null;
+    if (postId && postId !== "ALL_POSTS" && !selectedPost && isInstagramMediaId(postId)) {
+      const resolved = await resolveZernioPostIdFn({
+        data: { platformPostId: postId, accountId: acc._id },
+      });
+      fallbackZernioPostId = resolved.zernioPostId;
+    }
+
     // Пост может попасть в список ДО того, как его успела проиндексировать
     // аналитика Zernio — тогда platformPostId (настоящий ID публикации,
     // обязательный для сопоставления комментариев) у него ещё не заполнен,
@@ -2290,17 +2307,28 @@ function AdminInstagramPage() {
     // Zernio, а не реальный ID поста. Автоматизация сохранялась, выглядела
     // рабочей (пост "выбран", правило активно), но комментарии под этим
     // постом никогда не находили её — а нашли только по факту от продавца.
-    if (postId && postId !== "ALL_POSTS" && !selectedPost?.platformPostId) {
+    if (
+      postId &&
+      postId !== "ALL_POSTS" &&
+      !selectedPost?.platformPostId &&
+      !fallbackZernioPostId
+    ) {
       toast.warning(tr.postNotSyncedYet);
       return;
     }
-    const zernioPostId = selectedPost
-      ? String(selectedPost._zernioPostId || selectedPost._id || selectedPost.id || "")
-      : "";
+    const zernioPostId = fallbackZernioPostId
+      ? fallbackZernioPostId
+      : selectedPost
+        ? String(selectedPost._zernioPostId || selectedPost._id || selectedPost.id || "")
+        : "";
     if (postId && postId !== "ALL_POSTS" && !isZernioObjectId(zernioPostId)) {
       toast.warning(tr.postMissingZernioId);
       return;
     }
+    // В запасном пути selectedPost не найден вовсе — единственный источник
+    // настоящего platformPostId тогда сам postId (проверен isInstagramMediaId выше).
+    const resolvedPlatformPostId =
+      selectedPost?.platformPostId || (fallbackZernioPostId ? postId : undefined);
 
     setSavingAuto(true);
     try {
@@ -2323,7 +2351,7 @@ function AdminInstagramPage() {
         matchMode: "contains" as const,
         dmMessage: dmText,
         commentReply: replyText,
-        platformPostId: postId && postId !== "ALL_POSTS" ? selectedPost?.platformPostId : undefined,
+        platformPostId: postId && postId !== "ALL_POSTS" ? resolvedPlatformPostId : undefined,
         postId: postId && postId !== "ALL_POSTS" ? zernioPostId : undefined,
         postTitle: selectedPost
           ? String(selectedPost.caption || selectedPost.content || "").slice(0, 500)

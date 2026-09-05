@@ -795,6 +795,22 @@ export const syncZernioPostByUrlFn = createServerFn({ method: "POST" })
     return await syncExternalPostByUrl(data.accountId, data.url.trim());
   });
 
+/**
+ * Запасной путь при сохранении автоматизации на посте, которого нет в
+ * getZernioPostsFn (тот ограничен limit=50 на источник — старый пост из
+ * этого окна выпадает). Резолвит id записи Zernio напрямую по одному
+ * посту, без верхнего среза (см. resolveZernioPostId в zernio.server.ts).
+ */
+export const resolveZernioPostIdFn = createServerFn({ method: "GET" })
+  .validator((d: unknown) =>
+    z.object({ platformPostId: z.string().min(1), accountId: z.string().min(1) }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { resolveZernioPostId } = await import("./zernio.server");
+    await requireAdminWithModule();
+    return await resolveZernioPostId(data.platformPostId, data.accountId);
+  });
+
 export const cancelInstagramPostFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ postId: z.string().min(1) }).parse(d))
   .handler(async ({ data }) => {

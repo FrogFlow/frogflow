@@ -3,7 +3,7 @@
  */
 import type { Json } from "@/integrations-supabase/types";
 import { errorMessage } from "@/lib/error-message";
-import { pickZernioPostId } from "./zernio-post-ids";
+import { pickZernioPostId, isZernioObjectId } from "./zernio-post-ids";
 import { isZernioPlatform, type ZernioPlatform } from "./zernio-platform";
 
 // Канал — общий словарь для серверного слоя и разбора событий, живёт в
@@ -1782,6 +1782,41 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
   } catch (e) {
     console.error("[zernio] listZernioPosts error", e);
     return [];
+  }
+}
+
+/**
+ * Резолвит id записи Zernio по platformPostId одного конкретного поста —
+ * запасной путь, когда пост не попал в listZernioPosts. Список там
+ * ограничен `limit: 50` на каждый источник и отсортирован по дате: у
+ * аккаунта с историей длиннее полусотни постов старый Reel из этого окна
+ * выпадает, и редактирование автоматизации на нём упирается в
+ * postNotSyncedYet/postMissingZernioId — не потому что Zernio его не знает
+ * (комментарии-то читаются и без этого — см. listInstagramComments), а
+ * потому что наш собственный бандл из 4 источников его не показал.
+ *
+ * GET /analytics?postId=<любой id> — Zernio сам резолвит и Zernio Post ID,
+ * и External Post ID (документировано: "Accepts both... auto-resolved"),
+ * и отвечает по ОДНОМУ посту напрямую, без верхнего среза по времени/лимиту.
+ * `res.postId` в ответе — уже канонический id записи Zernio, а не эхо
+ * входного значения.
+ */
+export async function resolveZernioPostId(
+  platformPostId: string,
+  accountId: string,
+): Promise<{ zernioPostId: string | null; postTitle: string | null }> {
+  try {
+    const res = await zernioRequest<{ postId?: string; content?: string }>("/analytics", {
+      query: { postId: platformPostId, accountId },
+    });
+    const id = String(res.postId || "");
+    return {
+      zernioPostId: isZernioObjectId(id) ? id : null,
+      postTitle: typeof res.content === "string" ? res.content : null,
+    };
+  } catch (e) {
+    console.error("[zernio] resolveZernioPostId error", e);
+    return { zernioPostId: null, postTitle: null };
   }
 }
 
