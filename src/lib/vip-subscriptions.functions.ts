@@ -530,7 +530,7 @@ export const resendVipInvite = createServerFn({ method: "POST" })
 
 /** Shared reject: Telegram callbacks and admin panel. Notifies user only if row was updated. */
 export const rejectVipSubscriptionCore = createServerOnlyFn(
-  async (id: string): Promise<{ ok: true; alreadyProcessed?: boolean }> => {
+  async (id: string, note?: string): Promise<{ ok: true; alreadyProcessed?: boolean }> => {
     const s = await db();
 
     const { data: sub, error: fetchError } = await s
@@ -577,7 +577,10 @@ export const rejectVipSubscriptionCore = createServerOnlyFn(
 
     await tgVip("sendMessage", {
       chat_id: updated.telegram_id,
-      text: "❌ Ваша оплата была отклонена. Если это ошибка, свяжитесь с поддержкой.",
+      text:
+        "❌ Ваша оплата была отклонена." +
+        (note ? `\n\nПричина: ${note}` : "") +
+        " Если это ошибка, свяжитесь с поддержкой.",
     });
 
     return { ok: true };
@@ -585,10 +588,12 @@ export const rejectVipSubscriptionCore = createServerOnlyFn(
 );
 
 export const rejectVipSubscription = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d: unknown) =>
+    z.object({ id: z.string().uuid(), note: z.string().max(500).optional() }).parse(d),
+  )
   .handler(async ({ data }) => {
     await requireAdminWithModule();
-    return await rejectVipSubscriptionCore(data.id);
+    return await rejectVipSubscriptionCore(data.id, data.note);
   });
 
 const AddManualInput = z.object({

@@ -133,6 +133,8 @@ const copy: Record<
     testModeConfirmWarning: string;
     manualTestModeConfirm: string;
     rejectPaymentPrompt: string;
+    rejectReasonPrompt: string;
+    submittedAtLabel: (date: string) => string;
     extendPrompt: string;
     extendInvalid: string;
     extendReduceConfirm: (days: number) => string;
@@ -212,6 +214,8 @@ const copy: Record<
     manualTestModeConfirm:
       "🧪 Включён тестовый режим — введённое число дней будет проигнорировано, доступ дадут на несколько минут. Всё равно добавить?",
     rejectPaymentPrompt: "Отклонить оплату? Пользователь получит уведомление в VIP-боте.",
+    rejectReasonPrompt: "Причина отказа (необязательно):",
+    submittedAtLabel: (date) => `Чек прислан: ${date}`,
     extendPrompt:
       "Изменить срок (дни):\n+ число — продлить (например 2)\n− число — уменьшить (например -3)",
     extendInvalid: "Укажите целое число дней, не ноль (например 5 или -2)",
@@ -295,6 +299,8 @@ const copy: Record<
     manualTestModeConfirm:
       "🧪 Тест режимі қосулы — енгізілген күндер саны еленбейді, қолжетімділік бірнеше минутқа беріледі. Бәрібір қосу керек пе?",
     rejectPaymentPrompt: "Төлемді қабылдамау керек пе? Пайдаланушы VIP-ботта хабарлама алады.",
+    rejectReasonPrompt: "Қабылдамау себебі (міндетті емес):",
+    submittedAtLabel: (date) => `Чек жіберілді: ${date}`,
     extendPrompt:
       "Мерзімді өзгерту (күн):\n+ сан — ұзарту (мысалы 2)\n− сан — қысқарту (мысалы -3)",
     extendInvalid: "Бүтін сан енгізіңіз, нөл болмасын (мысалы 5 немесе -2)",
@@ -378,6 +384,8 @@ const copy: Record<
     manualTestModeConfirm:
       "🧪 Test mode is on — the days you entered will be ignored, access will last a few minutes. Add anyway?",
     rejectPaymentPrompt: "Reject the payment? The user will be notified in the VIP bot.",
+    rejectReasonPrompt: "Rejection reason (optional):",
+    submittedAtLabel: (date) => `Receipt sent: ${date}`,
     extendPrompt:
       "Change the duration (days):\n+ number — extend (e.g. 2)\n− number — shorten (e.g. -3)",
     extendInvalid: "Enter a non-zero whole number of days (e.g. 5 or -2)",
@@ -462,6 +470,8 @@ const copy: Record<
     manualTestModeConfirm:
       "🧪 Test rejimi yoqilgan — kiritilgan kunlar soni e'tiborga olinmaydi, kirish bir necha daqiqaga beriladi. Baribir qo‘shilsinmi?",
     rejectPaymentPrompt: "To‘lovni rad etasizmi? Foydalanuvchi VIP-botda xabar oladi.",
+    rejectReasonPrompt: "Rad etish sababi (ixtiyoriy):",
+    submittedAtLabel: (date) => `Chek yuborildi: ${date}`,
     extendPrompt:
       "Muddatni o‘zgartirish (kun):\n+ son — uzaytirish (masalan 2)\n− son — qisqartirish (masalan -3)",
     extendInvalid: "Nol bo‘lmagan butun son kiriting (masalan 5 yoki -2)",
@@ -604,9 +614,14 @@ function AdminVipSubscribers() {
   };
 
   const handleReject = async (id: string) => {
+    // prompt() возвращает null на Cancel/Esc — оставляем этот случай без
+    // подтверждения ниже, как и в admin.orders.tsx onReject.
+    const raw = prompt(tr.rejectReasonPrompt);
+    if (raw === null) return;
+    const note = raw.trim() || undefined;
     if (!(await confirmToast(tr.rejectPaymentPrompt))) return;
     try {
-      await rejectVipSubscription({ data: { id } });
+      await rejectVipSubscription({ data: { id, note } });
       qc.invalidateQueries({ queryKey: ["vip_subs"] });
     } catch (e: unknown) {
       toast.error(tr.genericError(errorMessage(e)));
@@ -915,7 +930,17 @@ function AdminVipSubscribers() {
                     })()}
                   </td>
                   <td className="p-2">
-                    {s.status === "pending_payment" ? "-" : formatDateTimeRu(s.expires_at)}
+                    {s.status === "pending_payment" ? (
+                      s.payment_proof_path ? (
+                        <span className="text-xs text-muted-foreground">
+                          {tr.submittedAtLabel(formatDateTimeRu(s.updated_at))}
+                        </span>
+                      ) : (
+                        "-"
+                      )
+                    ) : (
+                      formatDateTimeRu(s.expires_at)
+                    )}
                   </td>
                   <td className="p-2">
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
