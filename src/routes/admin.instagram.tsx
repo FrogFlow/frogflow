@@ -1351,6 +1351,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
   const [postId, setPostId] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
   const [comments, setComments] = useState<CatchupComment[] | null>(null);
+  const [commentSearch, setCommentSearch] = useState("");
   const [rawPreview, setRawPreview] = useState<string>("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
@@ -1370,6 +1371,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     }
     setLoadingComments(true);
     setComments(null);
+    setCommentSearch("");
     setSelected(new Set());
     setResults([]);
     try {
@@ -1400,6 +1402,16 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     }
   }
 
+  // Поиск — быстро найти свои тестовые аккаунты в списке (по имени или
+  // тексту комментария) вместо прокрутки всех подряд.
+  const commentSearchQuery = commentSearch.trim().toLowerCase();
+  const filteredComments = (comments ?? []).filter(
+    (c) =>
+      !commentSearchQuery ||
+      c.username.toLowerCase().includes(commentSearchQuery) ||
+      c.text.toLowerCase().includes(commentSearchQuery),
+  );
+
   function toggleOne(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -1409,11 +1421,21 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     });
   }
 
+  // "Выбрать все" применяется к тому, что реально видно (после поиска), а не
+  // ко всему списку — иначе поиск ради проверки 1-2 тестовых аккаунтов молча
+  // выбрал бы заодно всех, кого поиск скрыл.
   function toggleAll() {
-    if (!comments) return;
-    setSelected((prev) =>
-      prev.size === comments.length ? new Set() : new Set(comments.map((c) => c.id)),
-    );
+    if (filteredComments.length === 0) return;
+    const visibleIds = filteredComments.map((c) => c.id);
+    const allVisibleSelected = visibleIds.every((id) => selected.has(id));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of visibleIds) {
+        if (allVisibleSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
   }
 
   async function onSend() {
@@ -1525,13 +1547,23 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
               </p>
             )}
 
+            {comments.length > 0 && (
+              <Input
+                value={commentSearch}
+                onChange={(e) => setCommentSearch(e.target.value)}
+                placeholder="Поиск по имени или тексту — например, найти свои тестовые аккаунты"
+              />
+            )}
+
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center gap-2 cursor-pointer">
                 <Checkbox
-                  checked={comments.length > 0 && selected.size === comments.length}
+                  checked={
+                    filteredComments.length > 0 && filteredComments.every((c) => selected.has(c.id))
+                  }
                   onCheckedChange={toggleAll}
                 />
-                Выбрать все ({comments.length})
+                Выбрать все ({filteredComments.length})
               </label>
               <span className="text-muted-foreground">Выбрано: {selected.size}</span>
             </div>
@@ -1539,8 +1571,12 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
             <div className="max-h-80 overflow-y-auto rounded-md border divide-y">
               {comments.length === 0 ? (
                 <p className="p-3 text-sm text-muted-foreground">Комментарии не найдены.</p>
+              ) : filteredComments.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">
+                  Ничего не найдено по запросу «{commentSearch}».
+                </p>
               ) : (
-                comments.map((c) => {
+                filteredComments.map((c) => {
                   const result = results.find((r) => r.commentId === c.id);
                   return (
                     <label
