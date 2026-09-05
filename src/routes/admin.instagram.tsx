@@ -1770,13 +1770,15 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
               )}
             </div>
 
-            {results.some((r) => !r.ok && /2534066|не «отвалились права/i.test(r.error || "")) && (
+            {results.some(
+              (r) => !r.ok && /2534066|instagram_business_manage_messages/i.test(r.error || ""),
+            ) && (
               <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
-                Ошибка 2534066 звучит как «проверьте права токена», но на этом аккаунте другие посты
-                продолжают получать штатный Comment-to-DM. Instagram отклонил именно этот comment ID
-                для private reply. Проверьте: не ветка ли это, не старше ли 7 дней, и тот ли Target
-                (настоящий media ID). Публичный ответ ниже — быстрая проверка: если он уходит, ID
-                комментария живой.
+                Публичный ответ и private reply в Zernio — разные ручки. Если ответ в комментариях
+                уже ушёл, comment ID живой. 2534066 — отказ Instagram на POST …/private-reply (скоуп
+                instagram_business_manage_messages). Холодный DM так не отправить: либо уже открытый
+                чат, либо переподключение Instagram в Zernio с галкой про сообщения. Живые правила
+                Comment-to-DM на других постах идут своим путём и поэтому ещё работают.
               </p>
             )}
 

@@ -176,13 +176,14 @@ describe("commentPrivateReplyBlockReason", () => {
 });
 
 describe("explainInstagramPrivateReplyError", () => {
-  it("2534066 не читается как «переподключите Instagram»", () => {
+  it("2534066 отделяет private reply от публичного ответа в комментариях", () => {
     const explained = explainInstagramPrivateReplyError(
       'Zernio API Error 403: {"error":"Please check if access token has enough IG permissions granular scopes for IG private reply. Or, verify if the comment ID is valid","error_subcode":2534066}',
     );
     expect(explained).toMatch(/2534066/);
-    expect(explained).toMatch(/не «отвалились права у всего аккаунта»/);
-    expect(explained).not.toMatch(/переподключ/i);
+    expect(explained).toMatch(/instagram_business_manage_messages/);
+    expect(explained).toMatch(/публичн/i);
+    expect(explained).not.toMatch(/невалидный comment ID/i);
   });
 
   it("окно 7 дней и повторный private reply получают короткий текст", () => {

@@ -117,10 +117,9 @@ export function commentPrivateReplyBlockReason(
 
 /**
  * Переводит сырой отказ Zernio/Meta по private-reply в текст, который можно
- * показать оператору. 2534066 специально не читаем как «переподключите
- * Instagram»: на aa_teach_ в сентябре 2026 живые правила на других постах
- * продолжали слать DM в ту же минуту, когда догоняющая рассылка ловила
- * этот код на одном Target.
+ * показать оператору. По доке Zernio публичный ответ и private reply — разные
+ * вызовы и разные скоупы Instagram Login. Живой тест Educational (сент. 2026):
+ * публичный ответ на тот же comment ID ушёл, DM поймал 2534066.
  */
 export function explainInstagramPrivateReplyError(raw: string): string {
   const text = raw.toLowerCase();
@@ -130,13 +129,15 @@ export function explainInstagramPrivateReplyError(raw: string): string {
     text.includes("comment id is valid")
   ) {
     return (
-      "Instagram отклонил private reply для этого комментария (код 2534066). " +
-      "Это не «отвалились права у всего аккаунта»: на других постах живая автоматизация " +
-      "продолжает слать DM. Обычно так бывает, если комментарий — ответ в ветке, ему больше " +
-      "7 дней, или Post ID в запросе не тот media ID, на котором Instagram принимает " +
-      "приватный ответ (список комментариев Zernio при этом всё равно открывается). " +
-      "Попробуйте публичный ответ на этот же комментарий: если он уйдёт — ID живой, " +
-      "ломается только private reply."
+      "Instagram отклонил именно private reply / первый DM (код 2534066). " +
+      "По доке Zernio это другой вызов, чем ответ в комментариях: " +
+      "POST /inbox/comments/{postId}/{commentId}/private-reply и скоуп " +
+      "instagram_business_manage_messages. Публичный ответ идёт через " +
+      "POST /inbox/comments/{postId} и скоуп instagram_business_manage_comments — " +
+      "если он уже ушёл, comment ID живой, дело не в «не том посте» и не в возрасте. " +
+      "Холодный DM этим методом Instagram не принимает. Напишите в уже открытый чат " +
+      "или переподключите Instagram в Zernio, не снимая галку про сообщения. " +
+      "Живые правила Comment-to-DM идут своим путём — поэтому на других постах DM ещё приходят."
     );
   }
   if (text.includes("2534025") || text.includes("older than") || /\b7\s*day/.test(text)) {
