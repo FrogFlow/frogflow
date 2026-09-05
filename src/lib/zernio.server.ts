@@ -1376,10 +1376,7 @@ export type ZernioInstagramComment = {
   isHidden?: boolean;
 };
 
-/** Комментариев на странице ответа Zernio. */
-const COMMENTS_PAGE_LIMIT = 100;
-
-/** Потолок страниц за один вызов — до 500 комментариев на пост, дальше нужна отдельная задача, не разовый клик в панели. */
+/** Потолок страниц за один вызов — на дефолтном размере страницы Zernio этого с запасом хватает на разовый клик в панели. */
 const COMMENTS_MAX_PAGES = 5;
 
 /**
@@ -1394,12 +1391,19 @@ const COMMENTS_MAX_PAGES = 5;
  * раздела "Get post comments"); `raw` возвращается рядом для отладки на
  * случай реального расхождения (только последняя прочитанная страница).
  *
- * Раньше вызов не передавал limit и не читал pagination.hasMore/cursor из
- * ответа вовсе — значит всегда получал только первую страницу дефолтного
- * размера Zernio (недокументирован), и если под постом комментариев больше
- * этой страницы (ровно наш случай — сотня с лишним пропущенных), свежие или
- * старые комментарии могли просто не попасть в список, в зависимости от
- * сортировки Zernio. Теперь читаем все страницы до потолка ниже.
+ * Раньше вызов не читал pagination.hasMore/cursor из ответа вовсе — значит
+ * всегда получал только первую страницу дефолтного размера Zernio
+ * (недокументирован), и если под постом комментариев больше этой страницы
+ * (ровно наш случай — сотня с лишним пропущенных), свежие или старые
+ * комментарии могли просто не попасть в список, в зависимости от сортировки
+ * Zernio. Теперь ходим по cursor до потолка страниц ниже.
+ *
+ * Явный `limit` в запросе НЕ передаём: первая попытка задать его (100)
+ * привела к `Platform error: 100` от самого Instagram (не от валидации
+ * Zernio — код "platform_api_error") на первом же боевом посте, при том что
+ * без limit тот же запрос всегда проходил нормально. Раз дефолт Zernio и
+ * так работает, не рискуем — доверяем ему на каждой странице вместо
+ * собственного числа.
  */
 export async function listInstagramComments(
   postId: string,
@@ -1410,7 +1414,7 @@ export async function listInstagramComments(
   let lastRaw: Json = null;
 
   for (let page = 0; page < COMMENTS_MAX_PAGES; page++) {
-    const query: Record<string, string> = { accountId, limit: String(COMMENTS_PAGE_LIMIT) };
+    const query: Record<string, string> = { accountId };
     if (cursor) query.cursor = cursor;
 
     const res = await zernioRequest<Json>(`/inbox/comments/${encodeURIComponent(postId)}`, {
