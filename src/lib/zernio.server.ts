@@ -1376,6 +1376,12 @@ export type ZernioInstagramComment = {
   isHidden?: boolean;
 };
 
+/** Комментариев на странице ответа Zernio. */
+const COMMENTS_PAGE_LIMIT = 100;
+
+/** Потолок страниц за один вызов — до 500 комментариев на пост, дальше нужна отдельная задача, не разовый клик в панели. */
+const COMMENTS_MAX_PAGES = 5;
+
 /**
  * Комментарии под постом — для догоняющей рассылки, когда Comment-to-DM
  * перестал отвечать под конкретным постом (см. диагностику "Правила
@@ -1386,18 +1392,47 @@ export type ZernioInstagramComment = {
  * «Reply to comment», которая публикует новый комментарий/ответ на живом
  * посте. Форма подтверждена по документации Zernio (см. Response Body
  * раздела "Get post comments"); `raw` возвращается рядом для отладки на
- * случай реального расхождения.
+ * случай реального расхождения (только последняя прочитанная страница).
+ *
+ * Раньше вызов не передавал limit и не читал pagination.hasMore/cursor из
+ * ответа вовсе — значит всегда получал только первую страницу дефолтного
+ * размера Zernio (недокументирован), и если под постом комментариев больше
+ * этой страницы (ровно наш случай — сотня с лишним пропущенных), свежие или
+ * старые комментарии могли просто не попасть в список, в зависимости от
+ * сортировки Zernio. Теперь читаем все страницы до потолка ниже.
  */
 export async function listInstagramComments(
   postId: string,
   accountId: string,
 ): Promise<{ comments: ZernioInstagramComment[]; raw: Json }> {
-  const res = await zernioRequest<Json>(`/inbox/comments/${encodeURIComponent(postId)}`, {
-    method: "GET",
-    query: { accountId },
-  });
-  const list = res && typeof res === "object" ? ((res as Record<string, Json>).comments ?? []) : [];
-  return { comments: (Array.isArray(list) ? list : []) as ZernioInstagramComment[], raw: res };
+  const allComments: ZernioInstagramComment[] = [];
+  let cursor: string | undefined;
+  let lastRaw: Json = null;
+
+  for (let page = 0; page < COMMENTS_MAX_PAGES; page++) {
+    const query: Record<string, string> = { accountId, limit: String(COMMENTS_PAGE_LIMIT) };
+    if (cursor) query.cursor = cursor;
+
+    const res = await zernioRequest<Json>(`/inbox/comments/${encodeURIComponent(postId)}`, {
+      method: "GET",
+      query,
+    });
+    lastRaw = res;
+
+    const obj = res && typeof res === "object" ? (res as Record<string, Json>) : {};
+    const list = Array.isArray(obj.comments) ? obj.comments : [];
+    allComments.push(...(list as ZernioInstagramComment[]));
+
+    const pagination =
+      obj.pagination && typeof obj.pagination === "object"
+        ? (obj.pagination as Record<string, Json>)
+        : null;
+    const nextCursor = typeof pagination?.cursor === "string" ? pagination.cursor : undefined;
+    if (pagination?.hasMore !== true || !nextCursor) break;
+    cursor = nextCursor;
+  }
+
+  return { comments: allComments, raw: lastRaw };
 }
 
 /**
