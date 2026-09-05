@@ -280,6 +280,56 @@ export type Database = {
           },
         ];
       };
+      // MIGRATION-62. Журнал резервных (fallback) DM-отправок по комментариям
+      // Instagram — на случай, если родная автоматизация Comment-to-DM у
+      // Zernio перестала срабатывать на конкретном посте. Ручной патч по той
+      // же причине, что и у остальных таблиц этого файла: миграция уже
+      // применена к живой базе, а sync-db-types.mjs подтягивает только уже
+      // известные ему таблицы при следующем запуске.
+      comment_dm_fallback_sends: {
+        Row: {
+          id: string;
+          bot_id: string;
+          automation_id: string;
+          platform_post_id: string;
+          comment_id: string;
+          status: string;
+          error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string;
+          automation_id: string;
+          platform_post_id: string;
+          comment_id: string;
+          status?: string;
+          error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          automation_id?: string;
+          platform_post_id?: string;
+          comment_id?: string;
+          status?: string;
+          error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "comment_dm_fallback_sends_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       operator_login_attempts: {
         Row: {
           id: string;

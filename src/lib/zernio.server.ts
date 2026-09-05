@@ -1339,14 +1339,22 @@ export async function deleteCommentAutomation(automationId: string): Promise<{ o
 }
 
 /**
- * Получить логи автоматизации
+ * Получить логи автоматизации. Каждая строка несёт commentId и status
+ * ("sent"/"failed"/"skipped") — этим пользуется comment-dm-fallback.server.ts,
+ * чтобы понять, отработал ли Zernio конкретный комментарий, прежде чем
+ * пытаться резервной отправкой. limit по умолчанию Zernio не документирует —
+ * для диагностики (последние 5) хватает дефолта, а fallback-у нужен явный
+ * limit побольше, чтобы не пропустить старое срабатывание за пределами
+ * первой страницы.
  */
 export async function getCommentAutomationLogs(
   automationId: string,
+  options: { limit?: number } = {},
 ): Promise<{ logs: Record<string, Json>[] }> {
   try {
     const res = await zernioRequest<{ logs: Record<string, Json>[] }>(
       `/comment-automations/${automationId}/logs`,
+      options.limit ? { query: { limit: String(options.limit) } } : {},
     );
     return { logs: res.logs || [] };
   } catch (e) {
