@@ -1330,6 +1330,15 @@ function OrdersPage() {
                   {tr.viewScreenshot}
                 </button>
               )}
+              {/* Причина сбоя выдачи (пишется в admin_note деливери-кодом:
+                  "Выдача не удалась: ...", "требует ручной отправки: ..." и
+                  т.п.) раньше нигде в панели не отображалась — заказ мог
+                  зависнуть в "Выдаётся" без единой подсказки, почему.
+                  proof_auto — служебная пометка распознавания чека, не
+                  диагностика выдачи, её не показываем. */}
+              {o.admin_note && !o.admin_note.startsWith("proof_auto") && (
+                <div className="text-sm text-amber-700">⚠️ {o.admin_note}</div>
+              )}
               {o.status === "delivering" && o.fulfillment_kind !== "physical" && (
                 <div className="space-y-2 pt-2">
                   <p className="text-sm text-blue-700">{tr.deliveringHint}</p>
