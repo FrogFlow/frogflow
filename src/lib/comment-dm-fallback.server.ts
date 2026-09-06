@@ -63,12 +63,16 @@ async function notifyAdminsCommentUnresolved(text: string): Promise<void> {
  * sendCommentPrivateReply, что и ручная догоняющая рассылка в панели,
  * тем же текстом/кнопками, что настроены в самом правиле.
  *
- * Сознательно НЕ дублируется автоматический публичный ответ (commentReply):
- * ошибочный лишний ПУБЛИЧНЫЙ комментарий на живом посте клиента заметен и
- * необратим сильнее, чем случайный лишний приватный DM, а сопоставление
- * ключевых слов здесь — лучшее воспроизведение чужого алгоритма, не
- * гарантированная копия. Тот же довод — почему это резервный путь, а не
- * замена родному: подтверждённая логика Zernio остаётся основной.
+ * Если и наш private-reply не проходит — три уровня эскалации по нарастанию
+ * риска (см. комментарий внутри цикла): 1) обычное inbox-сообщение в уже
+ * существующий диалог с этим человеком, если он есть (другой вызов Zernio,
+ * не привязан к comment ID); 2) публичный ответ (commentReply правила) —
+ * только если шаг 1 реально доставил DM, иначе он рискует публично соврать
+ * «мы написали вам в директ»; 3) сообщение продавцу в Telegram, если не
+ * доставилось нигде. Сопоставление ключевых слов здесь — лучшее
+ * воспроизведение чужого алгоритма Zernio, не гарантированная копия. Тот же
+ * довод — почему это резервный путь, а не замена родному: подтверждённая
+ * логика Zernio остаётся основной.
  *
  * Компромисс размена: если Zernio всё же ответит с опозданием ПОСЛЕ того,
  * как отработал наш fallback, человек получит два похожих DM вместо одного.
@@ -98,6 +102,7 @@ export async function runCommentDmFallback(): Promise<{
     getCommentAutomationLogs,
     sendCommentPrivateReply,
     postCommentReply,
+    sendZernioInboxMessage,
   } = await import("./zernio.server");
 
   const { automations } = await listCommentAutomations();
@@ -188,17 +193,55 @@ export async function runCommentDmFallback(): Promise<{
         if (result.ok) sent++;
         else failed++;
 
-        // Эскалация: наш собственный private-reply тоже не прошёл — это уже
-        // второй провал (родная автоматизация Zernio + наш резерв), а не
-        // разовая случайность. Публичный ответ — другой вызов и scope у
-        // Zernio/Meta (см. живой случай: паблик ушёл, DM упал с 2534066),
-        // поэтому у него реальный шанс пройти там, где DM не прошёл ни разу.
-        // Если и это не помогло (или отвечать в комментариях у правила не
-        // настроено) — дальше автоматически сделать нечего, зовём продавца.
+        // Эскалация — только если наш собственный private-reply тоже не
+        // прошёл (второй провал: родная автоматизация Zernio + наш резерв).
+        //
+        // 1. Альтернативный канал: у комментатора может уже быть диалог с
+        //    этим аккаунтом (bot_users по ig_<id>) — тогда то же сообщение
+        //    уходит обычным inbox-сообщением в существующий диалог, а не
+        //    через комментарий-специфичный private-reply. Другой вызов
+        //    Zernio, не привязанный к comment ID вообще — не наследует то,
+        //    из-за чего падает именно private-reply к этому комментарию.
+        // 2. Публичный ответ (commentReply правила) — ТОЛЬКО если альт-канал
+        //    реально доставил DM: у commentReply часто в тексте что-то вроде
+        //    «мы написали вам в директ», и постить это на живом посте, когда
+        //    ни один DM в реальности не ушёл — публично вводить в заблуждение,
+        //    а это необратимее случайного лишнего DM.
+        // 3. Ничего не доставилось нигде — автоматически сделать больше
+        //    нечего, зовём продавца в Telegram.
+        let altChannelStatus: "skipped" | "sent" | "failed" = "skipped";
+        let altChannelError: string | null = null;
+        if (!result.ok) {
+          const commenterId = comment.from?.id;
+          if (commenterId) {
+            const { data: buyer } = await s
+              .from("bot_users")
+              .select("zernio_conversation_id")
+              .eq("user_key", `ig_${commenterId}`)
+              .maybeSingle();
+            if (buyer?.zernio_conversation_id) {
+              const altResult = await sendZernioInboxMessage(
+                buyer.zernio_conversation_id,
+                automation.accountId,
+                automation.dmMessage,
+                { buttons: automation.buttons ?? [] },
+              );
+              altChannelStatus = altResult.ok ? "sent" : "failed";
+              altChannelError = altResult.ok ? null : (altResult.error?.slice(0, 500) ?? null);
+            }
+          }
+        }
+
         let commentReplyStatus: "skipped" | "sent" | "failed" = "skipped";
         let commentReplyError: string | null = null;
         const commentReplyText = automation.commentReply?.trim();
-        if (!result.ok && commentReplyText && !commentReplySentByZernio.has(commentId)) {
+        const dmDeliveredSomehow = result.ok || altChannelStatus === "sent";
+        if (
+          !result.ok &&
+          altChannelStatus === "sent" &&
+          commentReplyText &&
+          !commentReplySentByZernio.has(commentId)
+        ) {
           const replyResult = await postCommentReply(
             postId,
             commentId,
@@ -214,6 +257,8 @@ export async function runCommentDmFallback(): Promise<{
           .update({
             status: result.ok ? "sent" : "failed",
             error: result.error?.slice(0, 500) ?? null,
+            alt_channel_status: altChannelStatus,
+            alt_channel_error: altChannelError,
             comment_reply_status: commentReplyStatus,
             comment_reply_error: commentReplyError,
           })
@@ -221,11 +266,12 @@ export async function runCommentDmFallback(): Promise<{
           .eq("automation_id", automationId)
           .eq("comment_id", commentId);
 
-        if (!result.ok && commentReplyStatus !== "sent") {
+        if (!dmDeliveredSomehow) {
           await notifyAdminsCommentUnresolved(
-            `⚠️ Комментарий под правилом «${escapeHtml(automation.name)}» не получил ни ` +
-              `личного, ни публичного ответа — ни родная автоматизация, ни резерв не сработали. ` +
-              `Ответьте вручную под постом (comment ID ${escapeHtml(commentId)}).`,
+            `⚠️ Комментарий под правилом «${escapeHtml(automation.name)}» не получил ответа ` +
+              `ни в директ (ни родная автоматизация, ни резерв, ни существующий диалог), ни в ` +
+              `комментариях — автоматика больше ничего сделать не может. Ответьте вручную ` +
+              `(comment ID ${escapeHtml(commentId)}).`,
           );
         }
       }
