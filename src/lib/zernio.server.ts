@@ -452,6 +452,18 @@ export type ZernioSendOptions = {
    */
   interactive?: Json;
   /**
+   * Тег сообщения Meta — единственный документированный способ у Zernio
+   * послать в Instagram сообщение ВНЕ 24-часового окна без comment-триггера
+   * private-reply: messagingType: "MESSAGE_TAG" + messageTag: "HUMAN_AGENT"
+   * (Instagram поддерживает только этот тег из четырёх). По политике Meta —
+   * для живого агента, отвечающего уже существующему контакту, не для
+   * массовой рассылки; используется только как последняя ступень эскалации
+   * резервной DM-отправки (comment-dm-fallback.server.ts), после того как
+   * обычное сообщение без тега не прошло.
+   */
+  messagingType?: "RESPONSE" | "UPDATE" | "MESSAGE_TAG";
+  messageTag?: "CONFIRMED_EVENT_UPDATE" | "POST_PURCHASE_UPDATE" | "ACCOUNT_UPDATE" | "HUMAN_AGENT";
+  /**
    * Канал получателя. Нужен ровно для одного решения — дописывать ли
    * инстаграмный хак с кнопкой «Оформить заказ» (см. ниже). По умолчанию
    * instagram: так ведут себя все вызовы, написанные до появления WhatsApp.
@@ -469,6 +481,13 @@ export async function sendZernioInboxMessage(
   const platform = opts.platform ?? "instagram";
   try {
     const body: Record<string, unknown> = buildInstagramInboxMessageBody(accountId, message);
+
+    if (opts.messageTag) {
+      body.messagingType = opts.messagingType ?? "MESSAGE_TAG";
+      body.messageTag = opts.messageTag;
+    } else if (opts.messagingType) {
+      body.messagingType = opts.messagingType;
+    }
 
     if (attachmentUrl) {
       body.attachmentUrl = attachmentUrl;

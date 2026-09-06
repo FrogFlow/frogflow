@@ -226,8 +226,36 @@ export async function runCommentDmFallback(): Promise<{
                 automation.dmMessage,
                 { buttons: automation.buttons ?? [] },
               );
-              altChannelStatus = altResult.ok ? "sent" : "failed";
-              altChannelError = altResult.ok ? null : (altResult.error?.slice(0, 500) ?? null);
+              if (altResult.ok) {
+                altChannelStatus = "sent";
+              } else {
+                // Обычное сообщение отказало — вероятная причина: 24-часовое
+                // окно с этим человеком уже закрылось (см. живой тест: то же
+                // сообщение прошло только пока покупатель писал в последние
+                // сутки). HUMAN_AGENT — единственный документированный у
+                // Zernio способ Instagram послать сообщение вне этого окна
+                // без comment-триггера private-reply. По политике Meta он для
+                // живого агента, отвечающего уже известному контакту — ровно
+                // наш случай (эскалация к реальному человеку в диалоге,
+                // который уже существует), не массовая рассылка.
+                const tagResult = await sendZernioInboxMessage(
+                  buyer.zernio_conversation_id,
+                  automation.accountId,
+                  automation.dmMessage,
+                  {
+                    buttons: automation.buttons ?? [],
+                    messagingType: "MESSAGE_TAG",
+                    messageTag: "HUMAN_AGENT",
+                  },
+                );
+                altChannelStatus = tagResult.ok ? "sent" : "failed";
+                altChannelError = tagResult.ok
+                  ? null
+                  : `без тега: ${altResult.error ?? ""}; с HUMAN_AGENT: ${tagResult.error ?? ""}`.slice(
+                      0,
+                      500,
+                    );
+              }
             }
           }
         }
