@@ -3,8 +3,6 @@ import {
   commentAgeVerdict,
   commentPrivateReplyBlockReason,
 } from "./comment-dm-fallback";
-import { tg } from "./telegram.server";
-import { escapeHtml } from "./vip-bot.server";
 
 /** Потолок правил за один проход крона — по числу их обычно не больше ~20-30 на аккаунт. */
 const MAX_AUTOMATIONS_PER_RUN = 20;
@@ -34,36 +32,6 @@ const STALE_PENDING_MS = 10 * 60 * 1000;
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
-}
-
-/**
- * Тот же паттерн, что notifyAdminsAboutDeliveryIssue в orders.server.ts —
- * написать продавцу в Telegram (admin_chat_id), когда ни один автоматический
- * путь не сработал и дальше есть только ручной ответ. Не общий импорт из
- * orders.server.ts намеренно: там функция не экспортирована, а дублировать
- * этот маленький хелпер — тот же приём, что и у db() в каждом *.server.ts.
- */
-async function notifyAdminsCommentUnresolved(text: string): Promise<void> {
-  const s = await db();
-  const { data: setting } = await s
-    .from("app_settings")
-    .select("value")
-    .eq("key", "admin_chat_id")
-    .maybeSingle();
-
-  const raw = setting?.value?.trim();
-  if (!raw) return;
-
-  for (const chatId of raw
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)) {
-    try {
-      await tg("sendMessage", { chat_id: chatId, text, parse_mode: "HTML" });
-    } catch (e) {
-      console.error("[comment-dm-fallback] notifyAdminsCommentUnresolved failed", e);
-    }
-  }
 }
 
 /**
@@ -373,15 +341,6 @@ export async function runCommentDmFallback(): Promise<{
           .eq("bot_id", botId)
           .eq("automation_id", automationId)
           .eq("comment_id", commentId);
-
-        if (!dmDeliveredSomehow) {
-          await notifyAdminsCommentUnresolved(
-            `⚠️ Комментарий под правилом «${escapeHtml(automation.name)}» не получил ответа ` +
-              `ни в директ (ни родная автоматизация, ни резерв, ни существующий диалог)` +
-              `${unresolvedPromptStatus === "sent" ? " — попросили написать в директ первым публичным ответом" : ""}. ` +
-              `Ответьте вручную (comment ID ${escapeHtml(commentId)}).`,
-          );
-        }
       }
     } catch (e) {
       console.error(`[comment-dm-fallback] правило ${automationId} не проверено`, e);
