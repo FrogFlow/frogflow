@@ -1415,6 +1415,14 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
     Array<{ commentId: string; ok: boolean; error?: string }>
   >([]);
   const [resolvedPostId, setResolvedPostId] = useState<string | null>(null);
+  // Диагностика: подставить в вызов private-reply другой (рабочий) postId,
+  // сохранив настоящий comment ID сломанного поста. Meta адресует private
+  // reply по самому comment ID (у них нет отдельного post ID в вызове) —
+  // если 2534066 всё равно повторится, блокировка у Meta именно по comment
+  // ID/аккаунту и postId в пути ни при чём. Если пройдёт — дело было в
+  // какой-то проверке на стороне Zernio, завязанной на исходный post ID.
+  // Пусто — обычная отправка без подмены.
+  const [testPostIdOverride, setTestPostIdOverride] = useState("");
 
   async function onLoadComments() {
     if (!postId.trim()) return;
@@ -1531,7 +1539,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
         setSendProgress({ done: i, total: ids.length });
         const res = await sendCatchupPrivateRepliesFn({
           data: {
-            postId: postId.trim(),
+            postId: testPostIdOverride.trim() || postId.trim(),
             accountId,
             commentIds: chunk,
             message: message.trim(),
@@ -1787,12 +1795,31 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
             ) && (
               <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
                 Публичный ответ и private reply в Zernio — разные ручки. Если ответ в комментариях
-                уже ушёл, comment ID живой. 2534066 — отказ Instagram на POST …/private-reply (скоуп
-                instagram_business_manage_messages). Холодный DM так не отправить: либо уже открытый
-                чат, либо переподключение Instagram в Zernio с галкой про сообщения. Живые правила
-                Comment-to-DM на других постах идут своим путём и поэтому ещё работают.
+                уже ушёл, comment ID живой. 2534066 (отказ Instagram на POST …/private-reply, скоуп
+                instagram_business_manage_messages) сама Meta объясняет двумя причинами разом и не
+                уточняет какой: недостаточно прав токена — или невалидный comment ID/контекст. Успех
+                публичного ответа не подтверждает и не исключает ни одну из них. Надёжнее всего —
+                переподключить Instagram в Zernio заново с явным подтверждением доступа к
+                сообщениям; не поможет — в поддержку Zernio с этим кодом.
               </p>
             )}
+
+            <div className="space-y-1 border rounded-md p-2 bg-muted/30">
+              <Label className="text-xs">
+                🧪 Диагностика: подставить другой post ID при отправке (необязательно)
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Comment ID остаётся настоящим (сломанного поста), но private-reply уйдёт с этим post
+                ID вместо него — проверить, действительно ли Meta вообще смотрит на post ID в этом
+                вызове, или ограничение только по comment ID/аккаунту.
+              </p>
+              <Input
+                value={testPostIdOverride}
+                onChange={(e) => setTestPostIdOverride(e.target.value)}
+                placeholder="Пусто — обычная отправка без подмены"
+                className="h-8 font-mono text-xs"
+              />
+            </div>
 
             <Button
               type="button"
@@ -1801,7 +1828,9 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
             >
               {sending
                 ? `Отправляю… ${sendProgress ? `${sendProgress.done}/${sendProgress.total}` : ""}`
-                : `Отправить DM выбранным (${selected.size})`}
+                : testPostIdOverride.trim()
+                  ? `🧪 Тест с другим post ID: отправить выбранным (${selected.size})`
+                  : `Отправить DM выбранным (${selected.size})`}
             </Button>
 
             <div className="space-y-2 border-t pt-4">
