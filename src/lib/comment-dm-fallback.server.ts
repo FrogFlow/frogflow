@@ -15,6 +15,22 @@ const MAX_SENDS_PER_RUN = 15;
 /** Сколько логов автоматизации проверять на "Zernio уже отправил" — с запасом на обычный объём срабатываний одного правила. */
 const LOG_CHECK_LIMIT = 200;
 
+/**
+ * Сколько ждать, прежде чем считать зарезервированную (`pending`), но не
+ * дошедшую до статуса `sent`/`failed` строку брошенной прошлым прогоном.
+ *
+ * Найдено на живых данных: 73 строки застряли в `pending` навсегда — прогон,
+ * который их зарезервировал, оборвался (похоже, таймаут функции: у этого
+ * крона не задан maxDuration, а эскалация теперь может делать до 4
+ * последовательных сетевых вызовов на комментарий) до того, как записал
+ * результат. Уникальный индекс (automation_id, comment_id) после этого
+ * навсегда блокировал повтор — эти люди не получили бы ответ уже никогда.
+ * 10 минут — с запасом выше времени одного прогона (крон каждые 15 минут,
+ * см. vercel.json), но короче интервала между прогонами, так что зависшая
+ * строка подхватывается уже следующим тиком.
+ */
+const STALE_PENDING_MS = 10 * 60 * 1000;
+
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
@@ -180,7 +196,38 @@ export async function runCommentDmFallback(): Promise<{
           comment_id: commentId,
           status: "pending",
         });
-        if (reserveError) continue; // уже зарезервировано другим проходом — пропускаем молча
+        if (reserveError) {
+          // Уже зарезервировано — либо другим (свежим) проходом, либо прошлым
+          // прогоном, который оборвался, не дописав результат. Отличаем одно
+          // от другого по возрасту: свежий pending оставляем как есть (не
+          // лезем в гонку с ещё выполняющимся прогоном), а брошенный старше
+          // STALE_PENDING_MS — забираем себе и пробуем реально отправить,
+          // а не молчим о нём вечно.
+          const { data: existing } = await s
+            .from("comment_dm_fallback_sends")
+            .select("status, updated_at")
+            .eq("automation_id", automationId)
+            .eq("comment_id", commentId)
+            .maybeSingle();
+          const isStalePending =
+            existing?.status === "pending" &&
+            now.getTime() - new Date(existing.updated_at).getTime() > STALE_PENDING_MS;
+          if (!isStalePending) continue;
+
+          // .update() над несуществующей строкой "успешен" и без единой
+          // затронутой строки — ошибку тут не проверить, нужен именно
+          // вернувшийся набор: пусто — кто-то другой забрал эту же строку
+          // между select и update прямо сейчас, отступаем.
+          const { data: takeover } = await s
+            .from("comment_dm_fallback_sends")
+            .update({ updated_at: now.toISOString() })
+            .eq("automation_id", automationId)
+            .eq("comment_id", commentId)
+            .eq("status", "pending")
+            .lt("updated_at", new Date(now.getTime() - STALE_PENDING_MS).toISOString())
+            .select("id");
+          if (!takeover?.length) continue;
+        }
 
         sendsThisRun++;
         const result = await sendCommentPrivateReply(
