@@ -176,14 +176,19 @@ describe("commentPrivateReplyBlockReason", () => {
 });
 
 describe("explainInstagramPrivateReplyError", () => {
-  it("2534066 отделяет private reply от публичного ответа в комментариях", () => {
+  it("2534066 отделяет private reply от публичного ответа в комментариях, не выбирая одну причину", () => {
     const explained = explainInstagramPrivateReplyError(
       'Zernio API Error 403: {"error":"Please check if access token has enough IG permissions granular scopes for IG private reply. Or, verify if the comment ID is valid","error_subcode":2534066}',
     );
     expect(explained).toMatch(/2534066/);
     expect(explained).toMatch(/instagram_business_manage_messages/);
     expect(explained).toMatch(/публичн/i);
-    expect(explained).not.toMatch(/невалидный comment ID/i);
+    // Раньше текст уверенно называл единственную причину ("холодный DM") — эта
+    // гипотеза опровергнута живым случаем (аккаунт с уже открытым чатом
+    // получил тот же код), поэтому текст обязан признавать обе версии Meta,
+    // а не настаивать на одной.
+    expect(explained).toMatch(/comment ID/);
+    expect(explained).not.toMatch(/холодный DM этим методом Instagram не принимает/i);
   });
 
   it("окно 7 дней и повторный private reply получают короткий текст", () => {

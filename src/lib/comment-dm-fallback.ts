@@ -117,9 +117,17 @@ export function commentPrivateReplyBlockReason(
 
 /**
  * Переводит сырой отказ Zernio/Meta по private-reply в текст, который можно
- * показать оператору. По доке Zernio публичный ответ и private reply — разные
- * вызовы и разные скоупы Instagram Login. Живой тест Educational (сент. 2026):
- * публичный ответ на тот же comment ID ушёл, DM поймал 2534066.
+ * показать оператору.
+ *
+ * ВАЖНО про 2534066: раньше здесь было уверенное объяснение "это холодный DM
+ * без предыдущей переписки" — по единственному живому тесту (Educational,
+ * сент. 2026), где публичный ответ на тот же comment ID прошёл, а DM упал с
+ * этой ошибкой. Гипотеза не пережила следующую проверку: тот же код вышел и
+ * на аккаунте, у которого переписка с бизнесом уже была. Сама Meta в тексте
+ * ошибки называет ДВЕ равнозначные причины (права токена ИЛИ невалидный
+ * comment ID) и не говорит, какая именно — мы не знаем этого точнее нее, и
+ * выдавать одну из версий за подтверждённый факт больше нельзя. Этого кода
+ * нет ни в документации Zernio, ни в публичной документации Meta.
  */
 export function explainInstagramPrivateReplyError(raw: string): string {
   const text = raw.toLowerCase();
@@ -129,15 +137,16 @@ export function explainInstagramPrivateReplyError(raw: string): string {
     text.includes("comment id is valid")
   ) {
     return (
-      "Instagram отклонил именно private reply / первый DM (код 2534066). " +
-      "По доке Zernio это другой вызов, чем ответ в комментариях: " +
-      "POST /inbox/comments/{postId}/{commentId}/private-reply и скоуп " +
-      "instagram_business_manage_messages. Публичный ответ идёт через " +
-      "POST /inbox/comments/{postId} и скоуп instagram_business_manage_comments — " +
-      "если он уже ушёл, comment ID живой, дело не в «не том посте» и не в возрасте. " +
-      "Холодный DM этим методом Instagram не принимает. Напишите в уже открытый чат " +
-      "или переподключите Instagram в Zernio, не снимая галку про сообщения. " +
-      "Живые правила Comment-to-DM идут своим путём — поэтому на других постах DM ещё приходят."
+      "Instagram отклонил private reply (код 2534066). Meta в самом тексте ошибки " +
+      "называет две возможные причины разом и не уточняет, какая верна: недостаточно " +
+      "прав токена на private reply (скоуп instagram_business_manage_messages) — или " +
+      "невалидный comment ID/контекст. Публичный ответ в комментариях идёт другим вызовом " +
+      "и скоупом (instagram_business_manage_comments), поэтому его успех НЕ подтверждает " +
+      "и не исключает ни одну из этих причин. Этот код не описан ни у Zernio, ни у Meta. " +
+      "Самое надёжное действие — переподключить Instagram в Zernio заново (полный вход " +
+      "через Meta, явно подтвердив доступ к сообщениям на экране согласия, а не быстрым " +
+      "«Продолжить»). Если не поможет — писать в поддержку Zernio с этим кодом, comment ID " +
+      "и post ID: с их стороны видно то, чего не видно нам."
     );
   }
   if (text.includes("2534025") || text.includes("older than") || /\b7\s*day/.test(text)) {
