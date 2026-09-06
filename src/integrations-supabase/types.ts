@@ -286,9 +286,10 @@ export type Database = {
       // же причине, что и у остальных таблиц этого файла: миграция уже
       // применена к живой базе, а sync-db-types.mjs подтягивает только уже
       // известные ему таблицы при следующем запуске.
-      // MIGRATION-64 (comment_reply_status/comment_reply_error) — применена
-      // к живой базе. MIGRATION-65 (alt_channel_status/alt_channel_error) —
-      // не применена в этой среде (нет доступа к боевой БД).
+      // MIGRATION-64 (comment_reply_status/comment_reply_error) и MIGRATION-65
+      // (alt_channel_status/alt_channel_error) — применены к живой базе.
+      // MIGRATION-66 (unresolved_prompt_status/unresolved_prompt_error) — не
+      // применена в этой среде (нет доступа к боевой БД).
       comment_dm_fallback_sends: {
         Row: {
           id: string;
@@ -302,6 +303,8 @@ export type Database = {
           comment_reply_error: string | null;
           alt_channel_status: string | null;
           alt_channel_error: string | null;
+          unresolved_prompt_status: string | null;
+          unresolved_prompt_error: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -317,6 +320,8 @@ export type Database = {
           comment_reply_error?: string | null;
           alt_channel_status?: string | null;
           alt_channel_error?: string | null;
+          unresolved_prompt_status?: string | null;
+          unresolved_prompt_error?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -332,12 +337,55 @@ export type Database = {
           comment_reply_error?: string | null;
           alt_channel_status?: string | null;
           alt_channel_error?: string | null;
+          unresolved_prompt_status?: string | null;
+          unresolved_prompt_error?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Relationships: [
           {
             foreignKeyName: "comment_dm_fallback_sends_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // MIGRATION-66. Настройка на правило Comment-to-DM (не поле у самого
+      // Zernio-правила — оно живёт у нас): просить написать в директ первым
+      // публичным ответом, если ни private-reply, ни альт-канал не доставили
+      // DM. Тенантская таблица (RLS по current_bot_id(), не платформенная) —
+      // не применена к живой базе (нет доступа), ручной патч по той же
+      // причине, что и у остальных таблиц этого файла.
+      comment_automation_settings: {
+        Row: {
+          bot_id: string;
+          automation_id: string;
+          unresolved_prompt_enabled: boolean;
+          unresolved_prompt_message: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          bot_id: string;
+          automation_id: string;
+          unresolved_prompt_enabled?: boolean;
+          unresolved_prompt_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          bot_id?: string;
+          automation_id?: string;
+          unresolved_prompt_enabled?: boolean;
+          unresolved_prompt_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "comment_automation_settings_bot_id_fkey";
             columns: ["bot_id"];
             isOneToOne: false;
             referencedRelation: "bots";

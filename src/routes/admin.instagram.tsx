@@ -46,6 +46,8 @@ import {
   sendCatchupCommentRepliesFn,
   getAutomationLogsFn,
   resolveZernioPostIdFn,
+  getCommentAutomationSettingsFn,
+  setCommentAutomationSettingsFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -78,6 +80,7 @@ import {
   Bot,
   Inbox,
   UserCircle2,
+  MessageSquareWarning,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import {
@@ -1971,6 +1974,47 @@ function AdminInstagramPage() {
     queryKey: ["ig_dashboard"],
     queryFn: () => getInstagramDashboardFn(),
   });
+
+  // Настройка "попросить написать в директ первым", если резервная отправка
+  // (comment-dm-fallback.server.ts) не смогла доставить DM ни одним путём —
+  // не поле у самой Zernio-автоматизации (это наша логика, MIGRATION-66),
+  // поэтому своя панель и своё сохранение, отдельно от handleSaveAutomation.
+  const [unresolvedPromptAutomationId, setUnresolvedPromptAutomationId] = useState<string | null>(
+    null,
+  );
+  const [unresolvedPromptEnabled, setUnresolvedPromptEnabled] = useState(false);
+  const [unresolvedPromptMessage, setUnresolvedPromptMessage] = useState("");
+  const [unresolvedPromptSaving, setUnresolvedPromptSaving] = useState(false);
+  const unresolvedPromptQuery = useQuery({
+    queryKey: ["ig_unresolved_prompt_settings", unresolvedPromptAutomationId],
+    queryFn: () =>
+      getCommentAutomationSettingsFn({ data: { automationId: unresolvedPromptAutomationId! } }),
+    enabled: !!unresolvedPromptAutomationId,
+  });
+  useEffect(() => {
+    if (unresolvedPromptQuery.data) {
+      setUnresolvedPromptEnabled(unresolvedPromptQuery.data.unresolvedPromptEnabled);
+      setUnresolvedPromptMessage(unresolvedPromptQuery.data.unresolvedPromptMessage);
+    }
+  }, [unresolvedPromptQuery.data]);
+  async function onSaveUnresolvedPrompt() {
+    if (!unresolvedPromptAutomationId) return;
+    setUnresolvedPromptSaving(true);
+    try {
+      await setCommentAutomationSettingsFn({
+        data: {
+          automationId: unresolvedPromptAutomationId,
+          unresolvedPromptEnabled,
+          unresolvedPromptMessage,
+        },
+      });
+      toast.success("Сохранено");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setUnresolvedPromptSaving(false);
+    }
+  }
   const directBotSettingsQuery = useQuery({
     queryKey: ["ig_direct_bot_settings"],
     queryFn: () => getInstagramDirectBotSettingsFn(),
@@ -3326,6 +3370,19 @@ function AdminInstagramPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8"
+                              title="Если DM не доставится ни одним способом — попросить написать в директ первым публичным ответом"
+                              onClick={() =>
+                                setUnresolvedPromptAutomationId((prev) =>
+                                  prev === auto.id ? null : (auto.id ?? null),
+                                )
+                              }
+                            >
+                              <MessageSquareWarning className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
                               onClick={() => handleEditAutomation(auto)}
                             >
                               <Settings2 className="w-4 h-4" />
@@ -3485,6 +3542,44 @@ function AdminInstagramPage() {
                                 )}
                               </>
                             ) : null}
+                          </div>
+                        )}
+
+                        {unresolvedPromptAutomationId === auto.id && (
+                          <div className="mt-3 border-t pt-3 space-y-2">
+                            <p className="text-[11px] text-muted-foreground">
+                              Если ни родная автоматизация, ни резерв, ни альт-канал не смогли
+                              доставить DM — публичный ответ работает всегда (другой вызов у Zernio,
+                              не зависит от того же ограничения). Включите, чтобы в этом случае
+                              человеку публично предложили написать в директ первым.
+                            </p>
+                            {unresolvedPromptQuery.isLoading ? (
+                              <p className="text-xs text-muted-foreground">Загрузка…</p>
+                            ) : (
+                              <>
+                                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                                  <Checkbox
+                                    checked={unresolvedPromptEnabled}
+                                    onCheckedChange={(v) => setUnresolvedPromptEnabled(!!v)}
+                                  />
+                                  Просить написать в директ, если ничего не доставилось
+                                </label>
+                                <Textarea
+                                  value={unresolvedPromptMessage}
+                                  onChange={(e) => setUnresolvedPromptMessage(e.target.value)}
+                                  rows={2}
+                                  placeholder="Например: Не получается написать вам в директ — напишите нам первым, пожалуйста! 💌"
+                                  className="text-xs"
+                                />
+                                <Button
+                                  size="sm"
+                                  onClick={onSaveUnresolvedPrompt}
+                                  disabled={unresolvedPromptSaving}
+                                >
+                                  {unresolvedPromptSaving ? "Сохранение…" : "Сохранить"}
+                                </Button>
+                              </>
+                            )}
                           </div>
                         )}
                       </CardContent>

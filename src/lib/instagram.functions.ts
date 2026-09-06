@@ -878,3 +878,51 @@ export const getInstagramContactProfilesFn = createServerFn({ method: "POST" })
     }
     return { profiles };
   });
+
+/**
+ * Настройка на правило Comment-to-DM: просить написать в директ первым
+ * публичным ответом, если резервная отправка (comment-dm-fallback.server.ts)
+ * не смогла доставить DM ни одним путём. Не поле у самой Zernio-автоматизации
+ * (это наша логика, не их) — своя тенантская таблица (MIGRATION-66).
+ */
+export const getCommentAutomationSettingsFn = createServerFn({ method: "GET" })
+  .validator((d: unknown) => z.object({ automationId: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { data: row, error } = await s
+      .from("comment_automation_settings")
+      .select("unresolved_prompt_enabled, unresolved_prompt_message")
+      .eq("bot_id", requireBotId())
+      .eq("automation_id", data.automationId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return {
+      unresolvedPromptEnabled: row?.unresolved_prompt_enabled ?? false,
+      unresolvedPromptMessage: row?.unresolved_prompt_message ?? "",
+    };
+  });
+
+export const setCommentAutomationSettingsFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        automationId: z.string().min(1),
+        unresolvedPromptEnabled: z.boolean(),
+        unresolvedPromptMessage: z.string().max(500),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const s = await db();
+    const { error } = await s.from("comment_automation_settings").upsert({
+      bot_id: requireBotId(),
+      automation_id: data.automationId,
+      unresolved_prompt_enabled: data.unresolvedPromptEnabled,
+      unresolved_prompt_message: data.unresolvedPromptMessage.trim() || null,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true as const };
+  });

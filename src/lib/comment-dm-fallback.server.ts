@@ -327,6 +327,37 @@ export async function runCommentDmFallback(): Promise<{
           commentReplyError = replyResult.ok ? null : (replyResult.error?.slice(0, 500) ?? null);
         }
 
+        // Последний рубеж: ничего не доставилось ни в один диалог — но
+        // публичный ответ работает всегда (другой вызов/scope у Zernio/Meta,
+        // не зависит от того, что сейчас падает у private-reply). Настройка
+        // на самом правиле (MIGRATION-66, не поле у Zernio — это наша
+        // логика): если продавец включил и задал текст, просим человека
+        // написать в директ первым — это открывает окно и делает следующую
+        // попытку (в т.ч. HUMAN_AGENT) уже не холодной.
+        let unresolvedPromptStatus: "skipped" | "sent" | "failed" = "skipped";
+        let unresolvedPromptError: string | null = null;
+        if (!dmDeliveredSomehow) {
+          const { data: settings } = await s
+            .from("comment_automation_settings")
+            .select("unresolved_prompt_enabled, unresolved_prompt_message")
+            .eq("bot_id", botId)
+            .eq("automation_id", automationId)
+            .maybeSingle();
+          const promptText = settings?.unresolved_prompt_message?.trim();
+          if (settings?.unresolved_prompt_enabled && promptText) {
+            const promptResult = await postCommentReply(
+              postId,
+              commentId,
+              automation.accountId,
+              promptText,
+            );
+            unresolvedPromptStatus = promptResult.ok ? "sent" : "failed";
+            unresolvedPromptError = promptResult.ok
+              ? null
+              : (promptResult.error?.slice(0, 500) ?? null);
+          }
+        }
+
         await s
           .from("comment_dm_fallback_sends")
           .update({
@@ -336,6 +367,8 @@ export async function runCommentDmFallback(): Promise<{
             alt_channel_error: altChannelError,
             comment_reply_status: commentReplyStatus,
             comment_reply_error: commentReplyError,
+            unresolved_prompt_status: unresolvedPromptStatus,
+            unresolved_prompt_error: unresolvedPromptError,
           })
           .eq("bot_id", botId)
           .eq("automation_id", automationId)
@@ -344,9 +377,9 @@ export async function runCommentDmFallback(): Promise<{
         if (!dmDeliveredSomehow) {
           await notifyAdminsCommentUnresolved(
             `⚠️ Комментарий под правилом «${escapeHtml(automation.name)}» не получил ответа ` +
-              `ни в директ (ни родная автоматизация, ни резерв, ни существующий диалог), ни в ` +
-              `комментариях — автоматика больше ничего сделать не может. Ответьте вручную ` +
-              `(comment ID ${escapeHtml(commentId)}).`,
+              `ни в директ (ни родная автоматизация, ни резерв, ни существующий диалог)` +
+              `${unresolvedPromptStatus === "sent" ? " — попросили написать в директ первым публичным ответом" : ""}. ` +
+              `Ответьте вручную (comment ID ${escapeHtml(commentId)}).`,
           );
         }
       }
