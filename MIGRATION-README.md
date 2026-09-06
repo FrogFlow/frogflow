@@ -292,3 +292,13 @@ RLS без единой политики — как у `subscription_payments`, 
 `new → qualified/rejected → contacted → replied → hot → converted/lost`;
 `score`/`score_reason`/`draft_message` — совет от ИИ (Anthropic), стадию
 всегда двигает оператор вручную.
+
+**64** (`MIGRATION-64-comment-reply-escalation.sql`) — не применена в этой
+среде (нет доступа к боевой БД). Добавляет `comment_reply_status`/
+`comment_reply_error` в `comment_dm_fallback_sends` (MIGRATION-62):
+резервный крон (`comment-dm-fallback.server.ts`), если и наш собственный
+private-reply не прошёл, теперь пробует публичный ответ в комментариях тем
+же проходом (другой вызов/scope у Zernio — может пройти, когда DM не
+проходит нигде), а если и это не помогло — пишет продавцу в Telegram
+(`admin_chat_id`), что комментарий остался без ответа и нужно вмешаться
+руками.

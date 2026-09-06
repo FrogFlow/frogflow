@@ -3,6 +3,8 @@ import {
   commentAgeVerdict,
   commentPrivateReplyBlockReason,
 } from "./comment-dm-fallback";
+import { tg } from "./telegram.server";
+import { escapeHtml } from "./vip-bot.server";
 
 /** Потолок правил за один проход крона — по числу их обычно не больше ~20-30 на аккаунт. */
 const MAX_AUTOMATIONS_PER_RUN = 20;
@@ -16,6 +18,36 @@ const LOG_CHECK_LIMIT = 200;
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
+}
+
+/**
+ * Тот же паттерн, что notifyAdminsAboutDeliveryIssue в orders.server.ts —
+ * написать продавцу в Telegram (admin_chat_id), когда ни один автоматический
+ * путь не сработал и дальше есть только ручной ответ. Не общий импорт из
+ * orders.server.ts намеренно: там функция не экспортирована, а дублировать
+ * этот маленький хелпер — тот же приём, что и у db() в каждом *.server.ts.
+ */
+async function notifyAdminsCommentUnresolved(text: string): Promise<void> {
+  const s = await db();
+  const { data: setting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", "admin_chat_id")
+    .maybeSingle();
+
+  const raw = setting?.value?.trim();
+  if (!raw) return;
+
+  for (const chatId of raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)) {
+    try {
+      await tg("sendMessage", { chat_id: chatId, text, parse_mode: "HTML" });
+    } catch (e) {
+      console.error("[comment-dm-fallback] notifyAdminsCommentUnresolved failed", e);
+    }
+  }
 }
 
 /**
@@ -65,6 +97,7 @@ export async function runCommentDmFallback(): Promise<{
     listInstagramComments,
     getCommentAutomationLogs,
     sendCommentPrivateReply,
+    postCommentReply,
   } = await import("./zernio.server");
 
   const { automations } = await listCommentAutomations();
@@ -95,6 +128,16 @@ export async function runCommentDmFallback(): Promise<{
       const sentByZernio = new Set(
         logs
           .filter((row) => String(row.status ?? "") === "sent")
+          .map((row) => String(row.commentId ?? "")),
+      );
+      // По доке Zernio: commentReplyStatus "skipped", если публичный ответ не
+      // настроен ИЛИ если DM не прошёл — то есть ровно та эскалация, которую
+      // мы сейчас достраиваем, у Zernio своей нет вовсе. Проверяем только
+      // "sent", чтобы не постить дубликат публичного ответа, если Zernio его
+      // всё же отправил (skipped/failed для нас не повод молчать).
+      const commentReplySentByZernio = new Set(
+        logs
+          .filter((row) => String(row.commentReplyStatus ?? "") === "sent")
           .map((row) => String(row.commentId ?? "")),
       );
 
@@ -145,15 +188,46 @@ export async function runCommentDmFallback(): Promise<{
         if (result.ok) sent++;
         else failed++;
 
+        // Эскалация: наш собственный private-reply тоже не прошёл — это уже
+        // второй провал (родная автоматизация Zernio + наш резерв), а не
+        // разовая случайность. Публичный ответ — другой вызов и scope у
+        // Zernio/Meta (см. живой случай: паблик ушёл, DM упал с 2534066),
+        // поэтому у него реальный шанс пройти там, где DM не прошёл ни разу.
+        // Если и это не помогло (или отвечать в комментариях у правила не
+        // настроено) — дальше автоматически сделать нечего, зовём продавца.
+        let commentReplyStatus: "skipped" | "sent" | "failed" = "skipped";
+        let commentReplyError: string | null = null;
+        const commentReplyText = automation.commentReply?.trim();
+        if (!result.ok && commentReplyText && !commentReplySentByZernio.has(commentId)) {
+          const replyResult = await postCommentReply(
+            postId,
+            commentId,
+            automation.accountId,
+            commentReplyText,
+          );
+          commentReplyStatus = replyResult.ok ? "sent" : "failed";
+          commentReplyError = replyResult.ok ? null : (replyResult.error?.slice(0, 500) ?? null);
+        }
+
         await s
           .from("comment_dm_fallback_sends")
           .update({
             status: result.ok ? "sent" : "failed",
             error: result.error?.slice(0, 500) ?? null,
+            comment_reply_status: commentReplyStatus,
+            comment_reply_error: commentReplyError,
           })
           .eq("bot_id", botId)
           .eq("automation_id", automationId)
           .eq("comment_id", commentId);
+
+        if (!result.ok && commentReplyStatus !== "sent") {
+          await notifyAdminsCommentUnresolved(
+            `⚠️ Комментарий под правилом «${escapeHtml(automation.name)}» не получил ни ` +
+              `личного, ни публичного ответа — ни родная автоматизация, ни резерв не сработали. ` +
+              `Ответьте вручную под постом (comment ID ${escapeHtml(commentId)}).`,
+          );
+        }
       }
     } catch (e) {
       console.error(`[comment-dm-fallback] правило ${automationId} не проверено`, e);

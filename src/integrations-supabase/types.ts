@@ -286,6 +286,8 @@ export type Database = {
       // же причине, что и у остальных таблиц этого файла: миграция уже
       // применена к живой базе, а sync-db-types.mjs подтягивает только уже
       // известные ему таблицы при следующем запуске.
+      // MIGRATION-64 добавила comment_reply_status/comment_reply_error —
+      // не применена в этой среде (нет доступа к боевой БД).
       comment_dm_fallback_sends: {
         Row: {
           id: string;
@@ -295,6 +297,8 @@ export type Database = {
           comment_id: string;
           status: string;
           error: string | null;
+          comment_reply_status: string | null;
+          comment_reply_error: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -306,6 +310,8 @@ export type Database = {
           comment_id: string;
           status?: string;
           error?: string | null;
+          comment_reply_status?: string | null;
+          comment_reply_error?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -317,6 +323,8 @@ export type Database = {
           comment_id?: string;
           status?: string;
           error?: string | null;
+          comment_reply_status?: string | null;
+          comment_reply_error?: string | null;
           created_at?: string;
           updated_at?: string;
         };
