@@ -284,14 +284,11 @@ RLS без единой политики — как у `subscription_payments`, 
 потерялась `fulfillment_at`. Корневую причину (non-null assertion в
 `zernio-bot.server.ts`) эта миграция не устраняет.
 
-**63** (`MIGRATION-63-sales-leads.sql`) — не применена в этой среде (нет
-доступа к боевой БД). Таблица `sales_leads` — лиды для собственного отдела
-продаж FrogFlow (панель `/operator/leads`), платформенная, без `bot_id`,
-тем же приёмом, что `operator_settings`/`subscription_invoices`: RLS без
-единой политики, видна только `service_role` панели оператора. Пайплайн
-`new → qualified/rejected → contacted → replied → hot → converted/lost`;
-`score`/`score_reason`/`draft_message` — совет от ИИ (Anthropic), стадию
-всегда двигает оператор вручную.
+**63** (`MIGRATION-63-sales-leads.sql`) — **применена** на боевой базе
+(таблица `sales_leads` уже принимала вставки). Лиды отдела продаж FrogFlow
+(панель `/operator/leads`), платформенная, без `bot_id`, RLS без политик,
+видна только `service_role`. Пайплайн стадий
+`new → qualified/rejected → contacted → replied → hot → converted/lost`.
 
 **64** (`MIGRATION-64-comment-reply-escalation.sql`) — **применена** на
 боевой базе (подтверждено пользователем 2026-09-06). Добавляет
@@ -311,3 +308,10 @@ ID, поэтому не наследует то, из-за чего падает
 только когда этот альт-канал реально доставил DM — иначе он рисковал
 публично соврать «мы написали вам в директ», когда ни один DM не ушёл.
 Если не доставилось нигде — сообщение продавцу в Telegram, как и раньше.
+
+**67** (`MIGRATION-67-sales-pipeline.sql`) — очередь касаний на `sales_leads`
+(`next_action` / `next_action_at` / `follow_up_count` / черновик дожима) и
+таблица `sales_lead_events`. Нужна крону `/api/operator-cron/leads` и кнопкам
+«Найти лидов» / «Прогнать воронку» в панели: без колонок прогон не знает,
+кому писать сегодня.
+

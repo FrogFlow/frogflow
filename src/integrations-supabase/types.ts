@@ -393,10 +393,8 @@ export type Database = {
           },
         ];
       };
-      // MIGRATION-63. Лиды для собственного отдела продаж FrogFlow (панель
-      // /operator/leads) — не применена к живой базе (нет доступа), ручной
-      // патч по той же причине, что и у comment_dm_fallback_sends выше:
-      // sync-db-types.mjs подтягивает только уже известные ему таблицы.
+      // MIGRATION-63 + MIGRATION-67. Лиды отдела продаж FrogFlow
+      // (/operator/leads). Ручной патч: sync-db-types.mjs не знает эти таблицы.
       sales_leads: {
         Row: {
           id: string;
@@ -419,6 +417,14 @@ export type Database = {
           created_by: string | null;
           contacted_at: string | null;
           replied_at: string | null;
+          next_action: string | null;
+          next_action_at: string | null;
+          follow_up_count: number;
+          last_touch_at: string | null;
+          outreach_channel: string | null;
+          follow_up_draft: string | null;
+          auto_processed_at: string | null;
+          lost_reason: string | null;
         };
         Insert: {
           id?: string;
@@ -441,6 +447,14 @@ export type Database = {
           created_by?: string | null;
           contacted_at?: string | null;
           replied_at?: string | null;
+          next_action?: string | null;
+          next_action_at?: string | null;
+          follow_up_count?: number;
+          last_touch_at?: string | null;
+          outreach_channel?: string | null;
+          follow_up_draft?: string | null;
+          auto_processed_at?: string | null;
+          lost_reason?: string | null;
         };
         Update: {
           id?: string;
@@ -463,6 +477,43 @@ export type Database = {
           created_by?: string | null;
           contacted_at?: string | null;
           replied_at?: string | null;
+          next_action?: string | null;
+          next_action_at?: string | null;
+          follow_up_count?: number;
+          last_touch_at?: string | null;
+          outreach_channel?: string | null;
+          follow_up_draft?: string | null;
+          auto_processed_at?: string | null;
+          lost_reason?: string | null;
+        };
+        Relationships: [];
+      };
+      // MIGRATION-67. Журнал касаний воронки продаж — та же изоляция, что
+      // sales_leads: RLS без политик, видит только service_role панели.
+      sales_lead_events: {
+        Row: {
+          id: string;
+          lead_id: string;
+          created_at: string;
+          actor: string;
+          kind: string;
+          detail: string | null;
+        };
+        Insert: {
+          id?: string;
+          lead_id: string;
+          created_at?: string;
+          actor?: string;
+          kind: string;
+          detail?: string | null;
+        };
+        Update: {
+          id?: string;
+          lead_id?: string;
+          created_at?: string;
+          actor?: string;
+          kind?: string;
+          detail?: string | null;
         };
         Relationships: [];
       };

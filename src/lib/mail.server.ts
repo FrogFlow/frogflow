@@ -150,3 +150,29 @@ export async function sendOrderMaterialsEmail(params: {
     return { ok: false, error: e instanceof Error ? e.message : "Не удалось отправить письмо." };
   }
 }
+
+export async function sendPlainTextMail(opts: {
+  to: string;
+  subject: string;
+  text: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isMailConfigured()) {
+    return { ok: false, error: "SMTP на этом деплое не настроен." };
+  }
+  try {
+    const transport = createTransport();
+    await transport.sendMail({
+      from: fromAddress(),
+      to: opts.to,
+      subject: opts.subject,
+      text: opts.text,
+    });
+    return { ok: true };
+  } catch (e) {
+    logger.error("mail.send_plain_failed", {
+      to: maskEmail(opts.to),
+      err: e,
+    });
+    return { ok: false, error: e instanceof Error ? e.message : "Не удалось отправить письмо." };
+  }
+}

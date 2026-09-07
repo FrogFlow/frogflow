@@ -13,9 +13,20 @@ import {
   deleteLeadFn,
   scoreLeadFn,
   generateDraftFn,
-  leadsAiConfiguredFn,
+  huntLeadsFn,
+  processPipelineFn,
+  markContactedFn,
+  markFollowUpSentFn,
+  pipelineStatusFn,
+  savePipelineSettingsFn,
 } from "@/lib/operator/leads.functions";
 import type { LeadStage, SalesLead } from "@/lib/operator/leads.server";
+import {
+  instagramHref,
+  mailtoHref,
+  pickOutreachChannel,
+  whatsappHref,
+} from "@/lib/operator/leads-pipeline";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
@@ -48,21 +59,11 @@ const STAGE_LABEL: Record<
   lost: { text: "Проигран", variant: "destructive" },
 };
 
-// Object.keys(STAGE_LABEL) вместо импорта LEAD_STAGES из leads.server.ts —
-// импорт значения (не типа) из *.server.* модуля в клиентский код запрещён
-// tanstack-start:import-protection (см. build), а STAGE_LABEL типизирован
-// как Record<LeadStage, ...>, так что ключи по-прежнему все 8 стадий.
 const LEAD_STAGES = Object.keys(STAGE_LABEL) as LeadStage[];
 
 function websiteHref(url: string): string {
   const trimmed = url.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
-function instagramHref(handle: string): string {
-  const name = handle.trim().replace(/^@/, "");
-  if (/^https?:\/\//i.test(handle.trim())) return handle.trim();
-  return `https://www.instagram.com/${name}/`;
 }
 
 function telHref(phone: string): string {
@@ -80,6 +81,18 @@ function LeadLink({ href, children }: { href: string; children: string }) {
       {children}
     </a>
   );
+}
+
+function outreachHref(lead: SalesLead): string | null {
+  const channel = pickOutreachChannel(lead);
+  const text = lead.follow_up_draft || lead.draft_message || "";
+  if (channel === "whatsapp" && lead.phone) return whatsappHref(lead.phone, text);
+  if (channel === "email" && lead.email) {
+    return mailtoHref(lead.email, `FrogFlow — ${lead.business_name}`, text);
+  }
+  if (channel === "instagram" && lead.instagram_handle) return instagramHref(lead.instagram_handle);
+  if (lead.phone) return telHref(lead.phone);
+  return null;
 }
 
 function AddLeadForm({ onAdded }: { onAdded: () => void }) {
@@ -134,8 +147,8 @@ function AddLeadForm({ onAdded }: { onAdded: () => void }) {
 
   if (!open) {
     return (
-      <Button size="sm" onClick={() => setOpen(true)}>
-        + Добавить лида
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        + Добавить вручную
       </Button>
     );
   }
@@ -210,6 +223,8 @@ function LeadCard({
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState(lead.notes ?? "");
   const label = STAGE_LABEL[lead.stage];
+  const href = outreachHref(lead);
+  const channel = pickOutreachChannel(lead);
 
   async function onScore() {
     setBusy(true);
@@ -273,15 +288,35 @@ function LeadCard({
     }
   }
 
-  async function onCopyDraft() {
-    if (!lead.draft_message) return;
+  async function onCopyDraft(text: string) {
     try {
-      await navigator.clipboard.writeText(lead.draft_message);
+      await navigator.clipboard.writeText(text);
       toast.success("Скопировано");
     } catch {
       toast.error("Не удалось скопировать — выделите текст вручную");
     }
   }
+
+  async function onWrote() {
+    setBusy(true);
+    try {
+      if (lead.follow_up_draft && lead.stage === "contacted") {
+        await markFollowUpSentFn({ data: { id: lead.id } });
+      } else {
+        await markContactedFn({ data: { id: lead.id, channel } });
+      }
+      onChanged();
+      toast.success("Касание записано, следующий шаг в очереди");
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const message = lead.follow_up_draft && lead.stage === "contacted"
+    ? lead.follow_up_draft
+    : lead.draft_message;
 
   return (
     <div className="py-3 space-y-2">
@@ -291,6 +326,9 @@ function LeadCard({
         {lead.city && <span className="text-muted-foreground">· {lead.city}</span>}
         <Badge variant={label.variant}>{label.text}</Badge>
         {lead.score !== null && <Badge variant="outline">Оценка: {lead.score}/100</Badge>}
+        {lead.next_action && (
+          <Badge variant="outline">Дальше: {lead.next_action}</Badge>
+        )}
       </div>
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         {lead.website_url && (
@@ -334,18 +372,42 @@ function LeadCard({
           {lead.score_reason}
         </p>
       )}
-      {lead.draft_message && (
+      {message && (
         <div className="bg-muted/40 rounded-md p-2 space-y-1">
           <p className="text-xs text-muted-foreground">
-            Черновик письма (проверьте перед отправкой):
+            {lead.follow_up_draft && lead.stage === "contacted"
+              ? "Дожим (проверьте перед отправкой):"
+              : "Черновик письма (проверьте перед отправкой):"}
           </p>
-          <p className="text-sm whitespace-pre-wrap">{lead.draft_message}</p>
-          <Button size="sm" variant="outline" onClick={onCopyDraft}>
+          <p className="text-sm whitespace-pre-wrap">{message}</p>
+          <Button size="sm" variant="outline" onClick={() => onCopyDraft(message)}>
             Скопировать
           </Button>
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
+        {href && (lead.stage === "qualified" || lead.stage === "new" || lead.stage === "contacted") && (
+          <Button size="sm" asChild disabled={busy}>
+            <a href={href} target="_blank" rel="noopener noreferrer" onClick={() => void onWrote()}>
+              {lead.stage === "contacted" ? "Дожать и отметить" : "Написать и отметить"}
+            </a>
+          </Button>
+        )}
+        {lead.stage === "contacted" && (
+          <Button size="sm" variant="outline" onClick={() => onStage("replied")} disabled={busy}>
+            Ответил
+          </Button>
+        )}
+        {lead.stage === "replied" && (
+          <Button size="sm" variant="outline" onClick={() => onStage("hot")} disabled={busy}>
+            Горячий
+          </Button>
+        )}
+        {(lead.stage === "hot" || lead.stage === "replied") && (
+          <Button size="sm" onClick={() => onStage("converted")} disabled={busy}>
+            Закрыли сделку
+          </Button>
+        )}
         <Button size="sm" variant="outline" onClick={onScore} disabled={busy || !aiConfigured}>
           {lead.score === null ? "Оценить (ИИ)" : "Переоценить (ИИ)"}
         </Button>
@@ -395,12 +457,14 @@ function OperatorLeadsPage() {
   const qc = useQueryClient();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [huntQuery, setHuntQuery] = useState("");
+  const [busy, setBusy] = useState(false);
   const active = FILTERS.find((f) => f.key === filter) ?? FILTERS[0]!;
 
   const funnel = useQuery({ queryKey: ["operator_leads_funnel"], queryFn: () => funnelCountsFn() });
-  const ai = useQuery({
-    queryKey: ["operator_leads_ai"],
-    queryFn: () => leadsAiConfiguredFn(),
+  const status = useQuery({
+    queryKey: ["operator_leads_pipeline"],
+    queryFn: () => pipelineStatusFn(),
   });
   const leads = useQuery({
     queryKey: ["operator_leads", active.stage, search],
@@ -411,19 +475,67 @@ function OperatorLeadsPage() {
   function onChanged() {
     qc.invalidateQueries({ queryKey: ["operator_leads"] });
     qc.invalidateQueries({ queryKey: ["operator_leads_funnel"] });
+    qc.invalidateQueries({ queryKey: ["operator_leads_pipeline"] });
   }
 
   const counts = funnel.data;
   const list = leads.data ?? [];
+  const pipe = status.data;
+  const due = pipe?.due ?? [];
+  const aiConfigured = pipe?.aiConfigured !== false;
+
+  async function onHunt() {
+    setBusy(true);
+    try {
+      const r = await huntLeadsFn({ data: { query: huntQuery.trim() || null } });
+      if (r.error) toast.error(r.error);
+      else {
+        toast.success(
+          `Поиск «${r.query}»: ${r.inserted} новых, ${r.skippedDup} уже были (${r.backend}, ${r.hits} сниппетов)`,
+        );
+      }
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onProcess() {
+    setBusy(true);
+    try {
+      const r = await processPipelineFn();
+      toast.success(
+        `Воронка: оценено ${r.scored}, квалифицировано ${r.qualified}, писем ${r.drafted}, дожимов ${r.followUps}, проиграно ${r.lost}`,
+      );
+      if (r.errors.length) toast.warning(r.errors.slice(0, 3).join("; "));
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onToggleHunt(on: boolean) {
+    try {
+      await savePipelineSettingsFn({ data: { autoHunt: on } });
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl font-semibold">Лиды</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Оценка и черновик письма — кнопки на карточке, здесь же в панели. Находите лидов и
-          двигаете стадию вы; отправку письма проверяете глазами. Стадии: новый →
-          квалифицирован/отклонён → написали → ответил → горячий → клиент/проигран.
+          Поиск, оценка и черновик идут сами (кнопка или ночной крон). Написать в WhatsApp или
+          Direct нужно вам — один клик открывает чат с текстом и ставит «Написали». Дожим через{" "}
+          {pipe?.settings.followUpDays ?? 3} дня, проигрыш после тишины. Сделку («Клиент»)
+          закрываете вы, когда человек оплатил онбординг.
         </p>
       </div>
 
@@ -437,15 +549,63 @@ function OperatorLeadsPage() {
         </div>
       )}
 
-      {ai.data === false && (
+      {pipe && !pipe.aiConfigured && (
         <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2">
-          Кнопки «Оценить» и «Сгенерировать письмо» не работают: в переменных этой панели нет{" "}
-          <code className="font-mono">ANTHROPIC_API_KEY</code>. Добавьте ключ в Vercel проекта
-          оператора и перезапустите деплой — ходить в чат агента для оценки не нужно.
+          Автопоиск и оценка выключены: в переменных этой панели нет{" "}
+          <code className="font-mono">ANTHROPIC_API_KEY</code>. Без него крон не вынет ICP из
+          выдачи. По желанию добавьте ещё <code className="font-mono">TAVILY_API_KEY</code> —
+          поиск стабильнее, чем запасной DuckDuckGo.
         </p>
       )}
 
-      <AddLeadForm onAdded={onChanged} />
+      <section className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="font-medium">Воронка</h2>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            value={huntQuery}
+            onChange={(e) => setHuntQuery(e.target.value)}
+            placeholder="Запрос или пусто — ротация по СНГ"
+            className="h-8 w-64"
+          />
+          <Button size="sm" onClick={() => void onHunt()} disabled={busy || !aiConfigured}>
+            {busy ? "Ищем…" : "Найти лидов"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void onProcess()} disabled={busy}>
+            Прогнать воронку
+          </Button>
+          <AddLeadForm onAdded={onChanged} />
+        </div>
+        {pipe && (
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={pipe.settings.autoHunt}
+              onChange={(e) => void onToggleHunt(e.target.checked)}
+            />
+            Ночной поиск сам (крон панели). Квалификация от {pipe.settings.qualifyMinScore} баллов,
+            отказ до {pipe.settings.rejectMaxScore}.
+          </label>
+        )}
+      </section>
+
+      {due.length > 0 && (
+        <section className="bg-card border rounded-lg p-4 space-y-3">
+          <h2 className="font-medium">Сегодня ({due.length})</h2>
+          <p className="text-xs text-muted-foreground">
+            Кто ждёт касания прямо сейчас. Написали → очередь сама поставит дожим.
+          </p>
+          <div className="divide-y">
+            {due.map((lead) => (
+              <LeadCard
+                key={`due-${lead.id}`}
+                lead={lead}
+                onChanged={onChanged}
+                aiConfigured={aiConfigured}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="bg-card border rounded-lg p-4 space-y-3">
         <div className="flex flex-wrap gap-2 items-center">
@@ -476,7 +636,7 @@ function OperatorLeadsPage() {
               key={lead.id}
               lead={lead}
               onChanged={onChanged}
-              aiConfigured={ai.data !== false}
+              aiConfigured={aiConfigured}
             />
           ))}
         </div>

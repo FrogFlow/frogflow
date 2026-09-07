@@ -11,6 +11,13 @@ import {
   scoreLead,
   generateDraft,
   isLeadsAiConfigured,
+  huntLeads,
+  processPipeline,
+  markContacted,
+  markFollowUpSent,
+  pipelineStatus,
+  savePipelineSettings,
+  listLeadEvents,
   LEAD_STAGES,
   type LeadStage,
 } from "./leads.server";
@@ -40,6 +47,16 @@ export const leadsAiConfiguredFn = createServerFn({ method: "GET" }).handler(asy
   return isLeadsAiConfigured();
 });
 
+export const pipelineStatusFn = createServerFn({ method: "GET" }).handler(async () => {
+  return pipelineStatus();
+});
+
+export const listLeadEventsFn = createServerFn({ method: "GET" })
+  .validator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    return listLeadEvents(data.id);
+  });
+
 export const createLeadFn = createServerFn({ method: "POST" })
   .validator((data: unknown) =>
     z
@@ -64,7 +81,7 @@ export const updateLeadStageFn = createServerFn({ method: "POST" })
   .validator((data: unknown) => z.object({ id: z.string().uuid(), stage: StageEnum }).parse(data))
   .handler(async ({ data }) => {
     await requireOperator();
-    await updateLeadStage(data.id, data.stage as (typeof LEAD_STAGES)[number]);
+    await updateLeadStage(data.id, data.stage as (typeof LEAD_STAGES)[number], await actor());
     return { ok: true as const };
   });
 
@@ -98,4 +115,55 @@ export const generateDraftFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     return generateDraft(data.id);
+  });
+
+export const huntLeadsFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z.object({ query: z.string().max(300).nullable().optional() }).parse(data ?? {}),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return huntLeads({ query: data.query, actor: await actor() });
+  });
+
+export const processPipelineFn = createServerFn({ method: "POST" }).handler(async () => {
+  await requireOperator();
+  return processPipeline(await actor());
+});
+
+export const markContactedFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z.object({ id: z.string().uuid(), channel: z.string().max(40).nullable().optional() }).parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    await markContacted(data.id, await actor(), data.channel);
+    return { ok: true as const };
+  });
+
+export const markFollowUpSentFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    await markFollowUpSent(data.id, await actor());
+    return { ok: true as const };
+  });
+
+export const savePipelineSettingsFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        qualifyMinScore: z.number().int().min(50).max(99).optional(),
+        rejectMaxScore: z.number().int().min(0).max(70).optional(),
+        followUpDays: z.number().int().min(1).max(14).optional(),
+        maxFollowUps: z.number().int().min(0).max(5).optional(),
+        autoHunt: z.boolean().optional(),
+        autoEmail: z.boolean().optional(),
+        lostAfterDays: z.number().int().min(7).max(90).optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return savePipelineSettings(data);
   });

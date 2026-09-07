@@ -112,7 +112,8 @@ ByteString`. Берите значение из первоисточника.
 | `OPERATOR_USERNAME`, `OPERATOR_PASSWORD`                                         | Вход в панель. Если не заданы, вход не работает вовсе — значения по умолчанию тут нет намеренно.                                                    |
 | `OPERATOR_SESSION_SECRET`                                                        | Ключ подписи cookie оператора. Как и `SESSION_SECRET`, без него (или короче 32 символов) вход отключён явной ошибкой, а не общеизвестным значением. |
 | `CRON_SECRET`                                                                    | Секрет для суточного прохода по подпискам.                                                                                                          |
-| `ANTHROPIC_API_KEY`                                                              | Кнопки «Оценить» и «Сгенерировать письмо» на странице Лиды. Без ключа кнопки в панели не работают.                                                  |
+| `ANTHROPIC_API_KEY`                                                              | Лиды: оценка, черновик письма, разбор поисковой выдачи. Без ключа кнопки и ночной поиск не работают.                                                  |
+| `TAVILY_API_KEY` / `BRAVE_SEARCH_API_KEY` / `SERPER_API_KEY`                     | Необязательно. Поиск лидов стабильнее, чем запасной DuckDuckGo. Достаточно одного.                                                                   |
 
 Токенов ботов у панели нет **намеренно**: рассылку владельцам она отправляет
 не сама, а запросом `POST {bots.app_url}/api/internal/notify-owner` в деплой
@@ -188,6 +189,7 @@ ByteString`. Берите значение из первоисточника.
 | `/api/operator-cron/subscriptions`   | раз в сутки (04:00 UTC), только панель | Обход подписок: предупреждает владельцев о скором окончании оплаты, применяет `bots.settings.on_overdue`. Идемпотентен — повторный вызов в тот же день ничего не продублирует.                                                                                                                                                          |
 | `/api/operator-cron/retention`       | раз в сутки (03:45 UTC), только панель | Ретеншн операторских логов/истории панели (её собственные таблицы, не клиентские).                                                                                                                                                                                                                                                      |
 | `/api/operator-cron/health-snapshot` | раз в 15 минут, только панель          | Снимок состояния клиентских деплоев для «Истории падений бота» в панели оператора.                                                                                                                                                                                                                                                      |
+| `/api/operator-cron/leads`           | раз в сутки (05:00 UTC), только панель | Воронка продаж: прогон оценки/черновиков/дожимов, затем один поисковый запрос по ротации ICP (если `autoHunt`). Клиентские деплои отвечают 404.                                                                                                                                                                                         |
 
 Ручной вызов (для проверки, что секрет верный и логика работает):
 
@@ -195,6 +197,7 @@ ByteString`. Берите значение из первоисточника.
 GET https://your-app.vercel.app/api/cron/broadcast?secret=YOUR_CRON_SECRET
 GET https://your-app.vercel.app/api/public/vip/cron?secret=YOUR_CRON_SECRET
 GET https://panel.vercel.app/api/operator-cron/subscriptions?secret=YOUR_CRON_SECRET
+GET https://panel.vercel.app/api/operator-cron/leads?secret=YOUR_CRON_SECRET
 ```
 
 > **`maxDuration` вебхука Zernio отдельно не поднят этой правкой.** Сборка

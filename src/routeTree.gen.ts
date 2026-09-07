@@ -60,6 +60,7 @@ import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/rel
 import { Route as ApiInternalSetWebhookRouteImport } from './routes/api/internal/set-webhook'
 import { Route as ApiOperatorCronHealthSnapshotRouteImport } from './routes/api/operator-cron/health-snapshot'
 import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
+import { Route as ApiOperatorCronLeadsRouteImport } from './routes/api/operator-cron/leads'
 import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
 import { Route as MiniAppProductProductIdRouteImport } from './routes/mini-app.product.$productId'
 import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
@@ -346,6 +347,11 @@ const ApiOperatorCronRetentionRoute =
     path: '/api/operator-cron/retention',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOperatorCronLeadsRoute = ApiOperatorCronLeadsRouteImport.update({
+  id: '/api/operator-cron/leads',
+  path: '/api/operator-cron/leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOperatorCronSubscriptionsRoute =
   ApiOperatorCronSubscriptionsRouteImport.update({
     id: '/api/operator-cron/subscriptions',
@@ -539,6 +545,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
+  '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
@@ -616,6 +623,7 @@ export interface FileRoutesByTo {
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
+  '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
@@ -696,6 +704,7 @@ export interface FileRoutesById {
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
+  '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
@@ -777,6 +786,7 @@ export interface FileRouteTypes {
     | '/api/internal/set-webhook'
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
+    | '/api/operator-cron/leads'
     | '/api/operator-cron/subscriptions'
     | '/mini-app/product/$productId'
     | '/operator/$botId'
@@ -854,6 +864,7 @@ export interface FileRouteTypes {
     | '/api/internal/set-webhook'
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
+    | '/api/operator-cron/leads'
     | '/api/operator-cron/subscriptions'
     | '/mini-app/product/$productId'
     | '/operator/$botId'
@@ -933,6 +944,7 @@ export interface FileRouteTypes {
     | '/api/internal/set-webhook'
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
+    | '/api/operator-cron/leads'
     | '/api/operator-cron/subscriptions'
     | '/mini-app/product/$productId'
     | '/operator/_authed/$botId'
@@ -989,6 +1001,7 @@ export interface RootRouteChildren {
   ApiInternalSetWebhookRoute: typeof ApiInternalSetWebhookRoute
   ApiOperatorCronHealthSnapshotRoute: typeof ApiOperatorCronHealthSnapshotRoute
   ApiOperatorCronRetentionRoute: typeof ApiOperatorCronRetentionRoute
+  ApiOperatorCronLeadsRoute: typeof ApiOperatorCronLeadsRoute
   ApiOperatorCronSubscriptionsRoute: typeof ApiOperatorCronSubscriptionsRoute
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
@@ -1368,6 +1381,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOperatorCronRetentionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/operator-cron/leads': {
+      id: '/api/operator-cron/leads'
+      path: '/api/operator-cron/leads'
+      fullPath: '/api/operator-cron/leads'
+      preLoaderRoute: typeof ApiOperatorCronLeadsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/operator-cron/subscriptions': {
       id: '/api/operator-cron/subscriptions'
       path: '/api/operator-cron/subscriptions'
@@ -1703,6 +1723,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalSetWebhookRoute: ApiInternalSetWebhookRoute,
   ApiOperatorCronHealthSnapshotRoute: ApiOperatorCronHealthSnapshotRoute,
   ApiOperatorCronRetentionRoute: ApiOperatorCronRetentionRoute,
+  ApiOperatorCronLeadsRoute: ApiOperatorCronLeadsRoute,
   ApiOperatorCronSubscriptionsRoute: ApiOperatorCronSubscriptionsRoute,
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
