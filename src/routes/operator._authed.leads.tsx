@@ -13,6 +13,7 @@ import {
   deleteLeadFn,
   scoreLeadFn,
   generateDraftFn,
+  leadsAiConfiguredFn,
 } from "@/lib/operator/leads.functions";
 import type { LeadStage, SalesLead } from "@/lib/operator/leads.server";
 import { Badge } from "@/components-ui/badge";
@@ -52,6 +53,34 @@ const STAGE_LABEL: Record<
 // tanstack-start:import-protection (см. build), а STAGE_LABEL типизирован
 // как Record<LeadStage, ...>, так что ключи по-прежнему все 8 стадий.
 const LEAD_STAGES = Object.keys(STAGE_LABEL) as LeadStage[];
+
+function websiteHref(url: string): string {
+  const trimmed = url.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function instagramHref(handle: string): string {
+  const name = handle.trim().replace(/^@/, "");
+  if (/^https?:\/\//i.test(handle.trim())) return handle.trim();
+  return `https://www.instagram.com/${name}/`;
+}
+
+function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^\d+]/g, "")}`;
+}
+
+function LeadLink({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-primary hover:underline underline-offset-2 break-all"
+    >
+      {children}
+    </a>
+  );
+}
 
 function AddLeadForm({ onAdded }: { onAdded: () => void }) {
   const [open, setOpen] = useState(false);
@@ -169,7 +198,15 @@ function AddLeadForm({ onAdded }: { onAdded: () => void }) {
   );
 }
 
-function LeadCard({ lead, onChanged }: { lead: SalesLead; onChanged: () => void }) {
+function LeadCard({
+  lead,
+  onChanged,
+  aiConfigured,
+}: {
+  lead: SalesLead;
+  onChanged: () => void;
+  aiConfigured: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState(lead.notes ?? "");
   const label = STAGE_LABEL[lead.stage];
@@ -256,10 +293,39 @@ function LeadCard({ lead, onChanged }: { lead: SalesLead; onChanged: () => void 
         {lead.score !== null && <Badge variant="outline">Оценка: {lead.score}/100</Badge>}
       </div>
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        {lead.website_url && <span>🌐 {lead.website_url}</span>}
-        {lead.instagram_handle && <span>📷 {lead.instagram_handle}</span>}
-        {lead.phone && <span>📞 {lead.phone}</span>}
-        {lead.email && <span>✉️ {lead.email}</span>}
+        {lead.website_url && (
+          <span>
+            🌐 <LeadLink href={websiteHref(lead.website_url)}>{lead.website_url}</LeadLink>
+          </span>
+        )}
+        {lead.instagram_handle && (
+          <span>
+            📷{" "}
+            <LeadLink href={instagramHref(lead.instagram_handle)}>{lead.instagram_handle}</LeadLink>
+          </span>
+        )}
+        {lead.phone && (
+          <span>
+            📞{" "}
+            <a
+              href={telHref(lead.phone)}
+              className="text-primary hover:underline underline-offset-2"
+            >
+              {lead.phone}
+            </a>
+          </span>
+        )}
+        {lead.email && (
+          <span>
+            ✉️{" "}
+            <a
+              href={`mailto:${lead.email}`}
+              className="text-primary hover:underline underline-offset-2 break-all"
+            >
+              {lead.email}
+            </a>
+          </span>
+        )}
       </div>
       {lead.signals && <p className="text-sm text-muted-foreground">💡 {lead.signals}</p>}
       {lead.score_reason && (
@@ -280,10 +346,10 @@ function LeadCard({ lead, onChanged }: { lead: SalesLead; onChanged: () => void 
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={onScore} disabled={busy}>
+        <Button size="sm" variant="outline" onClick={onScore} disabled={busy || !aiConfigured}>
           {lead.score === null ? "Оценить (ИИ)" : "Переоценить (ИИ)"}
         </Button>
-        <Button size="sm" variant="outline" onClick={onDraft} disabled={busy}>
+        <Button size="sm" variant="outline" onClick={onDraft} disabled={busy || !aiConfigured}>
           {lead.draft_message ? "Пересоздать письмо (ИИ)" : "Сгенерировать письмо (ИИ)"}
         </Button>
         <Select value={lead.stage} onValueChange={onStage}>
@@ -332,6 +398,10 @@ function OperatorLeadsPage() {
   const active = FILTERS.find((f) => f.key === filter) ?? FILTERS[0]!;
 
   const funnel = useQuery({ queryKey: ["operator_leads_funnel"], queryFn: () => funnelCountsFn() });
+  const ai = useQuery({
+    queryKey: ["operator_leads_ai"],
+    queryFn: () => leadsAiConfiguredFn(),
+  });
   const leads = useQuery({
     queryKey: ["operator_leads", active.stage, search],
     queryFn: () =>
@@ -351,10 +421,9 @@ function OperatorLeadsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Лиды</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Поиск клиентов для FrogFlow. ИИ здесь только советует — оценивает потенциал и готовит
-          черновик первого письма, а находите лидов, отправляете сообщения и двигаете стадию вы
-          сами. Стадии: новый → квалифицирован/отклонён → написали → ответил → горячий →
-          клиент/проигран.
+          Оценка и черновик письма — кнопки на карточке, здесь же в панели. Находите лидов и
+          двигаете стадию вы; отправку письма проверяете глазами. Стадии: новый →
+          квалифицирован/отклонён → написали → ответил → горячий → клиент/проигран.
         </p>
       </div>
 
@@ -366,6 +435,14 @@ function OperatorLeadsPage() {
             </span>
           ))}
         </div>
+      )}
+
+      {ai.data === false && (
+        <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2">
+          Кнопки «Оценить» и «Сгенерировать письмо» не работают: в переменных этой панели нет{" "}
+          <code className="font-mono">ANTHROPIC_API_KEY</code>. Добавьте ключ в Vercel проекта
+          оператора и перезапустите деплой — ходить в чат агента для оценки не нужно.
+        </p>
       )}
 
       <AddLeadForm onAdded={onChanged} />
@@ -395,7 +472,12 @@ function OperatorLeadsPage() {
         )}
         <div className="divide-y">
           {list.map((lead) => (
-            <LeadCard key={lead.id} lead={lead} onChanged={onChanged} />
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              onChanged={onChanged}
+              aiConfigured={ai.data !== false}
+            />
           ))}
         </div>
       </section>

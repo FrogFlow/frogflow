@@ -73,6 +73,11 @@ export type LeadInput = {
   signals?: string | null;
 };
 
+export async function isLeadsAiConfigured(): Promise<boolean> {
+  await requireOperator();
+  return Boolean(process.env.ANTHROPIC_API_KEY?.trim());
+}
+
 export async function listLeads(filter?: { stage?: LeadStage; q?: string }): Promise<SalesLead[]> {
   await requireOperator();
   const s = await db();
@@ -173,7 +178,11 @@ function leadBrief(lead: SalesLead): string {
 
 async function callAnthropic(prompt: string, maxTokens: number): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY не задан на этом деплое");
+  if (!apiKey) {
+    throw new Error(
+      "В переменных панели нет ANTHROPIC_API_KEY — оценка и письмо запускаются кнопками здесь, в карточке. Добавьте ключ в Vercel проекта панели оператора.",
+    );
+  }
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {

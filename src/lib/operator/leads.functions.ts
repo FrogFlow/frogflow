@@ -10,6 +10,7 @@ import {
   deleteLead,
   scoreLead,
   generateDraft,
+  isLeadsAiConfigured,
   LEAD_STAGES,
   type LeadStage,
 } from "./leads.server";
@@ -33,6 +34,10 @@ export const listLeadsFn = createServerFn({ method: "GET" })
 export const funnelCountsFn = createServerFn({ method: "GET" }).handler(async () => {
   await requireOperator();
   return funnelCounts();
+});
+
+export const leadsAiConfiguredFn = createServerFn({ method: "GET" }).handler(async () => {
+  return isLeadsAiConfigured();
 });
 
 export const createLeadFn = createServerFn({ method: "POST" })
