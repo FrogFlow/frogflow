@@ -3,10 +3,12 @@
  * Без БД и без Anthropic: пороги, дедуп, канал касания, расписание follow-up.
  * Сервер (leads.server.ts) только читает/пишет строки и вызывает ИИ.
  *
- * Автоматизируем всё, что не ломает площадки: поиск, оценка, квалификация,
- * черновик, очередь «сегодня», дожим, проигрыш по тишине. Первое сообщение
- * в WhatsApp/Instagram оператор отправляет сам (один клик открывает чат с
- * текстом) — холодная рассылка в мессенджеры с сервера это спам и бан.
+ * Поиск, оценка, квалификация, черновик, очередь «сегодня», дожим и проигрыш
+ * по тишине идут сами. Первое сообщение уходит из WhatsApp Business /
+ * Instagram Business FrogFlow через Zernio (кнопка на карточке; авто — только
+ * если включили тумблер). Личный wa.me — запасной путь, когда Zernio не
+ * настроен. Холодный Direct Instagram Meta почти не даёт: отказ показываем
+ * в карточке, профиль открывается вручную.
  */
 
 export type PipelineSettings = {
@@ -16,7 +18,11 @@ export type PipelineSettings = {
   maxFollowUps: number;
   autoHunt: boolean;
   autoEmail: boolean;
+  autoWhatsApp: boolean;
+  autoInstagram: boolean;
   lostAfterDays: number;
+  /** Имя одобренного шаблона Meta для первого WA. Пусто — Direct Send utility. */
+  whatsappTemplateName: string;
 };
 
 export const DEFAULT_PIPELINE: PipelineSettings = {
@@ -26,8 +32,16 @@ export const DEFAULT_PIPELINE: PipelineSettings = {
   maxFollowUps: 2,
   autoHunt: true,
   autoEmail: false,
+  autoWhatsApp: false,
+  autoInstagram: false,
   lostAfterDays: 21,
+  whatsappTemplateName: "",
 };
+
+function asTemplateName(v: unknown): string {
+  if (typeof v !== "string") return "";
+  return v.trim().slice(0, 128);
+}
 
 function clampInt(n: unknown, min: number, max: number, fallback: number): number {
   const v = Math.round(Number(n));
@@ -46,7 +60,10 @@ export function parsePipelineSettings(raw: string | null | undefined): PipelineS
       maxFollowUps: clampInt(parsed.maxFollowUps, 0, 5, DEFAULT_PIPELINE.maxFollowUps),
       autoHunt: parsed.autoHunt !== false,
       autoEmail: parsed.autoEmail === true,
+      autoWhatsApp: parsed.autoWhatsApp === true,
+      autoInstagram: parsed.autoInstagram === true,
       lostAfterDays: clampInt(parsed.lostAfterDays, 7, 90, DEFAULT_PIPELINE.lostAfterDays),
+      whatsappTemplateName: asTemplateName(parsed.whatsappTemplateName),
     };
   } catch {
     return { ...DEFAULT_PIPELINE };
@@ -70,11 +87,7 @@ function addUtcDays(now: Date, days: number): string {
 }
 
 /** Что делать дальше после смены стадии — очередь «Сегодня» строится отсюда. */
-export function nextActionForStage(
-  stage: string,
-  now: Date,
-  s: PipelineSettings,
-): NextAction {
+export function nextActionForStage(stage: string, now: Date, s: PipelineSettings): NextAction {
   switch (stage) {
     case "new":
       return { action: "Оценить и квалифицировать", at: now.toISOString() };
@@ -213,6 +226,96 @@ export function instagramHref(handle: string): string {
   return `https://www.instagram.com/${name}/`;
 }
 
+const TERMINAL_STAGES = new Set(["rejected", "lost", "converted"]);
+
+export type InboundNeedle = {
+  conversationId?: string;
+  phone?: string;
+  username?: string;
+};
+
+export type MatchableLead = {
+  id: string;
+  stage: string;
+  conversation_id: string | null;
+  phone: string | null;
+  instagram_handle: string | null;
+};
+
+/** Входящее из Zernio → лид: сначала диалог, потом телефон, потом Instagram. */
+export function matchInboundLead(
+  needle: InboundNeedle,
+  leads: MatchableLead[],
+): MatchableLead | null {
+  const cid = needle.conversationId?.trim();
+  if (cid) {
+    const byConv = leads.find((l) => l.conversation_id === cid && !TERMINAL_STAGES.has(l.stage));
+    if (byConv) return byConv;
+  }
+  const phone = needle.phone ? normalizePhone(needle.phone) : "";
+  if (phone.length >= 10) {
+    const byPhone = leads.find(
+      (l) => l.phone && normalizePhone(l.phone) === phone && !TERMINAL_STAGES.has(l.stage),
+    );
+    if (byPhone) return byPhone;
+  }
+  const ig = needle.username ? normalizeHandle(needle.username) : "";
+  if (ig) {
+    const byIg = leads.find(
+      (l) =>
+        l.instagram_handle &&
+        normalizeHandle(l.instagram_handle) === ig &&
+        !TERMINAL_STAGES.has(l.stage),
+    );
+    if (byIg) return byIg;
+  }
+  return null;
+}
+
+/** new/qualified/contacted → replied; hot не понижаем. */
+export function shouldPromoteToReplied(stage: string): boolean {
+  return stage === "new" || stage === "qualified" || stage === "contacted";
+}
+
+export type ZernioAccountPick = {
+  _id: string;
+  platform: string;
+  username?: string;
+  name?: string;
+  isExpired?: boolean;
+};
+
+export function pickZernioAccount(
+  accounts: ZernioAccountPick[],
+  platform: "whatsapp" | "instagram",
+  preferredId?: string | null,
+): ZernioAccountPick | null {
+  const live = accounts.filter((a) => a.platform === platform && a.isExpired !== true);
+  if (preferredId) {
+    const pref = live.find((a) => a._id === preferredId);
+    if (pref) return pref;
+  }
+  return live[0] ?? null;
+}
+
+export function canAutoSendChannel(channel: OutreachChannel, settings: PipelineSettings): boolean {
+  if (channel === "whatsapp") return settings.autoWhatsApp;
+  if (channel === "instagram") return settings.autoInstagram;
+  if (channel === "email") return settings.autoEmail;
+  return false;
+}
+
+export function outreachBody(lead: {
+  stage: string;
+  draft_message: string | null;
+  follow_up_draft: string | null;
+}): string {
+  if (lead.stage === "contacted" && lead.follow_up_draft?.trim()) {
+    return lead.follow_up_draft.trim();
+  }
+  return (lead.draft_message ?? "").trim();
+}
+
 /** Ротация запросов ICP по СНГ — крон берёт один в сутки, кнопка в панели — несколько. */
 export const HUNT_QUERIES: string[] = [
   "кондитерская бенто торт заказ WhatsApp Instagram Алматы",
@@ -233,7 +336,7 @@ export const HUNT_QUERIES: string[] = [
 
 export function huntQueryForDay(now: Date, offset = 0): string {
   const day = Math.floor(now.getTime() / 86_400_000);
-  const i = ((day + offset) % HUNT_QUERIES.length + HUNT_QUERIES.length) % HUNT_QUERIES.length;
+  const i = (((day + offset) % HUNT_QUERIES.length) + HUNT_QUERIES.length) % HUNT_QUERIES.length;
   return HUNT_QUERIES[i]!;
 }
 
@@ -276,7 +379,11 @@ export function parseDuckDuckGoHtml(html: string): SearchHit[] {
 }
 
 function stripTags(html: string): string {
-  return html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+  return html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ");
 }
 
 const EXTRACT_KEYS = [
@@ -342,9 +449,7 @@ export function parseExtractedLeads(text: string): HuntCandidate[] {
 }
 
 export function searchHitsPromptBlock(hits: SearchHit[]): string {
-  return hits
-    .map((h, i) => `${i + 1}. ${h.title}\n   ${h.url}\n   ${h.snippet}`)
-    .join("\n");
+  return hits.map((h, i) => `${i + 1}. ${h.title}\n   ${h.url}\n   ${h.snippet}`).join("\n");
 }
 
 export const ICP_EXTRACT_RULES =

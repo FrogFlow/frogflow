@@ -1,7 +1,12 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { verifyZernioWebhookSignature } from "../src/routes/api/public/zernio/webhook";
-import { describeZernioWebhookFit, isOtherStoreWebhook } from "../src/lib/zernio.server";
+import {
+  describeZernioSalesWebhookFit,
+  describeZernioWebhookFit,
+  isClientStoreZernioWorkspace,
+  isOtherStoreWebhook,
+} from "../src/lib/zernio.server";
 
 describe("verifyZernioWebhookSignature", () => {
   const body = JSON.stringify({ id: "event-1", event: "message.received" });
@@ -79,5 +84,31 @@ describe("isOtherStoreWebhook", () => {
     expect(isOtherStoreWebhook(expected, expected)).toBe(false);
     expect(isOtherStoreWebhook("https://hooks.zernio.io/custom", expected)).toBe(false);
     expect(isOtherStoreWebhook(undefined, expected)).toBe(false);
+  });
+});
+
+describe("sales webhook vs client store workspace", () => {
+  const salesUrl = "https://panel.example/api/operator/zernio-webhook";
+
+  it("recognizes a client store workspace by public webhook path", () => {
+    expect(
+      isClientStoreZernioWorkspace([
+        { name: "Store Webhook", url: "https://aatech-pi.vercel.app/api/public/zernio/webhook" },
+      ]),
+    ).toBe(true);
+    expect(isClientStoreZernioWorkspace([{ name: "FrogFlow Sales Webhook", url: salesUrl }])).toBe(
+      false,
+    );
+  });
+
+  it("sales fit is ok only for the operator URL listening to DMs", () => {
+    const current = {
+      name: "FrogFlow Sales Webhook",
+      url: salesUrl,
+      events: ["message.received"],
+      isActive: true,
+    };
+    expect(describeZernioSalesWebhookFit([current], salesUrl)).toEqual({ fit: "ok", current });
+    expect(describeZernioSalesWebhookFit([], salesUrl).fit).toBe("missing");
   });
 });

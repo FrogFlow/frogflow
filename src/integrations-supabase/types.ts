@@ -425,6 +425,9 @@ export type Database = {
           follow_up_draft: string | null;
           auto_processed_at: string | null;
           lost_reason: string | null;
+          conversation_id: string | null;
+          zernio_account_id: string | null;
+          outreach_error: string | null;
         };
         Insert: {
           id?: string;
@@ -455,6 +458,9 @@ export type Database = {
           follow_up_draft?: string | null;
           auto_processed_at?: string | null;
           lost_reason?: string | null;
+          conversation_id?: string | null;
+          zernio_account_id?: string | null;
+          outreach_error?: string | null;
         };
         Update: {
           id?: string;
@@ -485,6 +491,9 @@ export type Database = {
           follow_up_draft?: string | null;
           auto_processed_at?: string | null;
           lost_reason?: string | null;
+          conversation_id?: string | null;
+          zernio_account_id?: string | null;
+          outreach_error?: string | null;
         };
         Relationships: [];
       };

@@ -15,6 +15,7 @@ import {
   processPipeline,
   markContacted,
   markFollowUpSent,
+  sendLeadOutreach,
   pipelineStatus,
   savePipelineSettings,
   listLeadEvents,
@@ -133,12 +134,28 @@ export const processPipelineFn = createServerFn({ method: "POST" }).handler(asyn
 
 export const markContactedFn = createServerFn({ method: "POST" })
   .validator((data: unknown) =>
-    z.object({ id: z.string().uuid(), channel: z.string().max(40).nullable().optional() }).parse(data),
+    z
+      .object({ id: z.string().uuid(), channel: z.string().max(40).nullable().optional() })
+      .parse(data),
   )
   .handler(async ({ data }) => {
     await requireOperator();
     await markContacted(data.id, await actor(), data.channel);
     return { ok: true as const };
+  });
+
+export const sendLeadOutreachFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        id: z.string().uuid(),
+        channel: z.enum(["whatsapp", "instagram", "email"]).nullable().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return sendLeadOutreach(data.id, await actor(), data.channel);
   });
 
 export const markFollowUpSentFn = createServerFn({ method: "POST" })
@@ -159,7 +176,10 @@ export const savePipelineSettingsFn = createServerFn({ method: "POST" })
         maxFollowUps: z.number().int().min(0).max(5).optional(),
         autoHunt: z.boolean().optional(),
         autoEmail: z.boolean().optional(),
+        autoWhatsApp: z.boolean().optional(),
+        autoInstagram: z.boolean().optional(),
         lostAfterDays: z.number().int().min(7).max(90).optional(),
+        whatsappTemplateName: z.string().max(128).optional(),
       })
       .parse(data),
   )

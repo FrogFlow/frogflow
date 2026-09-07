@@ -1,11 +1,11 @@
 /**
  * Лиды для собственного отдела продаж FrogFlow — поиск новых клиентов
  * (владельцев ботов), а не данные ни одного клиентского магазина.
- * MIGRATION-63 + MIGRATION-67 (очередь касаний и журнал событий).
+ * MIGRATION-63 + MIGRATION-67 (очередь касаний) + MIGRATION-68 (диалог Zernio).
  *
  * Воронка: hunt → score → qualify/reject → draft → очередь «сегодня» →
- * оператор жмёт «Написал» (открывается WhatsApp/почта с текстом) → follow-up
- * кроном → lost по тишине / converted руками. Score сам сделку не закрывает.
+ * сообщение из WhatsApp/Instagram Business через Zernio → follow-up кроном →
+ * lost по тишине / converted руками. Score сам сделку не закрывает.
  */
 import { requireOperator } from "./guard.server";
 import type { TablesUpdate } from "@/integrations-supabase/types";
@@ -13,19 +13,30 @@ import { callAnthropic, isLeadsAiKeyPresent } from "./leads-ai.server";
 import { extractCandidates, isHuntConfigured, searchWeb } from "./leads-hunt.server";
 import {
   DEFAULT_PIPELINE,
+  canAutoSendChannel,
   decideAfterScore,
   huntQueryForDay,
   isDuplicate,
+  matchInboundLead,
   nextActionForStage,
+  outreachBody,
   parsePipelineSettings,
   pickOutreachChannel,
   shouldFollowUp,
   shouldMarkLost,
+  shouldPromoteToReplied,
   type ExistingLeadKey,
   type HuntCandidate,
+  type OutreachChannel,
   type PipelineSettings,
 } from "./leads-pipeline";
 import { isMailConfigured, sendPlainTextMail } from "@/lib/mail.server";
+import {
+  getOutreachStatus,
+  isZernioOutreachConfigured,
+  sendSalesMessage,
+  type OutreachStatus,
+} from "./leads-outreach.server";
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -79,6 +90,9 @@ export type SalesLead = {
   follow_up_draft: string | null;
   auto_processed_at: string | null;
   lost_reason: string | null;
+  conversation_id: string | null;
+  zernio_account_id: string | null;
+  outreach_error: string | null;
 };
 
 export type LeadEvent = {
@@ -123,7 +137,9 @@ export async function getPipelineSettings(): Promise<PipelineSettings> {
   return parsePipelineSettings(data?.value);
 }
 
-export async function savePipelineSettings(patch: Partial<PipelineSettings>): Promise<PipelineSettings> {
+export async function savePipelineSettings(
+  patch: Partial<PipelineSettings>,
+): Promise<PipelineSettings> {
   const current = await getPipelineSettings();
   const next = parsePipelineSettings(JSON.stringify({ ...current, ...patch }));
   const s = await db();
@@ -265,7 +281,11 @@ export async function createLead(input: LeadInput, createdBy: string): Promise<S
   return lead;
 }
 
-export async function updateLeadStage(id: string, stage: LeadStage, actor = "operator"): Promise<void> {
+export async function updateLeadStage(
+  id: string,
+  stage: LeadStage,
+  actor = "operator",
+): Promise<void> {
   await requireOperator();
   await transitionLead(id, stage, actor);
 }
@@ -332,7 +352,8 @@ function parseScoreJson(text: string): { score: number; reason: string } {
     throw new Error(`Не удалось разобрать ответ ИИ: ${text.slice(0, 200)}`);
   }
   const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score))));
-  if (!Number.isFinite(score)) throw new Error(`ИИ вернул нечисловую оценку: ${text.slice(0, 200)}`);
+  if (!Number.isFinite(score))
+    throw new Error(`ИИ вернул нечисловую оценку: ${text.slice(0, 200)}`);
   return { score, reason: String(parsed.reason ?? "").slice(0, 500) };
 }
 
@@ -395,14 +416,15 @@ export async function scoreLead(id: string): Promise<{ score: number; reason: st
 async function generateDraftInternal(id: string, actor: string): Promise<{ draft: string }> {
   const lead = await getLeadOrThrow(id);
   const prompt =
-    `Ты помогаешь оператору FrogFlow написать первое персональное письмо потенциальному клиенту. ` +
+    `Ты помогаешь оператору FrogFlow написать первое персональное сообщение потенциальному клиенту. ` +
+    `Оно уйдёт из WhatsApp Business или Instagram Direct FrogFlow, не как холодный спам с личного номера. ` +
     `FrogFlow делает Telegram/Instagram/WhatsApp-ботов, которые принимают заказы/запись 24/7 и ` +
     `разгружают администратора от рутинной переписки.\n\n` +
     `${leadBrief(lead)}\n\n` +
-    `Напиши короткое (4-6 предложений) персональное письмо на русском, обращённое именно к этому ` +
+    `Напиши короткое (4-6 предложений) персональное сообщение на русском, обращённое именно к этому ` +
     `бизнесу — сославшись на конкретные наблюдения выше, а не общими словами. Без "здравствуйте, ` +
     `меня зовут" и без подписи в конце (это добавит оператор сам). Без markdown-разметки. Тон — ` +
-    `деловой и конкретный, не рекламный. Ответь только текстом письма, без пояснений вокруг.`;
+    `деловой и конкретный, не рекламный. Ответь только текстом сообщения, без пояснений вокруг.`;
   const text = await callAnthropic(prompt, 1000);
   if (!text?.trim()) throw new Error("Пустой ответ от Anthropic");
   const draft = text.trim();
@@ -572,6 +594,7 @@ export type ProcessResult = {
   followUps: number;
   lost: number;
   emailed: number;
+  messaged: number;
   errors: string[];
 };
 
@@ -584,6 +607,7 @@ export async function processPipeline(actor: string, now = new Date()): Promise<
     followUps: 0,
     lost: 0,
     emailed: 0,
+    messaged: 0,
     errors: [],
   };
   const settings = await getPipelineSettings();
@@ -592,7 +616,9 @@ export async function processPipeline(actor: string, now = new Date()): Promise<
   if (error) throw new Error(`Не удалось прогнать воронку: ${error.message}`);
   const leads = ((all ?? []) as SalesLead[]).map(asLead);
 
-  const needScore = leads.filter((l) => l.stage === "new" && l.score === null).slice(0, PROCESS_BATCH);
+  const needScore = leads
+    .filter((l) => l.stage === "new" && l.score === null)
+    .slice(0, PROCESS_BATCH);
   if (isLeadsAiKeyPresent()) {
     for (const lead of needScore) {
       try {
@@ -635,19 +661,39 @@ export async function processPipeline(actor: string, now = new Date()): Promise<
           text: lead.draft_message!,
         });
         if (sent.ok) {
-          const channel = pickOutreachChannel(lead);
           await applyNextAction(lead.id, "contacted", {
             contacted_at: now.toISOString(),
             last_touch_at: now.toISOString(),
             outreach_channel: "email",
+            outreach_error: null,
           });
-          await logLeadEvent(lead.id, actor, "emailed", channel);
+          await logLeadEvent(lead.id, actor, "emailed", "email");
           result.emailed++;
         } else {
           result.errors.push(`${lead.business_name}: ${sent.error}`);
         }
       } catch (e: unknown) {
         result.errors.push(`${lead.business_name}: ${e instanceof Error ? e.message : "письмо"}`);
+      }
+    }
+  }
+
+  if (isZernioOutreachConfigured()) {
+    const { data: afterMail } = await s.from("sales_leads").select("*");
+    const forSend = ((afterMail ?? fresh) as SalesLead[]).map(asLead);
+    const readyMsg = forSend.filter(
+      (l) => l.stage === "qualified" && l.draft_message && !l.contacted_at,
+    );
+    for (const lead of readyMsg.slice(0, PROCESS_BATCH)) {
+      const channel = pickOutreachChannel(lead);
+      if (channel !== "whatsapp" && channel !== "instagram") continue;
+      if (!canAutoSendChannel(channel, settings)) continue;
+      try {
+        const sent = await sendLeadOutreachInternal(lead, actor, channel, now, settings);
+        if (sent.ok) result.messaged++;
+        else if (sent.error) result.errors.push(`${lead.business_name}: ${sent.error}`);
+      } catch (e: unknown) {
+        result.errors.push(`${lead.business_name}: ${e instanceof Error ? e.message : "отправка"}`);
       }
     }
   }
@@ -683,6 +729,17 @@ export async function processPipeline(actor: string, now = new Date()): Promise<
         .eq("id", lead.id);
       await logLeadEvent(lead.id, actor, "follow_up", `касание ${nextCount}`);
       result.followUps++;
+      const channel = (lead.outreach_channel as OutreachChannel) || pickOutreachChannel(lead);
+      if (
+        isZernioOutreachConfigured() &&
+        (channel === "whatsapp" || channel === "instagram") &&
+        canAutoSendChannel(channel, settings)
+      ) {
+        const freshLead = await getLeadOrThrow(lead.id);
+        const sent = await sendLeadOutreachInternal(freshLead, actor, channel, now, settings);
+        if (sent.ok) result.messaged++;
+        else if (sent.error) result.errors.push(`${lead.business_name}: ${sent.error}`);
+      }
     } catch (e: unknown) {
       result.errors.push(`${lead.business_name}: ${e instanceof Error ? e.message : "дожим"}`);
     }
@@ -717,13 +774,140 @@ export async function markFollowUpSent(id: string, actor: string): Promise<void>
     .update({
       last_touch_at: now.toISOString(),
       next_action: "Проверить ответ или дожать",
-      next_action_at: new Date(
-        now.getTime() + settings.followUpDays * 86_400_000,
-      ).toISOString(),
+      next_action_at: new Date(now.getTime() + settings.followUpDays * 86_400_000).toISOString(),
       updated_at: now.toISOString(),
     })
     .eq("id", id);
   await logLeadEvent(id, actor, "follow_up_sent", null);
+}
+
+async function sendLeadOutreachInternal(
+  lead: SalesLead,
+  actor: string,
+  channel: OutreachChannel,
+  now: Date,
+  settings: PipelineSettings,
+): Promise<{ ok: boolean; error?: string; fallbackHref?: string | null }> {
+  if (channel !== "whatsapp" && channel !== "instagram") {
+    return { ok: false, error: "Канал не WhatsApp и не Instagram" };
+  }
+  const text = outreachBody(lead);
+  const templateName =
+    channel === "whatsapp"
+      ? settings.whatsappTemplateName || process.env.SALES_WHATSAPP_TEMPLATE?.trim() || ""
+      : "";
+  const sent = await sendSalesMessage({
+    channel,
+    preferredAccountId: lead.zernio_account_id,
+    conversationId: lead.conversation_id,
+    phone: lead.phone,
+    instagramHandle: lead.instagram_handle,
+    text,
+    templateName: templateName || undefined,
+    templateLanguage: process.env.SALES_WHATSAPP_TEMPLATE_LANG?.trim() || "ru",
+  });
+
+  const s = await db();
+  if (!sent.ok) {
+    await s
+      .from("sales_leads")
+      .update({
+        outreach_error: (sent.error || "не отправилось").slice(0, 1000),
+        updated_at: now.toISOString(),
+      })
+      .eq("id", lead.id);
+    await logLeadEvent(lead.id, actor, "outreach_error", sent.error ?? null);
+    return sent;
+  }
+
+  const extra: TablesUpdate<"sales_leads"> = {
+    last_touch_at: now.toISOString(),
+    outreach_channel: channel,
+    outreach_error: null,
+    conversation_id: sent.conversationId || lead.conversation_id,
+    zernio_account_id: sent.accountId || lead.zernio_account_id,
+  };
+
+  if (lead.stage === "contacted") {
+    await s
+      .from("sales_leads")
+      .update({
+        ...extra,
+        next_action: "Проверить ответ или дожать",
+        next_action_at: new Date(now.getTime() + settings.followUpDays * 86_400_000).toISOString(),
+        updated_at: now.toISOString(),
+      })
+      .eq("id", lead.id);
+    await logLeadEvent(lead.id, actor, "follow_up_sent", channel);
+  } else {
+    await applyNextAction(lead.id, "contacted", { ...extra, contacted_at: now.toISOString() }, now);
+    await logLeadEvent(lead.id, actor, "contacted", channel);
+  }
+  return sent;
+}
+
+export async function sendLeadOutreach(
+  id: string,
+  actor: string,
+  channel?: string | null,
+): Promise<{ ok: boolean; error?: string; fallbackHref?: string | null; channel: string }> {
+  await requireOperator();
+  const lead = await getLeadOrThrow(id);
+  const settings = await getPipelineSettings();
+  const ch = (channel as OutreachChannel | undefined) || pickOutreachChannel(lead);
+  const sent = await sendLeadOutreachInternal(lead, actor, ch, new Date(), settings);
+  return { ...sent, channel: ch };
+}
+
+export async function ingestLeadInbound(
+  payload: import("@/lib/zernio.server").ZernioWebhookMessagePayload,
+): Promise<{ matched: boolean; leadId?: string; promoted: boolean }> {
+  if (payload.message?.direction === "outgoing") {
+    return { matched: false, promoted: false };
+  }
+  const { parseZernioMessage } = await import("@/lib/zernio-message");
+  const parsed = parseZernioMessage(payload);
+  const s = await db();
+  const { data, error } = await s
+    .from("sales_leads")
+    .select("id, stage, conversation_id, phone, instagram_handle");
+  if (error) throw new Error(`Не удалось сопоставить входящее: ${error.message}`);
+  const match = matchInboundLead(
+    {
+      conversationId: parsed.conversationId,
+      phone: parsed.senderPhone,
+      username: parsed.senderUsername,
+    },
+    (data ?? []) as Array<{
+      id: string;
+      stage: string;
+      conversation_id: string | null;
+      phone: string | null;
+      instagram_handle: string | null;
+    }>,
+  );
+  if (!match) return { matched: false, promoted: false };
+
+  await logLeadEvent(
+    match.id,
+    "zernio",
+    "inbound",
+    (parsed.text || "").slice(0, 500) || "(без текста)",
+  );
+  if (parsed.conversationId && parsed.conversationId !== match.conversation_id) {
+    await s
+      .from("sales_leads")
+      .update({
+        conversation_id: parsed.conversationId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", match.id);
+  }
+  if (!shouldPromoteToReplied(match.stage)) {
+    return { matched: true, leadId: match.id, promoted: false };
+  }
+  await transitionLead(match.id, "replied", "zernio");
+  return { matched: true, leadId: match.id, promoted: true };
 }
 
 export type PipelineStatus = {
@@ -731,17 +915,23 @@ export type PipelineStatus = {
   aiConfigured: boolean;
   huntConfigured: boolean;
   mailConfigured: boolean;
+  zernio: OutreachStatus;
   due: SalesLead[];
 };
 
 export async function pipelineStatus(): Promise<PipelineStatus> {
   await requireOperator();
-  const [settings, due] = await Promise.all([getPipelineSettings(), listDueLeadsInternal(new Date())]);
+  const [settings, due, zernio] = await Promise.all([
+    getPipelineSettings(),
+    listDueLeadsInternal(new Date()),
+    getOutreachStatus(),
+  ]);
   return {
     settings,
     aiConfigured: isLeadsAiKeyPresent(),
     huntConfigured: isHuntConfigured(),
     mailConfigured: isMailConfigured(),
+    zernio,
     due,
   };
 }
@@ -751,6 +941,10 @@ export async function runDailyLeadsPipeline(now = new Date()): Promise<{
   hunt: HuntResult | null;
   process: ProcessResult;
 }> {
+  if (isZernioOutreachConfigured()) {
+    const { ensureOperatorZernioWebhook } = await import("@/lib/zernio.server");
+    await ensureOperatorZernioWebhook();
+  }
   const settings = await getPipelineSettings();
   const process = await processPipeline("cron", now);
   let hunt: HuntResult | null = null;

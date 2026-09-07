@@ -678,6 +678,48 @@ export function isOtherStoreWebhook(currentUrl: string | undefined, expectedUrl:
   }
 }
 
+/**
+ * Ключ Zernio уже обслуживает магазин клиента (store-webhook на
+ * `/api/public/zernio/webhook`). Панель продаж не должна ни переписывать
+ * эту запись, ни слать холодные сообщения с WABA клиента.
+ */
+export function isClientStoreZernioWorkspace(webhooks: ZernioWebhookRecord[]): boolean {
+  return webhooks.some((webhook) => {
+    if (!webhook.url) return false;
+    try {
+      return /\/api\/public\/zernio\/webhook\/?$/.test(new URL(webhook.url).pathname);
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Имя отдельной записи вебхука для воронки продаж FrogFlow. */
+export const ZERNIO_SALES_WEBHOOK_NAME = "FrogFlow Sales Webhook";
+
+export function findZernioSalesWebhook(
+  webhooks: ZernioWebhookRecord[],
+  expectedUrl: string,
+): ZernioWebhookRecord | undefined {
+  return webhooks.find(
+    (webhook) => webhook.url === expectedUrl || webhook.name === ZERNIO_SALES_WEBHOOK_NAME,
+  );
+}
+
+export function describeZernioSalesWebhookFit(
+  webhooks: ZernioWebhookRecord[],
+  expectedUrl: string,
+): { fit: ZernioWebhookFit; current?: ZernioWebhookRecord } {
+  const current = findZernioSalesWebhook(webhooks, expectedUrl);
+  if (!current) return { fit: "missing" };
+  const events = current.events ?? [];
+  const listensForDm = events.includes("message.received");
+  if (!zernioWebhookIsActive(current) || current.url !== expectedUrl || !listensForDm) {
+    return { fit: "stale", current };
+  }
+  return { fit: "ok", current };
+}
+
 function zernioWebhookIsActive(webhook: ZernioWebhookRecord): boolean {
   if (webhook.isActive === false || webhook.active === false) return false;
   return true;
@@ -922,8 +964,149 @@ export async function registerZernioWebhook(
 }
 
 /**
- * Опубликовать Пост / Карточку в Instagram.
+ * Вебхук воронки продаж на панели оператора. Отдельная запись, не Store
+ * Webhook: иначе ключ клиента украдёт входящие магазина.
  */
+export async function registerZernioSalesWebhook(
+  webhookUrl: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const secret = process.env.ZERNIO_WEBHOOK_SECRET?.trim();
+    if (!secret)
+      return { ok: false, error: "Не задана переменная окружения ZERNIO_WEBHOOK_SECRET." };
+    const current = await zernioRequest<{ webhooks?: ZernioWebhookRecord[] }>("/webhooks/settings");
+    const existing = findZernioSalesWebhook(current.webhooks || [], webhookUrl);
+    const response = await zernioRequest<{ success?: boolean; error?: string }>(
+      "/webhooks/settings",
+      {
+        method: existing ? "PUT" : "POST",
+        body: {
+          ...(existing ? { _id: existing._id || existing.id } : {}),
+          name: ZERNIO_SALES_WEBHOOK_NAME,
+          url: webhookUrl,
+          secret,
+          events: ["message.received"],
+          isActive: true,
+        },
+      },
+    );
+    if (response.success === false)
+      return { ok: false, error: response.error || "Zernio не принял настройки webhook." };
+    return { ok: true };
+  } catch (e) {
+    console.error("[zernio] registerZernioSalesWebhook failed", e);
+    return { ok: false, error: errorMessage(e) };
+  }
+}
+
+export async function inspectOperatorZernioConnection(): Promise<
+  ZernioConnectionReport & { blockedAsClientWorkspace: boolean }
+> {
+  const { appOrigin } = await import("./app-origin.server");
+  const origin = appOrigin();
+  const expectedUrl = origin ? `${origin}/api/operator/zernio-webhook` : "";
+  try {
+    const [webhooks, accounts] = await Promise.all([
+      readZernioWebhookSettings(),
+      listZernioAccounts(),
+    ]);
+    const blockedAsClientWorkspace = isClientStoreZernioWorkspace(webhooks);
+    const { fit, current } = describeZernioSalesWebhookFit(webhooks, expectedUrl);
+    return {
+      expectedUrl,
+      currentUrl: current?.url || null,
+      fit: blockedAsClientWorkspace ? "stale" : fit,
+      accounts: summarizeZernioAccounts(accounts),
+      blockedAsClientWorkspace,
+      error: blockedAsClientWorkspace
+        ? "Ключ Zernio принадлежит магазину клиента. На панель нужен ключ своего бизнеса FrogFlow."
+        : undefined,
+    };
+  } catch (e) {
+    return {
+      expectedUrl,
+      currentUrl: null,
+      fit: "missing",
+      accounts: [],
+      blockedAsClientWorkspace: false,
+      error: errorMessage(e),
+    };
+  }
+}
+
+/**
+ * Вебхук ответов лидов на панели. Не трогает store-webhook клиентского
+ * деплоя: если в этой рабочей области Zernio уже висит
+ * `/api/public/zernio/webhook`, ключ чужой — пропускаем.
+ */
+export async function ensureOperatorZernioWebhook(options?: {
+  force?: boolean;
+}): Promise<EnsureZernioWebhookResult> {
+  const { isControlPlane } = await import("./control-plane.server");
+  if (!isControlPlane()) {
+    return { ok: true, action: "skipped" };
+  }
+  if (!process.env.ZERNIO_API_KEY?.trim()) {
+    return { ok: false, action: "error", error: "ZERNIO_API_KEY не задан" };
+  }
+
+  const { appOrigin } = await import("./app-origin.server");
+  const origin = appOrigin();
+  if (!origin) {
+    return { ok: false, action: "error", error: "PUBLIC_APP_URL не задан в этом деплое" };
+  }
+  const expectedUrl = `${origin}/api/operator/zernio-webhook`;
+
+  let webhooks: ZernioWebhookRecord[];
+  try {
+    webhooks = await readZernioWebhookSettings();
+  } catch (e) {
+    return { ok: false, action: "error", error: errorMessage(e) };
+  }
+
+  const accounts = summarizeZernioAccounts(await listZernioAccounts());
+  if (!options?.force && isClientStoreZernioWorkspace(webhooks)) {
+    const current = webhooks.find((w) => w.url && /\/api\/public\/zernio\/webhook\/?$/.test(w.url));
+    return {
+      ok: true,
+      action: "skipped",
+      url: current?.url,
+      previousUrl: current?.url ?? null,
+      accounts,
+      error:
+        "ключ Zernio принадлежит магазину клиента — store-webhook не трогаем. Повесьте на панель ключ своего Instagram/WhatsApp бизнеса FrogFlow.",
+    };
+  }
+
+  const { fit, current } = describeZernioSalesWebhookFit(webhooks, expectedUrl);
+  if (fit === "ok") {
+    return { ok: true, action: "unchanged", url: expectedUrl, previousUrl: current?.url, accounts };
+  }
+
+  const registered = await registerZernioSalesWebhook(expectedUrl);
+  if (!registered.ok) {
+    return {
+      ok: false,
+      action: "error",
+      url: expectedUrl,
+      previousUrl: current?.url ?? null,
+      accounts,
+      error: registered.error,
+    };
+  }
+  console.log("[zernio] sales webhook restored", {
+    previousUrl: current?.url ?? null,
+    expectedUrl,
+    fit,
+  });
+  return {
+    ok: true,
+    action: "set",
+    url: expectedUrl,
+    previousUrl: current?.url ?? null,
+    accounts,
+  };
+}
 export type CreateInstagramPostInput = {
   accountId: string;
   content: string;
@@ -1133,11 +1316,12 @@ export async function startWhatsAppConversation(params: {
 
   try {
     const { idempotencyKeyFor } = await import("./zernio-event-context.server");
-    const result = await zernioRequest<{ data?: { conversationId?: string } }>(
-      "/inbox/conversations",
-      { method: "POST", body, idempotencyKey: idempotencyKeyFor(body) },
-    );
-    return { ok: true, conversationId: result.data?.conversationId };
+    const result = await zernioRequest<{
+      data?: { conversationId?: string; id?: string };
+      conversationId?: string;
+      conversation?: { id?: string };
+    }>("/inbox/conversations", { method: "POST", body, idempotencyKey: idempotencyKeyFor(body) });
+    return { ok: true, conversationId: conversationIdFromStart(result) };
   } catch (e) {
     console.error("[zernio] startWhatsAppConversation failed", e);
     const details = errorMessage(e);
@@ -1153,6 +1337,73 @@ export async function startWhatsAppConversation(params: {
         ok: false,
         error:
           "Этот WhatsApp-аккаунт не допущен к отправке без шаблона. Нужен одобренный шаблон Meta.",
+      };
+    }
+    return { ok: false, error: details };
+  }
+}
+
+function conversationIdFromStart(result: {
+  data?: { conversationId?: string; id?: string };
+  conversationId?: string;
+  conversation?: { id?: string };
+}): string | undefined {
+  return (
+    result.data?.conversationId ||
+    result.data?.id ||
+    result.conversationId ||
+    result.conversation?.id ||
+    undefined
+  );
+}
+
+/**
+ * Написать в Instagram Direct первым — по username, без comment-to-DM.
+ *
+ * Meta почти всегда отказывает, если человек вам ещё не писал и не комментировал
+ * пост с автоматизацией. Это не баг ключа: холодный Direct запрещён. Ошибку
+ * отдаём текстом, чтобы карточка лида предложила открыть профиль вручную.
+ */
+export async function startInstagramConversation(params: {
+  accountId: string;
+  username: string;
+  message: string;
+}): Promise<{ ok: boolean; conversationId?: string; error?: string }> {
+  const handle = params.username.trim().replace(/^@+/, "");
+  if (!handle) {
+    return { ok: false, error: "Нет Instagram-ника, чтобы открыть Direct." };
+  }
+  const body: Record<string, unknown> = {
+    accountId: params.accountId,
+    participantId: handle,
+    identifier: handle,
+    identifierType: "username",
+    message: params.message,
+  };
+  try {
+    const { idempotencyKeyFor } = await import("./zernio-event-context.server");
+    const result = await zernioRequest<{
+      data?: { conversationId?: string; id?: string };
+      conversationId?: string;
+      conversation?: { id?: string };
+    }>("/inbox/conversations", {
+      method: "POST",
+      body,
+      idempotencyKey: idempotencyKeyFor(body),
+    });
+    return { ok: true, conversationId: conversationIdFromStart(result) };
+  } catch (e) {
+    console.error("[zernio] startInstagramConversation failed", e);
+    const details = errorMessage(e);
+    if (
+      /24[- ]hour|messaging window|outside the allowed|HUMAN_AGENT|not allowed to message/i.test(
+        details,
+      )
+    ) {
+      return {
+        ok: false,
+        error:
+          "Instagram не даёт написать первым в Direct: нет недавнего диалога. Откройте профиль вручную или дождитесь комментария к посту.",
       };
     }
     return { ok: false, error: details };

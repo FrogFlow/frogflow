@@ -62,6 +62,7 @@ import { Route as ApiOperatorCronHealthSnapshotRouteImport } from './routes/api/
 import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
 import { Route as ApiOperatorCronLeadsRouteImport } from './routes/api/operator-cron/leads'
 import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
+import { Route as ApiOperatorZernioWebhookRouteImport } from './routes/api/operator/zernio-webhook'
 import { Route as MiniAppProductProductIdRouteImport } from './routes/mini-app.product.$productId'
 import { Route as OperatorAuthedIndexRouteImport } from './routes/operator._authed.index'
 import { Route as OperatorAuthedBotIdRouteImport } from './routes/operator._authed.$botId'
@@ -352,6 +353,11 @@ const ApiOperatorCronLeadsRoute = ApiOperatorCronLeadsRouteImport.update({
   path: '/api/operator-cron/leads',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOperatorZernioWebhookRoute = ApiOperatorZernioWebhookRouteImport.update({
+  id: '/api/operator/zernio-webhook',
+  path: '/api/operator/zernio-webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOperatorCronSubscriptionsRoute =
   ApiOperatorCronSubscriptionsRouteImport.update({
     id: '/api/operator-cron/subscriptions',
@@ -546,6 +552,7 @@ export interface FileRoutesByFullPath {
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
+  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
@@ -624,6 +631,7 @@ export interface FileRoutesByTo {
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
+  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
@@ -705,6 +713,7 @@ export interface FileRoutesById {
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
   '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
+  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
@@ -787,6 +796,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/leads'
+    | '/api/operator/zernio-webhook'
     | '/api/operator-cron/subscriptions'
     | '/mini-app/product/$productId'
     | '/operator/$botId'
@@ -865,6 +875,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/leads'
+    | '/api/operator/zernio-webhook'
     | '/api/operator-cron/subscriptions'
     | '/mini-app/product/$productId'
     | '/operator/$botId'
@@ -945,6 +956,7 @@ export interface FileRouteTypes {
     | '/api/operator-cron/health-snapshot'
     | '/api/operator-cron/retention'
     | '/api/operator-cron/leads'
+    | '/api/operator/zernio-webhook'
     | '/api/operator-cron/subscriptions'
     | '/mini-app/product/$productId'
     | '/operator/_authed/$botId'
@@ -1002,6 +1014,7 @@ export interface RootRouteChildren {
   ApiOperatorCronHealthSnapshotRoute: typeof ApiOperatorCronHealthSnapshotRoute
   ApiOperatorCronRetentionRoute: typeof ApiOperatorCronRetentionRoute
   ApiOperatorCronLeadsRoute: typeof ApiOperatorCronLeadsRoute
+  ApiOperatorZernioWebhookRoute: typeof ApiOperatorZernioWebhookRoute
   ApiOperatorCronSubscriptionsRoute: typeof ApiOperatorCronSubscriptionsRoute
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
@@ -1388,6 +1401,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOperatorCronLeadsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/operator/zernio-webhook': {
+      id: '/api/operator/zernio-webhook'
+      path: '/api/operator/zernio-webhook'
+      fullPath: '/api/operator/zernio-webhook'
+      preLoaderRoute: typeof ApiOperatorZernioWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/operator-cron/subscriptions': {
       id: '/api/operator-cron/subscriptions'
       path: '/api/operator-cron/subscriptions'
@@ -1724,6 +1744,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiOperatorCronHealthSnapshotRoute: ApiOperatorCronHealthSnapshotRoute,
   ApiOperatorCronRetentionRoute: ApiOperatorCronRetentionRoute,
   ApiOperatorCronLeadsRoute: ApiOperatorCronLeadsRoute,
+  ApiOperatorZernioWebhookRoute: ApiOperatorZernioWebhookRoute,
   ApiOperatorCronSubscriptionsRoute: ApiOperatorCronSubscriptionsRoute,
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,

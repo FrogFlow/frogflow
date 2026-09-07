@@ -17,10 +17,12 @@ import {
   processPipelineFn,
   markContactedFn,
   markFollowUpSentFn,
+  sendLeadOutreachFn,
   pipelineStatusFn,
   savePipelineSettingsFn,
 } from "@/lib/operator/leads.functions";
 import type { LeadStage, SalesLead } from "@/lib/operator/leads.server";
+import type { OutreachStatus } from "@/lib/operator/leads-outreach.server";
 import {
   instagramHref,
   mailtoHref,
@@ -215,10 +217,12 @@ function LeadCard({
   lead,
   onChanged,
   aiConfigured,
+  zernio,
 }: {
   lead: SalesLead;
   onChanged: () => void;
   aiConfigured: boolean;
+  zernio: OutreachStatus | undefined;
 }) {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState(lead.notes ?? "");
@@ -314,9 +318,34 @@ function LeadCard({
     }
   }
 
-  const message = lead.follow_up_draft && lead.stage === "contacted"
-    ? lead.follow_up_draft
-    : lead.draft_message;
+  async function onSendBusiness(sendChannel: "whatsapp" | "instagram") {
+    setBusy(true);
+    try {
+      const r = await sendLeadOutreachFn({ data: { id: lead.id, channel: sendChannel } });
+      if (r.ok) {
+        toast.success(
+          sendChannel === "whatsapp"
+            ? "Отправлено из WhatsApp Business"
+            : "Отправлено в Instagram Direct",
+        );
+      } else {
+        toast.error(r.error || "Не отправилось");
+      }
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const message =
+    lead.follow_up_draft && lead.stage === "contacted" ? lead.follow_up_draft : lead.draft_message;
+  const canTouch = lead.stage === "qualified" || lead.stage === "new" || lead.stage === "contacted";
+  const zernioReady = Boolean(zernio?.configured && !zernio.blockedAsClientWorkspace);
+  const canWa = zernioReady && (zernio?.whatsapp.length ?? 0) > 0 && Boolean(lead.phone);
+  const canIg =
+    zernioReady && (zernio?.instagram.length ?? 0) > 0 && Boolean(lead.instagram_handle);
 
   return (
     <div className="py-3 space-y-2">
@@ -326,9 +355,8 @@ function LeadCard({
         {lead.city && <span className="text-muted-foreground">· {lead.city}</span>}
         <Badge variant={label.variant}>{label.text}</Badge>
         {lead.score !== null && <Badge variant="outline">Оценка: {lead.score}/100</Badge>}
-        {lead.next_action && (
-          <Badge variant="outline">Дальше: {lead.next_action}</Badge>
-        )}
+        {lead.next_action && <Badge variant="outline">Дальше: {lead.next_action}</Badge>}
+        {lead.conversation_id && <Badge variant="outline">Диалог открыт</Badge>}
       </div>
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         {lead.website_url && (
@@ -372,12 +400,15 @@ function LeadCard({
           {lead.score_reason}
         </p>
       )}
+      {lead.outreach_error && (
+        <p className="text-sm text-destructive">Не отправилось: {lead.outreach_error}</p>
+      )}
       {message && (
         <div className="bg-muted/40 rounded-md p-2 space-y-1">
           <p className="text-xs text-muted-foreground">
             {lead.follow_up_draft && lead.stage === "contacted"
               ? "Дожим (проверьте перед отправкой):"
-              : "Черновик письма (проверьте перед отправкой):"}
+              : "Черновик (проверьте перед отправкой из WhatsApp Business / Direct):"}
           </p>
           <p className="text-sm whitespace-pre-wrap">{message}</p>
           <Button size="sm" variant="outline" onClick={() => onCopyDraft(message)}>
@@ -386,10 +417,33 @@ function LeadCard({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        {href && (lead.stage === "qualified" || lead.stage === "new" || lead.stage === "contacted") && (
-          <Button size="sm" asChild disabled={busy}>
+        {canTouch && canWa && (
+          <Button size="sm" onClick={() => void onSendBusiness("whatsapp")} disabled={busy}>
+            {lead.stage === "contacted"
+              ? "Дожать из WhatsApp Business"
+              : "Отправить из WhatsApp Business"}
+          </Button>
+        )}
+        {canTouch && canIg && (
+          <Button
+            size="sm"
+            variant={canWa ? "outline" : "default"}
+            onClick={() => void onSendBusiness("instagram")}
+            disabled={busy}
+          >
+            {lead.stage === "contacted" ? "Дожать в Direct" : "Отправить в Direct"}
+          </Button>
+        )}
+        {href && canTouch && (
+          <Button size="sm" variant="outline" asChild disabled={busy}>
             <a href={href} target="_blank" rel="noopener noreferrer" onClick={() => void onWrote()}>
-              {lead.stage === "contacted" ? "Дожать и отметить" : "Написать и отметить"}
+              {zernioReady
+                ? channel === "email"
+                  ? "Письмо и отметить"
+                  : "Личный чат и отметить"
+                : lead.stage === "contacted"
+                  ? "Дожать и отметить"
+                  : "Написать и отметить"}
             </a>
           </Button>
         )}
@@ -459,6 +513,7 @@ function OperatorLeadsPage() {
   const [search, setSearch] = useState("");
   const [huntQuery, setHuntQuery] = useState("");
   const [busy, setBusy] = useState(false);
+  const [templateName, setTemplateName] = useState<string | null>(null);
   const active = FILTERS.find((f) => f.key === filter) ?? FILTERS[0]!;
 
   const funnel = useQuery({ queryKey: ["operator_leads_funnel"], queryFn: () => funnelCountsFn() });
@@ -483,6 +538,8 @@ function OperatorLeadsPage() {
   const pipe = status.data;
   const due = pipe?.due ?? [];
   const aiConfigured = pipe?.aiConfigured !== false;
+  const zernio = pipe?.zernio;
+  const templateValue = templateName ?? pipe?.settings.whatsappTemplateName ?? "";
 
   async function onHunt() {
     setBusy(true);
@@ -507,7 +564,7 @@ function OperatorLeadsPage() {
     try {
       const r = await processPipelineFn();
       toast.success(
-        `Воронка: оценено ${r.scored}, квалифицировано ${r.qualified}, писем ${r.drafted}, дожимов ${r.followUps}, проиграно ${r.lost}`,
+        `Воронка: оценено ${r.scored}, квалифицировано ${r.qualified}, черновиков ${r.drafted}, сообщений ${r.messaged}, дожимов ${r.followUps}, проиграно ${r.lost}`,
       );
       if (r.errors.length) toast.warning(r.errors.slice(0, 3).join("; "));
       onChanged();
@@ -527,15 +584,42 @@ function OperatorLeadsPage() {
     }
   }
 
+  async function onToggleWa(on: boolean) {
+    try {
+      await savePipelineSettingsFn({ data: { autoWhatsApp: on } });
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    }
+  }
+
+  async function onToggleIg(on: boolean) {
+    try {
+      await savePipelineSettingsFn({ data: { autoInstagram: on } });
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    }
+  }
+
+  async function onSaveTemplate() {
+    try {
+      await savePipelineSettingsFn({ data: { whatsappTemplateName: templateValue } });
+      toast.success("Имя шаблона сохранено");
+      onChanged();
+    } catch (e: unknown) {
+      toast.error(errorMessage(e));
+    }
+  }
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl font-semibold">Лиды</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Поиск, оценка и черновик идут сами (кнопка или ночной крон). Написать в WhatsApp или
-          Direct нужно вам — один клик открывает чат с текстом и ставит «Написали». Дожим через{" "}
-          {pipe?.settings.followUpDays ?? 3} дня, проигрыш после тишины. Сделку («Клиент»)
-          закрываете вы, когда человек оплатил онбординг.
+          Поиск и оценка идут сами. Первое сообщение — из вашего WhatsApp Business и Instagram
+          Business через Zernio, не с личного номера. Холодный Direct Meta часто режет: тогда
+          откройте профиль вручную. Сделку («Клиент») закрываете вы.
         </p>
       </div>
 
@@ -553,8 +637,37 @@ function OperatorLeadsPage() {
         <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2">
           Автопоиск и оценка выключены: в переменных этой панели нет{" "}
           <code className="font-mono">ANTHROPIC_API_KEY</code>. Без него крон не вынет ICP из
-          выдачи. По желанию добавьте ещё <code className="font-mono">TAVILY_API_KEY</code> —
-          поиск стабильнее, чем запасной DuckDuckGo.
+          выдачи. По желанию добавьте ещё <code className="font-mono">TAVILY_API_KEY</code> — поиск
+          стабильнее, чем запасной DuckDuckGo.
+        </p>
+      )}
+
+      {zernio && !zernio.configured && (
+        <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2">
+          WhatsApp Business и Instagram Business не подключены к панели: нет{" "}
+          <code className="font-mono">ZERNIO_API_KEY</code> своего бизнеса FrogFlow (не ключ
+          клиентского магазина). Пока кнопка откроет личный чат.
+        </p>
+      )}
+
+      {zernio?.blockedAsClientWorkspace && (
+        <p className="text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2">
+          {zernio.error ||
+            "На панели висит ключ Zernio магазина клиента. Отправка с него заблокирована, чтобы не писать лидам с чужого WhatsApp."}
+        </p>
+      )}
+
+      {zernio?.configured && !zernio.blockedAsClientWorkspace && (
+        <p className="text-sm bg-card border rounded-md px-3 py-2">
+          Zernio: WhatsApp{" "}
+          {zernio.whatsapp.length
+            ? zernio.whatsapp.map((a) => a.username).join(", ")
+            : "не подключён"}
+          , Instagram{" "}
+          {zernio.instagram.length
+            ? zernio.instagram.map((a) => `@${a.username}`).join(", ")
+            : "не подключён"}
+          {zernio.error ? `. ${zernio.error}` : ""}
         </p>
       )}
 
@@ -576,15 +689,47 @@ function OperatorLeadsPage() {
           <AddLeadForm onAdded={onChanged} />
         </div>
         {pipe && (
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={pipe.settings.autoHunt}
-              onChange={(e) => void onToggleHunt(e.target.checked)}
-            />
-            Ночной поиск сам (крон панели). Квалификация от {pipe.settings.qualifyMinScore} баллов,
-            отказ до {pipe.settings.rejectMaxScore}.
-          </label>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pipe.settings.autoHunt}
+                onChange={(e) => void onToggleHunt(e.target.checked)}
+              />
+              Ночной поиск сам (крон панели). Квалификация от {pipe.settings.qualifyMinScore}{" "}
+              баллов, отказ до {pipe.settings.rejectMaxScore}.
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pipe.settings.autoWhatsApp}
+                onChange={(e) => void onToggleWa(e.target.checked)}
+              />
+              Самим слать первое из WhatsApp Business (по умолчанию выкл. — жмёте на карточке)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={pipe.settings.autoInstagram}
+                onChange={(e) => void onToggleIg(e.target.checked)}
+              />
+              Самим слать первое в Direct (Meta часто откажет без диалога)
+            </label>
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Шаблон WhatsApp (если Meta просит)</Label>
+                <Input
+                  value={templateValue}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder="имя_одобренного_шаблона"
+                  className="h-8 w-64"
+                />
+              </div>
+              <Button size="sm" variant="outline" onClick={() => void onSaveTemplate()}>
+                Сохранить шаблон
+              </Button>
+            </div>
+          </div>
         )}
       </section>
 
@@ -601,6 +746,7 @@ function OperatorLeadsPage() {
                 lead={lead}
                 onChanged={onChanged}
                 aiConfigured={aiConfigured}
+                zernio={zernio}
               />
             ))}
           </div>
@@ -637,6 +783,7 @@ function OperatorLeadsPage() {
               lead={lead}
               onChanged={onChanged}
               aiConfigured={aiConfigured}
+              zernio={zernio}
             />
           ))}
         </div>

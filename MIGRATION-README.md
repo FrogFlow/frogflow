@@ -315,3 +315,7 @@ ID, поэтому не наследует то, из-за чего падает
 «Найти лидов» / «Прогнать воронку» в панели: без колонок прогон не знает,
 кому писать сегодня.
 
+**68** (`MIGRATION-68-sales-zernio-outreach.sql`) — `conversation_id`,
+`zernio_account_id`, `outreach_error` на `sales_leads`. Чтобы первое касание
+шло из WhatsApp Business / Instagram Business FrogFlow через Zernio, а
+входящий ответ попадал в тот же диалог.

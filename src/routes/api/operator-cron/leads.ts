@@ -5,7 +5,8 @@ import { isCronAuthorized } from "@/lib/cron-auth.server";
 
 /**
  * Суточный проход воронки продаж: поиск по ротации ICP-запросов (если
- * autoHunt) и прогон new → оценка → qualify/draft → дожим/lost.
+ * autoHunt) и прогон new → оценка → qualify/draft → отправка из WhatsApp
+ * Business (если autoWhatsApp) → дожим/lost.
  * Только панель (CONTROL_PLANE), как остальные /api/operator-cron/*.
  */
 export const Route = createFileRoute("/api/operator-cron/leads")({
