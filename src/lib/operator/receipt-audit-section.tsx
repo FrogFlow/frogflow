@@ -17,14 +17,33 @@ import { formatUsd } from "@/lib/smart-search-cost";
 import { Button } from "@/components-ui/button";
 import { Badge } from "@/components-ui/badge";
 
-type FilterKey = "all" | "mismatch" | "danger";
+type FilterKey =
+  "all" | "ocr-accept" | "ocr-reject" | "ocr-review" | "skip" | "agree" | "would-auto" | "danger";
 
-function severityBadge(severity: ReceiptAuditRow["comparison"]["severity"]) {
+function rowMatchesFilter(row: ReceiptAuditRow, filter: FilterKey): boolean {
+  const c = row.comparison;
+  if (filter === "all") return true;
+  if (filter === "ocr-accept") return c.ocrWould === "accept";
+  if (filter === "ocr-reject") return c.ocrWould === "reject";
+  if (filter === "ocr-review") return c.ocrWould === "review";
+  if (filter === "skip") return c.ocrWould === "skip";
+  if (filter === "agree") return c.agree;
+  if (filter === "would-auto") return c.ocrWould === "accept" && c.actual !== "auto_accepted";
+  if (filter === "danger") return c.severity === "danger";
+  return true;
+}
+
+function severityBadge(row: ReceiptAuditRow) {
+  const { severity, ocrWould } = row.comparison;
   if (severity === "danger") return { text: "выдали, OCR нет", variant: "destructive" as const };
   if (severity === "warn")
     return { text: "выдали, OCR не уверен", variant: "destructive" as const };
-  if (severity === "info") return { text: "если бы OCR был", variant: "secondary" as const };
   if (severity === "skip") return { text: "нет файла", variant: "outline" as const };
+  if (ocrWould === "accept" && !row.comparison.agree)
+    return { text: "OCR выдал бы сам", variant: "secondary" as const };
+  if (ocrWould === "accept") return { text: "OCR принял бы", variant: "secondary" as const };
+  if (ocrWould === "reject") return { text: "OCR отклонил бы", variant: "secondary" as const };
+  if (ocrWould === "review") return { text: "OCR к продавцу", variant: "secondary" as const };
   return { text: "сошлось", variant: "default" as const };
 }
 
@@ -70,6 +89,40 @@ function toCsv(rows: ReceiptAuditRow[]): string {
   return lines.join("\n");
 }
 
+function StatCard({
+  label,
+  hint,
+  value,
+  active,
+  onClick,
+  tone,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  active: boolean;
+  onClick: () => void;
+  tone?: "danger";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg border p-3 text-left transition-colors ${
+        active ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+      }`}
+    >
+      <div
+        className={`text-2xl font-semibold tabular-nums ${tone === "danger" && value > 0 ? "text-destructive" : ""}`}
+      >
+        {value}
+      </div>
+      <div className="text-sm font-medium leading-tight">{label}</div>
+      <div className="text-xs text-muted-foreground mt-0.5">{hint}</div>
+    </button>
+  );
+}
+
 export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDeploy: boolean }) {
   const [rows, setRows] = useState<ReceiptAuditRow[]>([]);
   const [running, setRunning] = useState(false);
@@ -86,11 +139,9 @@ export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDe
 
   const inventory = inventoryQuery.data?.ok ? inventoryQuery.data.inventory : null;
   const summary = summarizeAuditRows(rows);
-  const visible = rows.filter((row) => {
-    if (filter === "danger") return row.comparison.severity === "danger";
-    if (filter === "mismatch") return !row.comparison.agree && row.comparison.severity !== "skip";
-    return true;
-  });
+  const visible = rows.filter((row) => rowMatchesFilter(row, filter));
+  const target = inventory?.withFile ?? 0;
+  const progressPct = target > 0 ? Math.min(100, Math.round((summary.total / target) * 100)) : 0;
 
   async function runScan() {
     if (!inventory) return;
@@ -225,38 +276,96 @@ export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDe
       ) : null}
 
       {rows.length > 0 ? (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-3 text-sm">
-            <span>Проверено {summary.total}</span>
-            <span>сошлось {summary.ok}</span>
-            <span>если бы OCR {summary.info}</span>
-            <span>не уверен {summary.warn}</span>
-            <span className={summary.danger ? "text-destructive font-medium" : ""}>
-              выдали, OCR отклонил бы {summary.danger}
-            </span>
-            {summary.skip ? <span>нет файла {summary.skip}</span> : null}
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <div className="flex justify-between text-sm">
+              <span>
+                Проверено {summary.total}
+                {target ? ` из ${target}` : ""}
+              </span>
+              <span className="text-muted-foreground">{progressPct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div className="h-full bg-primary" style={{ width: `${progressPct}%` }} />
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                ["all", "Все"],
-                ["mismatch", "Расхождения"],
-                ["danger", "Выдали, OCR нет"],
-              ] as const
-            ).map(([key, label]) => (
-              <Button
-                key={key}
-                size="sm"
-                variant={filter === key ? "default" : "outline"}
-                onClick={() => setFilter(key)}
-              >
-                {label}
-              </Button>
-            ))}
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              OCR сказал бы
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <StatCard
+                label="Принял бы"
+                hint="сумма сошлась, выдал бы сам"
+                value={summary.ocrAccept}
+                active={filter === "ocr-accept"}
+                onClick={() => setFilter(filter === "ocr-accept" ? "all" : "ocr-accept")}
+              />
+              <StatCard
+                label="Отклонил бы"
+                hint="попросил бы другой чек"
+                value={summary.ocrReject}
+                active={filter === "ocr-reject"}
+                onClick={() => setFilter(filter === "ocr-reject" ? "all" : "ocr-reject")}
+              />
+              <StatCard
+                label="К продавцу"
+                hint="сам не решился"
+                value={summary.ocrReview}
+                active={filter === "ocr-review"}
+                onClick={() => setFilter(filter === "ocr-review" ? "all" : "ocr-review")}
+              />
+              <StatCard
+                label="Нет файла"
+                hint="в storage пусто"
+                value={summary.skip}
+                active={filter === "skip"}
+                onClick={() => setFilter(filter === "skip" ? "all" : "skip")}
+              />
+            </div>
           </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Сверка с тем, что в базе
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <StatCard
+                label="Как и сделали"
+                hint="исход тот же"
+                value={summary.agree}
+                active={filter === "agree"}
+                onClick={() => setFilter(filter === "agree" ? "all" : "agree")}
+              />
+              <StatCard
+                label="Ушло бы само"
+                hint="если б автопроверка была вкл."
+                value={summary.wouldHaveAuto}
+                active={filter === "would-auto"}
+                onClick={() => setFilter(filter === "would-auto" ? "all" : "would-auto")}
+              />
+              <StatCard
+                label="Выдали, OCR нет"
+                hint="уже выдан, OCR отклонил бы"
+                value={summary.danger}
+                tone={summary.danger > 0 ? "danger" : undefined}
+                active={filter === "danger"}
+                onClick={() => setFilter(filter === "danger" ? "all" : "danger")}
+              />
+            </div>
+          </div>
+          {filter !== "all" ? (
+            <p className="text-xs text-muted-foreground">
+              Показаны {visible.length} из {summary.total}.{" "}
+              <button type="button" className="underline" onClick={() => setFilter("all")}>
+                Сбросить фильтр
+              </button>
+            </p>
+          ) : null}
           <ul className="divide-y border rounded-md">
             {visible.map((row) => {
-              const badge = severityBadge(row.comparison.severity);
+              const badge = severityBadge(row);
               const open = openId === row.orderId;
               return (
                 <li key={row.orderId} className="p-3 space-y-1">

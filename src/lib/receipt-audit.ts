@@ -345,9 +345,28 @@ export type ReceiptAuditScanResult = {
 export type SeenReceiptHash = { hash: string; orderId: number; displayNo: number | string };
 
 export function summarizeAuditRows(rows: ReceiptAuditRow[]) {
-  const summary = { total: rows.length, ok: 0, info: 0, warn: 0, danger: 0, skip: 0 };
+  const summary = {
+    total: rows.length,
+    ok: 0,
+    info: 0,
+    warn: 0,
+    danger: 0,
+    skip: 0,
+    ocrAccept: 0,
+    ocrReject: 0,
+    ocrReview: 0,
+    agree: 0,
+    wouldHaveAuto: 0,
+  };
   for (const row of rows) {
     summary[row.comparison.severity] += 1;
+    if (row.comparison.ocrWould === "accept") summary.ocrAccept += 1;
+    if (row.comparison.ocrWould === "reject") summary.ocrReject += 1;
+    if (row.comparison.ocrWould === "review") summary.ocrReview += 1;
+    if (row.comparison.agree) summary.agree += 1;
+    if (row.comparison.ocrWould === "accept" && row.comparison.actual !== "auto_accepted") {
+      summary.wouldHaveAuto += 1;
+    }
   }
   return summary;
 }

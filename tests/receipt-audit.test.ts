@@ -217,6 +217,12 @@ describe("summarizeAuditRows", () => {
       },
     });
     const s = summarizeAuditRows([row("ok"), row("danger"), row("danger"), row("info")]);
-    expect(s).toEqual({ total: 4, ok: 1, info: 1, warn: 0, danger: 2, skip: 0 });
+    expect(s.total).toBe(4);
+    expect(s.ok).toBe(1);
+    expect(s.info).toBe(1);
+    expect(s.danger).toBe(2);
+    expect(s.ocrAccept).toBe(4);
+    expect(s.wouldHaveAuto).toBe(4);
+    expect(s.agree).toBe(1);
   });
 });
