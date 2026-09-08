@@ -115,9 +115,11 @@ export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDe
           toast.error(res.error);
           break;
         }
-        if (res.scan.row) {
-          const row = res.scan.row;
-          setRows((prev) => [...prev, row]);
+        const batch =
+          res.scan.rows?.length > 0 ? res.scan.rows : res.scan.row ? [res.scan.row] : [];
+        if (batch.length === 0) break;
+        setRows((prev) => [...prev, ...batch]);
+        for (const row of batch) {
           if (row.proofHash) {
             seenRef.current = [
               ...seenRef.current,
@@ -126,7 +128,7 @@ export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDe
           }
         }
         afterId = res.scan.afterId;
-        if (res.scan.done || !res.scan.row) break;
+        if (res.scan.done) break;
       }
       if (stopRef.current) toast.message("Прогон остановлен");
       else toast.success("Прогон чеков закончен");
@@ -197,7 +199,8 @@ export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDe
           </div>
           <p className="text-muted-foreground">
             Даже если модуль выключен, OCR ответит «как если бы был включён» — для сверки с ручной
-            выдачей.
+            выдачей. Прогон идёт с новых заказов: у части старых в базе путь есть, а файла в storage
+            уже нет — это не сбой OCR, такие просто помечаем.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={runScan} disabled={running || inventory.withFile === 0}>
@@ -269,8 +272,9 @@ export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDe
                     </div>
                     <p className="text-sm">{row.comparison.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      В базе: {ACTUAL_HANDLING_LABEL[row.comparison.actual]} · OCR:{" "}
-                      {OCR_WOULD_LABEL[row.comparison.ocrWould]} · {reasonLabel(row.ocrReason)}
+                      {row.comparison.severity === "skip"
+                        ? row.comparison.detail
+                        : `В базе: ${ACTUAL_HANDLING_LABEL[row.comparison.actual]} · OCR: ${OCR_WOULD_LABEL[row.comparison.ocrWould]} · ${reasonLabel(row.ocrReason)}`}
                     </p>
                   </button>
                   {open ? (

@@ -81,6 +81,21 @@ export function isAuditableProofPath(path: string | null | undefined): boolean {
   return true;
 }
 
+/**
+ * Куда ходить в storage: как записано, и с префиксом bot_id, если путь ещё
+ * старый (order-16/... или ig_…/...), а файл уже лежит в папке арендатора.
+ */
+export function proofPathCandidates(path: string, botId?: string | null): string[] {
+  const p = path.trim().replace(/^\/+/, "");
+  if (!p) return [];
+  const out = [p];
+  const id = botId?.trim();
+  if (id && !p.toLowerCase().startsWith(`${id.toLowerCase()}/`)) {
+    out.push(`${id}/${p}`);
+  }
+  return out;
+}
+
 export function mimeFromProofPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   if (ext === "pdf") return "application/pdf";
@@ -316,6 +331,9 @@ export type ReceiptAuditInventory = {
 };
 
 export type ReceiptAuditScanResult = {
+  /** Несколько строк, если подряд нет файла — не тратим раунд на каждый. */
+  rows: ReceiptAuditRow[];
+  /** Совместимость со старой панелью: последняя строка пачки. */
   row: ReceiptAuditRow | null;
   afterId: number;
   remaining: number;

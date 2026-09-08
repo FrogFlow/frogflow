@@ -6,9 +6,25 @@ import {
   mimeFromProofPath,
   OCR_REASON_LABEL,
   ocrWouldFromVerify,
+  proofPathCandidates,
   summarizeAuditRows,
   type ReceiptAuditRow,
 } from "../src/lib/receipt-audit";
+
+describe("proofPathCandidates", () => {
+  it("путь как есть, плюс префикс bot_id если его ещё нет", () => {
+    expect(proofPathCandidates("order-16/1.jpg", "aaa-bbb")).toEqual([
+      "order-16/1.jpg",
+      "aaa-bbb/order-16/1.jpg",
+    ]);
+  });
+
+  it("уже с префиксом — не дублируем", () => {
+    expect(proofPathCandidates("aaa-bbb/order-16/1.jpg", "aaa-bbb")).toEqual([
+      "aaa-bbb/order-16/1.jpg",
+    ]);
+  });
+});
 
 describe("isAuditableProofPath", () => {
   it("пустой и robokassa — не чек", () => {

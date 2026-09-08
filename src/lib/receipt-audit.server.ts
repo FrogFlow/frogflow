@@ -9,6 +9,7 @@ import {
   mimeFromProofPath,
   OCR_REASON_LABEL,
   ocrWouldFromVerify,
+  proofPathCandidates,
   type OcrFailReason,
   type ReceiptAuditInventory,
   type ReceiptAuditRow,
@@ -34,6 +35,9 @@ type OrderProofRow = {
 
 const ORDER_COLS =
   "id, display_no, order_no, status, total, currency, fulfillment_kind, payment_proof_path, payment_proof_hash, admin_note, created_at";
+
+/** Подряд без файла — быстро, Vision не зовём. Потом один чек с файлом. */
+const MAX_MISSING_PER_CALL = 20;
 
 function displayNoOf(order: OrderProofRow): number | string {
   return order.display_no ?? order.order_no ?? order.id;
@@ -75,7 +79,8 @@ async function countRemaining(afterId: number): Promise<number> {
     .not("payment_proof_path", "is", null)
     .neq("payment_proof_path", "")
     .neq("payment_proof_path", "robokassa");
-  if (afterId > 0) q = q.gt("id", afterId);
+  // С новых к старым: уже взяли afterId, остались меньшие id.
+  if (afterId > 0) q = q.lt("id", afterId);
   const { count, error } = await q;
   if (error) throw new Error(`Не удалось посчитать оставшиеся чеки: ${error.message}`);
   return count ?? 0;
@@ -89,12 +94,37 @@ async function nextOrderWithProof(afterId: number): Promise<OrderProofRow | null
     .not("payment_proof_path", "is", null)
     .neq("payment_proof_path", "")
     .neq("payment_proof_path", "robokassa")
-    .order("id", { ascending: true })
+    .order("id", { ascending: false })
     .limit(1);
-  if (afterId > 0) q = q.gt("id", afterId);
+  if (afterId > 0) q = q.lt("id", afterId);
   const { data, error } = await q.maybeSingle();
   if (error) throw new Error(`Не удалось взять следующий чек: ${error.message}`);
   return (data as OrderProofRow | null) ?? null;
+}
+
+async function downloadProof(
+  storedPath: string,
+): Promise<{ ok: true; bytes: Uint8Array; usedPath: string } | { ok: false; detail: string }> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const botId = process.env.BOT_ID?.trim() || null;
+  const tried: string[] = [];
+  let lastError = "файла нет в storage";
+  for (const candidate of proofPathCandidates(storedPath, botId)) {
+    tried.push(candidate);
+    const downloaded = await supabaseAdmin.storage.from("payment-proofs").download(candidate);
+    if (!downloaded.error && downloaded.data) {
+      return {
+        ok: true,
+        bytes: new Uint8Array(await downloaded.data.arrayBuffer()),
+        usedPath: candidate,
+      };
+    }
+    lastError = downloaded.error?.message || lastError;
+  }
+  return {
+    ok: false,
+    detail: `В storage нет (${lastError}). Путь в заказе: ${storedPath}${tried.length > 1 ? ` · пробовали ещё ${tried.slice(1).join(", ")}` : ""}`,
+  };
 }
 
 function rowFromSkip(
@@ -174,83 +204,78 @@ function applySessionReuse(
   };
 }
 
+function finishScan(
+  rows: ReceiptAuditRow[],
+  afterId: number,
+  remaining: number,
+  visionConfigured: boolean,
+): ReceiptAuditScanResult {
+  return {
+    rows,
+    row: rows[rows.length - 1] ?? null,
+    afterId,
+    remaining,
+    done: remaining === 0,
+    visionConfigured,
+  };
+}
+
 /**
- * Один заказ за вызов: Vision до 20 с, панель ждёт синхронно.
- * Заказы, статусы и хеши не пишем.
+ * С новых заказов к старым. Подряд без файла отдаём пачкой (Vision не зовём),
+ * как только файл скачался — один OCR и выход: Vision до 20 с.
+ * Заказы не пишем.
  */
 export async function scanNextReceipt(params: {
   afterId?: number;
   seenHashes?: SeenReceiptHash[];
 }): Promise<ReceiptAuditScanResult> {
-  const afterId = Math.max(0, Number(params.afterId) || 0);
+  let afterId = Math.max(0, Number(params.afterId) || 0);
   const flags = await visionAndModuleFlags();
-  const order = await nextOrderWithProof(afterId);
-  if (!order) {
-    return {
-      row: null,
-      afterId,
-      remaining: 0,
-      done: true,
-      visionConfigured: flags.visionConfigured,
-    };
-  }
-
+  const rows: ReceiptAuditRow[] = [];
   const { amountDueNow } = await import("./fulfillment.server");
-  const expectedAmount = await amountDueNow({
-    total: Number(order.total) || 0,
-    fulfillment_kind: order.fulfillment_kind || "digital",
-  });
 
-  const path = order.payment_proof_path;
-  if (!isAuditableProofPath(path)) {
+  for (let i = 0; i < MAX_MISSING_PER_CALL; i++) {
+    const order = await nextOrderWithProof(afterId);
+    if (!order) {
+      return finishScan(rows, afterId, 0, flags.visionConfigured);
+    }
+
+    const expectedAmount = await amountDueNow({
+      total: Number(order.total) || 0,
+      fulfillment_kind: order.fulfillment_kind || "digital",
+    });
+    const path = order.payment_proof_path;
+
+    if (!isAuditableProofPath(path)) {
+      rows.push(rowFromSkip(order, expectedAmount, "Путь к файлу не является чеком."));
+      afterId = order.id;
+      continue;
+    }
+
+    const downloaded = await downloadProof(path!);
+    if (!downloaded.ok) {
+      rows.push(rowFromSkip(order, expectedAmount, downloaded.detail));
+      afterId = order.id;
+      continue;
+    }
+
+    const proofHash = hashReceiptBytes(downloaded.bytes);
+    const seen = (params.seenHashes ?? []).find(
+      (item) => item.hash === proofHash && item.orderId !== order.id,
+    );
+    const { verifyPaymentReceipt } = await import("./receipt-verify.server");
+    const raw = await verifyPaymentReceipt({
+      bytes: downloaded.bytes,
+      mime: mimeFromProofPath(downloaded.usedPath),
+      expectedAmount,
+      currency: order.currency || undefined,
+      orderId: order.id,
+    });
+    rows.push(rowFromVerify(order, expectedAmount, applySessionReuse(raw, seen), proofHash));
     const remaining = await countRemaining(order.id);
-    return {
-      row: rowFromSkip(order, expectedAmount, "Путь к файлу не является чеком."),
-      afterId: order.id,
-      remaining,
-      done: remaining === 0,
-      visionConfigured: flags.visionConfigured,
-    };
+    return finishScan(rows, order.id, remaining, flags.visionConfigured);
   }
 
-  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  const downloaded = await supabaseAdmin.storage.from("payment-proofs").download(path!);
-  if (downloaded.error || !downloaded.data) {
-    const remaining = await countRemaining(order.id);
-    return {
-      row: rowFromSkip(
-        order,
-        expectedAmount,
-        downloaded.error?.message || "Файла нет в storage — OCR смотреть нечего.",
-      ),
-      afterId: order.id,
-      remaining,
-      done: remaining === 0,
-      visionConfigured: flags.visionConfigured,
-    };
-  }
-
-  const bytes = new Uint8Array(await downloaded.data.arrayBuffer());
-  const proofHash = hashReceiptBytes(bytes);
-  const seen = (params.seenHashes ?? []).find(
-    (item) => item.hash === proofHash && item.orderId !== order.id,
-  );
-
-  const { verifyPaymentReceipt } = await import("./receipt-verify.server");
-  const raw = await verifyPaymentReceipt({
-    bytes,
-    mime: mimeFromProofPath(path!),
-    expectedAmount,
-    currency: order.currency || undefined,
-    orderId: order.id,
-  });
-  const result = applySessionReuse(raw, seen);
-  const remaining = await countRemaining(order.id);
-  return {
-    row: rowFromVerify(order, expectedAmount, result, proofHash),
-    afterId: order.id,
-    remaining,
-    done: remaining === 0,
-    visionConfigured: flags.visionConfigured,
-  };
+  const remaining = await countRemaining(afterId);
+  return finishScan(rows, afterId, remaining, flags.visionConfigured);
 }
