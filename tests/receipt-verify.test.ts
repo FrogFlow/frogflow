@@ -176,6 +176,28 @@ describe("looksLikeReceipt / extractMoneyAmounts — не тронуты пра�
     expect(extractMoneyAmounts("Сумма в местной валюте 1072.58 KZT")).toContain(1072.58);
   });
 
+  it("Kaspi фискальный: 1 900 ₸ не выкидывается как год", () => {
+    const text = `
+      Фискальный чек
+      Оплата совершена
+      1 900 ₸
+      Дидактический материал
+      1 шт. x 1 900 ₸
+      Дата и время по Астане
+      06.09.2026 16:00
+      Оплачено с Kaspi Gold
+      РНМ 390504443238
+    `;
+    const amounts = extractMoneyAmounts(text);
+    expect(amounts).toContain(1900);
+    expect(amounts).not.toContain(2026);
+    expect(amounts).not.toContain(390504443238);
+  });
+
+  it("голое 1900 тоже сумма, не год", () => {
+    expect(extractMoneyAmounts("Оплата 1900 успешно")).toContain(1900);
+  });
+
   it("экран «Платёж выполнен» 227 ₽", () => {
     expect(extractMoneyAmounts("Платёж выполнен\n227 ₽\n7055113828")).toContain(227);
     expect(extractMoneyAmounts("Платёж выполнен\n227 ₽\n7055113828")).not.toContain(7055113);
@@ -402,6 +424,27 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("amount_mismatch");
+  });
+
+  it("фискальный Kaspi PDF-текст 1 900 ₸ на заказ 1900 — принимаем", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        visionResponse(
+          "Фискальный чек. Оплата совершена. 1 900 ₸. 06.09.2026. Kaspi Gold. РНМ 390504443238.",
+        ),
+      ),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 1900,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.matchedAmount).toBe(1900);
   });
 
   it("скрин карточки товара 2000 ₸ вместо чека на 800 ₸ — не принимаем", async () => {

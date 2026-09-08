@@ -264,10 +264,27 @@ export function extractMoneyAmounts(text: string): number[] {
     if (isInsideLongDigitRun(text, idx, raw.length)) continue;
     const n = parseAmountToken(raw);
     if (n == null) continue;
-    if (n >= 1900 && n <= 2099 && /^\d{4}$/.test(raw.replace(/[\s\u00a0]/g, ""))) continue;
+    // 1900 и 2000 — обычные цены (Kaspi «1 900 ₸»). Год из «06.09.2026»
+    // уже отсечён выше как фрагмент даты; не выкидываем всю тысячу 1900–2099.
     amounts.add(n);
   }
   return [...amounts];
+}
+
+/**
+ * Текст, который уже лежит в PDF (Kaspi фискальный чек — вектор, не скан).
+ * Vision files:annotate на длинном узком бланке часто читает только низ
+ * (РНМ/ФП) и не видит «1 900 ₸» сверху.
+ */
+export async function extractEmbeddedPdfText(bytes: Uint8Array): Promise<string> {
+  if (!isPdfReceipt("application/pdf", bytes)) return "";
+  try {
+    const { extractText } = await import("unpdf");
+    const { text } = await extractText(bytes, { mergePages: true });
+    return text.trim();
+  } catch {
+    return "";
+  }
 }
 
 /** Суммы, у которых в чеке явно написана валюта — «228 ₽», «1101.24 KZT». */
@@ -489,6 +506,21 @@ async function ocrWithGoogleVision(bytes: Uint8Array, mime: string): Promise<str
   return ocrImageWithGoogleVision(bytes, apiKey);
 }
 
+async function readReceiptText(bytes: Uint8Array, mime: string): Promise<string> {
+  if (isPdfReceipt(mime, bytes)) {
+    const embedded = await extractEmbeddedPdfText(bytes);
+    if (looksLikeReceipt(embedded) && extractMoneyAmounts(embedded).length >= 1) {
+      return embedded;
+    }
+  }
+  if (!process.env.GOOGLE_VISION_API_KEY?.trim()) {
+    throw new Error(
+      "GOOGLE_VISION_API_KEY не задан — автовыдача отключена, нужна ручная проверка.",
+    );
+  }
+  return ocrWithGoogleVision(bytes, mime);
+}
+
 /**
  * Verify a payment receipt (фото или PDF) against expected order amount
  * (+2%/-10%, см. RECEIPT_UNDERPAY_TOLERANCE/RECEIPT_OVERPAY_TOLERANCE),
@@ -508,18 +540,9 @@ export async function verifyPaymentReceipt(params: {
   /** Заказ, для которого проверяется чек — исключается из проверки на повтор. */
   orderId: number;
 }): Promise<ReceiptVerifyResult> {
-  const apiKey = process.env.GOOGLE_VISION_API_KEY?.trim();
-  if (!apiKey) {
-    return {
-      ok: false,
-      reason: "ocr_unavailable",
-      detail: "GOOGLE_VISION_API_KEY не задан — автовыдача отключена, нужна ручная проверка.",
-    };
-  }
-
   let text: string;
   try {
-    text = await ocrWithGoogleVision(params.bytes, params.mime || "image/jpeg");
+    text = await readReceiptText(params.bytes, params.mime || "image/jpeg");
   } catch (e: unknown) {
     console.error("[receipt-verify] OCR failed", e);
     return {
