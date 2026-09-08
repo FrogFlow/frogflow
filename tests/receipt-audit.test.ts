@@ -8,6 +8,7 @@ import {
   ocrWouldFromVerify,
   proofPathCandidates,
   summarizeAuditRows,
+  auditOrderCaption,
   type ReceiptAuditRow,
 } from "../src/lib/receipt-audit";
 
@@ -23,6 +24,17 @@ describe("proofPathCandidates", () => {
     expect(proofPathCandidates("aaa-bbb/order-16/1.jpg", "aaa-bbb")).toEqual([
       "aaa-bbb/order-16/1.jpg",
     ]);
+  });
+});
+
+describe("auditOrderCaption", () => {
+  it("когда номера разные — пишем оба, как в админке #868 vs проверка №871", () => {
+    expect(auditOrderCaption(871, 868)).toBe("№871 · в админке #868");
+  });
+
+  it("одинаковые или без админского — только один номер", () => {
+    expect(auditOrderCaption(868, 868)).toBe("№868");
+    expect(auditOrderCaption(868, null)).toBe("№868");
   });
 });
 

@@ -307,9 +307,22 @@ export function compareReceiptAudit(params: {
   };
 }
 
+/** Админка показывает order_no, проверка чеков — display_no. Когда они разные, пишем оба. */
+export function auditOrderCaption(
+  displayNo: number | string,
+  adminNo?: number | string | null,
+): string {
+  if (adminNo != null && String(adminNo) !== "" && String(adminNo) !== String(displayNo)) {
+    return `№${displayNo} · в админке #${adminNo}`;
+  }
+  return `№${displayNo}`;
+}
+
 export type ReceiptAuditRow = {
   orderId: number;
   displayNo: number | string;
+  /** То, что продавец видит в админке (#order_no). */
+  adminNo?: number | string | null;
   status: string;
   createdAt: string | null;
   expectedAmount: number;

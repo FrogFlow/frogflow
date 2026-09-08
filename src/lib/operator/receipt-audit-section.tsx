@@ -6,6 +6,7 @@ import { confirmToast } from "@/lib/confirm-toast";
 import { getBotReceiptAuditInventoryFn, scanBotReceiptFn } from "@/lib/operator/bots.functions";
 import {
   ACTUAL_HANDLING_LABEL,
+  auditOrderCaption,
   OCR_REASON_LABEL,
   OCR_WOULD_LABEL,
   summarizeAuditRows,
@@ -57,6 +58,7 @@ function toCsv(rows: ReceiptAuditRow[]): string {
   const header = [
     "order_id",
     "display_no",
+    "admin_no",
     "status",
     "actual",
     "ocr_would",
@@ -73,6 +75,7 @@ function toCsv(rows: ReceiptAuditRow[]): string {
     const cells = [
       row.orderId,
       row.displayNo,
+      row.adminNo ?? "",
       row.status,
       row.comparison.actual,
       row.comparison.ocrWould,
@@ -375,7 +378,9 @@ export function ReceiptAuditSection({ botId, hasDeploy }: { botId: string; hasDe
                     onClick={() => setOpenId(open ? null : row.orderId)}
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">№{row.displayNo}</span>
+                      <span className="font-medium">
+                        {auditOrderCaption(row.displayNo, row.adminNo)}
+                      </span>
                       <Badge variant={badge.variant}>{badge.text}</Badge>
                       <span className="text-xs text-muted-foreground">{row.status}</span>
                     </div>

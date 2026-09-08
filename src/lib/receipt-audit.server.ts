@@ -143,6 +143,7 @@ function rowFromSkip(
   return {
     orderId: order.id,
     displayNo: displayNoOf(order),
+    adminNo: order.order_no,
     status: order.status,
     createdAt: order.created_at,
     expectedAmount,
@@ -177,6 +178,7 @@ function rowFromVerify(
   return {
     orderId: order.id,
     displayNo: displayNoOf(order),
+    adminNo: order.order_no,
     status: order.status,
     createdAt: order.created_at,
     expectedAmount,
