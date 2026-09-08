@@ -11,6 +11,7 @@ import {
   matchFulfillmentType,
   extractEmail,
   isAffirmative,
+  matchLoyaltyPointsChoice,
   classifyIncoming,
   matchDirectCommand,
   isPaymentComplaint,
@@ -484,5 +485,24 @@ describe("pickCartLineToRemove", () => {
 
   it("не угадывает, когда такого в заказе нет", () => {
     expect(pickCartLineToRemove("999", names)).toBeNull();
+  });
+});
+
+describe("matchLoyaltyPointsChoice", () => {
+  it("принимает кнопки и короткие да/нет", () => {
+    expect(matchLoyaltyPointsChoice("Да, списать")).toBe("yes");
+    expect(matchLoyaltyPointsChoice("да")).toBe("yes");
+    expect(matchLoyaltyPointsChoice("loyalty:yes")).toBe("yes");
+    expect(matchLoyaltyPointsChoice("Yes, use")).toBe("yes");
+    expect(matchLoyaltyPointsChoice("Нет, копить")).toBe("no");
+    expect(matchLoyaltyPointsChoice("нет")).toBe("no");
+    expect(matchLoyaltyPointsChoice("loyalty:no")).toBe("no");
+    expect(matchLoyaltyPointsChoice("No, keep")).toBe("no");
+  });
+
+  it("не путает вежливый отказ от разговора с отказом списывать бонусы", () => {
+    expect(matchLoyaltyPointsChoice("спасибо")).toBeNull();
+    expect(matchLoyaltyPointsChoice("хорошо")).toBeNull();
+    expect(matchLoyaltyPointsChoice("018")).toBeNull();
   });
 });

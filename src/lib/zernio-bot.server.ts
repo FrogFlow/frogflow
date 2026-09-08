@@ -167,6 +167,12 @@ interface DirectCopy {
   fulfillmentNoteSkipBtn: string;
   emailBeforeProofAsk: string;
   emailBeforeProofHint: string;
+  loyaltyAsk: (points: number, currency: string) => string;
+  loyaltyYesBtn: string;
+  loyaltyNoBtn: string;
+  loyaltyHint: string;
+  loyaltyApplied: (points: number, currency: string) => string;
+  loyaltyBalance: (points: number, currency: string) => string;
   amountDue: (amount: number, currency: string) => string;
   sendProofHint: string;
   cancelled: string;
@@ -306,6 +312,15 @@ const directCopy: Record<Locale, DirectCopy> = {
     emailBeforeProofHint:
       "Это не похоже на адрес почты. Напишите его целиком, например anna@mail.ru\n\n" +
       "Чтобы выйти, напишите «отмена».",
+    loyaltyAsk: (points, currency) =>
+      `У вас ${points} ${currency} бонусов (1 бонус = 1 ${currency}). Списать при этой оплате?`,
+    loyaltyYesBtn: "Да, списать",
+    loyaltyNoBtn: "Нет, копить",
+    loyaltyHint:
+      "Не понял ответ. Списать бонусы сейчас или оставить на потом? Напишите «да» или «нет» — либо нажмите кнопку.",
+    loyaltyApplied: (points, currency) => `Списано бонусами: ${points} ${currency}.\n`,
+    loyaltyBalance: (points, currency) =>
+      `Бонусы: ${points} ${currency}. При оформлении спрошу, списать ли их.`,
     amountDue: (amount, currency) => `К оплате: ${amount} ${currency}\n`,
     sendProofHint: "После оплаты пришлите чек сюда — картинкой или файлом.",
     cancelled:
@@ -474,6 +489,15 @@ const directCopy: Record<Locale, DirectCopy> = {
     emailBeforeProofHint:
       "Бұл пошта мекен-жайына ұқсамайды. Толық жазыңыз, мысалы anna@mail.ru\n\n" +
       "Шығу үшін «отмена» деп жазыңыз.",
+    loyaltyAsk: (points, currency) =>
+      `Сізде ${points} ${currency} бонус бар (1 бонус = 1 ${currency}). Осы төлемде есептен шығарамыз ба?`,
+    loyaltyYesBtn: "Иә, есептен шығару",
+    loyaltyNoBtn: "Жоқ, жинау",
+    loyaltyHint:
+      "Жауапты түсінбедім. Бонустарды қазір есептен шығару керек пе, әлде қалдырамыз ба? «Иә» немесе «жоқ» деп жазыңыз — немесе батырманы басыңыз.",
+    loyaltyApplied: (points, currency) => `Бонустармен есептен шығарылды: ${points} ${currency}.\n`,
+    loyaltyBalance: (points, currency) =>
+      `Бонустар: ${points} ${currency}. Рәсімдегенде сұраймын — есептен шығарамыз ба.`,
     amountDue: (amount, currency) => `Төлеуге: ${amount} ${currency}\n`,
     sendProofHint: "Төлегеннен кейін чекті осында жіберіңіз — суретпен немесе файлмен.",
     cancelled: "Болдырмадым, себет бос. Дайын болғанда материал нөмірін жазыңыз — мысалы «018».",
@@ -640,6 +664,15 @@ const directCopy: Record<Locale, DirectCopy> = {
     emailBeforeProofHint:
       "That doesn't look like an email address. Please type it in full, e.g. anna@mail.ru\n\n" +
       'To cancel, type "cancel".',
+    loyaltyAsk: (points, currency) =>
+      `You have ${points} ${currency} in bonuses (1 bonus = 1 ${currency}). Use them on this payment?`,
+    loyaltyYesBtn: "Yes, use",
+    loyaltyNoBtn: "No, keep",
+    loyaltyHint:
+      'I didn\'t catch that. Use bonuses now or keep them? Reply "yes" or "no" — or tap a button.',
+    loyaltyApplied: (points, currency) => `Paid with bonuses: ${points} ${currency}.\n`,
+    loyaltyBalance: (points, currency) =>
+      `Bonuses: ${points} ${currency}. I'll ask at checkout whether to use them.`,
     amountDue: (amount, currency) => `Total due: ${amount} ${currency}\n`,
     sendProofHint: "After paying, send the receipt here — as a photo or a file.",
     cancelled:
@@ -805,6 +838,15 @@ const directCopy: Record<Locale, DirectCopy> = {
     emailBeforeProofHint:
       "Bu pochta manziliga o’xshamaydi. To’liq yozing, masalan anna@mail.ru\n\n" +
       "Chiqish uchun «отмена» deb yozing.",
+    loyaltyAsk: (points, currency) =>
+      `Sizda ${points} ${currency} bonus bor (1 bonus = 1 ${currency}). Shu to‘lovda yechib olamizmi?`,
+    loyaltyYesBtn: "Ha, yechib olish",
+    loyaltyNoBtn: "Yo‘q, saqlash",
+    loyaltyHint:
+      "Javobni tushunmadim. Bonuslarni hozir yechib olamizmi yoki saqlaymizmi? «Ha» yoki «yo‘q» deb yozing — yoki tugmani bosing.",
+    loyaltyApplied: (points, currency) => `Bonuslar bilan yechib olingan: ${points} ${currency}.\n`,
+    loyaltyBalance: (points, currency) =>
+      `Bonuslar: ${points} ${currency}. Rasmiylashtirishda so‘rayman — yechib olamizmi.`,
     amountDue: (amount, currency) => `To‘lov uchun: ${amount} ${currency}\n`,
     sendProofHint: "To‘lovdan so‘ng chekni shu yerga yuboring — surat yoki fayl sifatida.",
     cancelled:
@@ -1533,6 +1575,19 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     }
     if (features.checkout && postbackPayload === "fulfillnote:skip") {
       await finishFulfillmentAndShowPayment(conversationId, accountId, user, null);
+      return;
+    }
+    if (features.checkout && (postbackPayload === "loyalty:yes" || postbackPayload === "loyalty:no")) {
+      const flow = await import("./direct-purchase.server");
+      const loyaltyState = flow.readDirectState(user.state);
+      if (loyaltyState.mode === "awaiting_loyalty_points") {
+        await continueDirectAfterLoyalty({
+          conversationId,
+          accountId,
+          user,
+          usePoints: postbackPayload === "loyalty:yes",
+        });
+      }
       return;
     }
     // Зона доставки (Ниши, Блок B) — тап по кнопке, когда зон ≤3.
@@ -2374,6 +2429,15 @@ async function sendCart(conversationId: string, accountId: string, user: ZernioB
   // сказано, что это уже сумма за все три.
   const totalUnits = cart.reduce((sum, line) => sum + line.quantity, 0);
   const showTotal = totalUnits > 1 && !total.mixedCurrency;
+  let loyaltyLine = "";
+  const { hasModule } = await import("./modules/modules.server");
+  if (await hasModule("loyalty")) {
+    const { getLoyaltyBalance } = await import("./loyalty.server");
+    const points = await getLoyaltyBalance(user.telegram_id);
+    if (points > 0) {
+      loyaltyLine = `\n${copy.loyaltyBalance(points, total.currency)}`;
+    }
+  }
   await reply(
     user,
     conversationId,
@@ -2381,7 +2445,8 @@ async function sendCart(conversationId: string, accountId: string, user: ZernioB
     `${copy.cartHeader(cart.length)}\n\n` +
       `${flow.renderCart(total.lines)}\n\n` +
       (showTotal ? copy.cartTotal(total.total, total.currency) + "\n\n" : "") +
-      (cart.length > 1 ? copy.cartHintMulti : copy.cartHintSingle),
+      (cart.length > 1 ? copy.cartHintMulti : copy.cartHintSingle) +
+      loyaltyLine,
     [{ type: "postback", title: copy.btnCheckout, payload: "CHECKOUT" }],
   );
 }
@@ -2569,6 +2634,39 @@ async function startInstagramCheckout(
 }
 
 /**
+ * Ответ на «списать бонусы?»: запоминаем выбор и идём дальше к почте/реквизитам.
+ * user.state на этом вебхуке ещё без use_points — патчим его здесь, иначе
+ * sendDirectPaymentDetails снова задал бы тот же вопрос.
+ */
+async function continueDirectAfterLoyalty(params: {
+  conversationId: string;
+  accountId: string;
+  user: ZernioBotUser;
+  usePoints: boolean;
+}) {
+  const { conversationId, accountId, user, usePoints } = params;
+  const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
+  await flow.setDirectState(user.user_key, { use_points: usePoints, misses: 0 });
+
+  const options = await flow.listCountries();
+  const country = options.find((option) => option.code === state.country_code);
+  if (!country) {
+    await flow.clearDirectFlow(user.user_key);
+    await sendCart(conversationId, accountId, user);
+    return;
+  }
+
+  await sendDirectPaymentDetails({
+    conversationId,
+    accountId,
+    user: { ...user, state: { ...state, use_points: usePoints } },
+    country,
+    remembered: true,
+  });
+}
+
+/**
  * Реквизиты и итог по корзине. Общий шаг для обоих путей: когда страну только
  * что назвали и когда взяли из памяти.
  */
@@ -2619,7 +2717,9 @@ async function sendDirectPaymentDetails(params: {
   // fullAmount — настоящая полная цена корзины, и именно она идёт в
   // frozen_cart.total → orders.total (Блок 9 использует orders.total для
   // "внесено/остаток"; занизить его здесь значило бы навсегда потерять
-  // разницу между задатком и полной ценой). Отдельно считаем amountDue —
+  // разницу между задатком и полной ценой). Баллы — исключение: они
+  // уменьшают сам заказ, как в Telegram, и задаток пересчитывается уже
+  // от суммы после списания. Отдельно считаем amountDue —
   // сколько реально попросить сейчас и с чем сверять чек: для
   // payment_mode=deposit Direct раньше всегда требовал fullAmount, хотя
   // Telegram на той же настройке просит только задаток — покупатель из
@@ -2631,11 +2731,45 @@ async function sendDirectPaymentDetails(params: {
   // бы реальную возможность. Уже задокументированный отдельный разрыв, не
   // новый.
   const deliveryFee = state.checkout_delivery_fee ?? 0;
-  const fullAmount = cartTotal + deliveryFee;
+  let fullAmount = cartTotal + deliveryFee;
   const { cartFulfillmentKind, loadPaymentMode, amountDueNow } =
     await import("./fulfillment.server");
   const isPhysicalCart = (await cartFulfillmentKind(user.telegram_id)) === "physical";
   const mode = isPhysicalCart ? await loadPaymentMode() : "full";
+
+  const { hasModule } = await import("./modules/modules.server");
+  const loyaltyOn = await hasModule("loyalty");
+  let pointsBalance = 0;
+  if (loyaltyOn) {
+    const { getLoyaltyBalance } = await import("./loyalty.server");
+    pointsBalance = await getLoyaltyBalance(user.telegram_id);
+  }
+
+  // Бонусы спрашиваем до почты и до реквизитов: сумма «к оплате» должна уже
+  // учитывать ответ, а чек сверяется с тем, что назвали. Нулевой баланс и
+  // выключенный модуль — шаг пропускаем, как Telegram прячет кнопку списания.
+  if (loyaltyOn && pointsBalance > 0 && state.use_points === undefined) {
+    await flow.setDirectState(user.user_key, {
+      mode: "awaiting_loyalty_points",
+      country_code: country.code,
+      misses: 0,
+    });
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      copy.loyaltyAsk(pointsBalance, currency),
+      [
+        { type: "postback", title: copy.loyaltyYesBtn, payload: "loyalty:yes" },
+        { type: "postback", title: copy.loyaltyNoBtn, payload: "loyalty:no" },
+      ],
+    );
+    return;
+  }
+
+  const { applyLoyaltyToFullAmount } = await import("./loyalty");
+  const loyalty = applyLoyaltyToFullAmount(fullAmount, pointsBalance, state.use_points === true);
+  fullAmount = loyalty.fullAmount;
   const amountDue =
     isPhysicalCart && mode === "deposit"
       ? await amountDueNow({ total: fullAmount, fulfillment_kind: "physical" })
@@ -2654,6 +2788,7 @@ async function sendDirectPaymentDetails(params: {
       mode: "awaiting_email_before_proof",
       country_code: country.code,
       frozen_cart: frozenCart,
+      checkout_points_offered: loyalty.pointsUsed,
     });
     await say(copy.emailBeforeProofAsk);
     return;
@@ -2663,12 +2798,14 @@ async function sendDirectPaymentDetails(params: {
     mode: "awaiting_proof",
     country_code: country.code,
     frozen_cart: frozenCart,
+    checkout_points_offered: loyalty.pointsUsed,
   });
 
   await say(
     `${flow.renderCart(pricedLines)}\n\n` +
       (remembered ? copy.rememberedCountryNote(country.name) : "") +
       `${requisites.instructions}\n\n` +
+      (loyalty.pointsUsed > 0 ? copy.loyaltyApplied(loyalty.pointsUsed, currency) : "") +
       copy.amountDue(amountDue, currency) +
       copy.sendProofHint,
   );
@@ -2715,6 +2852,8 @@ async function proceedToFulfillmentOrPayment(
     checkout_delivery_zone_id: undefined,
     checkout_delivery_zone_name: undefined,
     checkout_delivery_fee: undefined,
+    use_points: undefined,
+    checkout_points_offered: undefined,
   });
 
   if ((await cartFulfillmentKind(user.telegram_id)) !== "physical") {
@@ -3214,8 +3353,15 @@ async function handlePurchaseFlow(params: {
     await say(copy.removed(removed.name));
 
     // Реквизиты уже отправлены — значит, названная сумма устарела, и её надо
-    // назвать заново, вместе с обновлённым составом заказа.
-    if (state.mode === "awaiting_proof" && state.country_code) {
+    // назвать заново, вместе с обновлённым составом заказа. То же на шаге
+    // бонусов и почты до чека: сумма ещё не зафиксирована для оплаты, но
+    // вопрос «списать?» / заморозка корзины уже завязаны на текущий состав.
+    if (
+      (state.mode === "awaiting_proof" ||
+        state.mode === "awaiting_loyalty_points" ||
+        state.mode === "awaiting_email_before_proof") &&
+      state.country_code
+    ) {
       const options = await flow.listCountries();
       const country = options.find((option) => option.code === state.country_code);
       if (country) {
@@ -3231,6 +3377,34 @@ async function handlePurchaseFlow(params: {
     }
 
     await sendCart(conversationId, accountId, user);
+    return true;
+  }
+
+  // ── Списать бонусы? До почты и до реквизитов ────────────────────────────
+  if (state.mode === "awaiting_loyalty_points") {
+    if (attachmentUrl && !text.trim()) {
+      await say(copy.loyaltyHint);
+      return true;
+    }
+    const { matchLoyaltyPointsChoice } = await import("./direct-flow");
+    const choice = matchLoyaltyPointsChoice(text);
+    if (!choice) {
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint: copy.loyaltyHint,
+        say,
+        locale,
+      });
+      return true;
+    }
+    await continueDirectAfterLoyalty({
+      conversationId,
+      accountId,
+      user,
+      usePoints: choice === "yes",
+    });
     return true;
   }
 
@@ -3813,6 +3987,8 @@ async function handleAwaitingProof(ctx: {
             fee: claim.checkout_delivery_fee ?? 0,
           }
         : undefined,
+      usePoints: claim.use_points === true,
+      pointsOffered: claim.checkout_points_offered ?? 0,
     });
   } catch (error) {
     console.error("[zernio-bot] failed to create direct order", error);

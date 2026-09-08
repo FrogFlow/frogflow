@@ -142,6 +142,19 @@ export type DirectState = {
    * больше трёх (иначе кнопки хватает, и этот шаг не нужен вовсе).
    */
   pending_variant_product_id?: string;
+  /**
+   * Списать бонусы при этой оплате. `undefined` — ещё не спрашивали
+   * (или модуль выключен / баланс 0, шаг пропускается). `true`/`false` —
+   * ответ покупателя, живёт до создания заказа и чистится вместе с FLOW_KEYS.
+   */
+  use_points?: boolean;
+  /**
+   * Сколько баллов обещали списать, когда показали «к оплате». Redeem в
+   * createOrderFromCart идёт по этому числу, а не по текущему балансу: иначе
+   * человек, которому начислили баллы между реквизитами и чеком, списал бы
+   * больше, чем ему назвали.
+   */
+  checkout_points_offered?: number;
 };
 
 /**
@@ -168,6 +181,8 @@ const FLOW_KEYS = [
   "checkout_fulfillment_address",
   "checkout_fulfillment_note",
   "pending_variant_product_id",
+  "use_points",
+  "checkout_points_offered",
 ] as const;
 
 /**
@@ -1576,6 +1591,14 @@ export async function createOrderFromCart(params: {
    * совместимость) или получение — самовывоз.
    */
   deliveryZone?: { id: string; name: string; fee: number };
+  /**
+   * Списать бонусы при создании заказа. Сумма в frozenPriced.total уже после
+   * скидки (её видел покупатель и по ней платил); здесь только само списание
+   * с баланса и запись points_used. Не задано / false — как раньше, без баллов.
+   */
+  usePoints?: boolean;
+  /** Сколько баллов назвали при показе реквизитов — верхняя граница redeem. */
+  pointsOffered?: number;
 }): Promise<{
   id: number;
   order_no: number | null;
@@ -1618,6 +1641,18 @@ export async function createOrderFromCart(params: {
         return null;
       }
       reservedStock.push({ productId: line.productId, qty: line.quantity });
+    }
+  }
+
+  let pointsUsed = 0;
+  let restoreRedeemedPoints: (() => Promise<void>) | null = null;
+  if (params.usePoints && (await hasModule("loyalty"))) {
+    const { redeemPointsForOrder, restorePointsForOrder } = await import("./loyalty.server");
+    const cap = Number(params.pointsOffered) > 0 ? Number(params.pointsOffered) : amount;
+    const redeemed = await redeemPointsForOrder(params.user.telegram_id, cap);
+    pointsUsed = redeemed.discount;
+    if (pointsUsed > 0) {
+      restoreRedeemedPoints = () => restorePointsForOrder(params.user.telegram_id, pointsUsed);
     }
   }
 
@@ -1667,6 +1702,7 @@ export async function createOrderFromCart(params: {
       delivery_zone_id: params.deliveryZone?.id ?? null,
       delivery_zone_name: params.deliveryZone?.name ?? null,
       delivery_fee: params.deliveryZone?.fee ?? 0,
+      points_used: pointsUsed,
     })
     .select("id, order_no, fulfillment_kind")
     .single();
@@ -1674,6 +1710,7 @@ export async function createOrderFromCart(params: {
   if (error || !order) {
     console.error("[direct] create order from cart failed", error);
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+    if (restoreRedeemedPoints) await restoreRedeemedPoints();
     return null;
   }
 
@@ -1732,6 +1769,7 @@ export async function createOrderFromCart(params: {
     console.error("[direct] create order items failed", itemsError);
     await s.from("orders").delete().eq("id", order.id);
     for (const r of reservedStock) await restoreStock(r.productId, r.qty);
+    if (restoreRedeemedPoints) await restoreRedeemedPoints();
     return null;
   }
 

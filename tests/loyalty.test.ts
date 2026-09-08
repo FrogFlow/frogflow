@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computePointsEarned, computePointsDiscount } from "../src/lib/loyalty";
+import { computePointsEarned, computePointsDiscount, applyLoyaltyToFullAmount } from "../src/lib/loyalty";
 
 describe("computePointsEarned", () => {
   it("считает процент от суммы заказа, округляя вниз", () => {
@@ -24,5 +24,19 @@ describe("computePointsDiscount", () => {
     expect(computePointsDiscount(0, 300)).toBe(0);
     expect(computePointsDiscount(1000, 0)).toBe(0);
     expect(computePointsDiscount(-100, 300)).toBe(0);
+  });
+});
+
+describe("applyLoyaltyToFullAmount", () => {
+  it("пример клиента: товар 500, на балансе 100 — к оплате 400", () => {
+    expect(applyLoyaltyToFullAmount(500, 100, true)).toEqual({ fullAmount: 400, pointsUsed: 100 });
+  });
+
+  it("без согласия сумму не трогает", () => {
+    expect(applyLoyaltyToFullAmount(500, 100, false)).toEqual({ fullAmount: 500, pointsUsed: 0 });
+  });
+
+  it("не списывает больше суммы заказа", () => {
+    expect(applyLoyaltyToFullAmount(200, 500, true)).toEqual({ fullAmount: 0, pointsUsed: 200 });
   });
 });

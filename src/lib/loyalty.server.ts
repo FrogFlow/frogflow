@@ -11,7 +11,6 @@
  * Отдельно от bot.server.ts и orders.server.ts по той же причине, что и
  * referrals.server.ts — нужен обоим, прямой импорт друг у друга дал бы цикл.
  */
-import { tg } from "./telegram.server";
 import { computePointsEarned, computePointsDiscount } from "./loyalty";
 
 async function db() {
@@ -85,6 +84,22 @@ export async function redeemPointsForOrder(
   return { discount };
 }
 
+export async function getLoyaltyBalance(telegramId: number): Promise<number> {
+  const s = await db();
+  const { data: user } = await s
+    .from("bot_users")
+    .select("loyalty_points")
+    .eq("telegram_id", telegramId)
+    .maybeSingle();
+  return Math.max(0, Math.floor(Number(user?.loyalty_points ?? 0)));
+}
+
+/** Откат списания, если заказ после redeem создать не удалось. */
+export async function restorePointsForOrder(telegramId: number, points: number): Promise<void> {
+  if (points <= 0) return;
+  await creditPoints(telegramId, points);
+}
+
 /**
  * Вызывается сразу после того, как заказ реально перешёл в delivered.
  * Идемпотентность — на самом заказе (points_earned: 0 → N ровно один раз),
@@ -119,8 +134,13 @@ export async function awardPointsForDelivery(orderId: number, telegramId: number
 
   const credited = await creditPoints(telegramId, points);
   if (!credited) return;
-  await tg("sendMessage", {
-    chat_id: telegramId,
-    text: `🏆 Вам начислено ${points} баллов за покупку. Баллами можно оплатить часть следующего заказа.`,
-  }).catch(() => {});
+  // Telegram-чат есть не у всех: Instagram/WhatsApp держат синтетический
+  // telegram_id, и sendMessage туда только засоряет лог 400. Пишем тем же
+  // маршрутом, что отклонение и выдача (notifyOrderCustomer) — в тот канал,
+  // откуда заказ.
+  const { notifyOrderCustomer } = await import("./orders.server");
+  await notifyOrderCustomer(
+    orderId,
+    `🏆 Вам начислено ${points} баллов за покупку. Баллами можно оплатить часть следующего заказа.`,
+  ).catch(() => {});
 }

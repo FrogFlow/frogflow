@@ -38,6 +38,12 @@ import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
  * (лимит Zernio — три на сообщение), поэтому шлём пронумерованный список
  * текстом и ждём ответ тем же приёмом, что и выбор зоны доставки/страны.
  * До трёх вариантов включительно кнопки хватает, и этот режим не нужен.
+ *
+ * `awaiting_loyalty_points` — списать ли бонусы, пока реквизиты ещё не показаны.
+ * В Telegram это кнопка в корзине; в Direct корзина — одно сообщение без места
+ * под ещё одну кнопку (лимит три), поэтому спрашиваем отдельно «да/нет» перед
+ * оплатой. Списание происходит только при создании заказа по чеку, иначе
+ * брошенный чекаут украл бы баллы.
  */
 export type DirectMode =
   | "awaiting_locale"
@@ -48,6 +54,7 @@ export type DirectMode =
   | "awaiting_address"
   | "awaiting_fulfillment_note"
   | "awaiting_variant_choice"
+  | "awaiting_loyalty_points"
   | "awaiting_email_before_proof"
   | "awaiting_proof"
   | "processing_proof"
@@ -408,6 +415,79 @@ export function isAffirmative(text: string): boolean {
     .toLowerCase()
     .replace(/[.!]+$/, "");
   return AFFIRMATIVES.has(normalized) || AFFIRMATIVES.has(`${normalized}!`);
+}
+
+function normalizeLoyaltyReply(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!]+$/, "")
+    .replace(/[’‘`´]/g, "'")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Ответ на «списать бонусы?» в Direct. Не используем isDismissal: «спасибо»
+ * и «хорошо» там закрывают разговор, а здесь это не отказ от списания.
+ */
+export function matchLoyaltyPointsChoice(text: string): "yes" | "no" | null {
+  const normalized = normalizeLoyaltyReply(text);
+  if (!normalized) return null;
+
+  if (normalized === "loyalty:yes") return "yes";
+  if (normalized === "loyalty:no") return "no";
+
+  const yes = new Set([
+    "да",
+    "да списать",
+    "да, списать",
+    "списать",
+    "yes",
+    "yes use",
+    "yes, use",
+    "yes redeem",
+    "yes, redeem",
+    "иә",
+    "иә, есептен шығару",
+    "есептен шығару",
+    "ha",
+    "ha, yechib olish",
+    "yechib olish",
+    "+",
+    "ага",
+    "угу",
+    "давай",
+    "давайте",
+    "ок",
+    "окей",
+    "ok",
+  ]);
+  const no = new Set([
+    "нет",
+    "не",
+    "нет копить",
+    "нет, копить",
+    "не списывать",
+    "no",
+    "no keep",
+    "no, keep",
+    "keep",
+    "keep them",
+    "жоқ",
+    "жоқ, жинау",
+    "жинау",
+    "yo'q",
+    "yo'q, saqlash",
+    "saqlash",
+    "-",
+  ]);
+  if (yes.has(normalized)) return "yes";
+  if (no.has(normalized)) return "no";
+  if (normalized.startsWith("да,") || normalized.startsWith("да ")) return "yes";
+  if (normalized.startsWith("yes,") || normalized.startsWith("yes ")) return "yes";
+  if (normalized.startsWith("нет")) return "no";
+  if (normalized.startsWith("no,") || normalized === "no") return "no";
+  return null;
 }
 
 /**
