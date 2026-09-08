@@ -14,6 +14,14 @@ import { errorMessage } from "@/lib/error-message";
 export const RECEIPT_UNDERPAY_TOLERANCE = 0.02;
 export const RECEIPT_OVERPAY_TOLERANCE = 0.1;
 
+/**
+ * Когда сумму заказа переводим в валюту чека: курс банка и наш mid-market
+ * (open.er-api, тот же convertAmount, что каталог) расходятся на пару процентов.
+ * 2% недоплаты здесь ломали бы честные переводы.
+ */
+export const RECEIPT_FX_UNDERPAY_TOLERANCE = 0.05;
+export const RECEIPT_FX_OVERPAY_TOLERANCE = 0.12;
+
 const RECEIPT_MARKERS = [
   "оплат",
   "перевод",
@@ -68,17 +76,27 @@ const CURRENCY_MARKERS: Record<string, string[]> = {
  * текстом написана не та валюта, которую ждёт заказ.
  */
 export function currencyConflict(text: string, expectedCurrency: string | undefined): boolean {
-  if (!expectedCurrency) return false;
-  const expected = expectedCurrency.toUpperCase();
-  const expectedMarkers = CURRENCY_MARKERS[expected];
-  if (!expectedMarkers) return false;
+  const found = detectReceiptCurrency(text, expectedCurrency);
+  if (!expectedCurrency || !found) return false;
+  return found.toUpperCase() !== expectedCurrency.toUpperCase();
+}
+
+/**
+ * Какая валюта написана в чеке. Если есть маркеры ожидаемой — берём её
+ * (даже когда рядом мелькнул «руб.» в подписи банка). Иначе — первая
+ * известная чужая. Нет маркеров — null, сумму сверяем как раньше, в валюте заказа.
+ */
+export function detectReceiptCurrency(text: string, expectedCurrency?: string): string | null {
   const t = text.toLowerCase().replace(/ё/g, "е");
-  if (expectedMarkers.some((m) => t.includes(m))) return false;
-  for (const [code, markers] of Object.entries(CURRENCY_MARKERS)) {
-    if (code === expected) continue;
-    if (markers.some((m) => t.includes(m))) return true;
+  const expected = expectedCurrency?.toUpperCase();
+  if (expected) {
+    const expectedMarkers = CURRENCY_MARKERS[expected];
+    if (expectedMarkers?.some((m) => t.includes(m))) return expected;
   }
-  return false;
+  for (const [code, markers] of Object.entries(CURRENCY_MARKERS)) {
+    if (markers.some((m) => t.includes(m))) return code;
+  }
+  return null;
 }
 
 export type ReceiptVerifyResult =
@@ -381,7 +399,9 @@ async function ocrWithGoogleVision(bytes: Uint8Array, mime: string): Promise<str
 /**
  * Verify a payment receipt (фото или PDF) against expected order amount
  * (+2%/-10%, см. RECEIPT_UNDERPAY_TOLERANCE/RECEIPT_OVERPAY_TOLERANCE),
- * against the expected currency (см. currencyConflict), and against reuse
+ * against the expected currency (см. detectReceiptCurrency): чужая валюта
+ * в чеке — не отказ, а перевод суммы заказа тем же convertAmount, что каталог,
+ * и сверка уже в валюте чека.
  * on another order of the same tenant (см. findReceiptReuse).
  *
  * Картинки — images:annotate. PDF — files:annotate (до 5 страниц). Дальше
@@ -444,22 +464,46 @@ export async function verifyPaymentReceipt(params: {
     };
   }
 
-  if (currencyConflict(text, params.currency)) {
-    return {
-      ok: false,
-      reason: "currency_mismatch",
-      detail: `В чеке похоже указана другая валюта, не ${params.currency}. Нужна ручная проверка.`,
-      extractedText: text.slice(0, 2000),
+  const amounts = extractMoneyAmounts(text);
+  const orderCurrency = params.currency?.trim().toUpperCase() || undefined;
+  const receiptCurrency = detectReceiptCurrency(text, orderCurrency);
+  let expected = Number(params.expectedAmount);
+  let matchOpts: { underTolerance?: number; overTolerance?: number } | undefined;
+  let comparedAs = orderCurrency;
+
+  if (receiptCurrency && orderCurrency && receiptCurrency !== orderCurrency) {
+    const { convertAmount } = await import("./currency.server");
+    const converted = await convertAmount(expected, orderCurrency, receiptCurrency);
+    if (converted == null) {
+      return {
+        ok: false,
+        reason: "currency_mismatch",
+        detail: `В чеке ${receiptCurrency}, заказ ${orderCurrency} — курс перевести не удалось. Нужна ручная проверка.`,
+        extractedText: text.slice(0, 2000),
+      };
+    }
+    expected = converted;
+    comparedAs = receiptCurrency;
+    matchOpts = {
+      underTolerance: RECEIPT_FX_UNDERPAY_TOLERANCE,
+      overTolerance: RECEIPT_FX_OVERPAY_TOLERANCE,
     };
   }
 
-  const amounts = extractMoneyAmounts(text);
-  const matched = findMatchingAmount(amounts, Number(params.expectedAmount));
+  const matched = findMatchingAmount(amounts, expected, matchOpts);
   if (matched == null) {
+    const fxNote =
+      comparedAs && orderCurrency && comparedAs !== orderCurrency
+        ? `заказ ${params.expectedAmount} ${orderCurrency} ≈ ${expected} ${comparedAs} по курсу каталога`
+        : `Сумма заказа ${params.expectedAmount}${orderCurrency ? ` ${orderCurrency}` : ""}`;
     return {
       ok: false,
       reason: "amount_mismatch",
-      detail: `Сумма заказа ${params.expectedAmount}${params.currency ? ` ${params.currency}` : ""} не найдена в чеке (допуск: -2%/+10%). Найдены: ${amounts.slice(0, 8).join(", ") || "—"}.`,
+      detail: `${fxNote} не найдена в чеке (допуск: ${
+        matchOpts
+          ? `-${RECEIPT_FX_UNDERPAY_TOLERANCE * 100}%/+${RECEIPT_FX_OVERPAY_TOLERANCE * 100}%`
+          : "-2%/+10%"
+      }). Найдены: ${amounts.slice(0, 8).join(", ") || "—"}.`,
       extractedText: text.slice(0, 2000),
     };
   }

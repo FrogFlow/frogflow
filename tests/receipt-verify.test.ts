@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   findMatchingAmount,
   currencyConflict,
+  detectReceiptCurrency,
   looksLikeReceipt,
   looksLikeFailedPayment,
   isReceiptRetryReason,
@@ -41,6 +42,20 @@ describe("findMatchingAmount — асимметричный допуск (Бло
   it("константы соответствуют документированным значениям", () => {
     expect(RECEIPT_UNDERPAY_TOLERANCE).toBe(0.02);
     expect(RECEIPT_OVERPAY_TOLERANCE).toBe(0.1);
+  });
+});
+
+describe("detectReceiptCurrency", () => {
+  it("если в чеке ожидаемая валюта — берём её, даже когда рядом другая", () => {
+    expect(detectReceiptCurrency("Оплата 5000 тенге, комиссия 10 руб", "KZT")).toBe("KZT");
+  });
+
+  it("только чужая валюта — возвращаем её", () => {
+    expect(detectReceiptCurrency("Перевод 1000 RUB успешно", "KZT")).toBe("RUB");
+  });
+
+  it("нет маркеров — null", () => {
+    expect(detectReceiptCurrency("Оплата 5000 получена", "KZT")).toBeNull();
   });
 });
 
@@ -131,6 +146,18 @@ describe("looksLikeReceipt / extractMoneyAmounts — не тронуты пра�
 });
 
 let reuseMatch: { id: number; display_no: number; order_no: number } | null = null;
+
+vi.mock("../src/lib/currency.server", () => ({
+  convertAmount: async (amount: number, from: string, to: string) => {
+    const f = from.toUpperCase();
+    const t = to.toUpperCase();
+    if (f === t) return Math.round(amount);
+    // Условный курс для тестов, не живой FX: 5 ₸ = 1 ₽.
+    if (f === "KZT" && t === "RUB") return Math.round(amount / 5);
+    if (f === "RUB" && t === "KZT") return Math.round(amount * 5);
+    return null;
+  },
+}));
 
 vi.mock("../src/integrations-supabase/client.server", () => ({
   supabaseAdmin: {
@@ -247,7 +274,25 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
     expect(result.ok).toBe(true);
   });
 
-  it("явный конфликт валюты — currency_mismatch, до проверки на повтор не доходит", async () => {
+  it("чек в другой валюте — переводим сумму заказа и сверяем", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(visionResponse("Перевод успешно выполнен. Сумма: 1000 RUB")),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 5000,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.matchedAmount).toBe(1000);
+  });
+
+  it("чек в другой валюте, сумма после курса не сошлась — amount_mismatch", async () => {
+    reuseMatch = null;
     global.fetch = vi.fn(() =>
       Promise.resolve(visionResponse("Перевод успешно выполнен. Сумма: 1000 RUB")),
     ) as unknown as typeof fetch;
@@ -260,7 +305,10 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
       orderId: 99,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("currency_mismatch");
+    if (!result.ok) {
+      expect(result.reason).toBe("amount_mismatch");
+      expect(result.detail).toMatch(/RUB/);
+    }
   });
 
   it("PDF идёт в files:annotate и проходит ту же сверку суммы", async () => {
