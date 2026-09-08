@@ -158,6 +158,23 @@ function bytesToBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
 }
 
+export function isPdfReceipt(mime: string, bytes?: Uint8Array): boolean {
+  const m = mime.toLowerCase();
+  if (m.includes("pdf")) return true;
+  if (!bytes || bytes.length < 4) return false;
+  return String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) === "%PDF";
+}
+
+/**
+ * Онлайн files:annotate принимает JSON до 10 МБ, base64 раздувает файл
+ * примерно на 37%. Банковский PDF обычно десятки–сотни КБ; если вдруг
+ * прилетел огромный документ — лучше ручная проверка, чем оборванный запрос.
+ */
+const MAX_PDF_BYTES_FOR_VISION = 7 * 1024 * 1024;
+
+/** Синхронный files:annotate читает не больше 5 страниц. Чек почти всегда на 1-й. */
+const PDF_OCR_PAGES = [1, 2, 3, 4, 5];
+
 /** SHA-256 картинки чека — для сверки на повторное использование (Блок A.4). */
 export function hashReceiptBytes(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -243,17 +260,19 @@ async function findReceiptReuse(
   return { displayNo: (data.display_no ?? data.order_no ?? data.id) as number };
 }
 
-async function ocrWithGoogleVision(bytes: Uint8Array, mime: string): Promise<string> {
-  const apiKey = process.env.GOOGLE_VISION_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("GOOGLE_VISION_API_KEY not set");
-  }
+type VisionPageAnnotation = {
+  error?: { message?: string };
+  fullTextAnnotation?: { text?: string };
+  textAnnotations?: Array<{ description?: string }>;
+};
 
-  // Vision images:annotate expects image content; PDFs often fail here → caller handles.
-  if (mime.includes("pdf") || mime === "application/pdf") {
-    throw new Error("PDF OCR via images API not supported; send to manual review");
-  }
+function textFromVisionPage(page: VisionPageAnnotation | undefined): string {
+  const full = page?.fullTextAnnotation?.text?.trim();
+  if (full) return full;
+  return page?.textAnnotations?.[0]?.description?.trim() || "";
+}
 
+async function ocrImageWithGoogleVision(bytes: Uint8Array, apiKey: string): Promise<string> {
   const url = `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
     method: "POST",
@@ -273,11 +292,7 @@ async function ocrWithGoogleVision(bytes: Uint8Array, mime: string): Promise<str
 
   const json = (await res.json()) as {
     error?: { message?: string };
-    responses?: Array<{
-      error?: { message?: string };
-      fullTextAnnotation?: { text?: string };
-      textAnnotations?: Array<{ description?: string }>;
-    }>;
+    responses?: VisionPageAnnotation[];
   };
 
   if (!res.ok) {
@@ -289,17 +304,84 @@ async function ocrWithGoogleVision(bytes: Uint8Array, mime: string): Promise<str
     throw new Error(first.error.message);
   }
 
-  const full = first?.fullTextAnnotation?.text?.trim();
-  if (full) return full;
-  const firstAnn = first?.textAnnotations?.[0]?.description?.trim();
-  return firstAnn || "";
+  return textFromVisionPage(first);
 }
 
 /**
- * Verify a payment receipt image against expected order amount (+2%/-10%,
- * см. RECEIPT_UNDERPAY_TOLERANCE/RECEIPT_OVERPAY_TOLERANCE), against the
- * expected currency (см. currencyConflict), and against reuse on another
- * order of the same tenant (см. findReceiptReuse).
+ * PDF нельзя отдать в images:annotate — там только картинки. Для файлов
+ * Vision даёт files:annotate (до 5 страниц синхронно, без GCS). Банковский
+ * чек из РФ/РБ часто именно PDF, не скрин.
+ */
+async function ocrPdfWithGoogleVision(bytes: Uint8Array, apiKey: string): Promise<string> {
+  if (bytes.length > MAX_PDF_BYTES_FOR_VISION) {
+    throw new Error("PDF слишком большой для онлайн-OCR Vision");
+  }
+
+  const url = `https://vision.googleapis.com/v1/files:annotate?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(20_000),
+    body: JSON.stringify({
+      requests: [
+        {
+          inputConfig: {
+            content: bytesToBase64(bytes),
+            mimeType: "application/pdf",
+          },
+          features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
+          pages: PDF_OCR_PAGES,
+        },
+      ],
+    }),
+  });
+
+  const json = (await res.json()) as {
+    error?: { message?: string };
+    responses?: Array<{
+      error?: { message?: string };
+      responses?: VisionPageAnnotation[];
+    }>;
+  };
+
+  if (!res.ok) {
+    throw new Error(json.error?.message || `Vision HTTP ${res.status}`);
+  }
+
+  const file = json.responses?.[0];
+  if (file?.error?.message) {
+    throw new Error(file.error.message);
+  }
+
+  const parts: string[] = [];
+  for (const page of file?.responses ?? []) {
+    if (page?.error?.message) continue;
+    const text = textFromVisionPage(page);
+    if (text) parts.push(text);
+  }
+  return parts.join("\n");
+}
+
+async function ocrWithGoogleVision(bytes: Uint8Array, mime: string): Promise<string> {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("GOOGLE_VISION_API_KEY not set");
+  }
+
+  if (isPdfReceipt(mime, bytes)) {
+    return ocrPdfWithGoogleVision(bytes, apiKey);
+  }
+  return ocrImageWithGoogleVision(bytes, apiKey);
+}
+
+/**
+ * Verify a payment receipt (фото или PDF) against expected order amount
+ * (+2%/-10%, см. RECEIPT_UNDERPAY_TOLERANCE/RECEIPT_OVERPAY_TOLERANCE),
+ * against the expected currency (см. currencyConflict), and against reuse
+ * on another order of the same tenant (см. findReceiptReuse).
+ *
+ * Картинки — images:annotate. PDF — files:annotate (до 5 страниц). Дальше
+ * тот же разбор текста: маркеры платежа, отказ, валюта, сумма, повтор.
  */
 export async function verifyPaymentReceipt(params: {
   bytes: Uint8Array;
@@ -334,7 +416,7 @@ export async function verifyPaymentReceipt(params: {
     return {
       ok: false,
       reason: "not_receipt",
-      detail: "На изображении почти нет текста.",
+      detail: "В файле почти нет текста.",
       extractedText: text,
     };
   }

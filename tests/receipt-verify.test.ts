@@ -5,6 +5,7 @@ import {
   looksLikeReceipt,
   looksLikeFailedPayment,
   isReceiptRetryReason,
+  isPdfReceipt,
   extractMoneyAmounts,
   hashReceiptBytes,
   RECEIPT_UNDERPAY_TOLERANCE,
@@ -102,6 +103,16 @@ describe("looksLikeFailedPayment", () => {
     expect(isReceiptRetryReason("payment_failed")).toBe(true);
     expect(isReceiptRetryReason("not_receipt")).toBe(true);
     expect(isReceiptRetryReason("amount_mismatch")).toBe(false);
+  });
+});
+
+describe("isPdfReceipt", () => {
+  it("узнаёт PDF по mime и по сигнатуре %PDF", () => {
+    expect(isPdfReceipt("application/pdf")).toBe(true);
+    expect(isPdfReceipt("application/pdf; charset=binary")).toBe(true);
+    const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]);
+    expect(isPdfReceipt("application/octet-stream", pdf)).toBe(true);
+    expect(isPdfReceipt("image/jpeg", new Uint8Array([0xff, 0xd8, 0xff]))).toBe(false);
   });
 });
 
@@ -250,5 +261,54 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("currency_mismatch");
+  });
+
+  it("PDF идёт в files:annotate и проходит ту же сверку суммы", async () => {
+    reuseMatch = null;
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            responses: [
+              {
+                responses: [{ fullTextAnnotation: { text: "Оплата успешно. Сумма: 1000 KZT" } }],
+              },
+            ],
+          }),
+      }),
+    ) as unknown as typeof fetch;
+    global.fetch = fetchMock;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+    const result = await verifyPaymentReceipt({
+      bytes: pdfBytes,
+      mime: "application/pdf",
+      expectedAmount: 1000,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(true);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("files:annotate");
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit)?.body));
+    expect(body.requests[0].inputConfig.mimeType).toBe("application/pdf");
+    expect(body.requests[0].pages).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("картинка по-прежнему идёт в images:annotate", async () => {
+    reuseMatch = null;
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(visionResponse("Оплата успешно. Сумма: 1000 KZT")),
+    ) as unknown as typeof fetch;
+    global.fetch = fetchMock;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 1000,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("images:annotate");
   });
 });
