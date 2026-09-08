@@ -294,6 +294,8 @@ async function ocrImageWithGoogleVision(bytes: Uint8Array, apiKey: string): Prom
     error?: { message?: string };
     responses?: VisionPageAnnotation[];
   };
+  const { recordReceiptOcrCall } = await import("./ai-usage.server");
+  await recordReceiptOcrCall();
 
   if (!res.ok) {
     throw new Error(json.error?.message || `Vision HTTP ${res.status}`);
@@ -343,6 +345,8 @@ async function ocrPdfWithGoogleVision(bytes: Uint8Array, apiKey: string): Promis
       responses?: VisionPageAnnotation[];
     }>;
   };
+  const { recordReceiptOcrCall } = await import("./ai-usage.server");
+  await recordReceiptOcrCall();
 
   if (!res.ok) {
     throw new Error(json.error?.message || `Vision HTTP ${res.status}`);

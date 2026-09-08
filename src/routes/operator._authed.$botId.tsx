@@ -39,6 +39,7 @@ import {
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import { VERTICAL_KEYS, verticalDef, type VerticalKey } from "@/lib/verticals/registry";
 import { formatBytes, daysSince } from "@/lib/operator/format";
+import { AiUsageSection } from "@/lib/operator/ai-usage-section";
 import { Badge } from "@/components-ui/badge";
 import { Button } from "@/components-ui/button";
 import { Input } from "@/components-ui/input";
@@ -314,6 +315,7 @@ function OperatorClientCard() {
           <TabsTrigger value="modules">Модули</TabsTrigger>
           <TabsTrigger value="client">Клиент</TabsTrigger>
           <TabsTrigger value="subscription">Подписка</TabsTrigger>
+          <TabsTrigger value="usage">Расход</TabsTrigger>
           <TabsTrigger value="deploy">Деплой</TabsTrigger>
           <TabsTrigger value="journal">Журнал</TabsTrigger>
         </TabsList>
@@ -560,6 +562,15 @@ function OperatorClientCard() {
 
         <TabsContent value="subscription" className="space-y-6">
           <SubscriptionSection botId={botId} />
+        </TabsContent>
+
+        <TabsContent value="usage" className="space-y-6">
+          <AiUsageSection
+            botId={botId}
+            hasSmartSearch={bot.modules.smart_search === true}
+            hasReceiptOcr={bot.modules.receipt_ocr === true}
+            hasDeploy={Boolean(bot.app_url && bot.has_internal_secret)}
+          />
         </TabsContent>
 
         <TabsContent value="deploy" className="space-y-6">

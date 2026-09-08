@@ -53,6 +53,7 @@ import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/m
 import { Route as ApiCronMiscRetentionRouteImport } from './routes/api/cron/misc-retention'
 import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
 import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio-retry'
+import { Route as ApiInternalAiUsageRouteImport } from './routes/api/internal/ai-usage'
 import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
 import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/health'
 import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
@@ -311,6 +312,11 @@ const ApiCronZernioRetryRoute = ApiCronZernioRetryRouteImport.update({
   path: '/api/cron/zernio-retry',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalAiUsageRoute = ApiInternalAiUsageRouteImport.update({
+  id: '/api/internal/ai-usage',
+  path: '/api/internal/ai-usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiInternalDiagnosticsRoute = ApiInternalDiagnosticsRouteImport.update({
   id: '/api/internal/diagnostics',
   path: '/api/internal/diagnostics',
@@ -544,6 +550,7 @@ export interface FileRoutesByFullPath {
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
+  '/api/internal/ai-usage': typeof ApiInternalAiUsageRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
@@ -623,6 +630,7 @@ export interface FileRoutesByTo {
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
+  '/api/internal/ai-usage': typeof ApiInternalAiUsageRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
@@ -705,6 +713,7 @@ export interface FileRoutesById {
   '/api/cron/misc-retention': typeof ApiCronMiscRetentionRoute
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
+  '/api/internal/ai-usage': typeof ApiInternalAiUsageRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
@@ -788,6 +797,7 @@ export interface FileRouteTypes {
     | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
+    | '/api/internal/ai-usage'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
@@ -867,6 +877,7 @@ export interface FileRouteTypes {
     | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
+    | '/api/internal/ai-usage'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
@@ -948,6 +959,7 @@ export interface FileRouteTypes {
     | '/api/cron/misc-retention'
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
+    | '/api/internal/ai-usage'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
@@ -1006,6 +1018,7 @@ export interface RootRouteChildren {
   ApiCronMiscRetentionRoute: typeof ApiCronMiscRetentionRoute
   ApiCronZernioLogsPruneRoute: typeof ApiCronZernioLogsPruneRoute
   ApiCronZernioRetryRoute: typeof ApiCronZernioRetryRoute
+  ApiInternalAiUsageRoute: typeof ApiInternalAiUsageRoute
   ApiInternalDiagnosticsRoute: typeof ApiInternalDiagnosticsRoute
   ApiInternalHealthRoute: typeof ApiInternalHealthRoute
   ApiInternalNotifyOwnerRoute: typeof ApiInternalNotifyOwnerRoute
@@ -1343,6 +1356,13 @@ declare module '@tanstack/react-router' {
       path: '/api/cron/zernio-retry'
       fullPath: '/api/cron/zernio-retry'
       preLoaderRoute: typeof ApiCronZernioRetryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/ai-usage': {
+      id: '/api/internal/ai-usage'
+      path: '/api/internal/ai-usage'
+      fullPath: '/api/internal/ai-usage'
+      preLoaderRoute: typeof ApiInternalAiUsageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/internal/diagnostics': {
@@ -1736,6 +1756,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronMiscRetentionRoute: ApiCronMiscRetentionRoute,
   ApiCronZernioLogsPruneRoute: ApiCronZernioLogsPruneRoute,
   ApiCronZernioRetryRoute: ApiCronZernioRetryRoute,
+  ApiInternalAiUsageRoute: ApiInternalAiUsageRoute,
   ApiInternalDiagnosticsRoute: ApiInternalDiagnosticsRoute,
   ApiInternalHealthRoute: ApiInternalHealthRoute,
   ApiInternalNotifyOwnerRoute: ApiInternalNotifyOwnerRoute,

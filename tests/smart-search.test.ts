@@ -116,8 +116,10 @@ describe("smartSearchProductIds — промпт учитывает нишу (У
   });
 
   function mockFetchCapturingBody(capture: { body?: string }) {
-    global.fetch = vi.fn(async (_url, init) => {
-      capture.body = String(init?.body ?? "");
+    global.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes("api.anthropic.com")) {
+        capture.body = String(init?.body ?? "");
+      }
       return new Response(
         JSON.stringify({
           content: [{ type: "text", text: '{"ids":[]}' }],

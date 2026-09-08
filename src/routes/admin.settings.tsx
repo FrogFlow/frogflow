@@ -9,6 +9,7 @@ import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Checkbox } from "@/components-ui/checkbox";
 import { Textarea } from "@/components-ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import {
   getSettings,
   saveSetting,
@@ -24,12 +25,8 @@ import { t, type Locale } from "@/lib/i18n";
 import { useModules } from "@/lib/modules/use-modules";
 import { useVertical } from "@/lib/verticals/use-vertical";
 import { VERTICALS } from "@/lib/verticals/registry";
-import {
-  DEFAULT_USD_PER_REQUEST,
-  SMART_SEARCH_DAILY_LIMIT,
-  formatUsd,
-  parseDailyCount,
-} from "@/lib/smart-search-cost";
+import { SMART_SEARCH_DAILY_LIMIT, formatUsd, parseDailyCount } from "@/lib/smart-search-cost";
+import { parseSmartSearchLifetime, parseReceiptOcrCount, receiptOcrUsd } from "@/lib/ai-usage";
 
 export const Route = createFileRoute("/admin/settings")({
   component: SettingsPage,
@@ -40,6 +37,11 @@ const copy: Record<
   {
     roles: { id: string; label: string }[];
     title: string;
+    tabGeneral: string;
+    tabShop: string;
+    tabBot: string;
+    tabUsage: string;
+    usageHint: string;
     recipientsLabel: string;
     idsPlaceholder: string;
     recipientsHint: string;
@@ -78,13 +80,15 @@ const copy: Record<
     smartSearchHint: string;
     smartSearchEnableLabel: string;
     smartSearchLastError: (detail: string) => string;
-    smartSearchUsage: (used: number, limit: number) => string;
+    smartSearchLifetime: (count: number, usd: string) => string;
+    smartSearchDailyGuard: (used: number, limit: number) => string;
     smartSearchUsageHint: string;
-    smartSearchRateSpend: (rate: string, usd: string) => string;
     smartSearchApiKeyMissing: string;
     receiptOcrTitle: string;
     receiptOcrHint: string;
     receiptOcrEnableLabel: string;
+    receiptOcrLifetime: (count: number, usd: string) => string;
+    receiptOcrRateHint: string;
     webStorefrontTitle: string;
     webStorefrontHint: string;
     webStorefrontOpenBtn: string;
@@ -132,6 +136,12 @@ const copy: Record<
       { id: "7256670713", label: "Разработчик" },
     ],
     title: "Настройки",
+    tabGeneral: "Общие",
+    tabShop: "Магазин",
+    tabBot: "Бот",
+    tabUsage: "Расход",
+    usageHint:
+      "Накопленный расход с последнего сброса. Когда сумма накоплена и оплачена — мы обнуляем счётчик в панели оператора.",
     recipientsLabel: "Получатели уведомлений о заказах (Telegram ID)",
     idsPlaceholder: "например, 123456789, 987654321",
     recipientsHint:
@@ -179,16 +189,18 @@ const copy: Record<
       "Если обычный поиск ничего не нашёл, бот пробует понять запрос по смыслу через ИИ (например, «что-то на день рождения пятилетке»). Требует настроенный ANTHROPIC_API_KEY у деплоя — каждый такой запрос стоит денег, поэтому выключено по умолчанию.",
     smartSearchEnableLabel: "Включить умный поиск",
     smartSearchLastError: (detail: string) => `Последняя ошибка умного поиска: ${detail}`,
-    smartSearchUsage: (used, limit) => `Сегодня: ${used} из ${limit} умных поисков`,
+    smartSearchLifetime: (count, usd) => `Всего запросов: ${count} · расход ${usd}`,
+    smartSearchDailyGuard: (used, limit) => `Сегодня (предохранитель): ${used} из ${limit}`,
     smartSearchUsageHint:
-      "Считаются запросы, по которым обычный поиск ничего не нашёл — в боте и в Mini App.",
-    smartSearchRateSpend: (rate, usd) => `По ставке ${rate} / запрос: ${usd}`,
+      "Считаются запросы, по которым обычный поиск ничего не нашёл — в боте и в Mini App. Дневной лимит защищает от накрутки, в оплату идёт накопленная сумма.",
     smartSearchApiKeyMissing:
       "⚠️ На этом деплое не настроен ANTHROPIC_API_KEY — включённый выше переключатель ничего не изменит: умный поиск не заработает, пока ключ не добавят в переменные окружения.",
     receiptOcrTitle: "Автопроверка чеков",
     receiptOcrHint:
       "Когда включено — бот сам читает скриншот оплаты и выдаёт заказ, если сумма сходится и платёж не помечен как ошибка. Выключите, если проверяете чеки сами; включите на ночь или когда вас нет на месте.",
     receiptOcrEnableLabel: "Автоматически проверять чеки и выдавать заказ",
+    receiptOcrLifetime: (count, usd) => `Всего чеков в Vision: ${count} · расход ${usd}`,
+    receiptOcrRateHint: "Тариф: $2 за 1000 чеков, которые бот реально отправил на распознавание.",
     webStorefrontTitle: "Публичная веб-витрина каталога",
     webStorefrontHint:
       "Публичная страница каталога — фото, названия, цены и рейтинг товаров, без входа. Купить с неё нельзя: кнопка на странице ведёт покупателя в сам бот. Дайте эту ссылку клиентам в шапке Instagram, рекламе и т.п.",
@@ -243,6 +255,12 @@ const copy: Record<
       { id: "7256670713", label: "Әзірлеуші" },
     ],
     title: "Баптаулар",
+    tabGeneral: "Жалпы",
+    tabShop: "Дүкен",
+    tabBot: "Бот",
+    tabUsage: "Шығын",
+    usageHint:
+      "Соңғы нөлдеуден бергі жинақталған шығын. Сома жиналып, төленген соң оператор панелінен есептегішті нөлдейміз.",
     recipientsLabel: "Тапсырыс хабарламаларын алушылар (Telegram ID)",
     idsPlaceholder: "мысалы, 123456789, 987654321",
     recipientsHint:
@@ -290,16 +308,18 @@ const copy: Record<
       "Әдеттегі іздеу ештеңе таппаса, бот сұранысты мағынасы бойынша ЖИ арқылы түсінуге тырысады (мысалы, «бес жасар балаға туған күнге бір нәрсе»). Деплойда ANTHROPIC_API_KEY бапталған болуы керек — әрбір осындай сұраныс ақылы, сондықтан әдепкі бойынша өшірулі.",
     smartSearchEnableLabel: "Ақылды іздеуді қосу",
     smartSearchLastError: (detail: string) => `Ақылды іздеудің соңғы қатесі: ${detail}`,
-    smartSearchUsage: (used, limit) => `Бүгін: ${used} / ${limit} ақылды іздеу`,
+    smartSearchLifetime: (count, usd) => `Барлық сұрау: ${count} · шығын ${usd}`,
+    smartSearchDailyGuard: (used, limit) => `Бүгін (сақтандырғыш): ${used} / ${limit}`,
     smartSearchUsageHint:
-      "Қарапайым іздеу ештеңе таппаған сұраулар саналады — ботта және Mini App-та.",
-    smartSearchRateSpend: (rate, usd) => `${rate} / сұрау мөлшерлемесімен: ${usd}`,
+      "Қарапайым іздеу ештеңе таппаған сұраулар саналады — ботта және Mini App-та. Күндік лимит накруткадан қорғайды, төлемге жинақталған сома кіреді.",
     smartSearchApiKeyMissing:
       "⚠️ Бұл деплойда ANTHROPIC_API_KEY бапталмаған — жоғарыдағы қосқыш ешнәрсені өзгертпейді: кілт орта айнымалыларына қосылмайынша ақылды іздеу жұмыс істемейді.",
     receiptOcrTitle: "Чектерді автотексеру",
     receiptOcrHint:
       "Қосулы болса — бот төлем скриншотын өзі оқиды және сома сәйкес келсе, төлем қате деп белгіленбесе, тапсырысты өзі береді. Чектерді өзіңіз тексерсеңіз — өшіріңіз; түнге немесе орныңызда жоқ кезде қосыңыз.",
     receiptOcrEnableLabel: "Чектерді автоматты тексеріп, тапсырысты беру",
+    receiptOcrLifetime: (count, usd) => `Vision-ға кеткен чектер: ${count} · шығын ${usd}`,
+    receiptOcrRateHint: "Тариф: 1000 чекке $2 — бот нақты танытуға жіберген чектер.",
     webStorefrontTitle: "Каталогтың ашық веб-витринасы",
     webStorefrontHint:
       "Кірусіз қолжетімді каталог беті — фото, атаулар, бағалар және рейтинг. Одан сатып алу мүмкін емес: беттегі түйме сатып алушыны боттың өзіне апарады. Бұл сілтемені Instagram шапкасында, жарнамада және т.б. беріңіз.",
@@ -354,6 +374,12 @@ const copy: Record<
       { id: "7256670713", label: "Developer" },
     ],
     title: "Settings",
+    tabGeneral: "General",
+    tabShop: "Shop",
+    tabBot: "Bot",
+    tabUsage: "Usage",
+    usageHint:
+      "Accumulated spend since the last reset. After the client pays, we zero the counter from the operator panel.",
     recipientsLabel: "Order notification recipients (Telegram ID)",
     idsPlaceholder: "e.g. 123456789, 987654321",
     recipientsHint:
@@ -400,16 +426,18 @@ const copy: Record<
       "If regular search finds nothing, the bot tries to understand the query by meaning via AI (e.g. a birthday gift for a five-year-old). Requires ANTHROPIC_API_KEY configured on the deployment — each such query costs money, so it is off by default.",
     smartSearchEnableLabel: "Enable smart search",
     smartSearchLastError: (detail: string) => `Last smart search error: ${detail}`,
-    smartSearchUsage: (used, limit) => `Today: ${used} of ${limit} smart searches`,
+    smartSearchLifetime: (count, usd) => `Total queries: ${count} · spend ${usd}`,
+    smartSearchDailyGuard: (used, limit) => `Today (safety cap): ${used} of ${limit}`,
     smartSearchUsageHint:
-      "Counts queries where regular search found nothing — in the bot and Mini App.",
-    smartSearchRateSpend: (rate, usd) => `At ${rate} / request: ${usd}`,
+      "Counts queries where regular search found nothing — in the bot and Mini App. The daily cap prevents abuse; billing uses the accumulated total.",
     smartSearchApiKeyMissing:
       "⚠️ ANTHROPIC_API_KEY is not configured on this deployment — the toggle above won't change anything: smart search won't work until the key is added to the environment variables.",
     receiptOcrTitle: "Automatic receipt verification",
     receiptOcrHint:
       "When on, the bot reads the payment screenshot and fulfills the order if the amount matches and the payment is not marked as failed. Turn it off when you check receipts yourself; turn it on overnight or when you are away.",
     receiptOcrEnableLabel: "Automatically verify receipts and fulfill orders",
+    receiptOcrLifetime: (count, usd) => `Receipts sent to Vision: ${count} · spend ${usd}`,
+    receiptOcrRateHint: "Rate: $2 per 1,000 receipts the bot actually sent for recognition.",
     webStorefrontTitle: "Public catalog storefront",
     webStorefrontHint:
       "A no-login catalog page — photos, names, prices, and ratings. You can't buy from it: the page button sends the buyer into the bot itself. Share this link in your Instagram bio, ads, etc.",
@@ -465,6 +493,12 @@ const copy: Record<
       { id: "7256670713", label: "Dasturchi" },
     ],
     title: "Sozlamalar",
+    tabGeneral: "Umumiy",
+    tabShop: "Do‘kon",
+    tabBot: "Bot",
+    tabUsage: "Sarfi",
+    usageHint:
+      "Oxirgi nolga tushirishdan beri yig‘ilgan sarf. Summa to‘langach, operator panelidan hisoblagichni nol qilamiz.",
     recipientsLabel: "Buyurtma xabarnomalari qabul qiluvchilari (Telegram ID)",
     idsPlaceholder: "masalan, 123456789, 987654321",
     recipientsHint:
@@ -512,16 +546,18 @@ const copy: Record<
       "Agar oddiy qidiruv hech narsa topmasa, bot so‘rovni mazmuni bo‘yicha AI orqali tushunishga harakat qiladi (masalan, «besh yoshli bola uchun tug‘ilgan kunga narsa»). Deployda ANTHROPIC_API_KEY sozlangan bo‘lishi kerak — har bir bunday so‘rov pul talab qiladi, shuning uchun standart bo‘yicha o‘chirilgan.",
     smartSearchEnableLabel: "Aqlli qidiruvni yoqish",
     smartSearchLastError: (detail: string) => `Aqlli qidiruvning oxirgi xatosi: ${detail}`,
-    smartSearchUsage: (used, limit) => `Bugun: ${used} / ${limit} aqlli qidiruv`,
+    smartSearchLifetime: (count, usd) => `Jami so‘rovlar: ${count} · sarf ${usd}`,
+    smartSearchDailyGuard: (used, limit) => `Bugun (himoya): ${used} / ${limit}`,
     smartSearchUsageHint:
-      "Oddiy qidiruv hech narsa topmagan so‘rovlar sanaladi — botda va Mini App’da.",
-    smartSearchRateSpend: (rate, usd) => `${rate} / so‘rov stavkasi: ${usd}`,
+      "Oddiy qidiruv hech narsa topmagan so‘rovlar sanaladi — botda va Mini App’da. Kunlik limit nagruzkadan himoya qiladi, to‘lovga yig‘ilgan summa kiradi.",
     smartSearchApiKeyMissing:
       "⚠️ Bu deployda ANTHROPIC_API_KEY sozlanmagan — yuqoridagi tugmacha hech narsani o‘zgartirmaydi: kalit muhit o‘zgaruvchilariga qo‘shilmaguncha aqlli qidiruv ishlamaydi.",
     receiptOcrTitle: "Cheklarni avtomatik tekshirish",
     receiptOcrHint:
       "Yoqilganida bot to‘lov skrinshotini o‘zi o‘qiydi va summa mos kelsa, to‘lov xato deb belgilamagan bo‘lsa, buyurtmani o‘zi beradi. Cheklarni o‘zingiz tekshirsangiz — o‘chiring; tunga yoki joyingizda bo‘lmaganda yoqing.",
     receiptOcrEnableLabel: "Cheklarni avtomatik tekshirib, buyurtmani berish",
+    receiptOcrLifetime: (count, usd) => `Vision’ga ketgan cheklar: ${count} · sarf ${usd}`,
+    receiptOcrRateHint: "Tarif: 1000 chekka $2 — bot haqiqatan tanishga yuborgan cheklar.",
     webStorefrontTitle: "Katalogning ochiq veb-vitrinasi",
     webStorefrontHint:
       "Kirishsiz ochiladigan katalog sahifasi — fotolar, nomlar, narxlar va reyting. Undan xarid qilib bo‘lmaydi: sahifadagi tugma xaridorni to‘g‘ridan-to‘g‘ri botga yuboradi. Bu havolani Instagram bio, reklama va h.k.da bering.",
@@ -932,454 +968,496 @@ function SettingsPage() {
     }
   }
 
+  const showUsageTab = modules.smart_search || modules.receipt_ocr;
+
   return (
     <div className="space-y-6 max-w-2xl">
       <h1 className="text-2xl font-semibold">{tr.title}</h1>
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <div className="space-y-2">
-          <Label>{tr.recipientsLabel}</Label>
-          <div className="flex flex-col gap-3 py-2">
-            {tr.roles.map((role) => {
-              const ids = adminChatId
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean);
-              const checked = ids.includes(role.id);
-              return (
-                <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(c) => {
-                      let newIds = [...ids];
-                      if (c) {
-                        if (!newIds.includes(role.id)) newIds.push(role.id);
-                      } else {
-                        newIds = newIds.filter((i) => i !== role.id);
-                      }
-                      setAdminChatId(newIds.join(", "));
-                    }}
-                  />
-                  <span>
-                    {role.label} <span className="text-muted-foreground">({role.id})</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-          <Input
-            value={adminChatId}
-            onChange={(e) => setAdminChatId(e.target.value)}
-            placeholder={tr.idsPlaceholder}
-          />
-          <p className="text-xs text-muted-foreground">{tr.recipientsHint}</p>
-        </div>
-        <div className="space-y-2 pt-2 border-t border-border/50">
-          <Label>{tr.contactLabel}</Label>
-          <Input
-            value={adminContactLink}
-            onChange={(e) => setAdminContactLink(e.target.value)}
-            placeholder={tr.contactPlaceholder}
-          />
-          <p className="text-xs text-muted-foreground">{tr.contactHint(contactBtn)}</p>
-        </div>
-        <div className="flex items-center gap-2 pt-2">
-          <Button onClick={onSave} disabled={settings.isLoading}>
-            {tr.save}
-          </Button>
-          {saved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-        </div>
-      </div>
+      <Tabs defaultValue="general">
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
+          <TabsTrigger value="general">{tr.tabGeneral}</TabsTrigger>
+          <TabsTrigger value="shop">{tr.tabShop}</TabsTrigger>
+          <TabsTrigger value="bot">{tr.tabBot}</TabsTrigger>
+          {showUsageTab ? <TabsTrigger value="usage">{tr.tabUsage}</TabsTrigger> : null}
+        </TabsList>
 
-      {!isPhysicalShop && (
-        <div className="bg-card border rounded-lg p-4 space-y-3">
-          <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
-          <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
-          <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="delivery-lang-timing"
-                checked={deliveryLangTiming === "after"}
-                disabled={deliveryLangTimingSaving}
-                onChange={() => onSaveDeliveryLangTiming("after")}
-              />
-              {tr.deliveryLangTimingAfter}
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="delivery-lang-timing"
-                checked={deliveryLangTiming === "before"}
-                disabled={deliveryLangTimingSaving}
-                onChange={() => onSaveDeliveryLangTiming("before")}
-              />
-              {tr.deliveryLangTimingBefore}
-            </label>
-          </div>
-          {deliveryLangTimingSaved && (
-            <span className="text-sm text-green-600">{tr.savedLabel}</span>
-          )}
-        </div>
-      )}
-
-      {isPhysicalShop && (
-        <>
+        <TabsContent value="general" className="space-y-6 mt-4">
           <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
-            <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
-            <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="payment-mode"
-                  checked={paymentMode === "full"}
-                  disabled={paymentModeSaving}
-                  onChange={() => onSavePaymentMode("full")}
-                />
-                {tr.paymentModeFull}
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="payment-mode"
-                  checked={paymentMode === "deposit"}
-                  disabled={paymentModeSaving}
-                  onChange={() => onSavePaymentMode("deposit")}
-                />
-                {tr.paymentModeDeposit}
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="payment-mode"
-                  checked={paymentMode === "on_receipt"}
-                  disabled={paymentModeSaving}
-                  onChange={() => onSavePaymentMode("on_receipt")}
-                />
-                {tr.paymentModeOnReceipt}
-              </label>
+            <div className="space-y-2">
+              <Label>{tr.recipientsLabel}</Label>
+              <div className="flex flex-col gap-3 py-2">
+                {tr.roles.map((role) => {
+                  const ids = adminChatId
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  const checked = ids.includes(role.id);
+                  return (
+                    <label key={role.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(c) => {
+                          let newIds = [...ids];
+                          if (c) {
+                            if (!newIds.includes(role.id)) newIds.push(role.id);
+                          } else {
+                            newIds = newIds.filter((i) => i !== role.id);
+                          }
+                          setAdminChatId(newIds.join(", "));
+                        }}
+                      />
+                      <span>
+                        {role.label} <span className="text-muted-foreground">({role.id})</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              <Input
+                value={adminChatId}
+                onChange={(e) => setAdminChatId(e.target.value)}
+                placeholder={tr.idsPlaceholder}
+              />
+              <p className="text-xs text-muted-foreground">{tr.recipientsHint}</p>
             </div>
-            {paymentModeSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-            {paymentMode === "deposit" && (
-              <div className="flex items-end gap-2 pt-2">
+            <div className="space-y-2 pt-2 border-t border-border/50">
+              <Label>{tr.contactLabel}</Label>
+              <Input
+                value={adminContactLink}
+                onChange={(e) => setAdminContactLink(e.target.value)}
+                placeholder={tr.contactPlaceholder}
+              />
+              <p className="text-xs text-muted-foreground">{tr.contactHint(contactBtn)}</p>
+            </div>
+            <div className="flex items-center gap-2 pt-2">
+              <Button onClick={onSave} disabled={settings.isLoading}>
+                {tr.save}
+              </Button>
+              {saved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="shop" className="space-y-6 mt-4">
+          {!isPhysicalShop && (
+            <div className="bg-card border rounded-lg p-4 space-y-3">
+              <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
+              <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="delivery-lang-timing"
+                    checked={deliveryLangTiming === "after"}
+                    disabled={deliveryLangTimingSaving}
+                    onChange={() => onSaveDeliveryLangTiming("after")}
+                  />
+                  {tr.deliveryLangTimingAfter}
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="radio"
+                    name="delivery-lang-timing"
+                    checked={deliveryLangTiming === "before"}
+                    disabled={deliveryLangTimingSaving}
+                    onChange={() => onSaveDeliveryLangTiming("before")}
+                  />
+                  {tr.deliveryLangTimingBefore}
+                </label>
+              </div>
+              {deliveryLangTimingSaved && (
+                <span className="text-sm text-green-600">{tr.savedLabel}</span>
+              )}
+            </div>
+          )}
+
+          {isPhysicalShop && (
+            <>
+              <div className="bg-card border rounded-lg p-4 space-y-3">
+                <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
+                <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="payment-mode"
+                      checked={paymentMode === "full"}
+                      disabled={paymentModeSaving}
+                      onChange={() => onSavePaymentMode("full")}
+                    />
+                    {tr.paymentModeFull}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="payment-mode"
+                      checked={paymentMode === "deposit"}
+                      disabled={paymentModeSaving}
+                      onChange={() => onSavePaymentMode("deposit")}
+                    />
+                    {tr.paymentModeDeposit}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="payment-mode"
+                      checked={paymentMode === "on_receipt"}
+                      disabled={paymentModeSaving}
+                      onChange={() => onSavePaymentMode("on_receipt")}
+                    />
+                    {tr.paymentModeOnReceipt}
+                  </label>
+                </div>
+                {paymentModeSaved && (
+                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                )}
+                {paymentMode === "deposit" && (
+                  <div className="flex items-end gap-2 pt-2">
+                    <div className="space-y-2">
+                      <Label>{tr.depositPercentLabel}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={depositPercent}
+                        onChange={(e) => setDepositPercent(e.target.value)}
+                        className="w-32"
+                      />
+                    </div>
+                    <Button
+                      onClick={onSaveDepositPercent}
+                      disabled={depositPercentSaving || settings.isLoading}
+                    >
+                      {tr.save}
+                    </Button>
+                    {depositPercentSaved && (
+                      <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-card border rounded-lg p-4 space-y-3">
+                <h2 className="text-lg font-semibold">{tr.fulfillmentOptionsTitle}</h2>
+                <p className="text-xs text-muted-foreground">{tr.fulfillmentOptionsHint}</p>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pickupEnabled}
+                      disabled={fulfillmentOptionsSaving}
+                      onChange={(e) => onSaveFulfillmentOption("pickup", e.target.checked)}
+                    />
+                    {tr.fulfillmentOptionsPickup}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={deliveryEnabled}
+                      disabled={fulfillmentOptionsSaving}
+                      onChange={(e) => onSaveFulfillmentOption("delivery", e.target.checked)}
+                    />
+                    {tr.fulfillmentOptionsDelivery}
+                  </label>
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="text-lg font-semibold">{tr.referralTitle}</h2>
+            <p className="text-xs text-muted-foreground">{tr.referralHint}</p>
+            {modules.referral ? (
+              <div className="flex items-end gap-2">
                 <div className="space-y-2">
-                  <Label>{tr.depositPercentLabel}</Label>
+                  <Label>{tr.referralPercentLabel}</Label>
                   <Input
                     type="number"
                     min={1}
                     max={100}
-                    value={depositPercent}
-                    onChange={(e) => setDepositPercent(e.target.value)}
+                    value={referralPercent}
+                    onChange={(e) => setReferralPercent(e.target.value)}
                     className="w-32"
                   />
                 </div>
                 <Button
-                  onClick={onSaveDepositPercent}
-                  disabled={depositPercentSaving || settings.isLoading}
+                  onClick={onSaveReferralPercent}
+                  disabled={referralSaving || settings.isLoading}
                 >
                   {tr.save}
                 </Button>
-                {depositPercentSaved && (
-                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
-                )}
+                {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
               </div>
+            ) : (
+              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
             )}
           </div>
 
           <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="text-lg font-semibold">{tr.fulfillmentOptionsTitle}</h2>
-            <p className="text-xs text-muted-foreground">{tr.fulfillmentOptionsHint}</p>
-            <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={pickupEnabled}
-                  disabled={fulfillmentOptionsSaving}
-                  onChange={(e) => onSaveFulfillmentOption("pickup", e.target.checked)}
-                />
-                {tr.fulfillmentOptionsPickup}
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={deliveryEnabled}
-                  disabled={fulfillmentOptionsSaving}
-                  onChange={(e) => onSaveFulfillmentOption("delivery", e.target.checked)}
-                />
-                {tr.fulfillmentOptionsDelivery}
-              </label>
-            </div>
-          </div>
-        </>
-      )}
-
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.referralTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.referralHint}</p>
-        {modules.referral ? (
-          <div className="flex items-end gap-2">
-            <div className="space-y-2">
-              <Label>{tr.referralPercentLabel}</Label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={referralPercent}
-                onChange={(e) => setReferralPercent(e.target.value)}
-                className="w-32"
-              />
-            </div>
-            <Button onClick={onSaveReferralPercent} disabled={referralSaving || settings.isLoading}>
-              {tr.save}
-            </Button>
-            {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-        )}
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.loyaltyTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.loyaltyHint}</p>
-        {modules.loyalty ? (
-          <div className="flex items-end gap-2">
-            <div className="space-y-2">
-              <Label>{tr.loyaltyEarnPercentLabel}</Label>
-              <Input
-                type="number"
-                min={1}
-                max={100}
-                value={loyaltyEarnPercent}
-                onChange={(e) => setLoyaltyEarnPercent(e.target.value)}
-                className="w-32"
-              />
-            </div>
-            <Button
-              onClick={onSaveLoyaltyEarnPercent}
-              disabled={loyaltySaving || settings.isLoading}
-            >
-              {tr.save}
-            </Button>
-            {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-        )}
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.webStorefrontTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.webStorefrontHint}</p>
-        {modules.web_storefront ? (
-          shopUrl.data?.url ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Input readOnly value={shopUrl.data.url} className="flex-1 min-w-[16rem]" />
-              <Button variant="outline" onClick={() => onCopyShopUrl(shopUrl.data!.url!)}>
-                {tr.webStorefrontCopyBtn}
-              </Button>
-              <a
-                href={shopUrl.data.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm underline text-primary"
-              >
-                {tr.webStorefrontOpenBtn}
-              </a>
-            </div>
-          ) : shopUrl.isLoading ? (
-            <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
-          ) : (
-            <p className="text-sm text-destructive">{tr.webStorefrontNoUrl}</p>
-          )
-        ) : (
-          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-        )}
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.miniAppTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.miniAppHint}</p>
-        {modules.telegram_mini_app ? (
-          miniAppUrlQuery.data?.url ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <Input readOnly value={miniAppUrlQuery.data.url} className="flex-1 min-w-[16rem]" />
-              <Button
-                variant="outline"
-                onClick={() => onCopyMiniAppUrl(miniAppUrlQuery.data!.url!)}
-              >
-                {tr.miniAppCopyBtn}
-              </Button>
-              <a
-                href={miniAppUrlQuery.data.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm underline text-primary"
-              >
-                {tr.miniAppOpenBtn}
-              </a>
-            </div>
-          ) : miniAppUrlQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
-          ) : (
-            <p className="text-sm text-destructive">{tr.miniAppNoUrl}</p>
-          )
-        ) : (
-          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-        )}
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.cartReminderTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.cartReminderHint}</p>
-        {modules.cart_reminder ? (
-          <div className="flex items-end gap-2">
-            <div className="space-y-2">
-              <Label>{tr.cartReminderHoursLabel}</Label>
-              <Input
-                type="number"
-                min={0}
-                max={168}
-                value={cartReminderHours}
-                onChange={(e) => setCartReminderHours(e.target.value)}
-                className="w-32"
-              />
-            </div>
-            <Button
-              onClick={onSaveCartReminderHours}
-              disabled={cartReminderSaving || settings.isLoading}
-            >
-              {tr.save}
-            </Button>
-            {cartReminderSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-        )}
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.smartSearchTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.smartSearchHint}</p>
-        {modules.smart_search ? (
-          <>
-            {settings.data?.smart_search_api_key_configured === "false" && (
-              <p className="text-sm text-destructive">{tr.smartSearchApiKeyMissing}</p>
+            <h2 className="text-lg font-semibold">{tr.loyaltyTitle}</h2>
+            <p className="text-xs text-muted-foreground">{tr.loyaltyHint}</p>
+            {modules.loyalty ? (
+              <div className="flex items-end gap-2">
+                <div className="space-y-2">
+                  <Label>{tr.loyaltyEarnPercentLabel}</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={loyaltyEarnPercent}
+                    onChange={(e) => setLoyaltyEarnPercent(e.target.value)}
+                    className="w-32"
+                  />
+                </div>
+                <Button
+                  onClick={onSaveLoyaltyEarnPercent}
+                  disabled={loyaltySaving || settings.isLoading}
+                >
+                  {tr.save}
+                </Button>
+                {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
             )}
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={smartSearchEnabled}
-                disabled={smartSearchSaving}
-                onChange={(e) => onSaveSmartSearchEnabled(e.target.checked)}
-              />
-              {tr.smartSearchEnableLabel}
-            </label>
-            {smartSearchSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-            <p className="text-sm">
-              {tr.smartSearchUsage(
-                parseDailyCount(settings.data?.smart_search_daily_count),
-                SMART_SEARCH_DAILY_LIMIT,
-              )}
-            </p>
-            <p className="text-sm">
-              {tr.smartSearchRateSpend(
-                formatUsd(DEFAULT_USD_PER_REQUEST),
-                formatUsd(
-                  DEFAULT_USD_PER_REQUEST *
+          </div>
+
+          <div className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="text-lg font-semibold">{tr.webStorefrontTitle}</h2>
+            <p className="text-xs text-muted-foreground">{tr.webStorefrontHint}</p>
+            {modules.web_storefront ? (
+              shopUrl.data?.url ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input readOnly value={shopUrl.data.url} className="flex-1 min-w-[16rem]" />
+                  <Button variant="outline" onClick={() => onCopyShopUrl(shopUrl.data!.url!)}>
+                    {tr.webStorefrontCopyBtn}
+                  </Button>
+                  <a
+                    href={shopUrl.data.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm underline text-primary"
+                  >
+                    {tr.webStorefrontOpenBtn}
+                  </a>
+                </div>
+              ) : shopUrl.isLoading ? (
+                <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
+              ) : (
+                <p className="text-sm text-destructive">{tr.webStorefrontNoUrl}</p>
+              )
+            ) : (
+              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+            )}
+          </div>
+
+          <div className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="text-lg font-semibold">{tr.miniAppTitle}</h2>
+            <p className="text-xs text-muted-foreground">{tr.miniAppHint}</p>
+            {modules.telegram_mini_app ? (
+              miniAppUrlQuery.data?.url ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    readOnly
+                    value={miniAppUrlQuery.data.url}
+                    className="flex-1 min-w-[16rem]"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => onCopyMiniAppUrl(miniAppUrlQuery.data!.url!)}
+                  >
+                    {tr.miniAppCopyBtn}
+                  </Button>
+                  <a
+                    href={miniAppUrlQuery.data.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm underline text-primary"
+                  >
+                    {tr.miniAppOpenBtn}
+                  </a>
+                </div>
+              ) : miniAppUrlQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
+              ) : (
+                <p className="text-sm text-destructive">{tr.miniAppNoUrl}</p>
+              )
+            ) : (
+              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+            )}
+          </div>
+
+          <div className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="text-lg font-semibold">{tr.cartReminderTitle}</h2>
+            <p className="text-xs text-muted-foreground">{tr.cartReminderHint}</p>
+            {modules.cart_reminder ? (
+              <div className="flex items-end gap-2">
+                <div className="space-y-2">
+                  <Label>{tr.cartReminderHoursLabel}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={168}
+                    value={cartReminderHours}
+                    onChange={(e) => setCartReminderHours(e.target.value)}
+                    className="w-32"
+                  />
+                </div>
+                <Button
+                  onClick={onSaveCartReminderHours}
+                  disabled={cartReminderSaving || settings.isLoading}
+                >
+                  {tr.save}
+                </Button>
+                {cartReminderSaved && (
+                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+            )}
+          </div>
+        </TabsContent>
+
+        {showUsageTab ? (
+          <TabsContent value="usage" className="space-y-6 mt-4">
+            <p className="text-sm text-muted-foreground">{tr.usageHint}</p>
+            {modules.smart_search ? (
+              <div className="bg-card border rounded-lg p-4 space-y-3">
+                <h2 className="text-lg font-semibold">{tr.smartSearchTitle}</h2>
+                <p className="text-xs text-muted-foreground">{tr.smartSearchHint}</p>
+                {settings.data?.smart_search_api_key_configured === "false" && (
+                  <p className="text-sm text-destructive">{tr.smartSearchApiKeyMissing}</p>
+                )}
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={smartSearchEnabled}
+                    disabled={smartSearchSaving}
+                    onChange={(e) => onSaveSmartSearchEnabled(e.target.checked)}
+                  />
+                  {tr.smartSearchEnableLabel}
+                </label>
+                {smartSearchSaved && (
+                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                )}
+                <p className="text-sm">
+                  {tr.smartSearchLifetime(
+                    parseSmartSearchLifetime(settings.data?.smart_search_lifetime_spend).count,
+                    formatUsd(
+                      parseSmartSearchLifetime(settings.data?.smart_search_lifetime_spend).usd,
+                    ),
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {tr.smartSearchDailyGuard(
                     parseDailyCount(settings.data?.smart_search_daily_count),
-                ),
-              )}
-            </p>
-            <p className="text-xs text-muted-foreground">{tr.smartSearchUsageHint}</p>
-            {settings.data?.smart_search_last_error ? (
-              <p className="text-xs text-destructive">
-                {tr.smartSearchLastError(settings.data.smart_search_last_error)}
-              </p>
+                    SMART_SEARCH_DAILY_LIMIT,
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">{tr.smartSearchUsageHint}</p>
+                {settings.data?.smart_search_last_error ? (
+                  <p className="text-xs text-destructive">
+                    {tr.smartSearchLastError(settings.data.smart_search_last_error)}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-        )}
-      </div>
+            {modules.receipt_ocr ? (
+              <div className="bg-card border rounded-lg p-4 space-y-3">
+                <h2 className="text-lg font-semibold">{tr.receiptOcrTitle}</h2>
+                <p className="text-xs text-muted-foreground">{tr.receiptOcrHint}</p>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={receiptOcrAuto}
+                    disabled={receiptOcrAutoSaving}
+                    onChange={(e) => onSaveReceiptOcrAuto(e.target.checked)}
+                  />
+                  {tr.receiptOcrEnableLabel}
+                </label>
+                {receiptOcrAutoSaved && (
+                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                )}
+                <p className="text-sm">
+                  {tr.receiptOcrLifetime(
+                    parseReceiptOcrCount(settings.data?.receipt_ocr_lifetime_count),
+                    formatUsd(
+                      receiptOcrUsd(
+                        parseReceiptOcrCount(settings.data?.receipt_ocr_lifetime_count),
+                      ),
+                    ),
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">{tr.receiptOcrRateHint}</p>
+              </div>
+            ) : null}
+          </TabsContent>
+        ) : null}
 
-      <div className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="text-lg font-semibold">{tr.receiptOcrTitle}</h2>
-        <p className="text-xs text-muted-foreground">{tr.receiptOcrHint}</p>
-        {modules.receipt_ocr ? (
-          <>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={receiptOcrAuto}
-                disabled={receiptOcrAutoSaving}
-                onChange={(e) => onSaveReceiptOcrAuto(e.target.checked)}
+        <TabsContent value="bot" className="space-y-6 mt-4">
+          <div className="bg-card border rounded-lg p-4 space-y-4">
+            <h2 className="text-lg font-semibold">{tr.instructionTitle}</h2>
+            <p className="text-sm text-muted-foreground">{tr.instructionHint}</p>
+            <div className="space-y-2">
+              <Label>{tr.videoLabel}</Label>
+              <Input
+                type="file"
+                accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+                disabled={instructionUploading}
+                onChange={(e) => onUploadInstruction(e.target.files?.[0] ?? null)}
               />
-              {tr.receiptOcrEnableLabel}
-            </label>
-            {receiptOcrAutoSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-        )}
-      </div>
-
-      <div className="bg-card border rounded-lg p-4 space-y-4">
-        <h2 className="text-lg font-semibold">{tr.instructionTitle}</h2>
-        <p className="text-sm text-muted-foreground">{tr.instructionHint}</p>
-        <div className="space-y-2">
-          <Label>{tr.videoLabel}</Label>
-          <Input
-            type="file"
-            accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
-            disabled={instructionUploading}
-            onChange={(e) => onUploadInstruction(e.target.files?.[0] ?? null)}
-          />
-          {instructionUploading && <p className="text-sm text-muted-foreground">{tr.uploading}</p>}
-          {instructionVideoPath && (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-muted-foreground truncate max-w-md">
-                {instructionVideoPath}
-              </span>
-              <Button type="button" size="sm" variant="ghost" onClick={onClearInstruction}>
-                {tr.deleteVideoBtn}
-              </Button>
+              {instructionUploading && (
+                <p className="text-sm text-muted-foreground">{tr.uploading}</p>
+              )}
+              {instructionVideoPath && (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-muted-foreground truncate max-w-md">
+                    {instructionVideoPath}
+                  </span>
+                  <Button type="button" size="sm" variant="ghost" onClick={onClearInstruction}>
+                    {tr.deleteVideoBtn}
+                  </Button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <div className="space-y-2">
-          <Label>{tr.captionLabel}</Label>
-          <Textarea
-            rows={8}
-            value={instructionCaption}
-            onChange={(e) => setInstructionCaption(e.target.value)}
-            placeholder={isPhysicalShop ? tr.captionPlaceholderPhysical : tr.captionPlaceholder}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={onSaveInstruction}>{tr.saveInstructionBtn}</Button>
-          {instructionSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-        </div>
-      </div>
+            <div className="space-y-2">
+              <Label>{tr.captionLabel}</Label>
+              <Textarea
+                rows={8}
+                value={instructionCaption}
+                onChange={(e) => setInstructionCaption(e.target.value)}
+                placeholder={isPhysicalShop ? tr.captionPlaceholderPhysical : tr.captionPlaceholder}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={onSaveInstruction}>{tr.saveInstructionBtn}</Button>
+              {instructionSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+            </div>
+          </div>
+        </TabsContent>
 
-      <div className="bg-card border rounded-lg p-4 space-y-1 text-sm">
-        <h2 className="font-medium mb-2">{tr.accessTitle}</h2>
-        <p>
-          {tr.accessCreds} <code>admin</code> / <code>admin</code>
-        </p>
-        <p className="text-muted-foreground">{tr.accessChangeHint}</p>
-      </div>
+        <TabsContent value="general" className="space-y-6 mt-4">
+          <div className="bg-card border rounded-lg p-4 space-y-1 text-sm">
+            <h2 className="font-medium mb-2">{tr.accessTitle}</h2>
+            <p>
+              {tr.accessCreds} <code>admin</code> / <code>admin</code>
+            </p>
+            <p className="text-muted-foreground">{tr.accessChangeHint}</p>
+          </div>
 
-      <div className="bg-card border border-destructive/40 rounded-lg p-4 space-y-3">
-        <h2 className="font-medium text-destructive">{tr.dangerTitle}</h2>
-        <p className="text-sm text-muted-foreground">{tr.dangerHint}</p>
-        <div className="flex items-center gap-2">
-          <Button variant="destructive" onClick={onReset} disabled={resetting}>
-            {resetting ? tr.resetting : tr.resetBtn}
-          </Button>
-          {resetDone && <span className="text-sm text-green-600">{tr.resetDone}</span>}
-        </div>
-      </div>
+          <div className="bg-card border border-destructive/40 rounded-lg p-4 space-y-3">
+            <h2 className="font-medium text-destructive">{tr.dangerTitle}</h2>
+            <p className="text-sm text-muted-foreground">{tr.dangerHint}</p>
+            <div className="flex items-center gap-2">
+              <Button variant="destructive" onClick={onReset} disabled={resetting}>
+                {resetting ? tr.resetting : tr.resetBtn}
+              </Button>
+              {resetDone && <span className="text-sm text-green-600">{tr.resetDone}</span>}
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

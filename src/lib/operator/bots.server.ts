@@ -7,6 +7,7 @@ import type { Json } from "@/integrations-supabase/types";
 import { computeState, readPolicy, type SubscriptionState } from "./subscriptions.server";
 import { errorMessage } from "@/lib/error-message";
 import { toCsv, isoDate, fetchAll } from "@/lib/csv";
+import type { AiUsageSnapshot } from "@/lib/ai-usage";
 
 type BotStatus = "active" | "paused" | "suspended";
 
@@ -342,6 +343,44 @@ export async function checkBotHealth(botId: string): Promise<BotHealthOutcome> {
   if (!res.ok) return { ok: false, error: res.error };
   if (!res.body?.report) return { ok: false, error: "Деплой ответил без отчёта" };
   return { ok: true, report: res.body.report };
+}
+
+export type BotAiUsageOutcome = { ok: true; usage: AiUsageSnapshot } | { ok: false; error: string };
+
+async function botInternalTarget(botId: string) {
+  const s = await db();
+  const { data, error } = await s
+    .from("bots")
+    .select("app_url, internal_secret")
+    .eq("id", botId)
+    .single();
+  if (error || !data) throw new Error(`Клиент не найден: ${error?.message ?? botId}`);
+  return data;
+}
+
+/** Накопленный расход умного поиска и OCR на деплое клиента. */
+export async function fetchBotAiUsage(botId: string): Promise<BotAiUsageOutcome> {
+  await requireOperator();
+  const data = await botInternalTarget(botId);
+  const res = await callInternal<{ usage?: AiUsageSnapshot }>(data, "/api/internal/ai-usage", {
+    action: "get",
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  if (!res.body?.usage) return { ok: false, error: "Деплой ответил без расхода" };
+  return { ok: true, usage: res.body.usage };
+}
+
+/** Обнулить расход после оплаты — счётчик на деплое, не в панели. */
+export async function resetBotAiUsage(botId: string, actor: string): Promise<BotAiUsageOutcome> {
+  await requireOperator();
+  const data = await botInternalTarget(botId);
+  const res = await callInternal<{ usage?: AiUsageSnapshot }>(data, "/api/internal/ai-usage", {
+    action: "reset",
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  if (!res.body?.usage) return { ok: false, error: "Деплой ответил без расхода" };
+  await logEvent(botId, actor, "meta", { action: "reset_ai_usage" });
+  return { ok: true, usage: res.body.usage };
 }
 
 /**

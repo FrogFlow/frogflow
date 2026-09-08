@@ -143,6 +143,8 @@ async function recordSmartSearchSpend(usage: SmartSearchTokenUsage | null): Prom
     const { data } = await s.from("app_settings").select("value").eq("key", key).maybeSingle();
     const next = addDailySpend(parseDailySpend(data?.value), usage);
     await s.from("app_settings").upsert({ key, value: JSON.stringify(next) });
+    const { recordSmartSearchLifetime } = await import("./ai-usage.server");
+    await recordSmartSearchLifetime(usage);
   } catch (e) {
     console.error("[smart-search] failed to record spend", e);
   }

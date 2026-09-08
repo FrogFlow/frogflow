@@ -25,6 +25,8 @@ import {
   getHealthHistory,
   exportFeedCsv,
   exportHealthHistoryCsv,
+  fetchBotAiUsage,
+  resetBotAiUsage,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -294,3 +296,17 @@ export const panelSelfCheckFn = createServerFn({ method: "GET" }).handler(async 
   const { panelSelfCheck } = await import("./env-block.server");
   return panelSelfCheck();
 });
+
+export const getBotAiUsageFn = createServerFn({ method: "GET" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return fetchBotAiUsage(data.botId);
+  });
+
+export const resetBotAiUsageFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return resetBotAiUsage(data.botId, await actor());
+  });
