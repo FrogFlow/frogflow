@@ -322,7 +322,79 @@ export function detectAllReceiptCurrencies(text: string): string[] {
     .map(([code]) => code);
 }
 
+/**
+ * Скрин нашего же сообщения «Заказ создан / сумма к оплате / пришлите чек»
+ * или карточки товара. OCR находит ту же сумму, что в заказе, и без этой
+ * проверки выдаёт файлы за скриншот инструкции.
+ *
+ * Если в том же кадре есть признаки уже прошедшего платежа (фискальный чек,
+ * «сумма операции») — не режем: покупатель мог сфотографировать чат вместе
+ * с настоящим чеком.
+ */
+const SHOP_SCREEN_PHRASES = [
+  "сумма к оплате",
+  "к оплате:",
+  "amount due",
+  "төлеуге тиіс сома",
+  "төлемге:",
+  "to‘lash summasi",
+  "to'lash summasi",
+  "tolash summasi",
+  "пришлите скриншот",
+  "пришлите чек",
+  "в этот чат",
+  "send the receipt",
+  "send a screenshot",
+  "in this chat",
+  "чекті осы чатқа жіберіңіз",
+  "скриншотты осы чатқа жіберіңіз",
+  "chekni shu chatga yuboring",
+  "skrinshotni shu chatga yuboring",
+  "выберите способ оплаты",
+  "оплатить через robokassa",
+  "оплатить по реквизитам",
+  "продолжить оплату",
+  "в корзине",
+  "добавить в корзину",
+];
+
+const RECEIPT_DONE_PHRASES = [
+  "оплата совершена",
+  "платеж выполнен",
+  "успешно проведен",
+  "успешно проведена",
+  "перевод выполнен",
+  "перевод успешно",
+  "зачисл",
+  "фискальн",
+  "сумма операции",
+  "сумма выплаты",
+  "сумма в местной валюте",
+  "чек по операции",
+  "рнм",
+  "комиссия за",
+  "payment successful",
+  "paid successfully",
+  "operation completed",
+  "операция выполнена",
+];
+
+const ORDER_CREATED_RE =
+  /(?:заказ|тапсырыс|buyurtma|order)\s*#\s*\d+[\s\S]{0,120}(?:создан|жасалды|yaratildi|created)/;
+
+function normalizeReceiptText(text: string): string {
+  return text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+}
+
+export function looksLikeShopScreenNotReceipt(text: string): boolean {
+  const t = normalizeReceiptText(text);
+  if (RECEIPT_DONE_PHRASES.some((p) => t.includes(p))) return false;
+  if (SHOP_SCREEN_PHRASES.some((p) => t.includes(p))) return true;
+  return ORDER_CREATED_RE.test(t);
+}
+
 export function looksLikeReceipt(text: string): boolean {
+  if (looksLikeShopScreenNotReceipt(text)) return false;
   const t = text.toLowerCase().replace(/ё/g, "е");
   if (t.replace(/\s+/g, "").length < 12) return false;
   const markerHits = RECEIPT_MARKERS.filter((m) => t.includes(m)).length;
@@ -555,6 +627,16 @@ export async function verifyPaymentReceipt(params: {
       reason: "not_receipt",
       detail: "В файле почти нет текста.",
       extractedText: text,
+    };
+  }
+
+  if (looksLikeShopScreenNotReceipt(text)) {
+    return {
+      ok: false,
+      reason: "not_receipt",
+      detail:
+        "Это скрин заказа, счёта к оплате или карточки товара — не чек банка. Сумма в тексте бота не считается оплатой.",
+      extractedText: text.slice(0, 2000),
     };
   }
 

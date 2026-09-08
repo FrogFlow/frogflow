@@ -4,6 +4,7 @@ import {
   currencyConflict,
   detectReceiptCurrency,
   looksLikeReceipt,
+  looksLikeShopScreenNotReceipt,
   looksLikeFailedPayment,
   isReceiptRetryReason,
   isPdfReceipt,
@@ -144,6 +145,36 @@ describe("looksLikeReceipt / extractMoneyAmounts — не тронуты пра�
 
   it("случайный текст без маркеров — не похоже", () => {
     expect(looksLikeReceipt("Съешь ещё этих мягких французских булок")).toBe(false);
+  });
+
+  it("скрин сообщения бота «заказ создан / сумма к оплате» — не чек", () => {
+    const botPayScreen = `
+      Заказ #911 создан
+      Сумма к оплате: 565 ₸
+      Оплатите через Kaspi.kz
+      После оплаты пришлите скриншот в этот чат
+    `;
+    expect(looksLikeShopScreenNotReceipt(botPayScreen)).toBe(true);
+    expect(looksLikeReceipt(botPayScreen)).toBe(false);
+  });
+
+  it("карточка товара с «в корзине» — не чек, даже если сумма та же", () => {
+    expect(
+      looksLikeShopScreenNotReceipt(
+        "039. Математический тренажёр. 2000 ₸. Продолжить оплату. 0 в корзине.",
+      ),
+    ).toBe(true);
+  });
+
+  it("настоящий чек не режется, даже если сверху попал текст бота", () => {
+    const mixed = `
+      Заказ #911 создан
+      Сумма к оплате: 565 ₸
+      После оплаты пришлите скриншот в этот чат
+      Фискальный чек. Оплата совершена. 565 ₸. Kaspi Gold.
+    `;
+    expect(looksLikeShopScreenNotReceipt(mixed)).toBe(false);
+    expect(looksLikeReceipt(mixed)).toBe(true);
   });
 
   it("извлекает суммы с разделителем тысяч", () => {
@@ -467,7 +498,7 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
     if (result.ok) expect(result.matchedAmount).toBe(1900);
   });
 
-  it("скрин карточки товара 2000 ₸ вместо чека на 800 ₸ — не принимаем", async () => {
+  it("скрин карточки товара вместо чека — не принимаем", async () => {
     reuseMatch = null;
     global.fetch = vi.fn(() =>
       Promise.resolve(
@@ -483,7 +514,31 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
       orderId: 99,
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe("amount_mismatch");
+    if (!result.ok) expect(result.reason).toBe("not_receipt");
+  });
+
+  it("скрин сообщения бота с той же суммой — not_receipt, не автовыдача", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        visionResponse(
+          "Заказ #911 создан. Сумма к оплате: 565 ₸. Оплатите через Kaspi.kz. После оплаты пришлите скриншот в этот чат.",
+        ),
+      ),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 565,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("not_receipt");
+      expect(result.detail).toMatch(/не чек/i);
+    }
   });
 
   it("чек в другой валюте — переводим сумму заказа и сверяем", async () => {
