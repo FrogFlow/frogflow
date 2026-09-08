@@ -8,6 +8,7 @@ import {
   isReceiptRetryReason,
   isPdfReceipt,
   extractMoneyAmounts,
+  amountsForCurrency,
   hashReceiptBytes,
   RECEIPT_UNDERPAY_TOLERANCE,
   RECEIPT_OVERPAY_TOLERANCE,
@@ -143,6 +144,52 @@ describe("looksLikeReceipt / extractMoneyAmounts — не тронуты пра�
   it("извлекает суммы с разделителем тысяч", () => {
     expect(extractMoneyAmounts("Сумма: 1 234,56 KZT")).toContain(1234.56);
   });
+
+  it("ВТБ: сумма операции 228 ₽ и выплата 1101.24 KZT, не телефон и не дата", () => {
+    const text = `
+      Перевод по номеру телефона в другую страну
+      Дата операции 08.09.2026, 19:33
+      Номер телефона 7055113828
+      Сумма выплаты 1101.24 KZT
+      Курс обмена 1 ₽ = 4.83 KZT
+      Комиссия за перевод 0 ₽
+      Сумма операции 228 ₽
+    `;
+    const amounts = extractMoneyAmounts(text);
+    expect(amounts).toContain(1101.24);
+    expect(amounts).toContain(228);
+    expect(amounts).not.toContain(7055113);
+    expect(amounts).not.toContain(8.09);
+    expect(amounts).not.toContain(2026);
+  });
+
+  it("Сбер: сумма в местной валюте 1077.30 KZT", () => {
+    expect(
+      extractMoneyAmounts("Сумма в местной валюте 1077.30 KZT Идентификатор 258797242136PSVG"),
+    ).toContain(1077.3);
+  });
+
+  it("экран «Платёж выполнен» 227 ₽", () => {
+    expect(extractMoneyAmounts("Платёж выполнен\n227 ₽\n7055113828")).toContain(227);
+    expect(extractMoneyAmounts("Платёж выполнен\n227 ₽\n7055113828")).not.toContain(7055113);
+  });
+});
+
+describe("amountsForCurrency — не смешивать 1000 ₽ и 1000 ₸", () => {
+  it("1000 RUB не идёт в пул KZT", () => {
+    expect(amountsForCurrency("Перевод успешно выполнен. Сумма: 1000 RUB", "KZT")).not.toContain(
+      1000,
+    );
+    expect(amountsForCurrency("Перевод успешно выполнен. Сумма: 1000 RUB", "RUB")).toContain(1000);
+  });
+
+  it("на смешанном чеке в KZT остаётся выплата, не рубли", () => {
+    const text = "Сумма выплаты 1101.24 KZT. Сумма операции 228 ₽.";
+    expect(amountsForCurrency(text, "KZT")).toEqual(expect.arrayContaining([1101.24]));
+    expect(amountsForCurrency(text, "KZT")).not.toContain(228);
+    expect(amountsForCurrency(text, "RUB")).toContain(228);
+    expect(amountsForCurrency(text, "RUB")).not.toContain(1101.24);
+  });
 });
 
 let reuseMatch: { id: number; display_no: number; order_no: number } | null = null;
@@ -272,6 +319,43 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
       orderId: 99,
     });
     expect(result.ok).toBe(true);
+  });
+
+  it("чек с тенге и рублями — находит 1101.24 KZT под заказ 1100 ₸", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        visionResponse("Сумма выплаты 1101.24 KZT. Сумма операции 228 ₽. Телефон 7055113828."),
+      ),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 1100,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.matchedAmount).toBe(1101.24);
+  });
+
+  it("на экране только 227 ₽ — переводим заказ 1100 ₸ и принимаем", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(visionResponse("Платёж выполнен. 227 ₽. Билайн Казахстан. 7055113828.")),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 1100,
+      currency: "KZT",
+      orderId: 99,
+    });
+    // 1100 ₸ → 220 ₽ по тестовому курсу, 227 в допуске FX (+12%)
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.matchedAmount).toBe(227);
   });
 
   it("чек в другой валюте — переводим сумму заказа и сверяем", async () => {

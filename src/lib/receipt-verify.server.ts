@@ -198,21 +198,111 @@ export function hashReceiptBytes(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** Extract money-like numbers from OCR text (supports 1 234,56 / 1234.56). */
+const AMOUNT_TOKEN = String.raw`\d{1,3}(?:[\s\u00a0\u202f]\d{3})+|\d+`;
+const AMOUNT_DEC = String.raw`(?:[.,]\d{1,2})?`;
+
+/** Хвост валюты у суммы. `rub` — латиница на чеке («1000 RUB»); без неё 1000 считался «голой» цифрой. */
+const CURRENCY_AMOUNT_TAIL: Record<string, string> = {
+  KZT: String.raw`(?:kzt|₸|тенге|тг\.?)`,
+  RUB: String.raw`(?:₽|руб(?:\.|лей|ля)?|rub)`,
+  USD: String.raw`(?:usd|\$|долл)`,
+  BYN: String.raw`(?:byn|бел\.?\s*руб)`,
+  KGS: String.raw`(?:kgs|сом|som)`,
+};
+const CURRENCY_TAIL = `(?:${Object.values(CURRENCY_AMOUNT_TAIL).join("|")})`;
+
+function parseAmountToken(raw: string): number | null {
+  const normalized = raw.replace(/[\s\u00a0\u202f]/g, "").replace(",", ".");
+  const n = Number(normalized);
+  if (!Number.isFinite(n) || n <= 0 || n > 10_000_000) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function addAmount(into: Set<number>, raw: string) {
+  const n = parseAmountToken(raw);
+  if (n != null) into.add(n);
+}
+
+function isInsideLongDigitRun(text: string, index: number, length: number): boolean {
+  let start = index;
+  while (start > 0 && /\d/.test(text[start - 1]!)) start -= 1;
+  let end = index + length;
+  while (end < text.length && /\d/.test(text[end]!)) end += 1;
+  return end - start >= 8;
+}
+
+/**
+ * Суммы из OCR. Сбер/ВТБ пишут «227 ₽», «1077.30 KZT», «Сумма операции 228 ₽».
+ * Телефон (7055113828) и дату (08.09.2026) в деньги не берём — из-за них
+ * раньше «находились» 7055113 и 8.09, а крупная сумма с ₽ терялась в шуме.
+ */
 export function extractMoneyAmounts(text: string): number[] {
   const amounts = new Set<number>();
-  // Match clusters like 1 234,56 or 1234.56 or 1500
-  const re = /\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d{1,2})?|\d+[.,]\d{1,2}|\d{2,7}/g;
-  const matches = text.match(re) || [];
-  for (const raw of matches) {
-    const normalized = raw.replace(/[\s\u00a0]/g, "").replace(",", ".");
-    const n = Number(normalized);
-    if (!Number.isFinite(n) || n <= 0) continue;
-    // Skip likely dates / years / order ids noise: keep plausible money range
-    if (n < 1 || n > 10_000_000) continue;
-    amounts.add(Math.round(n * 100) / 100);
+
+  const amount = `(?:${AMOUNT_TOKEN})${AMOUNT_DEC}`;
+  const tagged = new RegExp(`(${amount})\\s*${CURRENCY_TAIL}`, "gi");
+  for (const m of text.matchAll(tagged)) addAmount(amounts, m[1] ?? "");
+
+  const labeled = new RegExp(
+    `(?:сумма(?:\\s+(?:операции|выплаты|перевода|платежа|в\\s+местной\\s+валюте))?|итого)\\s*[:\\-]?\\s*(${amount})`,
+    "gi",
+  );
+  for (const m of text.matchAll(labeled)) addAmount(amounts, m[1] ?? "");
+
+  const general = new RegExp(`${amount}|\\d{2,7}`, "g");
+  const dates = new Set<string>();
+  for (const m of text.matchAll(/\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?/g)) {
+    if (m[0]) dates.add(m[0]);
+  }
+  for (const m of text.matchAll(general)) {
+    const raw = m[0];
+    const idx = m.index ?? 0;
+    if (dates.has(raw) || [...dates].some((d) => d.includes(raw) && /[./]/.test(d))) continue;
+    if (isInsideLongDigitRun(text, idx, raw.length)) continue;
+    const n = parseAmountToken(raw);
+    if (n == null) continue;
+    if (n >= 1900 && n <= 2099 && /^\d{4}$/.test(raw.replace(/[\s\u00a0]/g, ""))) continue;
+    amounts.add(n);
   }
   return [...amounts];
+}
+
+/** Суммы, у которых в чеке явно написана валюта — «228 ₽», «1101.24 KZT». */
+export function extractTaggedCurrencyAmounts(text: string): Record<string, number[]> {
+  const amount = `(?:${AMOUNT_TOKEN})${AMOUNT_DEC}`;
+  const out: Record<string, number[]> = {};
+  for (const [code, tail] of Object.entries(CURRENCY_AMOUNT_TAIL)) {
+    const re = new RegExp(`(${amount})\\s*${tail}`, "gi");
+    const found = new Set<number>();
+    for (const m of text.matchAll(re)) addAmount(found, m[1] ?? "");
+    if (found.size) out[code] = [...found];
+  }
+  return out;
+}
+
+/**
+ * Для сверки в валюте заказа не берём цифры, которые в чеке подписаны другой
+ * валютой: 1000 RUB при заказе 1000 ₸ — это не совпадение.
+ */
+export function amountsForCurrency(text: string, currency?: string): number[] {
+  const all = extractMoneyAmounts(text);
+  if (!currency) return all;
+  const tagged = extractTaggedCurrencyAmounts(text);
+  const own = new Set(tagged[currency] ?? []);
+  const foreign = new Set(
+    Object.entries(tagged)
+      .filter(([code]) => code !== currency)
+      .flatMap(([, nums]) => nums),
+  );
+  return all.filter((n) => own.has(n) || !foreign.has(n));
+}
+
+/** Все известные валюты, которые явно есть в тексте чека. */
+export function detectAllReceiptCurrencies(text: string): string[] {
+  const t = text.toLowerCase().replace(/ё/g, "е");
+  return Object.entries(CURRENCY_MARKERS)
+    .filter(([, markers]) => markers.some((m) => t.includes(m)))
+    .map(([code]) => code);
 }
 
 export function looksLikeReceipt(text: string): boolean {
@@ -466,41 +556,67 @@ export async function verifyPaymentReceipt(params: {
 
   const amounts = extractMoneyAmounts(text);
   const orderCurrency = params.currency?.trim().toUpperCase() || undefined;
-  const receiptCurrency = detectReceiptCurrency(text, orderCurrency);
-  let expected = Number(params.expectedAmount);
-  let matchOpts: { underTolerance?: number; overTolerance?: number } | undefined;
-  let comparedAs = orderCurrency;
+  const orderExpected = Number(params.expectedAmount);
+  const currenciesToTry = [
+    ...new Set(
+      [orderCurrency, ...detectAllReceiptCurrencies(text)].filter((c): c is string => Boolean(c)),
+    ),
+  ];
 
-  if (receiptCurrency && orderCurrency && receiptCurrency !== orderCurrency) {
-    const { convertAmount } = await import("./currency.server");
-    const converted = await convertAmount(expected, orderCurrency, receiptCurrency);
-    if (converted == null) {
-      return {
-        ok: false,
-        reason: "currency_mismatch",
-        detail: `В чеке ${receiptCurrency}, заказ ${orderCurrency} — курс перевести не удалось. Нужна ручная проверка.`,
-        extractedText: text.slice(0, 2000),
+  let matched: number | null = null;
+  let comparedAs = orderCurrency;
+  let lastExpected = orderExpected;
+  let usedFx = false;
+  let convertFailed = false;
+
+  for (const ccy of currenciesToTry.length ? currenciesToTry : [undefined]) {
+    let expected = orderExpected;
+    let matchOpts: { underTolerance?: number; overTolerance?: number } | undefined;
+    if (ccy && orderCurrency && ccy !== orderCurrency) {
+      const { convertAmount } = await import("./currency.server");
+      const converted = await convertAmount(orderExpected, orderCurrency, ccy);
+      if (converted == null) {
+        convertFailed = true;
+        continue;
+      }
+      expected = converted;
+      matchOpts = {
+        underTolerance: RECEIPT_FX_UNDERPAY_TOLERANCE,
+        overTolerance: RECEIPT_FX_OVERPAY_TOLERANCE,
       };
     }
-    expected = converted;
-    comparedAs = receiptCurrency;
-    matchOpts = {
-      underTolerance: RECEIPT_FX_UNDERPAY_TOLERANCE,
-      overTolerance: RECEIPT_FX_OVERPAY_TOLERANCE,
+    const hit = findMatchingAmount(amountsForCurrency(text, ccy), expected, matchOpts);
+    if (hit != null) {
+      matched = hit;
+      comparedAs = ccy;
+      lastExpected = expected;
+      usedFx = Boolean(matchOpts);
+      break;
+    }
+    lastExpected = expected;
+    usedFx = Boolean(matchOpts);
+    comparedAs = ccy;
+  }
+
+  if (matched == null && convertFailed && amounts.length === 0) {
+    return {
+      ok: false,
+      reason: "currency_mismatch",
+      detail: `В чеке другая валюта, заказ ${orderCurrency} — курс перевести не удалось. Нужна ручная проверка.`,
+      extractedText: text.slice(0, 2000),
     };
   }
 
-  const matched = findMatchingAmount(amounts, expected, matchOpts);
   if (matched == null) {
     const fxNote =
-      comparedAs && orderCurrency && comparedAs !== orderCurrency
-        ? `заказ ${params.expectedAmount} ${orderCurrency} ≈ ${expected} ${comparedAs} по курсу каталога`
-        : `Сумма заказа ${params.expectedAmount}${orderCurrency ? ` ${orderCurrency}` : ""}`;
+      usedFx && comparedAs && orderCurrency && comparedAs !== orderCurrency
+        ? `заказ ${orderExpected} ${orderCurrency} ≈ ${lastExpected} ${comparedAs} по курсу каталога`
+        : `Сумма заказа ${orderExpected}${orderCurrency ? ` ${orderCurrency}` : ""}`;
     return {
       ok: false,
       reason: "amount_mismatch",
       detail: `${fxNote} не найдена в чеке (допуск: ${
-        matchOpts
+        usedFx
           ? `-${RECEIPT_FX_UNDERPAY_TOLERANCE * 100}%/+${RECEIPT_FX_OVERPAY_TOLERANCE * 100}%`
           : "-2%/+10%"
       }). Найдены: ${amounts.slice(0, 8).join(", ") || "—"}.`,
