@@ -207,8 +207,14 @@ export async function processMiniAppPaymentProof(params: {
   const note = String(order.admin_note || "");
   const autoDeliver =
     claimedState.proof_auto === true || note === "proof_auto" || note.startsWith("proof_auto");
+  const { hasModule } = await import("./modules/modules.server");
+  const { isReceiptOcrAutoEnabled, shouldEnterReceiptOcrPath } =
+    await import("./receipt-ocr-auto.server");
+  const ocrEnabled = await isReceiptOcrAutoEnabled();
 
-  if (!autoDeliver) {
+  // Как в Telegram-боте: тумблер автопроверки важнее флага proof_auto.
+  // Иначе Mini App / чек до кнопки «реквизиты» обходил Vision.
+  if (!shouldEnterReceiptOcrPath(ocrEnabled, autoDeliver)) {
     await supabaseAdmin
       .from("orders")
       .update({
@@ -228,10 +234,8 @@ export async function processMiniAppPaymentProof(params: {
     total: Number(order.total),
     fulfillment_kind: order.fulfillment_kind,
   });
-  const { hasModule } = await import("./modules/modules.server");
-  const { isReceiptOcrAutoEnabled } = await import("./receipt-ocr-auto.server");
   const { verifyPaymentReceipt, isReceiptRetryReason } = await import("./receipt-verify.server");
-  const verify: ReceiptVerifyResult = (await isReceiptOcrAutoEnabled())
+  const verify: ReceiptVerifyResult = ocrEnabled
     ? await verifyPaymentReceipt({
         bytes: params.file.bytes,
         mime: validation.mime,

@@ -28,3 +28,13 @@ export async function isReceiptOcrAutoEnabled(): Promise<boolean> {
     .maybeSingle();
   return parseReceiptOcrAutoSetting(data?.value);
 }
+
+/**
+ * Чек уже в руках. OCR — если тумблер включён, даже когда нет proof_auto:
+ * в KZ покупатель часто шлёт скрин, пока ещё выбирает Robokassa/реквизиты,
+ * и заказ уходил продавцу как обычный. proof_auto без тумблера оставляем
+ * в этой ветке, чтобы в заметке было «автопроверка выключена», а не тишина.
+ */
+export function shouldEnterReceiptOcrPath(ocrEnabled: boolean, proofAuto: boolean): boolean {
+  return ocrEnabled || proofAuto;
+}

@@ -5726,6 +5726,12 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
     const note = String(orderRow.admin_note || "");
     const autoDeliver =
       user.state?.proof_auto === true || note === "proof_auto" || note.startsWith("proof_auto");
+    // Тумблер в настройках — единственный выключатель OCR. Флаг proof_auto
+    // ставится только после кнопки «реквизиты» (KZ) / для RU-BY. Иначе чек,
+    // присланный на шаге выбора оплаты, уходил продавцу как обычный заказ.
+    const { isReceiptOcrAutoEnabled, shouldEnterReceiptOcrPath } =
+      await import("./receipt-ocr-auto.server");
+    const ocrEnabled = await isReceiptOcrAutoEnabled();
 
     // Определяем источник чека и расширение сохраняемого файла.
     // Расширение важно: админ-панель определяет тип чека по расширению пути.
@@ -5789,7 +5795,7 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
       console.error("[bot] failed to download proof from Telegram", { orderId, proofKind });
     }
 
-    if (autoDeliver) {
+    if (shouldEnterReceiptOcrPath(ocrEnabled, autoDeliver)) {
       // OCR check before auto-delivery
       if (!dl) {
         await setState(from.id, {
@@ -5812,13 +5818,12 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
       // the module's own ocr_unavailable case already handles.
       const { verifyPaymentReceipt, isReceiptRetryReason } =
         await import("./receipt-verify.server");
-      const { isReceiptOcrAutoEnabled } = await import("./receipt-ocr-auto.server");
       const { amountDueNow: ocrAmountDueNow } = await import("./fulfillment.server");
       const ocrExpectedAmount = await ocrAmountDueNow({
         total: Number(orderRow.total),
         fulfillment_kind: orderRow.fulfillment_kind,
       });
-      const verify: ReceiptVerifyResult = (await isReceiptOcrAutoEnabled())
+      const verify: ReceiptVerifyResult = ocrEnabled
         ? await verifyPaymentReceipt({
             bytes: dl.bytes,
             mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
