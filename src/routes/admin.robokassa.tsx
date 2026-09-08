@@ -94,9 +94,9 @@ const copy: Record<
     robokassaEnableLabel: "Включить оплату через Robokassa (автовыдача файлов)",
     robokassaEnableLabelPhysical: "Включить оплату через Robokassa (автоподтверждение оплаты)",
     robokassaEnabledHint:
-      "При включении: RU, BY, OTHER — только чек с автовыдачей; KZ — выбор Robokassa или чек с автовыдачей; остальные страны — только Robokassa. При выключении все страны — чек с ручной проверкой. Автовыдача по чеку требует GOOGLE_VISION_API_KEY (OCR, сумма ±10%); без ключа чек уходит на ручную проверку.",
+      "При включении: RU, BY, OTHER — только чек с автовыдачей; KZ — выбор Robokassa или чек с автовыдачей; остальные страны — только Robokassa. При выключении все страны — чек с ручной проверкой. Автовыдача по чеку требует GOOGLE_VISION_API_KEY (OCR, сумма ±30%); без ключа чек уходит на ручную проверку.",
     robokassaEnabledHintPhysical:
-      "При включении оплата картой подтверждается автоматически, заказ уходит в работу. При выключении — чек с ручной проверкой, затем «Принять заказ». OCR чека требует GOOGLE_VISION_API_KEY (сумма ±10%); без ключа чек уходит на ручную проверку.",
+      "При включении оплата картой подтверждается автоматически, заказ уходит в работу. При выключении — чек с ручной проверкой, затем «Принять заказ». OCR чека требует GOOGLE_VISION_API_KEY (сумма ±30%); без ключа чек уходит на ручную проверку.",
     merchantLoginLabel: "Идентификатор магазина (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Пароль #1 (боевой)",
@@ -137,9 +137,9 @@ const copy: Record<
     robokassaEnableLabel: "Robokassa арқылы төлемді қосу (файлдарды автоберу)",
     robokassaEnableLabelPhysical: "Robokassa арқылы төлемді қосу (төлемді авторастау)",
     robokassaEnabledHint:
-      "Қосылған кезде: RU, BY, OTHER — тек автобер чегі; KZ — Robokassa немесе автобер чегін таңдау; басқа елдер — тек Robokassa. Өшірулі кезде барлық елдерде — қолмен тексерілетін чек. Чек бойынша автобер GOOGLE_VISION_API_KEY талап етеді (OCR, сома ±10%); кілт болмаса чек қолмен тексеруге жіберіледі.",
+      "Қосылған кезде: RU, BY, OTHER — тек автобер чегі; KZ — Robokassa немесе автобер чегін таңдау; басқа елдер — тек Robokassa. Өшірулі кезде барлық елдерде — қолмен тексерілетін чек. Чек бойынша автобер GOOGLE_VISION_API_KEY талап етеді (OCR, сома ±30%); кілт болмаса чек қолмен тексеруге жіберіледі.",
     robokassaEnabledHintPhysical:
-      "Қосылғанда картамен төлем автоматты расталады, тапсырыс жұмысқа кетеді. Өшірулі — қолмен тексерілетін чек, сосын «Қабылдау». OCR үшін GOOGLE_VISION_API_KEY (сома ±10%).",
+      "Қосылғанда картамен төлем автоматты расталады, тапсырыс жұмысқа кетеді. Өшірулі — қолмен тексерілетін чек, сосын «Қабылдау». OCR үшін GOOGLE_VISION_API_KEY (сома ±30%).",
     merchantLoginLabel: "Дүкен идентификаторы (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Құпия сөз №1 (боевой)",
@@ -180,9 +180,9 @@ const copy: Record<
     robokassaEnableLabel: "Enable payment via Robokassa (auto file delivery)",
     robokassaEnableLabelPhysical: "Enable payment via Robokassa (auto payment confirmation)",
     robokassaEnabledHint:
-      "When enabled: RU, BY, OTHER — receipt with auto-delivery only; KZ — choice of Robokassa or receipt with auto-delivery; other countries — Robokassa only. When disabled, all countries use a manually reviewed receipt. Auto-delivery by receipt requires GOOGLE_VISION_API_KEY (OCR, amount ±10%); without the key, receipts go to manual review.",
+      "When enabled: RU, BY, OTHER — receipt with auto-delivery only; KZ — choice of Robokassa or receipt with auto-delivery; other countries — Robokassa only. When disabled, all countries use a manually reviewed receipt. Auto-delivery by receipt requires GOOGLE_VISION_API_KEY (OCR, amount ±30%); without the key, receipts go to manual review.",
     robokassaEnabledHintPhysical:
-      "When enabled, card payment is confirmed automatically and the order goes into production. When disabled — a manually reviewed receipt, then Accept order. Receipt OCR needs GOOGLE_VISION_API_KEY (amount ±10%).",
+      "When enabled, card payment is confirmed automatically and the order goes into production. When disabled — a manually reviewed receipt, then Accept order. Receipt OCR needs GOOGLE_VISION_API_KEY (amount ±30%).",
     merchantLoginLabel: "Shop identifier (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Password #1 (live)",
@@ -225,9 +225,9 @@ const copy: Record<
     robokassaEnableLabelPhysical:
       "Robokassa orqali to‘lovni yoqish (to‘lovni avtomatik tasdiqlash)",
     robokassaEnabledHint:
-      "Yoqilgan bo‘lsa: RU, BY, OTHER — faqat avtomatik berish cheki; KZ — Robokassa yoki avtomatik berish chekini tanlash; boshqa mamlakatlar — faqat Robokassa. O‘chirilgan bo‘lsa barcha mamlakatlarda — qo‘lda tekshiriladigan chek. Chek bo‘yicha avtomatik berish GOOGLE_VISION_API_KEY talab qiladi (OCR, summa ±10%); kalit bo‘lmasa chek qo‘lda tekshirishga yuboriladi.",
+      "Yoqilgan bo‘lsa: RU, BY, OTHER — faqat avtomatik berish cheki; KZ — Robokassa yoki avtomatik berish chekini tanlash; boshqa mamlakatlar — faqat Robokassa. O‘chirilgan bo‘lsa barcha mamlakatlarda — qo‘lda tekshiriladigan chek. Chek bo‘yicha avtomatik berish GOOGLE_VISION_API_KEY talab qiladi (OCR, summa ±30%); kalit bo‘lmasa chek qo‘lda tekshirishga yuboriladi.",
     robokassaEnabledHintPhysical:
-      "Yoqilganda karta to‘lovi avtomatik tasdiqlanadi, buyurtma ishga o‘tadi. O‘chirilganda — qo‘lda tekshiriladigan chek, keyin «Qabul qilish». OCR uchun GOOGLE_VISION_API_KEY (summa ±10%).",
+      "Yoqilganda karta to‘lovi avtomatik tasdiqlanadi, buyurtma ishga o‘tadi. O‘chirilganda — qo‘lda tekshiriladigan chek, keyin «Qabul qilish». OCR uchun GOOGLE_VISION_API_KEY (summa ±30%).",
     merchantLoginLabel: "Do‘kon identifikatori (MerchantLogin)",
     merchantLoginPlaceholder: "my_shop_id",
     pass1Label: "Parol #1 (jonli)",

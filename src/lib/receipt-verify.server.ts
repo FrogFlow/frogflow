@@ -4,26 +4,23 @@ import { errorMessage } from "@/lib/error-message";
 /**
  * Tolerance for matching receipt amount to order total.
  *
- * Асимметрично, а не одно число на оба направления (Блок A.3, кейс 2, раунд
- * 2): недоплата — это не «сумма чуть отличается из-за округления банка», это
- * деньги, которых продавец не получил, и раньше допуск в 10% позволял
- * систематически платить 90% от любого заказа и всё равно получить
- * автовыдачу. Переплата продавцу не вредит и может быть просто щедростью
- * или комиссией банка на стороне отправителя — здесь запас оставлен прежним.
+ * ±30% в обе стороны: OCR и банк часто дают сумму рядом с заказом, но не
+ * вплотную (комиссия, курс Сбера на пополнении связи, «Сумма в местной
+ * валюте»). Скрин карточки товара (2000 ₸ на заказ 800 ₸) по-прежнему
+ * не проходит — это +150%.
  */
-export const RECEIPT_UNDERPAY_TOLERANCE = 0.02;
-export const RECEIPT_OVERPAY_TOLERANCE = 0.1;
+export const RECEIPT_UNDERPAY_TOLERANCE = 0.3;
+export const RECEIPT_OVERPAY_TOLERANCE = 0.3;
 
 /**
- * Когда сумму заказа переводим в валюту чека: mid-market каталога
- * (open.er-api) и розничный курс банка на пополнении связи в другую страну
- * расходятся сильнее, чем на пару процентов. Сбер по Beeline KZ отдаёт
- * примерно на 10% меньше тенге, чем mid-market (4.73 ₸/₽ при ~5.27 в каталоге).
- * 5% недоплаты отправляли честные чеки «Сумма в местной валюте … KZT» продавцу.
- * В той же валюте, что заказ, по-прежнему 2% — этот допуск только на перевод.
+ * Тот же ±30%, когда сумму заказа переводим в валюту чека. Mid-market
+ * каталога (open.er-api) и розничный курс банка расходятся сильнее, чем
+ * на пару процентов: Сбер по Beeline KZ отдаёт примерно на 10–17% меньше
+ * тенге, чем mid-market. Отдельные константы оставлены, чтобы FX-сверку
+ * можно было сузить независимо от той же валюты.
  */
-export const RECEIPT_FX_UNDERPAY_TOLERANCE = 0.15;
-export const RECEIPT_FX_OVERPAY_TOLERANCE = 0.12;
+export const RECEIPT_FX_UNDERPAY_TOLERANCE = 0.3;
+export const RECEIPT_FX_OVERPAY_TOLERANCE = 0.3;
 
 const RECEIPT_MARKERS = [
   "оплат",
@@ -523,7 +520,7 @@ async function readReceiptText(bytes: Uint8Array, mime: string): Promise<string>
 
 /**
  * Verify a payment receipt (фото или PDF) against expected order amount
- * (+2%/-10%, см. RECEIPT_UNDERPAY_TOLERANCE/RECEIPT_OVERPAY_TOLERANCE),
+ * (±30%, см. RECEIPT_UNDERPAY_TOLERANCE/RECEIPT_OVERPAY_TOLERANCE),
  * against the expected currency (см. detectReceiptCurrency): чужая валюта
  * в чеке — не отказ, а перевод суммы заказа тем же convertAmount, что каталог,
  * и сверка уже в валюте чека.
@@ -644,7 +641,7 @@ export async function verifyPaymentReceipt(params: {
       detail: `${fxNote} не найдена в чеке (допуск: ${
         usedFx
           ? `-${RECEIPT_FX_UNDERPAY_TOLERANCE * 100}%/+${RECEIPT_FX_OVERPAY_TOLERANCE * 100}%`
-          : "-2%/+10%"
+          : `-${RECEIPT_UNDERPAY_TOLERANCE * 100}%/+${RECEIPT_OVERPAY_TOLERANCE * 100}%`
       }). Найдены: ${amounts.slice(0, 8).join(", ") || "—"}.`,
       extractedText: text.slice(0, 2000),
     };

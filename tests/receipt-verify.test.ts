@@ -13,24 +13,26 @@ import {
   RECEIPT_UNDERPAY_TOLERANCE,
   RECEIPT_OVERPAY_TOLERANCE,
   RECEIPT_FX_UNDERPAY_TOLERANCE,
+  RECEIPT_FX_OVERPAY_TOLERANCE,
 } from "../src/lib/receipt-verify.server";
 
-describe("findMatchingAmount — асимметричный допуск (Блок A.3)", () => {
-  it("недоплата больше 2% не проходит", () => {
-    // 900 из 1000 — недоплата 10%, раньше проходила при симметричном допуске.
-    expect(findMatchingAmount([900], 1000)).toBeNull();
+describe("findMatchingAmount — допуск ±30%", () => {
+  it("недоплата больше 30% не проходит", () => {
+    // Ровно 30% (700) ещё проходит: diff < -under отвергает строго меньше.
+    expect(findMatchingAmount([690], 1000)).toBeNull();
   });
 
-  it("недоплата в пределах 2% проходит", () => {
-    expect(findMatchingAmount([981], 1000)).toBe(981);
+  it("недоплата в пределах 30% проходит", () => {
+    expect(findMatchingAmount([700], 1000)).toBe(700);
+    expect(findMatchingAmount([900], 1000)).toBe(900);
   });
 
-  it("переплата на 10% всё ещё проходит — не вредит продавцу", () => {
-    expect(findMatchingAmount([1100], 1000)).toBe(1100);
+  it("переплата на 30% проходит", () => {
+    expect(findMatchingAmount([1300], 1000)).toBe(1300);
   });
 
-  it("переплата больше 10% не проходит", () => {
-    expect(findMatchingAmount([1200], 1000)).toBeNull();
+  it("переплата больше 30% не проходит", () => {
+    expect(findMatchingAmount([1310], 1000)).toBeNull();
   });
 
   it("точное совпадение всегда проходит", () => {
@@ -42,9 +44,10 @@ describe("findMatchingAmount — асимметричный допуск (Бло
   });
 
   it("константы соответствуют документированным значениям", () => {
-    expect(RECEIPT_UNDERPAY_TOLERANCE).toBe(0.02);
-    expect(RECEIPT_OVERPAY_TOLERANCE).toBe(0.1);
-    expect(RECEIPT_FX_UNDERPAY_TOLERANCE).toBe(0.15);
+    expect(RECEIPT_UNDERPAY_TOLERANCE).toBe(0.3);
+    expect(RECEIPT_OVERPAY_TOLERANCE).toBe(0.3);
+    expect(RECEIPT_FX_UNDERPAY_TOLERANCE).toBe(0.3);
+    expect(RECEIPT_FX_OVERPAY_TOLERANCE).toBe(0.3);
   });
 });
 
@@ -383,7 +386,7 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
       currency: "KZT",
       orderId: 99,
     });
-    // 1100 ₸ → 209 ₽ по mid-market 5.267, 227 в допуске FX (+12%)
+    // 1100 ₸ → 209 ₽ по mid-market 5.267, 227 в допуске FX (+9%)
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.matchedAmount).toBe(227);
   });
@@ -409,10 +412,27 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
     if (result.ok) expect(result.matchedAmount).toBe(1077.3);
   });
 
-  it("Сбер 661.50 KZT на заказ 152 ₽ — слишком далеко от mid-market, к продавцу", async () => {
+  it("Сбер 661.50 KZT на заказ 152 ₽ — ~17% ниже mid-market, в допуске ±30%", async () => {
     reuseMatch = null;
     global.fetch = vi.fn(() =>
       Promise.resolve(visionResponse("Чек по операции. Сумма в местной валюте 661.50 KZT.")),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 152,
+      currency: "RUB",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.matchedAmount).toBe(661.5);
+  });
+
+  it("Сбер ~50% ниже mid-market — всё ещё к продавцу", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(visionResponse("Чек по операции. Сумма в местной валюте 400 KZT.")),
     ) as unknown as typeof fetch;
     const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
     const result = await verifyPaymentReceipt({
