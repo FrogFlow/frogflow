@@ -15,11 +15,14 @@ export const RECEIPT_UNDERPAY_TOLERANCE = 0.02;
 export const RECEIPT_OVERPAY_TOLERANCE = 0.1;
 
 /**
- * Когда сумму заказа переводим в валюту чека: курс банка и наш mid-market
- * (open.er-api, тот же convertAmount, что каталог) расходятся на пару процентов.
- * 2% недоплаты здесь ломали бы честные переводы.
+ * Когда сумму заказа переводим в валюту чека: mid-market каталога
+ * (open.er-api) и розничный курс банка на пополнении связи в другую страну
+ * расходятся сильнее, чем на пару процентов. Сбер по Beeline KZ отдаёт
+ * примерно на 10% меньше тенге, чем mid-market (4.73 ₸/₽ при ~5.27 в каталоге).
+ * 5% недоплаты отправляли честные чеки «Сумма в местной валюте … KZT» продавцу.
+ * В той же валюте, что заказ, по-прежнему 2% — этот допуск только на перевод.
  */
-export const RECEIPT_FX_UNDERPAY_TOLERANCE = 0.05;
+export const RECEIPT_FX_UNDERPAY_TOLERANCE = 0.15;
 export const RECEIPT_FX_OVERPAY_TOLERANCE = 0.12;
 
 const RECEIPT_MARKERS = [

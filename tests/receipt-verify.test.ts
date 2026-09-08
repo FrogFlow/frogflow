@@ -12,6 +12,7 @@ import {
   hashReceiptBytes,
   RECEIPT_UNDERPAY_TOLERANCE,
   RECEIPT_OVERPAY_TOLERANCE,
+  RECEIPT_FX_UNDERPAY_TOLERANCE,
 } from "../src/lib/receipt-verify.server";
 
 describe("findMatchingAmount — асимметричный допуск (Блок A.3)", () => {
@@ -43,6 +44,7 @@ describe("findMatchingAmount — асимметричный допуск (Бло
   it("константы соответствуют документированным значениям", () => {
     expect(RECEIPT_UNDERPAY_TOLERANCE).toBe(0.02);
     expect(RECEIPT_OVERPAY_TOLERANCE).toBe(0.1);
+    expect(RECEIPT_FX_UNDERPAY_TOLERANCE).toBe(0.15);
   });
 });
 
@@ -169,6 +171,11 @@ describe("looksLikeReceipt / extractMoneyAmounts — не тронуты пра�
     ).toContain(1077.3);
   });
 
+  it("Сбер: 661.50 и 1072.58 KZT тоже читаются", () => {
+    expect(extractMoneyAmounts("Сумма в местной валюте 661.50 KZT")).toContain(661.5);
+    expect(extractMoneyAmounts("Сумма в местной валюте 1072.58 KZT")).toContain(1072.58);
+  });
+
   it("экран «Платёж выполнен» 227 ₽", () => {
     expect(extractMoneyAmounts("Платёж выполнен\n227 ₽\n7055113828")).toContain(227);
     expect(extractMoneyAmounts("Платёж выполнен\n227 ₽\n7055113828")).not.toContain(7055113);
@@ -199,9 +206,10 @@ vi.mock("../src/lib/currency.server", () => ({
     const f = from.toUpperCase();
     const t = to.toUpperCase();
     if (f === t) return Math.round(amount);
-    // Условный курс для тестов, не живой FX: 5 ₸ = 1 ₽.
-    if (f === "KZT" && t === "RUB") return Math.round(amount / 5);
-    if (f === "RUB" && t === "KZT") return Math.round(amount * 5);
+    // Как mid-market каталога 8.09.2026: 1 ₽ ≈ 5.267 ₸. Розничный Сбер ~4.73.
+    const kztPerRub = 5.267;
+    if (f === "KZT" && t === "RUB") return Math.round(amount / kztPerRub);
+    if (f === "RUB" && t === "KZT") return Math.round(amount * kztPerRub);
     return null;
   },
 }));
@@ -353,9 +361,66 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
       currency: "KZT",
       orderId: 99,
     });
-    // 1100 ₸ → 220 ₽ по тестовому курсу, 227 в допуске FX (+12%)
+    // 1100 ₸ → 209 ₽ по mid-market 5.267, 227 в допуске FX (+12%)
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.matchedAmount).toBe(227);
+  });
+
+  it("Сбер «местная валюта» 1077.30 KZT на заказ 228 ₽ — принимаем (спред банка ~10%)", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        visionResponse(
+          "Чек по операции. Мобильная связь. Сумма в местной валюте 1077.30 KZT. Номер 7055113828.",
+        ),
+      ),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 228,
+      currency: "RUB",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.matchedAmount).toBe(1077.3);
+  });
+
+  it("Сбер 661.50 KZT на заказ 152 ₽ — слишком далеко от mid-market, к продавцу", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(visionResponse("Чек по операции. Сумма в местной валюте 661.50 KZT.")),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 152,
+      currency: "RUB",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("amount_mismatch");
+  });
+
+  it("скрин карточки товара 2000 ₸ вместо чека на 800 ₸ — не принимаем", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        visionResponse("039. Математический тренажёр. 2000 ₸. Продолжить оплату. 0 в корзине."),
+      ),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 800,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("amount_mismatch");
   });
 
   it("чек в другой валюте — переводим сумму заказа и сверяем", async () => {
