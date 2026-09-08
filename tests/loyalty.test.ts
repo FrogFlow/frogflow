@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { computePointsEarned, computePointsDiscount, applyLoyaltyToFullAmount } from "../src/lib/loyalty";
+import {
+  computePointsEarned,
+  computePointsDiscount,
+  applyLoyaltyToFullAmount,
+} from "../src/lib/loyalty";
 
 describe("computePointsEarned", () => {
   it("считает процент от суммы заказа, округляя вниз", () => {

@@ -1577,7 +1577,10 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
       await finishFulfillmentAndShowPayment(conversationId, accountId, user, null);
       return;
     }
-    if (features.checkout && (postbackPayload === "loyalty:yes" || postbackPayload === "loyalty:no")) {
+    if (
+      features.checkout &&
+      (postbackPayload === "loyalty:yes" || postbackPayload === "loyalty:no")
+    ) {
       const flow = await import("./direct-purchase.server");
       const loyaltyState = flow.readDirectState(user.state);
       if (loyaltyState.mode === "awaiting_loyalty_points") {
@@ -2754,16 +2757,10 @@ async function sendDirectPaymentDetails(params: {
       country_code: country.code,
       misses: 0,
     });
-    await reply(
-      user,
-      conversationId,
-      accountId,
-      copy.loyaltyAsk(pointsBalance, currency),
-      [
-        { type: "postback", title: copy.loyaltyYesBtn, payload: "loyalty:yes" },
-        { type: "postback", title: copy.loyaltyNoBtn, payload: "loyalty:no" },
-      ],
-    );
+    await reply(user, conversationId, accountId, copy.loyaltyAsk(pointsBalance, currency), [
+      { type: "postback", title: copy.loyaltyYesBtn, payload: "loyalty:yes" },
+      { type: "postback", title: copy.loyaltyNoBtn, payload: "loyalty:no" },
+    ]);
     return;
   }
 
