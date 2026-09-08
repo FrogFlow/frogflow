@@ -8,6 +8,12 @@ import { errorMessage } from "@/lib/error-message";
 /** Дольше держать смысла нет: панель ждёт синхронно, а деплой либо отвечает быстро, либо лежит. */
 export const INTERNAL_TIMEOUT_MS = 10_000;
 
+/**
+ * Один чек через Vision — до 20 с на PDF. Панель гоняет по одному, но 10 с
+ * дефолта здесь рвут запрос раньше ответа.
+ */
+export const RECEIPT_AUDIT_TIMEOUT_MS = 45_000;
+
 export type InternalTarget = {
   app_url: string | null;
   internal_secret: string | null;
@@ -27,6 +33,7 @@ export async function callInternal<T = unknown>(
   target: InternalTarget,
   path: `/api/internal/${string}`,
   body: unknown,
+  opts?: { timeoutMs?: number },
 ): Promise<InternalCallResult<T>> {
   if (!target.app_url) {
     return { ok: false, kind: "skipped", error: "Адрес деплоя (app_url) не заполнен" };
@@ -35,9 +42,10 @@ export async function callInternal<T = unknown>(
     return { ok: false, kind: "skipped", error: "internal_secret не задан" };
   }
 
+  const timeoutMs = opts?.timeoutMs ?? INTERNAL_TIMEOUT_MS;
   const url = `${target.app_url.replace(/\/$/, "")}${path}`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), INTERNAL_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const res = await fetch(url, {
@@ -66,7 +74,7 @@ export async function callInternal<T = unknown>(
   } catch (e: unknown) {
     const reason =
       e instanceof Error && e.name === "AbortError"
-        ? `деплой не ответил за ${INTERNAL_TIMEOUT_MS / 1000} с`
+        ? `деплой не ответил за ${timeoutMs / 1000} с`
         : errorMessage(e);
     return { ok: false, kind: "unreachable", error: `Деплой недоступен: ${reason}` };
   } finally {

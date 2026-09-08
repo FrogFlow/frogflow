@@ -45,6 +45,9 @@ export default defineConfig({
           // случай: 73 такие строки). Самоисцеление зависших pending
           // (STALE_PENDING_MS) страхует то, что всё же не уложится и в 60с,
           // но не должно становиться обычным путём.
+          "/api/internal/receipt-audit": {
+            maxDuration: 60,
+          },
           "/api/cron/comment-dm-fallback": {
             maxDuration: 60,
           },

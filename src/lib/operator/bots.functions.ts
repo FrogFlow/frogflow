@@ -27,6 +27,8 @@ import {
   exportHealthHistoryCsv,
   fetchBotAiUsage,
   resetBotAiUsage,
+  fetchBotReceiptAuditInventory,
+  scanBotReceipt,
 } from "./bots.server";
 
 async function actor(): Promise<string> {
@@ -309,4 +311,35 @@ export const resetBotAiUsageFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     await requireOperator();
     return resetBotAiUsage(data.botId, await actor());
+  });
+
+export const getBotReceiptAuditInventoryFn = createServerFn({ method: "GET" })
+  .validator((data: unknown) => BotIdInput.parse(data))
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return fetchBotReceiptAuditInventory(data.botId);
+  });
+
+export const scanBotReceiptFn = createServerFn({ method: "POST" })
+  .validator((data: unknown) =>
+    z
+      .object({
+        botId: z.string().uuid(),
+        afterId: z.number().int().nonnegative().optional(),
+        seenHashes: z
+          .array(
+            z.object({
+              hash: z.string().min(1),
+              orderId: z.number().int(),
+              displayNo: z.union([z.string(), z.number()]),
+            }),
+          )
+          .max(5000)
+          .optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data }) => {
+    await requireOperator();
+    return scanBotReceipt(data.botId, data.afterId ?? 0, data.seenHashes ?? []);
   });

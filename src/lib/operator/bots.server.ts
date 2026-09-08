@@ -1,13 +1,18 @@
 import { requireOperator } from "./guard.server";
 import { MODULE_KEYS, moduleDef, type ModuleKey } from "@/lib/modules/registry";
 import type { VerticalKey } from "@/lib/verticals/registry";
-import { callInternal } from "./internal-client.server";
+import { callInternal, RECEIPT_AUDIT_TIMEOUT_MS } from "./internal-client.server";
 import { logEvent } from "./events.server";
 import type { Json } from "@/integrations-supabase/types";
 import { computeState, readPolicy, type SubscriptionState } from "./subscriptions.server";
 import { errorMessage } from "@/lib/error-message";
 import { toCsv, isoDate, fetchAll } from "@/lib/csv";
 import type { AiUsageSnapshot } from "@/lib/ai-usage";
+import type {
+  ReceiptAuditInventory,
+  ReceiptAuditScanResult,
+  SeenReceiptHash,
+} from "@/lib/receipt-audit";
 
 type BotStatus = "active" | "paused" | "suspended";
 
@@ -381,6 +386,50 @@ export async function resetBotAiUsage(botId: string, actor: string): Promise<Bot
   if (!res.body?.usage) return { ok: false, error: "Деплой ответил без расхода" };
   await logEvent(botId, actor, "meta", { action: "reset_ai_usage" });
   return { ok: true, usage: res.body.usage };
+}
+
+export type BotReceiptAuditInventoryOutcome =
+  { ok: true; inventory: ReceiptAuditInventory } | { ok: false; error: string };
+
+export type BotReceiptAuditScanOutcome =
+  { ok: true; scan: ReceiptAuditScanResult } | { ok: false; error: string };
+
+/** Сколько чеков с файлом на деплое — без Vision, только SQL. */
+export async function fetchBotReceiptAuditInventory(
+  botId: string,
+): Promise<BotReceiptAuditInventoryOutcome> {
+  await requireOperator();
+  const data = await botInternalTarget(botId);
+  const res = await callInternal<{ inventory?: ReceiptAuditInventory }>(
+    data,
+    "/api/internal/receipt-audit",
+    { action: "inventory" },
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+  if (!res.body?.inventory) return { ok: false, error: "Деплой ответил без инвентаря чеков" };
+  return { ok: true, inventory: res.body.inventory };
+}
+
+/**
+ * Один чек через OCR. Статусы на деплое не меняются.
+ * seenHashes — повторы внутри текущего прогона, которых ещё нет в payment_proof_hash.
+ */
+export async function scanBotReceipt(
+  botId: string,
+  afterId: number,
+  seenHashes: SeenReceiptHash[],
+): Promise<BotReceiptAuditScanOutcome> {
+  await requireOperator();
+  const data = await botInternalTarget(botId);
+  const res = await callInternal<{ scan?: ReceiptAuditScanResult }>(
+    data,
+    "/api/internal/receipt-audit",
+    { action: "scan", afterId, seenHashes },
+    { timeoutMs: RECEIPT_AUDIT_TIMEOUT_MS },
+  );
+  if (!res.ok) return { ok: false, error: res.error };
+  if (!res.body?.scan) return { ok: false, error: "Деплой ответил без результата проверки" };
+  return { ok: true, scan: res.body.scan };
 }
 
 /**
