@@ -3,6 +3,8 @@ import {
   findMatchingAmount,
   currencyConflict,
   looksLikeReceipt,
+  looksLikeFailedPayment,
+  isReceiptRetryReason,
   extractMoneyAmounts,
   hashReceiptBytes,
   RECEIPT_UNDERPAY_TOLERANCE,
@@ -73,6 +75,33 @@ describe("hashReceiptBytes (Блок A.4)", () => {
     expect(hashReceiptBytes(new Uint8Array([1, 2, 3]))).not.toBe(
       hashReceiptBytes(new Uint8Array([1, 2, 4])),
     );
+  });
+});
+
+describe("looksLikeFailedPayment", () => {
+  it("отсекает чек, где банк пишет, что платёж не прошёл", () => {
+    expect(
+      looksLikeFailedPayment("Платёж не прошёл. Ошибка. Неверно введены данные. Сумма: 500 BYN"),
+    ).toBe(true);
+    expect(looksLikeFailedPayment("Операция отклонена. Недостаточно средств. 1500 RUB")).toBe(true);
+    expect(looksLikeFailedPayment("Payment failed. Transaction declined. Amount 1000")).toBe(true);
+  });
+
+  it("успешный чек с оговоркой «в случае ошибки» не считается отказом", () => {
+    expect(
+      looksLikeFailedPayment(
+        "Оплата успешно проведена. Сумма: 1000 KZT. В случае ошибки обратитесь в поддержку.",
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeFailedPayment("Платёж выполнен. Если вы не совершали операцию, обратитесь в банк."),
+    ).toBe(false);
+  });
+
+  it("payment_failed просим переслать, а не кладём в ручную выдачу", () => {
+    expect(isReceiptRetryReason("payment_failed")).toBe(true);
+    expect(isReceiptRetryReason("not_receipt")).toBe(true);
+    expect(isReceiptRetryReason("amount_mismatch")).toBe(false);
   });
 });
 
@@ -168,6 +197,43 @@ describe("verifyPaymentReceipt — сверка на повтор чека (Бл
       expect(result.matchedAmount).toBe(1000);
       expect(result.proofHash).toBe(hashReceiptBytes(new Uint8Array([1, 2, 3])));
     }
+  });
+
+  it("чек с ошибкой оплаты — payment_failed, даже если сумма совпадает", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(visionResponse("Платёж не прошёл. Неверно введены данные. Сумма: 1000 KZT")),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 1000,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("payment_failed");
+  });
+
+  it("успешный чек с фразой «в случае ошибки» — автовыдача", async () => {
+    reuseMatch = null;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        visionResponse(
+          "Оплата успешно проведена. Сумма: 1000 KZT. В случае ошибки обратитесь в банк.",
+        ),
+      ),
+    ) as unknown as typeof fetch;
+    const { verifyPaymentReceipt } = await import("../src/lib/receipt-verify.server");
+    const result = await verifyPaymentReceipt({
+      bytes: new Uint8Array([1, 2, 3]),
+      mime: "image/jpeg",
+      expectedAmount: 1000,
+      currency: "KZT",
+      orderId: 99,
+    });
+    expect(result.ok).toBe(true);
   });
 
   it("явный конфликт валюты — currency_mismatch, до проверки на повтор не доходит", async () => {

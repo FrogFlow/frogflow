@@ -229,8 +229,9 @@ export async function processMiniAppPaymentProof(params: {
     fulfillment_kind: order.fulfillment_kind,
   });
   const { hasModule } = await import("./modules/modules.server");
-  const { verifyPaymentReceipt } = await import("./receipt-verify.server");
-  const verify: ReceiptVerifyResult = (await hasModule("receipt_ocr"))
+  const { isReceiptOcrAutoEnabled } = await import("./receipt-ocr-auto.server");
+  const { verifyPaymentReceipt, isReceiptRetryReason } = await import("./receipt-verify.server");
+  const verify: ReceiptVerifyResult = (await isReceiptOcrAutoEnabled())
     ? await verifyPaymentReceipt({
         bytes: params.file.bytes,
         mime: validation.mime,
@@ -241,10 +242,12 @@ export async function processMiniAppPaymentProof(params: {
     : {
         ok: false,
         reason: "ocr_unavailable",
-        detail: "модуль receipt_ocr не подключён",
+        detail: (await hasModule("receipt_ocr"))
+          ? "автопроверка чеков выключена в настройках"
+          : "модуль receipt_ocr не подключён",
       };
 
-  if (!verify.ok && verify.reason === "not_receipt") {
+  if (!verify.ok && isReceiptRetryReason(verify.reason)) {
     await supabaseAdmin
       .from("orders")
       .update({

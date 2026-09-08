@@ -825,10 +825,25 @@ export async function verifyDirectReceipt(params: {
   expectedAmount: number;
   currency: string;
   orderId: number;
-}): Promise<{ autoDeliver: boolean; note: string; proofHash?: string }> {
+}): Promise<{
+  autoDeliver: boolean;
+  note: string;
+  proofHash?: string;
+  reason?:
+    | "auto_off"
+    | Extract<import("./receipt-verify.server").ReceiptVerifyResult, { ok: false }>["reason"];
+}> {
   const { hasModule } = await import("./modules/modules.server");
-  if (!(await hasModule("receipt_ocr"))) {
-    return { autoDeliver: false, note: "распознавание чека не подключено" };
+  const { isReceiptOcrAutoEnabled } = await import("./receipt-ocr-auto.server");
+  if (!(await isReceiptOcrAutoEnabled())) {
+    if (!(await hasModule("receipt_ocr"))) {
+      return { autoDeliver: false, note: "распознавание чека не подключено" };
+    }
+    return {
+      autoDeliver: false,
+      note: "автопроверка чеков выключена в настройках",
+      reason: "auto_off",
+    };
   }
 
   const { verifyPaymentReceipt } = await import("./receipt-verify.server");
@@ -847,7 +862,7 @@ export async function verifyDirectReceipt(params: {
       proofHash: result.proofHash,
     };
   }
-  return { autoDeliver: false, note: result.detail };
+  return { autoDeliver: false, note: result.detail, reason: result.reason };
 }
 
 /** Создаёт заказ из выбранного товара — по одному товару за раз, как в сценарии. */

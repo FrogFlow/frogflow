@@ -86,11 +86,13 @@ export type ReceiptVerifyResult =
   | {
       ok: false;
       /**
-       * not_receipt → ask user to resend; amount_mismatch / currency_mismatch /
-       * receipt_reused / ocr_unavailable → manual review
+       * not_receipt / payment_failed → ask user to resend a successful receipt;
+       * amount_mismatch / currency_mismatch / receipt_reused / ocr_unavailable
+       * → manual review (не выдаём материалы сами)
        */
       reason:
         | "not_receipt"
+        | "payment_failed"
         | "amount_mismatch"
         | "currency_mismatch"
         | "receipt_reused"
@@ -99,6 +101,58 @@ export type ReceiptVerifyResult =
       extractedText?: string;
       matchedAmount?: number;
     };
+
+/**
+ * Покупатель прислал скрин, где банк прямо пишет, что перевод не прошёл.
+ * Такие чеки раньше могли пройти автовыдачу: сумма на экране ошибки часто
+ * совпадает с суммой заказа, маркеры «платёж»/«оплат» тоже на месте.
+ *
+ * Только устойчивые фразы, не голое «ошибка»: на успешном чеке банк часто
+ * пишет «в случае ошибки обратитесь в поддержку», и это не отказ.
+ */
+const PAYMENT_FAILED_PHRASES = [
+  "платеж не прошел",
+  "оплата не прошла",
+  "перевод не выполнен",
+  "перевод не прошел",
+  "перевод отклонен",
+  "операция отклонена",
+  "операция отменена",
+  "операция не выполнена",
+  "платеж отклонен",
+  "платеж отменен",
+  "оплата отклонена",
+  "оплата отменена",
+  "недостаточно средств",
+  "неверно введен",
+  "данные введены неверно",
+  "ошибка оплаты",
+  "ошибка платежа",
+  "ошибка перевода",
+  "статус: ошибка",
+  "статус ошибка",
+  "платеж не осуществлен",
+  "оплата не выполнена",
+  "транзакция отклонена",
+  "транзакция не прошла",
+  "payment failed",
+  "payment declined",
+  "transaction failed",
+  "transaction declined",
+  "insufficient funds",
+];
+
+export function looksLikeFailedPayment(text: string): boolean {
+  const t = text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+  return PAYMENT_FAILED_PHRASES.some((phrase) => t.includes(phrase));
+}
+
+/** Чек просим прислать заново, а не кладём продавцу в очередь на выдачу. */
+export function isReceiptRetryReason(
+  reason: Extract<ReceiptVerifyResult, { ok: false }>["reason"],
+): boolean {
+  return reason === "not_receipt" || reason === "payment_failed";
+}
 
 function bytesToBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -290,6 +344,16 @@ export async function verifyPaymentReceipt(params: {
       ok: false,
       reason: "not_receipt",
       detail: "Текст не похож на чек оплаты (нет маркеров платежа).",
+      extractedText: text.slice(0, 2000),
+    };
+  }
+
+  if (looksLikeFailedPayment(text)) {
+    return {
+      ok: false,
+      reason: "payment_failed",
+      detail:
+        "В тексте чека указано, что платёж не прошёл (ошибка, отказ, неверные данные). Автовыдачи нет.",
       extractedText: text.slice(0, 2000),
     };
   }

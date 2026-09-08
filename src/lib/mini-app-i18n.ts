@@ -118,6 +118,7 @@ export type MiniAppStrings = {
   uploadingReceipt: string;
   proofReview: string;
   proofRetry: string;
+  proofPaymentFailed: string;
   proofAccepted: string;
   proofCompleted: string;
   invalidReceiptFile: string;
@@ -250,6 +251,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     uploadingReceipt: "Загрузка чека…",
     proofReview: "Чек отправлен продавцу на проверку.",
     proofRetry: "Файл не похож на чек. Загрузите другой.",
+    proofPaymentFailed: "По этому скриншоту платёж не прошёл. Загрузите чек успешной оплаты.",
     proofAccepted: "Оплата подтверждена, заказ принят в работу.",
     proofCompleted: "Оплата подтверждена, материалы отправлены в бот.",
     invalidReceiptFile: "Нужен чек в формате JPEG, PNG, WebP, HEIC или PDF.",
@@ -389,6 +391,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     uploadingReceipt: "Чек жүктелуде…",
     proofReview: "Чек сатушыға тексеруге жіберілді.",
     proofRetry: "Файл чекке ұқсамайды. Басқасын жүктеңіз.",
+    proofPaymentFailed: "Бұл скриншот бойынша төлем өтпеген. Сәтті төлем чегін жүктеңіз.",
     proofAccepted: "Төлем расталды, тапсырыс жұмысқа қабылданды.",
     proofCompleted: "Төлем расталды, материалдар ботқа жіберілді.",
     invalidReceiptFile: "JPEG, PNG, WebP, HEIC немесе PDF чек қажет.",
@@ -528,6 +531,8 @@ const dict: Record<Locale, MiniAppStrings> = {
     uploadingReceipt: "Uploading receipt…",
     proofReview: "The receipt was sent to the seller for review.",
     proofRetry: "This file does not look like a receipt. Upload another one.",
+    proofPaymentFailed:
+      "This screenshot shows the payment did not go through. Upload a successful payment receipt.",
     proofAccepted: "Payment confirmed. Your order is now being prepared.",
     proofCompleted: "Payment confirmed. Files were sent to the bot.",
     invalidReceiptFile: "Upload a JPEG, PNG, WebP, HEIC or PDF receipt.",
@@ -667,6 +672,7 @@ const dict: Record<Locale, MiniAppStrings> = {
     uploadingReceipt: "Chek yuklanmoqda…",
     proofReview: "Chek sotuvchiga tekshirish uchun yuborildi.",
     proofRetry: "Fayl chekga o‘xshamaydi. Boshqasini yuklang.",
+    proofPaymentFailed: "Bu skrinshotda to‘lov o‘tmagan. Muvaffaqiyatli to‘lov chekini yuklang.",
     proofAccepted: "To‘lov tasdiqlandi, buyurtma ishga qabul qilindi.",
     proofCompleted: "To‘lov tasdiqlandi, fayllar botga yuborildi.",
     invalidReceiptFile: "JPEG, PNG, WebP, HEIC yoki PDF chek yuklang.",
@@ -853,6 +859,7 @@ export function miniAppStringsClientPack(
     uploadingReceipt: s.uploadingReceipt,
     proofReview: s.proofReview,
     proofRetry: s.proofRetry,
+    proofPaymentFailed: s.proofPaymentFailed,
     proofAccepted: s.proofAccepted,
     proofCompleted: s.proofCompleted,
     invalidReceiptFile: s.invalidReceiptFile,

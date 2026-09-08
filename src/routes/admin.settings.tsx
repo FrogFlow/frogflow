@@ -82,6 +82,9 @@ const copy: Record<
     smartSearchUsageHint: string;
     smartSearchRateSpend: (rate: string, usd: string) => string;
     smartSearchApiKeyMissing: string;
+    receiptOcrTitle: string;
+    receiptOcrHint: string;
+    receiptOcrEnableLabel: string;
     webStorefrontTitle: string;
     webStorefrontHint: string;
     webStorefrontOpenBtn: string;
@@ -182,6 +185,10 @@ const copy: Record<
     smartSearchRateSpend: (rate, usd) => `По ставке ${rate} / запрос: ${usd}`,
     smartSearchApiKeyMissing:
       "⚠️ На этом деплое не настроен ANTHROPIC_API_KEY — включённый выше переключатель ничего не изменит: умный поиск не заработает, пока ключ не добавят в переменные окружения.",
+    receiptOcrTitle: "Автопроверка чеков",
+    receiptOcrHint:
+      "Когда включено — бот сам читает скриншот оплаты и выдаёт заказ, если сумма сходится и платёж не помечен как ошибка. Выключите, если проверяете чеки сами; включите на ночь или когда вас нет на месте.",
+    receiptOcrEnableLabel: "Автоматически проверять чеки и выдавать заказ",
     webStorefrontTitle: "Публичная веб-витрина каталога",
     webStorefrontHint:
       "Публичная страница каталога — фото, названия, цены и рейтинг товаров, без входа. Купить с неё нельзя: кнопка на странице ведёт покупателя в сам бот. Дайте эту ссылку клиентам в шапке Instagram, рекламе и т.п.",
@@ -289,6 +296,10 @@ const copy: Record<
     smartSearchRateSpend: (rate, usd) => `${rate} / сұрау мөлшерлемесімен: ${usd}`,
     smartSearchApiKeyMissing:
       "⚠️ Бұл деплойда ANTHROPIC_API_KEY бапталмаған — жоғарыдағы қосқыш ешнәрсені өзгертпейді: кілт орта айнымалыларына қосылмайынша ақылды іздеу жұмыс істемейді.",
+    receiptOcrTitle: "Чектерді автотексеру",
+    receiptOcrHint:
+      "Қосулы болса — бот төлем скриншотын өзі оқиды және сома сәйкес келсе, төлем қате деп белгіленбесе, тапсырысты өзі береді. Чектерді өзіңіз тексерсеңіз — өшіріңіз; түнге немесе орныңызда жоқ кезде қосыңыз.",
+    receiptOcrEnableLabel: "Чектерді автоматты тексеріп, тапсырысты беру",
     webStorefrontTitle: "Каталогтың ашық веб-витринасы",
     webStorefrontHint:
       "Кірусіз қолжетімді каталог беті — фото, атаулар, бағалар және рейтинг. Одан сатып алу мүмкін емес: беттегі түйме сатып алушыны боттың өзіне апарады. Бұл сілтемені Instagram шапкасында, жарнамада және т.б. беріңіз.",
@@ -395,6 +406,10 @@ const copy: Record<
     smartSearchRateSpend: (rate, usd) => `At ${rate} / request: ${usd}`,
     smartSearchApiKeyMissing:
       "⚠️ ANTHROPIC_API_KEY is not configured on this deployment — the toggle above won't change anything: smart search won't work until the key is added to the environment variables.",
+    receiptOcrTitle: "Automatic receipt verification",
+    receiptOcrHint:
+      "When on, the bot reads the payment screenshot and fulfills the order if the amount matches and the payment is not marked as failed. Turn it off when you check receipts yourself; turn it on overnight or when you are away.",
+    receiptOcrEnableLabel: "Automatically verify receipts and fulfill orders",
     webStorefrontTitle: "Public catalog storefront",
     webStorefrontHint:
       "A no-login catalog page — photos, names, prices, and ratings. You can't buy from it: the page button sends the buyer into the bot itself. Share this link in your Instagram bio, ads, etc.",
@@ -503,6 +518,10 @@ const copy: Record<
     smartSearchRateSpend: (rate, usd) => `${rate} / so‘rov stavkasi: ${usd}`,
     smartSearchApiKeyMissing:
       "⚠️ Bu deployda ANTHROPIC_API_KEY sozlanmagan — yuqoridagi tugmacha hech narsani o‘zgartirmaydi: kalit muhit o‘zgaruvchilariga qo‘shilmaguncha aqlli qidiruv ishlamaydi.",
+    receiptOcrTitle: "Cheklarni avtomatik tekshirish",
+    receiptOcrHint:
+      "Yoqilganida bot to‘lov skrinshotini o‘zi o‘qiydi va summa mos kelsa, to‘lov xato deb belgilamagan bo‘lsa, buyurtmani o‘zi beradi. Cheklarni o‘zingiz tekshirsangiz — o‘chiring; tunga yoki joyingizda bo‘lmaganda yoqing.",
+    receiptOcrEnableLabel: "Cheklarni avtomatik tekshirib, buyurtmani berish",
     webStorefrontTitle: "Katalogning ochiq veb-vitrinasi",
     webStorefrontHint:
       "Kirishsiz ochiladigan katalog sahifasi — fotolar, nomlar, narxlar va reyting. Undan xarid qilib bo‘lmaydi: sahifadagi tugma xaridorni to‘g‘ridan-to‘g‘ri botga yuboradi. Bu havolani Instagram bio, reklama va h.k.da bering.",
@@ -610,6 +629,10 @@ function SettingsPage() {
   const [smartSearchSaving, setSmartSearchSaving] = useState(false);
   const [smartSearchSaved, setSmartSearchSaved] = useState(false);
 
+  const [receiptOcrAuto, setReceiptOcrAuto] = useState(true);
+  const [receiptOcrAutoSaving, setReceiptOcrAutoSaving] = useState(false);
+  const [receiptOcrAutoSaved, setReceiptOcrAutoSaved] = useState(false);
+
   const [instructionCaption, setInstructionCaption] = useState("");
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
   const [instructionUploading, setInstructionUploading] = useState(false);
@@ -630,6 +653,7 @@ function SettingsPage() {
     setLoyaltyEarnPercent(settings.data?.loyalty_earn_percent ?? "5");
     setCartReminderHours(settings.data?.cart_reminder_hours ?? "6");
     setSmartSearchEnabled(settings.data?.smart_search_enabled === "true");
+    setReceiptOcrAuto(settings.data?.receipt_ocr_auto !== "false");
   }, [settings.data]);
 
   async function onSave() {
@@ -800,6 +824,22 @@ function SettingsPage() {
       toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     } finally {
       setSmartSearchSaving(false);
+    }
+  }
+
+  async function onSaveReceiptOcrAuto(value: boolean) {
+    setReceiptOcrAuto(value);
+    setReceiptOcrAutoSaving(true);
+    try {
+      await saveSetting({ data: { key: "receipt_ocr_auto", value: value ? "true" : "false" } });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setReceiptOcrAutoSaved(true);
+      setTimeout(() => setReceiptOcrAutoSaved(false), 2000);
+    } catch (e: unknown) {
+      setReceiptOcrAuto(!value);
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
+    } finally {
+      setReceiptOcrAutoSaving(false);
     }
   }
 
@@ -1257,6 +1297,27 @@ function SettingsPage() {
                 {tr.smartSearchLastError(settings.data.smart_search_last_error)}
               </p>
             ) : null}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+        )}
+      </div>
+
+      <div className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold">{tr.receiptOcrTitle}</h2>
+        <p className="text-xs text-muted-foreground">{tr.receiptOcrHint}</p>
+        {modules.receipt_ocr ? (
+          <>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={receiptOcrAuto}
+                disabled={receiptOcrAutoSaving}
+                onChange={(e) => onSaveReceiptOcrAuto(e.target.checked)}
+              />
+              {tr.receiptOcrEnableLabel}
+            </label>
+            {receiptOcrAutoSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
           </>
         ) : (
           <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>

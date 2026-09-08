@@ -91,6 +91,7 @@ const copy: Record<
     deliveryZoneRequired: string;
     deliveryZoneEmpty: string;
     paidAmountLine: (paid: number, total: number, currency: string) => string;
+    pointsUsedLine: (points: number, currency: string) => string;
     reject: string;
     resendFiles: string;
     block: string;
@@ -211,6 +212,7 @@ const copy: Record<
       paid >= total
         ? `Оплачено полностью: ${paid} ${currency}`
         : `Внесено ${paid} из ${total} ${currency} · остаток ${total - paid} ${currency}`,
+    pointsUsedLine: (points, currency) => `Списано бонусами: ${points} ${currency}`,
     reject: "❌ Отклонить",
     resendFiles: "Отправить файлы ещё раз",
     block: "Заблокировать",
@@ -337,6 +339,7 @@ const copy: Record<
       paid >= total
         ? `Толық төленді: ${paid} ${currency}`
         : `Төленді ${paid} / ${total} ${currency} · қалдық ${total - paid} ${currency}`,
+    pointsUsedLine: (points, currency) => `Бонустармен есептен шығарылды: ${points} ${currency}`,
     reject: "❌ Қабылдамау",
     resendFiles: "Файлдарды қайта жіберу",
     block: "Бұғаттау",
@@ -465,6 +468,7 @@ const copy: Record<
       paid >= total
         ? `Paid in full: ${paid} ${currency}`
         : `Paid ${paid} of ${total} ${currency} · balance ${total - paid} ${currency}`,
+    pointsUsedLine: (points, currency) => `Paid with bonuses: ${points} ${currency}`,
     reject: "❌ Reject",
     resendFiles: "Resend files",
     block: "Block",
@@ -593,6 +597,7 @@ const copy: Record<
       paid >= total
         ? `To‘liq to‘landi: ${paid} ${currency}`
         : `To‘landi ${paid} / ${total} ${currency} · qoldiq ${total - paid} ${currency}`,
+    pointsUsedLine: (points, currency) => `Bonuslar bilan yechib olingan: ${points} ${currency}`,
     reject: "❌ Rad etish",
     resendFiles: "Fayllarni qayta yuborish",
     block: "Bloklash",
@@ -1118,6 +1123,11 @@ function OrdersPage() {
                   {o.total} {o.currency}
                 </div>
               </div>
+              {Number(o.points_used) > 0 && (
+                <div className="text-sm text-muted-foreground">
+                  {tr.pointsUsedLine(Number(o.points_used), o.currency)}
+                </div>
+              )}
               <div className="text-sm">
                 <div>
                   👤 <b>{o.display_name}</b>

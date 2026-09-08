@@ -654,6 +654,7 @@ type Msg = {
   sendReceiptPrompt: string;
   fileDownloadFail: string;
   notReceiptLike: (orderId: number | string) => string;
+  receiptPaymentFailed: (orderId: number | string) => string;
   receiptManualReview: (orderId: number | string, isPhysical: boolean) => string;
   receiptVerifiedDelivering: (orderId: number | string, isPhysical: boolean) => string;
   deliveryFailedAfterOcr: (orderId: number | string, isPhysical: boolean) => string;
@@ -817,6 +818,8 @@ const copy: Record<Locale, Msg> = {
     fileDownloadFail: "⚠️ Не удалось загрузить файл. Пришлите чек ещё раз — фото или PDF.",
     notReceiptLike: (id) =>
       `⚠️ Это не похоже на чек оплаты.\n\nПришлите, пожалуйста, скриншот перевода / чека с суммой заказа #${id}.`,
+    receiptPaymentFailed: (id) =>
+      `⚠️ По этому скриншоту платёж не прошёл (ошибка, отказ или неверные данные).\n\nЗаказ #${id} не выдан. Пришлите чек успешной оплаты — когда перевод действительно зачислится.`,
     receiptManualReview: (id, isPhysical) =>
       `📨 Чек получен по заказу #${id}, но автоматическая проверка не прошла.\n` +
       (isPhysical
@@ -995,6 +998,8 @@ const copy: Record<Locale, Msg> = {
     fileDownloadFail: "⚠️ Файлды жүктеу мүмкін болмады. Чекті қайта жіберіңіз — фото немесе PDF.",
     notReceiptLike: (id) =>
       `⚠️ Бұл төлем чегіне ұқсамайды.\n\n#${id} тапсырысының сомасы көрсетілген аударым/чек скриншотын жіберіңіз.`,
+    receiptPaymentFailed: (id) =>
+      `⚠️ Бұл скриншот бойынша төлем өтпеген (қате, бас тарту немесе қате деректер).\n\n#${id} тапсырысы берілген жоқ. Аударым нақты түскеннен кейін сәтті төлем чегін жіберіңіз.`,
     receiptManualReview: (id, isPhysical) =>
       `📨 #${id} тапсырысы бойынша чек алынды, бірақ автоматты тексеру өтпеді.\n` +
       (isPhysical
@@ -1177,6 +1182,8 @@ const copy: Record<Locale, Msg> = {
       "⚠️ Couldn’t download the file. Please send the receipt again — photo or PDF.",
     notReceiptLike: (id) =>
       `⚠️ This doesn’t look like a payment receipt.\n\nPlease send a screenshot of the transfer/receipt showing the amount for order #${id}.`,
+    receiptPaymentFailed: (id) =>
+      `⚠️ This screenshot shows the payment did not go through (error, declined, or invalid details).\n\nOrder #${id} was not fulfilled. Please send a receipt of a successful payment once the transfer is completed.`,
     receiptManualReview: (id, isPhysical) =>
       `📨 Receipt received for order #${id}, but automatic verification failed.\n` +
       (isPhysical
@@ -1360,6 +1367,8 @@ const copy: Record<Locale, Msg> = {
     fileDownloadFail: "⚠️ Faylni yuklab bo‘lmadi. Chekni qayta yuboring — foto yoki PDF.",
     notReceiptLike: (id) =>
       `⚠️ Bu to‘lov chekiga o‘xshamayapti.\n\n#${id} buyurtma summasi ko‘rsatilgan o‘tkazma/chek skrinshotini yuboring.`,
+    receiptPaymentFailed: (id) =>
+      `⚠️ Bu skrinshotda to‘lov o‘tmagan (xato, rad etilgan yoki noto‘g‘ri ma’lumot).\n\n#${id} buyurtma berilmadi. O‘tkazma haqiqatan o‘tgach, muvaffaqiyatli to‘lov chekini yuboring.`,
     receiptManualReview: (id, isPhysical) =>
       `📨 #${id} buyurtmasi uchun chek qabul qilindi, lekin avtomatik tekshiruv o‘tmadi.\n` +
       (isPhysical
@@ -5801,13 +5810,15 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
       // and ran OCR regardless of whether the client's tariff still
       // includes receipt_ocr. Falls into the same "manual review" branch
       // the module's own ocr_unavailable case already handles.
-      const { verifyPaymentReceipt } = await import("./receipt-verify.server");
+      const { verifyPaymentReceipt, isReceiptRetryReason } =
+        await import("./receipt-verify.server");
+      const { isReceiptOcrAutoEnabled } = await import("./receipt-ocr-auto.server");
       const { amountDueNow: ocrAmountDueNow } = await import("./fulfillment.server");
       const ocrExpectedAmount = await ocrAmountDueNow({
         total: Number(orderRow.total),
         fulfillment_kind: orderRow.fulfillment_kind,
       });
-      const verify: ReceiptVerifyResult = (await hasModule("receipt_ocr"))
+      const verify: ReceiptVerifyResult = (await isReceiptOcrAutoEnabled())
         ? await verifyPaymentReceipt({
             bytes: dl.bytes,
             mime: dl.mime || (fileExt === "pdf" ? "application/pdf" : "image/jpeg"),
@@ -5815,9 +5826,15 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
             currency: (orderRow.currency as string) || undefined,
             orderId,
           })
-        : { ok: false, reason: "ocr_unavailable", detail: "модуль receipt_ocr не подключён" };
+        : {
+            ok: false,
+            reason: "ocr_unavailable",
+            detail: (await hasModule("receipt_ocr"))
+              ? "автопроверка чеков выключена в настройках"
+              : "модуль receipt_ocr не подключён",
+          };
 
-      if (!verify.ok && verify.reason === "not_receipt") {
+      if (!verify.ok && isReceiptRetryReason(verify.reason)) {
         // Keep order open; ask for a real receipt
         await setState(from.id, {
           ...user.state,
@@ -5837,7 +5854,10 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
         }
         await tg("sendMessage", {
           chat_id,
-          text: m.notReceiptLike(displayNo),
+          text:
+            verify.reason === "payment_failed"
+              ? m.receiptPaymentFailed(displayNo)
+              : m.notReceiptLike(displayNo),
         });
         return;
       }

@@ -1084,7 +1084,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
         return;
       }
       var message = result.outcome === "proof_retry"
-        ? t("proofRetry")
+        ? (result.reason === "payment_failed" ? t("proofPaymentFailed") : t("proofRetry"))
         : result.outcome === "proof_review"
           ? t("proofReview")
           : result.outcome === "accepted"

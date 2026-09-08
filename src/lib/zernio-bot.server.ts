@@ -191,6 +191,7 @@ interface DirectCopy {
    * не файл в чат, а заказ курьером/самовывозом).
    */
   receiptReceivedPhysical: (displayNo: number | string) => string;
+  receiptPaymentFailed: (displayNo: number | string) => string;
   countryHint: string;
   emailStepGotReceipt: string;
   emailHint: string;
@@ -340,6 +341,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       `Чек получил, заказ №${displayNo} принят. После проверки оплаты материалы придут сюда, в WhatsApp.`,
     receiptReceivedPhysical: (displayNo) =>
       `Чек получил, заказ №${displayNo} принят. После проверки оплаты продавец свяжется с вами по деталям получения.`,
+    receiptPaymentFailed: (displayNo) =>
+      `По этому скриншоту платёж не прошёл (ошибка, отказ или неверные данные). Заказ №${displayNo} не выдан.\n\nПришлите чек успешной оплаты — когда перевод действительно зачислится.`,
     countryHint:
       "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\n" +
       "Чтобы выйти, напишите «отмена».",
@@ -505,6 +508,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       `Чекті алдым, №${displayNo} тапсырыс қабылданды. Төлем тексерілгеннен кейін материалдар осы WhatsApp чатына жіберіледі.`,
     receiptReceivedPhysical: (displayNo) =>
       `Чекті алдым, №${displayNo} тапсырыс қабылданды. Төлем тексерілгеннен кейін сатушы алу мәліметтері бойынша хабарласады.`,
+    receiptPaymentFailed: (displayNo) =>
+      `Бұл скриншот бойынша төлем өтпеген (қате, бас тарту немесе қате деректер). №${displayNo} тапсырыс берілген жоқ.\n\nАударым нақты түскеннен кейін сәтті төлем чегін жіберіңіз.`,
     countryHint:
       "Елді түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Қазақстан».\n\n" +
       "Шығу үшін «/stop» деп жазыңыз.",
@@ -668,6 +673,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       `Got the receipt, order #${displayNo} is in. After the payment is checked, the materials will be sent here in WhatsApp.`,
     receiptReceivedPhysical: (displayNo) =>
       `Got the receipt, order #${displayNo} is in. Once the payment is checked, the seller will contact you about pickup/delivery details.`,
+    receiptPaymentFailed: (displayNo) =>
+      `This screenshot shows the payment did not go through (error, declined, or invalid details). Order #${displayNo} was not fulfilled.\n\nPlease send a receipt of a successful payment once the transfer is completed.`,
     countryHint:
       'Didn\'t catch the country. Reply with the number from the list or the name — for example "1" or "Kazakhstan".\n\n' +
       'To exit, send "/stop".',
@@ -834,6 +841,8 @@ const directCopy: Record<Locale, DirectCopy> = {
       `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. To‘lov tekshirilgach, materiallar shu WhatsApp chatiga yuboriladi.`,
     receiptReceivedPhysical: (displayNo) =>
       `Chek qabul qilindi, №${displayNo} buyurtma qabul qilindi. To‘lov tekshirilgach, sotuvchi olib ketish tafsilotlari bo‘yicha bog‘lanadi.`,
+    receiptPaymentFailed: (displayNo) =>
+      `Bu skrinshotda to‘lov o‘tmagan (xato, rad etilgan yoki noto‘g‘ri ma’lumot). №${displayNo} buyurtma berilmadi.\n\nO‘tkazma haqiqatan o‘tgach, muvaffaqiyatli to‘lov chekini yuboring.`,
     countryHint:
       "Davlatni tushunmadim. Ro‘yxatdagi raqam yoki nomi bilan javob bering — masalan, «1» yoki «Qozog‘iston».\n\n" +
       "Chiqish uchun «/stop» deb yozing.",
@@ -3936,6 +3945,15 @@ async function handleAwaitingProof(ctx: {
     .eq("id", order.id);
 
   // Instagram требует почту, WhatsApp выдаёт файлы прямо в чат.
+  if (verdict.reason === "payment_failed") {
+    await flow.notifyAdminAboutDirectOrder(order.id, displayNo, {
+      verdict: verdict.note,
+      needsAction: true,
+    });
+    await say(copy.receiptPaymentFailed(displayNo));
+    return true;
+  }
+
   if (verdict.autoDeliver && (!needsEmail || email)) {
     if (email) await s.from("orders").update({ customer_email: email }).eq("id", order.id);
     await flow.clearDirectFlow(user.user_key);
