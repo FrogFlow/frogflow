@@ -1508,6 +1508,11 @@ async function deliverOrderByEmail(
       const { orderFilesPageUrl } = await import("./order-files-page.server");
       const { instagramFilesButtonTitle } = await import("./order-files-page");
       const filesPageUrl = orderFilesPageUrl(orderId);
+      if (!filesPageUrl) {
+        console.error(
+          `[orders] заказ ${orderId}: нет TELEGRAM_BOT_TOKEN/PUBLIC_APP_URL — кнопка файлов в Direct не собралась`,
+        );
+      }
       const text = filesPageUrl
         ? `Оплата подтверждена — заказ №${displayNo}.\n\n` +
           `Нажмите кнопку: откроется страница с вашими файлами. Они не скачиваются сами — выберите, когда будете готовы.\n\n` +

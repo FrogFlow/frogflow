@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   instagramFilesButtonTitle,
   mintOrderFilesToken,
+  orderFilesSigningSecret,
   parseOrderFilesToken,
   renderOrderFilesPageHtml,
 } from "../src/lib/order-files-page";
@@ -44,6 +45,14 @@ describe("order files page token", () => {
       ok: false,
       reason: "invalid",
     });
+  });
+
+  it("uses TELEGRAM_BOT_TOKEN, not the nonexistent BOT_TOKEN", () => {
+    expect(orderFilesSigningSecret({ BOT_TOKEN: "wrong", TELEGRAM_BOT_TOKEN: "right" })).toBe(
+      "right",
+    );
+    expect(orderFilesSigningSecret({ SUPABASE_JWT_SECRET: "", BOT_TOKEN: "" })).toBeNull();
+    expect(orderFilesSigningSecret({ TELEGRAM_BOT_TOKEN: " tg-token " })).toBe("tg-token");
   });
 });
 

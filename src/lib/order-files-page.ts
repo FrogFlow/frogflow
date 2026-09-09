@@ -8,6 +8,21 @@ export function instagramFilesButtonTitle(fileCount: number): string {
   return fileCount === 1 ? "Получить файл" : "Получить файлы";
 }
 
+/**
+ * Секрет подписи ссылки. На клиентском деплое токен бота — `TELEGRAM_BOT_TOKEN`,
+ * не `BOT_TOKEN`. Из-за этого страница на educational открывалась, а кнопка в
+ * Direct не уходила: URL не собирался и оставался старый текст про почту.
+ */
+export function orderFilesSigningSecret(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  for (const key of ["TELEGRAM_BOT_TOKEN", "SESSION_SECRET", "SUPABASE_JWT_SECRET", "BOT_TOKEN"]) {
+    const value = env[key]?.trim();
+    if (value) return value;
+  }
+  return null;
+}
+
 export function mintOrderFilesToken(
   orderId: number,
   secret: string,

@@ -1,6 +1,7 @@
 import { requireAppOrigin } from "./app-origin.server";
 import {
   mintOrderFilesToken,
+  orderFilesSigningSecret,
   ORDER_FILES_LINK_DAYS,
   parseOrderFilesToken,
   renderOrderFilesErrorHtml,
@@ -10,13 +11,8 @@ import { collectOrderFiles, type OrderItem } from "./orders.server";
 
 const VIEWABLE_STATUSES = new Set(["awaiting_confirmation", "delivering", "delivered"]);
 
-function orderFilesSecret(): string | null {
-  const secret = (process.env.SUPABASE_JWT_SECRET || process.env.BOT_TOKEN || "").trim();
-  return secret || null;
-}
-
 export function orderFilesPageUrl(orderId: number): string | null {
-  const secret = orderFilesSecret();
+  const secret = orderFilesSigningSecret();
   if (!secret) return null;
   try {
     return `${requireAppOrigin()}/files/${mintOrderFilesToken(orderId, secret)}`;
@@ -37,7 +33,7 @@ function htmlResponse(html: string, status = 200): Response {
 }
 
 export async function orderFilesPageResponse(token: string): Promise<Response> {
-  const secret = orderFilesSecret();
+  const secret = orderFilesSigningSecret();
   if (!secret) {
     return htmlResponse(
       renderOrderFilesErrorHtml(
