@@ -122,6 +122,18 @@ export function miniAppProductSearchText(
     .toLocaleLowerCase(locale);
 }
 
+/**
+ * Same rule as the Telegram bot's ILIKE `%query%`: the whole query is one
+ * phrase. Splitting "4 класс" into tokens made `"4"` match inside "24", "14",
+ * prices and years, so almost every material with the word «класс» appeared.
+ */
+export function miniAppSearchMatches(searchText: string, query: string, locale?: string): boolean {
+  const needle = query.trim().replace(/\s+/g, " ").toLocaleLowerCase(locale).slice(0, 100);
+  if (!needle) return true;
+  const hay = searchText.replace(/\s+/g, " ").toLocaleLowerCase(locale);
+  return hay.includes(needle);
+}
+
 export function filterMiniAppProductIds(
   products: MiniAppProductIndexRow[],
   hiddenCategoryIds: ReadonlySet<string>,
@@ -130,8 +142,6 @@ export function filterMiniAppProductIds(
   categoryMatchIds?: ReadonlySet<string>,
   materialLang = "",
 ): string[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase().slice(0, 100);
-  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
   const matchIds = categoryMatchIds ?? (categoryId ? new Set([categoryId]) : null);
   const lang = materialLang.trim().toLowerCase();
   const langFilter = isLocale(lang) ? lang : "";
@@ -144,8 +154,7 @@ export function filterMiniAppProductIds(
       if (langFilter && !availableMaterialLanguages(product).includes(langFilter)) {
         return false;
       }
-      if (!tokens.length) return true;
-      return tokens.every((token) => miniAppProductSearchText(product).includes(token));
+      return miniAppSearchMatches(miniAppProductSearchText(product), query);
     })
     .map((product) => product.id);
 }

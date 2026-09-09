@@ -55,6 +55,30 @@ describe("Mini App catalog filtering", () => {
     expect(filterMiniAppProductIds(products, new Set(), "математика")).toEqual(["visible"]);
   });
 
+  it("treats the query as one phrase, like the bot, not AND of substrings", () => {
+    const catalog: MiniAppProductIndexRow[] = [
+      {
+        id: "grade4",
+        name: "Математика. Тесты",
+        description: null,
+        keywords: "4 класс, дроби, сложение",
+        category_ids: ["math"],
+        product_variants: null,
+      },
+      {
+        id: "grade5",
+        name: "Математика 5 класс",
+        description: "24 задания на уравнения",
+        keywords: "5 класс, уравнения",
+        category_ids: ["math"],
+        product_variants: null,
+      },
+    ];
+    expect(filterMiniAppProductIds(catalog, new Set(), "4 класс")).toEqual(["grade4"]);
+    expect(filterMiniAppProductIds(catalog, new Set(), "5 класс")).toEqual(["grade5"]);
+    expect(filterMiniAppProductIds(catalog, new Set(), "математика 5 класс")).toEqual(["grade5"]);
+  });
+
   it("keeps uncategorized products only in the unfiltered catalog", () => {
     expect(filterMiniAppProductIds(products, new Set(), "", "cakes")).toEqual(["visible"]);
   });

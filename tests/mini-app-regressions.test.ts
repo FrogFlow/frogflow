@@ -16,7 +16,7 @@ describe("Mini App production regressions", () => {
   it("loads the runtime from the registered route", () => {
     const page = source("src/lib/mini-app-page.server.ts");
     const route = source("src/routes/mini-app-runtime.ts");
-    expect(page).toContain('src="/mini-app-runtime?v=9"');
+    expect(page).toContain('src="/mini-app-runtime?v=10"');
     expect(route).toContain('createFileRoute("/mini-app-runtime")');
     expect(page).not.toContain('src="/mini-app-runtime.js"');
   });
@@ -161,6 +161,8 @@ describe("Mini App production regressions", () => {
     expect(runtime).toContain("location.hash");
     expect(runtime).toContain("maybeSmartSearch(location.pathname + location.search");
     expect(runtime).toContain(".card:not([hidden])");
+    expect(runtime).toContain("hay.indexOf(q) !== -1");
+    expect(runtime).not.toContain("tokens.every");
     expect(runtime).toContain('showSearchStatus(t("searchingDeeper"))');
     const search = source("src/lib/mini-app-search.server.ts");
     expect(search).not.toContain("descendantCategoryIds");

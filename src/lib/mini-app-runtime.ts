@@ -1429,15 +1429,12 @@ export const MINI_APP_RUNTIME_JS = `(function () {
       });
   }
   function filterVisibleCards(query) {
-    var q = String(query || "").trim().toLowerCase();
-    var tokens = q.split(/\\s+/).filter(Boolean);
+    var q = String(query || "").trim().toLowerCase().replace(/\\s+/g, " ");
     var cards = document.querySelectorAll(".grid .card");
     var shown = 0;
     cards.forEach(function (card) {
-      var hay = (card.getAttribute("data-name") || "").toLowerCase();
-      var match = !tokens.length || tokens.every(function (token) {
-        return hay.indexOf(token) !== -1;
-      });
+      var hay = (card.getAttribute("data-name") || "").toLowerCase().replace(/\\s+/g, " ");
+      var match = !q || hay.indexOf(q) !== -1;
       card.hidden = !match;
       if (match) shown += 1;
     });
@@ -1451,7 +1448,7 @@ export const MINI_APP_RUNTIME_JS = `(function () {
     }
     if (empty && empty.getAttribute("data-search-empty") === "1") {
       empty.textContent = t("searchEmpty");
-      empty.hidden = shown > 0 || !tokens.length;
+      empty.hidden = shown > 0 || !q;
     }
   }
   var searchForm = document.querySelector(".catalog-search");

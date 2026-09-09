@@ -532,7 +532,7 @@ export function wrapMiniAppPage(
     window.__miniAppLocale = "${lang}";
     window.__miniAppPhysicalShop = ${physicalShop ? "true" : "false"};
   </script>
-  <script src="/mini-app-runtime?v=9"></script>
+  <script src="/mini-app-runtime?v=10"></script>
 </body>
 </html>`;
 }
