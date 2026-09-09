@@ -7,7 +7,7 @@ import { isZernioPlatform, PLATFORM_LABEL, type ZernioPlatform } from "./zernio-
 import { imageUrl } from "./public-image";
 import crypto from "node:crypto";
 import { logger, truncate } from "./logger.server";
-import { localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
+import { localeFlags, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
 import type { Json, TablesUpdate } from "@/integrations-supabase/types";
 import type { DirectMode } from "./direct-flow";
 
@@ -199,6 +199,11 @@ interface DirectCopy {
   receiptReceivedPhysical: (displayNo: number | string) => string;
   receiptPaymentFailed: (displayNo: number | string) => string;
   countryHint: string;
+  chooseDeliveryLanguage: string;
+  allLanguagesBtn: (n: number) => string;
+  deliveryLangHint: string;
+  deliveryLangListButton: string;
+  deliveryLangListSection: string;
   emailStepGotReceipt: string;
   emailHint: string;
   emailSaved: (email: string) => string;
@@ -361,6 +366,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     countryHint:
       "Не понял страну. Ответьте номером из списка или названием — например «1» или «Казахстан».\n\n" +
       "Чтобы выйти, напишите «отмена».",
+    chooseDeliveryLanguage: "🌐 На каком языке нужны материалы?",
+    allLanguagesBtn: (n) => `Все языки ×${n}`,
+    deliveryLangHint:
+      "Ответьте номером из списка или названием — например «1» или «русский». «Все языки» стоит дороже.",
+    deliveryLangListButton: "Язык",
+    deliveryLangListSection: "Язык материалов",
     emailStepGotReceipt:
       "Чек получил, он уже у продавца. Осталось одно: напишите почту, " +
       "на которую отправить материалы — например anna@mail.ru\n\n" +
@@ -537,6 +548,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     countryHint:
       "Елді түсінбедім. Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «Қазақстан».\n\n" +
       "Шығу үшін «/stop» деп жазыңыз.",
+    chooseDeliveryLanguage: "🌐 Материалдарды қай тілде алғыңыз келеді?",
+    allLanguagesBtn: (n) => `Барлық тілдер ×${n}`,
+    deliveryLangHint:
+      "Тізімдегі нөмірмен немесе атауымен жауап беріңіз — мысалы «1» немесе «қазақша». «Барлық тілдер» қымбатырақ.",
+    deliveryLangListButton: "Тіл",
+    deliveryLangListSection: "Материал тілі",
     emailStepGotReceipt:
       "Чекті алдым, ол сатушыда. Бір-ақ нәрсе қалды: материалдарды жіберетін поштаны жазыңыз " +
       "— мысалы anna@mail.ru",
@@ -711,6 +728,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     countryHint:
       'Didn\'t catch the country. Reply with the number from the list or the name — for example "1" or "Kazakhstan".\n\n' +
       'To exit, send "/stop".',
+    chooseDeliveryLanguage: "🌐 Which language should the files be in?",
+    allLanguagesBtn: (n) => `All languages ×${n}`,
+    deliveryLangHint:
+      'Reply with the number from the list or the name — for example "1" or "Russian". "All languages" costs more.',
+    deliveryLangListButton: "Language",
+    deliveryLangListSection: "File language",
     emailStepGotReceipt:
       "Got the receipt, the seller already has it. One thing left: send the email " +
       "to send the materials to — for example anna@mail.ru",
@@ -888,6 +911,12 @@ const directCopy: Record<Locale, DirectCopy> = {
     countryHint:
       "Davlatni tushunmadim. Ro‘yxatdagi raqam yoki nomi bilan javob bering — masalan, «1» yoki «Qozog‘iston».\n\n" +
       "Chiqish uchun «/stop» deb yozing.",
+    chooseDeliveryLanguage: "🌐 Materiallarni qaysi tilda olishni xohlaysiz?",
+    allLanguagesBtn: (n) => `Barcha tillar ×${n}`,
+    deliveryLangHint:
+      "Ro‘yxatdagi raqam yoki nomi bilan javob bering — masalan, «1» yoki «ruscha». «Barcha tillar» qimmatroq.",
+    deliveryLangListButton: "Til",
+    deliveryLangListSection: "Material tili",
     emailStepGotReceipt:
       "Chek qabul qilindi, u sotuvchida. Bitta narsa qoldi: materiallarni yuborish uchun pochtangizni yozing " +
       "— masalan, anna@mail.ru",
@@ -1590,6 +1619,24 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
           user,
           usePoints: postbackPayload === "loyalty:yes",
         });
+      }
+      return;
+    }
+    if (features.checkout && postbackPayload.startsWith("deliverylang:")) {
+      const flow = await import("./direct-purchase.server");
+      const langState = flow.readDirectState(user.state);
+      if (langState.mode === "awaiting_delivery_lang") {
+        const langs = await deliveryLangChoicesForDirectCart(user.telegram_id);
+        const { matchDeliveryLangChoice } = await import("./direct-flow");
+        const choice = matchDeliveryLangChoice(postbackPayload, langs);
+        if (choice) {
+          await continueDirectAfterDeliveryLang({
+            conversationId,
+            accountId,
+            user,
+            choice,
+          });
+        }
       }
       return;
     }
@@ -2670,6 +2717,149 @@ async function continueDirectAfterLoyalty(params: {
 }
 
 /**
+ * Ответ на язык материалов: запоминаем выбор и идём к бонусам/почте/реквизитам.
+ * user.state на этом вебхуке ещё без checkout_lang_choice — патчим его здесь,
+ * иначе sendDirectPaymentDetails посчитал бы обычную цену без ×N.
+ */
+async function continueDirectAfterDeliveryLang(params: {
+  conversationId: string;
+  accountId: string;
+  user: ZernioBotUser;
+  choice: import("./product-materials").DeliveryLangChoice;
+}) {
+  const { conversationId, accountId, user, choice } = params;
+  const flow = await import("./direct-purchase.server");
+  const state = flow.readDirectState(user.state);
+  await flow.setDirectState(user.user_key, { checkout_lang_choice: choice, misses: 0 });
+
+  const options = await flow.listCountries();
+  const country = options.find((option) => option.code === state.country_code);
+  if (!country) {
+    await flow.clearDirectFlow(user.user_key);
+    await sendCart(conversationId, accountId, user);
+    return;
+  }
+
+  await sendDirectPaymentDetails({
+    conversationId,
+    accountId,
+    user: { ...user, state: { ...state, checkout_lang_choice: choice } },
+    country,
+    remembered: true,
+  });
+}
+
+async function shouldAskDeliveryLangBeforeOrder(): Promise<boolean> {
+  const { hasModule } = await import("./modules/modules.server");
+  if (!(await hasModule("multi_language"))) return false;
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", "delivery_lang_timing")
+    .maybeSingle();
+  return (data?.value ?? "after") === "before";
+}
+
+async function deliveryLangChoicesForDirectCart(telegramId: number): Promise<Locale[]> {
+  const s = await db();
+  const { data: items } = await s
+    .from("cart_items")
+    .select(
+      "products(file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order))",
+    )
+    .eq("telegram_id", telegramId);
+  const { MATERIAL_LANGUAGES, availableMaterialLanguages } = await import("./product-materials");
+  const set = new Set<Locale>();
+  for (const it of items ?? []) {
+    for (const lang of availableMaterialLanguages(it.products)) set.add(lang);
+  }
+  return MATERIAL_LANGUAGES.filter((lang) => set.has(lang));
+}
+
+/**
+ * Спросить язык файлов до реквизитов, если настройка «before» и в корзине
+ * больше одного языка. Возвращает true, когда вопрос уже ушёл и ждать ответа.
+ *
+ * Instagram: нумерованный текст всегда — кнопки не видны в «Запросах сообщений»,
+ * куда падает воронка. До трёх вариантов ещё и кнопки (лимит Direct). WhatsApp —
+ * список, как у страны.
+ */
+async function maybeAskDeliveryLanguage(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+): Promise<boolean> {
+  if (!(await shouldAskDeliveryLangBeforeOrder())) return false;
+  const langs = await deliveryLangChoicesForDirectCart(user.telegram_id);
+  if (langs.length <= 1) return false;
+
+  const flow = await import("./direct-purchase.server");
+  await flow.setDirectState(user.user_key, { mode: "awaiting_delivery_lang", misses: 0 });
+  await sendDeliveryLangPrompt(conversationId, accountId, user, langs);
+  return true;
+}
+
+async function sendDeliveryLangPrompt(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+  langs: Locale[],
+) {
+  const flow = await import("./direct-purchase.server");
+  const locale = flow.directLocale(flow.readDirectState(user.state));
+  const copy = directCopy[locale];
+  const n = langs.length;
+  const lines = [
+    ...langs.map((lang, index) => `${index + 1}. ${localeFlags[lang]} ${localeNames[lang]}`),
+    `${n + 1}. ${copy.allLanguagesBtn(n)}`,
+  ];
+  const text = `${copy.chooseDeliveryLanguage}\n\n${lines.join("\n")}\n\n${copy.deliveryLangHint}`;
+  const options = [
+    ...langs.map((lang) => ({
+      id: lang,
+      label: `${localeFlags[lang]} ${localeNames[lang]}`,
+    })),
+    { id: "all" as const, label: copy.allLanguagesBtn(n) },
+  ];
+
+  if (platformOf(user) === "whatsapp") {
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      text,
+      undefined,
+      false,
+      whatsappList({
+        body: text,
+        buttonLabel: copy.deliveryLangListButton,
+        sections: [
+          {
+            title: copy.deliveryLangListSection,
+            rows: options.map((option, index) => ({
+              id: `${STEP_PREFIX}${index + 1}`,
+              title: option.label,
+            })),
+          },
+        ],
+      }),
+    );
+    return;
+  }
+
+  const buttons: ZernioDmButton[] | undefined =
+    options.length <= 3
+      ? options.map((option) => ({
+          type: "postback" as const,
+          title: option.label.slice(0, 20),
+          payload: `deliverylang:${option.id}`,
+        }))
+      : undefined;
+  await reply(user, conversationId, accountId, text, buttons);
+}
+
+/**
  * Реквизиты и итог по корзине. Общий шаг для обоих путей: когда страну только
  * что назвали и когда взяли из памяти.
  */
@@ -2703,8 +2893,8 @@ async function sendDirectPaymentDetails(params: {
   // Цены — в валюте выбранной страны: покупателю из России сумма и реквизиты
   // должны совпадать по валюте, иначе он платит непонятно сколько.
   const {
-    lines: pricedLines,
-    total: cartTotal,
+    lines: pricedLinesRaw,
+    total: cartTotalRaw,
     currency,
     mixedCurrency,
   } = await flow.priceCart(cart, country.code);
@@ -2713,6 +2903,12 @@ async function sendDirectPaymentDetails(params: {
     await say(copy.mixedCurrencySplit);
     return;
   }
+  const priced = await flow.applyDeliveryLangPricing(
+    { lines: pricedLinesRaw, total: cartTotalRaw, currency, mixedCurrency },
+    state.checkout_lang_choice,
+  );
+  const pricedLines = priced.lines;
+  const cartTotal = priced.total;
   // Комиссия зоны доставки (Ниши, Блок B) — обязательно ДО заморозки: сумма,
   // которую видит и по которой платит покупатель, должна совпадать с той,
   // что попадёт в orders.total через createOrderFromCart (см. frozen_cart).
@@ -2843,7 +3039,7 @@ async function proceedToFulfillmentOrPayment(
   // (bot.server.ts, proceedToFulfillmentOrPlace): выбрал зону "+2000",
   // бросил чекаут на шаге адреса, вернулся и выбрал самовывоз — без этой
   // очистки старая комиссия ехала бы в новый заказ.
-  await flow.setDirectState(user.user_key, {
+  const checkoutReset = {
     country_code: country.code,
     checkout_fulfillment_type: undefined,
     checkout_delivery_zone_id: undefined,
@@ -2851,10 +3047,23 @@ async function proceedToFulfillmentOrPayment(
     checkout_delivery_fee: undefined,
     use_points: undefined,
     checkout_points_offered: undefined,
-  });
+    checkout_lang_choice: undefined,
+  };
+  await flow.setDirectState(user.user_key, checkoutReset);
+  const userForCheckout = {
+    ...user,
+    state: { ...flow.readDirectState(user.state), ...checkoutReset },
+  };
 
   if ((await cartFulfillmentKind(user.telegram_id)) !== "physical") {
-    await sendDirectPaymentDetails({ conversationId, accountId, user, country, remembered });
+    if (await maybeAskDeliveryLanguage(conversationId, accountId, userForCheckout)) return;
+    await sendDirectPaymentDetails({
+      conversationId,
+      accountId,
+      user: userForCheckout,
+      country,
+      remembered,
+    });
     return;
   }
 
@@ -3356,12 +3565,16 @@ async function handlePurchaseFlow(params: {
     if (
       (state.mode === "awaiting_proof" ||
         state.mode === "awaiting_loyalty_points" ||
-        state.mode === "awaiting_email_before_proof") &&
+        state.mode === "awaiting_email_before_proof" ||
+        state.mode === "awaiting_delivery_lang") &&
       state.country_code
     ) {
       const options = await flow.listCountries();
       const country = options.find((option) => option.code === state.country_code);
       if (country) {
+        if (state.mode === "awaiting_delivery_lang") {
+          if (await maybeAskDeliveryLanguage(conversationId, accountId, user)) return true;
+        }
         await sendDirectPaymentDetails({
           conversationId,
           accountId,
@@ -3474,6 +3687,52 @@ async function handlePurchaseFlow(params: {
 
     // Дальше — общий шаг с тем случаем, когда страну взяли из памяти.
     await proceedToFulfillmentOrPayment(conversationId, accountId, user, chosen, false);
+    return true;
+  }
+
+  // ── Язык материалов до оплаты (delivery_lang_timing = "before") ──────────
+  if (state.mode === "awaiting_delivery_lang") {
+    if (attachmentUrl && !text.trim()) {
+      await say(copy.deliveryLangHint);
+      return true;
+    }
+    const langs = await deliveryLangChoicesForDirectCart(user.telegram_id);
+    if (langs.length <= 1) {
+      const options = await flow.listCountries();
+      const country = options.find((option) => option.code === state.country_code);
+      if (!country) {
+        await flow.clearDirectFlow(user.user_key);
+        await sendCart(conversationId, accountId, user);
+        return true;
+      }
+      await sendDirectPaymentDetails({
+        conversationId,
+        accountId,
+        user,
+        country,
+        remembered: true,
+      });
+      return true;
+    }
+    const { matchDeliveryLangChoice } = await import("./direct-flow");
+    const choice = matchDeliveryLangChoice(text, langs);
+    if (!choice) {
+      await flow.handleStepMiss({
+        user,
+        state,
+        text,
+        hint: copy.deliveryLangHint,
+        say,
+        locale,
+      });
+      return true;
+    }
+    await continueDirectAfterDeliveryLang({
+      conversationId,
+      accountId,
+      user,
+      choice,
+    });
     return true;
   }
 
@@ -3986,6 +4245,7 @@ async function handleAwaitingProof(ctx: {
         : undefined,
       usePoints: claim.use_points === true,
       pointsOffered: claim.checkout_points_offered ?? 0,
+      deliveryLangChoice: claim.checkout_lang_choice ?? null,
     });
   } catch (error) {
     console.error("[zernio-bot] failed to create direct order", error);

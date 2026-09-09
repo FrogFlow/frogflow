@@ -1,4 +1,5 @@
 import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
+import { isDeliveryLangChoice, type DeliveryLangChoice } from "./product-materials";
 
 /**
  * Разбор реплик покупателя в Instagram Direct — без побочных действий, чтобы
@@ -44,6 +45,12 @@ import { isLocale, localeNames, SUPPORTED_LOCALES, type Locale } from "./i18n";
  * под ещё одну кнопку (лимит три), поэтому спрашиваем отдельно «да/нет» перед
  * оплатой. Списание происходит только при создании заказа по чеку, иначе
  * брошенный чекаут украл бы баллы.
+ *
+ * `awaiting_delivery_lang` — язык файлов (RU / KZ / оба), если в настройках
+ * `delivery_lang_timing = "before"` и модуль `multi_language` включён. В Telegram
+ * этот шаг уже был (proceedToLanguageOrPlace); Direct его пропускал и всегда
+ * отдавал все языки. Стоит между страной (и физическим получением, если оно
+ * есть) и реквизитами — иначе сумма «все языки ×N» разойдётся с чеком.
  */
 export type DirectMode =
   | "awaiting_locale"
@@ -54,6 +61,7 @@ export type DirectMode =
   | "awaiting_address"
   | "awaiting_fulfillment_note"
   | "awaiting_variant_choice"
+  | "awaiting_delivery_lang"
   | "awaiting_loyalty_points"
   | "awaiting_email_before_proof"
   | "awaiting_proof"
@@ -188,6 +196,76 @@ export function matchLocalePick(text: string): Locale | null {
 
   for (const locale of SUPPORTED_LOCALES) {
     const name = strip(localeNames[locale]);
+    if (name === needle) return locale;
+    if (needle.length >= 3 && name.startsWith(needle)) return locale;
+  }
+  return null;
+}
+
+/**
+ * Ответ на «на каком языке нужны материалы» в Direct.
+ *
+ * Список языков — не SUPPORTED_LOCALES целиком, а те, что реально есть
+ * у товаров в корзине, плюс последний пункт «все языки». Номер совпадает
+ * с показанным списком; «1 класс» сюда не попадает — как и в matchCountry,
+ * цифра должна быть всей репликой.
+ *
+ * Не путать с matchLocalePick: тот выбирает язык интерфейса в начале
+ * разговора и всегда нумерует все четыре Locale.
+ */
+export function matchDeliveryLangChoice(text: string, langs: Locale[]): DeliveryLangChoice | null {
+  const raw = text.trim().toLowerCase();
+  if (!raw || langs.length === 0) return null;
+
+  if (raw.startsWith("deliverylang:")) {
+    const rest = raw.slice("deliverylang:".length);
+    if (rest === "all") return "all";
+    return langs.includes(rest as Locale) && isDeliveryLangChoice(rest) ? rest : null;
+  }
+
+  const ordinal = raw.match(/^(\d{1,2})\s*[.)]?$/);
+  if (ordinal) {
+    const index = Number(ordinal[1]) - 1;
+    if (index >= 0 && index < langs.length) return langs[index];
+    if (index === langs.length) return "all";
+    return null;
+  }
+
+  const strip = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const needle = strip(raw);
+  if (!needle) return null;
+
+  const allAliases = new Set([
+    "all",
+    "both",
+    "оба",
+    "обе",
+    "все",
+    "всеязыки",
+    "барлық",
+    "барлыктилдер",
+    "hammasi",
+    "barchatillar",
+    "bothlanguages",
+    "alllanguages",
+  ]);
+  if (
+    allAliases.has(needle) ||
+    needle.includes("всеязык") ||
+    needle.includes("обаязык") ||
+    needle.includes("барлықтил") ||
+    needle.includes("barchatil")
+  ) {
+    return "all";
+  }
+
+  const kkAliases = new Set(["kz", "казахский", "казакша", "kazakh", "қазақ"]);
+  if (kkAliases.has(needle) && langs.includes("kk")) return "kk";
+
+  for (const locale of langs) {
+    if (needle === locale) return locale;
+    const name = strip(localeNames[locale]);
+    if (!name) continue;
     if (name === needle) return locale;
     if (needle.length >= 3 && name.startsWith(needle)) return locale;
   }

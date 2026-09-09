@@ -19,6 +19,7 @@ import {
   pickCartLineToRemove,
   pickReceiptAttachment,
   pickExpectedReceiptAttachment,
+  matchDeliveryLangChoice,
 } from "../src/lib/direct-flow";
 
 /** Список стран взят из настоящих payment_methods клиента. */
@@ -162,6 +163,36 @@ describe("matchLocalePick", () => {
     expect(matchLocalePick("")).toBeNull();
     // Двух букв мало: под них подошло бы слишком многое.
     expect(matchLocalePick("ру")).toBeNull();
+  });
+});
+
+describe("matchDeliveryLangChoice", () => {
+  const langs = ["ru", "kk"] as const;
+
+  it("понимает номер из показанного списка: языки, затем «все»", () => {
+    expect(matchDeliveryLangChoice("1", [...langs])).toBe("ru");
+    expect(matchDeliveryLangChoice("2.", [...langs])).toBe("kk");
+    expect(matchDeliveryLangChoice("3", [...langs])).toBe("all");
+  });
+
+  it("не принимает «1 класс» и номер товара за выбор языка", () => {
+    expect(matchDeliveryLangChoice("1 класс", [...langs])).toBeNull();
+    expect(matchDeliveryLangChoice("018", [...langs])).toBeNull();
+    expect(matchDeliveryLangChoice("4", [...langs])).toBeNull();
+  });
+
+  it("понимает название языка и постбэк кнопки", () => {
+    expect(matchDeliveryLangChoice("Русский", [...langs])).toBe("ru");
+    expect(matchDeliveryLangChoice("қазақша", [...langs])).toBe("kk");
+    expect(matchDeliveryLangChoice("kz", [...langs])).toBe("kk");
+    expect(matchDeliveryLangChoice("deliverylang:ru", [...langs])).toBe("ru");
+    expect(matchDeliveryLangChoice("deliverylang:all", [...langs])).toBe("all");
+  });
+
+  it("понимает «оба» / «все языки»", () => {
+    expect(matchDeliveryLangChoice("оба", [...langs])).toBe("all");
+    expect(matchDeliveryLangChoice("все языки", [...langs])).toBe("all");
+    expect(matchDeliveryLangChoice("all", [...langs])).toBe("all");
   });
 });
 

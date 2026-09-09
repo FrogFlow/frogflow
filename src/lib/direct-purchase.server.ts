@@ -9,6 +9,7 @@ import {
   type DirectMode,
 } from "./direct-flow";
 import { isLocale, type Locale } from "./i18n";
+import type { DeliveryLangChoice } from "./product-materials";
 import type { Json } from "@/integrations-supabase/types";
 import { PLATFORM_LABEL } from "./zernio-platform";
 import { instagramDigitalMissingEmail } from "./order-platform";
@@ -155,6 +156,13 @@ export type DirectState = {
    * больше, чем ему назвали.
    */
   checkout_points_offered?: number;
+  /**
+   * Язык материалов, выбранный ДО оплаты (настройка delivery_lang_timing =
+   * "before"). Тот же ключ, что у Telegram-бота: код Locale или "all".
+   * Пишется в orders.delivery_lang_choice при создании заказа и чистится
+   * вместе с FLOW_KEYS — следующий заказ спрашивает заново.
+   */
+  checkout_lang_choice?: DeliveryLangChoice;
 };
 
 /**
@@ -183,6 +191,7 @@ const FLOW_KEYS = [
   "pending_variant_product_id",
   "use_points",
   "checkout_points_offered",
+  "checkout_lang_choice",
 ] as const;
 
 /**
@@ -1525,6 +1534,46 @@ export async function priceCart(
 }
 
 /**
+ * «Все языки» — цена позиции ×N по числу файловых языков у ЭТОГО товара.
+ * Тот же множитель, что Telegram считает в placeOrderInner. Вызываем после
+ * priceCart, уже зная checkout_lang_choice: до выбора языка корзина должна
+ * показывать обычную цену.
+ */
+export async function applyDeliveryLangPricing(
+  priced: PricedCart,
+  choice: DeliveryLangChoice | null | undefined,
+): Promise<PricedCart> {
+  if (choice !== "all" || priced.mixedCurrency || priced.lines.length === 0) return priced;
+
+  const s = await db();
+  const { data: products } = await s
+    .from("products")
+    .select(
+      "id, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order)",
+    )
+    .in(
+      "id",
+      priced.lines.map((line) => line.productId),
+    );
+  const byId = new Map((products ?? []).map((p) => [p.id, p]));
+  const { availableMaterialLanguages, deliveryPriceMultiplier } =
+    await import("./product-materials");
+
+  let total = 0;
+  const lines = priced.lines.map((line) => {
+    const multiplier = deliveryPriceMultiplier(
+      choice,
+      availableMaterialLanguages(byId.get(line.productId)).length,
+    );
+    const unit = line.unit * multiplier;
+    const sum = unit * line.quantity;
+    total += sum;
+    return { ...line, unit, sum };
+  });
+  return { ...priced, lines, total };
+}
+
+/**
  * Список корзины для сообщения покупателю.
  *
  * С ценой у каждой позиции, но без итога. Покупатель должен видеть, из чего
@@ -1599,6 +1648,11 @@ export async function createOrderFromCart(params: {
   usePoints?: boolean;
   /** Сколько баллов назвали при показе реквизитов — верхняя граница redeem. */
   pointsOffered?: number;
+  /**
+   * Язык материалов, выбранный на шаге awaiting_delivery_lang. Не задан —
+   * настройка «оставить как есть» / after, либо в корзине один язык.
+   */
+  deliveryLangChoice?: DeliveryLangChoice | null;
 }): Promise<{
   id: number;
   order_no: number | null;
@@ -1609,8 +1663,11 @@ export async function createOrderFromCart(params: {
 
   // Считаем в валюте покупателя: по этой сумме он платит, её же сверяет
   // распознавание чека, и она же попадает в письмо и в панель продавца.
-  const priced =
+  const pricedRaw =
     params.frozenPriced ?? (await priceCart(await readCart(params.user), params.countryCode));
+  const priced = params.frozenPriced
+    ? pricedRaw
+    : await applyDeliveryLangPricing(pricedRaw, params.deliveryLangChoice);
   if (priced.lines.length === 0) return null;
   const { currency } = priced;
   // Комиссия зоны доставки — уже сложена в params.frozenPriced.total
@@ -1703,6 +1760,7 @@ export async function createOrderFromCart(params: {
       delivery_zone_name: params.deliveryZone?.name ?? null,
       delivery_fee: params.deliveryZone?.fee ?? 0,
       points_used: pointsUsed,
+      delivery_lang_choice: params.deliveryLangChoice ?? null,
     })
     .select("id, order_no, fulfillment_kind")
     .single();

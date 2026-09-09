@@ -1100,15 +1100,23 @@ export async function collectOrderFiles(
 ): Promise<{ files: Array<{ name: string; url: string }>; missing: string[] }> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { hasModule } = await import("./modules/modules.server");
-  const { availableOrderItemLanguages } = await import("./product-materials");
-  // Instagram/WhatsApp не умеют спрашивать язык интерактивно (email — не
-  // диалог, а WhatsApp-выдача идёт вложением без кнопок) — но это довод за
-  // то, чтобы приложить ВСЕ купленные языки разом, а не за то, чтобы
-  // выбрать за покупателя один: materialsForOrderItemAnyLang раньше молча
-  // отдавала только первый существующий язык, и покупатель, оплативший
-  // материал на трёх языках, получал ровно один. Без модуля — как и в
-  // deliverOrder (Telegram) — доступен только ru, тем же порядком, что и
-  // раньше.
+  const { availableOrderItemLanguages, isDeliveryLangChoice } = await import("./product-materials");
+  // Если язык спросили ДО оформления (delivery_lang_timing = "before") —
+  // отдаём выбранный, как Telegram. Без выбора (настройка «оставить как есть»
+  // / after) по-прежнему прикладываем все купленные языки: Instagram и
+  // WhatsApp не умеют спросить язык уже после оплаты (письмо — не диалог,
+  // WhatsApp-выдача идёт вложением без кнопок). Раньше это был довод за то,
+  // чтобы приложить все языки всегда, даже когда Direct мог спросить до
+  // оплаты — и покупатель из Instagram, выбравший только русский в настройках
+  // продавца, всё равно получал оба файла.
+  const { data: orderRow } = await supabaseAdmin
+    .from("orders")
+    .select("delivery_lang_choice")
+    .eq("id", orderId)
+    .maybeSingle();
+  const langChoice = isDeliveryLangChoice(orderRow?.delivery_lang_choice)
+    ? orderRow.delivery_lang_choice
+    : null;
   const multiLanguageOn = await hasModule("multi_language");
   const files: Array<{ name: string; url: string }> = [];
   const missing: string[] = [];
@@ -1118,7 +1126,13 @@ export async function collectOrderFiles(
     // тем же помощником, что и выдача в Telegram, иначе часть файлов пропала
     // бы молча.
     const langs = multiLanguageOn ? availableOrderItemLanguages(item) : (["ru"] as Locale[]);
-    let materialsByLang: Array<{ lang: Locale; materials: MaterialFile[] }> = langs
+    const selectedLangs =
+      multiLanguageOn && langChoice && langChoice !== "all"
+        ? langs.includes(langChoice)
+          ? [langChoice]
+          : langs.slice(0, 1)
+        : langs;
+    let materialsByLang: Array<{ lang: Locale; materials: MaterialFile[] }> = selectedLangs
       .map((lang) => ({ lang, materials: materialsForOrderItem(item, lang) }))
       .filter((entry) => entry.materials.length > 0);
 
@@ -1141,9 +1155,15 @@ export async function collectOrderFiles(
         .eq("id", item.product_id)
         .maybeSingle();
       const currentLangs = multiLanguageOn ? MATERIAL_LANGUAGES : (["ru"] as const);
-      materialsByLang = currentLangs
+      const allCurrent = currentLangs
         .map((lang) => ({ lang, materials: materialsForProduct(product, lang) }))
         .filter((entry) => entry.materials.length > 0);
+      if (langChoice && langChoice !== "all") {
+        const hit = allCurrent.find((entry) => entry.lang === langChoice);
+        materialsByLang = hit ? [hit] : allCurrent.slice(0, 1);
+      } else {
+        materialsByLang = allCurrent;
+      }
       if (materialsByLang.length > 0) {
         console.warn(
           `[orders] заказ ${orderId}: снимок файлов пуст, отправляю текущие файлы товара ${item.product_id}`,
