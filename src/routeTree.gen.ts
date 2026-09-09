@@ -35,6 +35,7 @@ import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminVipRouteImport } from './routes/admin.vip'
 import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
 import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
+import { Route as FilesTokenRouteImport } from './routes/files.$token'
 import { Route as MiniAppLibraryRouteImport } from './routes/mini-app.library'
 import { Route as MiniAppOrdersRouteImport } from './routes/mini-app.orders'
 import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
@@ -220,6 +221,11 @@ const AdminWhatsappRoute = AdminWhatsappRouteImport.update({
 const LegalSlugRoute = LegalSlugRouteImport.update({
   id: '/legal/$slug',
   path: '/legal/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FilesTokenRoute = FilesTokenRouteImport.update({
+  id: '/files/$token',
+  path: '/files/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MiniAppLibraryRoute = MiniAppLibraryRouteImport.update({
@@ -539,6 +545,7 @@ export interface FileRoutesByFullPath {
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
+  '/files/$token': typeof FilesTokenRoute
   '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/login': typeof OperatorLoginRoute
@@ -620,6 +627,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
+  '/files/$token': typeof FilesTokenRoute
   '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/login': typeof OperatorLoginRoute
@@ -703,6 +711,7 @@ export interface FileRoutesById {
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/legal/$slug': typeof LegalSlugRoute
+  '/files/$token': typeof FilesTokenRoute
   '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/_authed': typeof OperatorAuthedRouteWithChildren
@@ -789,6 +798,7 @@ export interface FileRouteTypes {
     | '/admin/vip'
     | '/admin/whatsapp'
     | '/legal/$slug'
+    | '/files/$token'
     | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/login'
@@ -870,6 +880,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/whatsapp'
     | '/legal/$slug'
+    | '/files/$token'
     | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/login'
@@ -952,6 +963,7 @@ export interface FileRouteTypes {
     | '/admin/vip'
     | '/admin/whatsapp'
     | '/legal/$slug'
+    | '/files/$token'
     | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/_authed'
@@ -1020,6 +1032,7 @@ export interface RootRouteChildren {
   OperatorRoute: typeof OperatorRouteWithChildren
   ShopRoute: typeof ShopRoute
   LegalSlugRoute: typeof LegalSlugRoute
+  FilesTokenRoute: typeof FilesTokenRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronCartReminderRoute: typeof ApiCronCartReminderRoute
@@ -1243,6 +1256,13 @@ declare module '@tanstack/react-router' {
       path: '/legal/$slug'
       fullPath: '/legal/$slug'
       preLoaderRoute: typeof LegalSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/files/$token': {
+      id: '/files/$token'
+      path: '/files/$token'
+      fullPath: '/files/$token'
+      preLoaderRoute: typeof FilesTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mini-app/library': {
@@ -1766,6 +1786,7 @@ const rootRouteChildren: RootRouteChildren = {
   OperatorRoute: OperatorRouteWithChildren,
   ShopRoute: ShopRoute,
   LegalSlugRoute: LegalSlugRoute,
+  FilesTokenRoute: FilesTokenRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronCartReminderRoute: ApiCronCartReminderRoute,

@@ -292,8 +292,9 @@ export async function deliverOrder(
    * Дальше пути расходятся, и расходятся они по возможностям площадки:
    *
    *  - Instagram Direct не принимает вложениями документы (только картинки,
-   *    видео и аудио), а продаются здесь PDF и ZIP. Плюс окно в 24 часа,
-   *    открыть которое в Instagram нечем. Обе беды снимает письмо.
+   *    видео и аудио), а продаются здесь PDF и ZIP. Поэтому покупатель получает
+   *    кнопку на страницу со ссылками, как в письме, плюс само письмо. Окно
+   *    в 24 часа Instagram открыть нечем — если Direct не дойдёт, остаётся почта.
    *  - WhatsApp документы принимает, до 100 МБ, и окно умеет открывать
    *    шаблоном. Значит, материалы уходят туда же, где человек платил, —
    *    письмо там только запасной путь.
@@ -1057,8 +1058,8 @@ export async function sendFileToUser(
   return { delivered: false, retry: true, reason: "Telegram отклонил отправку" };
 }
 
-/** Сколько живут ссылки в письме. То же значение, что у выдачи в Telegram. */
-const EMAIL_LINK_DAYS = 7;
+/** Сколько живут ссылки в письме и на странице выдачи Instagram. */
+export const EMAIL_LINK_DAYS = 7;
 
 /**
  * Имя, под которым файл сохранится у покупателя.
@@ -1093,7 +1094,7 @@ export function downloadFileName(displayName: string, storagePath: string): stri
  * `files` без следа, и покупатель, оплативший 5 материалов, получал письмо
  * с 3 ссылками, а заказ всё равно закрывался как «выдан» — см. Блок 1.3.
  */
-async function collectOrderFiles(
+export async function collectOrderFiles(
   orderId: number,
   items: OrderItem[],
 ): Promise<{ files: Array<{ name: string; url: string }>; missing: string[] }> {
@@ -1489,16 +1490,11 @@ async function deliverOrderByEmail(
   }
 
   /**
-   * Сказать покупателю в переписке, что письмо ушло.
+   * Сказать покупателю в Direct и дать кнопку на страницу файлов.
    *
-   * Без этого он остаётся в тишине: заказ подтвердили, письмо отправили, а в
-   * Direct — ничего. Человек не знает, случилось ли что-нибудь вообще, и идёт
-   * спрашивать.
-   *
-   * Отправка может не пройти: Instagram запрещает писать позже 24 часов с
-   * последнего сообщения покупателя, а подтверждение продавца часто приходит
-   * на следующий день. Это ожидаемо и не должно ронять выдачу — письмо уже
-   * ушло, а оно здесь главное. Поэтому ошибку только пишем в журнал.
+   * Страница как письмо: список ссылок, ничего не скачивается само. Письмо
+   * остаётся запасным путём — Instagram молчит после 24 часов, а подтверждение
+   * продавца часто на следующий день. Ошибка Direct не роняет выдачу.
    */
   try {
     const { data: buyer } = await supabaseAdmin
@@ -1509,13 +1505,22 @@ async function deliverOrderByEmail(
 
     if (buyer?.zernio_conversation_id && buyer?.zernio_account_id) {
       const { sendZernioInboxMessage } = await import("./zernio.server");
-      await sendZernioInboxMessage(
-        buyer.zernio_conversation_id,
-        buyer.zernio_account_id,
-        `Оплата подтверждена — материалы по заказу №${displayNo} отправлены на ${email}.\n\n` +
+      const { orderFilesPageUrl } = await import("./order-files-page.server");
+      const { instagramFilesButtonTitle } = await import("./order-files-page");
+      const filesPageUrl = orderFilesPageUrl(orderId);
+      const text = filesPageUrl
+        ? `Оплата подтверждена — заказ №${displayNo}.\n\n` +
+          `Нажмите кнопку: откроется страница с вашими файлами. Они не скачиваются сами — выберите, когда будете готовы.\n\n` +
+          `Дубликат отправили на ${email}. Если письма нет — папка «Спам». Ссылки действуют ${EMAIL_LINK_DAYS} дней.`
+        : `Оплата подтверждена — материалы по заказу №${displayNo} отправлены на ${email}.\n\n` +
           `Ссылки в письме действуют ${EMAIL_LINK_DAYS} дней, лучше скачать файлы сразу.\n\n` +
-          "Если письма нет — проверьте папку «Спам» и напишите сюда, поможем.",
-      );
+          "Если письма нет — проверьте папку «Спам» и напишите сюда, поможем.";
+      await sendZernioInboxMessage(buyer.zernio_conversation_id, buyer.zernio_account_id, text, {
+        buttons: filesPageUrl
+          ? [{ type: "url", title: instagramFilesButtonTitle(files.length), url: filesPageUrl }]
+          : undefined,
+        platform: "instagram",
+      });
     }
   } catch (e) {
     console.error("[orders] не удалось сообщить покупателю в Direct об отправке письма", e);
