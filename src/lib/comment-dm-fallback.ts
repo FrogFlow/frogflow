@@ -43,6 +43,50 @@ export function commentMatchesAutomation(
 export const FALLBACK_MIN_AGE_MS = 5 * 60 * 1000;
 
 /**
+ * Сколько ждать, прежде чем считать `pending` брошенным прошлым прогоном.
+ * Крон каждые 15 минут (vercel.json); 10 минут — длиннее одного прогона и
+ * короче следующего тика.
+ */
+export const STALE_PENDING_MS = 10 * 60 * 1000;
+
+/**
+ * Что делать с уже существующей строкой comment_dm_fallback_sends.
+ *
+ * Раньше любой зависший pending заново слал DM, в том числе обычным inbox
+ * в уже открытый чат. Inbox не идемпотентен: если прошлый прогон успел
+ * отправить и умер до UPDATE, человек получал то же сообщение каждые 15
+ * минут (живой случай: «мишки с геометрическими фигурами»).
+ *
+ * Один повтор private-reply ещё допустим (Meta на дубль отвечает
+ * «already sent»). Второй и дальше — бросаем, не пишем в директ.
+ */
+export type StalePendingAction = "wait" | "retry" | "abandon" | "skip";
+
+export function stalePendingAction(
+  row: { status: string; created_at: string; updated_at: string },
+  now: Date,
+  staleMs: number = STALE_PENDING_MS,
+): StalePendingAction {
+  if (row.status !== "pending") return "skip";
+  const created = new Date(row.created_at).getTime();
+  const updated = new Date(row.updated_at).getTime();
+  if (Number.isNaN(created) || Number.isNaN(updated)) return "abandon";
+  if (now.getTime() - updated <= staleMs) return "wait";
+  // updated уже уехал от insert — этот комментарий уже подхватывали.
+  if (updated - created > staleMs) return "abandon";
+  return "retry";
+}
+
+/** Private-reply ИЛИ альт-канал доставили DM — для крона это успех, не повод слать ещё. */
+export function fallbackRecordStatus(
+  privateOk: boolean,
+  altChannelStatus: string,
+): "sent" | "failed" {
+  if (privateOk || altChannelStatus === "sent") return "sent";
+  return "failed";
+}
+
+/**
  * С запасом от документированного 7-дневного окна private-reply у Zernio —
  * дальше этого возраста попытка гарантированно вернёт PLATFORM_LIMITATION,
  * пробовать нет смысла.

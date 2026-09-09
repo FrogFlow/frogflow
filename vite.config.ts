@@ -49,7 +49,7 @@ export default defineConfig({
             maxDuration: 60,
           },
           "/api/cron/comment-dm-fallback": {
-            maxDuration: 60,
+            maxDuration: 120,
           },
           "/api/operator-cron/leads": {
             maxDuration: 60,

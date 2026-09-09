@@ -2,32 +2,23 @@ import {
   commentMatchesAutomation,
   commentAgeVerdict,
   commentPrivateReplyBlockReason,
+  stalePendingAction,
+  fallbackRecordStatus,
+  STALE_PENDING_MS,
 } from "./comment-dm-fallback";
 
 /** Потолок правил за один проход крона — по числу их обычно не больше ~20-30 на аккаунт. */
 const MAX_AUTOMATIONS_PER_RUN = 20;
 
-/** Потолок реальных отправок за один проход — если сопоставление где-то ошиблось, не разослать лишнего разом; остаток подхватит следующий проход. */
-const MAX_SENDS_PER_RUN = 15;
+/**
+ * Потолок реальных отправок за один проход. На неудачном private-reply до 4
+ * сетевых вызовов на комментарий; 15 штук не укладывались в 60с, прогон
+ * умирал на UPDATE, и тот же директ уходил снова следующим тиком.
+ */
+const MAX_SENDS_PER_RUN = 5;
 
 /** Сколько логов автоматизации проверять на "Zernio уже отправил" — с запасом на обычный объём срабатываний одного правила. */
 const LOG_CHECK_LIMIT = 200;
-
-/**
- * Сколько ждать, прежде чем считать зарезервированную (`pending`), но не
- * дошедшую до статуса `sent`/`failed` строку брошенной прошлым прогоном.
- *
- * Найдено на живых данных: 73 строки застряли в `pending` навсегда — прогон,
- * который их зарезервировал, оборвался (похоже, таймаут функции: у этого
- * крона не задан maxDuration, а эскалация теперь может делать до 4
- * последовательных сетевых вызовов на комментарий) до того, как записал
- * результат. Уникальный индекс (automation_id, comment_id) после этого
- * навсегда блокировал повтор — эти люди не получили бы ответ уже никогда.
- * 10 минут — с запасом выше времени одного прогона (крон каждые 15 минут,
- * см. vercel.json), но короче интервала между прогонами, так что зависшая
- * строка подхватывается уже следующим тиком.
- */
-const STALE_PENDING_MS = 10 * 60 * 1000;
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -164,28 +155,35 @@ export async function runCommentDmFallback(): Promise<{
           comment_id: commentId,
           status: "pending",
         });
+        let allowAltChannel = true;
         if (reserveError) {
-          // Уже зарезервировано — либо другим (свежим) проходом, либо прошлым
-          // прогоном, который оборвался, не дописав результат. Отличаем одно
-          // от другого по возрасту: свежий pending оставляем как есть (не
-          // лезем в гонку с ещё выполняющимся прогоном), а брошенный старше
-          // STALE_PENDING_MS — забираем себе и пробуем реально отправить,
-          // а не молчим о нём вечно.
           const { data: existing } = await s
             .from("comment_dm_fallback_sends")
-            .select("status, updated_at")
+            .select("status, created_at, updated_at")
             .eq("automation_id", automationId)
             .eq("comment_id", commentId)
             .maybeSingle();
-          const isStalePending =
-            existing?.status === "pending" &&
-            now.getTime() - new Date(existing.updated_at).getTime() > STALE_PENDING_MS;
-          if (!isStalePending) continue;
+          const action = existing
+            ? stalePendingAction(existing, now)
+            : "wait";
+          if (action === "wait" || action === "skip") continue;
+          if (action === "abandon") {
+            await s
+              .from("comment_dm_fallback_sends")
+              .update({
+                status: "failed",
+                error:
+                  "stale pending: повтор в директ не шлём — прошлый прогон мог уже доставить сообщение",
+              })
+              .eq("automation_id", automationId)
+              .eq("comment_id", commentId)
+              .eq("status", "pending");
+            continue;
+          }
 
-          // .update() над несуществующей строкой "успешен" и без единой
-          // затронутой строки — ошибку тут не проверить, нужен именно
-          // вернувшийся набор: пусто — кто-то другой забрал эту же строку
-          // между select и update прямо сейчас, отступаем.
+          // Один повтор: только private-reply (Meta на дубль отвечает
+          // «already sent»). Inbox в открытый чат не идемпотентен — его
+          // на retry не трогаем.
           const { data: takeover } = await s
             .from("comment_dm_fallback_sends")
             .update({ updated_at: now.toISOString() })
@@ -195,6 +193,7 @@ export async function runCommentDmFallback(): Promise<{
             .lt("updated_at", new Date(now.getTime() - STALE_PENDING_MS).toISOString())
             .select("id");
           if (!takeover?.length) continue;
+          allowAltChannel = false;
         }
 
         sendsThisRun++;
@@ -226,7 +225,7 @@ export async function runCommentDmFallback(): Promise<{
         //    нечего, зовём продавца в Telegram.
         let altChannelStatus: "skipped" | "sent" | "failed" = "skipped";
         let altChannelError: string | null = null;
-        if (!result.ok) {
+        if (!result.ok && allowAltChannel) {
           const commenterId = comment.from?.id;
           if (commenterId) {
             const { data: buyer } = await s
@@ -304,7 +303,7 @@ export async function runCommentDmFallback(): Promise<{
         // попытку (в т.ч. HUMAN_AGENT) уже не холодной.
         let unresolvedPromptStatus: "skipped" | "sent" | "failed" = "skipped";
         let unresolvedPromptError: string | null = null;
-        if (!dmDeliveredSomehow) {
+        if (!dmDeliveredSomehow && allowAltChannel) {
           const { data: settings } = await s
             .from("comment_automation_settings")
             .select("unresolved_prompt_enabled, unresolved_prompt_message")
@@ -329,7 +328,7 @@ export async function runCommentDmFallback(): Promise<{
         await s
           .from("comment_dm_fallback_sends")
           .update({
-            status: result.ok ? "sent" : "failed",
+            status: fallbackRecordStatus(result.ok, altChannelStatus),
             error: result.error?.slice(0, 500) ?? null,
             alt_channel_status: altChannelStatus,
             alt_channel_error: altChannelError,

@@ -5,8 +5,11 @@ import {
   annotateCommentStatus,
   commentPrivateReplyBlockReason,
   explainInstagramPrivateReplyError,
+  stalePendingAction,
+  fallbackRecordStatus,
   FALLBACK_MIN_AGE_MS,
   FALLBACK_MAX_AGE_MS,
+  STALE_PENDING_MS,
 } from "./comment-dm-fallback";
 
 /**
@@ -198,5 +201,51 @@ describe("explainInstagramPrivateReplyError", () => {
 
   it("незнакомый текст оставляем как есть", () => {
     expect(explainInstagramPrivateReplyError("rate limited")).toBe("rate limited");
+  });
+});
+
+describe("stalePendingAction", () => {
+  const now = new Date("2026-09-09T12:00:00Z");
+  const stale = STALE_PENDING_MS;
+
+  it("sent/failed не трогаем", () => {
+    const ts = now.toISOString();
+    expect(stalePendingAction({ status: "sent", created_at: ts, updated_at: ts }, now)).toBe(
+      "skip",
+    );
+    expect(stalePendingAction({ status: "failed", created_at: ts, updated_at: ts }, now)).toBe(
+      "skip",
+    );
+  });
+
+  it("свежий pending — ждём, вдруг прогон ещё жив", () => {
+    const created = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
+    expect(
+      stalePendingAction({ status: "pending", created_at: created, updated_at: created }, now),
+    ).toBe("wait");
+  });
+
+  it("первый зависший pending — один повтор private-reply", () => {
+    const created = new Date(now.getTime() - stale - 1000).toISOString();
+    expect(
+      stalePendingAction({ status: "pending", created_at: created, updated_at: created }, now),
+    ).toBe("retry");
+  });
+
+  it("pending, который уже подхватывали — больше не пишем в директ", () => {
+    const created = new Date(now.getTime() - 40 * 60 * 1000).toISOString();
+    const updated = new Date(now.getTime() - stale - 1000).toISOString();
+    expect(
+      stalePendingAction({ status: "pending", created_at: created, updated_at: updated }, now),
+    ).toBe("abandon");
+  });
+});
+
+describe("fallbackRecordStatus", () => {
+  it("альт-канал доставил — это успех, не failed", () => {
+    expect(fallbackRecordStatus(false, "sent")).toBe("sent");
+    expect(fallbackRecordStatus(true, "skipped")).toBe("sent");
+    expect(fallbackRecordStatus(false, "failed")).toBe("failed");
+    expect(fallbackRecordStatus(false, "skipped")).toBe("failed");
   });
 });
