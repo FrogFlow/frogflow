@@ -94,6 +94,14 @@ export const MODULES = {
     price: 25000,
     status: "available",
   },
+  crypto: {
+    title: "Оплата криптой (NOWPayments)",
+    group: "Оплата",
+    price: 25000,
+    status: "planned",
+    note:
+      "Приём криптовалюты через NOWPayments (счёт-инвойс + IPN). Кода оплаты ещё нет — тумблер серый, пока не подключим шлюз. Цену в прайсе уточнить.",
+  },
   receipt_ocr: {
     title: "Распознавание чека",
     group: "Оплата",
