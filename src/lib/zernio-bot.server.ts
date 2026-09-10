@@ -90,18 +90,18 @@ interface DirectCopy {
   greetingShort: string;
   catalogIntro: string;
   catalogNumberHint: string;
-  catalogBotLink: (link: string) => string;
-  searchNoResults: (query: string, link: string) => string;
   searchFoundCount: (n: number) => string;
   /**
    * Дальше — тексты каталога-списка. Он есть только в WhatsApp: в Instagram
    * на сообщение три кнопки и нет списков, поэтому там каталог остаётся
-   * текстовым, со ссылкой на Telegram-бота (catalogBotLink выше).
+   * текстовым: просим код материала из публикации.
    *
-   * Ссылки на Telegram здесь нет намеренно. В Instagram она осмысленна — бот
-   * не может ни показать каталог целиком, ни отдать файл. WhatsApp умеет и
-   * то и другое, и уводить оттуда покупателя, который уже готов платить, —
-   * значит терять его на лишнем шаге.
+   * Ссылки на Telegram-бота здесь нет намеренно. Раньше Instagram-витрина
+   * вела в t.me «посмотреть каталог», и люди читали только этот конец
+   * сообщения — думали, что купить можно лишь там, и писали «не получается».
+   * Покупка уже идёт в Direct по коду, файлы уходят письмом или страницей
+   * ссылок; уводить в другой бот незачем. WhatsApp тем более умеет каталог
+   * и файлы сам.
    */
   catalogEmpty: string;
   catalogPick: string;
@@ -230,9 +230,6 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Теперь введите КОД материала, который хотите приобрести.",
     catalogNumberHint:
       "🔴❗️Код указан в самом первом сообщении.\nВведите его только ЦИФРАМИ.\n\nПосле этого сможете оформить заказ и увидеть цену в вашей валюте. 💳",
-    catalogBotLink: (link) => `Наш бот: ${link}`,
-    searchNoResults: (query, link) =>
-      `По запросу «${query}» ничего не найдено. Попробуйте другое слово или откройте каталог в нашем боте: ${link}`,
     searchFoundCount: (n) => `🔎 Нашли ${n} вариантов:`,
     catalogEmpty: "Каталог пока пуст — товары ещё не добавлены. Напишите продавцу, он подскажет.",
     catalogPick: "Выберите из каталога:",
@@ -413,9 +410,6 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Енді сатып алғыңыз келетін материалдың КОДын енгізіңіз.",
     catalogNumberHint:
       "🔴❗️Код ең бірінші хабарламада көрсетілген.\nОны тек ЦИФРМЕН енгізіңіз.\n\nОсыдан кейін тапсырысты рәсімдеп, бағаны өз валютаңызда көресіз. 💳",
-    catalogBotLink: (link) => `Біздің бот: ${link}`,
-    searchNoResults: (query, link) =>
-      `«${query}» бойынша ештеңе табылмады. Басқа сөзбен көріңіз немесе боттағы каталогты ашыңыз: ${link}`,
     searchFoundCount: (n) => `🔎 ${n} нұсқа таптық:`,
     catalogEmpty: "Каталог әзірге бос — тауарлар қосылмаған. Сатушыға жазыңыз.",
     catalogPick: "Каталогтан таңдаңыз:",
@@ -593,9 +587,6 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Now enter the CODE of the material you want to buy.",
     catalogNumberHint:
       "🔴❗️The code is in the very first message.\nEnter it in DIGITS only.\n\nAfter that you can place the order and see the price in your currency. 💳",
-    catalogBotLink: (link) => `Our bot: ${link}`,
-    searchNoResults: (query, link) =>
-      `Nothing found for "${query}". Try another word, or open the catalog in our bot: ${link}`,
     searchFoundCount: (n) => `🔎 Found ${n} matching items:`,
     catalogEmpty:
       "The catalog is empty for now — no items yet. Message the seller and they'll help.",
@@ -773,9 +764,6 @@ const directCopy: Record<Locale, DirectCopy> = {
     catalogIntro: "Endi sotib olmoqchi bo‘lgan materialning KODini kiriting.",
     catalogNumberHint:
       "🔴❗️Kod eng birinchi xabarda ko‘rsatilgan.\nUni faqat RAQAMLAR bilan kiriting.\n\nShundan so‘ng buyurtmani rasmiylashtirib, narxni o‘z valyutangizda ko‘rasiz. 💳",
-    catalogBotLink: (link) => `Botimiz: ${link}`,
-    searchNoResults: (query, link) =>
-      `«${query}» bo‘yicha hech narsa topilmadi. Boshqa so‘z bilan urinib ko‘ring yoki botimizdagi katalogni oching: ${link}`,
     searchFoundCount: (n) => `🔎 ${n} ta variant topildi:`,
     catalogEmpty: "Katalog hozircha bo'sh — mahsulotlar qo'shilmagan. Sotuvchiga yozing.",
     catalogPick: "Katalogdan tanlang:",
@@ -1885,7 +1873,9 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
  *    заказы теперь оформляются по чеку с выдачей на почту.
  *
  * Теперь меню говорит ровно то, что бот действительно умеет: принять номер
- * товара. Разбирать каталог удобнее в Telegram-боте — туда и ведём.
+ * товара. Ссылку на Telegram сюда больше не ставим: люди читают конец
+ * сообщения, принимают её за единственный способ купить и пишут, что
+ * «через бота не получается» — хотя код материала как раз вводится здесь.
  */
 async function sendCatalogMenu(conversationId: string, accountId: string, user: ZernioBotUser) {
   const flow = await import("./direct-purchase.server");
@@ -1904,12 +1894,7 @@ async function sendCatalogMenu(conversationId: string, accountId: string, user: 
     return;
   }
 
-  const botLink = await telegramBotLink();
   const lines = [copy.catalogIntro, "", copy.catalogNumberHint];
-
-  if (botLink) {
-    lines.push("", copy.catalogBotLink(botLink));
-  }
 
   // «/start», «купить» и прочие слова-вызовы — явное повторное обращение
   // человека. После «стоп» он должен получить меню даже если его текст
@@ -2308,16 +2293,9 @@ async function sendInteractiveProductResults(
     .limit(isWhatsApp ? WA_LIST_PAGE_SIZE : 5);
 
   if (!products?.length) {
-    await reply(
-      user,
-      conversationId,
-      accountId,
-      // В WhatsApp каталог открывается тут же, звать в другой бот незачем.
-      isWhatsApp
-        ? copy.searchNoResultsHere(query)
-        : copy.searchNoResults(query, (await telegramBotLink()) ?? ""),
-      [{ type: "postback", title: copy.btnCatalog, payload: "CATALOG" }],
-    );
+    await reply(user, conversationId, accountId, copy.searchNoResultsHere(query), [
+      { type: "postback", title: copy.btnCatalog, payload: "CATALOG" },
+    ]);
     return;
   }
 
@@ -4614,37 +4592,4 @@ function parseTriggerWords(raw: string): string[] {
     .map((word) => word.trim().toLowerCase())
     .filter(Boolean);
   return words.length > 0 ? words : DEFAULT_TRIGGER_WORDS;
-}
-
-/**
- * Ссылка на Telegram-бота этого клиента.
- *
- * Раньше в Direct уходила ссылка на веб-адрес деплоя — а это админка, и
- * покупателю там делать нечего. Правильный адресат — Telegram-бот: в нём
- * каталог, поиск и выдача файлов, ради которых из Instagram и приходят.
- *
- * Юзернейм спрашиваем у самого Telegram по токену, который у деплоя и так
- * есть: так его не надо прописывать руками ни в панели, ни в переменных, и он
- * не разъедется с действительностью, если бота переименуют. Ответ кешируем на
- * процесс — он меняется раз в никогда, а дёргать getMe на каждое сообщение
- * незачем. Переопределить можно переменной TELEGRAM_BOT_USERNAME.
- */
-let cachedBotUsername: string | null = null;
-
-export async function telegramBotLink(): Promise<string | null> {
-  const override = process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, "");
-  if (override) return `https://t.me/${override}`;
-  if (cachedBotUsername) return `https://t.me/${cachedBotUsername}`;
-
-  try {
-    const { tg } = await import("./telegram.server");
-    const response = (await tg("getMe", {})) as { ok?: boolean; result?: { username?: string } };
-    const username = response?.result?.username?.trim();
-    if (!username) return null;
-    cachedBotUsername = username;
-    return `https://t.me/${username}`;
-  } catch (e) {
-    console.error("[zernio-bot] не удалось узнать юзернейм Telegram-бота", e);
-    return null;
-  }
 }
