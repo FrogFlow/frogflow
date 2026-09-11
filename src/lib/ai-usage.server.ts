@@ -3,6 +3,7 @@
  * Сброс делает только внутренний API — его зовёт панель оператора после оплаты.
  */
 import {
+  CONSULTANT_LIFETIME_KEY,
   RECEIPT_OCR_LIFETIME_KEY,
   SMART_SEARCH_LIFETIME_KEY,
   addSmartSearchLifetime,
@@ -46,6 +47,26 @@ export async function recordSmartSearchLifetime(usage: SmartSearchTokenUsage): P
     });
   } catch (e) {
     console.error("[ai-usage] failed to record smart search lifetime", e);
+  }
+}
+
+export async function recordConsultantLifetime(usage: SmartSearchTokenUsage): Promise<void> {
+  if (usage.inputTokens <= 0 && usage.outputTokens <= 0) return;
+  try {
+    const s = await db();
+    const { data } = await s
+      .from("app_settings")
+      .select("value")
+      .eq("key", CONSULTANT_LIFETIME_KEY)
+      .maybeSingle();
+    const next = addSmartSearchLifetime(parseSmartSearchLifetime(data?.value), usage);
+    await s.from("app_settings").upsert({
+      key: CONSULTANT_LIFETIME_KEY,
+      value: JSON.stringify(next),
+      updated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("[ai-usage] failed to record consultant lifetime", e);
   }
 }
 

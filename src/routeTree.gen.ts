@@ -49,6 +49,7 @@ import { Route as ApiAdminUploadRouteImport } from './routes/api/admin/upload'
 import { Route as ApiCronBroadcastRouteImport } from './routes/api/cron/broadcast'
 import { Route as ApiCronCartReminderRouteImport } from './routes/api/cron/cart-reminder'
 import { Route as ApiCronCommentDmFallbackRouteImport } from './routes/api/cron/comment-dm-fallback'
+import { Route as ApiCronConsultantVtbRouteImport } from './routes/api/cron/consultant-vtb'
 import { Route as ApiCronEnsureWebhookRouteImport } from './routes/api/cron/ensure-webhook'
 import { Route as ApiCronFulfillmentReminderRouteImport } from './routes/api/cron/fulfillment-reminder'
 import { Route as ApiCronManagerChatPruneRouteImport } from './routes/api/cron/manager-chat-prune'
@@ -294,6 +295,11 @@ const ApiCronCommentDmFallbackRoute =
     path: '/api/cron/comment-dm-fallback',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCronConsultantVtbRoute = ApiCronConsultantVtbRouteImport.update({
+  id: '/api/cron/consultant-vtb',
+  path: '/api/cron/consultant-vtb',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiCronEnsureWebhookRoute = ApiCronEnsureWebhookRouteImport.update({
   id: '/api/cron/ensure-webhook',
   path: '/api/cron/ensure-webhook',
@@ -564,6 +570,7 @@ export interface FileRoutesByFullPath {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/comment-dm-fallback': typeof ApiCronCommentDmFallbackRoute
+  '/api/cron/consultant-vtb': typeof ApiCronConsultantVtbRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/fulfillment-reminder': typeof ApiCronFulfillmentReminderRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
@@ -647,6 +654,7 @@ export interface FileRoutesByTo {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/comment-dm-fallback': typeof ApiCronCommentDmFallbackRoute
+  '/api/cron/consultant-vtb': typeof ApiCronConsultantVtbRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/fulfillment-reminder': typeof ApiCronFulfillmentReminderRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
@@ -733,6 +741,7 @@ export interface FileRoutesById {
   '/api/cron/broadcast': typeof ApiCronBroadcastRoute
   '/api/cron/cart-reminder': typeof ApiCronCartReminderRoute
   '/api/cron/comment-dm-fallback': typeof ApiCronCommentDmFallbackRoute
+  '/api/cron/consultant-vtb': typeof ApiCronConsultantVtbRoute
   '/api/cron/ensure-webhook': typeof ApiCronEnsureWebhookRoute
   '/api/cron/fulfillment-reminder': typeof ApiCronFulfillmentReminderRoute
   '/api/cron/manager-chat-prune': typeof ApiCronManagerChatPruneRoute
@@ -820,6 +829,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/cart-reminder'
     | '/api/cron/comment-dm-fallback'
+    | '/api/cron/consultant-vtb'
     | '/api/cron/ensure-webhook'
     | '/api/cron/fulfillment-reminder'
     | '/api/cron/manager-chat-prune'
@@ -903,6 +913,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/cart-reminder'
     | '/api/cron/comment-dm-fallback'
+    | '/api/cron/consultant-vtb'
     | '/api/cron/ensure-webhook'
     | '/api/cron/fulfillment-reminder'
     | '/api/cron/manager-chat-prune'
@@ -988,6 +999,7 @@ export interface FileRouteTypes {
     | '/api/cron/broadcast'
     | '/api/cron/cart-reminder'
     | '/api/cron/comment-dm-fallback'
+    | '/api/cron/consultant-vtb'
     | '/api/cron/ensure-webhook'
     | '/api/cron/fulfillment-reminder'
     | '/api/cron/manager-chat-prune'
@@ -1049,6 +1061,7 @@ export interface RootRouteChildren {
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronCartReminderRoute: typeof ApiCronCartReminderRoute
   ApiCronCommentDmFallbackRoute: typeof ApiCronCommentDmFallbackRoute
+  ApiCronConsultantVtbRoute: typeof ApiCronConsultantVtbRoute
   ApiCronEnsureWebhookRoute: typeof ApiCronEnsureWebhookRoute
   ApiCronFulfillmentReminderRoute: typeof ApiCronFulfillmentReminderRoute
   ApiCronManagerChatPruneRoute: typeof ApiCronManagerChatPruneRoute
@@ -1366,6 +1379,13 @@ declare module '@tanstack/react-router' {
       path: '/api/cron/comment-dm-fallback'
       fullPath: '/api/cron/comment-dm-fallback'
       preLoaderRoute: typeof ApiCronCommentDmFallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/cron/consultant-vtb': {
+      id: '/api/cron/consultant-vtb'
+      path: '/api/cron/consultant-vtb'
+      fullPath: '/api/cron/consultant-vtb'
+      preLoaderRoute: typeof ApiCronConsultantVtbRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/cron/ensure-webhook': {
@@ -1812,6 +1832,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronCartReminderRoute: ApiCronCartReminderRoute,
   ApiCronCommentDmFallbackRoute: ApiCronCommentDmFallbackRoute,
+  ApiCronConsultantVtbRoute: ApiCronConsultantVtbRoute,
   ApiCronEnsureWebhookRoute: ApiCronEnsureWebhookRoute,
   ApiCronFulfillmentReminderRoute: ApiCronFulfillmentReminderRoute,
   ApiCronManagerChatPruneRoute: ApiCronManagerChatPruneRoute,

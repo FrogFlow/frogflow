@@ -7,6 +7,7 @@ import { estimateUsdFromTokens, type SmartSearchTokenUsage } from "./smart-searc
 
 export const SMART_SEARCH_LIFETIME_KEY = "smart_search_lifetime_spend";
 export const RECEIPT_OCR_LIFETIME_KEY = "receipt_ocr_lifetime_count";
+export const CONSULTANT_LIFETIME_KEY = "consultant_lifetime_spend";
 
 /** Тариф автопроверки для клиента: $2 за 1000 чеков, которые реально ушли в Vision. */
 export const RECEIPT_OCR_USD_PER_1000 = 2;

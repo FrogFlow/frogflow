@@ -40,16 +40,76 @@ function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
   return true;
 }
 
+export const CATALOG_KEY = "consultant_catalog_json";
+export const CATALOG_META_KEY = "consultant_catalog_meta";
+export const SHOP_URL_KEY = "consultant_shop_url";
+export const SHEETS_URL_KEY = "consultant_sheets_url";
+export const DEFAULT_SHOP_URL = "https://bovi.kz";
+
+export type CatalogMeta = {
+  count: number;
+  importedAt: string;
+  source: string;
+};
+
+async function db() {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  return supabaseAdmin;
+}
+
+export async function getConsultantShopUrl(): Promise<string> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", SHOP_URL_KEY)
+    .maybeSingle();
+  const url = data?.value?.trim();
+  return url || DEFAULT_SHOP_URL;
+}
+
+export async function loadCatalogMeta(): Promise<CatalogMeta | null> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", CATALOG_META_KEY)
+    .maybeSingle();
+  if (!data?.value?.trim()) return null;
+  try {
+    return JSON.parse(data.value) as CatalogMeta;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveConsultantCatalog(
+  products: ConsultantProduct[],
+  source: string,
+): Promise<CatalogMeta> {
+  const meta: CatalogMeta = {
+    count: products.length,
+    importedAt: new Date().toISOString(),
+    source,
+  };
+  const s = await db();
+  const now = meta.importedAt;
+  await s.from("app_settings").upsert([
+    { key: CATALOG_KEY, value: JSON.stringify(products), updated_at: now },
+    { key: CATALOG_META_KEY, value: JSON.stringify(meta), updated_at: now },
+  ]);
+  return meta;
+}
+
 /**
- * Снимок прайса. Пока нет синка Sheets — читаем JSON из app_settings.
- * Пустой снимок = честный «нет в наличии», не догадка модели.
+ * Снимок прайса. Пустой = честный «нет в наличии», не догадка модели.
  */
 export async function loadConsultantCatalog(): Promise<ConsultantProduct[]> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data } = await supabaseAdmin
     .from("app_settings")
     .select("value")
-    .eq("key", "consultant_catalog_json")
+    .eq("key", CATALOG_KEY)
     .maybeSingle();
   if (!data?.value?.trim()) return [];
   try {

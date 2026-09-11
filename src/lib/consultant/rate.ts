@@ -12,7 +12,7 @@ export type StoredVtbRate = {
   updatedAt: string;
 };
 
-/** Пока cron VTB не подключён — курса нет, fallback тоже пустой. */
+/** Последний успешно сохранённый курс. Cron / ручное обновление пишут сюда. */
 export async function getStoredVtbRate(): Promise<StoredVtbRate | null> {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data } = await supabaseAdmin

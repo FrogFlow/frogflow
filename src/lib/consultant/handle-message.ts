@@ -3,11 +3,12 @@ import type { ZernioWebhookMessagePayload } from "@/lib/zernio.server";
 import { sendDirectReply } from "@/lib/direct-purchase.server";
 import { logger } from "@/lib/logger.server";
 import { runConsultantClaude } from "./claude";
-import { loadConsultantCatalog } from "./catalog";
+import { getConsultantShopUrl, loadConsultantCatalog } from "./catalog";
 import { consultantCopy, formatProductReply } from "./copy";
 import { matchCountry, matchPurchaseIntent } from "./intent";
 import { getStoredVtbRate, priceRub } from "./rate";
 import {
+  appendRecent,
   isAutomationPaused,
   isBotEcho,
   loadConsultantState,
@@ -65,6 +66,7 @@ export async function handleConsultantZernioEvent(params: {
     ...reply.patch,
     last_bot_reply: reply.text,
     last_bot_reply_at: new Date().toISOString(),
+    recent: appendRecent(consultant, text, reply.text),
   });
 }
 
@@ -117,15 +119,24 @@ export async function decideConsultantReply(
   }
 
   try {
+    const shopUrl = await getConsultantShopUrl();
     const ai = await runConsultantClaude({
       text,
       state: { ...state, ...countryPatch },
       catalog,
-      shopUrl: "https://bovi.kz",
+      shopUrl,
     });
+    if (ai.usage) {
+      const { recordConsultantLifetime } = await import("@/lib/ai-usage.server");
+      await recordConsultantLifetime(ai.usage);
+    }
 
     if (ai.error === "no_api_key") {
       return fallbackFromCatalog(text, catalog, country, countryPatch);
+    }
+
+    if (looksLikeProductQuery(text) && ai.products.length === 0 && !ai.handoff) {
+      return { text: consultantCopy.oos, patch: { ...countryPatch, last_product_ids: [] } };
     }
 
     if (ai.handoff) {

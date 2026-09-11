@@ -8,7 +8,10 @@ const KZ_RE = /казахстан|қазақстан|(^|[^a-zа-яё])kz([^a-zа
 const RU_RE = /росси[яиию]|рф|russia|(^|[^a-zа-яё])ru([^a-zа-яё]|$)|москва|питер/i;
 
 export function matchPurchaseIntent(text: string): boolean {
-  return PURCHASE_RE.test(text.trim());
+  const t = text.trim();
+  if (PURCHASE_RE.test(t)) return true;
+  if (/^давайте[.!?…]*$/i.test(t)) return true;
+  return /давайте\s+(оформ|заказ|куп|плат)/i.test(t);
 }
 
 export function matchCountry(text: string): ConsultantCountry | null {
@@ -26,6 +29,9 @@ export const FORBIDDEN_PHRASES = [
   "наверное",
   "примерно",
   "скорее всего",
+  "думаю есть",
+  "бесплатн",
+  "скидк",
 ] as const;
 
 export function containsForbiddenPhrase(text: string): boolean {

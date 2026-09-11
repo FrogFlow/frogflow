@@ -9,6 +9,7 @@ import type { ConsultantProduct } from "./catalog";
 import type { ConsultantCountry } from "./intent";
 import type { ConsultantState } from "./state";
 import { extractAnthropicUsage, type SmartSearchTokenUsage } from "@/lib/smart-search-cost";
+import { logger } from "@/lib/logger.server";
 
 export const CONSULTANT_SYSTEM_PROMPT = `ROLE
 You are the AI customer consultant for a shop in Instagram Direct.
@@ -69,9 +70,11 @@ export async function runConsultantClaude(params: {
   }
 
   const country: ConsultantCountry | undefined = params.state.country;
+  const recent = (params.state.recent ?? []).map((t) => `${t.role}: ${t.text}`).join("\n");
   const dynamic =
     `STATE country=${country ?? "unknown"} paused=${params.state.automation_paused === true}` +
     (params.shopUrl ? ` shop_url=${params.shopUrl}` : "") +
+    (recent ? `\nRECENT\n${recent}` : "") +
     `\nCUSTOMER: ${params.text}`;
 
   const messages: Array<{ role: "user" | "assistant"; content: unknown }> = [
@@ -95,7 +98,13 @@ export async function runConsultantClaude(params: {
       body: JSON.stringify({
         model: consultantModel(),
         max_tokens: 600,
-        system: CONSULTANT_SYSTEM_PROMPT,
+        system: [
+          {
+            type: "text",
+            text: CONSULTANT_SYSTEM_PROMPT,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
         tools: CONSULTANT_TOOLS,
         messages,
       }),
@@ -104,6 +113,7 @@ export async function runConsultantClaude(params: {
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
+      logger.warn("consultant.claude_http", { status: res.status, body: body.slice(0, 180) });
       return {
         text: "",
         products,
@@ -141,6 +151,13 @@ export async function runConsultantClaude(params: {
         .trim();
 
     if (toolUses.length === 0) {
+      logger.info("consultant.claude_usage", {
+        model: consultantModel(),
+        inputTokens: usage?.inputTokens ?? 0,
+        outputTokens: usage?.outputTokens ?? 0,
+        rounds: round + 1,
+        handoff,
+      });
       return { text: lastText, products, extraNumbers, handoff, usage };
     }
 

@@ -4,6 +4,8 @@ import type { ConsultantCountry } from "./intent";
 export type PauseReason = "manager_intervention" | "purchase" | "error" | "other";
 export type ConsultantConversationState = "awaiting_country" | "consulting" | "handed_off";
 
+export type ConsultantTurn = { role: "customer" | "assistant"; text: string };
+
 export type ConsultantState = {
   country?: ConsultantCountry;
   automation_paused?: boolean;
@@ -12,7 +14,23 @@ export type ConsultantState = {
   last_product_ids?: string[];
   last_bot_reply?: string;
   last_bot_reply_at?: string;
+  recent?: ConsultantTurn[];
 };
+
+const RECENT_LIMIT = 8;
+
+export function appendRecent(
+  state: ConsultantState,
+  customer: string,
+  assistant: string,
+): ConsultantTurn[] {
+  const next = [
+    ...(state.recent ?? []),
+    { role: "customer" as const, text: customer.slice(0, 500) },
+  ];
+  if (assistant.trim()) next.push({ role: "assistant", text: assistant.slice(0, 800) });
+  return next.slice(-RECENT_LIMIT);
+}
 
 const KEY = "consultant";
 

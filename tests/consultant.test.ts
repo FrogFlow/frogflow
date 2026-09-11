@@ -54,6 +54,8 @@ describe("consultant — поиск по снимку, не по памяти м
 describe("consultant — намерения", () => {
   it("покупка и менеджер — handoff", () => {
     expect(matchPurchaseIntent("давайте оформляем")).toBe(true);
+    expect(matchPurchaseIntent("давайте")).toBe(true);
+    expect(matchPurchaseIntent("давайте посмотрим другое")).toBe(false);
     expect(matchPurchaseIntent("беру, куда платить")).toBe(true);
     expect(matchPurchaseIntent("свяжите с менеджером")).toBe(true);
     expect(matchPurchaseIntent("есть полотенце 70x140?")).toBe(false);
@@ -144,5 +146,42 @@ describe("consultant — decideConsultantReply без магазинного ч�
     const res = await decideConsultantReply("есть белое полотенце?", {});
     expect(res?.text).toBe(consultantCopy.askCountry);
     expect(res?.patch.conversation_state).toBe("awaiting_country");
+  });
+});
+
+describe("consultant — импорт CSV / Sheets URL", () => {
+  it("разбирает Excel-CSV с точкой с запятой и русскими заголовками", async () => {
+    const { parseCatalogCsv } = await import("../src/lib/consultant/catalog-import");
+    const csv =
+      "Название;Размер;Цвет;Цена;Наличие\n" +
+      "Полотенце банное;70x140;белый / серый;45000;да\n" +
+      "Плед;200x220;бежевый;12000;0\n";
+    const parsed = parseCatalogCsv(csv);
+    expect(parsed.products).toHaveLength(2);
+    expect(parsed.products[0].price_kzt).toBe(45000);
+    expect(parsed.products[0].colors).toEqual(["белый", "серый"]);
+    expect(parsed.products[0].stock).toBe(true);
+    expect(parsed.products[1].stock).toBe(false);
+  });
+
+  it("строит export URL для Google Sheet", async () => {
+    const { googleSheetsCsvUrl } = await import("../src/lib/consultant/catalog-import");
+    expect(googleSheetsCsvUrl("https://docs.google.com/spreadsheets/d/abcDEF123/edit#gid=7")).toBe(
+      "https://docs.google.com/spreadsheets/d/abcDEF123/export?format=csv&gid=7",
+    );
+    expect(googleSheetsCsvUrl("https://example.com/file.csv")).toBeNull();
+  });
+});
+
+describe("consultant — разбор курса VTB", () => {
+  it("берёт JSON rate", async () => {
+    const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb");
+    expect(parseVtbBuyRate('{"rate":5.15}')).toBe(5.15);
+  });
+
+  it("достаёт покупку RUB из HTML", async () => {
+    const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb");
+    const html = `<table><tr><td>RUB</td><td>покупка</td><td>5.15</td><td>продажа</td><td>6.20</td></tr></table>`;
+    expect(parseVtbBuyRate(html)).toBe(5.15);
   });
 });
