@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { confirmToast } from "@/lib/confirm-toast";
@@ -12,6 +13,7 @@ import { useAdminLocale } from "@/lib/admin-locale";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/promo-codes")({
+  beforeLoad: ({ context }) => rejectConsultantShopPage(context),
   component: PromoCodesPage,
 });
 

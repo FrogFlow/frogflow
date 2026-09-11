@@ -286,6 +286,21 @@ export const sendInstagramConversationMessageFn = createServerFn({ method: "POST
     return sent;
   });
 
+export const resumeConsultantConversationFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ conversationId: z.string().min(1).max(200) }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdminWithModule();
+    const { currentVertical } = await import("./verticals/vertical.server");
+    const { isConsultantVertical } = await import("./verticals/registry");
+    if (!isConsultantVertical(currentVertical())) {
+      throw new Error("Только для ниши консультанта");
+    }
+    const { resumeConsultantByConversation } = await import("./consultant/state");
+    const ok = await resumeConsultantByConversation(data.conversationId);
+    if (!ok) throw new Error("Диалог не найден");
+    return { ok: true as const };
+  });
+
 export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler(async () => {
   const { listCommentAutomations } = await import("./zernio.server");
   await requireAdminWithModule();

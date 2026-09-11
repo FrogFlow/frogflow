@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { confirmToast } from "@/lib/confirm-toast";
 import { useVertical } from "@/lib/verticals/use-vertical";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -48,6 +49,7 @@ import {
 
 export const Route = createFileRoute("/admin/whatsapp")({
   beforeLoad: ({ context }) => {
+    rejectConsultantShopPage(context);
     if (!context.modules.whatsapp) throw redirect({ to: "/admin" });
   },
   component: AdminWhatsAppPage,

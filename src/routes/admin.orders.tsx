@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { confirmToast } from "@/lib/confirm-toast";
@@ -46,6 +47,7 @@ function proofKind(path: string): "image" | "pdf" | "other" {
 }
 
 export const Route = createFileRoute("/admin/orders")({
+  beforeLoad: ({ context }) => rejectConsultantShopPage(context),
   component: OrdersPage,
 });
 

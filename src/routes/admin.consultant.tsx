@@ -11,13 +11,16 @@ import {
   importConsultantCatalogFn,
   importConsultantSheetsFn,
   refreshConsultantRateFn,
+  resumeConsultantFn,
   saveConsultantShopUrlFn,
   setConsultantRateFn,
 } from "@/lib/consultant/consultant.functions";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
+import { rejectNonConsultantPage } from "@/lib/verticals/consultant-admin-guard";
 
 export const Route = createFileRoute("/admin/consultant")({
+  beforeLoad: ({ context }) => rejectNonConsultantPage(context),
   component: ConsultantPage,
 });
 
@@ -46,6 +49,10 @@ const copy: Record<
     noKey: string;
     rulesTitle: string;
     rules: string[];
+    pausedTitle: string;
+    pausedEmpty: string;
+    pausedResume: string;
+    pausedReason: Record<string, string>;
   }
 > = {
   ru: {
@@ -78,8 +85,17 @@ const copy: Record<
       "Сначала страна: Казахстан или Россия.",
       "Нет в прайсе — честный отказ, не альтернатива из головы.",
       "РФ: СДЭК, доставку бот не считает.",
-      "Покупка / менеджер — пауза. Ответ из этой админки тоже ставит паузу.",
+      "Покупка / менеджер — пауза. Ответ из Instagram Direct тоже ставит паузу. Здесь можно вернуть бота.",
     ],
+    pausedTitle: "Пауза бота",
+    pausedEmpty: "Нет диалогов на паузе.",
+    pausedResume: "Вернуть бота",
+    pausedReason: {
+      manager_intervention: "ответил менеджер",
+      purchase: "покупка",
+      error: "ошибка",
+      other: "пауза",
+    },
   },
   kk: {
     title: "Кеңесші",
@@ -108,8 +124,17 @@ const copy: Record<
       "Алдымен ел.",
       "Прайста жоқ — ашық айту.",
       "РФ: CDEK, бот жеткізуді есептемейді.",
-      "Сатып алу / менеджер — пауза.",
+      "Сатып алу / менеджер — пауза. Осы жерден ботты қайта қосуға болады.",
     ],
+    pausedTitle: "Бот паузасы",
+    pausedEmpty: "Паузадағы диалог жоқ.",
+    pausedResume: "Ботты қайтару",
+    pausedReason: {
+      manager_intervention: "менеджер жауап берді",
+      purchase: "сатып алу",
+      error: "қате",
+      other: "пауза",
+    },
   },
   en: {
     title: "Consultant",
@@ -141,8 +166,17 @@ const copy: Record<
       "Country first: Kazakhstan or Russia.",
       "Not on the list — say so, do not invent alternatives.",
       "RF: CDEK; the bot does not quote shipping.",
-      "Buy / manager pauses automation. A reply from this inbox also pauses it.",
+      "Buy / manager pauses automation. A reply from Instagram Direct also pauses it. Resume the bot here.",
     ],
+    pausedTitle: "Bot pause",
+    pausedEmpty: "No paused conversations.",
+    pausedResume: "Resume bot",
+    pausedReason: {
+      manager_intervention: "manager replied",
+      purchase: "purchase",
+      error: "error",
+      other: "paused",
+    },
   },
   uz: {
     title: "Maslahatchi",
@@ -172,8 +206,17 @@ const copy: Record<
       "Avval mamlakat.",
       "Ro‘yxatda yo‘q — ochiq aytish.",
       "RF: CDEK, bot yetkazib berishni hisoblamaydi.",
-      "Sotib olish / menejer — pauza.",
+      "Sotib olish / menejer — pauza. Botni shu yerda qayta yoqish mumkin.",
     ],
+    pausedTitle: "Bot pauzasi",
+    pausedEmpty: "Pauzadagi suhbat yo‘q.",
+    pausedResume: "Botni qaytarish",
+    pausedReason: {
+      manager_intervention: "menejer javob berdi",
+      purchase: "sotib olish",
+      error: "xato",
+      other: "pauza",
+    },
   },
 };
 
@@ -236,6 +279,14 @@ function ConsultantPage() {
     onSuccess: () => {
       toast.success("Курс записан");
       setManualRate("");
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+  const resumeBot = useMutation({
+    mutationFn: (userKey: string) => resumeConsultantFn({ data: { userKey } }),
+    onSuccess: () => {
+      toast.success(c.pausedResume);
       qc.invalidateQueries({ queryKey: ["consultant-admin"] });
     },
     onError: (e: unknown) => toast.error(errorMessage(e)),
@@ -342,6 +393,41 @@ function ConsultantPage() {
             {c.manualRate}
           </Button>
         </div>
+      </section>
+
+      <section className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="font-medium">{c.pausedTitle}</h2>
+        {(d?.paused ?? []).length === 0 ? (
+          <p className="text-sm text-muted-foreground">{c.pausedEmpty}</p>
+        ) : (
+          <ul className="space-y-2">
+            {(d?.paused ?? []).map((row) => (
+              <li
+                key={row.userKey}
+                className="flex flex-wrap items-center justify-between gap-2 text-sm"
+              >
+                <span>
+                  {row.label}
+                  <span className="text-muted-foreground">
+                    {" · "}
+                    {c.pausedReason[row.pauseReason ?? "other"] ?? c.pausedReason.other}
+                    {" · "}
+                    {formatWhen(row.updatedAt, locale)}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={resumeBot.isPending}
+                  onClick={() => resumeBot.mutate(row.userKey)}
+                >
+                  {c.pausedResume}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="bg-card border rounded-lg p-4 space-y-2">

@@ -5,6 +5,7 @@ import {
   matchCountry,
   matchPurchaseIntent,
   containsForbiddenPhrase,
+  looksLikeProductQuery,
 } from "../src/lib/consultant/intent";
 import { validateConsultantReply } from "../src/lib/consultant/validate";
 import { presentCard } from "../src/lib/consultant/tools";
@@ -66,6 +67,14 @@ describe("consultant — намерения", () => {
     expect(matchCountry("я из России")).toBe("RU");
     expect(matchCountry("полотенце")).toBeNull();
   });
+
+  it("запрос товара vs приветствие и страна", () => {
+    expect(looksLikeProductQuery("есть белое полотенце?")).toBe(true);
+    expect(looksLikeProductQuery("70x140 белый")).toBe(true);
+    expect(looksLikeProductQuery("я из России")).toBe(false);
+    expect(looksLikeProductQuery("привет")).toBe(false);
+    expect(looksLikeProductQuery("оформляем")).toBe(false);
+  });
 });
 
 describe("consultant — валидатор ответа", () => {
@@ -81,6 +90,18 @@ describe("consultant — валидатор ответа", () => {
 
   it("пустой ответ не отправляем", () => {
     expect(validateConsultantReply("   ", []).ok).toBe(false);
+  });
+
+  it("режет выдуманную стоимость доставки", () => {
+    expect(validateConsultantReply("Доставка стоит 1500 ₽, СДЭК", [towel]).ok).toBe(false);
+    expect(
+      validateConsultantReply("Доставка по России — СДЭК, за счёт покупателя.", [towel]).ok,
+    ).toBe(true);
+  });
+
+  it("режет цвет, которого не было в карточке", () => {
+    expect(validateConsultantReply("Есть в розовом цвете, цена 45 000", [towel]).ok).toBe(false);
+    expect(validateConsultantReply("Есть в белом цвете, цена 45 000", [towel]).ok).toBe(true);
   });
 });
 

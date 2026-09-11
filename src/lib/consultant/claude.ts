@@ -29,6 +29,12 @@ Do not list the whole assortment. If they ask for the full catalog, give the sho
 HUMAN HANDOFF
 When the customer confirms a purchase, asks to pay, or asks for a manager, call handoff_to_manager. After handoff, do not continue the sale.
 
+SHIPPING
+For Russia mention СДЭК and that the buyer pays. Never quote a shipping price, estimate, or «примерно».
+
+COLORS
+Mention only colors returned by tools. If the requested color is missing, say it is unavailable.
+
 PAUSE
 If automation is paused, produce no customer-facing answer.`;
 
@@ -56,6 +62,7 @@ export async function runConsultantClaude(params: {
   state: ConsultantState;
   catalog?: ConsultantProduct[];
   shopUrl?: string;
+  forceTools?: boolean;
 }): Promise<ClaudeTurnResult> {
   const apiKey = consultantApiKey();
   if (!apiKey) {
@@ -107,6 +114,7 @@ export async function runConsultantClaude(params: {
         ],
         tools: CONSULTANT_TOOLS,
         messages,
+        ...(params.forceTools && round === 0 ? { tool_choice: { type: "any" } } : {}),
       }),
       signal: AbortSignal.timeout(CONSULTANT_AI_TIMEOUT_MS),
     });

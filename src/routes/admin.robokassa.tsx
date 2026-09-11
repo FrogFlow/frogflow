@@ -18,10 +18,12 @@ import {
 } from "@/lib/settings.functions";
 import { useAdminLocale } from "@/lib/admin-locale";
 import { useVertical } from "@/lib/verticals/use-vertical";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/robokassa")({
   beforeLoad: ({ context }) => {
+    rejectConsultantShopPage(context);
     if (!context.modules.robokassa) throw redirect({ to: "/admin" });
   },
   component: RobokassaPage,

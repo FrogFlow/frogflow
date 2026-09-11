@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, Link, redirect } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAdminLocale } from "@/lib/admin-locale";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { getSettings } from "@/lib/settings.functions";
 import type { Locale } from "@/lib/i18n";
 
@@ -46,6 +47,7 @@ const copy: Record<
 
 export const Route = createFileRoute("/admin/vip")({
   beforeLoad: ({ context }) => {
+    rejectConsultantShopPage(context);
     if (!context.modules.vip) throw redirect({ to: "/admin" });
   },
   component: AdminVipLayout,

@@ -48,6 +48,7 @@ import {
   resolveZernioPostIdFn,
   getCommentAutomationSettingsFn,
   setCommentAutomationSettingsFn,
+  resumeConsultantConversationFn,
 } from "@/lib/instagram.functions";
 import {
   Select,
@@ -1883,7 +1884,7 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
 
 function AdminInstagramPage() {
   const { locale } = useAdminLocale();
-  const { isPhysicalShop } = useVertical();
+  const { isPhysicalShop, isConsultant } = useVertical();
   const tr = copy[locale];
   const qc = useQueryClient();
 
@@ -2092,6 +2093,18 @@ function AdminInstagramPage() {
         queryKey: ["ig_conversation_messages", acc._id, selectedConversationId],
       });
       qc.invalidateQueries({ queryKey: ["ig_conversations", acc._id] });
+    } catch (e: unknown) {
+      setStatusMsg(tr.postActionErrorMsg(errorMessage(e)));
+    }
+  };
+
+  const handleResumeConsultant = async () => {
+    if (!selectedConversationId) return;
+    try {
+      await resumeConsultantConversationFn({
+        data: { conversationId: selectedConversationId },
+      });
+      setStatusMsg("Бот снова отвечает в этом диалоге.");
     } catch (e: unknown) {
       setStatusMsg(tr.postActionErrorMsg(errorMessage(e)));
     }
@@ -3947,6 +3960,16 @@ function AdminInstagramPage() {
                         Отправить
                       </Button>
                     </div>
+                    {isConsultant && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResumeConsultant}
+                      >
+                        Вернуть бота
+                      </Button>
+                    )}
                   </>
                 )}
               </div>

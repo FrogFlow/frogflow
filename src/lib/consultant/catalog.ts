@@ -83,6 +83,43 @@ export async function loadCatalogMeta(): Promise<CatalogMeta | null> {
   }
 }
 
+export type SheetsImportResult =
+  { ok: true; meta: CatalogMeta; skipped: number } | { ok: false; reason: string };
+
+export async function importCatalogFromSheetsUrl(url: string): Promise<SheetsImportResult> {
+  const { googleSheetsCsvUrl, parseCatalogCsv } = await import("./catalog-import");
+  const csvUrl = googleSheetsCsvUrl(url);
+  if (!csvUrl) return { ok: false, reason: "bad_url" };
+  const res = await fetch(csvUrl, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) return { ok: false, reason: `http_${res.status}` };
+  const csv = await res.text();
+  const parsed = parseCatalogCsv(csv);
+  if (parsed.products.length === 0) {
+    return { ok: false, reason: parsed.errors[0]?.message || "empty" };
+  }
+  const s = await db();
+  await s.from("app_settings").upsert({
+    key: SHEETS_URL_KEY,
+    value: url,
+    updated_at: new Date().toISOString(),
+  });
+  const meta = await saveConsultantCatalog(parsed.products, "google_sheets");
+  return { ok: true, meta, skipped: parsed.errors.length };
+}
+
+/** Крон: если ссылка на таблицу сохранена — обновить снимок. */
+export async function refreshCatalogFromSavedSheet(): Promise<SheetsImportResult> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", SHEETS_URL_KEY)
+    .maybeSingle();
+  const url = data?.value?.trim();
+  if (!url) return { ok: false, reason: "no_sheets_url" };
+  return importCatalogFromSheetsUrl(url);
+}
+
 export async function saveConsultantCatalog(
   products: ConsultantProduct[],
   source: string,

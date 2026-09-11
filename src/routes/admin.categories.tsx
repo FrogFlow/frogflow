@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components-ui/button";
@@ -28,6 +29,7 @@ import { useModules } from "@/lib/modules/use-modules";
 import { useVertical } from "@/lib/verticals/use-vertical";
 
 export const Route = createFileRoute("/admin/categories")({
+  beforeLoad: ({ context }) => rejectConsultantShopPage(context),
   component: CategoriesPage,
 });
 

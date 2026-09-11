@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
 import {
@@ -16,6 +17,7 @@ import { useVertical } from "@/lib/verticals/use-vertical";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/analytics")({
+  beforeLoad: ({ context }) => rejectConsultantShopPage(context),
   component: AnalyticsPage,
 });
 

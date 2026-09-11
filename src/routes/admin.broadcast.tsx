@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { toast } from "sonner";
 import { errorMessage } from "@/lib/error-message";
 import { confirmToast } from "@/lib/confirm-toast";
@@ -36,6 +37,7 @@ import { useModules } from "@/lib/modules/use-modules";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/broadcast")({
+  beforeLoad: ({ context }) => rejectConsultantShopPage(context),
   component: BroadcastPage,
 });
 

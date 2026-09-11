@@ -38,3 +38,27 @@ export function containsForbiddenPhrase(text: string): boolean {
   const lower = text.toLowerCase();
   return FORBIDDEN_PHRASES.some((p) => lower.includes(p));
 }
+
+const GREETING_RE = /^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай)[.!?…]*$/i;
+
+/**
+ * После страны почти любой осмысленный текст — про товар.
+ * «я из России» / «привет» не считаем запросом в прайс.
+ */
+export function looksLikeProductQuery(text: string): boolean {
+  const t = text.trim();
+  if (!t || GREETING_RE.test(t)) return false;
+  if (matchPurchaseIntent(t)) return false;
+  const country = matchCountry(t);
+  if (country) {
+    const leftover = t
+      .replace(KZ_RE, " ")
+      .replace(RU_RE, " ")
+      .replace(/я\s+из|из|страна|мы\s+из/gi, " ")
+      .replace(/[.!?…,]/g, " ")
+      .trim();
+    const tokens = leftover.split(/\s+/).filter((w) => w.length > 1);
+    if (tokens.length === 0) return false;
+  }
+  return true;
+}

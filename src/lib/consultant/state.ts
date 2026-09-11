@@ -102,6 +102,85 @@ export async function pauseConsultantByConversation(
   return true;
 }
 
+export async function resumeConsultant(userKey: string): Promise<ConsultantState> {
+  const { raw, consultant } = await loadConsultantState(userKey);
+  const next: ConsultantState = {
+    ...consultant,
+    automation_paused: false,
+    conversation_state: consultant.country ? "consulting" : "awaiting_country",
+  };
+  delete next.pause_reason;
+  const s = await db();
+  await s
+    .from("bot_users")
+    .update({
+      state: { ...raw, [KEY]: next } as unknown as Json,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_key", userKey);
+  return next;
+}
+
+export async function resumeConsultantByConversation(conversationId: string): Promise<boolean> {
+  const s = await db();
+  const { data } = await s
+    .from("bot_users")
+    .select("user_key")
+    .eq("zernio_conversation_id", conversationId)
+    .maybeSingle();
+  if (!data?.user_key) return false;
+  await resumeConsultant(data.user_key);
+  return true;
+}
+
+export type PausedConsultation = {
+  userKey: string;
+  label: string;
+  conversationId: string | null;
+  platform: string;
+  pauseReason: PauseReason | undefined;
+  updatedAt: string;
+};
+
+function displayLabel(row: {
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  user_key: string;
+}): string {
+  if (row.username) return `@${row.username}`;
+  const name = [row.first_name, row.last_name].filter(Boolean).join(" ");
+  return name || row.user_key;
+}
+
+/** Недавние диалоги с паузой — оператор может вернуть бота. */
+export async function listPausedConsultations(limit = 40): Promise<PausedConsultation[]> {
+  const s = await db();
+  const { data } = await s
+    .from("bot_users")
+    .select(
+      "user_key, username, first_name, last_name, platform, zernio_conversation_id, updated_at, state",
+    )
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  return (data ?? [])
+    .flatMap((row) => {
+      const consultant = readConsultantState(row.state);
+      if (!isAutomationPaused(consultant)) return [];
+      return [
+        {
+          userKey: row.user_key,
+          label: displayLabel(row),
+          conversationId: row.zernio_conversation_id,
+          platform: row.platform,
+          pauseReason: consultant.pause_reason,
+          updatedAt: row.updated_at,
+        },
+      ];
+    })
+    .slice(0, limit);
+}
+
 export function isAutomationPaused(state: ConsultantState): boolean {
   return state.automation_paused === true;
 }

@@ -5,7 +5,7 @@ import { logger } from "@/lib/logger.server";
 import { runConsultantClaude } from "./claude";
 import { getConsultantShopUrl, loadConsultantCatalog } from "./catalog";
 import { consultantCopy, formatProductReply } from "./copy";
-import { matchCountry, matchPurchaseIntent } from "./intent";
+import { looksLikeProductQuery, matchCountry, matchPurchaseIntent } from "./intent";
 import { getStoredVtbRate, priceRub } from "./rate";
 import {
   appendRecent,
@@ -125,6 +125,7 @@ export async function decideConsultantReply(
       state: { ...state, ...countryPatch },
       catalog,
       shopUrl,
+      forceTools: looksLikeProductQuery(text),
     });
     if (ai.usage) {
       const { recordConsultantLifetime } = await import("@/lib/ai-usage.server");
@@ -197,10 +198,6 @@ export async function decideConsultantReply(
       },
     };
   }
-}
-
-function looksLikeProductQuery(text: string): boolean {
-  return text.trim().split(/\s+/).length > 2 || /\d/.test(text);
 }
 
 function fallbackFromCatalog(
