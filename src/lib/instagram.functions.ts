@@ -274,7 +274,16 @@ export const sendInstagramConversationMessageFn = createServerFn({ method: "POST
   .handler(async ({ data }) => {
     const { sendZernioInboxMessage } = await import("./zernio.server");
     await requireAdminWithModule();
-    return await sendZernioInboxMessage(data.conversationId, data.accountId, data.message);
+    const sent = await sendZernioInboxMessage(data.conversationId, data.accountId, data.message);
+    if (sent.ok) {
+      const { currentVertical } = await import("./verticals/vertical.server");
+      const { isConsultantVertical } = await import("./verticals/registry");
+      if (isConsultantVertical(currentVertical())) {
+        const { pauseConsultantByConversation } = await import("./consultant/state");
+        await pauseConsultantByConversation(data.conversationId, "manager_intervention");
+      }
+    }
+    return sent;
   });
 
 export const getInstagramDashboardFn = createServerFn({ method: "GET" }).handler(async () => {

@@ -24,7 +24,7 @@ const copy: Record<
   ru: {
     title: "Консультант",
     intro:
-      "Основа ниши: каталог из таблицы, курс VTB и правила диалога. Живые интеграции подключим следующим шагом — сейчас только каркас.",
+      "Claude — консультант, не касса и не «бот, который знает магазин». Цены и остатки только из backend/tools. Каталог и курс VTB подключим следующим шагом.",
     catalogTitle: "Каталог из Google Sheets",
     catalogBody:
       "Ежедневный Excel/CSV менеджера → таблица → бот отвечает только тем, что есть в прайсе. Цены и остатки модель не выдумывает.",
@@ -47,7 +47,7 @@ const copy: Record<
   kk: {
     title: "Кеңесші",
     intro:
-      "Ниша негізі: кесте каталогы, VTB бағамы және диалог ережелері. Нақты интеграциялар келесі қадамда — қазір тек қаңқа.",
+      "Claude — кеңесші, касса емес. Баға мен қор тек backend/tools арқылы. Каталог пен VTB курсы — келесі қадам.",
     catalogTitle: "Google Sheets каталогы",
     catalogBody:
       "Менеджердің күнделікті Excel/CSV → кесте → бот тек прайстағыны айтады. Баға мен қорды модель ойлап шығармайды.",
@@ -70,7 +70,7 @@ const copy: Record<
   en: {
     title: "Consultant",
     intro:
-      "Foundation: sheet catalog, VTB rate, and dialog rules. Live integrations come next — this is the skeleton only.",
+      "Claude is a consultant, not a checkout bot. Prices and stock come from backend tools only. Sheet catalog and VTB rate come next.",
     catalogTitle: "Catalog from Google Sheets",
     catalogBody:
       "Manager’s daily Excel/CSV → sheet → the bot answers only from the price list. The model must not invent prices or stock.",
@@ -93,7 +93,7 @@ const copy: Record<
   uz: {
     title: "Maslahatchi",
     intro:
-      "Asos: jadval katalogi, VTB kursi va dialog qoidalari. Jonli integratsiyalar keyin — hozir faqat qobiq.",
+      "Claude — maslahatchi, kassa emas. Narx va qoldiq faqat backend/tools orqali. Katalog va VTB kursi — keyingi qadam.",
     catalogTitle: "Google Sheets katalogi",
     catalogBody:
       "Menejerning kunlik Excel/CSV → jadval → bot faqat narxlar ro‘yxatidan javob beradi. Model narx va qoldiqni o‘ylab topmaydi.",

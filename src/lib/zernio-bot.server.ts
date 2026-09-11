@@ -1401,6 +1401,26 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     platform,
   );
 
+  /**
+   * Ниша consultant — не магазин в Direct. Claude + tools, без корзины и чекаута.
+   * Магазинный поток ниже (язык, handlePurchaseFlow, «передал продавцу») сюда
+   * не должен заходить: иначе консультант превращается обратно в бота-кассу.
+   */
+  const { isConsultantVertical } = await import("./verticals/registry");
+  const { currentVertical } = await import("./verticals/vertical.server");
+  if (isConsultantVertical(currentVertical())) {
+    const { handleConsultantZernioEvent } = await import("./consultant/handle-message");
+    await handleConsultantZernioEvent({
+      payload,
+      conversationId,
+      accountId,
+      userKey: user.user_key,
+      text,
+      platform,
+    });
+    return;
+  }
+
   // A CMD button in a Zernio automation carries its command in the postback
   // payload, while `message.text` contains the visible label (for example,
   // «купить»). Instagram always shows that label in the chat — the command
