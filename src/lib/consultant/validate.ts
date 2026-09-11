@@ -1,12 +1,12 @@
 import { containsForbiddenPhrase } from "./intent";
 import type { ConsultantProduct } from "./catalog";
+import { foldText } from "./synonyms";
 
 const PRICE_TOKEN_RE = /\d[\d\s]{2,}/g;
 
 const SHIPPING_QUOTE_RE =
   /стоимост[ьи]\s+доставк|доставк\w{0,8}\s+\d|доставка\s+(стоит|обойд|составит|будет\s+\d)|рассчита\w*\s+доставк|доставка\s+\d/i;
 
-/** Основы цветов — ловим «розовом», не только «розовый». */
 const COLOR_STEMS = [
   "бел",
   "сер",
@@ -56,15 +56,11 @@ export function collectKnownFacts(
     facts.add(p.size);
     for (const c of p.colors) facts.add(c.toLowerCase());
     facts.add(p.name.toLowerCase());
+    facts.add(foldText(p.name));
   }
   return facts;
 }
 
-/**
- * Не отправляем ответ, если модель вставила число, которого не было в tools.
- * Короткие числа (размер 70, 140) пропускаем, если они есть в фактах или < 1000
- * и похожи на размер — иначе режем любой «похожий на цену» токен ≥ 1000.
- */
 export function replyUsesUnknownPrice(text: string, known: Set<string>): boolean {
   const tokens = text.match(PRICE_TOKEN_RE) ?? [];
   for (const raw of tokens) {
@@ -96,6 +92,23 @@ export function replyUsesUnknownColor(text: string, known: Set<string>): boolean
   return false;
 }
 
+export function replyUsesUnknownProductName(text: string, products: ConsultantProduct[]): boolean {
+  if (products.length === 0) return false;
+  const hay = foldText(products.map((p) => p.name).join(" "));
+  const quoted = text.match(/«([^»]+)»|"([^"]+)"/g) ?? [];
+  for (const q of quoted) {
+    const inner = foldText(q.replace(/[«»"]/g, ""));
+    if (inner.length > 3 && !hay.includes(inner)) return true;
+  }
+  return false;
+}
+
+export function replyInventedInStock(text: string, products: ConsultantProduct[]): boolean {
+  if (!/есть в наличии|в наличии/i.test(text)) return false;
+  if (products.length === 0) return true;
+  return products.every((p) => !p.stock);
+}
+
 export function validateConsultantReply(
   text: string,
   knownProducts: ConsultantProduct[],
@@ -103,14 +116,15 @@ export function validateConsultantReply(
 ): { ok: true } | { ok: false; reason: string } {
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, reason: "empty" };
+  if (trimmed.length > 900) return { ok: false, reason: "too_long" };
   if (containsForbiddenPhrase(trimmed)) return { ok: false, reason: "forbidden_phrase" };
   if (replyQuotesShippingCost(trimmed)) return { ok: false, reason: "shipping_quote" };
   const known = collectKnownFacts(knownProducts, extraNumbers);
-  if (replyUsesUnknownPrice(trimmed, known)) {
-    return { ok: false, reason: "unknown_price" };
+  if (replyUsesUnknownPrice(trimmed, known)) return { ok: false, reason: "unknown_price" };
+  if (replyUsesUnknownColor(trimmed, known)) return { ok: false, reason: "unknown_color" };
+  if (replyUsesUnknownProductName(trimmed, knownProducts)) {
+    return { ok: false, reason: "unknown_product" };
   }
-  if (replyUsesUnknownColor(trimmed, known)) {
-    return { ok: false, reason: "unknown_color" };
-  }
+  if (replyInventedInStock(trimmed, knownProducts)) return { ok: false, reason: "unknown_stock" };
   return { ok: true };
 }

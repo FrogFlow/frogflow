@@ -17,6 +17,11 @@ export const Route = createFileRoute("/api/cron/cart-reminder")({
         if (!isCronAuthorized(request)) {
           return new Response("Unauthorized", { status: 401 });
         }
+        const { isConsultantVertical } = await import("@/lib/verticals/registry");
+        const { currentVertical } = await import("@/lib/verticals/vertical.server");
+        if (isConsultantVertical(currentVertical())) {
+          return Response.json({ ok: true, skipped: "consultant_vertical" });
+        }
         try {
           const result = await sendAbandonedCartReminders();
           return Response.json({ ok: true, ...result });

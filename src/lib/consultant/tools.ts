@@ -39,6 +39,12 @@ export const CONSULTANT_TOOLS = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "get_catalog_link",
+    description:
+      "Return the configured full-catalog site URL. Use when the customer asks for the whole assortment, photos or the website.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
     name: "handoff_to_manager",
     description:
       "Call when the customer wants to buy, pay, or talk to a manager, or when you cannot answer from tools. After this, automation pauses.",
@@ -65,7 +71,7 @@ export function presentCard(
 export async function executeConsultantTool(
   name: string,
   input: Record<string, unknown>,
-  ctx: { country?: ConsultantCountry; catalog?: ConsultantProduct[] },
+  ctx: { country?: ConsultantCountry; catalog?: ConsultantProduct[]; shopUrl?: string },
 ): Promise<{ result: unknown; products: ConsultantProduct[]; handoff: boolean }> {
   const rateRow = await getStoredVtbRate();
   const rate = rateRow?.rate ?? null;
@@ -101,6 +107,11 @@ export async function executeConsultantTool(
       products: [],
       handoff: false,
     };
+  }
+
+  if (name === "get_catalog_link") {
+    const url = ctx.shopUrl || (await import("./catalog")).DEFAULT_SHOP_URL;
+    return { result: { url }, products: [], handoff: false };
   }
 
   if (name === "handoff_to_manager") {

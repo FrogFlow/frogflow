@@ -66,6 +66,11 @@ export async function runCommentDmFallback(): Promise<{
   sent: number;
   failed: number;
 }> {
+  const { isConsultantVertical } = await import("./verticals/registry");
+  const { currentVertical } = await import("./verticals/vertical.server");
+  if (isConsultantVertical(currentVertical())) {
+    return { automationsChecked: 0, commentsChecked: 0, sent: 0, failed: 0 };
+  }
   const { hasModule } = await import("./modules/modules.server");
   if (!(await hasModule("instagram"))) {
     return { automationsChecked: 0, commentsChecked: 0, sent: 0, failed: 0 };

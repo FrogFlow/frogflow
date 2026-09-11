@@ -1417,6 +1417,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
       userKey: user.user_key,
       text,
       platform,
+      postback: postbackPayload,
     });
     return;
   }

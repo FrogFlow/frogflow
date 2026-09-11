@@ -1,3 +1,5 @@
+import { expandToken, foldText, haystackOf, tokenizeQuery } from "./synonyms";
+
 /**
  * Нормализованная карточка. Claude видит только результаты search/get,
  * не весь прайс и не «память» модели.
@@ -20,21 +22,13 @@ export type ProductSearchQuery = {
   color?: string;
 };
 
-function normalize(value: string): string {
-  return value.trim().toLowerCase().replace(/×/g, "x").replace(/\s+/g, " ");
-}
-
 function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
-  if (q.category && normalize(product.category) !== normalize(q.category)) return false;
-  if (q.size && normalize(product.size) !== normalize(q.size)) return false;
-  if (q.color && !product.colors.some((c) => normalize(c) === normalize(q.color!))) return false;
+  const hay = haystackOf([product.name, product.category, product.size, product.colors.join(" ")]);
+  if (q.category && !hay.includes(expandToken(q.category))) return false;
+  if (q.size && !foldText(product.size).includes(foldText(q.size))) return false;
+  if (q.color && !hay.includes(expandToken(q.color))) return false;
   if (q.query) {
-    const hay = normalize(
-      [product.name, product.category, product.size, product.colors.join(" ")].join(" "),
-    );
-    const tokens = normalize(q.query)
-      .split(" ")
-      .filter((t) => t.length > 1);
+    const tokens = tokenizeQuery(q.query);
     if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) return false;
   }
   return true;

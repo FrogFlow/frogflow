@@ -5404,6 +5404,32 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
   if (!ownerPendingInvoiceId && (await replyIfPaused(chat_id))) return;
   const user = await upsertUser(from);
   if (!user) return;
+  {
+    const { isConsultantVertical } = await import("./verticals/registry");
+    const { currentVertical } = await import("./verticals/vertical.server");
+    if (isConsultantVertical(currentVertical()) && msg.text && !msg.text.startsWith("/id")) {
+      const { decideConsultantReply } = await import("./consultant/handle-message");
+      const { loadConsultantState, patchConsultantState, appendRecent } =
+        await import("./consultant/state");
+      const userKey = `tg_${from.id}`;
+      const { consultant } = await loadConsultantState(userKey);
+      if (!consultant.automation_paused) {
+        const reply = await decideConsultantReply(msg.text, consultant, {
+          userKey,
+        });
+        if (reply) {
+          await tg("sendMessage", { chat_id, text: reply.text });
+          await patchConsultantState(userKey, {
+            ...reply.patch,
+            last_bot_reply: reply.text,
+            last_bot_reply_at: new Date().toISOString(),
+            recent: appendRecent(consultant, msg.text, reply.text),
+          });
+        }
+      }
+      return;
+    }
+  }
   const locale: Locale = user.state?.locale ?? "ru";
   const m = copy[locale];
 

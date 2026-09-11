@@ -4,6 +4,7 @@ import { isCronAuthorized } from "@/lib/cron-auth.server";
 import { currentVertical } from "@/lib/verticals/vertical.server";
 import { isConsultantVertical } from "@/lib/verticals/registry";
 import { refreshCatalogFromSavedSheet } from "@/lib/consultant/catalog";
+import { pollOutgoingManagerMessages } from "@/lib/consultant/outgoing-poll";
 import { refreshVtbRate } from "@/lib/consultant/vtb";
 
 /**
@@ -24,11 +25,12 @@ export const Route = createFileRoute("/api/cron/consultant-vtb")({
           return Response.json({ ok: true, skipped: "not_consultant" });
         }
         try {
-          const [rate, catalog] = await Promise.all([
+          const [rate, catalog, outgoing] = await Promise.all([
             refreshVtbRate(),
             refreshCatalogFromSavedSheet(),
+            pollOutgoingManagerMessages().catch(() => ({ checked: 0, paused: 0 })),
           ]);
-          return Response.json({ rate, catalog });
+          return Response.json({ rate, catalog, outgoing });
         } catch (e: unknown) {
           console.error("[cron/consultant-vtb]", e);
           return Response.json({ ok: false, error: errorMessage(e) }, { status: 500 });

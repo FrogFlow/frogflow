@@ -9,11 +9,15 @@ import { useAdminLocale } from "@/lib/admin-locale";
 import {
   getConsultantAdminFn,
   importConsultantCatalogFn,
+  importConsultantDriveFn,
   importConsultantSheetsFn,
   refreshConsultantRateFn,
   resumeConsultantFn,
+  saveConsultantAbFn,
+  saveConsultantChecklistFn,
   saveConsultantShopUrlFn,
   setConsultantRateFn,
+  setConsultantTaskDoneFn,
 } from "@/lib/consultant/consultant.functions";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
@@ -233,6 +237,7 @@ function ConsultantPage() {
   const qc = useQueryClient();
   const data = useQuery({ queryKey: ["consultant-admin"], queryFn: () => getConsultantAdminFn() });
   const [sheetsUrl, setSheetsUrl] = useState("");
+  const [driveUrl, setDriveUrl] = useState("");
   const [shopUrl, setShopUrl] = useState("");
   const [manualRate, setManualRate] = useState("");
 
@@ -242,6 +247,23 @@ function ConsultantPage() {
 
   const importCsv = useMutation({
     mutationFn: (csv: string) => importConsultantCatalogFn({ data: { csv, source: "csv" } }),
+    onSuccess: (res) => {
+      toast.success(`${res.meta.count} позиций`);
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+  const importXlsx = useMutation({
+    mutationFn: (xlsxBase64: string) =>
+      importConsultantCatalogFn({ data: { xlsxBase64, source: "xlsx" } }),
+    onSuccess: (res) => {
+      toast.success(`${res.meta.count} позиций`);
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+  const importDrive = useMutation({
+    mutationFn: () => importConsultantDriveFn({ data: { url: driveUrl || d?.driveUrl || "" } }),
     onSuccess: (res) => {
       toast.success(`${res.meta.count} позиций`);
       qc.invalidateQueries({ queryKey: ["consultant-admin"] });
@@ -291,6 +313,19 @@ function ConsultantPage() {
     },
     onError: (e: unknown) => toast.error(errorMessage(e)),
   });
+  const saveAb = useMutation({
+    mutationFn: (bucket: "a" | "b" | "split") => saveConsultantAbFn({ data: { bucket } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["consultant-admin"] }),
+  });
+  const toggleTask = useMutation({
+    mutationFn: (p: { id: string; done: boolean }) => setConsultantTaskDoneFn({ data: p }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["consultant-admin"] }),
+  });
+  const saveChecks = useMutation({
+    mutationFn: (checklist: Record<string, boolean>) =>
+      saveConsultantChecklistFn({ data: { checklist } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["consultant-admin"] }),
+  });
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -317,11 +352,20 @@ function ConsultantPage() {
           <Label>{c.uploadLabel}</Label>
           <Input
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
-              importCsv.mutate(await file.text());
+              if (/\.xlsx$/i.test(file.name)) {
+                const buf = new Uint8Array(await file.arrayBuffer());
+                let binary = "";
+                buf.forEach((b) => {
+                  binary += String.fromCharCode(b);
+                });
+                importXlsx.mutate(btoa(binary));
+              } else {
+                importCsv.mutate(await file.text());
+              }
               e.target.value = "";
             }}
           />
@@ -344,6 +388,34 @@ function ConsultantPage() {
             </Button>
           </div>
         </div>
+        <div className="space-y-1">
+          <Label>Google Drive (файл или папка)</Label>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              value={driveUrl || d?.driveUrl || ""}
+              onChange={(e) => setDriveUrl(e.target.value)}
+              placeholder="https://drive.google.com/…"
+              className="flex-1 min-w-[16rem]"
+            />
+            <Button
+              type="button"
+              onClick={() => importDrive.mutate()}
+              disabled={importDrive.isPending}
+            >
+              Загрузить с Drive
+            </Button>
+          </div>
+        </div>
+        {(d?.preview ?? []).length > 0 && (
+          <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-auto">
+            {d!.preview.map((p) => (
+              <li key={p.id}>
+                {p.name} · {p.size} · {p.colors.join("/")} · {p.price_kzt} ₸ ·{" "}
+                {p.stock ? "есть" : "нет"}
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="space-y-1">
           <Label>{c.shopLabel}</Label>
           <div className="flex flex-wrap gap-2">
@@ -369,6 +441,8 @@ function ConsultantPage() {
         <p className="text-sm text-muted-foreground">{c.rateBody}</p>
         <p className="text-sm">
           {d?.rate ? c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale)) : c.rateEmpty}
+          {d?.rateMissing ? " · курса нет — для РФ бот не назовёт ₽" : ""}
+          {d?.rateStale ? " · курс старше 2 часов" : ""}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -428,6 +502,98 @@ function ConsultantPage() {
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="bg-card border rounded-lg p-4 space-y-2">
+        <h2 className="font-medium">Клиенты</h2>
+        <ul className="text-sm space-y-1">
+          {(d?.customers ?? []).slice(0, 15).map((row) => (
+            <li key={row.userKey}>
+              {row.label} · {row.country ?? "—"} · {row.conversationState ?? "—"}
+              {row.paused ? " · пауза" : ""}
+            </li>
+          ))}
+          {(d?.customers ?? []).length === 0 && (
+            <li className="text-muted-foreground">Пока нет диалогов консультанта.</li>
+          )}
+        </ul>
+      </section>
+
+      <section className="bg-card border rounded-lg p-4 space-y-2">
+        <h2 className="font-medium">Задачи менеджеру</h2>
+        <ul className="space-y-2 text-sm">
+          {(d?.tasks ?? []).map((task) => (
+            <li key={task.id} className="flex items-start justify-between gap-2">
+              <span>
+                {task.userKey}: {task.reason} — {task.text}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => toggleTask.mutate({ id: task.id, done: !task.done })}
+              >
+                {task.done ? "Вернуть" : "Сделано"}
+              </Button>
+            </li>
+          ))}
+          {(d?.tasks ?? []).length === 0 && <li className="text-muted-foreground">Задач нет.</li>}
+        </ul>
+      </section>
+
+      <section className="bg-card border rounded-lg p-4 space-y-2">
+        <h2 className="font-medium">Аналитика вопросов</h2>
+        <p className="text-sm text-muted-foreground">
+          Всего {d?.analytics.total ?? 0}. Часто нет в наличии:{" "}
+          {(d?.analytics.frequentOos ?? []).map((x) => `${x.text} (${x.count})`).join("; ") || "—"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          API Claude отдельно от абонентки 15 000 ₸. Модель {d?.model}. {d?.spend.usdLabel}
+        </p>
+      </section>
+
+      <section className="bg-card border rounded-lg p-4 space-y-2">
+        <h2 className="font-medium">A/B формулировок</h2>
+        <div className="flex gap-2">
+          {(["split", "a", "b"] as const).map((bucket) => (
+            <Button
+              key={bucket}
+              type="button"
+              size="sm"
+              variant={d?.ab === bucket ? "default" : "outline"}
+              onClick={() => saveAb.mutate(bucket)}
+            >
+              {bucket}
+            </Button>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          A — дословное ТЗ. B — короткий сухой вариант.
+        </p>
+      </section>
+
+      <section className="bg-card border rounded-lg p-4 space-y-2">
+        <h2 className="font-medium">Приёмка</h2>
+        <p className="text-xs text-muted-foreground">{d?.oneCNote}</p>
+        <p className="text-xs text-muted-foreground">{d?.paymentNote}</p>
+        {[
+          ["ig_live", "Реальный Instagram проверен"],
+          ["catalog_live", "Реальный ассортимент BOVI прогнан"],
+          ["manager_inbox", "Пауза из Inbox проверена"],
+          ["manager_app", "Пауза из приложения Instagram проверена"],
+          ["demo", "Демонстрация клиенту пройдена"],
+        ].map(([id, label]) => (
+          <label key={id} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(d?.checklist[id])}
+              onChange={(e) =>
+                saveChecks.mutate({ ...(d?.checklist ?? {}), [id]: e.target.checked })
+              }
+            />
+            {label}
+          </label>
+        ))}
       </section>
 
       <section className="bg-card border rounded-lg p-4 space-y-2">

@@ -25,6 +25,11 @@ export function matchCountry(text: string): ConsultantCountry | null {
 
 export const FORBIDDEN_PHRASES = [
   "отлично",
+  "прекрасный выбор",
+  "прекрасный",
+  "замечательно",
+  "будем рады помочь",
+  "передаю ваш диалог менеджеру",
   "передаю менеджеру",
   "наверное",
   "примерно",
@@ -61,4 +66,23 @@ export function looksLikeProductQuery(text: string): boolean {
     if (tokens.length === 0) return false;
   }
   return true;
+}
+
+export function matchCatalogIntent(text: string): boolean {
+  return /полн(ый|ым)\s+каталог|весь\s+ассортимент|сайт|bovi\.kz|ссылк\w*\s+на\s+(сайт|каталог)/i.test(
+    text,
+  );
+}
+
+export function matchOtherCategoriesIntent(text: string): boolean {
+  return /друг(ие|ие категории|ое)|что ещё|что еще|какие категори|ассортимент(?!\s+полный)/i.test(
+    text,
+  );
+}
+
+export function matchCountryPostback(payload: string | null | undefined): ConsultantCountry | null {
+  if (!payload) return null;
+  if (payload === "CONSULTANT_COUNTRY:KZ") return "KZ";
+  if (payload === "CONSULTANT_COUNTRY:RU") return "RU";
+  return null;
 }

@@ -1,39 +1,95 @@
 import type { ConsultantCountry } from "./intent";
 import type { ConsultantProduct } from "./catalog";
 
-export const consultantCopy = {
+/** Дословные реплики ТЗ BOVI. Вариант B — сухой A/B без клише. */
+export type ConsultantCopyPack = {
+  askCountry: string;
+  askProduct: string;
+  oos: string;
+  purchase: string;
+  unrecognized: string;
+  catalogEmpty: string;
+  cdek: string;
+  catalogLink: (url: string) => string;
+  crossSell: string;
+  otherCategories: string;
+  telegramIntro: string;
+};
+
+export const TZ_COPY: ConsultantCopyPack = {
   askCountry:
-    "Здравствуйте. Напишите, пожалуйста, из какой вы страны — Казахстан или Россия. От этого зависит цена.",
-  catalogEmpty:
-    "Каталог ещё не загружен. В ближайшее время с вами свяжется менеджер и уточнит наличие.",
+    "Здравствуйте! Подскажите, пожалуйста, из какой вы страны, чтобы мы показали актуальные цены и условия доставки?",
+  askProduct: "Какой товар, размер или расцветка вас интересуют? Напишите, пожалуйста:",
   oos: "Данного товара сейчас нет в наличии. В ближайшее время с вами свяжется менеджер и предложит доступные альтернативы.",
   purchase: "Спасибо! В ближайшее время с вами свяжется менеджер для оформления заказа.",
-  clarify: "Уточните, пожалуйста, какой товар нужен: название, размер и цвет — если они важны.",
-  apiError: "Сейчас не могу ответить по каталогу. В ближайшее время с вами свяжется менеджер.",
-  cdek: "Доставка по России — СДЭК, за счёт покупателя. Стоимость доставки бот не рассчитывает.",
-  catalogLink: "Полный ассортимент: https://bovi.kz",
+  unrecognized:
+    "Спасибо за обращение! В ближайшее время с вами свяжется менеджер для консультации.",
+  catalogEmpty:
+    "Спасибо за обращение! В ближайшее время с вами свяжется менеджер для консультации.",
+  cdek: "Доставка осуществляется курьерской службой СДЭК и оплачивается покупателем при получении по тарифам СДЭК.",
+  catalogLink: (url) =>
+    `С полным каталогом и подробной информацией о товарах вы можете ознакомиться на нашем сайте: ${url.replace(/^https?:\/\//, "")}. Если потребуется уточнить наличие конкретной позиции, напишите сюда.`,
   crossSell: "Может, вас интересует что-нибудь ещё из нашего ассортимента?",
+  otherCategories:
+    "В нашем ассортименте также представлены: матрасы, одеяла, подушки, посуда, постельное бельё и полотенца. Напишите интересующую позицию или категорию для проверки наличия и стоимости.",
+  telegramIntro:
+    "Консультации по наличию и цене — в Instagram Direct. Напишите сюда страну и товар — ответим по прайсу.",
 };
+
+const AB_COPY: ConsultantCopyPack = {
+  ...TZ_COPY,
+  askCountry:
+    "Здравствуйте! Напишите, пожалуйста, страну — Казахстан или Россия. От этого зависят цена и доставка.",
+  askProduct: "Напишите товар, размер или цвет — проверим наличие и цену.",
+  crossSell: "Нужно проверить ещё что-то из ассортимента?",
+};
+
+export type CopyBucket = "a" | "b";
+
+export function copyForBucket(bucket: CopyBucket | undefined): ConsultantCopyPack {
+  return bucket === "b" ? AB_COPY : TZ_COPY;
+}
+
+/** Совместимость со старыми тестами: пакет A = ТЗ. */
+export const consultantCopy = {
+  askCountry: TZ_COPY.askCountry,
+  catalogEmpty: TZ_COPY.catalogEmpty,
+  oos: TZ_COPY.oos,
+  purchase: TZ_COPY.purchase,
+  clarify: TZ_COPY.askProduct,
+  apiError: TZ_COPY.unrecognized,
+  cdek: TZ_COPY.cdek,
+  catalogLink: TZ_COPY.catalogLink("bovi.kz"),
+  crossSell: TZ_COPY.crossSell,
+  otherCategories: TZ_COPY.otherCategories,
+};
+
+export const COUNTRY_BUTTONS = [
+  { type: "postback" as const, title: "Казахстан", payload: "CONSULTANT_COUNTRY:KZ" },
+  { type: "postback" as const, title: "Россия", payload: "CONSULTANT_COUNTRY:RU" },
+];
 
 export function formatProductReply(
   product: ConsultantProduct,
   country: ConsultantCountry | undefined,
   priceRub: number | null,
+  opts: { includeCdek: boolean; shopUrl?: string; pack?: ConsultantCopyPack } = {
+    includeCdek: false,
+  },
 ): string {
+  const pack = opts.pack ?? TZ_COPY;
   const colors = product.colors.length > 0 ? product.colors.join(", ") : "уточните у менеджера";
-  const stock = product.stock ? "в наличии" : "нет в наличии";
-  const price =
-    country === "RU" && priceRub
-      ? `${product.price_kzt.toLocaleString("ru-RU")} ₸ / ${priceRub.toLocaleString("ru-RU")} ₽`
+  const size = product.size ? `${product.size}`.replace(/\s*см$/i, "") : "";
+  const amount =
+    country === "RU" && priceRub != null
+      ? `${priceRub.toLocaleString("ru-RU")} ₽`
       : `${product.price_kzt.toLocaleString("ru-RU")} ₸`;
+  const title = product.name;
+  const sizeBit = size ? ` ${size} см` : "";
   const lines = [
-    product.name,
-    product.size ? `Размер: ${product.size}` : "",
-    `Цвета: ${colors}`,
-    `Наличие: ${stock}`,
-    `Цена: ${price}`,
-  ].filter(Boolean);
-  if (country === "RU") lines.push(consultantCopy.cdek);
-  lines.push(consultantCopy.crossSell);
+    `${title}${sizeBit} есть в наличии. Доступные расцветки: ${colors}. Стоимость — ${amount}.`,
+  ];
+  if (country === "RU" && opts.includeCdek) lines.push(pack.cdek);
+  lines.push(pack.crossSell);
   return lines.join("\n");
 }

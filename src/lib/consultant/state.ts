@@ -2,7 +2,8 @@ import type { Json } from "@/integrations-supabase/types";
 import type { ConsultantCountry } from "./intent";
 
 export type PauseReason = "manager_intervention" | "purchase" | "error" | "other";
-export type ConsultantConversationState = "awaiting_country" | "consulting" | "handed_off";
+export type ConsultantConversationState =
+  "awaiting_country" | "awaiting_product" | "consulting" | "handed_off";
 
 export type ConsultantTurn = { role: "customer" | "assistant"; text: string };
 
@@ -15,6 +16,8 @@ export type ConsultantState = {
   last_bot_reply?: string;
   last_bot_reply_at?: string;
   recent?: ConsultantTurn[];
+  ru_cdek_sent?: boolean;
+  ab_bucket?: "a" | "b";
 };
 
 const RECENT_LIMIT = 8;
@@ -188,4 +191,44 @@ export function isAutomationPaused(state: ConsultantState): boolean {
 export function isBotEcho(state: ConsultantState, text: string): boolean {
   const reply = state.last_bot_reply?.trim();
   return Boolean(reply && reply === text.trim());
+}
+
+export type ConsultantCustomer = {
+  userKey: string;
+  label: string;
+  platform: string;
+  country?: ConsultantCountry;
+  conversationState?: ConsultantConversationState;
+  paused: boolean;
+  lastReply?: string;
+  updatedAt: string;
+};
+
+export async function listConsultantCustomers(limit = 40): Promise<ConsultantCustomer[]> {
+  const s = await db();
+  const { data } = await s
+    .from("bot_users")
+    .select("user_key, username, first_name, last_name, platform, updated_at, state")
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  return (data ?? [])
+    .flatMap((row) => {
+      const consultant = readConsultantState(row.state);
+      if (!consultant.country && !consultant.conversation_state && !consultant.recent?.length) {
+        return [];
+      }
+      return [
+        {
+          userKey: row.user_key,
+          label: displayLabel(row),
+          platform: row.platform,
+          country: consultant.country,
+          conversationState: consultant.conversation_state,
+          paused: isAutomationPaused(consultant),
+          lastReply: consultant.last_bot_reply,
+          updatedAt: row.updated_at,
+        },
+      ];
+    })
+    .slice(0, limit);
 }

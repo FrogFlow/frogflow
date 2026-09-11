@@ -8,14 +8,32 @@ export type CatalogImportResult = {
 };
 
 const HEADER_ALIASES: Record<keyof ConsultantProduct | "skip", string[]> = {
-  id: ["id", "артикул", "sku", "код", "code"],
-  name: ["name", "название", "товар", "наименование", "product"],
-  category: ["category", "категория", "раздел", "группа"],
-  size: ["size", "размер"],
-  colors: ["color", "colors", "цвет", "цвета"],
-  price_kzt: ["price_kzt", "price", "цена", "цена_тг", "цена тг", "kzt"],
-  stock: ["stock", "наличие", "in_stock"],
-  stock_qty: ["stock_qty", "qty", "количество", "кол-во", "остаток"],
+  id: ["id", "артикул", "sku", "код", "code", "номенклатуракод", "кодтовара"],
+  name: [
+    "name",
+    "название",
+    "товар",
+    "наименование",
+    "product",
+    "номенклатура",
+    "наименованиетовара",
+  ],
+  category: ["category", "категория", "раздел", "группа", "вид", "видтовара"],
+  size: ["size", "размер", "разм", "габарит", "характеристика"],
+  colors: ["color", "colors", "цвет", "цвета", "цветткани", "расцветка", "окрас"],
+  price_kzt: [
+    "price_kzt",
+    "price",
+    "цена",
+    "цена_тг",
+    "цена тг",
+    "kzt",
+    "ценарозничная",
+    "розничнаяцена",
+    "ценатенге",
+  ],
+  stock: ["stock", "наличие", "in_stock", "вналичии"],
+  stock_qty: ["stock_qty", "qty", "количество", "кол-во", "остаток", "остатоксклад", "колво"],
   skip: [],
 };
 
