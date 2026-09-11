@@ -612,7 +612,7 @@ function SettingsPage() {
   const { locale } = useAdminLocale();
   const tr = copy[locale];
   const modules = useModules();
-  const { vertical, isPhysicalShop } = useVertical();
+  const { vertical, isPhysicalShop, isConsultant } = useVertical();
   const contactBtn = VERTICALS[vertical].locales[locale].contactBtn;
   const qc = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
@@ -976,7 +976,7 @@ function SettingsPage() {
       <Tabs defaultValue="general">
         <TabsList className="flex h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="general">{tr.tabGeneral}</TabsTrigger>
-          <TabsTrigger value="shop">{tr.tabShop}</TabsTrigger>
+          {!isConsultant && <TabsTrigger value="shop">{tr.tabShop}</TabsTrigger>}
           <TabsTrigger value="bot">{tr.tabBot}</TabsTrigger>
           {showUsageTab ? <TabsTrigger value="usage">{tr.tabUsage}</TabsTrigger> : null}
         </TabsList>
@@ -1038,286 +1038,288 @@ function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="shop" className="space-y-6 mt-4">
-          {!isPhysicalShop && (
-            <div className="bg-card border rounded-lg p-4 space-y-3">
-              <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
-              <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="delivery-lang-timing"
-                    checked={deliveryLangTiming === "after"}
-                    disabled={deliveryLangTimingSaving}
-                    onChange={() => onSaveDeliveryLangTiming("after")}
-                  />
-                  {tr.deliveryLangTimingAfter}
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="delivery-lang-timing"
-                    checked={deliveryLangTiming === "before"}
-                    disabled={deliveryLangTimingSaving}
-                    onChange={() => onSaveDeliveryLangTiming("before")}
-                  />
-                  {tr.deliveryLangTimingBefore}
-                </label>
+        {!isConsultant && (
+          <TabsContent value="shop" className="space-y-6 mt-4">
+            {!isPhysicalShop && (
+              <div className="bg-card border rounded-lg p-4 space-y-3">
+                <h2 className="text-lg font-semibold">{tr.deliveryLangTimingTitle}</h2>
+                <p className="text-xs text-muted-foreground">{tr.deliveryLangTimingHint}</p>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="delivery-lang-timing"
+                      checked={deliveryLangTiming === "after"}
+                      disabled={deliveryLangTimingSaving}
+                      onChange={() => onSaveDeliveryLangTiming("after")}
+                    />
+                    {tr.deliveryLangTimingAfter}
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="delivery-lang-timing"
+                      checked={deliveryLangTiming === "before"}
+                      disabled={deliveryLangTimingSaving}
+                      onChange={() => onSaveDeliveryLangTiming("before")}
+                    />
+                    {tr.deliveryLangTimingBefore}
+                  </label>
+                </div>
+                {deliveryLangTimingSaved && (
+                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                )}
               </div>
-              {deliveryLangTimingSaved && (
-                <span className="text-sm text-green-600">{tr.savedLabel}</span>
+            )}
+
+            {isPhysicalShop && (
+              <>
+                <div className="bg-card border rounded-lg p-4 space-y-3">
+                  <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
+                  <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="payment-mode"
+                        checked={paymentMode === "full"}
+                        disabled={paymentModeSaving}
+                        onChange={() => onSavePaymentMode("full")}
+                      />
+                      {tr.paymentModeFull}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="payment-mode"
+                        checked={paymentMode === "deposit"}
+                        disabled={paymentModeSaving}
+                        onChange={() => onSavePaymentMode("deposit")}
+                      />
+                      {tr.paymentModeDeposit}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="payment-mode"
+                        checked={paymentMode === "on_receipt"}
+                        disabled={paymentModeSaving}
+                        onChange={() => onSavePaymentMode("on_receipt")}
+                      />
+                      {tr.paymentModeOnReceipt}
+                    </label>
+                  </div>
+                  {paymentModeSaved && (
+                    <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                  )}
+                  {paymentMode === "deposit" && (
+                    <div className="flex items-end gap-2 pt-2">
+                      <div className="space-y-2">
+                        <Label>{tr.depositPercentLabel}</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={depositPercent}
+                          onChange={(e) => setDepositPercent(e.target.value)}
+                          className="w-32"
+                        />
+                      </div>
+                      <Button
+                        onClick={onSaveDepositPercent}
+                        disabled={depositPercentSaving || settings.isLoading}
+                      >
+                        {tr.save}
+                      </Button>
+                      {depositPercentSaved && (
+                        <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-card border rounded-lg p-4 space-y-3">
+                  <h2 className="text-lg font-semibold">{tr.fulfillmentOptionsTitle}</h2>
+                  <p className="text-xs text-muted-foreground">{tr.fulfillmentOptionsHint}</p>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={pickupEnabled}
+                        disabled={fulfillmentOptionsSaving}
+                        onChange={(e) => onSaveFulfillmentOption("pickup", e.target.checked)}
+                      />
+                      {tr.fulfillmentOptionsPickup}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={deliveryEnabled}
+                        disabled={fulfillmentOptionsSaving}
+                        onChange={(e) => onSaveFulfillmentOption("delivery", e.target.checked)}
+                      />
+                      {tr.fulfillmentOptionsDelivery}
+                    </label>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="bg-card border rounded-lg p-4 space-y-3">
+              <h2 className="text-lg font-semibold">{tr.referralTitle}</h2>
+              <p className="text-xs text-muted-foreground">{tr.referralHint}</p>
+              {modules.referral ? (
+                <div className="flex items-end gap-2">
+                  <div className="space-y-2">
+                    <Label>{tr.referralPercentLabel}</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={referralPercent}
+                      onChange={(e) => setReferralPercent(e.target.value)}
+                      className="w-32"
+                    />
+                  </div>
+                  <Button
+                    onClick={onSaveReferralPercent}
+                    disabled={referralSaving || settings.isLoading}
+                  >
+                    {tr.save}
+                  </Button>
+                  {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
               )}
             </div>
-          )}
 
-          {isPhysicalShop && (
-            <>
-              <div className="bg-card border rounded-lg p-4 space-y-3">
-                <h2 className="text-lg font-semibold">{tr.paymentModeTitle}</h2>
-                <p className="text-xs text-muted-foreground">{tr.paymentModeHint}</p>
-                <div className="flex flex-col gap-2">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="payment-mode"
-                      checked={paymentMode === "full"}
-                      disabled={paymentModeSaving}
-                      onChange={() => onSavePaymentMode("full")}
+            <div className="bg-card border rounded-lg p-4 space-y-3">
+              <h2 className="text-lg font-semibold">{tr.loyaltyTitle}</h2>
+              <p className="text-xs text-muted-foreground">{tr.loyaltyHint}</p>
+              {modules.loyalty ? (
+                <div className="flex items-end gap-2">
+                  <div className="space-y-2">
+                    <Label>{tr.loyaltyEarnPercentLabel}</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={loyaltyEarnPercent}
+                      onChange={(e) => setLoyaltyEarnPercent(e.target.value)}
+                      className="w-32"
                     />
-                    {tr.paymentModeFull}
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="payment-mode"
-                      checked={paymentMode === "deposit"}
-                      disabled={paymentModeSaving}
-                      onChange={() => onSavePaymentMode("deposit")}
-                    />
-                    {tr.paymentModeDeposit}
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="payment-mode"
-                      checked={paymentMode === "on_receipt"}
-                      disabled={paymentModeSaving}
-                      onChange={() => onSavePaymentMode("on_receipt")}
-                    />
-                    {tr.paymentModeOnReceipt}
-                  </label>
-                </div>
-                {paymentModeSaved && (
-                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
-                )}
-                {paymentMode === "deposit" && (
-                  <div className="flex items-end gap-2 pt-2">
-                    <div className="space-y-2">
-                      <Label>{tr.depositPercentLabel}</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={depositPercent}
-                        onChange={(e) => setDepositPercent(e.target.value)}
-                        className="w-32"
-                      />
-                    </div>
-                    <Button
-                      onClick={onSaveDepositPercent}
-                      disabled={depositPercentSaving || settings.isLoading}
-                    >
-                      {tr.save}
-                    </Button>
-                    {depositPercentSaved && (
-                      <span className="text-sm text-green-600">{tr.savedLabel}</span>
-                    )}
                   </div>
-                )}
-              </div>
-
-              <div className="bg-card border rounded-lg p-4 space-y-3">
-                <h2 className="text-lg font-semibold">{tr.fulfillmentOptionsTitle}</h2>
-                <p className="text-xs text-muted-foreground">{tr.fulfillmentOptionsHint}</p>
-                <div className="flex flex-col gap-2">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={pickupEnabled}
-                      disabled={fulfillmentOptionsSaving}
-                      onChange={(e) => onSaveFulfillmentOption("pickup", e.target.checked)}
-                    />
-                    {tr.fulfillmentOptionsPickup}
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={deliveryEnabled}
-                      disabled={fulfillmentOptionsSaving}
-                      onChange={(e) => onSaveFulfillmentOption("delivery", e.target.checked)}
-                    />
-                    {tr.fulfillmentOptionsDelivery}
-                  </label>
-                </div>
-              </div>
-            </>
-          )}
-
-          <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="text-lg font-semibold">{tr.referralTitle}</h2>
-            <p className="text-xs text-muted-foreground">{tr.referralHint}</p>
-            {modules.referral ? (
-              <div className="flex items-end gap-2">
-                <div className="space-y-2">
-                  <Label>{tr.referralPercentLabel}</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={referralPercent}
-                    onChange={(e) => setReferralPercent(e.target.value)}
-                    className="w-32"
-                  />
-                </div>
-                <Button
-                  onClick={onSaveReferralPercent}
-                  disabled={referralSaving || settings.isLoading}
-                >
-                  {tr.save}
-                </Button>
-                {referralSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-            )}
-          </div>
-
-          <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="text-lg font-semibold">{tr.loyaltyTitle}</h2>
-            <p className="text-xs text-muted-foreground">{tr.loyaltyHint}</p>
-            {modules.loyalty ? (
-              <div className="flex items-end gap-2">
-                <div className="space-y-2">
-                  <Label>{tr.loyaltyEarnPercentLabel}</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={100}
-                    value={loyaltyEarnPercent}
-                    onChange={(e) => setLoyaltyEarnPercent(e.target.value)}
-                    className="w-32"
-                  />
-                </div>
-                <Button
-                  onClick={onSaveLoyaltyEarnPercent}
-                  disabled={loyaltySaving || settings.isLoading}
-                >
-                  {tr.save}
-                </Button>
-                {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-            )}
-          </div>
-
-          <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="text-lg font-semibold">{tr.webStorefrontTitle}</h2>
-            <p className="text-xs text-muted-foreground">{tr.webStorefrontHint}</p>
-            {modules.web_storefront ? (
-              shopUrl.data?.url ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input readOnly value={shopUrl.data.url} className="flex-1 min-w-[16rem]" />
-                  <Button variant="outline" onClick={() => onCopyShopUrl(shopUrl.data!.url!)}>
-                    {tr.webStorefrontCopyBtn}
-                  </Button>
-                  <a
-                    href={shopUrl.data.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm underline text-primary"
-                  >
-                    {tr.webStorefrontOpenBtn}
-                  </a>
-                </div>
-              ) : shopUrl.isLoading ? (
-                <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
-              ) : (
-                <p className="text-sm text-destructive">{tr.webStorefrontNoUrl}</p>
-              )
-            ) : (
-              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-            )}
-          </div>
-
-          <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="text-lg font-semibold">{tr.miniAppTitle}</h2>
-            <p className="text-xs text-muted-foreground">{tr.miniAppHint}</p>
-            {modules.telegram_mini_app ? (
-              miniAppUrlQuery.data?.url ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    readOnly
-                    value={miniAppUrlQuery.data.url}
-                    className="flex-1 min-w-[16rem]"
-                  />
                   <Button
-                    variant="outline"
-                    onClick={() => onCopyMiniAppUrl(miniAppUrlQuery.data!.url!)}
+                    onClick={onSaveLoyaltyEarnPercent}
+                    disabled={loyaltySaving || settings.isLoading}
                   >
-                    {tr.miniAppCopyBtn}
+                    {tr.save}
                   </Button>
-                  <a
-                    href={miniAppUrlQuery.data.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm underline text-primary"
-                  >
-                    {tr.miniAppOpenBtn}
-                  </a>
+                  {loyaltySaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
                 </div>
-              ) : miniAppUrlQuery.isLoading ? (
-                <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
               ) : (
-                <p className="text-sm text-destructive">{tr.miniAppNoUrl}</p>
-              )
-            ) : (
-              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-            )}
-          </div>
+                <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+              )}
+            </div>
 
-          <div className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="text-lg font-semibold">{tr.cartReminderTitle}</h2>
-            <p className="text-xs text-muted-foreground">{tr.cartReminderHint}</p>
-            {modules.cart_reminder ? (
-              <div className="flex items-end gap-2">
-                <div className="space-y-2">
-                  <Label>{tr.cartReminderHoursLabel}</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={168}
-                    value={cartReminderHours}
-                    onChange={(e) => setCartReminderHours(e.target.value)}
-                    className="w-32"
-                  />
+            <div className="bg-card border rounded-lg p-4 space-y-3">
+              <h2 className="text-lg font-semibold">{tr.webStorefrontTitle}</h2>
+              <p className="text-xs text-muted-foreground">{tr.webStorefrontHint}</p>
+              {modules.web_storefront ? (
+                shopUrl.data?.url ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input readOnly value={shopUrl.data.url} className="flex-1 min-w-[16rem]" />
+                    <Button variant="outline" onClick={() => onCopyShopUrl(shopUrl.data!.url!)}>
+                      {tr.webStorefrontCopyBtn}
+                    </Button>
+                    <a
+                      href={shopUrl.data.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm underline text-primary"
+                    >
+                      {tr.webStorefrontOpenBtn}
+                    </a>
+                  </div>
+                ) : shopUrl.isLoading ? (
+                  <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
+                ) : (
+                  <p className="text-sm text-destructive">{tr.webStorefrontNoUrl}</p>
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+              )}
+            </div>
+
+            <div className="bg-card border rounded-lg p-4 space-y-3">
+              <h2 className="text-lg font-semibold">{tr.miniAppTitle}</h2>
+              <p className="text-xs text-muted-foreground">{tr.miniAppHint}</p>
+              {modules.telegram_mini_app ? (
+                miniAppUrlQuery.data?.url ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      readOnly
+                      value={miniAppUrlQuery.data.url}
+                      className="flex-1 min-w-[16rem]"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => onCopyMiniAppUrl(miniAppUrlQuery.data!.url!)}
+                    >
+                      {tr.miniAppCopyBtn}
+                    </Button>
+                    <a
+                      href={miniAppUrlQuery.data.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm underline text-primary"
+                    >
+                      {tr.miniAppOpenBtn}
+                    </a>
+                  </div>
+                ) : miniAppUrlQuery.isLoading ? (
+                  <p className="text-sm text-muted-foreground">{t("loading", locale)}</p>
+                ) : (
+                  <p className="text-sm text-destructive">{tr.miniAppNoUrl}</p>
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+              )}
+            </div>
+
+            <div className="bg-card border rounded-lg p-4 space-y-3">
+              <h2 className="text-lg font-semibold">{tr.cartReminderTitle}</h2>
+              <p className="text-xs text-muted-foreground">{tr.cartReminderHint}</p>
+              {modules.cart_reminder ? (
+                <div className="flex items-end gap-2">
+                  <div className="space-y-2">
+                    <Label>{tr.cartReminderHoursLabel}</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={168}
+                      value={cartReminderHours}
+                      onChange={(e) => setCartReminderHours(e.target.value)}
+                      className="w-32"
+                    />
+                  </div>
+                  <Button
+                    onClick={onSaveCartReminderHours}
+                    disabled={cartReminderSaving || settings.isLoading}
+                  >
+                    {tr.save}
+                  </Button>
+                  {cartReminderSaved && (
+                    <span className="text-sm text-green-600">{tr.savedLabel}</span>
+                  )}
                 </div>
-                <Button
-                  onClick={onSaveCartReminderHours}
-                  disabled={cartReminderSaving || settings.isLoading}
-                >
-                  {tr.save}
-                </Button>
-                {cartReminderSaved && (
-                  <span className="text-sm text-green-600">{tr.savedLabel}</span>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
-            )}
-          </div>
-        </TabsContent>
+              ) : (
+                <p className="text-sm text-muted-foreground/80">🔒 {t("moduleLocked", locale)}</p>
+              )}
+            </div>
+          </TabsContent>
+        )}
 
         {showUsageTab ? (
           <TabsContent value="usage" className="space-y-6 mt-4">

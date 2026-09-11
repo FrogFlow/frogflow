@@ -1,6 +1,7 @@
 import type { Locale } from "./i18n";
 import { miniAppStringsClientPack, resolveMiniAppLocale } from "./mini-app-i18n";
-import { currentVerticalDef } from "./verticals/vertical.server";
+import { isPhysicalShopVertical } from "./verticals/registry";
+import { currentVertical } from "./verticals/vertical.server";
 
 /** Shared Mini App HTML shell, styles and client runtime. */
 export function wrapMiniAppPage(
@@ -11,7 +12,7 @@ export function wrapMiniAppPage(
 ): string {
   const lang = locale;
   const i18n = JSON.stringify(miniAppStringsClientPack(locale));
-  const physicalShop = currentVerticalDef().defaultFulfillment === "physical";
+  const physicalShop = isPhysicalShopVertical(currentVertical());
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 

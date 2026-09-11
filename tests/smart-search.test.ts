@@ -151,4 +151,16 @@ describe("smartSearchProductIds — промпт учитывает нишу (У
     expect(capture.body).toContain("кондитерской");
     expect(capture.body).not.toContain("учебный материал");
   });
+
+  it("consultant — промпт про прайс, не учебные материалы", async () => {
+    process.env.VERTICAL = "consultant";
+    const capture: { body?: string } = {};
+    mockFetchCapturingBody(capture);
+    await smartSearchProductIds("пододеяльник 200х220 бежевый", [
+      { id: "p1", name: "Пододеяльник", description: null, keywords: null },
+    ]);
+    expect(capture.body).toContain("прайса консультанта");
+    expect(capture.body).not.toContain("учебный материал");
+    expect(capture.body).not.toContain("кондитерской");
+  });
 });

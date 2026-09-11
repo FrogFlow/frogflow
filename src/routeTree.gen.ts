@@ -21,6 +21,7 @@ import { Route as AdminAnalyticsRouteImport } from './routes/admin.analytics'
 import { Route as AdminBlockedRouteImport } from './routes/admin.blocked'
 import { Route as AdminBroadcastRouteImport } from './routes/admin.broadcast'
 import { Route as AdminCategoriesRouteImport } from './routes/admin.categories'
+import { Route as AdminConsultantRouteImport } from './routes/admin.consultant'
 import { Route as AdminDeliveryZonesRouteImport } from './routes/admin.delivery-zones'
 import { Route as AdminGiftCertificatesRouteImport } from './routes/admin.gift-certificates'
 import { Route as AdminInstagramRouteImport } from './routes/admin.instagram'
@@ -151,6 +152,11 @@ const AdminBroadcastRoute = AdminBroadcastRouteImport.update({
 const AdminCategoriesRoute = AdminCategoriesRouteImport.update({
   id: '/categories',
   path: '/categories',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminConsultantRoute = AdminConsultantRouteImport.update({
+  id: '/consultant',
+  path: '/consultant',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminDeliveryZonesRoute = AdminDeliveryZonesRouteImport.update({
@@ -531,6 +537,7 @@ export interface FileRoutesByFullPath {
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/consultant': typeof AdminConsultantRoute
   '/admin/delivery-zones': typeof AdminDeliveryZonesRoute
   '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
   '/admin/instagram': typeof AdminInstagramRoute
@@ -614,6 +621,7 @@ export interface FileRoutesByTo {
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/consultant': typeof AdminConsultantRoute
   '/admin/delivery-zones': typeof AdminDeliveryZonesRoute
   '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
   '/admin/instagram': typeof AdminInstagramRoute
@@ -697,6 +705,7 @@ export interface FileRoutesById {
   '/admin/blocked': typeof AdminBlockedRoute
   '/admin/broadcast': typeof AdminBroadcastRoute
   '/admin/categories': typeof AdminCategoriesRoute
+  '/admin/consultant': typeof AdminConsultantRoute
   '/admin/delivery-zones': typeof AdminDeliveryZonesRoute
   '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
   '/admin/instagram': typeof AdminInstagramRoute
@@ -784,6 +793,7 @@ export interface FileRouteTypes {
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/consultant'
     | '/admin/delivery-zones'
     | '/admin/gift-certificates'
     | '/admin/instagram'
@@ -867,6 +877,7 @@ export interface FileRouteTypes {
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/consultant'
     | '/admin/delivery-zones'
     | '/admin/gift-certificates'
     | '/admin/instagram'
@@ -949,6 +960,7 @@ export interface FileRouteTypes {
     | '/admin/blocked'
     | '/admin/broadcast'
     | '/admin/categories'
+    | '/admin/consultant'
     | '/admin/delivery-zones'
     | '/admin/gift-certificates'
     | '/admin/instagram'
@@ -1158,6 +1170,13 @@ declare module '@tanstack/react-router' {
       path: '/categories'
       fullPath: '/admin/categories'
       preLoaderRoute: typeof AdminCategoriesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/consultant': {
+      id: '/admin/consultant'
+      path: '/consultant'
+      fullPath: '/admin/consultant'
+      preLoaderRoute: typeof AdminConsultantRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/delivery-zones': {
@@ -1683,6 +1702,7 @@ interface AdminRouteChildren {
   AdminBlockedRoute: typeof AdminBlockedRoute
   AdminBroadcastRoute: typeof AdminBroadcastRoute
   AdminCategoriesRoute: typeof AdminCategoriesRoute
+  AdminConsultantRoute: typeof AdminConsultantRoute
   AdminDeliveryZonesRoute: typeof AdminDeliveryZonesRoute
   AdminGiftCertificatesRoute: typeof AdminGiftCertificatesRoute
   AdminInstagramRoute: typeof AdminInstagramRoute
@@ -1704,6 +1724,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminBlockedRoute: AdminBlockedRoute,
   AdminBroadcastRoute: AdminBroadcastRoute,
   AdminCategoriesRoute: AdminCategoriesRoute,
+  AdminConsultantRoute: AdminConsultantRoute,
   AdminDeliveryZonesRoute: AdminDeliveryZonesRoute,
   AdminGiftCertificatesRoute: AdminGiftCertificatesRoute,
   AdminInstagramRoute: AdminInstagramRoute,

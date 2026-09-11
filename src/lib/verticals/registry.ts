@@ -30,9 +30,18 @@ export type VerticalLocaleCopy = {
   instructionDefaultCaption: string;
 };
 
+export type VerticalMode = "shop" | "consultant";
+
 export type VerticalDef = {
   /** Как показывать в панели оператора. */
   title: string;
+  /**
+   * shop — витрина (каталог, заказы, оплата).
+   * consultant — консультант в Direct: прайс и менеджер, без кассы и зон доставки.
+   * Не путать с defaultFulfillment: у консультанта товары физические, но
+   * чекаут кондитерской (зоны, самовывоз, задаток) не включается.
+   */
+  mode: VerticalMode;
   /** Умолчание для products.fulfillment_kind новых товаров этого деплоя. */
   defaultFulfillment: "digital" | "physical";
   /** Профильный текст бота (setMyDescription) — первые строки, до ссылок на оферту. */
@@ -51,6 +60,7 @@ export type VerticalDef = {
 export const VERTICALS = {
   digital: {
     title: "Цифровые материалы",
+    mode: "shop",
     defaultFulfillment: "digital",
     botDescriptionIntro:
       `📚 Каталог цифровых учебных материалов.\n` +
@@ -105,6 +115,7 @@ export const VERTICALS = {
   },
   confectionery: {
     title: "Кондитерская",
+    mode: "shop",
     defaultFulfillment: "physical",
     botDescriptionIntro:
       `🎂 Каталог тортов и десертов на заказ.\n` +
@@ -159,6 +170,63 @@ export const VERTICALS = {
       },
     },
   },
+  consultant: {
+    title: "Консультант в Direct",
+    mode: "consultant",
+    // Товары физические (дом. текстиль и т.п.), но UI кондитерской не включаем —
+    // см. isPhysicalShopVertical: mode === "shop" && defaultFulfillment === "physical".
+    defaultFulfillment: "physical",
+    botDescriptionIntro:
+      `Каталог в Instagram Direct.\n` +
+      `→ Наличие и цена из прайса\n` +
+      `→ Казахстан и Россия\n` +
+      `→ Связь с менеджером`,
+    shortDescription:
+      "Консультант в Direct. Нажимая /start, вы принимаете оферту и политику конфиденциальности.",
+    suggestedModules: ["instagram", "manager_chat"],
+    locales: {
+      ru: {
+        welcomeGreeting: "Здравствуйте. Помогу подобрать товар из наличия.",
+        welcomeCatalog: "Каталог по прайсу: размер, цвет, наличие",
+        welcomePayment: "Оформление через менеджера",
+        contactBtn: "💬 Связаться с менеджером",
+        instructionComingSoon:
+          "📖 Инструкция скоро появится.\nПока: напишите, что ищете — бот ответит по прайсу. «Купить» или «менеджер» — подключится живой менеджер.",
+        instructionDefaultCaption:
+          "📖 Напишите запрос в Direct. Бот ответит по наличию и цене из прайса. Чтобы оформить заказ или поговорить с человеком — напишите «купить» или «менеджер».",
+      },
+      kk: {
+        welcomeGreeting: "Сәлеметсіз бе. Қолда бар тауарды таңдауға көмектесемін.",
+        welcomeCatalog: "Прайс бойынша каталог: өлшем, түс, қор",
+        welcomePayment: "Менеджер арқылы рәсімдеу",
+        contactBtn: "💬 Менеджермен байланысу",
+        instructionComingSoon:
+          "📖 Нұсқаулық жақында қосылады.\nӘзірге: не іздегеніңізді жазыңыз — бот прайс бойынша жауап береді. «Сатып алу» немесе «менеджер» — тірі менеджер қосылады.",
+        instructionDefaultCaption:
+          "📖 Direct-ке сұрау жазыңыз. Бот прайстағы қор мен баға бойынша жауап береді. Тапсырыс рәсімдеу немесе адаммен сөйлесу үшін «сатып алу» немесе «менеджер» деп жазыңыз.",
+      },
+      en: {
+        welcomeGreeting: "Hello. I can help you pick an item from stock.",
+        welcomeCatalog: "Catalog from the price list: size, color, stock",
+        welcomePayment: "Checkout with a manager",
+        contactBtn: "💬 Contact a manager",
+        instructionComingSoon:
+          "📖 The guide is coming soon.\nFor now: write what you need — the bot answers from the price list. “Buy” or “manager” connects a live manager.",
+        instructionDefaultCaption:
+          "📖 Send a query in Direct. The bot answers with stock and price from the list. To place an order or talk to a person, write “buy” or “manager”.",
+      },
+      uz: {
+        welcomeGreeting: "Salom. Mavjud tovardan tanlashga yordam beraman.",
+        welcomeCatalog: "Narxlar ro‘yxati: o‘lcham, rang, qoldiq",
+        welcomePayment: "Menejer orqali rasmiylashtirish",
+        contactBtn: "💬 Menejer bilan bog‘lanish",
+        instructionComingSoon:
+          "📖 Yo‘riqnoma tez orada qo‘shiladi.\nHozircha: nima izlayotganingizni yozing — bot narxlar ro‘yxati bo‘yicha javob beradi. «Sotib olish» yoki «menejer» — jonli menejer ulanadi.",
+        instructionDefaultCaption:
+          "📖 Direct’ga so‘rov yozing. Bot ro‘yxatdagi qoldiq va narx bo‘yicha javob beradi. Buyurtma yoki odam bilan gaplashish uchun «sotib olish» yoki «menejer» deb yozing.",
+      },
+    },
+  },
 } as const satisfies Record<string, VerticalDef>;
 
 export type VerticalKey = keyof typeof VERTICALS;
@@ -167,4 +235,14 @@ export const VERTICAL_KEYS = Object.keys(VERTICALS) as VerticalKey[];
 
 export function verticalDef(key: VerticalKey): VerticalDef {
   return VERTICALS[key];
+}
+
+/** Кондитерская витрина: зоны, самовывоз, задаток. У консультанта — false. */
+export function isPhysicalShopVertical(key: VerticalKey): boolean {
+  const def = VERTICALS[key];
+  return def.mode === "shop" && def.defaultFulfillment === "physical";
+}
+
+export function isConsultantVertical(key: VerticalKey): boolean {
+  return VERTICALS[key].mode === "consultant";
 }

@@ -49,6 +49,12 @@ const messages: Dictionary = {
     uz: "Yetkazib berish zonalari",
   },
   settings: { ru: "Настройки", kk: "Баптаулар", en: "Settings", uz: "Sozlamalar" },
+  consultant: {
+    ru: "Консультант",
+    kk: "Кеңесші",
+    en: "Consultant",
+    uz: "Maslahatchi",
+  },
   catalogGroup: { ru: "Каталог", kk: "Каталог", en: "Catalog", uz: "Katalog" },
   paymentGroup: { ru: "Оплата", kk: "Төлем", en: "Payment", uz: "To‘lov" },
   promotionGroup: { ru: "Продвижение", kk: "Жылжыту", en: "Promotion", uz: "Reklama" },

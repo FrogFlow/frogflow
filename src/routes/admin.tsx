@@ -40,7 +40,7 @@ function AdminLayout() {
   const router = useRouter();
   const logout = useServerFn(adminLogout);
   const modules = useModules();
-  const { isPhysicalShop, verticalTitle } = useVertical();
+  const { isPhysicalShop, isConsultant, vertical, verticalTitle } = useVertical();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [locale, setLocale] = useState<Locale>("ru");
   useEffect(() => {
@@ -70,7 +70,7 @@ function AdminLayout() {
             <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1">
               <div className="font-semibold mr-1 shrink-0 px-2 text-sm uppercase text-muted-foreground flex items-center gap-2">
                 {t("adminPanel", locale)}
-                {isPhysicalShop && verticalTitle && (
+                {vertical !== "digital" && verticalTitle && (
                   <span className="normal-case font-medium text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                     {verticalTitle}
                   </span>
@@ -78,95 +78,119 @@ function AdminLayout() {
               </div>
               <NavLink to="/admin">{t("dashboard", locale)}</NavLink>
 
-              <GroupNav
-                label={t("catalogGroup", locale)}
-                active={
-                  pathname.startsWith("/admin/categories") || pathname.startsWith("/admin/products")
-                }
-              >
-                <GroupLink to="/admin/categories" locale={locale}>
-                  {t("categories", locale)}
-                </GroupLink>
-                <GroupLink to="/admin/products" locale={locale}>
-                  {t("products", locale)}
-                </GroupLink>
-              </GroupNav>
+              {isConsultant ? (
+                <>
+                  <NavLink to="/admin/consultant">{t("consultant", locale)}</NavLink>
+                  <NavLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
+                    Instagram
+                  </NavLink>
+                  {modules.manager_chat ? (
+                    <ManagerChatNavLink locale={locale} />
+                  ) : (
+                    <NavLink to="/admin/manager-chat" locked locale={locale}>
+                      {t("managerChat", locale)}
+                    </NavLink>
+                  )}
+                  <NavLink to="/admin/blocked" locked={!modules.blocked} locale={locale}>
+                    {t("blocked", locale)}
+                  </NavLink>
+                </>
+              ) : (
+                <>
+                  <GroupNav
+                    label={t("catalogGroup", locale)}
+                    active={
+                      pathname.startsWith("/admin/categories") ||
+                      pathname.startsWith("/admin/products")
+                    }
+                  >
+                    <GroupLink to="/admin/categories" locale={locale}>
+                      {t("categories", locale)}
+                    </GroupLink>
+                    <GroupLink to="/admin/products" locale={locale}>
+                      {t("products", locale)}
+                    </GroupLink>
+                  </GroupNav>
 
-              <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
+                  <NavLink to="/admin/orders">{t("orders", locale)}</NavLink>
 
-              <NavLink to="/admin/analytics">{t("analytics", locale)}</NavLink>
+                  <NavLink to="/admin/analytics">{t("analytics", locale)}</NavLink>
 
-              <GroupNav
-                label={t("paymentGroup", locale)}
-                active={
-                  pathname.startsWith("/admin/payment-methods") ||
-                  pathname.startsWith("/admin/robokassa") ||
-                  pathname.startsWith("/admin/delivery-zones")
-                }
-              >
-                <GroupLink to="/admin/payment-methods" locale={locale}>
-                  {t("payments", locale)}
-                </GroupLink>
-                <GroupLink to="/admin/robokassa" locked={!modules.robokassa} locale={locale}>
-                  Robokassa
-                </GroupLink>
-                {isPhysicalShop && (
-                  <GroupLink to="/admin/delivery-zones" locale={locale}>
-                    {t("deliveryZones", locale)}
-                  </GroupLink>
-                )}
-              </GroupNav>
+                  <GroupNav
+                    label={t("paymentGroup", locale)}
+                    active={
+                      pathname.startsWith("/admin/payment-methods") ||
+                      pathname.startsWith("/admin/robokassa") ||
+                      pathname.startsWith("/admin/delivery-zones")
+                    }
+                  >
+                    <GroupLink to="/admin/payment-methods" locale={locale}>
+                      {t("payments", locale)}
+                    </GroupLink>
+                    <GroupLink to="/admin/robokassa" locked={!modules.robokassa} locale={locale}>
+                      Robokassa
+                    </GroupLink>
+                    {isPhysicalShop && (
+                      <GroupLink to="/admin/delivery-zones" locale={locale}>
+                        {t("deliveryZones", locale)}
+                      </GroupLink>
+                    )}
+                  </GroupNav>
 
-              <GroupNav
-                label={t("promotionGroup", locale)}
-                active={
-                  pathname.startsWith("/admin/broadcast") ||
-                  pathname.startsWith("/admin/instagram") ||
-                  pathname.startsWith("/admin/whatsapp") ||
-                  pathname.startsWith("/admin/manager-chat") ||
-                  pathname.startsWith("/admin/promo-codes") ||
-                  pathname.startsWith("/admin/gift-certificates")
-                }
-              >
-                <GroupLink to="/admin/broadcast" locale={locale}>
-                  {t("broadcast", locale)}
-                </GroupLink>
-                <GroupLink to="/admin/promo-codes" locked={!modules.coupons} locale={locale}>
-                  {t("promoCodes", locale)}
-                </GroupLink>
-                <GroupLink
-                  to="/admin/gift-certificates"
-                  locked={!modules.gift_certificates}
-                  locale={locale}
-                >
-                  {t("giftCertificates", locale)}
-                </GroupLink>
-                <GroupLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
-                  Instagram
-                </GroupLink>
-                <GroupLink to="/admin/whatsapp" locked={!modules.whatsapp} locale={locale}>
-                  WhatsApp
-                </GroupLink>
-                {modules.manager_chat ? (
-                  <ManagerChatGroupLink locale={locale} />
-                ) : (
-                  <GroupLink to="/admin/manager-chat" locked locale={locale}>
-                    {t("managerChat", locale)}
-                  </GroupLink>
-                )}
-              </GroupNav>
+                  <GroupNav
+                    label={t("promotionGroup", locale)}
+                    active={
+                      pathname.startsWith("/admin/broadcast") ||
+                      pathname.startsWith("/admin/instagram") ||
+                      pathname.startsWith("/admin/whatsapp") ||
+                      pathname.startsWith("/admin/manager-chat") ||
+                      pathname.startsWith("/admin/promo-codes") ||
+                      pathname.startsWith("/admin/gift-certificates")
+                    }
+                  >
+                    <GroupLink to="/admin/broadcast" locale={locale}>
+                      {t("broadcast", locale)}
+                    </GroupLink>
+                    <GroupLink to="/admin/promo-codes" locked={!modules.coupons} locale={locale}>
+                      {t("promoCodes", locale)}
+                    </GroupLink>
+                    <GroupLink
+                      to="/admin/gift-certificates"
+                      locked={!modules.gift_certificates}
+                      locale={locale}
+                    >
+                      {t("giftCertificates", locale)}
+                    </GroupLink>
+                    <GroupLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
+                      Instagram
+                    </GroupLink>
+                    <GroupLink to="/admin/whatsapp" locked={!modules.whatsapp} locale={locale}>
+                      WhatsApp
+                    </GroupLink>
+                    {modules.manager_chat ? (
+                      <ManagerChatGroupLink locale={locale} />
+                    ) : (
+                      <GroupLink to="/admin/manager-chat" locked locale={locale}>
+                        {t("managerChat", locale)}
+                      </GroupLink>
+                    )}
+                  </GroupNav>
 
-              <GroupNav
-                label={t("audienceGroup", locale)}
-                active={pathname.startsWith("/admin/vip") || pathname.startsWith("/admin/blocked")}
-              >
-                <GroupLink to="/admin/vip" locked={!modules.vip} locale={locale}>
-                  {t("vip", locale)}
-                </GroupLink>
-                <GroupLink to="/admin/blocked" locked={!modules.blocked} locale={locale}>
-                  {t("blocked", locale)}
-                </GroupLink>
-              </GroupNav>
+                  <GroupNav
+                    label={t("audienceGroup", locale)}
+                    active={
+                      pathname.startsWith("/admin/vip") || pathname.startsWith("/admin/blocked")
+                    }
+                  >
+                    <GroupLink to="/admin/vip" locked={!modules.vip} locale={locale}>
+                      {t("vip", locale)}
+                    </GroupLink>
+                    <GroupLink to="/admin/blocked" locked={!modules.blocked} locale={locale}>
+                      {t("blocked", locale)}
+                    </GroupLink>
+                  </GroupNav>
+                </>
+              )}
 
               <NavLink to="/admin/modules">{t("modules", locale)}</NavLink>
               <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
@@ -236,6 +260,32 @@ function NavLink({
       activeOptions={{ exact: to === "/admin" }}
     >
       {children}
+    </Link>
+  );
+}
+
+/** Top-level «Чат с менеджером» for the consultant nav (no «Продвижение» dropdown). */
+function ManagerChatNavLink({ locale }: { locale: Locale }) {
+  const unread = useQuery({
+    queryKey: ["manager_chat_total_unread"],
+    queryFn: () => totalManagerChatUnreadFn(),
+    refetchInterval: 20_000,
+  });
+  return (
+    <Link
+      to="/admin/manager-chat"
+      className="px-2.5 py-1.5 rounded-md text-sm hover:bg-accent shrink-0 inline-flex items-center gap-1.5"
+      activeProps={{
+        className:
+          "px-2.5 py-1.5 rounded-md text-sm bg-accent font-medium shrink-0 inline-flex items-center gap-1.5",
+      }}
+    >
+      {t("managerChat", locale)}
+      {!!unread.data && (
+        <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
+          {unread.data}
+        </span>
+      )}
     </Link>
   );
 }

@@ -8,7 +8,8 @@ import {
   materialsForProduct,
 } from "./product-materials";
 import { isLocale, localeFlags, localeNames, type Locale } from "./i18n";
-import { currentVertical, currentVerticalDef } from "./verticals/vertical.server";
+import { isPhysicalShopVertical } from "./verticals/registry";
+import { currentVertical } from "./verticals/vertical.server";
 
 export const MINI_APP_INDEX_SELECT =
   "id, name, description, keywords, category_ids, fulfillment_kind, price, created_at, rating_avg, rating_count, file_path, file_name, file_path_kz, file_name_kz, file_url, file_url_kz, product_material_files(language, file_path, file_name, sort_order), product_variants(name)";
@@ -456,7 +457,7 @@ export function renderMiniAppTabBar(
   else ctx.set("lang", locale);
   if (country) ctx.set("country", country);
   const qs = ctx.toString();
-  const physical = currentVerticalDef().defaultFulfillment === "physical";
+  const physical = isPhysicalShopVertical(currentVertical());
   const tabs = [
     { id: "catalog" as const, href: `/mini-app?${qs}`, label: s.tabCatalog },
     ...(!physical

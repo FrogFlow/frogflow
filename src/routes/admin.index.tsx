@@ -24,6 +24,10 @@ const copy: Record<
     step3: string;
     step4: string;
     step4Physical: string;
+    step1Consultant: string;
+    step2Consultant: string;
+    step3Consultant: string;
+    step4Consultant: string;
   }
 > = {
   ru: {
@@ -47,6 +51,12 @@ const copy: Record<
       "При выключенной Robokassa: проверьте скриншот и нажмите «Подтвердить». При включённой — для RU/BY/OTHER/KZ чек может выдать файлы сразу (уведомление без кнопки); прочие страны — через Robokassa.",
     step4Physical:
       "В «Настройках» задайте задаток и самовывоз/доставку, в «Зонах доставки» — районы. В «Заказах»: Принять → В работу → Готов → Выдан.",
+    step1Consultant: "В «Модулях» подключите Instagram и чат с менеджером.",
+    step2Consultant:
+      "В разделе «Консультант» будет таблица каталога (Google Sheets / ежедневный Excel) — бот отвечает только прайсом.",
+    step3Consultant: "Там же — курс VTB KZ и правила диалога. Цены и остатки модель не выдумывает.",
+    step4Consultant:
+      "В Direct бот отвечает сам. «Купить» / «менеджер» открывает чат с менеджером и останавливает бота.",
   },
   kk: {
     title: "Басқару тақтасы",
@@ -69,6 +79,13 @@ const copy: Record<
       "Robokassa өшірулі болса: скриншотты тексеріп, «Растау» батырмасын басыңыз. Қосулы болса — RU/BY/OTHER/KZ үшін чек файлдарды бірден бере алады (батырмасыз хабарлама); басқа елдер — Robokassa арқылы.",
     step4Physical:
       "«Баптауларда» алдын ала төлем мен өзі алып кету/жеткізуді, «Жеткізу аймақтарында» аудандарды көрсетіңіз. «Тапсырыстарда»: Қабылдау → Жұмысқа → Дайын → Берілді.",
+    step1Consultant: "«Модульдерде» Instagram мен менеджер чатын қосыңыз.",
+    step2Consultant:
+      "«Кеңесші» бөлімінде каталог кестесі болады (Google Sheets / күнделікті Excel) — бот тек прайспен жауап береді.",
+    step3Consultant:
+      "Сол жерде — VTB KZ бағамы және диалог ережелері. Баға мен қорды модель ойлап шығармайды.",
+    step4Consultant:
+      "Direct-те бот өзі жауап береді. «Сатып алу» / «менеджер» менеджер чатын ашып, ботты тоқтатады.",
   },
   en: {
     title: "Dashboard",
@@ -91,6 +108,13 @@ const copy: Record<
       'With Robokassa disabled: check the screenshot and click "Confirm". With it enabled — for RU/BY/OTHER/KZ the receipt may release the files right away (a notification with no button); other countries go through Robokassa.',
     step4Physical:
       "In Settings set the deposit and pickup/delivery, in Delivery zones — areas. In Orders: Accept → In production → Ready → Delivered.",
+    step1Consultant: "In Modules enable Instagram and manager chat.",
+    step2Consultant:
+      "The Consultant page will hold the catalog sheet (Google Sheets / daily Excel) — the bot answers from the price list only.",
+    step3Consultant:
+      "Same page: VTB KZ rate and dialog rules. The model must not invent prices or stock.",
+    step4Consultant:
+      "In Direct the bot replies on its own. “Buy” / “manager” opens manager chat and stops the bot.",
   },
   uz: {
     title: "Boshqaruv paneli",
@@ -115,6 +139,13 @@ const copy: Record<
       "Robokassa o‘chirilgan bo‘lsa: skrinshotni tekshirib, «Tasdiqlash» tugmasini bosing. Yoqilgan bo‘lsa — RU/BY/OTHER/KZ uchun chek fayllarni darhol berishi mumkin (tugmasiz xabarnoma); boshqa mamlakatlar — Robokassa orqali.",
     step4Physical:
       "«Sozlamalar»da oldindan to‘lov va olib ketish/yetkazib berishni, «Yetkazib berish zonalari»da tumanlarni belgilang. «Buyurtmalar»da: Qabul qilish → Ishga → Tayyor → Berildi.",
+    step1Consultant: "«Modullar»da Instagram va menejer chatini ulang.",
+    step2Consultant:
+      "«Maslahatchi» bo‘limida katalog jadvali bo‘ladi (Google Sheets / kunlik Excel) — bot faqat narxlar ro‘yxati bilan javob beradi.",
+    step3Consultant:
+      "O‘sha yerda — VTB KZ kursi va dialog qoidalari. Model narx va qoldiqni o‘ylab topmaydi.",
+    step4Consultant:
+      "Direct’da bot o‘zi javob beradi. «Sotib olish» / «menejer» menejer chatini ochadi va botni to‘xtatadi.",
   },
 };
 
@@ -124,7 +155,7 @@ export const Route = createFileRoute("/admin/")({
 
 function Dashboard() {
   const { locale } = useAdminLocale();
-  const { isPhysicalShop } = useVertical();
+  const { isPhysicalShop, isConsultant } = useVertical();
   const c = copy[locale];
   const stats = useQuery({ queryKey: ["dashboard-stats"], queryFn: () => getDashboardStats() });
   const s = stats.data;
@@ -143,27 +174,40 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">{c.title}</h1>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        <Stat label={c.products} value={products} />
-        <Stat label={c.totalOrders} value={total} />
-        <Stat label={c.awaitingPayment} value={awaitingPayment} highlight={awaitingPayment > 0} />
-        <Stat label={c.awaiting} value={awaiting} highlight={awaiting > 0} />
-        {showProduction && (
-          <Stat label={c.inProduction} value={inProduction} highlight={inProduction > 0} />
-        )}
-        {showReady && <Stat label={c.ready} value={ready} highlight={ready > 0} />}
-        <Stat label={c.delivered} value={delivered} />
-      </div>
-      {delivering > 0 && !isPhysicalShop && (
+      {!isConsultant && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          <Stat label={c.products} value={products} />
+          <Stat label={c.totalOrders} value={total} />
+          <Stat label={c.awaitingPayment} value={awaitingPayment} highlight={awaitingPayment > 0} />
+          <Stat label={c.awaiting} value={awaiting} highlight={awaiting > 0} />
+          {showProduction && (
+            <Stat label={c.inProduction} value={inProduction} highlight={inProduction > 0} />
+          )}
+          {showReady && <Stat label={c.ready} value={ready} highlight={ready > 0} />}
+          <Stat label={c.delivered} value={delivered} />
+        </div>
+      )}
+      {delivering > 0 && !isPhysicalShop && !isConsultant && (
         <p className="text-sm text-blue-700">{c.delivering(delivering)}</p>
       )}
       <div className="bg-card border rounded-lg p-4">
         <h2 className="font-medium mb-2">{c.howToTitle}</h2>
         <ol className="list-decimal pl-5 text-sm space-y-1 text-muted-foreground">
-          <li>{isPhysicalShop ? c.step1Physical : c.step1}</li>
-          <li>{c.step2}</li>
-          <li>{c.step3}</li>
-          <li>{isPhysicalShop ? c.step4Physical : c.step4}</li>
+          {isConsultant ? (
+            <>
+              <li>{c.step1Consultant}</li>
+              <li>{c.step2Consultant}</li>
+              <li>{c.step3Consultant}</li>
+              <li>{c.step4Consultant}</li>
+            </>
+          ) : (
+            <>
+              <li>{isPhysicalShop ? c.step1Physical : c.step1}</li>
+              <li>{c.step2}</li>
+              <li>{c.step3}</li>
+              <li>{isPhysicalShop ? c.step4Physical : c.step4}</li>
+            </>
+          )}
         </ol>
       </div>
     </div>

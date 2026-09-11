@@ -1,6 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { currentVertical, currentVerticalDef } from "./vertical.server";
-import { VERTICAL_KEYS, verticalDef } from "./registry";
+import {
+  VERTICAL_KEYS,
+  isConsultantVertical,
+  isPhysicalShopVertical,
+  verticalDef,
+} from "./registry";
 import { SUPPORTED_LOCALES } from "@/lib/i18n";
 
 const ORIGINAL_VERTICAL = process.env.VERTICAL;
@@ -31,9 +36,36 @@ describe("currentVertical — deploy-level discriminator, mirrors CONTROL_PLANE"
     expect(currentVertical()).toBe("confectionery");
   });
 
+  it("подхватывает consultant", () => {
+    process.env.VERTICAL = "consultant";
+    expect(currentVertical()).toBe("consultant");
+  });
+
   it("currentVerticalDef() согласован с currentVertical()", () => {
     process.env.VERTICAL = "confectionery";
     expect(currentVerticalDef()).toBe(verticalDef("confectionery"));
+  });
+});
+
+describe("mode — витрина vs консультант", () => {
+  it("digital — shop, не physical-shop UI", () => {
+    expect(verticalDef("digital").mode).toBe("shop");
+    expect(isPhysicalShopVertical("digital")).toBe(false);
+    expect(isConsultantVertical("digital")).toBe(false);
+  });
+
+  it("confectionery — shop + physical-shop UI", () => {
+    expect(verticalDef("confectionery").mode).toBe("shop");
+    expect(isPhysicalShopVertical("confectionery")).toBe(true);
+    expect(isConsultantVertical("confectionery")).toBe(false);
+  });
+
+  it("consultant — физические товары, без UI кондитерской", () => {
+    expect(verticalDef("consultant").mode).toBe("consultant");
+    expect(verticalDef("consultant").defaultFulfillment).toBe("physical");
+    expect(isPhysicalShopVertical("consultant")).toBe(false);
+    expect(isConsultantVertical("consultant")).toBe(true);
+    expect(verticalDef("consultant").suggestedModules).toEqual(["instagram", "manager_chat"]);
   });
 });
 
