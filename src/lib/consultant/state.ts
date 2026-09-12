@@ -192,10 +192,16 @@ export function isAutomationPaused(state: ConsultantState): boolean {
 
 export function isBotEcho(state: ConsultantState, text: string): boolean {
   const reply = state.last_bot_reply?.trim();
-  return Boolean(reply && reply === text.trim());
+  const incoming = text.trim();
+  if (!reply || !incoming) return false;
+  if (reply === incoming) return true;
+  return (
+    incoming.length >= 24 &&
+    (incoming.startsWith(reply.slice(0, 24)) || reply.startsWith(incoming.slice(0, 24)))
+  );
 }
 
-const CLAIM_TTL_MS = 90_000;
+const IN_FLIGHT_MS = 15_000;
 const REPLY_TTL_MS = 3 * 60_000;
 
 /** Webhook и inbox-poll не должны отвечать на одно и то же входящее дважды. */
@@ -208,8 +214,16 @@ export function alreadyAnsweredIncoming(
   if (!incoming || incoming !== (state.last_customer_text ?? "").trim()) return false;
   const claimed = Date.parse(state.last_claim_at ?? "");
   const replied = Date.parse(state.last_bot_reply_at ?? "");
-  if (Number.isFinite(claimed) && now - claimed < CLAIM_TTL_MS) return true;
-  if (Number.isFinite(replied) && now - replied < REPLY_TTL_MS) return true;
+  if (Number.isFinite(replied) && now - replied < REPLY_TTL_MS) {
+    if (!Number.isFinite(claimed) || replied >= claimed) return true;
+  }
+  if (
+    Number.isFinite(claimed) &&
+    now - claimed < IN_FLIGHT_MS &&
+    (!Number.isFinite(replied) || replied < claimed)
+  ) {
+    return true;
+  }
   return false;
 }
 

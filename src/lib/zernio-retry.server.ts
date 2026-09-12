@@ -46,7 +46,9 @@ export async function retryStuckZernioEvents(): Promise<{
   // сообщения. Отставшие строки при этом не трогаем — просто ждут своего
   // часа, если Instagram включат обратно.
   const { hasModule } = await import("./modules/modules.server");
-  if (!(await hasModule("instagram"))) {
+  const { isConsultantVertical } = await import("./verticals/registry");
+  const { currentVertical } = await import("./verticals/vertical.server");
+  if (!(await hasModule("instagram")) && !isConsultantVertical(currentVertical())) {
     return { found: 0, recovered: 0, stillStuck: 0 };
   }
 

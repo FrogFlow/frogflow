@@ -22,17 +22,11 @@ export function shouldAnswerLastIncoming(params: {
 }): boolean {
   if (params.paused) return false;
   if (params.alreadyAnswered) return false;
-  if (params.lastDirection === "outgoing") return false;
   const text = params.incomingText?.trim();
   if (!text) return false;
   const now = params.now ?? Date.now();
   const incomingTs = params.incomingAt ? Date.parse(params.incomingAt) : NaN;
   if (Number.isFinite(incomingTs) && now - incomingTs > MAX_AGE_MS) return false;
-  const outgoingTs = params.outgoingAt ? Date.parse(params.outgoingAt) : NaN;
-  if (Number.isFinite(outgoingTs) && Number.isFinite(incomingTs) && outgoingTs >= incomingTs) {
-    return false;
-  }
-  if (Number.isFinite(outgoingTs) && !Number.isFinite(incomingTs)) return false;
   return true;
 }
 

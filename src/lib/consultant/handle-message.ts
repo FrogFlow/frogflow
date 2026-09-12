@@ -123,6 +123,11 @@ export async function handleConsultantZernioEvent(params: {
     return;
   }
 
+  await patchConsultantState(params.userKey, {
+    last_customer_text: text,
+    last_bot_reply: reply.text,
+  });
+
   const send = (buttons: ConsultantReply["buttons"] | undefined) =>
     sendDirectReply({
       conversationId: params.conversationId,
