@@ -32,10 +32,8 @@ export const Route = createFileRoute("/api/cron/zernio-retry")({
           const { currentVertical } = await import("@/lib/verticals/vertical.server");
           let inbox = { checked: 0, replied: 0, skipped: 0 };
           if (isConsultantVertical(currentVertical())) {
-            const { pollIncomingConsultantMessages } = await import(
-              "@/lib/consultant/inbox-poll"
-            );
-            inbox = await pollIncomingConsultantMessages().catch(() => inbox);
+            const { pollIncomingConsultantBurst } = await import("@/lib/consultant/inbox-poll");
+            inbox = await pollIncomingConsultantBurst().catch(() => inbox);
           }
           return Response.json({ ok: true, ...result, inbox });
         } catch (e: unknown) {

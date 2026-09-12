@@ -600,13 +600,28 @@ export function resetProfileAccountsCache() {
  * спрашивать про каждый канал отдельно, то есть по разу на платформу за
  * событие.
  */
+export function matchZernioAccount(
+  accounts: ZernioAccount[],
+  accountId: string,
+): ZernioAccount | undefined {
+  const id = accountId.trim();
+  if (!id) return undefined;
+  const exact = accounts.find(
+    (candidate) => candidate._id === id || candidate.username === id || candidate.name === id,
+  );
+  if (exact) return exact;
+  const instagram = accounts.filter((a) => (a.platform || "instagram") === "instagram");
+  if (instagram.length === 1) return instagram[0];
+  return undefined;
+}
+
 export async function zernioAccountPlatform(accountId: string): Promise<ZernioPlatform | null> {
+  if (!accountId.trim()) return null;
   const profileId = process.env.ZERNIO_PROFILE_ID?.trim();
-  if (!profileId || !accountId) return null;
-  const accounts = await accountsInProfile(profileId);
-  const account = accounts.find((candidate) => candidate._id === accountId);
+  const accounts = profileId ? await accountsInProfile(profileId) : await listZernioAccounts();
+  const account = matchZernioAccount(accounts, accountId);
   if (!account) return null;
-  return isZernioPlatform(account.platform) ? account.platform : null;
+  return isZernioPlatform(account.platform) ? account.platform : "instagram";
 }
 
 /*

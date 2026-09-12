@@ -116,3 +116,38 @@ export async function pollIncomingConsultantMessages(): Promise<{
   logConsultantEvent(requestId, "inbox_poll", { checked, replied, skipped });
   return { checked, replied, skipped };
 }
+
+const BURST_MS = 50_000;
+const BURST_GAP_MS = 8_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Vercel cron не чаще раза в минуту. Если webhook молчит, без этого
+ * «здравствуйте» ждёт весь тик. Крутим Inbox до конца слота функции.
+ */
+export async function pollIncomingConsultantBurst(maxMs = BURST_MS): Promise<{
+  rounds: number;
+  checked: number;
+  replied: number;
+  skipped: number;
+}> {
+  const started = Date.now();
+  let rounds = 0;
+  let checked = 0;
+  let replied = 0;
+  let skipped = 0;
+  while (Date.now() - started < maxMs) {
+    const once = await pollIncomingConsultantMessages();
+    rounds += 1;
+    checked += once.checked;
+    replied += once.replied;
+    skipped += once.skipped;
+    const left = maxMs - (Date.now() - started);
+    if (left < BURST_GAP_MS) break;
+    await sleep(BURST_GAP_MS);
+  }
+  return { rounds, checked, replied, skipped };
+}

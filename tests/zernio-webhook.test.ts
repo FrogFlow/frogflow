@@ -6,6 +6,7 @@ import {
   describeZernioWebhookFit,
   isClientStoreZernioWorkspace,
   isOtherStoreWebhook,
+  matchZernioAccount,
 } from "../src/lib/zernio.server";
 
 describe("verifyZernioWebhookSignature", () => {
@@ -110,5 +111,23 @@ describe("sales webhook vs client store workspace", () => {
     };
     expect(describeZernioSalesWebhookFit([current], salesUrl)).toEqual({ fit: "ok", current });
     expect(describeZernioSalesWebhookFit([], salesUrl).fit).toBe("missing");
+  });
+});
+
+describe("matchZernioAccount", () => {
+  const shop = { _id: "acc_1", platform: "instagram", username: "bovi.kz", name: "BOVI" };
+
+  it("принимает id из вебхука, не только mongo _id", () => {
+    expect(matchZernioAccount([shop], "acc_1")?._id).toBe("acc_1");
+    expect(matchZernioAccount([shop], "bovi.kz")?._id).toBe("acc_1");
+  });
+
+  it("если Instagram один — не отбрасывает чужой формат accountId", () => {
+    expect(matchZernioAccount([shop], "17841400000000000")?._id).toBe("acc_1");
+  });
+
+  it("двум аккаунтам без точного id не угадывает", () => {
+    const extra = { _id: "acc_2", platform: "instagram", username: "other" };
+    expect(matchZernioAccount([shop, extra], "unknown")).toBeUndefined();
   });
 });

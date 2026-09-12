@@ -73,6 +73,9 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
          * вообще принадлежит профилю этого деплоя.
          */
         const { isZernioPlatform } = await import("@/lib/zernio-platform");
+        const { isConsultantVertical } = await import("@/lib/verticals/registry");
+        const { currentVertical } = await import("@/lib/verticals/vertical.server");
+        const consultantMode = isConsultantVertical(currentVertical());
         const hintedPlatform = isZernioPlatform(payload.account?.platform)
           ? payload.account.platform
           : null;
@@ -92,10 +95,19 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
         if (eventType !== "account.disconnected") {
           const { zernioAccountPlatform } = await import("@/lib/zernio.server");
           platform = await zernioAccountPlatform(String(accountId || ""));
+          if (!platform && consultantMode) {
+            platform = hintedPlatform ?? "instagram";
+          }
           if (!platform) {
             console.warn(
               "[zernio-webhook] ignored event for an account outside this deployment profile",
             );
+            if (consultantMode) {
+              const { pollIncomingConsultantMessages } = await import(
+                "@/lib/consultant/inbox-poll"
+              );
+              await pollIncomingConsultantMessages().catch(() => undefined);
+            }
             return new Response("ignored", { status: 202 });
           }
         }
@@ -111,19 +123,20 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
          * без подсказки в теле), пропускаем событие дальше, если куплен хотя бы
          * один из каналов: это уведомление об отвалившемся аккаунте, и молчать
          * о нём — тот самый случай, ради которого событие и подписано.
+         *
+         * Консультант — сам канал Direct. Модуль/пауза магазина не должны
+         * откладывать «здравствуйте» до минутного крона.
          */
-        const { hasModule, botStatus } = await import("@/lib/modules/modules.server");
-        const moduleForPlatform = { instagram: "instagram", whatsapp: "whatsapp" } as const;
-        if (platform) {
-          if (!(await hasModule(moduleForPlatform[platform]))) return new Response("ok");
-        } else if (!(await hasModule("instagram")) && !(await hasModule("whatsapp"))) {
-          return new Response("ok");
+        if (!consultantMode) {
+          const { hasModule, botStatus } = await import("@/lib/modules/modules.server");
+          const moduleForPlatform = { instagram: "instagram", whatsapp: "whatsapp" } as const;
+          if (platform) {
+            if (!(await hasModule(moduleForPlatform[platform]))) return new Response("ok");
+          } else if (!(await hasModule("instagram")) && !(await hasModule("whatsapp"))) {
+            return new Response("ok");
+          }
+          if ((await botStatus()) !== "active") return new Response("ok");
         }
-
-        // Приостановка за неоплату (bots.status <> active) гасит и Direct/WhatsApp —
-        // иначе основной Telegram-бот вежливо молчит, а эти каналы продолжают
-        // принимать заказы в обход паузы. См. replyIfPaused в bot.server.ts.
-        if ((await botStatus()) !== "active") return new Response("ok");
 
         const eventId =
           payload.id ||
@@ -214,9 +227,7 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
          * «здравствуйте» тогда ждёт крон добора (у нас это выглядело как 2 минуты).
          * Магазинный сценарий длиннее 5 с Zernio — его оставляем в фоне.
          */
-        const { isConsultantVertical } = await import("@/lib/verticals/registry");
-        const { currentVertical } = await import("@/lib/verticals/vertical.server");
-        if (isConsultantVertical(currentVertical()) && eventType === "message.received") {
+        if (consultantMode && eventType === "message.received") {
           await processEvent();
         } else {
           runInBackground(processEvent);
