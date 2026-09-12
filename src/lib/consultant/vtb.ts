@@ -1,4 +1,4 @@
-import { getStoredVtbRate, type StoredVtbRate } from "./rate";
+import { getStoredVtbRate, rememberStoredVtbRate, type StoredVtbRate } from "./rate";
 import { parseVtbBuyRate, rateSourceKind, type RateSourceKind } from "./vtb-parse";
 
 export { parseNbkRubRate, parseVtbBuyRate, rateSourceKind } from "./vtb-parse";
@@ -31,6 +31,7 @@ export async function saveVtbRate(rate: number, source: string): Promise<StoredV
     value: JSON.stringify(stored),
     updated_at: stored.updatedAt,
   });
+  rememberStoredVtbRate(stored);
   return stored;
 }
 

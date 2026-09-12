@@ -2,7 +2,12 @@ import type { ZernioPlatform } from "@/lib/zernio-platform";
 import type { ZernioWebhookMessagePayload } from "@/lib/zernio.server";
 import { sendDirectReply } from "@/lib/direct-purchase.server";
 import { runConsultantClaude } from "./claude";
-import { getConsultantShopUrl, loadConsultantCatalog, searchProducts } from "./catalog";
+import {
+  getConsultantShopUrl,
+  loadConsultantCatalog,
+  queryHasCatalogSignal,
+  searchProducts,
+} from "./catalog";
 import {
   COUNTRY_BUTTONS,
   copyForBucket,
@@ -133,24 +138,23 @@ export async function decideConsultantReply(
   ctx: { userKey?: string; postback?: string | null; requestId?: string } = {},
 ): Promise<ConsultantReply | null> {
   let bucket = state.ab_bucket ?? "a";
-  if (ctx.userKey) {
+  if (ctx.userKey && !state.ab_bucket) {
     try {
       const forced = await getForcedAbBucket();
-      bucket = state.ab_bucket ?? bucketForUser(ctx.userKey, forced);
+      bucket = bucketForUser(ctx.userKey, forced);
     } catch {
-      bucket = state.ab_bucket ?? "a";
+      bucket = "a";
     }
   }
   const pack = copyForBucket(bucket);
-  const shopUrl = await getShopUrlSafe();
 
   if (looksLikePromptInjection(text)) {
-    await track(ctx.userKey, "injection", text, bucket);
+    void track(ctx.userKey, "injection", text, bucket);
     return handoffReply(pack, state, bucket, "injection", text, ctx.userKey);
   }
 
   if (matchPurchaseIntent(text)) {
-    await track(ctx.userKey, "purchase", text, bucket);
+    void track(ctx.userKey, "purchase", text, bucket);
     return handoffReply(pack, state, bucket, "purchase", text, ctx.userKey, pack.purchase);
   }
 
@@ -179,7 +183,7 @@ export async function decideConsultantReply(
     !matchOtherCategoriesIntent(text);
 
   if (justCountry) {
-    await track(ctx.userKey, "country", text, bucket);
+    void track(ctx.userKey, "country", text, bucket);
     return {
       text: pack.askProduct,
       patch: { ...countryPatch, conversation_state: "awaiting_product" },
@@ -188,9 +192,9 @@ export async function decideConsultantReply(
   }
 
   if (matchCatalogIntent(text)) {
-    await track(ctx.userKey, "catalog", text, bucket);
+    void track(ctx.userKey, "catalog", text, bucket);
     return {
-      text: pack.catalogLink(shopUrl),
+      text: pack.catalogLink(await getShopUrlSafe()),
       patch: countryPatch,
       kind: "catalog",
     };
@@ -200,10 +204,32 @@ export async function decideConsultantReply(
     return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
   }
 
-  const catalog = await loadConsultantCatalog();
+  if (!looksLikeProductQuery(text)) {
+    return {
+      text: pack.askProduct,
+      patch: { ...countryPatch, conversation_state: "awaiting_product" },
+      kind: "clarify",
+    };
+  }
+
+  const [catalog, rateRow] = await Promise.all([loadConsultantCatalog(), getStoredVtbRate()]);
   if (catalog.length === 0) {
-    await track(ctx.userKey, "error", "catalog_empty", bucket);
+    void track(ctx.userKey, "error", "catalog_empty", bucket);
     return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
+  }
+
+  const local = await replyFromLocalCatalog(
+    text,
+    catalog,
+    country,
+    countryPatch,
+    pack,
+    state,
+    rateRow?.rate ?? null,
+  );
+  if (local) {
+    void track(ctx.userKey, local.kind === "oos" ? "oos" : "query", text, bucket);
+    return local;
   }
 
   try {
@@ -211,20 +237,29 @@ export async function decideConsultantReply(
       text,
       state: { ...state, ...countryPatch },
       catalog,
-      shopUrl,
-      forceTools: looksLikeProductQuery(text) || matchCatalogIntent(text),
+      shopUrl: await getShopUrlSafe(),
+      forceTools: false,
     });
     if (ai.usage) {
-      const { recordConsultantLifetime } = await import("@/lib/ai-usage.server");
-      await recordConsultantLifetime(ai.usage);
+      void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
     }
 
     if (ai.error === "no_api_key") {
-      return fallbackFromCatalog(text, catalog, country, countryPatch, pack, state);
+      return (
+        (await replyFromLocalCatalog(
+          text,
+          catalog,
+          country,
+          countryPatch,
+          pack,
+          state,
+          rateRow?.rate ?? null,
+        )) ?? { text: pack.askProduct, patch: countryPatch, kind: "clarify" }
+      );
     }
 
     if (ai.handoff) {
-      await track(ctx.userKey, "handoff", text, bucket);
+      void track(ctx.userKey, "handoff", text, bucket);
       return handoffReply(
         pack,
         { ...state, ...countryPatch, last_product_ids: ai.products.map((p) => p.id) },
@@ -237,32 +272,21 @@ export async function decideConsultantReply(
     }
 
     if (ai.error) {
-      await track(ctx.userKey, "error", ai.error, bucket);
-      return handoffReply(pack, { ...state, ...countryPatch }, bucket, "error", text, ctx.userKey);
-    }
-
-    const inStock = ai.products.filter((p) => p.stock);
-    if (looksLikeProductQuery(text) && inStock.length === 0) {
-      await track(ctx.userKey, "oos", text, bucket);
+      void track(ctx.userKey, "error", ai.error, bucket);
       return {
-        text: pack.oos,
-        patch: { ...countryPatch, last_product_ids: [] },
-        kind: "oos",
+        text: pack.askProduct,
+        patch: countryPatch,
+        kind: "clarify",
       };
     }
 
+    const inStock = ai.products.filter((p) => p.stock);
     if (inStock.length > 0) {
-      const rate = (await getStoredVtbRate())?.rate ?? null;
       const includeCdek = country === "RU" && !state.ru_cdek_sent;
-      const rub = country === "RU" && rate ? priceRub(inStock[0].price_kzt, rate) : null;
-      const card = formatProductReply(inStock[0], country, rub, {
-        includeCdek,
-        shopUrl,
-        pack,
-      });
-      await track(ctx.userKey, "query", text, bucket);
+      const rub = country === "RU" && rateRow?.rate ? priceRub(inStock[0].price_kzt, rateRow.rate) : null;
+      void track(ctx.userKey, "query", text, bucket);
       return {
-        text: card,
+        text: formatProductReply(inStock[0], country, rub, { includeCdek, pack }),
         patch: {
           ...countryPatch,
           last_product_ids: inStock.map((p) => p.id),
@@ -270,6 +294,11 @@ export async function decideConsultantReply(
         },
         kind: "product",
       };
+    }
+
+    if (looksLikeProductQuery(text) && queryHasCatalogSignal(text, catalog)) {
+      void track(ctx.userKey, "oos", text, bucket);
+      return { text: pack.oos, patch: { ...countryPatch, last_product_ids: [] }, kind: "oos" };
     }
 
     const check = validateConsultantReply(ai.text, ai.products, ai.extraNumbers);
@@ -287,34 +316,43 @@ export async function decideConsultantReply(
       kind: "clarify",
     };
   } catch {
-    await track(ctx.userKey, "error", "claude_failed", bucket);
-    return handoffReply(pack, { ...state, ...countryPatch }, bucket, "error", text, ctx.userKey);
+    void track(ctx.userKey, "error", "claude_failed", bucket);
+    return {
+      text: pack.askProduct,
+      patch: countryPatch,
+      kind: "clarify",
+    };
   }
 }
 
-async function fallbackFromCatalog(
+export async function replyFromLocalCatalog(
   text: string,
   catalog: import("./catalog").ConsultantProduct[],
   country: import("./intent").ConsultantCountry | undefined,
   countryPatch: Partial<ConsultantState>,
   pack: ConsultantCopyPack,
   state: ConsultantState,
-): Promise<ConsultantReply> {
+  rate: number | null,
+): Promise<ConsultantReply | null> {
   const found = await searchProducts({ query: text }, catalog);
   const hit = found.find((p) => p.stock);
-  if (!hit) {
-    return { text: pack.oos, patch: countryPatch, kind: "oos" };
+  if (hit) {
+    const includeCdek = country === "RU" && !state.ru_cdek_sent;
+    const rub = country === "RU" && rate ? priceRub(hit.price_kzt, rate) : null;
+    return {
+      text: formatProductReply(hit, country, rub, { includeCdek, pack }),
+      patch: {
+        ...countryPatch,
+        last_product_ids: [hit.id],
+        ru_cdek_sent: state.ru_cdek_sent || includeCdek,
+      },
+      kind: "product",
+    };
   }
-  const includeCdek = country === "RU" && !state.ru_cdek_sent;
-  return {
-    text: formatProductReply(hit, country, null, { includeCdek, pack }),
-    patch: {
-      ...countryPatch,
-      last_product_ids: [hit.id],
-      ru_cdek_sent: state.ru_cdek_sent || includeCdek,
-    },
-    kind: "product",
-  };
+  if (found.length > 0 || queryHasCatalogSignal(text, catalog)) {
+    return { text: pack.oos, patch: { ...countryPatch, last_product_ids: [] }, kind: "oos" };
+  }
+  return null;
 }
 
 async function handoffReply(
@@ -329,12 +367,8 @@ async function handoffReply(
   const pauseReason = reason === "injection" ? "other" : reason === "other" ? "other" : reason;
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
-    await addConsultantTask({
-      userKey,
-      reason,
-      text,
-    });
-    await notifyConsultantHandoff({ userKey, reason, text });
+    void addConsultantTask({ userKey, reason, text });
+    void notifyConsultantHandoff({ userKey, reason, text });
   }
   return {
     text: message ?? pack.unrecognized,

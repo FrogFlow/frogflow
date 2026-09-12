@@ -100,7 +100,7 @@ export async function runConsultantClaude(params: {
       },
       body: JSON.stringify({
         model: consultantModel(),
-        max_tokens: 600,
+        max_tokens: 280,
         system: [
           {
             type: "text",
@@ -167,13 +167,18 @@ export async function runConsultantClaude(params: {
       return { text: lastText, products, extraNumbers, handoff, usage };
     }
 
+    const executedAll = await Promise.all(
+      toolUses.map((call) =>
+        executeConsultantTool(call.name, call.input ?? {}, {
+          country,
+          catalog: params.catalog,
+          shopUrl: params.shopUrl,
+        }),
+      ),
+    );
     const toolResults: unknown[] = [];
-    for (const call of toolUses) {
-      const executed = await executeConsultantTool(call.name, call.input ?? {}, {
-        country,
-        catalog: params.catalog,
-        shopUrl: params.shopUrl,
-      });
+    for (let i = 0; i < toolUses.length; i++) {
+      const executed = executedAll[i];
       products.push(...executed.products);
       if (executed.handoff) handoff = true;
       const rate = (executed.result as { rate?: number } | null)?.rate;
@@ -181,12 +186,13 @@ export async function runConsultantClaude(params: {
       for (const p of executed.products) extraNumbers.push(p.price_kzt);
       toolResults.push({
         type: "tool_result",
-        tool_use_id: call.id,
+        tool_use_id: toolUses[i].id,
         content: JSON.stringify(executed.result),
       });
     }
     messages.push({ role: "user", content: toolResults });
-    if (handoff) {
+    /** Карточку и handoff собирает backend — второй круг Claude только задерживает Direct. */
+    if (handoff || products.length > 0) {
       return { text: lastText, products, extraNumbers, handoff, usage };
     }
   }

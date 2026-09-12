@@ -129,24 +129,40 @@ export async function saveConsultantCatalog(
     { key: CATALOG_KEY, value: JSON.stringify(products), updated_at: now },
     { key: CATALOG_META_KEY, value: JSON.stringify(meta), updated_at: now },
   ]);
+  catalogCache = { at: Date.now(), products };
   return meta;
+}
+
+let catalogCache: { at: number; products: ConsultantProduct[] } | null = null;
+const CATALOG_CACHE_MS = 45_000;
+
+export function invalidateConsultantCatalogCache(): void {
+  catalogCache = null;
 }
 
 /**
  * Снимок прайса. Пустой = честный «нет в наличии», не догадка модели.
  */
 export async function loadConsultantCatalog(): Promise<ConsultantProduct[]> {
+  if (catalogCache && Date.now() - catalogCache.at < CATALOG_CACHE_MS) {
+    return catalogCache.products;
+  }
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data } = await supabaseAdmin
     .from("app_settings")
     .select("value")
     .eq("key", CATALOG_KEY)
     .maybeSingle();
-  if (!data?.value?.trim()) return [];
+  if (!data?.value?.trim()) {
+    catalogCache = { at: Date.now(), products: [] };
+    return [];
+  }
   try {
     const parsed = JSON.parse(data.value) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isConsultantProduct);
+    const products = parsed.filter(isConsultantProduct);
+    catalogCache = { at: Date.now(), products };
+    return products;
   } catch {
     return [];
   }
@@ -164,6 +180,36 @@ function isConsultantProduct(row: unknown): row is ConsultantProduct {
     typeof p.price_kzt === "number" &&
     typeof p.stock === "boolean"
   );
+}
+
+const QUERY_STOP = new Set([
+  "есть",
+  "нужен",
+  "нужна",
+  "нужно",
+  "хочу",
+  "подскажи",
+  "сколько",
+  "стоит",
+  "цена",
+  "пожалуйста",
+  "можно",
+  "какой",
+  "какое",
+  "какие",
+  "наличии",
+  "наличие",
+]);
+
+/** В запросе есть размер, цвет или слово из прайса — можно ответить без Claude. */
+export function queryHasCatalogSignal(text: string, catalog: ConsultantProduct[]): boolean {
+  if (/\d+\s*[xх×]\s*\d+/i.test(text)) return true;
+  const tokens = tokenizeQuery(text).filter((t) => t.length > 2 && !QUERY_STOP.has(t));
+  if (tokens.length === 0) return false;
+  return catalog.some((p) => {
+    const hay = haystackOf([p.name, p.category, p.size, p.colors.join(" ")]);
+    return tokens.some((t) => hay.includes(t));
+  });
 }
 
 export async function searchProducts(
