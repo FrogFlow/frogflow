@@ -173,7 +173,6 @@ describe("consultant — decideConsultantReply без магазинного ч�
     const res = await decideConsultantReply("есть белое полотенце?", {});
     expect(res?.text).toBe(consultantCopy.askCountry);
     expect(res?.patch.conversation_state).toBe("awaiting_country");
-    expect(res?.buttons).toHaveLength(2);
   });
 
   it("после страны — запрос товара по ТЗ", async () => {

@@ -44,7 +44,8 @@ export function containsForbiddenPhrase(text: string): boolean {
   return FORBIDDEN_PHRASES.some((p) => lower.includes(p));
 }
 
-const GREETING_RE = /^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай)[.!?…]*$/i;
+const GREETING_RE =
+  /^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай)([.!?…\s]|👋|🙏)*$/i;
 
 /**
  * После страны почти любой осмысленный текст — про товар.

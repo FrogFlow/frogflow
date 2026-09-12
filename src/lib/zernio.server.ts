@@ -307,6 +307,7 @@ async function zernioRequest<T>(
      * тот же ключ с другим телом — 422, ключ ещё в работе — 409.
      */
     idempotencyKey?: string;
+    timeoutMs?: number;
   } = {},
 ): Promise<T> {
   const apiKey = getZernioKey();
@@ -327,6 +328,7 @@ async function zernioRequest<T>(
       ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: AbortSignal.timeout(options.timeoutMs ?? 12_000),
   });
 
   const responseText = await response.text();

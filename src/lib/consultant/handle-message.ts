@@ -8,12 +8,7 @@ import {
   queryHasCatalogSignal,
   searchProducts,
 } from "./catalog";
-import {
-  COUNTRY_BUTTONS,
-  copyForBucket,
-  formatProductReply,
-  type ConsultantCopyPack,
-} from "./copy";
+import { copyForBucket, formatProductReply, type ConsultantCopyPack } from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import {
   looksLikeProductQuery,
@@ -164,7 +159,6 @@ export async function decideConsultantReply(
   if (!country) {
     return {
       text: pack.askCountry,
-      buttons: COUNTRY_BUTTONS,
       patch: { conversation_state: "awaiting_country", ab_bucket: bucket },
       kind: "country",
     };

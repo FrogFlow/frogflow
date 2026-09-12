@@ -169,8 +169,7 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
           return new Response("failed to record event", { status: 500 });
         }
 
-        // Обрабатывается ровно то, на что мы подписаны (см. registerZernioWebhook).
-        runInBackground(async () => {
+        const processEvent = async () => {
           try {
             const { handleZernioMessage, handleZernioAccountDisconnected } =
               await import("@/lib/zernio-bot.server");
@@ -207,7 +206,21 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
               .update({ status: "error" })
               .eq("id", logEntry.id);
           }
-        });
+        };
+
+        /**
+         * Консультант отвечает за 1–2 с (страна / карточка из прайса). Если
+         * уйти в waitUntil, Vercel часто гасит изолят сразу после 200 —
+         * «здравствуйте» тогда ждёт крон добора (у нас это выглядело как 2 минуты).
+         * Магазинный сценарий длиннее 5 с Zernio — его оставляем в фоне.
+         */
+        const { isConsultantVertical } = await import("@/lib/verticals/registry");
+        const { currentVertical } = await import("@/lib/verticals/vertical.server");
+        if (isConsultantVertical(currentVertical()) && eventType === "message.received") {
+          await processEvent();
+        } else {
+          runInBackground(processEvent);
+        }
 
         return new Response("ok", { status: 200 });
       },

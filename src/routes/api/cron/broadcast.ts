@@ -26,6 +26,24 @@ export const Route = createFileRoute("/api/cron/broadcast")({
         try {
           const webhook = await ensureTelegramWebhook();
 
+          let consultantInbox:
+            | { checked: number; replied: number; skipped: number }
+            | { error: string }
+            | undefined;
+          try {
+            const { isConsultantVertical } = await import("@/lib/verticals/registry");
+            const { currentVertical } = await import("@/lib/verticals/vertical.server");
+            if (isConsultantVertical(currentVertical())) {
+              const { pollIncomingConsultantMessages } = await import(
+                "@/lib/consultant/inbox-poll"
+              );
+              consultantInbox = await pollIncomingConsultantMessages();
+            }
+          } catch (e: unknown) {
+            console.error("[cron/broadcast] consultant inbox", e);
+            consultantInbox = { error: errorMessage(e) };
+          }
+
           let total = 0;
           let done = false;
           let last: Awaited<ReturnType<typeof processBroadcastBatch>> | undefined;
@@ -63,6 +81,7 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             done,
             deliveries,
             adminNotify,
+            consultantInbox,
             ...last,
           });
         } catch (e: unknown) {

@@ -8,7 +8,7 @@
   "regions": ["icn1"],
   "crons": [
     { "path": "/api/cron/broadcast", "schedule": "*/1 * * * *" },
-    { "path": "/api/cron/zernio-retry", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/zernio-retry", "schedule": "*/1 * * * *" },
     { "path": "/api/cron/zernio-logs-prune", "schedule": "0 3 * * *" },
     { "path": "/api/cron/manager-chat-prune", "schedule": "15 3 * * *" },
     { "path": "/api/cron/misc-retention", "schedule": "30 3 * * *" },
