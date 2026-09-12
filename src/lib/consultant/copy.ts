@@ -64,6 +64,40 @@ export const consultantCopy = {
   otherCategories: TZ_COPY.otherCategories,
 };
 
+function foldReply(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** Своя карточка/шаблон, а не реплика менеджера — по ней нельзя ставить паузу. */
+export function looksLikeConsultantBotReply(text: string): boolean {
+  const t = foldReply(text);
+  if (!t) return false;
+  const snippets = [
+    TZ_COPY.askCountry,
+    TZ_COPY.askProduct,
+    TZ_COPY.oos,
+    TZ_COPY.purchase,
+    TZ_COPY.otherCategories,
+    TZ_COPY.crossSell,
+    TZ_COPY.unrecognized,
+    AB_COPY.askCountry,
+    AB_COPY.askProduct,
+    AB_COPY.crossSell,
+  ];
+  if (snippets.some((s) => t === foldReply(s) || t.includes(foldReply(s).slice(0, 32)))) {
+    return true;
+  }
+  return (
+    /есть в наличии/i.test(t) ||
+    /данного товара сейчас нет в наличии/i.test(t) ||
+    /из какой вы страны/i.test(t) ||
+    /какой товар, размер или расцветка/i.test(t) ||
+    /в нашем ассортименте также/i.test(t) ||
+    /напишите товар, размер или цвет/i.test(t) ||
+    /стоимость\s*[—\-]\s*[\d\s]+[₸₽]/i.test(t)
+  );
+}
+
 export const COUNTRY_BUTTONS = [
   { type: "postback" as const, title: "Казахстан", payload: "CONSULTANT_COUNTRY:KZ" },
   { type: "postback" as const, title: "Россия", payload: "CONSULTANT_COUNTRY:RU" },

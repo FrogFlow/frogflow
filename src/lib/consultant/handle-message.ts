@@ -8,7 +8,12 @@ import {
   queryHasCatalogSignal,
   searchProducts,
 } from "./catalog";
-import { copyForBucket, formatProductReply, type ConsultantCopyPack } from "./copy";
+import {
+  copyForBucket,
+  formatProductReply,
+  looksLikeConsultantBotReply,
+  type ConsultantCopyPack,
+} from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import {
   looksLikeProductQuery,
@@ -27,9 +32,11 @@ import {
   claimIncomingMessage,
   isAutomationPaused,
   isBotEcho,
+  isFalseManagerPause,
   loadConsultantState,
   patchConsultantState,
   pauseConsultant,
+  resumeConsultant,
   type ConsultantState,
 } from "./state";
 import { validateConsultantReply } from "./validate";
@@ -69,7 +76,7 @@ export async function handleConsultantZernioEvent(params: {
   const { consultant } = await loadConsultantState(params.userKey);
 
   if (direction === "outgoing") {
-    if (isBotEcho(consultant, params.text)) return;
+    if (isBotEcho(consultant, params.text) || looksLikeConsultantBotReply(params.text)) return;
     if (params.text.trim()) {
       await pauseConsultant(params.userKey, "manager_intervention");
       logConsultantEvent(requestId, "paused", {
@@ -81,11 +88,28 @@ export async function handleConsultantZernioEvent(params: {
   }
 
   if (isAutomationPaused(consultant)) {
-    logConsultantEvent(requestId, "skipped_paused", {
-      userKey: params.userKey,
-      reason: consultant.pause_reason,
-    });
-    return;
+    let lastOutgoing = "";
+    try {
+      const { listZernioConversationMessages } = await import("@/lib/zernio.server");
+      const messages = await listZernioConversationMessages(
+        params.accountId,
+        params.conversationId,
+      );
+      lastOutgoing =
+        [...messages].reverse().find((m) => m.direction === "outgoing" && m.message?.trim())
+          ?.message ?? "";
+    } catch {
+      lastOutgoing = "";
+    }
+    if (isFalseManagerPause(consultant, lastOutgoing)) {
+      await resumeConsultant(params.userKey);
+    } else {
+      logConsultantEvent(requestId, "skipped_paused", {
+        userKey: params.userKey,
+        reason: consultant.pause_reason,
+      });
+      return;
+    }
   }
 
   const text = params.text.trim() || params.postback?.trim() || "";

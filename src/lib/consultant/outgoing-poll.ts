@@ -1,3 +1,4 @@
+import { looksLikeConsultantBotReply } from "./copy";
 import { isBotEcho, loadConsultantState, pauseConsultant } from "./state";
 import { logConsultantEvent, consultantRequestId } from "./log";
 
@@ -26,6 +27,7 @@ export async function pollOutgoingManagerMessages(): Promise<{ checked: number; 
       const { consultant } = await loadConsultantState(data.user_key);
       if (consultant.automation_paused) continue;
       if (isBotEcho(consultant, last.message || "")) continue;
+      if (looksLikeConsultantBotReply(last.message || "")) continue;
       await pauseConsultant(data.user_key, "manager_intervention");
       paused += 1;
       logConsultantEvent(consultantRequestId(), "paused_poll", { userKey: data.user_key });

@@ -13,7 +13,7 @@ import {
 } from "../src/lib/consultant/intent";
 import { validateConsultantReply } from "../src/lib/consultant/validate";
 import { looksLikePromptInjection } from "../src/lib/consultant/injection";
-import { formatProductReply, TZ_COPY } from "../src/lib/consultant/copy";
+import { formatProductReply, looksLikeConsultantBotReply, TZ_COPY } from "../src/lib/consultant/copy";
 import { tokenizeQuery } from "../src/lib/consultant/synonyms";
 import { googleDriveFileId, googleDriveFolderId } from "../src/lib/consultant/drive";
 import { presentCard } from "../src/lib/consultant/tools";
@@ -21,6 +21,7 @@ import {
   alreadyAnsweredIncoming,
   isAutomationPaused,
   isBotEcho,
+  isFalseManagerPause,
   pickConversationUserKey,
   readConsultantState,
 } from "../src/lib/consultant/state";
@@ -172,6 +173,28 @@ describe("consultant — pause / echo", () => {
     ).toBe("ig_123");
     expect(pickConversationUserKey([{ user_key: "ig_only", state: {} }])).toBe("ig_only");
     expect(pickConversationUserKey([])).toBeNull();
+  });
+
+  it("карточка и шаблон — не вмешательство менеджера", () => {
+    const card = formatProductReply(towel, "KZ", null);
+    expect(looksLikeConsultantBotReply(card)).toBe(true);
+    expect(looksLikeConsultantBotReply(TZ_COPY.askProduct)).toBe(true);
+    expect(looksLikeConsultantBotReply("Сейчас посмотрю на складе, напишите адрес")).toBe(false);
+    expect(
+      isFalseManagerPause(
+        { automation_paused: true, pause_reason: "manager_intervention" },
+        card,
+      ),
+    ).toBe(true);
+    expect(
+      isFalseManagerPause(
+        { automation_paused: true, pause_reason: "manager_intervention" },
+        "Ок, оформляем, куда доставить?",
+      ),
+    ).toBe(false);
+    expect(isFalseManagerPause({ automation_paused: true, pause_reason: "purchase" }, card)).toBe(
+      false,
+    );
   });
 
   it("своё исходящее не считает вмешательством менеджера", () => {

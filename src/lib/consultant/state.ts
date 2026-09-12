@@ -1,4 +1,5 @@
 import type { Json } from "@/integrations-supabase/types";
+import { looksLikeConsultantBotReply } from "./copy";
 import type { ConsultantCountry } from "./intent";
 
 export type PauseReason = "manager_intervention" | "purchase" | "error" | "other";
@@ -190,15 +191,26 @@ export function isAutomationPaused(state: ConsultantState): boolean {
   return state.automation_paused === true;
 }
 
+function foldReply(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 export function isBotEcho(state: ConsultantState, text: string): boolean {
-  const reply = state.last_bot_reply?.trim();
-  const incoming = text.trim();
+  const reply = foldReply(state.last_bot_reply ?? "");
+  const incoming = foldReply(text);
   if (!reply || !incoming) return false;
   if (reply === incoming) return true;
   return (
     incoming.length >= 24 &&
     (incoming.startsWith(reply.slice(0, 24)) || reply.startsWith(incoming.slice(0, 24)))
   );
+}
+
+/** Пауза «менеджер» после нашей же карточки — бот тогда молчит навсегда. */
+export function isFalseManagerPause(state: ConsultantState, lastOutgoingText?: string): boolean {
+  if (!isAutomationPaused(state)) return false;
+  if (state.pause_reason && state.pause_reason !== "manager_intervention") return false;
+  return Boolean(lastOutgoingText && looksLikeConsultantBotReply(lastOutgoingText));
 }
 
 const IN_FLIGHT_MS = 15_000;
