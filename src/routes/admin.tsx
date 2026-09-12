@@ -84,16 +84,6 @@ function AdminLayout() {
                   <NavLink to="/admin/instagram" locked={!modules.instagram} locale={locale}>
                     Instagram
                   </NavLink>
-                  {modules.manager_chat ? (
-                    <ManagerChatNavLink locale={locale} />
-                  ) : (
-                    <NavLink to="/admin/manager-chat" locked locale={locale}>
-                      {t("managerChat", locale)}
-                    </NavLink>
-                  )}
-                  <NavLink to="/admin/blocked" locked={!modules.blocked} locale={locale}>
-                    {t("blocked", locale)}
-                  </NavLink>
                 </>
               ) : (
                 <>
@@ -192,7 +182,7 @@ function AdminLayout() {
                 </>
               )}
 
-              <NavLink to="/admin/modules">{t("modules", locale)}</NavLink>
+              {!isConsultant && <NavLink to="/admin/modules">{t("modules", locale)}</NavLink>}
               <NavLink to="/admin/settings">{t("settings", locale)}</NavLink>
             </div>
             <select
@@ -260,32 +250,6 @@ function NavLink({
       activeOptions={{ exact: to === "/admin" }}
     >
       {children}
-    </Link>
-  );
-}
-
-/** Top-level «Чат с менеджером» for the consultant nav (no «Продвижение» dropdown). */
-function ManagerChatNavLink({ locale }: { locale: Locale }) {
-  const unread = useQuery({
-    queryKey: ["manager_chat_total_unread"],
-    queryFn: () => totalManagerChatUnreadFn(),
-    refetchInterval: 20_000,
-  });
-  return (
-    <Link
-      to="/admin/manager-chat"
-      className="px-2.5 py-1.5 rounded-md text-sm hover:bg-accent shrink-0 inline-flex items-center gap-1.5"
-      activeProps={{
-        className:
-          "px-2.5 py-1.5 rounded-md text-sm bg-accent font-medium shrink-0 inline-flex items-center gap-1.5",
-      }}
-    >
-      {t("managerChat", locale)}
-      {!!unread.data && (
-        <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] rounded-full bg-destructive text-destructive-foreground text-[10px] px-1">
-          {unread.data}
-        </span>
-      )}
     </Link>
   );
 }

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components-ui/button";
@@ -14,6 +15,7 @@ import { t, type Locale } from "@/lib/i18n";
 import { errorMessage } from "@/lib/error-message";
 
 export const Route = createFileRoute("/admin/modules")({
+  beforeLoad: ({ context }) => rejectConsultantShopPage(context),
   component: ModulesPage,
 });
 

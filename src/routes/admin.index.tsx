@@ -51,7 +51,7 @@ const copy: Record<
       "При выключенной Robokassa: проверьте скриншот и нажмите «Подтвердить». При включённой — для RU/BY/OTHER/KZ чек может выдать файлы сразу (уведомление без кнопки); прочие страны — через Robokassa.",
     step4Physical:
       "В «Настройках» задайте задаток и самовывоз/доставку, в «Зонах доставки» — районы. В «Заказах»: Принять → В работу → Готов → Выдан.",
-    step1Consultant: "В «Модулях» подключите Instagram и чат с менеджером.",
+    step1Consultant: "В «Instagram» подключите Direct — входящие диалоги будут там же.",
     step2Consultant:
       "В разделе «Консультант» будет таблица каталога (Google Sheets / ежедневный Excel) — бот отвечает только прайсом.",
     step3Consultant: "Там же — курс VTB KZ и правила диалога. Цены и остатки модель не выдумывает.",
@@ -79,7 +79,8 @@ const copy: Record<
       "Robokassa өшірулі болса: скриншотты тексеріп, «Растау» батырмасын басыңыз. Қосулы болса — RU/BY/OTHER/KZ үшін чек файлдарды бірден бере алады (батырмасыз хабарлама); басқа елдер — Robokassa арқылы.",
     step4Physical:
       "«Баптауларда» алдын ала төлем мен өзі алып кету/жеткізуді, «Жеткізу аймақтарында» аудандарды көрсетіңіз. «Тапсырыстарда»: Қабылдау → Жұмысқа → Дайын → Берілді.",
-    step1Consultant: "«Модульдерде» Instagram мен менеджер чатын қосыңыз.",
+    step1Consultant:
+      "«Instagram» бөлімінде Direct-ті қосыңыз — кіріс диалогтар сол жерде болады.",
     step2Consultant:
       "«Кеңесші» бөлімінде каталог кестесі болады (Google Sheets / күнделікті Excel) — бот тек прайспен жауап береді.",
     step3Consultant:
@@ -108,7 +109,7 @@ const copy: Record<
       'With Robokassa disabled: check the screenshot and click "Confirm". With it enabled — for RU/BY/OTHER/KZ the receipt may release the files right away (a notification with no button); other countries go through Robokassa.',
     step4Physical:
       "In Settings set the deposit and pickup/delivery, in Delivery zones — areas. In Orders: Accept → In production → Ready → Delivered.",
-    step1Consultant: "In Modules enable Instagram and manager chat.",
+    step1Consultant: "In Instagram connect Direct — incoming conversations stay on that tab.",
     step2Consultant:
       "The Consultant page will hold the catalog sheet (Google Sheets / daily Excel) — the bot answers from the price list only.",
     step3Consultant:
@@ -139,7 +140,8 @@ const copy: Record<
       "Robokassa o‘chirilgan bo‘lsa: skrinshotni tekshirib, «Tasdiqlash» tugmasini bosing. Yoqilgan bo‘lsa — RU/BY/OTHER/KZ uchun chek fayllarni darhol berishi mumkin (tugmasiz xabarnoma); boshqa mamlakatlar — Robokassa orqali.",
     step4Physical:
       "«Sozlamalar»da oldindan to‘lov va olib ketish/yetkazib berishni, «Yetkazib berish zonalari»da tumanlarni belgilang. «Buyurtmalar»da: Qabul qilish → Ishga → Tayyor → Berildi.",
-    step1Consultant: "«Modullar»da Instagram va menejer chatini ulang.",
+    step1Consultant:
+      "«Instagram» bo‘limida Direct’ni ulang — kiruvchi suhbatlar o‘sha yerda bo‘ladi.",
     step2Consultant:
       "«Maslahatchi» bo‘limida katalog jadvali bo‘ladi (Google Sheets / kunlik Excel) — bot faqat narxlar ro‘yxati bilan javob beradi.",
     step3Consultant:

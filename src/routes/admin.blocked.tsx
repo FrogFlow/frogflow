@@ -16,10 +16,12 @@ import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
 import { useAdminLocale } from "@/lib/admin-locale";
 import { useVertical } from "@/lib/verticals/use-vertical";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 import type { Locale } from "@/lib/i18n";
 
 export const Route = createFileRoute("/admin/blocked")({
   beforeLoad: ({ context }) => {
+    rejectConsultantShopPage(context);
     if (!context.modules.blocked) throw redirect({ to: "/admin" });
   },
   component: BlockedUsersPage,

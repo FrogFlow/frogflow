@@ -15,9 +15,11 @@ import {
   markManagerChatReadFn,
   sendManagerChatReplyFn,
 } from "@/lib/modules/manager-chat.functions";
+import { rejectConsultantShopPage } from "@/lib/verticals/consultant-admin-guard";
 
 export const Route = createFileRoute("/admin/manager-chat")({
   beforeLoad: ({ context }) => {
+    rejectConsultantShopPage(context);
     if (!context.modules.manager_chat) throw redirect({ to: "/admin" });
   },
   component: ManagerChatPage,
