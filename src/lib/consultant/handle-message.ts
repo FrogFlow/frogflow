@@ -7,6 +7,7 @@ import {
   loadConsultantCatalog,
   queryHasCatalogSignal,
   searchProducts,
+  searchTokens,
 } from "./catalog";
 import {
   copyForBucket,
@@ -17,6 +18,7 @@ import {
 import { looksLikePromptInjection } from "./injection";
 import {
   looksLikeProductQuery,
+  looksLikeVagueHelp,
   matchAdviceIntent,
   matchCatalogIntent,
   matchCountry,
@@ -115,6 +117,11 @@ export async function handleConsultantZernioEvent(params: {
 
   const text = params.text.trim() || params.postback?.trim() || "";
   if (!text && !params.postback) return;
+
+  if (isBotEcho(consultant, text) || looksLikeConsultantBotReply(text)) {
+    logConsultantEvent(requestId, "skipped_echo", { userKey: params.userKey });
+    return;
+  }
 
   const source = params.source ?? "webhook";
   if (alreadyAnsweredIncoming(consultant, text, Date.now(), source)) {
@@ -256,7 +263,7 @@ export async function decideConsultantReply(
     };
   }
 
-  if (matchAdviceIntent(text) || matchOtherCategoriesIntent(text)) {
+  if (looksLikeVagueHelp(text) || matchAdviceIntent(text) || matchOtherCategoriesIntent(text)) {
     let namedProduct = false;
     try {
       const catalog = await loadConsultantCatalog();
@@ -295,6 +302,10 @@ export async function decideConsultantReply(
   if (local) {
     void track(ctx.userKey, local.kind === "oos" ? "oos" : "query", text, bucket);
     return local;
+  }
+
+  if (searchTokens(text).length === 0 || looksLikeVagueHelp(text)) {
+    return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
   }
 
   try {

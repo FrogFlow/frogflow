@@ -8,6 +8,7 @@ import {
   matchCatalogIntent,
   containsForbiddenPhrase,
   looksLikeProductQuery,
+  looksLikeVagueHelp,
   matchAdviceIntent,
   matchOtherCategoriesIntent,
 } from "../src/lib/consultant/intent";
@@ -89,6 +90,8 @@ describe("consultant — намерения", () => {
     expect(looksLikeProductQuery("я из России")).toBe(false);
     expect(looksLikeProductQuery("привет")).toBe(false);
     expect(looksLikeProductQuery("оформляем")).toBe(false);
+    expect(looksLikeProductQuery("Чем я могу помочь?")).toBe(false);
+    expect(looksLikeVagueHelp("Чем я могу помочь? Мы продаём матрасы")).toBe(true);
   });
 
   it("совет «для дома» — категории, не товар и не OOS", () => {
@@ -204,6 +207,7 @@ describe("consultant — pause / echo", () => {
     expect(looksLikeConsultantBotReply(card)).toBe(true);
     expect(looksLikeConsultantBotReply(TZ_COPY.askProduct)).toBe(true);
     expect(looksLikeConsultantBotReply("Сейчас посмотрю на складе, напишите адрес")).toBe(false);
+    expect(looksLikeConsultantBotReply("Чем я могу помочь?\nМы продаём:\n- матрасы")).toBe(true);
     expect(
       isFalseManagerPause(
         { automation_paused: true, pause_reason: "manager_intervention" },
@@ -284,6 +288,13 @@ describe("consultant — decideConsultantReply без магазинного ч�
     const res = await decideConsultantReply("Казахстан", {});
     expect(res?.text).toBe(TZ_COPY.askProduct);
     expect(res?.patch.country).toBe("KZ");
+  });
+
+  it("«чем я могу помочь» — шаблон категорий, не свободный Claude", async () => {
+    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
+    const res = await decideConsultantReply("Чем я могу помочь?", { country: "KZ" });
+    expect(res?.kind).toBe("clarify");
+    expect(res?.text).toBe(TZ_COPY.otherCategories);
   });
 
   it("повторное «здравствуйте» снова спрашивает страну", async () => {
@@ -522,6 +533,20 @@ describe("consultant — добор входящих Direct", () => {
         lastDirection: "incoming",
       }),
     ).toBe(true);
+    expect(
+      shouldAnswerLastIncoming({
+        incomingText: "Чем я могу помочь?",
+        paused: false,
+        incomingLooksLikeBot: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAnswerLastIncoming({
+        incomingText: "есть полотенце?",
+        paused: false,
+        recentlyReplied: true,
+      }),
+    ).toBe(false);
   });
 });
 

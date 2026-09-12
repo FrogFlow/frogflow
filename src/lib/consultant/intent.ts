@@ -51,6 +51,13 @@ export function isConsultantGreeting(text: string): boolean {
   return GREETING_RE.test(text.trim());
 }
 
+/** Свободные «чем помочь / мы продаём» — не запрос в прайс и не реплика клиента. */
+export function looksLikeVagueHelp(text: string): boolean {
+  return /чем\s+(я\s+)?могу\s+помочь|напишите[,\s]+что\s+вас\s+интересует|жду\s+вашего|я\s+здесь[,\s]+чтобы|мы\s+прода[её]м|что\s+вас\s+интересует|я\s+жду\s+вашего/i.test(
+    text,
+  );
+}
+
 /**
  * После страны почти любой осмысленный текст — про товар.
  * «я из России» / «привет» не считаем запросом в прайс.
@@ -58,6 +65,7 @@ export function isConsultantGreeting(text: string): boolean {
 export function looksLikeProductQuery(text: string): boolean {
   const t = text.trim();
   if (!t || GREETING_RE.test(t)) return false;
+  if (looksLikeVagueHelp(t)) return false;
   if (matchPurchaseIntent(t)) return false;
   const country = matchCountry(t);
   if (country) {

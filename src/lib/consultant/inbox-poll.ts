@@ -1,4 +1,5 @@
 import { USER_KEY_PREFIX } from "@/lib/zernio-platform";
+import { looksLikeConsultantBotReply } from "./copy";
 import { handleConsultantZernioEvent } from "./handle-message";
 import {
   alreadyAnsweredIncoming,
@@ -6,6 +7,7 @@ import {
   isAutomationPaused,
   isFalseManagerPause,
   loadConsultantState,
+  recentlyReplied,
   resumeConsultant,
 } from "./state";
 import { logConsultantEvent, consultantRequestId } from "./log";
@@ -21,9 +23,13 @@ export function shouldAnswerLastIncoming(params: {
   now?: number;
   lastDirection?: "incoming" | "outgoing";
   alreadyAnswered?: boolean;
+  recentlyReplied?: boolean;
+  incomingLooksLikeBot?: boolean;
 }): boolean {
   if (params.paused) return false;
   if (params.alreadyAnswered) return false;
+  if (params.recentlyReplied) return false;
+  if (params.incomingLooksLikeBot) return false;
   const text = params.incomingText?.trim();
   if (!text) return false;
   const now = params.now ?? Date.now();
@@ -95,6 +101,8 @@ export async function pollIncomingConsultantMessages(): Promise<{
             Date.now(),
             "poll",
           ),
+          recentlyReplied: recentlyReplied(consultant),
+          incomingLooksLikeBot: looksLikeConsultantBotReply(lastIncoming?.message ?? ""),
         })
       ) {
         skipped += 1;

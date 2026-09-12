@@ -215,6 +215,12 @@ export function isFalseManagerPause(state: ConsultantState, lastOutgoingText?: s
 
 const IN_FLIGHT_MS = 15_000;
 const REPLY_TTL_MS = 3 * 60_000;
+const POLL_COOLDOWN_MS = 45_000;
+
+export function recentlyReplied(state: ConsultantState, now = Date.now(), windowMs = POLL_COOLDOWN_MS): boolean {
+  const replied = Date.parse(state.last_bot_reply_at ?? "");
+  return Number.isFinite(replied) && now - replied < windowMs;
+}
 
 export type IncomingSource = "webhook" | "poll";
 
