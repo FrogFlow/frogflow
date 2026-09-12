@@ -173,6 +173,18 @@ describe("consultant — pause / echo", () => {
     expect(
       alreadyAnsweredIncoming(
         {
+          last_customer_text: "Что можете посоветовать для дома?",
+          last_bot_reply: "В нашем ассортименте также представлены: матрасы",
+          last_bot_reply_at: new Date(now - 10 * 60_000).toISOString(),
+        },
+        "Что можете посоветовать для дома?",
+        now,
+        "poll",
+      ),
+    ).toBe(true);
+    expect(
+      alreadyAnsweredIncoming(
+        {
           last_customer_text: "Здравствуйте",
           last_bot_reply_at: new Date(now - 10_000).toISOString(),
           conversation_state: "awaiting_country",
@@ -517,17 +529,17 @@ describe("consultant — добор входящих Direct", () => {
     ).toBe(false);
   });
 
-  it("follow-up без createdAt отвечает, даже если последним видно исходящее", async () => {
+  it("не пишет сам, если последнее слово уже за ботом", async () => {
     const { shouldAnswerLastIncoming } = await import("../src/lib/consultant/inbox-poll");
     expect(
       shouldAnswerLastIncoming({
-        incomingText: "А одеяла?",
+        incomingText: "Что можете посоветовать для дома?",
         outgoingAt: new Date().toISOString(),
         paused: false,
         lastDirection: "outgoing",
         alreadyAnswered: false,
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldAnswerLastIncoming({
         incomingText: "А одеяла?",

@@ -30,6 +30,7 @@ export function shouldAnswerLastIncoming(params: {
   if (params.alreadyAnswered) return false;
   if (params.recentlyReplied) return false;
   if (params.incomingLooksLikeBot) return false;
+  if (params.lastDirection === "outgoing") return false;
   const text = params.incomingText?.trim();
   if (!text) return false;
   const now = params.now ?? Date.now();
