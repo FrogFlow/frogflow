@@ -26,6 +26,7 @@ import {
   matchOtherCategoriesIntent,
   matchPurchaseIntent,
 } from "./intent";
+import { consultantApiKey } from "./config";
 import { consultantRequestId, logConsultantEvent } from "./log";
 import { getStoredVtbRate, priceRub } from "./rate";
 import {
@@ -245,7 +246,11 @@ export async function decideConsultantReply(
     !matchOtherCategoriesIntent(text) &&
     !matchAdviceIntent(text);
 
-  if (justCountry) {
+  const canClaude = Boolean(consultantApiKey());
+  const wantsAdvice =
+    looksLikeVagueHelp(text) || matchAdviceIntent(text) || matchOtherCategoriesIntent(text);
+
+  if (justCountry && !canClaude) {
     void track(ctx.userKey, "country", text, bucket);
     return {
       text: pack.askProduct,
@@ -263,11 +268,11 @@ export async function decideConsultantReply(
     };
   }
 
-  if (looksLikeVagueHelp(text) || matchAdviceIntent(text) || matchOtherCategoriesIntent(text)) {
+  if (wantsAdvice && !canClaude) {
     let namedProduct = false;
     try {
-      const catalog = await loadConsultantCatalog();
-      namedProduct = queryHasCatalogSignal(text, catalog);
+      const catalogPreview = await loadConsultantCatalog();
+      namedProduct = queryHasCatalogSignal(text, catalogPreview);
     } catch {
       namedProduct = false;
     }
@@ -276,7 +281,7 @@ export async function decideConsultantReply(
     }
   }
 
-  if (!looksLikeProductQuery(text)) {
+  if (!looksLikeProductQuery(text) && !justCountry && !wantsAdvice && !canClaude) {
     return {
       text: pack.askProduct,
       patch: { ...countryPatch, conversation_state: "awaiting_product" },
@@ -288,6 +293,66 @@ export async function decideConsultantReply(
   if (catalog.length === 0) {
     void track(ctx.userKey, "error", "catalog_empty", bucket);
     return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
+  }
+
+  if (canClaude) {
+    try {
+      const ai = await runConsultantClaude({
+        text,
+        state: { ...state, ...countryPatch },
+        catalog,
+        shopUrl: await getShopUrlSafe(),
+        forceTools: looksLikeProductQuery(text) || wantsAdvice,
+      });
+      if (ai.usage) {
+        void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
+      }
+      if (ai.error === "no_api_key") {
+        /* fall through to local */
+      } else if (ai.handoff) {
+        void track(ctx.userKey, "handoff", text, bucket);
+        return handoffReply(
+          pack,
+          { ...state, ...countryPatch, last_product_ids: ai.products.map((p) => p.id) },
+          bucket,
+          "purchase",
+          text,
+          ctx.userKey,
+          pack.purchase,
+        );
+      } else if (!ai.error) {
+        const inStock = ai.products.filter((p) => p.stock);
+        const check = validateConsultantReply(ai.text, ai.products, ai.extraNumbers);
+        if (check.ok && ai.text.trim()) {
+          void track(ctx.userKey, "query", text, bucket);
+          return {
+            text: ai.text.trim(),
+            patch: {
+              ...countryPatch,
+              last_product_ids: inStock.map((p) => p.id),
+              conversation_state: "consulting",
+            },
+            kind: inStock.length ? "product" : "clarify",
+          };
+        }
+        if (inStock.length > 0) {
+          const includeCdek = country === "RU" && !state.ru_cdek_sent;
+          const rub =
+            country === "RU" && rateRow?.rate ? priceRub(inStock[0].price_kzt, rateRow.rate) : null;
+          return {
+            text: formatProductReply(inStock[0], country, rub, { includeCdek, pack }),
+            patch: {
+              ...countryPatch,
+              last_product_ids: inStock.map((p) => p.id),
+              ru_cdek_sent: state.ru_cdek_sent || includeCdek,
+            },
+            kind: "product",
+          };
+        }
+      }
+    } catch {
+      void track(ctx.userKey, "error", "claude_failed", bucket);
+    }
   }
 
   const local = await replyFromLocalCatalog(
@@ -304,101 +369,24 @@ export async function decideConsultantReply(
     return local;
   }
 
-  if (searchTokens(text).length === 0 || looksLikeVagueHelp(text)) {
+  if (justCountry) {
+    void track(ctx.userKey, "country", text, bucket);
+    return {
+      text: pack.askProduct,
+      patch: { ...countryPatch, conversation_state: "awaiting_product" },
+      kind: "clarify",
+    };
+  }
+
+  if (wantsAdvice || searchTokens(text).length === 0) {
     return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
   }
 
-  try {
-    const ai = await runConsultantClaude({
-      text,
-      state: { ...state, ...countryPatch },
-      catalog,
-      shopUrl: await getShopUrlSafe(),
-      forceTools: false,
-    });
-    if (ai.usage) {
-      void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
-    }
-
-    if (ai.error === "no_api_key") {
-      return (
-        (await replyFromLocalCatalog(
-          text,
-          catalog,
-          country,
-          countryPatch,
-          pack,
-          state,
-          rateRow?.rate ?? null,
-        )) ?? { text: pack.askProduct, patch: countryPatch, kind: "clarify" }
-      );
-    }
-
-    if (ai.handoff) {
-      void track(ctx.userKey, "handoff", text, bucket);
-      return handoffReply(
-        pack,
-        { ...state, ...countryPatch, last_product_ids: ai.products.map((p) => p.id) },
-        bucket,
-        "purchase",
-        text,
-        ctx.userKey,
-        pack.purchase,
-      );
-    }
-
-    if (ai.error) {
-      void track(ctx.userKey, "error", ai.error, bucket);
-      return {
-        text: pack.askProduct,
-        patch: countryPatch,
-        kind: "clarify",
-      };
-    }
-
-    const inStock = ai.products.filter((p) => p.stock);
-    if (inStock.length > 0) {
-      const includeCdek = country === "RU" && !state.ru_cdek_sent;
-      const rub = country === "RU" && rateRow?.rate ? priceRub(inStock[0].price_kzt, rateRow.rate) : null;
-      void track(ctx.userKey, "query", text, bucket);
-      return {
-        text: formatProductReply(inStock[0], country, rub, { includeCdek, pack }),
-        patch: {
-          ...countryPatch,
-          last_product_ids: inStock.map((p) => p.id),
-          ru_cdek_sent: state.ru_cdek_sent || includeCdek,
-        },
-        kind: "product",
-      };
-    }
-
-    if (looksLikeProductQuery(text) && queryHasCatalogSignal(text, catalog)) {
-      void track(ctx.userKey, "oos", text, bucket);
-      return { text: pack.oos, patch: { ...countryPatch, last_product_ids: [] }, kind: "oos" };
-    }
-
-    const check = validateConsultantReply(ai.text, ai.products, ai.extraNumbers);
-    if (!check.ok) {
-      return {
-        text: pack.askProduct,
-        patch: { ...countryPatch, last_product_ids: ai.products.map((p) => p.id) },
-        kind: "clarify",
-      };
-    }
-
-    return {
-      text: ai.text.trim() || pack.askProduct,
-      patch: { ...countryPatch, last_product_ids: ai.products.map((p) => p.id) },
-      kind: "clarify",
-    };
-  } catch {
-    void track(ctx.userKey, "error", "claude_failed", bucket);
-    return {
-      text: pack.askProduct,
-      patch: countryPatch,
-      kind: "clarify",
-    };
-  }
+  return {
+    text: pack.askProduct,
+    patch: { ...countryPatch, conversation_state: "awaiting_product" },
+    kind: "clarify",
+  };
 }
 
 export async function replyFromLocalCatalog(

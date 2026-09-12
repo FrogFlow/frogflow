@@ -568,19 +568,36 @@ function ConsultantPage() {
         )}
       </section>
 
-      <section className="bg-card border rounded-lg p-4 space-y-2">
-        <h2 className="font-medium">Клиенты</h2>
-        <ul className="text-sm space-y-1">
-          {(d?.customers ?? []).slice(0, 15).map((row) => (
-            <li key={row.userKey}>
-              {row.label} · {row.country ?? "—"} · {row.conversationState ?? "—"}
-              {row.paused ? " · пауза" : ""}
-            </li>
-          ))}
-          {(d?.customers ?? []).length === 0 && (
-            <li className="text-muted-foreground">Пока нет диалогов консультанта.</li>
-          )}
-        </ul>
+      <section className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="font-medium">Диалоги</h2>
+        {(d?.customers ?? []).length === 0 ? (
+          <p className="text-sm text-muted-foreground">Пока нет диалогов консультанта.</p>
+        ) : (
+          <ul className="space-y-4">
+            {(d?.customers ?? []).slice(0, 12).map((row) => (
+              <li key={row.userKey} className="text-sm space-y-1">
+                <div className="font-medium">
+                  {row.label} · {row.country ?? "—"} · {row.conversationState ?? "—"}
+                  {row.paused ? " · пауза" : ""}
+                </div>
+                {(row.recent ?? []).length === 0 ? (
+                  <p className="text-muted-foreground">{row.lastReply || "Нет реплик"}</p>
+                ) : (
+                  <ul className="space-y-0.5 text-muted-foreground">
+                    {(row.recent ?? []).map((turn, i) => (
+                      <li key={`${row.userKey}-${i}`}>
+                        <span className="text-foreground">
+                          {turn.role === "customer" ? "Клиент" : "Бот"}:
+                        </span>{" "}
+                        {turn.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="bg-card border rounded-lg p-4 space-y-2">

@@ -20,6 +20,7 @@ export type ProductSearchQuery = {
   category?: string;
   size?: string;
   color?: string;
+  max_price_kzt?: number;
 };
 
 function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
@@ -27,6 +28,9 @@ function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
   if (q.category && !hay.includes(expandToken(q.category))) return false;
   if (q.size && !foldText(product.size).includes(foldText(q.size))) return false;
   if (q.color && !hay.includes(expandToken(q.color))) return false;
+  if (typeof q.max_price_kzt === "number" && q.max_price_kzt > 0 && product.price_kzt > q.max_price_kzt) {
+    return false;
+  }
   if (q.query) {
     const tokens = searchTokens(q.query);
     if (tokens.length === 0) return false;
@@ -252,7 +256,7 @@ export async function searchProducts(
   catalog?: ConsultantProduct[],
 ): Promise<ConsultantProduct[]> {
   const rows = catalog ?? (await loadConsultantCatalog());
-  const hasFilter = Boolean(q.query || q.category || q.size || q.color);
+  const hasFilter = Boolean(q.query || q.category || q.size || q.color || q.max_price_kzt);
   if (!hasFilter) return rows.slice(0, 8);
   return rows.filter((p) => matches(p, q)).slice(0, 8);
 }

@@ -76,6 +76,11 @@ describe("consultant — намерения", () => {
     expect(matchPurchaseIntent("беру, куда платить")).toBe(true);
     expect(matchPurchaseIntent("свяжите с менеджером")).toBe(true);
     expect(matchPurchaseIntent("есть полотенце 70x140?")).toBe(false);
+    expect(matchPurchaseIntent("что вы посоветуете купить?")).toBe(false);
+    expect(matchPurchaseIntent("А у меня только 15000 что вы посоветуете купить?")).toBe(false);
+    expect(matchPurchaseIntent("Я только купил кровать, что вы посоветуете купить мне?")).toBe(
+      false,
+    );
   });
 
   it("страна KZ/RU", () => {
@@ -431,6 +436,10 @@ describe("consultant — шаблоны ТЗ и синонимы", () => {
     };
     const found = await searchProducts({ query: "А одеяла?" }, [blanket]);
     expect(found.map((p) => p.id)).toEqual(["b1"]);
+    expect(await searchProducts({ query: "одеяло", max_price_kzt: 10000 }, [blanket])).toEqual([]);
+    expect((await searchProducts({ query: "одеяло", max_price_kzt: 20000 }, [blanket]))[0]?.id).toBe(
+      "b1",
+    );
   });
 
   it("injection detector", () => {

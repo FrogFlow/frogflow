@@ -19,6 +19,10 @@ export const CONSULTANT_TOOLS = [
         category: { type: "string" },
         size: { type: "string" },
         color: { type: "string" },
+        max_price_kzt: {
+          type: "number",
+          description: "Only cards at or below this KZT price. Use when the customer names a budget.",
+        },
       },
     },
   },
@@ -82,6 +86,10 @@ export async function executeConsultantTool(
       category: typeof input.category === "string" ? input.category : undefined,
       size: typeof input.size === "string" ? input.size : undefined,
       color: typeof input.color === "string" ? input.color : undefined,
+      max_price_kzt:
+        typeof input.max_price_kzt === "number" && input.max_price_kzt > 0
+          ? input.max_price_kzt
+          : undefined,
     };
     const found = await searchProducts(q, ctx.catalog);
     return {

@@ -333,6 +333,7 @@ export type ConsultantCustomer = {
   conversationState?: ConsultantConversationState;
   paused: boolean;
   lastReply?: string;
+  recent?: ConsultantTurn[];
   updatedAt: string;
 };
 
@@ -358,6 +359,7 @@ export async function listConsultantCustomers(limit = 40): Promise<ConsultantCus
           conversationState: consultant.conversation_state,
           paused: isAutomationPaused(consultant),
           lastReply: consultant.last_bot_reply,
+          recent: consultant.recent,
           updatedAt: row.updated_at,
         },
       ];
