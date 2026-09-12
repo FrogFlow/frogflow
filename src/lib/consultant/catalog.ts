@@ -28,8 +28,9 @@ function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
   if (q.size && !foldText(product.size).includes(foldText(q.size))) return false;
   if (q.color && !hay.includes(expandToken(q.color))) return false;
   if (q.query) {
-    const tokens = tokenizeQuery(q.query);
-    if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) return false;
+    const tokens = searchTokens(q.query);
+    if (tokens.length === 0) return false;
+    if (!tokens.every((t) => hay.includes(t))) return false;
   }
   return true;
 }
@@ -182,29 +183,63 @@ function isConsultantProduct(row: unknown): row is ConsultantProduct {
   );
 }
 
-const QUERY_STOP = new Set([
+/** Служебные слова живой фразы. «У вас есть полотенца?» → только «полотенце». */
+export const QUERY_STOP = new Set([
   "есть",
   "нужен",
   "нужна",
   "нужно",
+  "нужны",
   "хочу",
   "подскажи",
+  "подскажите",
+  "скажите",
   "сколько",
   "стоит",
   "цена",
   "пожалуйста",
   "можно",
   "какой",
+  "какая",
   "какое",
   "какие",
   "наличии",
   "наличие",
+  "вас",
+  "вам",
+  "мне",
+  "нам",
+  "ли",
+  "или",
+  "для",
+  "дома",
+  "дом",
+  "что",
+  "это",
+  "этот",
+  "эта",
+  "эти",
+  "ещё",
+  "еще",
+  "нибудь",
+  "можете",
+  "посоветовать",
+  "посоветуйте",
+  "посоветуешь",
+  "порекомендуйте",
+  "интересует",
+  "интересуют",
+  "покажите",
 ]);
+
+export function searchTokens(text: string): string[] {
+  return tokenizeQuery(text).filter((t) => t.length > 2 && !QUERY_STOP.has(t));
+}
 
 /** В запросе есть размер, цвет или слово из прайса — можно ответить без Claude. */
 export function queryHasCatalogSignal(text: string, catalog: ConsultantProduct[]): boolean {
   if (/\d+\s*[xх×]\s*\d+/i.test(text)) return true;
-  const tokens = tokenizeQuery(text).filter((t) => t.length > 2 && !QUERY_STOP.has(t));
+  const tokens = searchTokens(text);
   if (tokens.length === 0) return false;
   return catalog.some((p) => {
     const hay = haystackOf([p.name, p.category, p.size, p.colors.join(" ")]);

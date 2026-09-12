@@ -12,6 +12,7 @@ import { copyForBucket, formatProductReply, type ConsultantCopyPack } from "./co
 import { looksLikePromptInjection } from "./injection";
 import {
   looksLikeProductQuery,
+  matchAdviceIntent,
   matchCatalogIntent,
   matchCountry,
   matchCountryPostback,
@@ -21,6 +22,7 @@ import {
 import { consultantRequestId, logConsultantEvent } from "./log";
 import { getStoredVtbRate, priceRub } from "./rate";
 import {
+  alreadyAnsweredIncoming,
   appendRecent,
   isAutomationPaused,
   isBotEcho,
@@ -88,6 +90,15 @@ export async function handleConsultantZernioEvent(params: {
   const text = params.text.trim() || params.postback?.trim() || "";
   if (!text && !params.postback) return;
 
+  if (alreadyAnsweredIncoming(consultant, text)) {
+    logConsultantEvent(requestId, "skipped_duplicate", { userKey: params.userKey });
+    return;
+  }
+  await patchConsultantState(params.userKey, {
+    last_customer_text: text,
+    last_claim_at: new Date().toISOString(),
+  });
+
   const reply = await decideConsultantReply(text, consultant, {
     userKey: params.userKey,
     postback: params.postback,
@@ -114,6 +125,7 @@ export async function handleConsultantZernioEvent(params: {
 
   await patchConsultantState(params.userKey, {
     ...reply.patch,
+    last_customer_text: text,
     last_bot_reply: reply.text,
     last_bot_reply_at: new Date().toISOString(),
     recent: appendRecent(consultant, text, reply.text),
@@ -174,7 +186,8 @@ export async function decideConsultantReply(
     Boolean(matchCountryPostback(ctx.postback) ?? matchCountry(text)) &&
     !looksLikeProductQuery(text) &&
     !matchCatalogIntent(text) &&
-    !matchOtherCategoriesIntent(text);
+    !matchOtherCategoriesIntent(text) &&
+    !matchAdviceIntent(text);
 
   if (justCountry) {
     void track(ctx.userKey, "country", text, bucket);
@@ -194,8 +207,17 @@ export async function decideConsultantReply(
     };
   }
 
-  if (matchOtherCategoriesIntent(text) && !looksLikeProductQuery(text)) {
-    return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
+  if (matchAdviceIntent(text) || matchOtherCategoriesIntent(text)) {
+    let namedProduct = false;
+    try {
+      const catalog = await loadConsultantCatalog();
+      namedProduct = queryHasCatalogSignal(text, catalog);
+    } catch {
+      namedProduct = false;
+    }
+    if (!namedProduct) {
+      return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
+    }
   }
 
   if (!looksLikeProductQuery(text)) {

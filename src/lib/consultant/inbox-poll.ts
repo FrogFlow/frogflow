@@ -1,6 +1,6 @@
 import { USER_KEY_PREFIX } from "@/lib/zernio-platform";
 import { handleConsultantZernioEvent } from "./handle-message";
-import { isAutomationPaused, loadConsultantState } from "./state";
+import { alreadyAnsweredIncoming, isAutomationPaused, loadConsultantState } from "./state";
 import { logConsultantEvent, consultantRequestId } from "./log";
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -12,8 +12,12 @@ export function shouldAnswerLastIncoming(params: {
   incomingText?: string;
   paused: boolean;
   now?: number;
+  lastDirection?: "incoming" | "outgoing";
+  alreadyAnswered?: boolean;
 }): boolean {
   if (params.paused) return false;
+  if (params.alreadyAnswered) return false;
+  if (params.lastDirection === "outgoing") return false;
   const text = params.incomingText?.trim();
   if (!text) return false;
   const now = params.now ?? Date.now();
@@ -66,6 +70,7 @@ export async function pollIncomingConsultantMessages(): Promise<{
       const lastOutgoing = [...messages]
         .reverse()
         .find((m) => m.direction === "outgoing" && m.message?.trim());
+      const lastText = [...messages].reverse().find((m) => m.message?.trim());
       const senderId = convo.participantId || convo.participantUsername || convo.id;
       const userKey = `${USER_KEY_PREFIX.instagram}${senderId}`;
       const { consultant } = await loadConsultantState(userKey).catch(() => ({
@@ -77,6 +82,11 @@ export async function pollIncomingConsultantMessages(): Promise<{
           outgoingAt: lastOutgoing?.createdAt,
           incomingText: lastIncoming?.message,
           paused: isAutomationPaused(consultant),
+          lastDirection: lastText?.direction,
+          alreadyAnswered: alreadyAnsweredIncoming(
+            consultant,
+            lastIncoming?.message?.trim() ?? "",
+          ),
         })
       ) {
         skipped += 1;

@@ -81,6 +81,13 @@ export function matchOtherCategoriesIntent(text: string): boolean {
   );
 }
 
+/** «Что посоветуете для дома?» — показать категории, не «нет в наличии». */
+export function matchAdviceIntent(text: string): boolean {
+  return /посовет|порекоменд|что\s+(взять|выбрать|подобрать|можете)|для\s+дома|что\s+есть\b|какие\s+(товар|категор)|покажите\s+(что|ассортимент)/i.test(
+    text,
+  );
+}
+
 export function matchCountryPostback(payload: string | null | undefined): ConsultantCountry | null {
   if (!payload) return null;
   if (payload === "CONSULTANT_COUNTRY:KZ") return "KZ";
