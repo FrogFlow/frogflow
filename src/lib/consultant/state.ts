@@ -1,6 +1,6 @@
 import type { Json } from "@/integrations-supabase/types";
 import { looksLikeConsultantBotReply } from "./copy";
-import type { ConsultantCountry } from "./intent";
+import { isConsultantGreeting, type ConsultantCountry } from "./intent";
 
 export type PauseReason = "manager_intervention" | "purchase" | "error" | "other";
 export type ConsultantConversationState =
@@ -216,25 +216,33 @@ export function isFalseManagerPause(state: ConsultantState, lastOutgoingText?: s
 const IN_FLIGHT_MS = 15_000;
 const REPLY_TTL_MS = 3 * 60_000;
 
+export type IncomingSource = "webhook" | "poll";
+
 /** Webhook и inbox-poll не должны отвечать на одно и то же входящее дважды. */
 export function alreadyAnsweredIncoming(
   state: ConsultantState,
   text: string,
   now = Date.now(),
+  source: IncomingSource = "poll",
 ): boolean {
   const incoming = text.trim();
   if (!incoming || incoming !== (state.last_customer_text ?? "").trim()) return false;
   const claimed = Date.parse(state.last_claim_at ?? "");
   const replied = Date.parse(state.last_bot_reply_at ?? "");
-  if (Number.isFinite(replied) && now - replied < REPLY_TTL_MS) {
-    if (!Number.isFinite(claimed) || replied >= claimed) return true;
-  }
-  if (
+  const inFlight =
     Number.isFinite(claimed) &&
     now - claimed < IN_FLIGHT_MS &&
-    (!Number.isFinite(replied) || replied < claimed)
+    (!Number.isFinite(replied) || replied < claimed);
+  if (inFlight) return true;
+  if (
+    source === "webhook" &&
+    isConsultantGreeting(incoming) &&
+    (!state.country || state.conversation_state === "awaiting_country")
   ) {
-    return true;
+    return false;
+  }
+  if (Number.isFinite(replied) && now - replied < REPLY_TTL_MS) {
+    if (!Number.isFinite(claimed) || replied >= claimed) return true;
   }
   return false;
 }
@@ -273,7 +281,11 @@ export async function findUserKeyByConversation(conversationId: string): Promise
  * Занять входящее атомарно: второй обработчик (poll / повтор webhook)
  * видит 0 обновлённых строк и выходит. Read-modify-write здесь гоняется.
  */
-export async function claimIncomingMessage(userKey: string, text: string): Promise<boolean> {
+export async function claimIncomingMessage(
+  userKey: string,
+  text: string,
+  source: IncomingSource = "poll",
+): Promise<boolean> {
   const incoming = text.trim();
   if (!incoming) return false;
   const s = await db();
@@ -286,7 +298,7 @@ export async function claimIncomingMessage(userKey: string, text: string): Promi
     if (!data) return false;
     const raw = asObject(data.state);
     const consultant = readConsultantState(raw);
-    if (alreadyAnsweredIncoming(consultant, incoming)) return false;
+    if (alreadyAnsweredIncoming(consultant, incoming, Date.now(), source)) return false;
     const claimAt = new Date().toISOString();
     const next: ConsultantState = {
       ...consultant,

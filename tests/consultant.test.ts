@@ -162,6 +162,30 @@ describe("consultant — pause / echo", () => {
     expect(alreadyAnsweredIncoming({ last_customer_text: "А подушки?" }, "А полотенца?", now)).toBe(
       false,
     );
+    expect(
+      alreadyAnsweredIncoming(
+        {
+          last_customer_text: "Здравствуйте",
+          last_bot_reply_at: new Date(now - 10_000).toISOString(),
+          conversation_state: "awaiting_country",
+        },
+        "Здравствуйте",
+        now,
+        "webhook",
+      ),
+    ).toBe(false);
+    expect(
+      alreadyAnsweredIncoming(
+        {
+          last_customer_text: "Здравствуйте",
+          last_bot_reply_at: new Date(now - 10_000).toISOString(),
+          conversation_state: "awaiting_country",
+        },
+        "Здравствуйте",
+        now,
+        "poll",
+      ),
+    ).toBe(true);
   });
 
   it("poll берёт покупателя из треда, а не второй ключ по username", () => {
@@ -260,6 +284,15 @@ describe("consultant — decideConsultantReply без магазинного ч�
     const res = await decideConsultantReply("Казахстан", {});
     expect(res?.text).toBe(TZ_COPY.askProduct);
     expect(res?.patch.country).toBe("KZ");
+  });
+
+  it("повторное «здравствуйте» снова спрашивает страну", async () => {
+    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
+    const res = await decideConsultantReply("Здравствуйте", {
+      conversation_state: "awaiting_country",
+    });
+    expect(res?.text).toBe(TZ_COPY.askCountry);
+    expect(res?.kind).toBe("country");
   });
 
   it("полный каталог — абзац сайта", async () => {

@@ -47,6 +47,10 @@ export function containsForbiddenPhrase(text: string): boolean {
 const GREETING_RE =
   /^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай)([.!?…\s]|👋|🙏)*$/i;
 
+export function isConsultantGreeting(text: string): boolean {
+  return GREETING_RE.test(text.trim());
+}
+
 /**
  * После страны почти любой осмысленный текст — про товар.
  * «я из России» / «привет» не считаем запросом в прайс.

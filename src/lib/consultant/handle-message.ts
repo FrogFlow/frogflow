@@ -69,6 +69,7 @@ export async function handleConsultantZernioEvent(params: {
   text: string;
   platform: ZernioPlatform;
   postback?: string | null;
+  source?: "webhook" | "poll";
 }): Promise<void> {
   const requestId = consultantRequestId();
   const started = Date.now();
@@ -115,11 +116,12 @@ export async function handleConsultantZernioEvent(params: {
   const text = params.text.trim() || params.postback?.trim() || "";
   if (!text && !params.postback) return;
 
-  if (alreadyAnsweredIncoming(consultant, text)) {
+  const source = params.source ?? "webhook";
+  if (alreadyAnsweredIncoming(consultant, text, Date.now(), source)) {
     logConsultantEvent(requestId, "skipped_duplicate", { userKey: params.userKey });
     return;
   }
-  const claimed = await claimIncomingMessage(params.userKey, text);
+  const claimed = await claimIncomingMessage(params.userKey, text, source);
   if (!claimed) {
     logConsultantEvent(requestId, "skipped_duplicate", {
       userKey: params.userKey,
@@ -137,8 +139,9 @@ export async function handleConsultantZernioEvent(params: {
 
   const { consultant: latest } = await loadConsultantState(params.userKey);
   if (
+    source === "poll" &&
     latest.last_bot_reply?.trim() === reply.text.trim() &&
-    alreadyAnsweredIncoming(latest, text)
+    alreadyAnsweredIncoming(latest, text, Date.now(), source)
   ) {
     logConsultantEvent(requestId, "skipped_duplicate", {
       userKey: params.userKey,

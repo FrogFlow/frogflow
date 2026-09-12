@@ -92,6 +92,8 @@ export async function pollIncomingConsultantMessages(): Promise<{
           alreadyAnswered: alreadyAnsweredIncoming(
             consultant,
             lastIncoming?.message?.trim() ?? "",
+            Date.now(),
+            "poll",
           ),
         })
       ) {
@@ -124,6 +126,7 @@ export async function pollIncomingConsultantMessages(): Promise<{
         userKey,
         text: lastIncoming!.message!.trim(),
         platform: "instagram",
+        source: "poll",
       });
       replied += 1;
     }
