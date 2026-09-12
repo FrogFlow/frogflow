@@ -1,6 +1,11 @@
 import { USER_KEY_PREFIX } from "@/lib/zernio-platform";
 import { handleConsultantZernioEvent } from "./handle-message";
-import { alreadyAnsweredIncoming, isAutomationPaused, loadConsultantState } from "./state";
+import {
+  alreadyAnsweredIncoming,
+  findUserKeyByConversation,
+  isAutomationPaused,
+  loadConsultantState,
+} from "./state";
 import { logConsultantEvent, consultantRequestId } from "./log";
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -72,7 +77,9 @@ export async function pollIncomingConsultantMessages(): Promise<{
         .find((m) => m.direction === "outgoing" && m.message?.trim());
       const lastText = [...messages].reverse().find((m) => m.message?.trim());
       const senderId = convo.participantId || convo.participantUsername || convo.id;
-      const userKey = `${USER_KEY_PREFIX.instagram}${senderId}`;
+      const userKey =
+        (await findUserKeyByConversation(convo.id).catch(() => null)) ||
+        `${USER_KEY_PREFIX.instagram}${senderId}`;
       const { consultant } = await loadConsultantState(userKey).catch(() => ({
         consultant: {},
       }));

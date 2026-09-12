@@ -21,6 +21,7 @@ import {
   alreadyAnsweredIncoming,
   isAutomationPaused,
   isBotEcho,
+  pickConversationUserKey,
   readConsultantState,
 } from "../src/lib/consultant/state";
 import { consultantCopy } from "../src/lib/consultant/copy";
@@ -153,6 +154,17 @@ describe("consultant — pause / echo", () => {
     expect(alreadyAnsweredIncoming({ last_customer_text: "А подушки?" }, "А полотенца?", now)).toBe(
       false,
     );
+  });
+
+  it("poll берёт покупателя из треда, а не второй ключ по username", () => {
+    expect(
+      pickConversationUserKey([
+        { user_key: "ig_nick", state: {} },
+        { user_key: "ig_123", state: { consultant: { country: "KZ", last_customer_text: "Казахстан" } } },
+      ]),
+    ).toBe("ig_123");
+    expect(pickConversationUserKey([{ user_key: "ig_only", state: {} }])).toBe("ig_only");
+    expect(pickConversationUserKey([])).toBeNull();
   });
 
   it("своё исходящее не считает вмешательством менеджера", () => {

@@ -213,6 +213,74 @@ export function alreadyAnsweredIncoming(
   return false;
 }
 
+export function hasConsultantHistory(state: ConsultantState): boolean {
+  return Boolean(
+    state.country ||
+      state.conversation_state ||
+      state.last_customer_text ||
+      state.last_bot_reply ||
+      (state.recent && state.recent.length > 0),
+  );
+}
+
+/** Если webhook и poll завели двух покупателей на один тред — берём того, кто уже консультирует. */
+export function pickConversationUserKey(
+  rows: { user_key: string; state?: unknown }[],
+): string | null {
+  if (rows.length === 0) return null;
+  const withHistory = rows.find((row) => hasConsultantHistory(readConsultantState(row.state)));
+  return (withHistory ?? rows[0]).user_key;
+}
+
+export async function findUserKeyByConversation(conversationId: string): Promise<string | null> {
+  const s = await db();
+  const { data } = await s
+    .from("bot_users")
+    .select("user_key, state")
+    .eq("zernio_conversation_id", conversationId)
+    .order("updated_at", { ascending: false })
+    .limit(5);
+  return pickConversationUserKey(data ?? []);
+}
+
+/**
+ * Занять входящее атомарно: второй обработчик (poll / повтор webhook)
+ * видит 0 обновлённых строк и выходит. Read-modify-write здесь гоняется.
+ */
+export async function claimIncomingMessage(userKey: string, text: string): Promise<boolean> {
+  const incoming = text.trim();
+  if (!incoming) return false;
+  const s = await db();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data } = await s
+      .from("bot_users")
+      .select("state, updated_at")
+      .eq("user_key", userKey)
+      .maybeSingle();
+    if (!data) return false;
+    const raw = asObject(data.state);
+    const consultant = readConsultantState(raw);
+    if (alreadyAnsweredIncoming(consultant, incoming)) return false;
+    const claimAt = new Date().toISOString();
+    const next: ConsultantState = {
+      ...consultant,
+      last_customer_text: incoming,
+      last_claim_at: claimAt,
+    };
+    let query = s
+      .from("bot_users")
+      .update({
+        state: { ...raw, [KEY]: next } as unknown as Json,
+        updated_at: claimAt,
+      })
+      .eq("user_key", userKey);
+    query = data.updated_at ? query.eq("updated_at", data.updated_at) : query.is("updated_at", null);
+    const { data: updated } = await query.select("user_key");
+    if (updated && updated.length > 0) return true;
+  }
+  return false;
+}
+
 export type ConsultantCustomer = {
   userKey: string;
   label: string;

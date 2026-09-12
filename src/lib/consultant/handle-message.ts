@@ -24,6 +24,7 @@ import { getStoredVtbRate, priceRub } from "./rate";
 import {
   alreadyAnsweredIncoming,
   appendRecent,
+  claimIncomingMessage,
   isAutomationPaused,
   isBotEcho,
   loadConsultantState,
@@ -94,10 +95,14 @@ export async function handleConsultantZernioEvent(params: {
     logConsultantEvent(requestId, "skipped_duplicate", { userKey: params.userKey });
     return;
   }
-  await patchConsultantState(params.userKey, {
-    last_customer_text: text,
-    last_claim_at: new Date().toISOString(),
-  });
+  const claimed = await claimIncomingMessage(params.userKey, text);
+  if (!claimed) {
+    logConsultantEvent(requestId, "skipped_duplicate", {
+      userKey: params.userKey,
+      reason: "claim_lost",
+    });
+    return;
+  }
 
   const reply = await decideConsultantReply(text, consultant, {
     userKey: params.userKey,
@@ -105,6 +110,18 @@ export async function handleConsultantZernioEvent(params: {
     requestId,
   });
   if (!reply) return;
+
+  const { consultant: latest } = await loadConsultantState(params.userKey);
+  if (
+    latest.last_bot_reply?.trim() === reply.text.trim() &&
+    alreadyAnsweredIncoming(latest, text)
+  ) {
+    logConsultantEvent(requestId, "skipped_duplicate", {
+      userKey: params.userKey,
+      reason: "already_sent",
+    });
+    return;
+  }
 
   const send = (buttons: ConsultantReply["buttons"] | undefined) =>
     sendDirectReply({
