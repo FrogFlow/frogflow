@@ -19,6 +19,7 @@ import {
   setConsultantRateFn,
   setConsultantTaskDoneFn,
 } from "@/lib/consultant/consultant.functions";
+import { rateSourceKind } from "@/lib/consultant/vtb-parse";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
 import { rejectNonConsultantPage } from "@/lib/verticals/consultant-admin-guard";
@@ -47,6 +48,8 @@ const copy: Record<
     rateBody: string;
     rateEmpty: string;
     rateValue: (rate: number, at: string) => string;
+    rateSource: Record<"vtb" | "nbk" | "manual" | "other", string>;
+    rateNbkToast: string;
     refreshRate: string;
     manualRate: string;
     usage: (count: number, usd: string, model: string) => string;
@@ -76,9 +79,16 @@ const copy: Record<
     saveShop: "Сохранить ссылку",
     rateTitle: "Курс VTB Казахстан",
     rateBody:
-      "RUB = ₸ / (курс покупки × 0,95). Обновление раз в 15 минут; если запрос упал — последний удачный.",
+      "RUB = ₸ / (курс покупки × 0,95). Сначала касса VTB; если страница недоступна — официальный курс НБРК. Кассу VTB всегда можно ввести вручную.",
     rateEmpty: "Курса ещё нет. Обновите или введите вручную.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateSource: {
+      vtb: "источник: VTB",
+      nbk: "источник: НБРК (касса VTB сейчас не публикует курс)",
+      manual: "источник: вручную",
+      other: "источник: внешний URL",
+    },
+    rateNbkToast: "Страница VTB недоступна — записан курс НБРК. Кассу банка введите вручную, если нужна именно она.",
     refreshRate: "Обновить курс",
     manualRate: "Записать курс вручную",
     usage: (count, usd, model) => `Claude: ${count} вызовов · ${usd} · модель ${model}`,
@@ -115,9 +125,16 @@ const copy: Record<
     shopLabel: "Толық ассортимент сілтемесі",
     saveShop: "Сілтемені сақтау",
     rateTitle: "VTB Қазақстан бағамы",
-    rateBody: "RUB = ₸ / (сатып алу бағамы × 0,95). 15 минут сайын.",
+    rateBody: "RUB = ₸ / (сатып алу бағамы × 0,95). VTB жоқ болса — НБРК.",
     rateEmpty: "Бағам жоқ.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateSource: {
+      vtb: "көз: VTB",
+      nbk: "көз: НБРК (VTB кассасы жарияламайды)",
+      manual: "көз: қолмен",
+      other: "көз: сыртқы URL",
+    },
+    rateNbkToast: "VTB беті жоқ — НБРК бағамы жазылды.",
     refreshRate: "Бағамды жаңарту",
     manualRate: "Қолмен жазу",
     usage: (count, usd, model) => `Claude: ${count} · ${usd} · ${model}`,
@@ -157,9 +174,16 @@ const copy: Record<
     saveShop: "Save URL",
     rateTitle: "VTB Kazakhstan rate",
     rateBody:
-      "RUB = ₸ / (buy rate × 0.95). Refreshed every 15 minutes; fetch failure keeps the last good rate.",
+      "RUB = ₸ / (buy rate × 0.95). VTB first; if their page is down we store the official NBK rate. You can still type the VTB till rate.",
     rateEmpty: "No rate yet. Refresh or enter it manually.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateSource: {
+      vtb: "source: VTB",
+      nbk: "source: NBK (VTB till rate is not published)",
+      manual: "source: manual",
+      other: "source: custom URL",
+    },
+    rateNbkToast: "VTB page is down — stored the official NBK rate. Enter the till rate manually if you need VTB.",
     refreshRate: "Refresh rate",
     manualRate: "Save manual rate",
     usage: (count, usd, model) => `Claude: ${count} calls · ${usd} · ${model}`,
@@ -197,9 +221,16 @@ const copy: Record<
     shopLabel: "To‘liq assortiment havolasi",
     saveShop: "Havolani saqlash",
     rateTitle: "VTB Qozog‘iston kursi",
-    rateBody: "RUB = ₸ / (sotib olish kursi × 0,95). 15 daqiqada.",
+    rateBody: "RUB = ₸ / (sotib olish kursi × 0,95). VTB yo‘q bo‘lsa — NBK.",
     rateEmpty: "Kurs yo‘q.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateSource: {
+      vtb: "manba: VTB",
+      nbk: "manba: NBK (VTB kassasi e’lon qilmaydi)",
+      manual: "manba: qo‘lda",
+      other: "manba: tashqi URL",
+    },
+    rateNbkToast: "VTB sahifasi yo‘q — NBK kursi yozildi.",
     refreshRate: "Kursni yangilash",
     manualRate: "Qo‘lda yozish",
     usage: (count, usd, model) => `Claude: ${count} · ${usd} · ${model}`,
@@ -289,7 +320,8 @@ function ConsultantPage() {
   const refreshRate = useMutation({
     mutationFn: () => refreshConsultantRateFn(),
     onSuccess: (res) => {
-      if (res.fetched) toast.success("Курс обновлён");
+      if (res.fetched && res.kind === "nbk") toast.message(c.rateNbkToast);
+      else if (res.fetched) toast.success("Курс обновлён");
       else if (res.stored) toast.message("Запрос не прошёл — оставлен последний курс");
       else toast.error("Курс не получен");
       qc.invalidateQueries({ queryKey: ["consultant-admin"] });
@@ -440,7 +472,9 @@ function ConsultantPage() {
         <h2 className="font-medium">{c.rateTitle}</h2>
         <p className="text-sm text-muted-foreground">{c.rateBody}</p>
         <p className="text-sm">
-          {d?.rate ? c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale)) : c.rateEmpty}
+          {d?.rate
+            ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} · ${c.rateSource[rateSourceKind(d.rate.source)]}`
+            : c.rateEmpty}
           {d?.rateMissing ? " · курса нет — для РФ бот не назовёт ₽" : ""}
           {d?.rateStale ? " · курс старше 2 часов" : ""}
         </p>

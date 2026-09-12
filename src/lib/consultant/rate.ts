@@ -10,6 +10,8 @@ export function priceRub(priceKzt: number, vtbBuyRate: number): number {
 export type StoredVtbRate = {
   rate: number;
   updatedAt: string;
+  /** URL источника или `manual`. */
+  source?: string;
 };
 
 /** Последний успешно сохранённый курс. Cron / ручное обновление пишут сюда. */
@@ -25,7 +27,11 @@ export async function getStoredVtbRate(): Promise<StoredVtbRate | null> {
     const parsed = JSON.parse(data.value) as Partial<StoredVtbRate>;
     const rate = Number(parsed.rate);
     if (!(rate > 0) || !parsed.updatedAt) return null;
-    return { rate, updatedAt: String(parsed.updatedAt) };
+    return {
+      rate,
+      updatedAt: String(parsed.updatedAt),
+      source: parsed.source ? String(parsed.source) : undefined,
+    };
   } catch {
     return null;
   }

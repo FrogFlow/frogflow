@@ -272,13 +272,30 @@ describe("consultant — импорт CSV / Sheets URL", () => {
 
 describe("consultant — разбор курса VTB", () => {
   it("берёт JSON rate", async () => {
-    const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb");
+    const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb-parse");
     expect(parseVtbBuyRate('{"rate":5.15}')).toBe(5.15);
   });
 
   it("достаёт покупку RUB из HTML", async () => {
-    const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb");
+    const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb-parse");
     const html = `<table><tr><td>RUB</td><td>покупка</td><td>5.15</td><td>продажа</td><td>6.20</td></tr></table>`;
     expect(parseVtbBuyRate(html)).toBe(5.15);
+  });
+
+  it("достаёт RUB из RSS НБРК", async () => {
+    const { parseNbkRubRate, parseVtbBuyRate, rateSourceKind } =
+      await import("../src/lib/consultant/vtb-parse");
+    const xml = `<?xml version="1.0"?><rss><channel>
+      <item><title>USD</title><description>323.21</description><quant>1</quant></item>
+      <item><title>RUB</title><description>5.33</description><quant>1</quant></item>
+    </channel></rss>`;
+    expect(parseNbkRubRate(xml)).toBe(5.33);
+    expect(parseVtbBuyRate(xml)).toBe(5.33);
+    expect(rateSourceKind("https://www.nationalbank.kz/rss/rates_all.xml")).toBe("nbk");
+  });
+
+  it("не принимает 404-страницу VTB за курс", async () => {
+    const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb-parse");
+    expect(parseVtbBuyRate("<title>404 Страница не найдена — ВТБ Казахстан</title>")).toBeNull();
   });
 });
