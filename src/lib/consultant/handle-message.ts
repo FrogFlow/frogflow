@@ -95,16 +95,22 @@ export async function handleConsultantZernioEvent(params: {
   });
   if (!reply) return;
 
-  const sent = await sendDirectReply({
-    conversationId: params.conversationId,
-    accountId: params.accountId,
-    userKey: params.userKey,
-    text: reply.text,
-    buttons: reply.buttons,
-    platform: params.platform,
-    force: true,
-  });
-  if (!sent) return;
+  const send = (buttons: ConsultantReply["buttons"] | undefined) =>
+    sendDirectReply({
+      conversationId: params.conversationId,
+      accountId: params.accountId,
+      userKey: params.userKey,
+      text: reply.text,
+      buttons,
+      platform: params.platform,
+      force: true,
+    });
+  let sent = await send(reply.buttons);
+  if (!sent && reply.buttons?.length) sent = await send(undefined);
+  if (!sent) {
+    logConsultantEvent(requestId, "send_failed", { userKey: params.userKey, kind: reply.kind });
+    return;
+  }
 
   await patchConsultantState(params.userKey, {
     ...reply.patch,

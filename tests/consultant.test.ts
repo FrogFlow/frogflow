@@ -270,6 +270,40 @@ describe("consultant — импорт CSV / Sheets URL", () => {
   });
 });
 
+describe("consultant — добор входящих Direct", () => {
+  it("отвечает на свежее входящее без исходящего", async () => {
+    const { shouldAnswerLastIncoming } = await import("../src/lib/consultant/inbox-poll");
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: new Date().toISOString(),
+        incomingText: "есть полотенце?",
+        paused: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("молчит если уже ответили или пауза", async () => {
+    const { shouldAnswerLastIncoming } = await import("../src/lib/consultant/inbox-poll");
+    const now = Date.now();
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: new Date(now - 60_000).toISOString(),
+        outgoingAt: new Date(now - 10_000).toISOString(),
+        incomingText: "есть полотенце?",
+        paused: false,
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: new Date().toISOString(),
+        incomingText: "есть полотенце?",
+        paused: true,
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("consultant — разбор курса VTB", () => {
   it("берёт JSON rate", async () => {
     const { parseVtbBuyRate } = await import("../src/lib/consultant/vtb-parse");

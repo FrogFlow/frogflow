@@ -16,6 +16,7 @@ import {
   saveConsultantAbFn,
   saveConsultantChecklistFn,
   saveConsultantShopUrlFn,
+  pollConsultantInboxFn,
   setConsultantRateFn,
   setConsultantTaskDoneFn,
 } from "@/lib/consultant/consultant.functions";
@@ -358,6 +359,14 @@ function ConsultantPage() {
       saveConsultantChecklistFn({ data: { checklist } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["consultant-admin"] }),
   });
+  const pollInbox = useMutation({
+    mutationFn: () => pollConsultantInboxFn(),
+    onSuccess: (res) => {
+      toast.success(`Direct: проверено ${res.checked}, ответов ${res.replied}`);
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -371,6 +380,27 @@ function ConsultantPage() {
           </p>
         ) : null}
       </div>
+
+      <section className="bg-card border rounded-lg p-4 space-y-3">
+        <h2 className="font-medium">Instagram Direct</h2>
+        <p className="text-sm text-muted-foreground">
+          Пишите в сообщения аккаунта, не в комментарий под постом. Первое сообщение — обычный
+          текст, бот спросит страну.
+        </p>
+        <p className="text-sm">
+          {d?.lastDirectAt
+            ? `Последний входящий вебхук: ${formatWhen(d.lastDirectAt, locale)} · ${d.lastDirectStatus}`
+            : "Вебхуков message.received ещё не было — либо сообщение не дошло до сервера, либо пишете не в Direct."}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={pollInbox.isPending}
+          onClick={() => pollInbox.mutate()}
+        >
+          Проверить входящие и ответить
+        </Button>
+      </section>
 
       <section className="bg-card border rounded-lg p-4 space-y-3">
         <h2 className="font-medium">{c.catalogTitle}</h2>

@@ -74,6 +74,13 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     checklist = {};
   }
   const rateAgeHours = rate ? (Date.now() - Date.parse(rate.updatedAt)) / 36e5 : null;
+  const { data: lastHooks } = await s
+    .from("zernio_logs")
+    .select("event_type, status, created_at")
+    .eq("event_type", "message.received")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const lastDirect = lastHooks?.[0] ?? null;
   return {
     catalogCount: catalog.length,
     preview: catalog.slice(0, 20),
@@ -96,7 +103,15 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     checklist,
     paymentNote: "Оплата в боте не делается — только handoff менеджеру (ТЗ).",
     oneCNote: "1С API недоступно по ТЗ. Источник — Excel/CSV/Sheets/Drive.",
+    lastDirectAt: lastDirect?.created_at ?? null,
+    lastDirectStatus: lastDirect?.status ?? null,
   };
+});
+
+export const pollConsultantInboxFn = createServerFn({ method: "POST" }).handler(async () => {
+  await requireAdmin();
+  const { pollIncomingConsultantMessages } = await import("./inbox-poll");
+  return pollIncomingConsultantMessages();
 });
 
 export const importConsultantCatalogFn = createServerFn({ method: "POST" })

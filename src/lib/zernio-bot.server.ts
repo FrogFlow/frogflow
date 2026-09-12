@@ -1322,7 +1322,17 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     (settingRows ?? []).find((row) => row.key === `${settingsPrefix}${suffix}`)?.value?.trim() ||
     "";
 
-  if (setting("enabled") === "false") {
+  /**
+   * Консультант отвечает на любое входящее в Direct. Тумблер «Автоответчик»
+   * — это магазинный сценарий (/start, покупки). Если проверять его здесь,
+   * выключенный магазинный бот глушит консультанта: человек пишет в
+   * Instagram, реакции нет.
+   */
+  const { isConsultantVertical } = await import("./verticals/registry");
+  const { currentVertical } = await import("./verticals/vertical.server");
+  const consultantMode = isConsultantVertical(currentVertical());
+
+  if (!consultantMode && setting("enabled") === "false") {
     console.log(
       `[zernio-bot] ${PLATFORM_LABEL[platform]} assistant is disabled; event recorded without a reply`,
     );
@@ -1406,9 +1416,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * Магазинный поток ниже (язык, handlePurchaseFlow, «передал продавцу») сюда
    * не должен заходить: иначе консультант превращается обратно в бота-кассу.
    */
-  const { isConsultantVertical } = await import("./verticals/registry");
-  const { currentVertical } = await import("./verticals/vertical.server");
-  if (isConsultantVertical(currentVertical())) {
+  if (consultantMode) {
     const { handleConsultantZernioEvent } = await import("./consultant/handle-message");
     await handleConsultantZernioEvent({
       payload,
