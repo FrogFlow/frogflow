@@ -240,6 +240,10 @@ export function alreadyAnsweredIncoming(
     now - claimed < IN_FLIGHT_MS &&
     (!Number.isFinite(replied) || replied < claimed);
   if (inFlight) return true;
+  // Заняли эту реплику после последней отправки — ответа на неё ещё нет.
+  if (Number.isFinite(claimed) && Number.isFinite(replied) && replied < claimed) {
+    return false;
+  }
   if (source === "poll" && (state.last_bot_reply?.trim() || Number.isFinite(replied))) {
     return true;
   }

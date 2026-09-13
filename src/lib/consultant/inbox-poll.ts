@@ -25,12 +25,13 @@ export function shouldAnswerLastIncoming(params: {
   alreadyAnswered?: boolean;
   recentlyReplied?: boolean;
   incomingLooksLikeBot?: boolean;
+  sameAsLastAnswered?: boolean;
 }): boolean {
   if (params.paused) return false;
   if (params.alreadyAnswered) return false;
-  if (params.recentlyReplied) return false;
   if (params.incomingLooksLikeBot) return false;
-  if (params.lastDirection === "outgoing") return false;
+  // Не глушить follow-up вроде «А одеяла?» из‑за недавней карточки
+  // или того, что в Inbox последнее видимое ещё исходящее.
   const text = params.incomingText?.trim();
   if (!text) return false;
   const now = params.now ?? Date.now();
@@ -89,6 +90,9 @@ export async function pollIncomingConsultantMessages(): Promise<{
       if (isFalseManagerPause(consultant, lastOutgoing?.message)) {
         consultant = await resumeConsultant(userKey);
       }
+      const incomingText = lastIncoming?.message?.trim() ?? "";
+      const sameAsLastAnswered =
+        Boolean(incomingText) && incomingText === (consultant.last_customer_text ?? "").trim();
       if (
         !shouldAnswerLastIncoming({
           incomingAt: lastIncoming?.createdAt,
@@ -96,14 +100,10 @@ export async function pollIncomingConsultantMessages(): Promise<{
           incomingText: lastIncoming?.message,
           paused: isAutomationPaused(consultant),
           lastDirection: lastText?.direction,
-          alreadyAnswered: alreadyAnsweredIncoming(
-            consultant,
-            lastIncoming?.message?.trim() ?? "",
-            Date.now(),
-            "poll",
-          ),
+          alreadyAnswered: alreadyAnsweredIncoming(consultant, incomingText, Date.now(), "poll"),
           recentlyReplied: recentlyReplied(consultant),
           incomingLooksLikeBot: looksLikeConsultantBotReply(lastIncoming?.message ?? ""),
+          sameAsLastAnswered,
         })
       ) {
         skipped += 1;

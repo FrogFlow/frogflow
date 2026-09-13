@@ -167,6 +167,19 @@ describe("consultant — pause / echo", () => {
         now,
       ),
     ).toBe(false);
+    expect(
+      alreadyAnsweredIncoming(
+        {
+          last_customer_text: "А одеяла?",
+          last_claim_at: new Date(now - 30_000).toISOString(),
+          last_bot_reply: "Подушка 50×70 см есть в наличии.",
+          last_bot_reply_at: new Date(now - 2 * 60_000).toISOString(),
+        },
+        "А одеяла?",
+        now,
+        "poll",
+      ),
+    ).toBe(false);
     expect(alreadyAnsweredIncoming({ last_customer_text: "А подушки?" }, "А полотенца?", now)).toBe(
       false,
     );
@@ -537,7 +550,9 @@ describe("consultant — добор входящих Direct", () => {
         outgoingAt: new Date().toISOString(),
         paused: false,
         lastDirection: "outgoing",
-        alreadyAnswered: false,
+        alreadyAnswered: true,
+        sameAsLastAnswered: true,
+        recentlyReplied: true,
       }),
     ).toBe(false);
     expect(
@@ -566,8 +581,38 @@ describe("consultant — добор входящих Direct", () => {
         incomingText: "есть полотенце?",
         paused: false,
         recentlyReplied: true,
+        sameAsLastAnswered: true,
+        alreadyAnswered: true,
       }),
     ).toBe(false);
+    expect(
+      shouldAnswerLastIncoming({
+        incomingText: "А одеяла?",
+        paused: false,
+        lastDirection: "incoming",
+        recentlyReplied: true,
+        sameAsLastAnswered: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAnswerLastIncoming({
+        incomingText: "А одеяла?",
+        paused: false,
+        lastDirection: "outgoing",
+        recentlyReplied: true,
+        alreadyAnswered: false,
+        sameAsLastAnswered: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAnswerLastIncoming({
+        incomingText: "А одеяла?",
+        paused: false,
+        recentlyReplied: true,
+        sameAsLastAnswered: true,
+        alreadyAnswered: false,
+      }),
+    ).toBe(true);
   });
 });
 
