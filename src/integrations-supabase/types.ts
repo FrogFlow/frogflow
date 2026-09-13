@@ -795,6 +795,235 @@ export type Database = {
           },
         ];
       };
+      // MIGRATION-69. Durable BOVI consultant message ledger and trace.
+      consultant_message_runs: {
+        Row: {
+          id: string;
+          bot_id: string;
+          message_id: string;
+          event_id: string | null;
+          platform_message_id: string | null;
+          conversation_id: string;
+          account_id: string | null;
+          user_key: string;
+          direction: string;
+          source: string;
+          status: string;
+          incoming_text: string | null;
+          reply_text: string | null;
+          reply_kind: string | null;
+          reply_fingerprint: string | null;
+          outbound_message_id: string | null;
+          model: string | null;
+          prompt_version: string | null;
+          catalog_version: string | null;
+          rate_value: number | null;
+          rate_updated_at: string | null;
+          rate_source: string | null;
+          tool_trace: Json;
+          token_usage: Json;
+          validator_result: Json;
+          error_code: string | null;
+          error_message: string | null;
+          attempt_count: number;
+          received_at: string;
+          claimed_at: string | null;
+          sent_at: string | null;
+          completed_at: string | null;
+          next_retry_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          message_id: string;
+          event_id?: string | null;
+          platform_message_id?: string | null;
+          conversation_id: string;
+          account_id?: string | null;
+          user_key: string;
+          direction?: string;
+          source?: string;
+          status?: string;
+          incoming_text?: string | null;
+          reply_text?: string | null;
+          reply_kind?: string | null;
+          reply_fingerprint?: string | null;
+          outbound_message_id?: string | null;
+          model?: string | null;
+          prompt_version?: string | null;
+          catalog_version?: string | null;
+          rate_value?: number | null;
+          rate_updated_at?: string | null;
+          rate_source?: string | null;
+          tool_trace?: Json;
+          token_usage?: Json;
+          validator_result?: Json;
+          error_code?: string | null;
+          error_message?: string | null;
+          attempt_count?: number;
+          received_at?: string;
+          claimed_at?: string | null;
+          sent_at?: string | null;
+          completed_at?: string | null;
+          next_retry_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          message_id?: string;
+          event_id?: string | null;
+          platform_message_id?: string | null;
+          conversation_id?: string;
+          account_id?: string | null;
+          user_key?: string;
+          direction?: string;
+          source?: string;
+          status?: string;
+          incoming_text?: string | null;
+          reply_text?: string | null;
+          reply_kind?: string | null;
+          reply_fingerprint?: string | null;
+          outbound_message_id?: string | null;
+          model?: string | null;
+          prompt_version?: string | null;
+          catalog_version?: string | null;
+          rate_value?: number | null;
+          rate_updated_at?: string | null;
+          rate_source?: string | null;
+          tool_trace?: Json;
+          token_usage?: Json;
+          validator_result?: Json;
+          error_code?: string | null;
+          error_message?: string | null;
+          attempt_count?: number;
+          received_at?: string;
+          claimed_at?: string | null;
+          sent_at?: string | null;
+          completed_at?: string | null;
+          next_retry_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consultant_message_runs_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // MIGRATION-69. BOVI manager handoff queue.
+      consultant_handoffs: {
+        Row: {
+          id: string;
+          bot_id: string;
+          run_id: string | null;
+          user_key: string;
+          conversation_id: string | null;
+          reason: string;
+          customer_text: string | null;
+          product_ids: Json;
+          status: string;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          run_id?: string | null;
+          user_key: string;
+          conversation_id?: string | null;
+          reason: string;
+          customer_text?: string | null;
+          product_ids?: Json;
+          status?: string;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          run_id?: string | null;
+          user_key?: string;
+          conversation_id?: string | null;
+          reason?: string;
+          customer_text?: string | null;
+          product_ids?: Json;
+          status?: string;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consultant_handoffs_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "consultant_handoffs_run_id_fkey";
+            columns: ["run_id"];
+            isOneToOne: false;
+            referencedRelation: "consultant_message_runs";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // MIGRATION-69. Append-only BOVI catalog import history.
+      consultant_catalog_imports: {
+        Row: {
+          id: string;
+          bot_id: string;
+          version: string;
+          source: string;
+          source_url: string | null;
+          status: string;
+          product_count: number;
+          skipped_count: number;
+          errors: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          version: string;
+          source: string;
+          source_url?: string | null;
+          status: string;
+          product_count?: number;
+          skipped_count?: number;
+          errors?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          version?: string;
+          source?: string;
+          source_url?: string | null;
+          status?: string;
+          product_count?: number;
+          skipped_count?: number;
+          errors?: Json;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "consultant_catalog_imports_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bots";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       zernio_logs: {
         Row: {
           id: string;
