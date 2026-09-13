@@ -21,6 +21,7 @@ import {
   matchBasketIntent,
   matchCatalogIntent,
   matchCountry,
+  matchMoreVariantsIntent,
   matchPurchaseIntent,
 } from "../src/lib/consultant/intent";
 import {
@@ -135,6 +136,26 @@ describe("consultant — матрица живых диалогов", () => {
     const ids = basket.patch.last_product_ids ?? [];
     const total = shop.filter((p) => ids.includes(p.id)).reduce((s, p) => s + p.price_kzt, 0);
     expect(total).toBeLessThanOrEqual(20000);
+  });
+
+  it("скрин: «что у вас есть» без сайта, «ещё варианты» не та же подушка", async () => {
+    expect(matchCatalogIntent("Что у вас есть?")).toBe(false);
+    expect(matchMoreVariantsIntent("А ещё варианты?")).toBe(true);
+
+    const what = await say("Что у вас есть?");
+    expect(what.kind).toBe("clarify");
+    expect(what.text).not.toMatch(/bovi\.kz|https?:\/\//i);
+
+    const first = shop.find((p) => p.id === "TEST-060");
+    expect(first).toBeTruthy();
+    const again = await say("А ещё варианты?", {
+      country: "KZ",
+      last_product_ids: [first!.id],
+    });
+    expect(again.kind).toBe("product");
+    expect(again.text).not.toBe(formatProductReply(first!, "KZ", null));
+    expect(again.patch.last_product_ids ?? []).not.toContain(first!.id);
+    expect(again.text).toMatch(/Подушка|Ещё из этой категории/i);
   });
 
   it("категории из прайса: карточка, не OOS и не корзина", async () => {

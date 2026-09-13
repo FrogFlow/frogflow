@@ -17,6 +17,7 @@ import {
   looksLikeVagueHelp,
   matchAdviceIntent,
   matchBasketIntent,
+  matchMoreVariantsIntent,
   matchOtherCategoriesIntent,
   extractBudgetKzt,
 } from "../src/lib/consultant/intent";
@@ -123,6 +124,8 @@ describe("consultant — намерения", () => {
     expect(matchBasketIntent("А одеяла?")).toBe(false);
     expect(matchBasketIntent("есть комплект постельного?")).toBe(false);
     expect(matchBasketIntent("набор полотенец")).toBe(false);
+    expect(matchMoreVariantsIntent("А ещё варианты?")).toBe(true);
+    expect(matchMoreVariantsIntent("А одеяла?")).toBe(false);
   });
 
   it("бюджет из живой фразы, не размер 50×70", () => {

@@ -1,5 +1,6 @@
 import {
   getProduct,
+  relatedVariants,
   searchProducts,
   type ConsultantProduct,
   type ProductSearchQuery,
@@ -23,6 +24,11 @@ export const CONSULTANT_TOOLS = [
           type: "number",
           description: "Only cards at or below this KZT price. Use when the customer names a budget.",
         },
+        exclude_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids already shown. Use for «ещё варианты» so the same card is not repeated.",
+        },
       },
     },
   },
@@ -45,7 +51,7 @@ export const CONSULTANT_TOOLS = [
   {
     name: "get_catalog_link",
     description:
-      "Return the configured full-catalog site URL. Use when the customer asks for the whole assortment, photos or the website.",
+      "Return the shop URL. Call only when they explicitly ask for the website, full catalog or photos — not for «что у вас есть».",
     input_schema: { type: "object", properties: {} },
   },
   {
@@ -75,7 +81,12 @@ export function presentCard(
 export async function executeConsultantTool(
   name: string,
   input: Record<string, unknown>,
-  ctx: { country?: ConsultantCountry; catalog?: ConsultantProduct[]; shopUrl?: string },
+  ctx: {
+    country?: ConsultantCountry;
+    catalog?: ConsultantProduct[];
+    shopUrl?: string;
+    excludeIds?: string[];
+  },
 ): Promise<{ result: unknown; products: ConsultantProduct[]; handoff: boolean }> {
   const rateRow = await getStoredVtbRate();
   const rate = rateRow?.rate ?? null;
@@ -91,7 +102,14 @@ export async function executeConsultantTool(
           ? input.max_price_kzt
           : undefined,
     };
-    const found = await searchProducts(q, ctx.catalog);
+    const fromTool = Array.isArray(input.exclude_ids)
+      ? input.exclude_ids.filter((id): id is string => typeof id === "string")
+      : [];
+    const exclude = new Set([...(ctx.excludeIds ?? []), ...fromTool]);
+    let found = (await searchProducts(q, ctx.catalog)).filter((p) => !exclude.has(p.id));
+    if (found.length === 0 && exclude.size > 0 && ctx.catalog) {
+      found = relatedVariants(ctx.catalog, [...exclude]);
+    }
     return {
       result: { products: found.map((p) => presentCard(p, ctx.country, rate)) },
       products: found,

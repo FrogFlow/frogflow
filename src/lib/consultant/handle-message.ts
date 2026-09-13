@@ -7,6 +7,7 @@ import {
   loadConsultantCatalog,
   packBasket,
   queryHasCatalogSignal,
+  relatedVariants,
   searchProducts,
   searchTokens,
   suggestForBudget,
@@ -16,6 +17,7 @@ import {
   formatBasketReply,
   formatBudgetReply,
   formatProductReply,
+  formatVariantsReply,
   looksLikeConsultantBotReply,
   type ConsultantCopyPack,
 } from "./copy";
@@ -29,6 +31,7 @@ import {
   matchCatalogIntent,
   matchCountry,
   matchCountryPostback,
+  matchMoreVariantsIntent,
   matchOtherCategoriesIntent,
   matchPurchaseIntent,
 } from "./intent";
@@ -326,8 +329,8 @@ export async function decideConsultantReply(
         state: { ...state, ...countryPatch },
         catalog,
         shopUrl: await getShopUrlSafe(),
-        forceTools: looksLikeProductQuery(text) || wantsAdvice,
-        composeAfterTools: Boolean(budgetKzt || wantsBasket || wantsAdvice),
+        forceTools: looksLikeProductQuery(text) || wantsAdvice || matchMoreVariantsIntent(text),
+        composeAfterTools: true,
       });
       if (ai.usage) {
         void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
@@ -372,6 +375,8 @@ export async function decideConsultantReply(
             rateRow?.rate ?? null,
           );
           if (composed) return composed;
+          const variants = replyMoreVariants(text, catalog, inStock, country, countryPatch, state, rateRow?.rate ?? null);
+          if (variants) return variants;
           if (wantsAdvice && !budgetKzt && !wantsBasket && !queryHasCatalogSignal(text, catalog)) {
             return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
           }
@@ -425,6 +430,34 @@ export async function decideConsultantReply(
     text: pack.askProduct,
     patch: { ...countryPatch, conversation_state: "awaiting_product" },
     kind: "clarify",
+  };
+}
+
+function replyMoreVariants(
+  text: string,
+  catalog: import("./catalog").ConsultantProduct[],
+  fallback: import("./catalog").ConsultantProduct[],
+  country: import("./intent").ConsultantCountry | undefined,
+  countryPatch: Partial<ConsultantState>,
+  state: ConsultantState,
+  rate: number | null,
+): ConsultantReply | null {
+  if (!matchMoreVariantsIntent(text)) return null;
+  const lastIds = state.last_product_ids ?? [];
+  const fromSearch = fallback.filter((p) => p.stock && !lastIds.includes(p.id));
+  const picks =
+    fromSearch.length > 0 ? fromSearch.slice(0, 2) : relatedVariants(catalog, lastIds);
+  if (picks.length === 0) {
+    return {
+      text: "Других размеров и цветов в этой позиции сейчас нет. Напишите, что ещё посмотреть.",
+      patch: countryPatch,
+      kind: "clarify",
+    };
+  }
+  return {
+    text: formatVariantsReply(picks, country, rate),
+    patch: { ...countryPatch, last_product_ids: picks.map((p) => p.id) },
+    kind: "product",
   };
 }
 
@@ -499,6 +532,9 @@ export async function replyFromLocalCatalog(
     rate,
   );
   if (composed) return composed;
+
+  const variants = replyMoreVariants(text, catalog, [], country, countryPatch, state, rate);
+  if (variants) return variants;
 
   const found = await searchProducts({ query: text }, catalog);
   const hit = found.find((p) => p.stock);

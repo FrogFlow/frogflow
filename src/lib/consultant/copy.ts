@@ -104,7 +104,8 @@ export function looksLikeConsultantBotReply(text: string): boolean {
     /матрас.*одеял.*подуш/i.test(t) ||
     /в\s+бюджет/i.test(t) ||
     /можно\s+собрать/i.test(t) ||
-    /на\s+[\d\s]+\s*₸\s+сейчас/i.test(t)
+    /на\s+[\d\s]+\s*₸\s+сейчас/i.test(t) ||
+    /ещё из этой категории/i.test(t)
   );
 }
 
@@ -197,5 +198,23 @@ export function formatBasketReply(
   } else {
     lines.push(`Вместе ${money(totalKzt)}. Если нужно ближе к сумме или другие позиции — напишите.`);
   }
+  return lines.join("\n");
+}
+
+/** Другие размеры/цвета — не повтор той же карточки. */
+export function formatVariantsReply(
+  products: ConsultantProduct[],
+  country: ConsultantCountry | undefined,
+  rate: number | null = null,
+): string {
+  if (products.length === 0) {
+    return "Других размеров и цветов в этой позиции сейчас нет. Напишите, что ещё посмотреть.";
+  }
+  const lines = ["Ещё из этой категории в наличии:"];
+  for (const p of products) {
+    const colors = p.colors.length ? ` · ${p.colors.join(", ")}` : "";
+    lines.push(`${moneyLine(p, country, rate)}${colors}`);
+  }
+  lines.push("Какой размер или цвет ближе?");
   return lines.join("\n");
 }

@@ -24,7 +24,16 @@ COUNTRY
 KZ — prices in ₸ from the card. RU — use price_rub from the tool. СДЭК: buyer pays on receipt, never quote a shipping price. If country is unknown, ask Kazakhstan or Russia first.
 
 BUDGET AND ADVICE
-«Что купить / посоветуйте / у меня только N» is advice, not checkout. Search with max_price_kzt and a short product query (not words like купить/корзина). Suggest 1–2 different in-stock cards under the budget. If they ask for a корзина/набор, pick 2–3 in-stock cards whose prices SUM to ≤ budget and say the total. Never answer a budget with the same single cheapest card. Write the message yourself.
+«Что купить / посоветуйте / у меня только N» is advice, not checkout. Search with max_price_kzt and a short product query (not words like купить/корзина). Suggest 1–2 different in-stock cards under the budget. If they ask for a корзина/набор, pick 2–3 in-stock cards whose prices SUM to ≤ budget and say the total. Never answer a budget with the same single cheapest card.
+
+VARIANTS
+«А ещё варианты / другие / другой цвет или размер» — show OTHER in-stock cards from the same category than last_shown. Never repeat the last card.
+
+SITE
+get_catalog_link only if they ask for сайт, полный каталог or photos. «Что у вас есть?» = 3–4 categories in one short line, no URL.
+
+WRITE
+Always write the Instagram message yourself after tools. Do not wait for a backend template.
 
 HUMAN HANDOFF
 Call handoff_to_manager only when they clearly want to pay, place an order, or talk to a manager — not when they ask what to buy.
@@ -77,6 +86,9 @@ export async function runConsultantClaude(params: {
   const dynamic =
     `STATE country=${country ?? "unknown"} paused=${params.state.automation_paused === true}` +
     (params.shopUrl ? ` shop_url=${params.shopUrl}` : "") +
+    (params.state.last_product_ids?.length
+      ? ` last_shown=${params.state.last_product_ids.join(",")}`
+      : "") +
     (recent ? `\nRECENT\n${recent}` : "") +
     `\nCUSTOMER: ${params.text}`;
 
@@ -173,6 +185,7 @@ export async function runConsultantClaude(params: {
           country,
           catalog: params.catalog,
           shopUrl: params.shopUrl,
+          excludeIds: params.state.last_product_ids,
         }),
       ),
     );
@@ -191,8 +204,7 @@ export async function runConsultantClaude(params: {
       });
     }
     messages.push({ role: "user", content: toolResults });
-    /** Обычную карточку собирает backend. Бюджет/корзину Claude должен дописать сам. */
-    if (handoff || (products.length > 0 && (lastText.trim() || !params.composeAfterTools))) {
+    if (handoff) {
       return { text: lastText, products, extraNumbers, handoff, usage };
     }
   }

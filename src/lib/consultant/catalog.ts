@@ -21,6 +21,7 @@ export type ProductSearchQuery = {
   size?: string;
   color?: string;
   max_price_kzt?: number;
+  exclude_ids?: string[];
 };
 
 function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
@@ -31,6 +32,7 @@ function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
   if (typeof q.max_price_kzt === "number" && q.max_price_kzt > 0 && product.price_kzt > q.max_price_kzt) {
     return false;
   }
+  if (q.exclude_ids?.includes(product.id)) return false;
   if (q.query) {
     const tokens = searchTokens(q.query);
     if (tokens.length === 0) return false;
@@ -370,6 +372,32 @@ export function packBasket(
     }
   }
   return best;
+}
+
+/** Другие карточки той же категории, чем уже показали. */
+export function relatedVariants(
+  catalog: ConsultantProduct[],
+  lastIds: string[],
+  limit = 2,
+): ConsultantProduct[] {
+  const shown = catalog.filter((p) => lastIds.includes(p.id));
+  if (shown.length === 0) return [];
+  const cats = new Set(shown.map((p) => foldText(p.category)));
+  const stems = new Set(shown.map((p) => foldText(p.name).split(" ")[0] ?? "").filter(Boolean));
+  const shownSig = new Set(
+    shown.map((p) => `${foldText(p.size)}|${p.colors.map((c) => foldText(c)).sort().join(",")}`),
+  );
+  const rest = catalog.filter((p) => {
+    if (!p.stock || lastIds.includes(p.id)) return false;
+    const cat = foldText(p.category);
+    const stem = foldText(p.name).split(" ")[0] ?? "";
+    return cats.has(cat) || stems.has(stem);
+  });
+  const different = rest.filter(
+    (p) => !shownSig.has(`${foldText(p.size)}|${p.colors.map((c) => foldText(c)).sort().join(",")}`),
+  );
+  const pool = different.length > 0 ? different : rest;
+  return pool.slice(0, limit);
 }
 
 export async function getProduct(

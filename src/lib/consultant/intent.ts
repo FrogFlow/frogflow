@@ -103,6 +103,13 @@ export function matchAdviceIntent(text: string): boolean {
   );
 }
 
+/** «А ещё варианты?» — другие карточки той же категории, не повтор. */
+export function matchMoreVariantsIntent(text: string): boolean {
+  return /ещё\s+вариант|еще\s+вариант|другие\s+вариант|другой\s+(цвет|размер)|другие\s+(цвет|размер|есть)|а\s+ещё\s*\??$|ещё\s+есть\??$/i.test(
+    text.trim(),
+  );
+}
+
 /** «Соберите корзину / набор на N» — не товар «комплект белья» / «набор полотенец». */
 export function matchBasketIntent(text: string): boolean {
   if (/корзин/i.test(text)) return true;
