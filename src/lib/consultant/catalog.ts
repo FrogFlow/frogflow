@@ -244,15 +244,28 @@ export const QUERY_STOP = new Set([
   "предложить",
   "корзину",
   "корзина",
-  "набор",
-  "комплект",
   "бюджет",
   "тысяч",
   "тенге",
+  "казахстан",
+  "казахстана",
+  "қазақстан",
+  "россия",
+  "россии",
+  "алматы",
+  "астана",
+  "шымкент",
+  "москва",
+  "питер",
+  "страна",
 ]);
 
 export function searchTokens(text: string): string[] {
-  return tokenizeQuery(text).filter((t) => t.length > 2 && !QUERY_STOP.has(t) && !/^\d+$/.test(t));
+  return tokenizeQuery(text).filter((t) => {
+    if (QUERY_STOP.has(t) || /^\d+$/.test(t)) return false;
+    if (/^[smlx]{1,3}$/i.test(t)) return true;
+    return t.length > 2;
+  });
 }
 
 /** В запросе есть размер, цвет или слово из прайса — можно ответить без Claude. */
@@ -309,23 +322,54 @@ export function suggestForBudget(
   return picks.filter(Boolean);
 }
 
-/** Набор 2–3 позиций, сумма ≤ бюджета. Жадный от более дорогих. */
+/** Набор 2–3 позиций, сумма как можно ближе к бюджету, но не выше. */
 export function packBasket(
   catalog: ConsultantProduct[],
   budgetKzt: number,
   maxItems = 3,
 ): { items: ConsultantProduct[]; total: number } {
   const under = productsUnderBudget(catalog, budgetKzt);
-  const items: ConsultantProduct[] = [];
-  let total = 0;
+  if (under.length === 0) return { items: [], total: 0 };
+
+  const byCat = new Map<string, ConsultantProduct[]>();
   for (const p of under) {
-    if (items.some((i) => i.id === p.id)) continue;
-    if (total + p.price_kzt > budgetKzt) continue;
-    items.push(p);
-    total += p.price_kzt;
-    if (items.length >= maxItems) break;
+    const cat = foldText(p.category || p.name);
+    const list = byCat.get(cat) ?? [];
+    if (list.length < 3) list.push(p);
+    byCat.set(cat, list);
   }
-  return { items, total };
+  const cheap = [...under].sort((a, b) => a.price_kzt - b.price_kzt).slice(0, 10);
+  const seen = new Set<string>();
+  const pool: ConsultantProduct[] = [];
+  for (const p of [...byCat.values()].flat().concat(cheap)) {
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    pool.push(p);
+  }
+
+  let best: { items: ConsultantProduct[]; total: number } = { items: [], total: 0 };
+  const consider = (items: ConsultantProduct[]) => {
+    if (items.length === 0 || items.length > maxItems) return;
+    const total = items.reduce((sum, p) => sum + p.price_kzt, 0);
+    if (total > budgetKzt) return;
+    if (total > best.total || (total === best.total && items.length > best.items.length)) {
+      best = { items, total };
+    }
+  };
+
+  for (const a of pool) consider([a]);
+  for (let i = 0; i < pool.length; i++) {
+    for (let j = i + 1; j < pool.length; j++) consider([pool[i], pool[j]]);
+  }
+  if (maxItems >= 3) {
+    const n = Math.min(pool.length, 18);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        for (let k = j + 1; k < n; k++) consider([pool[i], pool[j], pool[k]]);
+      }
+    }
+  }
+  return best;
 }
 
 export async function getProduct(

@@ -205,7 +205,13 @@ export async function handleConsultantZernioEvent(params: {
 export async function decideConsultantReply(
   text: string,
   state: ConsultantState,
-  ctx: { userKey?: string; postback?: string | null; requestId?: string } = {},
+  ctx: {
+    userKey?: string;
+    postback?: string | null;
+    requestId?: string;
+    catalog?: import("./catalog").ConsultantProduct[];
+    rate?: number | null;
+  } = {},
 ): Promise<ConsultantReply | null> {
   let bucket = state.ab_bucket ?? "a";
   if (ctx.userKey && !state.ab_bucket) {
@@ -283,7 +289,7 @@ export async function decideConsultantReply(
   if (wantsAdvice && !canClaude && !budgetKzt && !wantsBasket) {
     let namedProduct = false;
     try {
-      const catalogPreview = await loadConsultantCatalog();
+      const catalogPreview = ctx.catalog ?? (await loadConsultantCatalog());
       namedProduct = queryHasCatalogSignal(text, catalogPreview);
     } catch {
       namedProduct = false;
@@ -301,7 +307,13 @@ export async function decideConsultantReply(
     };
   }
 
-  const [catalog, rateRow] = await Promise.all([loadConsultantCatalog(), getStoredVtbRate()]);
+  const catalog = ctx.catalog ?? (await loadConsultantCatalog());
+  const rateRow =
+    ctx.catalog != null || ctx.rate !== undefined
+      ? ctx.rate != null
+        ? { rate: ctx.rate, updatedAt: "test", source: "test" }
+        : null
+      : await getStoredVtbRate();
   if (catalog.length === 0) {
     void track(ctx.userKey, "error", "catalog_empty", bucket);
     return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);

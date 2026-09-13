@@ -29,7 +29,7 @@ import {
   looksLikeConsultantBotReply,
   TZ_COPY,
 } from "../src/lib/consultant/copy";
-import { tokenizeQuery } from "../src/lib/consultant/synonyms";
+import { foldText, tokenizeQuery } from "../src/lib/consultant/synonyms";
 import { googleDriveFileId, googleDriveFolderId } from "../src/lib/consultant/drive";
 import { presentCard } from "../src/lib/consultant/tools";
 import {
@@ -121,6 +121,8 @@ describe("consultant — намерения", () => {
     expect(matchAdviceIntent("У меня только 15000 что посоветуете купить?")).toBe(true);
     expect(matchBasketIntent("А вы можете предложить мне корзину на 20000?")).toBe(true);
     expect(matchBasketIntent("А одеяла?")).toBe(false);
+    expect(matchBasketIntent("есть комплект постельного?")).toBe(false);
+    expect(matchBasketIntent("набор полотенец")).toBe(false);
   });
 
   it("бюджет из живой фразы, не размер 50×70", () => {
@@ -545,6 +547,9 @@ describe("consultant — шаблоны ТЗ и синонимы", () => {
 
   it("синоним полотенца → полотенце", () => {
     expect(tokenizeQuery("полотенца 70x140")).toContain("полотенце");
+    expect(tokenizeQuery("подушку")).toContain("подушка");
+    expect(foldText("халат")).toBe("халат");
+    expect(foldText("50х70")).toBe("50x70");
   });
 
   it("сигнал прайса: размер или слово из каталога", async () => {

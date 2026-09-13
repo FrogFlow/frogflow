@@ -103,9 +103,12 @@ export function matchAdviceIntent(text: string): boolean {
   );
 }
 
-/** «Соберите корзину / набор на N» — несколько позиций, не одна дешёвая карточка. */
+/** «Соберите корзину / набор на N» — не товар «комплект белья» / «набор полотенец». */
 export function matchBasketIntent(text: string): boolean {
-  return /корзин|набор|комплект|подбер\w+|собери|соберите/i.test(text);
+  if (/корзин/i.test(text)) return true;
+  if (/(собери|соберите).{0,32}(набор|комплект)/i.test(text)) return true;
+  if (/(набор|комплект).{0,24}(на\s+\d|бюджет|до\s+\d)/i.test(text)) return true;
+  return false;
 }
 
 /**
