@@ -1,70 +1,51 @@
-import type { Locale } from "../i18n";
-import { VERTICALS, type Vertical } from "./registry";
+import { VERTICALS, verticalDef, type VerticalKey } from "./registry";
 
-export interface VerticalDef {
-  id: Vertical;
-  botDescriptionIntro: string;
-  shortDescription: string;
-  locales: Record<Locale, {
-    contactBtn: string;
-    instructionDefaultCaption: string;
-    instructionComingSoon: string;
-  }>;
+/**
+ * Ниша деплоя — переменная окружения VERTICAL на проекте Vercel, тем же
+ * приёмом, что и BOT_ID/CONTROL_PLANE (см. lib/control-plane.server.ts).
+ * Пустая или неизвестная переменная молча даёт "digital": опечатка в панели
+ * оператора не должна ронять магазин, а семь живых деплоев без этой
+ * переменной обязаны продолжать работать как раньше.
+ */
+export function currentVertical(): VerticalKey {
+  const raw = process.env.VERTICAL?.trim();
+  return raw && raw in VERTICALS ? (raw as VerticalKey) : "digital";
 }
 
-export function currentVertical(): Vertical {
-  const v = process.env.VERTICAL || "default";
-  return (VERTICALS as readonly string[]).includes(v) ? (v as Vertical) : "default";
+export function currentVerticalDef() {
+  return verticalDef(currentVertical());
 }
 
-export function currentVerticalDef(): VerticalDef {
-  const v = currentVertical();
-  if (v === "consultant") {
-    return {
-      id: "consultant",
-      botDescriptionIntro: "AI Consultant Bot",
-      shortDescription: "Your AI assistant.",
-      locales: {
-        ru: {
-          contactBtn: "Связаться с менеджером",
-          instructionDefaultCaption: "Инструкция",
-          instructionComingSoon: "Инструкция скоро появится",
-        },
-        en: {
-          contactBtn: "Contact Manager",
-          instructionDefaultCaption: "Instruction",
-          instructionComingSoon: "Instruction coming soon",
-        },
-        kz: {
-          contactBtn: "Менеджермен байланысу",
-          instructionDefaultCaption: "Нұсқаулық",
-          instructionComingSoon: "Нұсқаулық жақында шығады",
-        },
-      }
-    };
-  }
-  
-  // Default fallback
-  return {
-    id: "default",
-    botDescriptionIntro: "Standard Bot",
-    shortDescription: "A standard ecommerce bot.",
-    locales: {
-      ru: {
-        contactBtn: "Связаться",
-        instructionDefaultCaption: "Инструкция",
-        instructionComingSoon: "Скоро",
-      },
-      en: {
-        contactBtn: "Contact",
-        instructionDefaultCaption: "Instruction",
-        instructionComingSoon: "Coming soon",
-      },
-      kz: {
-        contactBtn: "Байланыс",
-        instructionDefaultCaption: "Нұсқаулық",
-        instructionComingSoon: "Жақында",
-      },
-    }
-  };
-}
+/**
+ * Блок 11 — сознательно отложенные находки, все требуют прокинуть
+ * currentVertical()/VerticalDef в места, куда он сегодня нигде не
+ * экспонирован (клиентская часть client-админки, операторская панель):
+ *
+ * 11.2 — сделано: vertical уходит в root context (getRuntimeModulesFn),
+ * блок «Оплата физических заказов» и пункт «Зоны доставки» (9.2) видны
+ * только у shop+physical (isPhysicalShopVertical), не у consultant.
+ *
+ * 11.4 — сделано: env-block.server.ts (buildEnvBlockFor) больше не молчит
+ * для digital — вместо простого опущения строки VERTICAL печатает явный
+ * комментарий-инструкцию "удалите её вручную, если задана", безвредный для
+ * деплоев, где переменной никогда не было (пропускается при вставке, как и
+ * остальные "#"-строки блока), и единственный явный сигнал при переходе
+ * клиента назад в "Цифровые материалы".
+ *
+ * 11.5 — сделано частично и сознательно НЕ автоприменением: presetForVertical
+ * по-прежнему висит на отдельной кнопке "Как у ниши" в мастере подключения
+ * (onboard.tsx) — автовключение модулей осталось решением
+ * продавца/оператора, не тихим умолчанием (не любой продавец захочет
+ * автовключение платных модулей). Вместо этого: подпись у селектора ниши
+ * явно говорит, что модули она не включает, и в разделе "Модули" появляется
+ * заметная подсказка-напоминание, если выбранной нише есть что предложить, а
+ * пресет ещё не применён.
+ *
+ * 11.6 — сделано: ниша показана бейджем рядом с именем бота в списке
+ * клиентов операторской панели (operator._authed.index.tsx), "digital" не
+ * показываем — это умолчание для деплоя без явно заданной ниши.
+ *
+ * 11.7 — частично закрыто mode: consultant — физические товары без чекаута
+ * кондитерской. Конфиг шагов чекаута (надпись на торте и т.п.) по-прежнему
+ * зашит в ботах, не в VerticalDef: второй витринной физической ниши нет.
+ */

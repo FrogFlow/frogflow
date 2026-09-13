@@ -1,99 +1,152 @@
-import { searchProducts, getProduct, listCategories, getCatalogLink, getDeliveryInfo } from "./catalog";
-import { getActiveVtbRate, calculateRubPrice } from "./rate";
+import {
+  getProduct,
+  relatedVariants,
+  searchProducts,
+  type ConsultantProduct,
+  type ProductSearchQuery,
+} from "./catalog";
+import { getStoredVtbRate, priceRub } from "./rate";
+import type { ConsultantCountry } from "./intent";
 
 export const CONSULTANT_TOOLS = [
   {
     name: "search_products",
-    description: "Searches the current catalog for products by name, category, size, or color. Exclude previously shown IDs if the customer asks for alternatives.",
+    description:
+      "Search the live catalog by free text, category, size or color. Use before answering any stock or price question. Returns at most 8 cards. Empty list means nothing matched — do not invent items.",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string" },
+        query: { type: "string", description: "Free-text product query" },
         category: { type: "string" },
         size: { type: "string" },
         color: { type: "string" },
-        exclude_ids: { type: "array", items: { type: "string" } }
-      }
-    }
+        max_price_kzt: {
+          type: "number",
+          description: "Only cards at or below this KZT price. Use when the customer names a budget.",
+        },
+        exclude_ids: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids already shown. Use for «ещё варианты» so the same card is not repeated.",
+        },
+      },
+    },
   },
   {
     name: "get_product",
-    description: "Returns the exact product card with actual stock and price information by ID.",
+    description:
+      "Get one catalog card by id from a previous search. Use for exact price and stock.",
     input_schema: {
       type: "object",
-      properties: {
-        id: { type: "string", description: "The product ID" }
-      },
-      required: ["id"]
-    }
-  },
-  {
-    name: "list_categories",
-    description: "Lists all available product categories.",
-    input_schema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "get_catalog_link",
-    description: "Gets the public link to the complete website catalog for customers asking to browse.",
-    input_schema: {
-      type: "object",
-      properties: {}
-    }
-  },
-  {
-    name: "get_delivery_info",
-    description: "Gets standard delivery information (e.g. CDEK delivery conditions for RU).",
-    input_schema: {
-      type: "object",
-      properties: {}
-    }
+      properties: { id: { type: "string" } },
+      required: ["id"],
+    },
   },
   {
     name: "get_current_rate",
-    description: "Gets the current KZT to RUB exchange rate. Important for Russian buyers.",
-    input_schema: {
-      type: "object",
-      properties: {}
-    }
+    description:
+      "Return the last stored VTB KZ buy rate. Do not compute RUB yourself — cards already include price_rub when the country is RU and a rate exists.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_catalog_link",
+    description:
+      "Return the shop URL. Call only when they explicitly ask for the website, full catalog or photos — not for «что у вас есть».",
+    input_schema: { type: "object", properties: {} },
   },
   {
     name: "handoff_to_manager",
-    description: "Signals that the user wants to talk to a human manager, or wants to proceed to purchase. Also used when a product is explicitly out of stock and you need to tell them a manager will offer alternatives. This pauses AI responses.",
+    description:
+      "Call when the customer wants to buy, pay, or talk to a manager, or when you cannot answer from tools. After this, automation pauses.",
     input_schema: {
       type: "object",
-      properties: {
-        reason: { type: "string", enum: ["purchase", "out_of_stock", "manager_request", "other"] }
-      },
-      required: ["reason"]
-    }
-  }
-];
+      properties: { reason: { type: "string" } },
+    },
+  },
+] as const;
 
-export async function executeConsultantTool(botId: string, name: string, input: any) {
-  try {
-    switch (name) {
-      case "search_products":
-        return await searchProducts(botId, input.query, input.category, input.size, input.color, input.exclude_ids);
-      case "get_product":
-        return await getProduct(botId, input.id);
-      case "list_categories":
-        return await listCategories(botId);
-      case "get_catalog_link":
-        return await getCatalogLink();
-      case "get_delivery_info":
-        return await getDeliveryInfo();
-      case "get_current_rate":
-        return await getActiveVtbRate(botId);
-      case "handoff_to_manager":
-        return { success: true, reason: input.reason };
-      default:
-        return { error: "Unknown tool" };
+export type ToolFactCard = ConsultantProduct & { price_rub?: number | null };
+
+export function presentCard(
+  product: ConsultantProduct,
+  country: ConsultantCountry | undefined,
+  rate: number | null,
+): ToolFactCard {
+  return {
+    ...product,
+    price_rub: country === "RU" && rate ? priceRub(product.price_kzt, rate) : null,
+  };
+}
+
+export async function executeConsultantTool(
+  name: string,
+  input: Record<string, unknown>,
+  ctx: {
+    country?: ConsultantCountry;
+    catalog?: ConsultantProduct[];
+    shopUrl?: string;
+    excludeIds?: string[];
+  },
+): Promise<{ result: unknown; products: ConsultantProduct[]; handoff: boolean }> {
+  const rateRow = await getStoredVtbRate();
+  const rate = rateRow?.rate ?? null;
+
+  if (name === "search_products") {
+    const q: ProductSearchQuery = {
+      query: typeof input.query === "string" ? input.query : undefined,
+      category: typeof input.category === "string" ? input.category : undefined,
+      size: typeof input.size === "string" ? input.size : undefined,
+      color: typeof input.color === "string" ? input.color : undefined,
+      max_price_kzt:
+        typeof input.max_price_kzt === "number" && input.max_price_kzt > 0
+          ? input.max_price_kzt
+          : undefined,
+    };
+    const fromTool = Array.isArray(input.exclude_ids)
+      ? input.exclude_ids.filter((id): id is string => typeof id === "string")
+      : [];
+    const exclude = new Set([...(ctx.excludeIds ?? []), ...fromTool]);
+    let found = (await searchProducts(q, ctx.catalog)).filter((p) => !exclude.has(p.id));
+    if (found.length === 0 && exclude.size > 0 && ctx.catalog) {
+      found = relatedVariants(ctx.catalog, [...exclude]);
     }
-  } catch (err) {
-    console.error("Tool execution error:", err);
-    return { error: String(err) };
+    return {
+      result: { products: found.map((p) => presentCard(p, ctx.country, rate)) },
+      products: found,
+      handoff: false,
+    };
   }
+
+  if (name === "get_product") {
+    const id = typeof input.id === "string" ? input.id : "";
+    const product = id ? await getProduct(id, ctx.catalog) : null;
+    return {
+      result: product ? presentCard(product, ctx.country, rate) : { error: "not_found" },
+      products: product ? [product] : [],
+      handoff: false,
+    };
+  }
+
+  if (name === "get_current_rate") {
+    return {
+      result: rateRow ?? { rate: null, updatedAt: null, note: "no_rate_stored" },
+      products: [],
+      handoff: false,
+    };
+  }
+
+  if (name === "get_catalog_link") {
+    const url = ctx.shopUrl || (await import("./catalog")).DEFAULT_SHOP_URL;
+    return { result: { url }, products: [], handoff: false };
+  }
+
+  if (name === "handoff_to_manager") {
+    return {
+      result: { paused: true, reason: typeof input.reason === "string" ? input.reason : "handoff" },
+      products: [],
+      handoff: true,
+    };
+  }
+
+  return { result: { error: "unknown_tool" }, products: [], handoff: false };
 }

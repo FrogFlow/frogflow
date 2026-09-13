@@ -1,78 +1,480 @@
-import { supabaseAdmin } from "../integrations-supabase/client.server";
+import { expandToken, foldText, haystackOf, tokenizeQuery } from "./synonyms";
 
-export interface NormalizedProduct {
+/**
+ * Нормализованная карточка. Claude видит только результаты search/get,
+ * не весь прайс и не «память» модели.
+ */
+export type ConsultantProduct = {
   id: string;
   name: string;
   category: string;
-  size?: string;
+  size: string;
   colors: string[];
   price_kzt: number;
   stock: boolean;
   stock_qty?: number;
+};
+
+export type ProductSearchQuery = {
+  query?: string;
+  category?: string;
+  size?: string;
+  color?: string;
+  max_price_kzt?: number;
+  exclude_ids?: string[];
+};
+
+function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
+  const hay = haystackOf([product.name, product.category, product.size, product.colors.join(" ")]);
+  if (q.category && !hay.includes(expandToken(q.category))) return false;
+  if (q.size && !foldText(product.size).includes(foldText(q.size))) return false;
+  if (q.color && !hay.includes(expandToken(q.color))) return false;
+  if (typeof q.max_price_kzt === "number" && q.max_price_kzt > 0 && product.price_kzt > q.max_price_kzt) {
+    return false;
+  }
+  if (q.exclude_ids?.includes(product.id)) return false;
+  if (q.query) {
+    const tokens = searchTokens(q.query);
+    if (tokens.length === 0) return false;
+    if (!tokens.every((t) => hay.includes(t))) return false;
+  }
+  return true;
 }
 
-export async function searchProducts(botId: string, query: string, category?: string, size?: string, color?: string, excludeIds?: string[]): Promise<NormalizedProduct[]> {
-  // Query existing products table. In the BOVI architecture, we need to map the backend product to the NormalizedProduct.
-  let q = supabaseAdmin.from("products").select("id, name, price, stock_quantity, is_active, category_id, attributes").eq("bot_id", botId).eq("is_active", true);
-  
-  if (excludeIds && excludeIds.length > 0) {
-    q = q.not("id", "in", `(${excludeIds.join(",")})`);
-  }
-  
-  // Basic query logic
-  const { data, error } = await q;
-  if (error || !data) return [];
-  
-  // Filter manually for simplicity or use db search features
-  let results = data;
-  
-  if (query) {
-    const ql = query.toLowerCase();
-    results = results.filter(p => p.name.toLowerCase().includes(ql));
-  }
-  
-  // Normalize
-  return results.map(p => {
-    const attrs = p.attributes as Record<string, any> || {};
-    return {
-      id: p.id,
-      name: p.name,
-      category: category || "unknown", // Ideal to lookup category name
-      size: attrs.size,
-      colors: attrs.colors || (attrs.color ? [attrs.color] : []),
-      price_kzt: Number(p.price) || 0,
-      stock: (p.stock_quantity ?? 1) > 0,
-      stock_qty: p.stock_quantity ?? 0
-    };
-  }).slice(0, 10);
+export const CATALOG_KEY = "consultant_catalog_json";
+export const CATALOG_META_KEY = "consultant_catalog_meta";
+export const SHOP_URL_KEY = "consultant_shop_url";
+export const SHEETS_URL_KEY = "consultant_sheets_url";
+export const DEFAULT_SHOP_URL = "https://bovi.kz";
+
+export type CatalogMeta = {
+  count: number;
+  importedAt: string;
+  source: string;
+};
+
+async function db() {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  return supabaseAdmin;
 }
 
-export async function getProduct(botId: string, id: string): Promise<NormalizedProduct | null> {
-  const { data, error } = await supabaseAdmin.from("products").select("id, name, price, stock_quantity, is_active, attributes").eq("bot_id", botId).eq("id", id).single();
-  if (error || !data) return null;
-  
-  const attrs = data.attributes as Record<string, any> || {};
-  return {
-    id: data.id,
-    name: data.name,
-    category: "unknown",
-    size: attrs.size,
-    colors: attrs.colors || (attrs.color ? [attrs.color] : []),
-    price_kzt: Number(data.price) || 0,
-    stock: (data.stock_quantity ?? 1) > 0,
-    stock_qty: data.stock_quantity ?? 0
+export async function getConsultantShopUrl(): Promise<string> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", SHOP_URL_KEY)
+    .maybeSingle();
+  const url = data?.value?.trim();
+  return url || DEFAULT_SHOP_URL;
+}
+
+export async function loadCatalogMeta(): Promise<CatalogMeta | null> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", CATALOG_META_KEY)
+    .maybeSingle();
+  if (!data?.value?.trim()) return null;
+  try {
+    return JSON.parse(data.value) as CatalogMeta;
+  } catch {
+    return null;
+  }
+}
+
+export type SheetsImportResult =
+  { ok: true; meta: CatalogMeta; skipped: number } | { ok: false; reason: string };
+
+export async function importCatalogFromSheetsUrl(url: string): Promise<SheetsImportResult> {
+  const { googleSheetsCsvUrl, parseCatalogCsv } = await import("./catalog-import");
+  const csvUrl = googleSheetsCsvUrl(url);
+  if (!csvUrl) return { ok: false, reason: "bad_url" };
+  const res = await fetch(csvUrl, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) return { ok: false, reason: `http_${res.status}` };
+  const csv = await res.text();
+  const parsed = parseCatalogCsv(csv);
+  if (parsed.products.length === 0) {
+    return { ok: false, reason: parsed.errors[0]?.message || "empty" };
+  }
+  const s = await db();
+  await s.from("app_settings").upsert({
+    key: SHEETS_URL_KEY,
+    value: url,
+    updated_at: new Date().toISOString(),
+  });
+  const meta = await saveConsultantCatalog(parsed.products, "google_sheets");
+  return { ok: true, meta, skipped: parsed.errors.length };
+}
+
+/** Крон: если ссылка на таблицу сохранена — обновить снимок. */
+export async function refreshCatalogFromSavedSheet(): Promise<SheetsImportResult> {
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", SHEETS_URL_KEY)
+    .maybeSingle();
+  const url = data?.value?.trim();
+  if (!url) return { ok: false, reason: "no_sheets_url" };
+  return importCatalogFromSheetsUrl(url);
+}
+
+export async function saveConsultantCatalog(
+  products: ConsultantProduct[],
+  source: string,
+): Promise<CatalogMeta> {
+  const meta: CatalogMeta = {
+    count: products.length,
+    importedAt: new Date().toISOString(),
+    source,
   };
+  const s = await db();
+  const now = meta.importedAt;
+  await s.from("app_settings").upsert([
+    { key: CATALOG_KEY, value: JSON.stringify(products), updated_at: now },
+    { key: CATALOG_META_KEY, value: JSON.stringify(meta), updated_at: now },
+  ]);
+  catalogCache = { at: Date.now(), products };
+  return meta;
 }
 
-export async function listCategories(botId: string): Promise<string[]> {
-  // Mock logic - should query categories table
-  return ["постельное бельё", "полотенца", "матрасы", "одеяла", "подушки", "посуда"];
+let catalogCache: { at: number; products: ConsultantProduct[] } | null = null;
+const CATALOG_CACHE_MS = 45_000;
+
+export function invalidateConsultantCatalogCache(): void {
+  catalogCache = null;
 }
 
-export async function getCatalogLink(): Promise<string> {
-  return "https://bovi.kz";
+/**
+ * Снимок прайса. Пустой = честный «нет в наличии», не догадка модели.
+ */
+export async function loadConsultantCatalog(): Promise<ConsultantProduct[]> {
+  if (catalogCache && Date.now() - catalogCache.at < CATALOG_CACHE_MS) {
+    return catalogCache.products;
+  }
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const { data } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", CATALOG_KEY)
+    .maybeSingle();
+  if (!data?.value?.trim()) {
+    catalogCache = { at: Date.now(), products: [] };
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(data.value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const products = parsed.filter(isConsultantProduct);
+    catalogCache = { at: Date.now(), products };
+    return products;
+  } catch {
+    return [];
+  }
 }
 
-export async function getDeliveryInfo(): Promise<string> {
-  return "Доставка осуществляется курьерской службой СДЭК и оплачивается покупателем при получении по тарифам СДЭК.";
+function isConsultantProduct(row: unknown): row is ConsultantProduct {
+  if (!row || typeof row !== "object") return false;
+  const p = row as Partial<ConsultantProduct>;
+  return (
+    typeof p.id === "string" &&
+    typeof p.name === "string" &&
+    typeof p.category === "string" &&
+    typeof p.size === "string" &&
+    Array.isArray(p.colors) &&
+    typeof p.price_kzt === "number" &&
+    typeof p.stock === "boolean"
+  );
+}
+
+/** Служебные слова живой фразы. «У вас есть полотенца?» → только «полотенце». */
+export const QUERY_STOP = new Set([
+  "есть",
+  "нужен",
+  "нужна",
+  "нужно",
+  "нужны",
+  "хочу",
+  "подскажи",
+  "подскажите",
+  "скажите",
+  "сколько",
+  "стоит",
+  "цена",
+  "пожалуйста",
+  "можно",
+  "какой",
+  "какая",
+  "какое",
+  "какие",
+  "наличии",
+  "наличие",
+  "вас",
+  "вам",
+  "мне",
+  "меня",
+  "нам",
+  "вы",
+  "ли",
+  "или",
+  "для",
+  "дома",
+  "дом",
+  "что",
+  "это",
+  "этот",
+  "эта",
+  "эти",
+  "ещё",
+  "еще",
+  "нибудь",
+  "можете",
+  "посоветовать",
+  "посоветуйте",
+  "посоветуешь",
+  "посоветуете",
+  "порекомендуйте",
+  "интересует",
+  "интересуют",
+  "покажите",
+  "только",
+  "купить",
+  "купите",
+  "предложите",
+  "предложить",
+  "корзину",
+  "корзина",
+  "бюджет",
+  "тысяч",
+  "тенге",
+  "казахстан",
+  "казахстана",
+  "қазақстан",
+  "россия",
+  "россии",
+  "россию",
+  "россией",
+  "алматы",
+  "астана",
+  "шымкент",
+  "москва",
+  "питер",
+  "страна",
+  "дагестан",
+  "дагестане",
+  "хасавюрт",
+  "хасавюрте",
+  "доставка",
+  "доставку",
+  "доставке",
+  "сдэк",
+  "cdek",
+  "заказать",
+  "цвет",
+  "цвета",
+  "расцветка",
+  "осень",
+  "зима",
+  "качество",
+  "соотношение",
+  "здравствуйте",
+  "привет",
+  "добрый",
+  "день",
+  "вечер",
+]);
+
+export function searchTokens(text: string): string[] {
+  return tokenizeQuery(text).filter((t) => {
+    if (QUERY_STOP.has(t) || /^\d+$/.test(t)) return false;
+    if (/^[smlx]{1,3}$/i.test(t)) return true;
+    return t.length > 2;
+  });
+}
+
+/** В запросе есть размер, цвет или слово из прайса — можно ответить без Claude. */
+const CATEGORY_STEMS = new Set([
+  "одеяло",
+  "подушка",
+  "полотенце",
+  "плед",
+  "матрас",
+  "постельное",
+  "халат",
+  "тарелка",
+  "кружка",
+]);
+
+const SIZE_WORDS = /евро|семей|двуспальн|полутор|1\.5|полутораспальн/;
+
+/** «Интересует одеяло» без 150×200 — менеджер сначала даёт размеры, не одну SKU. */
+export function isCategoryWithoutSize(text: string): boolean {
+  if (/\d+\s*[xх×*∗]\s*\d+/i.test(text)) return false;
+  const tokens = searchTokens(text);
+  if (tokens.length === 0) return false;
+  if (tokens.some((t) => SIZE_WORDS.test(t))) return false;
+  return tokens.every((t) => CATEGORY_STEMS.has(t));
+}
+
+export function categoryQuery(text: string): string | null {
+  const cats = searchTokens(text).filter((t) => CATEGORY_STEMS.has(t));
+  return cats.length ? cats.join(" ") : null;
+}
+
+export function sizeOptions(
+  catalog: ConsultantProduct[],
+  query: string,
+  limit = 3,
+): ConsultantProduct[] {
+  const tokens = searchTokens(query);
+  const inStock = catalog.filter((p) => {
+    if (!p.stock) return false;
+    const hay = haystackOf([p.name, p.category, p.size, p.colors.join(" ")]);
+    return tokens.length > 0 && tokens.every((t) => hay.includes(t));
+  });
+  const bySize = new Map<string, ConsultantProduct>();
+  for (const p of inStock) {
+    const key = foldText(p.size) || p.id;
+    if (!bySize.has(key)) bySize.set(key, p);
+  }
+  return [...bySize.values()].slice(0, limit);
+}
+
+export function queryHasCatalogSignal(text: string, catalog: ConsultantProduct[]): boolean {
+  if (/\d+\s*[xх×]\s*\d+/i.test(text)) return true;
+  const tokens = searchTokens(text);
+  if (tokens.length === 0) return false;
+  return catalog.some((p) => {
+    const hay = haystackOf([p.name, p.category, p.size, p.colors.join(" ")]);
+    return tokens.some((t) => hay.includes(t));
+  });
+}
+
+export async function searchProducts(
+  q: ProductSearchQuery,
+  catalog?: ConsultantProduct[],
+): Promise<ConsultantProduct[]> {
+  const rows = catalog ?? (await loadConsultantCatalog());
+  const hasFilter = Boolean(q.query || q.category || q.size || q.color || q.max_price_kzt);
+  if (!hasFilter) return rows.slice(0, 8);
+  const found = rows.filter((p) => matches(p, q));
+  if (q.max_price_kzt) {
+    found.sort((a, b) => Number(b.stock) - Number(a.stock) || b.price_kzt - a.price_kzt);
+  }
+  return found.slice(0, 8);
+}
+
+export function productsUnderBudget(
+  catalog: ConsultantProduct[],
+  maxPriceKzt: number,
+): ConsultantProduct[] {
+  return catalog
+    .filter((p) => p.stock && p.price_kzt > 0 && p.price_kzt <= maxPriceKzt)
+    .sort((a, b) => b.price_kzt - a.price_kzt);
+}
+
+/** Две позиции из разных категорий в бюджет — не одна случайная первая. */
+export function suggestForBudget(
+  catalog: ConsultantProduct[],
+  maxPriceKzt: number,
+  limit = 2,
+): ConsultantProduct[] {
+  const under = productsUnderBudget(catalog, maxPriceKzt);
+  const picks: ConsultantProduct[] = [];
+  const seen = new Set<string>();
+  for (const p of under) {
+    const cat = foldText(p.category || p.name);
+    if (picks.length > 0 && seen.has(cat)) continue;
+    picks.push(p);
+    seen.add(cat);
+    if (picks.length >= limit) break;
+  }
+  if (picks.length === 1 && under.length > 1) picks.push(under.find((p) => p.id !== picks[0].id)!);
+  return picks.filter(Boolean);
+}
+
+/** Набор 2–3 позиций, сумма как можно ближе к бюджету, но не выше. */
+export function packBasket(
+  catalog: ConsultantProduct[],
+  budgetKzt: number,
+  maxItems = 3,
+): { items: ConsultantProduct[]; total: number } {
+  const under = productsUnderBudget(catalog, budgetKzt);
+  if (under.length === 0) return { items: [], total: 0 };
+
+  const byCat = new Map<string, ConsultantProduct[]>();
+  for (const p of under) {
+    const cat = foldText(p.category || p.name);
+    const list = byCat.get(cat) ?? [];
+    if (list.length < 3) list.push(p);
+    byCat.set(cat, list);
+  }
+  const cheap = [...under].sort((a, b) => a.price_kzt - b.price_kzt).slice(0, 10);
+  const seen = new Set<string>();
+  const pool: ConsultantProduct[] = [];
+  for (const p of [...byCat.values()].flat().concat(cheap)) {
+    if (seen.has(p.id)) continue;
+    seen.add(p.id);
+    pool.push(p);
+  }
+
+  let best: { items: ConsultantProduct[]; total: number } = { items: [], total: 0 };
+  const consider = (items: ConsultantProduct[]) => {
+    if (items.length === 0 || items.length > maxItems) return;
+    const total = items.reduce((sum, p) => sum + p.price_kzt, 0);
+    if (total > budgetKzt) return;
+    if (total > best.total || (total === best.total && items.length > best.items.length)) {
+      best = { items, total };
+    }
+  };
+
+  for (const a of pool) consider([a]);
+  for (let i = 0; i < pool.length; i++) {
+    for (let j = i + 1; j < pool.length; j++) consider([pool[i], pool[j]]);
+  }
+  if (maxItems >= 3) {
+    const n = Math.min(pool.length, 18);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        for (let k = j + 1; k < n; k++) consider([pool[i], pool[j], pool[k]]);
+      }
+    }
+  }
+  return best;
+}
+
+/** Другие карточки той же категории, чем уже показали. */
+export function relatedVariants(
+  catalog: ConsultantProduct[],
+  lastIds: string[],
+  limit = 2,
+): ConsultantProduct[] {
+  const shown = catalog.filter((p) => lastIds.includes(p.id));
+  if (shown.length === 0) return [];
+  const cats = new Set(shown.map((p) => foldText(p.category)));
+  const stems = new Set(shown.map((p) => foldText(p.name).split(" ")[0] ?? "").filter(Boolean));
+  const shownSig = new Set(
+    shown.map((p) => `${foldText(p.size)}|${p.colors.map((c) => foldText(c)).sort().join(",")}`),
+  );
+  const rest = catalog.filter((p) => {
+    if (!p.stock || lastIds.includes(p.id)) return false;
+    const cat = foldText(p.category);
+    const stem = foldText(p.name).split(" ")[0] ?? "";
+    return cats.has(cat) || stems.has(stem);
+  });
+  const different = rest.filter(
+    (p) => !shownSig.has(`${foldText(p.size)}|${p.colors.map((c) => foldText(c)).sort().join(",")}`),
+  );
+  const pool = different.length > 0 ? different : rest;
+  return pool.slice(0, limit);
+}
+
+export async function getProduct(
+  id: string,
+  catalog?: ConsultantProduct[],
+): Promise<ConsultantProduct | null> {
+  const rows = catalog ?? (await loadConsultantCatalog());
+  return rows.find((p) => p.id === id) ?? null;
 }

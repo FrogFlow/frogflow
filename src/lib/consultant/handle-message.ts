@@ -1,167 +1,691 @@
-import { supabaseAdmin } from "../integrations-supabase/client.server";
-import { loadConsultantState, patchConsultantState, appendRecent, pauseConsultantByConversation, ConsultantState } from "./state";
-import { askClaude } from "./claude";
-import { executeConsultantTool } from "./tools";
-import { COPY } from "./copy";
+import type { ZernioPlatform } from "@/lib/zernio-platform";
+import type { ZernioWebhookMessagePayload } from "@/lib/zernio.server";
+import { sendDirectReply } from "@/lib/direct-purchase.server";
+import { runConsultantClaude } from "./claude";
+import {
+  getConsultantShopUrl,
+  loadConsultantCatalog,
+  categoryQuery,
+  isCategoryWithoutSize,
+  packBasket,
+  queryHasCatalogSignal,
+  relatedVariants,
+  searchProducts,
+  searchTokens,
+  sizeOptions,
+  suggestForBudget,
+} from "./catalog";
+import {
+  copyForBucket,
+  formatBasketReply,
+  formatBudgetReply,
+  formatMissingColorReply,
+  formatProductReply,
+  formatSizeOptionsReply,
+  formatThanksReply,
+  formatVariantsReply,
+  looksLikeConsultantBotReply,
+  type ConsultantCopyPack,
+} from "./copy";
+import { looksLikePromptInjection } from "./injection";
+import {
+  extractBudgetKzt,
+  isConsultantThanks,
+  looksLikeProductQuery,
+  looksLikeVagueHelp,
+  matchAdviceIntent,
+  matchBasketIntent,
+  matchCatalogIntent,
+  matchCountry,
+  matchCountryPostback,
+  matchDeliveryIntent,
+  matchMoreVariantsIntent,
+  matchOtherCategoriesIntent,
+  matchPriceOnlyIntent,
+  matchPurchaseIntent,
+} from "./intent";
+import { consultantApiKey } from "./config";
+import { consultantRequestId, logConsultantEvent } from "./log";
+import { getStoredVtbRate, priceRub } from "./rate";
+import {
+  alreadyAnsweredIncoming,
+  appendRecent,
+  claimIncomingMessage,
+  isAutomationPaused,
+  isBotEcho,
+  isFalseManagerPause,
+  loadConsultantState,
+  patchConsultantState,
+  pauseConsultant,
+  resumeConsultant,
+  type ConsultantState,
+} from "./state";
+import { validateConsultantReply } from "./validate";
+import { bucketForUser, getForcedAbBucket } from "./ab";
+import { recordConsultantEvent } from "./analytics";
+import { addConsultantTask } from "./tasks";
+import { notifyConsultantHandoff } from "./notify";
 
-export interface ConsultantEvent {
-  payload: any;
+export type ConsultantReply = {
+  text: string;
+  patch: Partial<ConsultantState>;
+  buttons?: { type: "postback"; title: string; payload: string }[];
+  kind:
+    | "country"
+    | "product"
+    | "oos"
+    | "purchase"
+    | "handoff"
+    | "catalog"
+    | "clarify"
+    | "error"
+    | "injection";
+};
+
+export async function handleConsultantZernioEvent(params: {
+  payload: ZernioWebhookMessagePayload;
   conversationId: string;
   accountId: string;
   userKey: string;
-  text?: string;
-  platform: string;
-  postback?: any;
-}
+  text: string;
+  platform: ZernioPlatform;
+  postback?: string | null;
+  source?: "webhook" | "poll";
+}): Promise<void> {
+  const requestId = consultantRequestId();
+  const started = Date.now();
+  const direction = params.payload.message?.direction;
+  const { consultant } = await loadConsultantState(params.userKey);
 
-export async function handleConsultantZernioEvent(event: ConsultantEvent): Promise<void> {
-  if (!event.text) return; // Ignore non-text for now
-
-  // Extract messageId from payload or generate one to deduplicate
-  const messageId = event.payload?.message?.mid || event.payload?.message_id || `msg-${Date.now()}`;
-  const botId = event.userKey.split(":")[0]; // Typically bot_id:platform_user_id
-
-  // 1. Verify idempotency / deduplication
-  const { data: existingRun } = await supabaseAdmin
-    .from("consultant_message_runs")
-    .select("id, status")
-    .eq("bot_id", botId)
-    .eq("message_id", messageId)
-    .single();
-
-  if (existingRun && existingRun.status !== 'received' && existingRun.status !== 'retryable_failed') {
-    return; // Already processed
-  }
-
-  if (!existingRun) {
-    await supabaseAdmin.from("consultant_message_runs").insert({
-      bot_id: botId,
-      message_id: messageId,
-      conversation_id: event.conversationId,
-      user_key: event.userKey,
-      status: "processing",
-      incoming_text: event.text
-    });
-  } else {
-    await supabaseAdmin.from("consultant_message_runs").update({ status: "processing" }).eq("id", existingRun.id);
-  }
-
-  // 2. Load State
-  const { consultant } = await loadConsultantState(event.userKey);
-  
-  // 3. Pause check
-  if (consultant.automation_paused) {
-    await updateRunStatus(botId, messageId, "cancelled");
+  if (direction === "outgoing") {
+    if (isBotEcho(consultant, params.text) || looksLikeConsultantBotReply(params.text)) return;
+    if (params.text.trim()) {
+      await pauseConsultant(params.userKey, "manager_intervention");
+      logConsultantEvent(requestId, "paused", {
+        userKey: params.userKey,
+        reason: "manager_intervention",
+      });
+    }
     return;
   }
 
-  // 4. Decide Reply
-  try {
-    const reply = await decideConsultantReply(event.text, consultant, { botId, conversationId: event.conversationId, userKey: event.userKey });
-    
-    // Check pause immediately before send
-    const { consultant: latestState } = await loadConsultantState(event.userKey);
-    if (latestState.automation_paused) {
-      await updateRunStatus(botId, messageId, "cancelled");
+  if (isAutomationPaused(consultant)) {
+    let lastOutgoing = "";
+    try {
+      const { listZernioConversationMessages } = await import("@/lib/zernio.server");
+      const messages = await listZernioConversationMessages(
+        params.accountId,
+        params.conversationId,
+      );
+      lastOutgoing =
+        [...messages].reverse().find((m) => m.direction === "outgoing" && m.message?.trim())
+          ?.message ?? "";
+    } catch {
+      lastOutgoing = "";
+    }
+    if (isFalseManagerPause(consultant, lastOutgoing)) {
+      await resumeConsultant(params.userKey);
+    } else {
+      logConsultantEvent(requestId, "skipped_paused", {
+        userKey: params.userKey,
+        reason: consultant.pause_reason,
+      });
       return;
     }
+  }
 
-    // Update state with the interaction
-    await patchConsultantState(event.userKey, {
-      recent: appendRecent(latestState, event.text, reply.text)
+  const text = params.text.trim() || params.postback?.trim() || "";
+  if (!text && !params.postback) return;
+
+  if (isBotEcho(consultant, text) || looksLikeConsultantBotReply(text)) {
+    logConsultantEvent(requestId, "skipped_echo", { userKey: params.userKey });
+    return;
+  }
+
+  const source = params.source ?? "webhook";
+  if (alreadyAnsweredIncoming(consultant, text, Date.now(), source)) {
+    logConsultantEvent(requestId, "skipped_duplicate", { userKey: params.userKey });
+    return;
+  }
+  const claimed = await claimIncomingMessage(params.userKey, text, source);
+  if (!claimed) {
+    logConsultantEvent(requestId, "skipped_duplicate", {
+      userKey: params.userKey,
+      reason: "claim_lost",
     });
-
-    // We rely on the caller or a dedicated sender to actually deliver the message to IG.
-    // In BOVI architecture, zernio-bot typically sends it if we integrate back, or we send it here.
-    // For now, update the run.
-    await supabaseAdmin.from("consultant_message_runs").update({
-      status: "replied",
-      reply_text: reply.text,
-      sent_at: new Date().toISOString(),
-      completed_at: new Date().toISOString()
-    }).eq("bot_id", botId).eq("message_id", messageId);
-    
-  } catch (error) {
-    console.error("Consultant error:", error);
-    await updateRunStatus(botId, messageId, "terminal_failed");
+    return;
   }
+
+  const reply = await decideConsultantReply(text, consultant, {
+    userKey: params.userKey,
+    postback: params.postback,
+    requestId,
+  });
+  if (!reply) return;
+
+  const { consultant: latest } = await loadConsultantState(params.userKey);
+  if (
+    source === "poll" &&
+    latest.last_bot_reply?.trim() === reply.text.trim() &&
+    alreadyAnsweredIncoming(latest, text, Date.now(), source)
+  ) {
+    logConsultantEvent(requestId, "skipped_duplicate", {
+      userKey: params.userKey,
+      reason: "already_sent",
+    });
+    return;
+  }
+
+  await patchConsultantState(params.userKey, {
+    last_customer_text: text,
+    last_bot_reply: reply.text,
+  });
+
+  const send = (buttons: ConsultantReply["buttons"] | undefined) =>
+    sendDirectReply({
+      conversationId: params.conversationId,
+      accountId: params.accountId,
+      userKey: params.userKey,
+      text: reply.text,
+      buttons,
+      platform: params.platform,
+      force: true,
+    });
+  let sent = await send(reply.buttons);
+  if (!sent && reply.buttons?.length) sent = await send(undefined);
+  if (!sent) {
+    logConsultantEvent(requestId, "send_failed", { userKey: params.userKey, kind: reply.kind });
+    return;
+  }
+
+  await patchConsultantState(params.userKey, {
+    ...reply.patch,
+    last_customer_text: text,
+    last_bot_reply: reply.text,
+    last_bot_reply_at: new Date().toISOString(),
+    recent: appendRecent(consultant, text, reply.text),
+  });
+
+  logConsultantEvent(requestId, "replied", {
+    userKey: params.userKey,
+    kind: reply.kind,
+    latencyMs: Date.now() - started,
+    tools: reply.patch.last_product_ids?.length ?? 0,
+  });
 }
 
-async function updateRunStatus(botId: string, messageId: string, status: string) {
-  await supabaseAdmin.from("consultant_message_runs").update({ status }).eq("bot_id", botId).eq("message_id", messageId);
-}
-
-export async function decideConsultantReply(text: string, state: ConsultantState, context: { botId: string, conversationId: string, userKey: string }): Promise<{ text: string }> {
-  // Construct System Prompt
-  const systemPrompt = `
-You are the AI customer consultant for BOVI in Instagram Direct.
-ROLE: Businesslike, concise, and factual. Address the customer formally ("Вы").
-Do not use emotional sales clichés. Never invent product, stock, price, delivery, or currency information.
-Use backend tools for factual data.
-
-REGULATED TEXT:
-- If they ask for delivery options in RU: "${COPY.cdekDelivery}"
-- If they want the full catalog: "${COPY.fullCatalog}"
-- Cross-sell phrase: "${COPY.crossSell}"
-
-When the customer confirms a purchase or asks for a human, invoke handoff_to_manager tool.
-`;
-
-  // Get Claude API key from process.env or settings. 
-  // Normally we would query bot settings, for now assume env var or placeholder.
-  const apiKey = process.env.ANTHROPIC_API_KEY || "dummy_key";
-
-  const messages = [...(state.recent || [])];
-  messages.push({ role: "user", content: text });
-
-  try {
-    let aiResponse = await askClaude(systemPrompt, messages, apiKey);
-    
-    // Handle Tool calls
-    if (aiResponse.toolCalls && aiResponse.toolCalls.length > 0) {
-      const toolResults = [];
-      let handoffTriggered = false;
-
-      for (const call of aiResponse.toolCalls) {
-        const result = await executeConsultantTool(context.botId, call.name, call.input);
-        
-        if (call.name === "handoff_to_manager") {
-          handoffTriggered = true;
-          // create task and pause
-          await supabaseAdmin.from("consultant_handoffs").insert({
-            bot_id: context.botId,
-            user_key: context.userKey,
-            conversation_id: context.conversationId,
-            reason: call.input.reason || "other",
-            customer_text: text
-          });
-          await pauseConsultantByConversation(context.conversationId, call.input.reason || "manager_request");
-          
-          if (call.input.reason === "purchase") return { text: COPY.purchaseConfirmed };
-          if (call.input.reason === "out_of_stock") return { text: COPY.outOfStock };
-          return { text: COPY.technicalFailure };
-        }
-        
-        toolResults.push({ tool_use_id: call.id, content: JSON.stringify(result) });
-      }
-
-      if (handoffTriggered) {
-        return { text: COPY.technicalFailure }; // Fallback if not caught above
-      }
-
-      // If there are tool results, we would normally send them back to Claude for the final answer.
-      // This is a simplified single-turn logic for demonstration.
-      messages.push({ role: "assistant", content: JSON.stringify(aiResponse.toolCalls) });
-      messages.push({ role: "user", content: JSON.stringify(toolResults) });
-      
-      aiResponse = await askClaude(systemPrompt, messages, apiKey);
+export async function decideConsultantReply(
+  text: string,
+  state: ConsultantState,
+  ctx: {
+    userKey?: string;
+    postback?: string | null;
+    requestId?: string;
+    catalog?: import("./catalog").ConsultantProduct[];
+    rate?: number | null;
+  } = {},
+): Promise<ConsultantReply | null> {
+  let bucket = state.ab_bucket ?? "a";
+  if (ctx.userKey && !state.ab_bucket) {
+    try {
+      const forced = await getForcedAbBucket();
+      bucket = bucketForUser(ctx.userKey, forced);
+    } catch {
+      bucket = "a";
     }
-    
-    return { text: aiResponse.text || COPY.technicalFailure };
-
-  } catch (err) {
-    console.error("LLM Error:", err);
-    await pauseConsultantByConversation(context.conversationId, "ai_error");
-    return { text: COPY.technicalFailure };
   }
+  const pack = copyForBucket(bucket);
+
+  if (looksLikePromptInjection(text)) {
+    void track(ctx.userKey, "injection", text, bucket);
+    return handoffReply(pack, state, bucket, "injection", text, ctx.userKey);
+  }
+
+  if (isConsultantThanks(text)) {
+    return { text: formatThanksReply(), patch: { ab_bucket: bucket }, kind: "clarify" };
+  }
+
+  if (matchPurchaseIntent(text)) {
+    void track(ctx.userKey, "purchase", text, bucket);
+    return handoffReply(pack, state, bucket, "purchase", text, ctx.userKey, pack.purchase);
+  }
+
+  const country =
+    matchCountryPostback(ctx.postback) ?? matchCountry(text) ?? state.country ?? undefined;
+
+  if (!country) {
+    return {
+      text: pack.askCountry,
+      patch: { conversation_state: "awaiting_country", ab_bucket: bucket },
+      kind: "country",
+    };
+  }
+
+  const countryPatch: Partial<ConsultantState> = {
+    country,
+    ab_bucket: bucket,
+    conversation_state: "consulting",
+  };
+
+  const justCountry =
+    Boolean(matchCountryPostback(ctx.postback) ?? matchCountry(text)) &&
+    !looksLikeProductQuery(text) &&
+    !matchCatalogIntent(text) &&
+    !matchOtherCategoriesIntent(text) &&
+    !matchAdviceIntent(text);
+
+  const canClaude = Boolean(consultantApiKey());
+  const budgetKzt = extractBudgetKzt(text);
+  const wantsBasket = matchBasketIntent(text);
+  const wantsAdvice =
+    looksLikeVagueHelp(text) ||
+    matchAdviceIntent(text) ||
+    matchOtherCategoriesIntent(text) ||
+    Boolean(budgetKzt) ||
+    wantsBasket;
+
+  if (justCountry && !canClaude) {
+    void track(ctx.userKey, "country", text, bucket);
+    return {
+      text: pack.askProduct,
+      patch: { ...countryPatch, conversation_state: "awaiting_product" },
+      kind: "clarify",
+    };
+  }
+
+  if (matchCatalogIntent(text)) {
+    void track(ctx.userKey, "catalog", text, bucket);
+    return {
+      text: pack.catalogLink(await getShopUrlSafe()),
+      patch: countryPatch,
+      kind: "catalog",
+    };
+  }
+
+  if (wantsAdvice && !canClaude && !budgetKzt && !wantsBasket) {
+    let namedProduct = false;
+    try {
+      const catalogPreview = ctx.catalog ?? (await loadConsultantCatalog());
+      namedProduct = queryHasCatalogSignal(text, catalogPreview);
+    } catch {
+      namedProduct = false;
+    }
+    if (!namedProduct) {
+      return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
+    }
+  }
+
+  if (!looksLikeProductQuery(text) && !justCountry && !wantsAdvice && !canClaude) {
+    return {
+      text: pack.askProduct,
+      patch: { ...countryPatch, conversation_state: "awaiting_product" },
+      kind: "clarify",
+    };
+  }
+
+  const catalog = ctx.catalog ?? (await loadConsultantCatalog());
+  const rateRow =
+    ctx.catalog != null || ctx.rate !== undefined
+      ? ctx.rate != null
+        ? { rate: ctx.rate, updatedAt: "test", source: "test" }
+        : null
+      : await getStoredVtbRate();
+  if (catalog.length === 0) {
+    void track(ctx.userKey, "error", "catalog_empty", bucket);
+    return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
+  }
+
+  if (canClaude) {
+    try {
+      const ai = await runConsultantClaude({
+        text,
+        state: { ...state, ...countryPatch },
+        catalog,
+        shopUrl: await getShopUrlSafe(),
+        forceTools:
+          looksLikeProductQuery(text) ||
+          wantsAdvice ||
+          matchMoreVariantsIntent(text) ||
+          matchDeliveryIntent(text) ||
+          matchPriceOnlyIntent(text),
+        composeAfterTools: true,
+      });
+      if (ai.usage) {
+        void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
+      }
+      if (ai.error === "no_api_key") {
+        /* fall through to local */
+      } else if (ai.handoff) {
+        void track(ctx.userKey, "handoff", text, bucket);
+        return handoffReply(
+          pack,
+          { ...state, ...countryPatch, last_product_ids: ai.products.map((p) => p.id) },
+          bucket,
+          "purchase",
+          text,
+          ctx.userKey,
+          pack.purchase,
+        );
+      } else if (!ai.error) {
+        const inStock = ai.products.filter((p) => p.stock);
+        const check = validateConsultantReply(ai.text, ai.products, ai.extraNumbers);
+        if (check.ok && ai.text.trim()) {
+          void track(ctx.userKey, "query", text, bucket);
+          return {
+            text: ai.text.trim(),
+            patch: {
+              ...countryPatch,
+              last_product_ids: inStock.map((p) => p.id),
+              conversation_state: "consulting",
+            },
+            kind: inStock.length ? "product" : "clarify",
+          };
+        }
+        if (inStock.length > 0) {
+          const composed = composeBudgetOrBasketReply(
+            text,
+            catalog,
+            inStock,
+            country,
+            countryPatch,
+            pack,
+            state,
+            rateRow?.rate ?? null,
+          );
+          if (composed) return composed;
+          const variants = replyMoreVariants(text, catalog, inStock, country, countryPatch, state, rateRow?.rate ?? null);
+          if (variants) return variants;
+          if (wantsAdvice && !budgetKzt && !wantsBasket && !queryHasCatalogSignal(text, catalog)) {
+            return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
+          }
+          const includeCdek = country === "RU" && !state.ru_cdek_sent;
+          const rub =
+            country === "RU" && rateRow?.rate ? priceRub(inStock[0].price_kzt, rateRow.rate) : null;
+          return {
+            text: formatProductReply(inStock[0], country, rub, { includeCdek, pack }),
+            patch: {
+              ...countryPatch,
+              last_product_ids: inStock.map((p) => p.id),
+              ru_cdek_sent: state.ru_cdek_sent || includeCdek,
+            },
+            kind: "product",
+          };
+        }
+      }
+    } catch {
+      void track(ctx.userKey, "error", "claude_failed", bucket);
+    }
+  }
+
+  const local = await replyFromLocalCatalog(
+    text,
+    catalog,
+    country,
+    countryPatch,
+    pack,
+    state,
+    rateRow?.rate ?? null,
+  );
+  if (local) {
+    void track(ctx.userKey, local.kind === "oos" ? "oos" : "query", text, bucket);
+    return local;
+  }
+
+  if (justCountry) {
+    void track(ctx.userKey, "country", text, bucket);
+    return {
+      text: pack.askProduct,
+      patch: { ...countryPatch, conversation_state: "awaiting_product" },
+      kind: "clarify",
+    };
+  }
+
+  if (wantsAdvice || searchTokens(text).length === 0) {
+    return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
+  }
+
+  return {
+    text: pack.askProduct,
+    patch: { ...countryPatch, conversation_state: "awaiting_product" },
+    kind: "clarify",
+  };
+}
+
+function replyMoreVariants(
+  text: string,
+  catalog: import("./catalog").ConsultantProduct[],
+  fallback: import("./catalog").ConsultantProduct[],
+  country: import("./intent").ConsultantCountry | undefined,
+  countryPatch: Partial<ConsultantState>,
+  state: ConsultantState,
+  rate: number | null,
+): ConsultantReply | null {
+  if (!matchMoreVariantsIntent(text)) return null;
+  const lastIds = state.last_product_ids ?? [];
+  const fromSearch = fallback.filter((p) => p.stock && !lastIds.includes(p.id));
+  const picks =
+    fromSearch.length > 0 ? fromSearch.slice(0, 2) : relatedVariants(catalog, lastIds);
+  if (picks.length === 0) {
+    return {
+      text: "Других размеров и цветов в этой позиции сейчас нет. Напишите, что ещё посмотреть.",
+      patch: countryPatch,
+      kind: "clarify",
+    };
+  }
+  return {
+    text: formatVariantsReply(picks, country, rate),
+    patch: { ...countryPatch, last_product_ids: picks.map((p) => p.id) },
+    kind: "product",
+  };
+}
+
+function composeBudgetOrBasketReply(
+  text: string,
+  catalog: import("./catalog").ConsultantProduct[],
+  fallback: import("./catalog").ConsultantProduct[],
+  country: import("./intent").ConsultantCountry | undefined,
+  countryPatch: Partial<ConsultantState>,
+  _pack: ConsultantCopyPack,
+  _state: ConsultantState,
+  rate: number | null,
+): ConsultantReply | null {
+  const budget = extractBudgetKzt(text);
+  const basket = matchBasketIntent(text);
+  if (!budget && !basket) return null;
+  if (basket && !budget) {
+    return {
+      text: "На какую сумму собрать набор? Напишите бюджет — подберу 2–3 позиции из наличия.",
+      patch: countryPatch,
+      kind: "clarify",
+    };
+  }
+  if (!budget) return null;
+  const pool = catalog.length > 0 ? catalog : fallback;
+  if (basket) {
+    const { items, total } = packBasket(pool, budget);
+    return {
+      text: formatBasketReply(items, total, budget, country, rate),
+      patch: {
+        ...countryPatch,
+        last_product_ids: items.map((p) => p.id),
+      },
+      kind: items.length ? "product" : "oos",
+    };
+  }
+  const picks = suggestForBudget(pool, budget);
+  if (picks.length === 0) {
+    return {
+      text: `В бюджет ${budget.toLocaleString("ru-RU")} ₸ сейчас нет позиций в наличии. Могу показать соседние категории — напишите, что ближе.`,
+      patch: { ...countryPatch, last_product_ids: [] },
+      kind: "oos",
+    };
+  }
+  return {
+    text: formatBudgetReply(picks, budget, country, rate),
+    patch: {
+      ...countryPatch,
+      last_product_ids: picks.map((p) => p.id),
+    },
+    kind: "product",
+  };
+}
+
+export async function replyFromLocalCatalog(
+  text: string,
+  catalog: import("./catalog").ConsultantProduct[],
+  country: import("./intent").ConsultantCountry | undefined,
+  countryPatch: Partial<ConsultantState>,
+  pack: ConsultantCopyPack,
+  state: ConsultantState,
+  rate: number | null,
+): Promise<ConsultantReply | null> {
+  const composed = composeBudgetOrBasketReply(
+    text,
+    catalog,
+    [],
+    country,
+    countryPatch,
+    pack,
+    state,
+    rate,
+  );
+  if (composed) return composed;
+
+  const variants = replyMoreVariants(text, catalog, [], country, countryPatch, state, rate);
+  if (variants) return variants;
+
+  if (matchPriceOnlyIntent(text)) {
+    const last = (state.last_product_ids ?? [])
+      .map((id) => catalog.find((p) => p.id === id))
+      .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
+    if (last[0]) {
+      const includeCdek = country === "RU" && !state.ru_cdek_sent;
+      const rub = country === "RU" && rate ? priceRub(last[0].price_kzt, rate) : null;
+      return {
+        text: formatProductReply(last[0], country, rub, { includeCdek, pack }),
+        patch: { ...countryPatch, last_product_ids: [last[0].id] },
+        kind: "product",
+      };
+    }
+    return {
+      text: "Напишите, что на фото — полотенце, одеяло или бельё — сверю цену по прайсу.",
+      patch: countryPatch,
+      kind: "clarify",
+    };
+  }
+
+  if (searchTokens(text).includes("молочный")) {
+    const milk = catalog.filter(
+      (p) => p.stock && p.colors.some((c) => /молочн/i.test(c)),
+    );
+    if (milk.length === 0) {
+      return {
+        text: formatMissingColorReply("Молочного", ["белый", "бежевый"]),
+        patch: countryPatch,
+        kind: "oos",
+      };
+    }
+  }
+
+  if (isCategoryWithoutSize(text)) {
+    const opts = sizeOptions(catalog, text, 3);
+    if (opts.length > 0) {
+      return {
+        text: formatSizeOptionsReply(opts, country, rate, {
+          includeCdek: country === "RU" && !state.ru_cdek_sent,
+        }),
+        patch: { ...countryPatch, last_product_ids: opts.map((p) => p.id) },
+        kind: "product",
+      };
+    }
+  }
+
+  if (matchDeliveryIntent(text) && country === "RU" && !queryHasCatalogSignal(text, catalog)) {
+    return {
+      text: `Доставка в Россию есть, ${pack.cdek}`,
+      patch: { ...countryPatch, ru_cdek_sent: true },
+      kind: "clarify",
+    };
+  }
+
+  const found = await searchProducts({ query: text }, catalog);
+  const hit = found.find((p) => p.stock);
+  if (hit) {
+    const includeCdek = country === "RU" && !state.ru_cdek_sent;
+    const rub = country === "RU" && rate ? priceRub(hit.price_kzt, rate) : null;
+    return {
+      text: formatProductReply(hit, country, rub, { includeCdek, pack }),
+      patch: {
+        ...countryPatch,
+        last_product_ids: [hit.id],
+        ru_cdek_sent: state.ru_cdek_sent || includeCdek,
+      },
+      kind: "product",
+    };
+  }
+  const cat = categoryQuery(text);
+  if (found.length === 0 && cat) {
+    const opts = sizeOptions(catalog, cat, 3);
+    if (opts.length > 0) {
+      return {
+        text: formatSizeOptionsReply(opts, country, rate, {
+          includeCdek: country === "RU" && !state.ru_cdek_sent,
+        }),
+        patch: { ...countryPatch, last_product_ids: opts.map((p) => p.id) },
+        kind: "product",
+      };
+    }
+  }
+
+  if (found.length > 0 || queryHasCatalogSignal(text, catalog)) {
+    return { text: pack.oos, patch: { ...countryPatch, last_product_ids: [] }, kind: "oos" };
+  }
+  return null;
+}
+
+async function handoffReply(
+  pack: ConsultantCopyPack,
+  state: ConsultantState,
+  bucket: "a" | "b",
+  reason: "purchase" | "error" | "other" | "injection",
+  text: string,
+  userKey?: string,
+  message?: string,
+): Promise<ConsultantReply> {
+  const pauseReason = reason === "injection" ? "other" : reason === "other" ? "other" : reason;
+  if (userKey) {
+    await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
+    void addConsultantTask({ userKey, reason, text });
+    void notifyConsultantHandoff({ userKey, reason, text });
+  }
+  return {
+    text: message ?? pack.unrecognized,
+    patch: {
+      ...state,
+      ab_bucket: bucket,
+      automation_paused: true,
+      pause_reason:
+        pauseReason === "purchase" ? "purchase" : pauseReason === "error" ? "error" : "other",
+      conversation_state: "handed_off",
+    },
+    kind: reason === "purchase" ? "purchase" : reason === "injection" ? "injection" : "handoff",
+  };
+}
+
+async function getShopUrlSafe(): Promise<string> {
+  try {
+    return await getConsultantShopUrl();
+  } catch {
+    return "https://bovi.kz";
+  }
+}
+
+async function track(
+  userKey: string | undefined,
+  kind: import("./analytics").ConsultantEventKind,
+  text: string,
+  bucket: string,
+) {
+  if (!userKey) return;
+  await recordConsultantEvent({ userKey, kind, text, bucket });
 }
