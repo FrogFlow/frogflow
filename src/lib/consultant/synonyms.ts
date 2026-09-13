@@ -6,7 +6,7 @@ export function foldText(value: string): string {
   return value
     .toLowerCase()
     .replace(/[ёЁ]/g, (ch) => YO[ch as keyof typeof YO] ?? ch)
-    .replace(/(\d)\s*[×хХx]\s*(\d)/g, "$1x$2")
+    .replace(/(\d)\s*[×хХx*∗]\s*(\d)/g, "$1x$2")
     .replace(/[^a-zа-я0-9x]+/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -30,6 +30,9 @@ const SYNONYM_GROUPS: string[][] = [
   ["желтый", "желтая", "желтое", "желтые", "жёлтый", "жёлтая"],
   ["графит", "графитовый", "графитовая", "графитовое"],
   ["халат", "халаты", "robe"],
+  ["молочный", "молочная", "молочное", "молочного"],
+  ["евро", "eu"],
+  ["семейный", "семейное", "семейка"],
 ];
 
 const LOOKUP = new Map<string, string>();

@@ -467,3 +467,69 @@ describe("consultant — таблица намерений, чтобы не ло
     );
   });
 });
+
+describe("consultant — сценарии из живого Direct клиента", () => {
+  it("Сafi: «как заказать» → страна; Дагестан / Хасавюрт = РФ", async () => {
+    const how = await say("Здравствуйте, как заказать?", {});
+    expect(how.kind).toBe("country");
+    expect(matchPurchaseIntent("Здравствуйте, как заказать?")).toBe(false);
+
+    const dag = await say("В Дагестане", {});
+    expect(dag.patch.country).toBe("RU");
+    expect(dag.kind).toBe("clarify");
+
+    const city = await say("В городе Хасавюрт", {});
+    expect(city.patch.country).toBe("RU");
+  });
+
+  it("Жанна: «интересует одеяло» — размеры, не одна SKU", async () => {
+    const res = await say("Добрый день! Интересует одеяло");
+    expect(res.kind).toBe("product");
+    expect(res.text).toMatch(/размер/i);
+    expect(res.patch.last_product_ids?.length).toBeGreaterThan(1);
+    expect(res.text).not.toBe(TZ_COPY.oos);
+  });
+
+  it("Марина: семейное бельё + доставка в Россию", async () => {
+    const res = await say(
+      "Здравствуйте! Постельное белье семейное сколько стоит? И есть доставка в Россию?",
+      {},
+    );
+    expect(res.patch.country).toBe("RU");
+    expect(res.kind).toBe("product");
+    expect(res.text).toMatch(/семей|Постель|Комплект/i);
+    expect(res.text).toMatch(/СДЭК|₽/i);
+    expect(res.text).not.toBe(TZ_COPY.oos);
+  });
+
+  it("Людмила: спасибо — коротко, не каталог", async () => {
+    const res = await say("Очень круто, спасибо", { country: "RU" });
+    expect(res.text).toMatch(/Пожалуйста/i);
+    expect(res.text).not.toMatch(/есть в наличии/);
+    expect(res.patch.automation_paused).not.toBe(true);
+  });
+
+  it("Людмила: молочного нет — честно, не подмена бежевым", async () => {
+    const res = await say("Хочу молочного цвета", { country: "KZ" });
+    expect(res.kind).toBe("oos");
+    expect(res.text).toMatch(/Молочного/i);
+    expect(res.text).toMatch(/беж|бел/i);
+  });
+
+  it("Ирина: «добрый день цена» без фото — спросить что на фото", async () => {
+    const res = await say("Добрый день цена");
+    expect(res.kind).toBe("clarify");
+    expect(res.text).toMatch(/фото|прайс/i);
+    expect(res.text).not.toMatch(/есть в наличии/);
+  });
+
+  it("Людмила: одеяло евро осень-зима — не корзина и не касса", async () => {
+    expect(matchBasketIntent("Подберите одеяло осень-зима, соотношение цены и качества, евро")).toBe(
+      false,
+    );
+    const res = await say("Подберите пожалуйста одеяло осень-зима, соотношение цены и качества, евро");
+    expect(res.patch.automation_paused).not.toBe(true);
+    expect(res.kind).toBe("product");
+    expect(res.text).toMatch(/Одеяло|евро/i);
+  });
+});

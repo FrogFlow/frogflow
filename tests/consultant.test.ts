@@ -20,6 +20,9 @@ import {
   matchMoreVariantsIntent,
   matchOtherCategoriesIntent,
   extractBudgetKzt,
+  isConsultantThanks,
+  matchDeliveryIntent,
+  matchPriceOnlyIntent,
 } from "../src/lib/consultant/intent";
 import { validateConsultantReply } from "../src/lib/consultant/validate";
 import { looksLikePromptInjection } from "../src/lib/consultant/injection";
@@ -96,12 +99,16 @@ describe("consultant — намерения", () => {
     expect(matchPurchaseIntent("Я только купил кровать, что вы посоветуете купить мне?")).toBe(
       false,
     );
+    expect(matchPurchaseIntent("Здравствуйте, как заказать?")).toBe(false);
+    expect(matchPurchaseIntent("как заказать")).toBe(false);
   });
 
   it("страна KZ/RU", () => {
     expect(matchCountry("Казахстан")).toBe("KZ");
     expect(matchCountry("я из России")).toBe("RU");
     expect(matchCountry("полотенце")).toBeNull();
+    expect(matchCountry("В Дагестане")).toBe("RU");
+    expect(matchCountry("В городе Хасавюрт")).toBe("RU");
   });
 
   it("запрос товара vs приветствие и страна", () => {
@@ -111,6 +118,12 @@ describe("consultant — намерения", () => {
     expect(looksLikeProductQuery("привет")).toBe(false);
     expect(looksLikeProductQuery("оформляем")).toBe(false);
     expect(looksLikeProductQuery("Чем я могу помочь?")).toBe(false);
+    expect(looksLikeProductQuery("как заказать")).toBe(false);
+    expect(looksLikeProductQuery("Здравствуйте, как заказать?")).toBe(false);
+    expect(looksLikeProductQuery("В городе Хасавюрт")).toBe(false);
+    expect(isConsultantThanks("Очень круто, спасибо")).toBe(true);
+    expect(matchDeliveryIntent("есть доставка в Россию?")).toBe(true);
+    expect(matchPriceOnlyIntent("Добрый день цена")).toBe(true);
     expect(looksLikeVagueHelp("Чем я могу помочь? Мы продаём матрасы")).toBe(true);
   });
 
@@ -553,6 +566,7 @@ describe("consultant — шаблоны ТЗ и синонимы", () => {
     expect(tokenizeQuery("подушку")).toContain("подушка");
     expect(foldText("халат")).toBe("халат");
     expect(foldText("50х70")).toBe("50x70");
+    expect(foldText("200*220")).toBe("200x220");
   });
 
   it("сигнал прайса: размер или слово из каталога", async () => {

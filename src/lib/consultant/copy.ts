@@ -105,7 +105,9 @@ export function looksLikeConsultantBotReply(text: string): boolean {
     /в\s+бюджет/i.test(t) ||
     /можно\s+собрать/i.test(t) ||
     /на\s+[\d\s]+\s*₸\s+сейчас/i.test(t) ||
-    /ещё из этой категории/i.test(t)
+    /ещё из этой категории/i.test(t) ||
+    /размеры сейчас в наличии/i.test(t) ||
+    /доставка в россию есть/i.test(t)
   );
 }
 
@@ -217,4 +219,31 @@ export function formatVariantsReply(
   }
   lines.push("Какой размер или цвет ближе?");
   return lines.join("\n");
+}
+
+export function formatSizeOptionsReply(
+  products: ConsultantProduct[],
+  country: ConsultantCountry | undefined,
+  rate: number | null = null,
+  opts: { includeCdek?: boolean } = {},
+): string {
+  if (products.length === 0) {
+    return "Напишите размер — проверю наличие и цену.";
+  }
+  const lines = ["Размеры сейчас в наличии:"];
+  for (const p of products) {
+    lines.push(moneyLine(p, country, rate));
+  }
+  if (country === "RU" && opts.includeCdek) lines.push(TZ_COPY.cdek);
+  lines.push("Какой размер вам нужен?");
+  return lines.join("\n");
+}
+
+export function formatThanksReply(): string {
+  return "Пожалуйста! Если нужен другой размер или цвет — напишите.";
+}
+
+export function formatMissingColorReply(wanted: string, alternatives: string[]): string {
+  const alts = alternatives.length ? alternatives.join(", ") : "белый и бежевый";
+  return `${wanted} сейчас нет в наличии. Есть ${alts}. Напишите, какой ближе, или пришлите фото с видео.`;
 }

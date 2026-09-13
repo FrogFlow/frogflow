@@ -254,12 +254,36 @@ export const QUERY_STOP = new Set([
   "қазақстан",
   "россия",
   "россии",
+  "россию",
+  "россией",
   "алматы",
   "астана",
   "шымкент",
   "москва",
   "питер",
   "страна",
+  "дагестан",
+  "дагестане",
+  "хасавюрт",
+  "хасавюрте",
+  "доставка",
+  "доставку",
+  "доставке",
+  "сдэк",
+  "cdek",
+  "заказать",
+  "цвет",
+  "цвета",
+  "расцветка",
+  "осень",
+  "зима",
+  "качество",
+  "соотношение",
+  "здравствуйте",
+  "привет",
+  "добрый",
+  "день",
+  "вечер",
 ]);
 
 export function searchTokens(text: string): string[] {
@@ -271,6 +295,53 @@ export function searchTokens(text: string): string[] {
 }
 
 /** В запросе есть размер, цвет или слово из прайса — можно ответить без Claude. */
+const CATEGORY_STEMS = new Set([
+  "одеяло",
+  "подушка",
+  "полотенце",
+  "плед",
+  "матрас",
+  "постельное",
+  "халат",
+  "тарелка",
+  "кружка",
+]);
+
+const SIZE_WORDS = /евро|семей|двуспальн|полутор|1\.5|полутораспальн/;
+
+/** «Интересует одеяло» без 150×200 — менеджер сначала даёт размеры, не одну SKU. */
+export function isCategoryWithoutSize(text: string): boolean {
+  if (/\d+\s*[xх×*∗]\s*\d+/i.test(text)) return false;
+  const tokens = searchTokens(text);
+  if (tokens.length === 0) return false;
+  if (tokens.some((t) => SIZE_WORDS.test(t))) return false;
+  return tokens.every((t) => CATEGORY_STEMS.has(t));
+}
+
+export function categoryQuery(text: string): string | null {
+  const cats = searchTokens(text).filter((t) => CATEGORY_STEMS.has(t));
+  return cats.length ? cats.join(" ") : null;
+}
+
+export function sizeOptions(
+  catalog: ConsultantProduct[],
+  query: string,
+  limit = 3,
+): ConsultantProduct[] {
+  const tokens = searchTokens(query);
+  const inStock = catalog.filter((p) => {
+    if (!p.stock) return false;
+    const hay = haystackOf([p.name, p.category, p.size, p.colors.join(" ")]);
+    return tokens.length > 0 && tokens.every((t) => hay.includes(t));
+  });
+  const bySize = new Map<string, ConsultantProduct>();
+  for (const p of inStock) {
+    const key = foldText(p.size) || p.id;
+    if (!bySize.has(key)) bySize.set(key, p);
+  }
+  return [...bySize.values()].slice(0, limit);
+}
+
 export function queryHasCatalogSignal(text: string, catalog: ConsultantProduct[]): boolean {
   if (/\d+\s*[xх×]\s*\d+/i.test(text)) return true;
   const tokens = searchTokens(text);

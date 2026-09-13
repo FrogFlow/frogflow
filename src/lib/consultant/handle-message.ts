@@ -5,18 +5,24 @@ import { runConsultantClaude } from "./claude";
 import {
   getConsultantShopUrl,
   loadConsultantCatalog,
+  categoryQuery,
+  isCategoryWithoutSize,
   packBasket,
   queryHasCatalogSignal,
   relatedVariants,
   searchProducts,
   searchTokens,
+  sizeOptions,
   suggestForBudget,
 } from "./catalog";
 import {
   copyForBucket,
   formatBasketReply,
   formatBudgetReply,
+  formatMissingColorReply,
   formatProductReply,
+  formatSizeOptionsReply,
+  formatThanksReply,
   formatVariantsReply,
   looksLikeConsultantBotReply,
   type ConsultantCopyPack,
@@ -24,6 +30,7 @@ import {
 import { looksLikePromptInjection } from "./injection";
 import {
   extractBudgetKzt,
+  isConsultantThanks,
   looksLikeProductQuery,
   looksLikeVagueHelp,
   matchAdviceIntent,
@@ -31,8 +38,10 @@ import {
   matchCatalogIntent,
   matchCountry,
   matchCountryPostback,
+  matchDeliveryIntent,
   matchMoreVariantsIntent,
   matchOtherCategoriesIntent,
+  matchPriceOnlyIntent,
   matchPurchaseIntent,
 } from "./intent";
 import { consultantApiKey } from "./config";
@@ -232,6 +241,10 @@ export async function decideConsultantReply(
     return handoffReply(pack, state, bucket, "injection", text, ctx.userKey);
   }
 
+  if (isConsultantThanks(text)) {
+    return { text: formatThanksReply(), patch: { ab_bucket: bucket }, kind: "clarify" };
+  }
+
   if (matchPurchaseIntent(text)) {
     void track(ctx.userKey, "purchase", text, bucket);
     return handoffReply(pack, state, bucket, "purchase", text, ctx.userKey, pack.purchase);
@@ -329,7 +342,12 @@ export async function decideConsultantReply(
         state: { ...state, ...countryPatch },
         catalog,
         shopUrl: await getShopUrlSafe(),
-        forceTools: looksLikeProductQuery(text) || wantsAdvice || matchMoreVariantsIntent(text),
+        forceTools:
+          looksLikeProductQuery(text) ||
+          wantsAdvice ||
+          matchMoreVariantsIntent(text) ||
+          matchDeliveryIntent(text) ||
+          matchPriceOnlyIntent(text),
         composeAfterTools: true,
       });
       if (ai.usage) {
@@ -536,6 +554,60 @@ export async function replyFromLocalCatalog(
   const variants = replyMoreVariants(text, catalog, [], country, countryPatch, state, rate);
   if (variants) return variants;
 
+  if (matchPriceOnlyIntent(text)) {
+    const last = (state.last_product_ids ?? [])
+      .map((id) => catalog.find((p) => p.id === id))
+      .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
+    if (last[0]) {
+      const includeCdek = country === "RU" && !state.ru_cdek_sent;
+      const rub = country === "RU" && rate ? priceRub(last[0].price_kzt, rate) : null;
+      return {
+        text: formatProductReply(last[0], country, rub, { includeCdek, pack }),
+        patch: { ...countryPatch, last_product_ids: [last[0].id] },
+        kind: "product",
+      };
+    }
+    return {
+      text: "Напишите, что на фото — полотенце, одеяло или бельё — сверю цену по прайсу.",
+      patch: countryPatch,
+      kind: "clarify",
+    };
+  }
+
+  if (searchTokens(text).includes("молочный")) {
+    const milk = catalog.filter(
+      (p) => p.stock && p.colors.some((c) => /молочн/i.test(c)),
+    );
+    if (milk.length === 0) {
+      return {
+        text: formatMissingColorReply("Молочного", ["белый", "бежевый"]),
+        patch: countryPatch,
+        kind: "oos",
+      };
+    }
+  }
+
+  if (isCategoryWithoutSize(text)) {
+    const opts = sizeOptions(catalog, text, 3);
+    if (opts.length > 0) {
+      return {
+        text: formatSizeOptionsReply(opts, country, rate, {
+          includeCdek: country === "RU" && !state.ru_cdek_sent,
+        }),
+        patch: { ...countryPatch, last_product_ids: opts.map((p) => p.id) },
+        kind: "product",
+      };
+    }
+  }
+
+  if (matchDeliveryIntent(text) && country === "RU" && !queryHasCatalogSignal(text, catalog)) {
+    return {
+      text: `Доставка в Россию есть, ${pack.cdek}`,
+      patch: { ...countryPatch, ru_cdek_sent: true },
+      kind: "clarify",
+    };
+  }
+
   const found = await searchProducts({ query: text }, catalog);
   const hit = found.find((p) => p.stock);
   if (hit) {
@@ -551,6 +623,20 @@ export async function replyFromLocalCatalog(
       kind: "product",
     };
   }
+  const cat = categoryQuery(text);
+  if (found.length === 0 && cat) {
+    const opts = sizeOptions(catalog, cat, 3);
+    if (opts.length > 0) {
+      return {
+        text: formatSizeOptionsReply(opts, country, rate, {
+          includeCdek: country === "RU" && !state.ru_cdek_sent,
+        }),
+        patch: { ...countryPatch, last_product_ids: opts.map((p) => p.id) },
+        kind: "product",
+      };
+    }
+  }
+
   if (found.length > 0 || queryHasCatalogSignal(text, catalog)) {
     return { text: pack.oos, patch: { ...countryPatch, last_product_ids: [] }, kind: "oos" };
   }

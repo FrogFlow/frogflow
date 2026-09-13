@@ -4,13 +4,19 @@ export type ConsultantCountry = "KZ" | "RU";
 const PURCHASE_RE =
   /оформляем|оформить|оформление|беру|возьму|покупаю|оплатить|оплата|куда\s+платить|давайте\s+оформ|менеджер|свяжите|хочу\s+заказать/i;
 
-const KZ_RE = /казахстан|қазақстан|(^|[^a-zа-яё])kz([^a-zа-яё]|$)|алматы|астана|шымкент/i;
-const RU_RE = /росси[яиию]|рф|russia|(^|[^a-zа-яё])ru([^a-zа-яё]|$)|москва|питер/i;
+const KZ_RE =
+  /казахстан|қазақстан|(^|[^a-zа-яё])kz([^a-zа-яё]|$)|алматы|астана|шымкент|караганда|актобе|павлодар|атау|уральск|костанай/i;
+const RU_RE =
+  /росси[яиию]|рф|russia|(^|[^a-zа-яё])ru([^a-zа-яё]|$)|москва|питер|спб|дагестан|хасавюрт|махачкала|казань|екатеринбург|новосибирск|краснодар|сочи|ростов|самара|уфа|пермь|воронеж|челябинск|омск|татарстан|башкортостан/i;
 
 export function matchPurchaseIntent(text: string): boolean {
   const t = text.trim();
   if (/посовет|что\s+(взять|выбрать|купить)|бюджет|только\s+\d/i.test(t)) {
     if (!/оформ|оплат|менеджер|свяжите|куда\s+платить/i.test(t)) return false;
+  }
+  /** Живой Direct: «как заказать?» → страна, не сразу касса. */
+  if (/как\s+(заказать|оформить|купить)/i.test(t)) {
+    if (!/оплат|куда\s+платить|менеджер|свяжите/i.test(t)) return false;
   }
   if (PURCHASE_RE.test(t)) return true;
   if (/^давайте[.!?…]*$/i.test(t)) return true;
@@ -75,12 +81,18 @@ export function looksLikeProductQuery(text: string): boolean {
     const leftover = t
       .replace(KZ_RE, " ")
       .replace(RU_RE, " ")
-      .replace(/я\s+из|из|страна|мы\s+из/gi, " ")
+      .replace(/я\s+из|из|страна|мы\s+из|город[еау]?|пос[её]лк\w*|прожива\w*/gi, " ")
       .replace(/[.!?…,]/g, " ")
       .trim();
     const tokens = leftover.split(/\s+/).filter((w) => w.length > 1);
     if (tokens.length === 0) return false;
   }
+  const leftoverHow = t
+    .replace(/^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай)([.!?…\s,]|👋|🙏)*/i, " ")
+    .replace(/как\s+(заказать|оформить|купить)\??/gi, " ")
+    .replace(/[.!?…,]/g, " ")
+    .trim();
+  if (!leftoverHow) return false;
   return true;
 }
 
@@ -137,6 +149,21 @@ export function extractBudgetKzt(text: string): number | null {
   const n = Number(raw.replace(/\s/g, ""));
   if (!Number.isFinite(n) || n < 1000 || n > 10_000_000) return null;
   return n;
+}
+
+export function matchDeliveryIntent(text: string): boolean {
+  return /доставк|сдэк|cdek|отправ(ить|ка|ите)/i.test(text);
+}
+
+export function isConsultantThanks(text: string): boolean {
+  return /^(спасибо|благодар|очень\s+круто.{0,24}спасибо|круто,?\s*спасибо)([.!?…\s❤🌸🙏]*)$/i.test(
+    text.trim(),
+  );
+}
+
+/** Сторис: «цена» / «добрый день цена» — не пустой поиск по слову «цена». */
+export function matchPriceOnlyIntent(text: string): boolean {
+  return /^(добрый\s+(день|вечер)\s+)?(цена|стоимость|почём|почем)\s*[?!.…]*$/i.test(text.trim());
 }
 
 export function matchCountryPostback(payload: string | null | undefined): ConsultantCountry | null {
