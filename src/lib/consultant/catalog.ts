@@ -212,7 +212,9 @@ export const QUERY_STOP = new Set([
   "вас",
   "вам",
   "мне",
+  "меня",
   "нам",
+  "вы",
   "ли",
   "или",
   "для",
@@ -230,14 +232,27 @@ export const QUERY_STOP = new Set([
   "посоветовать",
   "посоветуйте",
   "посоветуешь",
+  "посоветуете",
   "порекомендуйте",
   "интересует",
   "интересуют",
   "покажите",
+  "только",
+  "купить",
+  "купите",
+  "предложите",
+  "предложить",
+  "корзину",
+  "корзина",
+  "набор",
+  "комплект",
+  "бюджет",
+  "тысяч",
+  "тенге",
 ]);
 
 export function searchTokens(text: string): string[] {
-  return tokenizeQuery(text).filter((t) => t.length > 2 && !QUERY_STOP.has(t));
+  return tokenizeQuery(text).filter((t) => t.length > 2 && !QUERY_STOP.has(t) && !/^\d+$/.test(t));
 }
 
 /** В запросе есть размер, цвет или слово из прайса — можно ответить без Claude. */
@@ -258,7 +273,59 @@ export async function searchProducts(
   const rows = catalog ?? (await loadConsultantCatalog());
   const hasFilter = Boolean(q.query || q.category || q.size || q.color || q.max_price_kzt);
   if (!hasFilter) return rows.slice(0, 8);
-  return rows.filter((p) => matches(p, q)).slice(0, 8);
+  const found = rows.filter((p) => matches(p, q));
+  if (q.max_price_kzt) {
+    found.sort((a, b) => Number(b.stock) - Number(a.stock) || b.price_kzt - a.price_kzt);
+  }
+  return found.slice(0, 8);
+}
+
+export function productsUnderBudget(
+  catalog: ConsultantProduct[],
+  maxPriceKzt: number,
+): ConsultantProduct[] {
+  return catalog
+    .filter((p) => p.stock && p.price_kzt > 0 && p.price_kzt <= maxPriceKzt)
+    .sort((a, b) => b.price_kzt - a.price_kzt);
+}
+
+/** Две позиции из разных категорий в бюджет — не одна случайная первая. */
+export function suggestForBudget(
+  catalog: ConsultantProduct[],
+  maxPriceKzt: number,
+  limit = 2,
+): ConsultantProduct[] {
+  const under = productsUnderBudget(catalog, maxPriceKzt);
+  const picks: ConsultantProduct[] = [];
+  const seen = new Set<string>();
+  for (const p of under) {
+    const cat = foldText(p.category || p.name);
+    if (picks.length > 0 && seen.has(cat)) continue;
+    picks.push(p);
+    seen.add(cat);
+    if (picks.length >= limit) break;
+  }
+  if (picks.length === 1 && under.length > 1) picks.push(under.find((p) => p.id !== picks[0].id)!);
+  return picks.filter(Boolean);
+}
+
+/** Набор 2–3 позиций, сумма ≤ бюджета. Жадный от более дорогих. */
+export function packBasket(
+  catalog: ConsultantProduct[],
+  budgetKzt: number,
+  maxItems = 3,
+): { items: ConsultantProduct[]; total: number } {
+  const under = productsUnderBudget(catalog, budgetKzt);
+  const items: ConsultantProduct[] = [];
+  let total = 0;
+  for (const p of under) {
+    if (items.some((i) => i.id === p.id)) continue;
+    if (total + p.price_kzt > budgetKzt) continue;
+    items.push(p);
+    total += p.price_kzt;
+    if (items.length >= maxItems) break;
+  }
+  return { items, total };
 }
 
 export async function getProduct(

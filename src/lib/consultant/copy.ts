@@ -1,5 +1,6 @@
 import type { ConsultantCountry } from "./intent";
 import type { ConsultantProduct } from "./catalog";
+import { priceRub } from "./rate";
 
 /** Дословные реплики ТЗ BOVI. Вариант B — сухой A/B без клише. */
 export type ConsultantCopyPack = {
@@ -100,7 +101,10 @@ export function looksLikeConsultantBotReply(text: string): boolean {
     /напишите[,\s]+что\s+вас\s+интересует/i.test(t) ||
     /жду\s+вашего/i.test(t) ||
     /я\s+здесь[,\s]+чтобы\s+помочь/i.test(t) ||
-    /матрас.*одеял.*подуш/i.test(t)
+    /матрас.*одеял.*подуш/i.test(t) ||
+    /в\s+бюджет/i.test(t) ||
+    /можно\s+собрать/i.test(t) ||
+    /на\s+[\d\s]+\s*₸\s+сейчас/i.test(t)
   );
 }
 
@@ -131,5 +135,67 @@ export function formatProductReply(
   ];
   if (country === "RU" && opts.includeCdek) lines.push(pack.cdek);
   lines.push(pack.crossSell);
+  return lines.join("\n");
+}
+
+function moneyLine(
+  product: ConsultantProduct,
+  country: ConsultantCountry | undefined,
+  rate: number | null,
+): string {
+  const size = product.size ? `${product.size}`.replace(/\s*см$/i, "") : "";
+  const sizeBit = size ? ` ${size} см` : "";
+  const amount =
+    country === "RU" && rate != null
+      ? `${priceRubAmount(product.price_kzt, rate)} ₽`
+      : `${product.price_kzt.toLocaleString("ru-RU")} ₸`;
+  return `${product.name}${sizeBit} есть в наличии — ${amount}`;
+}
+
+function priceRubAmount(priceKzt: number, rate: number): string {
+  return priceRub(priceKzt, rate).toLocaleString("ru-RU");
+}
+
+/** Совет по бюджету: 1–2 позиции, не шаблон одной карточки. */
+export function formatBudgetReply(
+  products: ConsultantProduct[],
+  budgetKzt: number,
+  country: ConsultantCountry | undefined,
+  rate: number | null = null,
+): string {
+  const cap =
+    country === "RU" && rate != null
+      ? `${priceRubAmount(budgetKzt, rate)} ₽`
+      : `${budgetKzt.toLocaleString("ru-RU")} ₸`;
+  const lines = [`В бюджет ${cap} сейчас влезает, например:`];
+  for (const p of products) lines.push(moneyLine(p, country, rate));
+  lines.push("Что ближе — напишите, уточню размер или цвет.");
+  return lines.join("\n");
+}
+
+/** Корзина/набор: несколько позиций и сумма, не повтор одной карточки. */
+export function formatBasketReply(
+  items: ConsultantProduct[],
+  totalKzt: number,
+  budgetKzt: number,
+  country: ConsultantCountry | undefined,
+  rate: number | null = null,
+): string {
+  const money = (n: number) =>
+    country === "RU" && rate != null
+      ? `${priceRubAmount(n, rate)} ₽`
+      : `${n.toLocaleString("ru-RU")} ₸`;
+  if (items.length === 0) {
+    return `На ${money(budgetKzt)} сейчас нет набора из наличия. Напишите категорию — подберём по одной позиции.`;
+  }
+  const lines = [`На ${money(budgetKzt)} можно собрать:`];
+  for (const p of items) lines.push(moneyLine(p, country, rate));
+  if (items.length === 1) {
+    lines.push(
+      `Вместе ${money(totalKzt)}. Вторую позицию в ${money(budgetKzt)} уже не влезает — если собрать из более мелких, напишите.`,
+    );
+  } else {
+    lines.push(`Вместе ${money(totalKzt)}. Если нужно ближе к сумме или другие позиции — напишите.`);
+  }
   return lines.join("\n");
 }

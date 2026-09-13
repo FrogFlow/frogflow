@@ -98,9 +98,35 @@ export function matchOtherCategoriesIntent(text: string): boolean {
 
 /** «Что посоветуете для дома?» — показать категории, не «нет в наличии». */
 export function matchAdviceIntent(text: string): boolean {
-  return /посовет|порекоменд|что\s+(взять|выбрать|подобрать|можете)|для\s+дома|что\s+есть\b|какие\s+(товар|категор)|покажите\s+(что|ассортимент)/i.test(
+  return /посовет|порекоменд|что\s+(взять|выбрать|подобрать|можете|купить)|для\s+дома|что\s+есть\b|какие\s+(товар|категор)|покажите\s+(что|ассортимент)|бюджет|только\s+\d|предложи/i.test(
     text,
   );
+}
+
+/** «Соберите корзину / набор на N» — несколько позиций, не одна дешёвая карточка. */
+export function matchBasketIntent(text: string): boolean {
+  return /корзин|набор|комплект|подбер\w+|собери|соберите/i.test(text);
+}
+
+/**
+ * Бюджет из живой фразы: «только 15000», «корзину на 20 000».
+ * Размер 50×70 и мелкие числа не считаем деньгами.
+ */
+export function extractBudgetKzt(text: string): number | null {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  if (!/(только|бюджет|до|на|около|корзин|набор|комплект|посовет|предложи|подбер)/i.test(t)) {
+    return null;
+  }
+  const tagged =
+    t.match(
+      /(?:только|бюджет|до|на|около)\s*(\d[\d\s]{2,8})\s*(?:₸|тг|тенге|тыс(?:яч)?|к\b)?/i,
+    ) ?? t.match(/(\d[\d\s]{2,8})\s*(?:₸|тг|тенге)/i);
+  const raw = tagged?.[1] ?? t.match(/(\d[\d\s]{3,8})/)?.[1];
+  if (!raw) return null;
+  const n = Number(raw.replace(/\s/g, ""));
+  if (!Number.isFinite(n) || n < 1000 || n > 10_000_000) return null;
+  return n;
 }
 
 export function matchCountryPostback(payload: string | null | undefined): ConsultantCountry | null {

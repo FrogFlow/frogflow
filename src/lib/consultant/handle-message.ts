@@ -5,21 +5,27 @@ import { runConsultantClaude } from "./claude";
 import {
   getConsultantShopUrl,
   loadConsultantCatalog,
+  packBasket,
   queryHasCatalogSignal,
   searchProducts,
   searchTokens,
+  suggestForBudget,
 } from "./catalog";
 import {
   copyForBucket,
+  formatBasketReply,
+  formatBudgetReply,
   formatProductReply,
   looksLikeConsultantBotReply,
   type ConsultantCopyPack,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import {
+  extractBudgetKzt,
   looksLikeProductQuery,
   looksLikeVagueHelp,
   matchAdviceIntent,
+  matchBasketIntent,
   matchCatalogIntent,
   matchCountry,
   matchCountryPostback,
@@ -247,8 +253,14 @@ export async function decideConsultantReply(
     !matchAdviceIntent(text);
 
   const canClaude = Boolean(consultantApiKey());
+  const budgetKzt = extractBudgetKzt(text);
+  const wantsBasket = matchBasketIntent(text);
   const wantsAdvice =
-    looksLikeVagueHelp(text) || matchAdviceIntent(text) || matchOtherCategoriesIntent(text);
+    looksLikeVagueHelp(text) ||
+    matchAdviceIntent(text) ||
+    matchOtherCategoriesIntent(text) ||
+    Boolean(budgetKzt) ||
+    wantsBasket;
 
   if (justCountry && !canClaude) {
     void track(ctx.userKey, "country", text, bucket);
@@ -268,7 +280,7 @@ export async function decideConsultantReply(
     };
   }
 
-  if (wantsAdvice && !canClaude) {
+  if (wantsAdvice && !canClaude && !budgetKzt && !wantsBasket) {
     let namedProduct = false;
     try {
       const catalogPreview = await loadConsultantCatalog();
@@ -303,6 +315,7 @@ export async function decideConsultantReply(
         catalog,
         shopUrl: await getShopUrlSafe(),
         forceTools: looksLikeProductQuery(text) || wantsAdvice,
+        composeAfterTools: Boolean(budgetKzt || wantsBasket || wantsAdvice),
       });
       if (ai.usage) {
         void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
@@ -336,6 +349,20 @@ export async function decideConsultantReply(
           };
         }
         if (inStock.length > 0) {
+          const composed = composeBudgetOrBasketReply(
+            text,
+            catalog,
+            inStock,
+            country,
+            countryPatch,
+            pack,
+            state,
+            rateRow?.rate ?? null,
+          );
+          if (composed) return composed;
+          if (wantsAdvice && !budgetKzt && !wantsBasket && !queryHasCatalogSignal(text, catalog)) {
+            return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
+          }
           const includeCdek = country === "RU" && !state.ru_cdek_sent;
           const rub =
             country === "RU" && rateRow?.rate ? priceRub(inStock[0].price_kzt, rateRow.rate) : null;
@@ -389,6 +416,57 @@ export async function decideConsultantReply(
   };
 }
 
+function composeBudgetOrBasketReply(
+  text: string,
+  catalog: import("./catalog").ConsultantProduct[],
+  fallback: import("./catalog").ConsultantProduct[],
+  country: import("./intent").ConsultantCountry | undefined,
+  countryPatch: Partial<ConsultantState>,
+  _pack: ConsultantCopyPack,
+  _state: ConsultantState,
+  rate: number | null,
+): ConsultantReply | null {
+  const budget = extractBudgetKzt(text);
+  const basket = matchBasketIntent(text);
+  if (!budget && !basket) return null;
+  if (basket && !budget) {
+    return {
+      text: "На какую сумму собрать набор? Напишите бюджет — подберу 2–3 позиции из наличия.",
+      patch: countryPatch,
+      kind: "clarify",
+    };
+  }
+  if (!budget) return null;
+  const pool = catalog.length > 0 ? catalog : fallback;
+  if (basket) {
+    const { items, total } = packBasket(pool, budget);
+    return {
+      text: formatBasketReply(items, total, budget, country, rate),
+      patch: {
+        ...countryPatch,
+        last_product_ids: items.map((p) => p.id),
+      },
+      kind: items.length ? "product" : "oos",
+    };
+  }
+  const picks = suggestForBudget(pool, budget);
+  if (picks.length === 0) {
+    return {
+      text: `В бюджет ${budget.toLocaleString("ru-RU")} ₸ сейчас нет позиций в наличии. Могу показать соседние категории — напишите, что ближе.`,
+      patch: { ...countryPatch, last_product_ids: [] },
+      kind: "oos",
+    };
+  }
+  return {
+    text: formatBudgetReply(picks, budget, country, rate),
+    patch: {
+      ...countryPatch,
+      last_product_ids: picks.map((p) => p.id),
+    },
+    kind: "product",
+  };
+}
+
 export async function replyFromLocalCatalog(
   text: string,
   catalog: import("./catalog").ConsultantProduct[],
@@ -398,6 +476,18 @@ export async function replyFromLocalCatalog(
   state: ConsultantState,
   rate: number | null,
 ): Promise<ConsultantReply | null> {
+  const composed = composeBudgetOrBasketReply(
+    text,
+    catalog,
+    [],
+    country,
+    countryPatch,
+    pack,
+    state,
+    rate,
+  );
+  if (composed) return composed;
+
   const found = await searchProducts({ query: text }, catalog);
   const hit = found.find((p) => p.stock);
   if (hit) {
