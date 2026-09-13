@@ -9,6 +9,7 @@ import {
   loadConsultantState,
   recentlyReplied,
   resumeConsultant,
+  type ConsultantState,
 } from "./state";
 import { logConsultantEvent, consultantRequestId } from "./log";
 
@@ -85,7 +86,7 @@ export async function pollIncomingConsultantMessages(): Promise<{
         (await findUserKeyByConversation(convo.id).catch(() => null)) ||
         `${USER_KEY_PREFIX.instagram}${senderId}`;
       let { consultant } = await loadConsultantState(userKey).catch(() => ({
-        consultant: {},
+        consultant: {} as ConsultantState,
       }));
       if (isFalseManagerPause(consultant, lastOutgoing?.message)) {
         consultant = await resumeConsultant(userKey);
