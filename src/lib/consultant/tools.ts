@@ -65,12 +65,12 @@ export const CONSULTANT_TOOLS = [
       }
     }
   },
-  {
-    name: "handoff_to_manager",
-    description:
-      "Call when the customer wants to buy, pay, or talk to a manager, or when you cannot answer from tools. After this, automation pauses.",
-    input_schema: {
-      type: "object",
+    {
+      name: "handoff_to_manager",
+      description:
+        "Call ONLY when the customer explicitly wants to buy, pay, place an order, or talk to a human. Do NOT call this if a product is out of stock or not found - instead, output a normal text message saying it's unavailable.",
+      input_schema: {
+        type: "object",
       properties: { reason: { type: "string" } },
     },
   },
