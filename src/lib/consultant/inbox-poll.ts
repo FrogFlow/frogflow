@@ -78,6 +78,30 @@ export async function pollIncomingConsultantMessages(): Promise<{
 
     for (const convo of recent) {
       checked += 1;
+
+      // Prevent 429: Short-circuit if the last message is already known and we are not paused
+      const senderId = convo.participantId || convo.participantUsername || convo.id;
+      const userKey =
+        (await findUserKeyByConversation(convo.id).catch(() => null)) ||
+        `${USER_KEY_PREFIX.instagram}${senderId}`;
+      let { consultant } = await loadConsultantState(userKey).catch(() => ({
+        consultant: {} as ConsultantState,
+      }));
+
+      const lastMsgStr = convo.lastMessage?.trim();
+      const knownLastMsg =
+        lastMsgStr &&
+        (lastMsgStr === (consultant.last_customer_text ?? "").trim() ||
+         lastMsgStr === (consultant.last_bot_reply ?? "").trim());
+
+      if (knownLastMsg && !consultant.automation_paused) {
+        skipped += 1;
+        continue;
+      }
+
+      // Add a tiny delay to avoid Zernio 429s when fetching many conversations
+      await new Promise(r => setTimeout(r, 200));
+
       const messages = await listZernioConversationMessages(acc._id, convo.id);
       const lastIncoming = [...messages]
         .reverse()
@@ -86,13 +110,6 @@ export async function pollIncomingConsultantMessages(): Promise<{
         .reverse()
         .find((m) => m.direction === "outgoing" && m.message?.trim());
       const lastText = [...messages].reverse().find((m) => m.message?.trim());
-      const senderId = convo.participantId || convo.participantUsername || convo.id;
-      const userKey =
-        (await findUserKeyByConversation(convo.id).catch(() => null)) ||
-        `${USER_KEY_PREFIX.instagram}${senderId}`;
-      let { consultant } = await loadConsultantState(userKey).catch(() => ({
-        consultant: {} as ConsultantState,
-      }));
       if (isFalseManagerPause(consultant, lastOutgoing?.message)) {
         consultant = await resumeConsultant(userKey);
       }
