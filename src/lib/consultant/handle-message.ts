@@ -91,6 +91,8 @@ export async function handleConsultantZernioEvent(params: {
   platform: ZernioPlatform;
   postback?: string | null;
   source?: "webhook" | "poll";
+  storyId?: string | null;
+  storyMediaUrl?: string | null;
 }): Promise<void> {
   const requestId = consultantRequestId();
   const started = Date.now();
@@ -135,7 +137,7 @@ export async function handleConsultantZernioEvent(params: {
   }
 
   const text = params.text.trim() || params.postback?.trim() || "";
-  if (!text && !params.postback) return;
+  if (!text && !params.postback && !params.storyId && !params.storyMediaUrl) return;
 
   if (isBotEcho(consultant, text) || looksLikeConsultantBotReply(text)) {
     logConsultantEvent(requestId, "skipped_echo", { userKey: params.userKey });
@@ -147,6 +149,7 @@ export async function handleConsultantZernioEvent(params: {
     logConsultantEvent(requestId, "skipped_duplicate", { userKey: params.userKey });
     return;
   }
+
   const claimed = await claimIncomingMessage(params.userKey, text, source);
   if (!claimed) {
     logConsultantEvent(requestId, "skipped_duplicate", {
@@ -160,6 +163,8 @@ export async function handleConsultantZernioEvent(params: {
     userKey: params.userKey,
     postback: params.postback,
     requestId,
+    storyId: params.storyId,
+    storyMediaUrl: params.storyMediaUrl,
   });
   if (!reply) return;
 
@@ -223,6 +228,8 @@ export async function decideConsultantReply(
     requestId?: string;
     catalog?: import("./catalog").ConsultantProduct[];
     rate?: number | null;
+    storyId?: string | null;
+    storyMediaUrl?: string | null;
   } = {},
 ): Promise<ConsultantReply | null> {
   let bucket = state.ab_bucket ?? "a";
@@ -337,8 +344,13 @@ export async function decideConsultantReply(
 
   if (canClaude) {
     try {
+      let claudeText = text;
+      if (ctx.storyId || ctx.storyMediaUrl) {
+        claudeText = `[Customer replied to a story. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown] ${text}`;
+      }
+
       const ai = await runConsultantClaude({
-        text,
+        text: claudeText,
         state: { ...state, ...countryPatch },
         catalog,
         shopUrl: await getShopUrlSafe(),
@@ -347,7 +359,8 @@ export async function decideConsultantReply(
           wantsAdvice ||
           matchMoreVariantsIntent(text) ||
           matchDeliveryIntent(text) ||
-          matchPriceOnlyIntent(text),
+          matchPriceOnlyIntent(text) ||
+          Boolean(ctx.storyId || ctx.storyMediaUrl),
         composeAfterTools: true,
       });
       if (ai.usage) {

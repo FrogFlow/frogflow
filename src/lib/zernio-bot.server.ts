@@ -1417,6 +1417,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * не должен заходить: иначе консультант превращается обратно в бота-кассу.
    */
   if (consultantMode) {
+    const { storyId, storyMediaUrl } = parseZernioMessage(payload);
     const { handleConsultantZernioEvent } = await import("./consultant/handle-message");
     await handleConsultantZernioEvent({
       payload,
@@ -1426,6 +1427,8 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
       text,
       platform,
       postback: postbackPayload,
+      storyId,
+      storyMediaUrl,
     });
     return;
   }

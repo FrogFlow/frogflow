@@ -55,6 +55,17 @@ export const CONSULTANT_TOOLS = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "get_story_product",
+    description: "Returns the product tagged to the Instagram story the user replied to. Requires story_id or attachment_url.",
+    input_schema: {
+      type: "object",
+      properties: {
+        story_id: { type: "string" },
+        attachment_url: { type: "string" }
+      }
+    }
+  },
+  {
     name: "handoff_to_manager",
     description:
       "Call when the customer wants to buy, pay, or talk to a manager, or when you cannot answer from tools. After this, automation pauses.",
@@ -125,6 +136,39 @@ export async function executeConsultantTool(
       products: product ? [product] : [],
       handoff: false,
     };
+  }
+
+  if (name === "get_story_product") {
+    const { findStoryTagById, findStoryTagByUrl } = await import("./story-tags.functions");
+    const tag =
+      (typeof input.story_id === "string" && input.story_id ? await findStoryTagById(input.story_id) : null) ||
+      (typeof input.attachment_url === "string" && input.attachment_url ? await findStoryTagByUrl(input.attachment_url) : null);
+    
+    if (tag) {
+      // If we have a product_id mapped, we can return the full product.
+      if (tag.product_id) {
+        const product = await getProduct(tag.product_id, ctx.catalog);
+        if (product) {
+          return {
+            result: presentCard(product, ctx.country, rate),
+            products: [product],
+            handoff: false,
+          };
+        }
+      }
+      // Otherwise return the manually typed metadata
+      return {
+        result: {
+          product_name: tag.product_name,
+          price_kzt: tag.product_price_kzt,
+          price_rub: tag.product_price_kzt ? priceRub(tag.product_price_kzt, rate || 0) : null,
+          notes: tag.notes,
+        },
+        products: [],
+        handoff: false,
+      };
+    }
+    return { result: { error: "not_found", note: "No product is tagged to this story in the admin panel." }, products: [], handoff: false };
   }
 
   if (name === "get_current_rate") {

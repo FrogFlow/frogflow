@@ -43,6 +43,10 @@ export type ParsedZernioMessage = {
    * нужно, чтобы ответить, а не промолчать.
    */
   nativeOrder: NativeOrder | null;
+  /** Instagram story ID when the message is a reply to a story. */
+  storyId: string | null;
+  /** URL of the story media attachment (for fallback matching). */
+  storyMediaUrl: string | null;
 };
 
 export type NativeOrder = {
@@ -126,6 +130,22 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
       }
     : null;
 
+  let storyId: string | null = null;
+  let storyMediaUrl: string | null = null;
+
+  if (typeof interactive.story_id === "string") {
+    storyId = interactive.story_id;
+  }
+  
+  if (message.attachments && Array.isArray(message.attachments)) {
+    for (const att of message.attachments) {
+      if (att.type === "story_reply" || att.type === "story_share" || att.type === "story") {
+        if (!storyMediaUrl && att.url) storyMediaUrl = att.url;
+        if (!storyId && att.payload?.story_id) storyId = String(att.payload.story_id);
+      }
+    }
+  }
+
   return {
     conversationId: message.conversationId || conversation.id,
     // `accountId` — каноническое поле фильтрации, `id` держим как запасное.
@@ -140,5 +160,7 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
     metadata,
     postbackPayload,
     nativeOrder,
+    storyId,
+    storyMediaUrl,
   };
 }

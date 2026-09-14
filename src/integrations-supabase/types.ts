@@ -976,6 +976,49 @@ export type Database = {
           },
         ];
       };
+      // MIGRATION-70. Story product tags for consultant story replies.
+      story_product_tags: {
+        Row: {
+          id: string;
+          bot_id: string | null;
+          story_id: string;
+          story_url: string | null;
+          thumbnail_url: string | null;
+          product_name: string;
+          product_price_kzt: number | null;
+          product_id: string | null;
+          notes: string | null;
+          created_at: string;
+          expires_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          bot_id?: string | null;
+          story_id: string;
+          story_url?: string | null;
+          thumbnail_url?: string | null;
+          product_name: string;
+          product_price_kzt?: number | null;
+          product_id?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          expires_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string | null;
+          story_id?: string;
+          story_url?: string | null;
+          thumbnail_url?: string | null;
+          product_name?: string;
+          product_price_kzt?: number | null;
+          product_id?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          expires_at?: string | null;
+        };
+        Relationships: [];
+      };
       // MIGRATION-69. Append-only BOVI catalog import history.
       consultant_catalog_imports: {
         Row: {
