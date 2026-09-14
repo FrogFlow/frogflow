@@ -244,3 +244,17 @@ export const setConsultantTaskDoneFn = createServerFn({ method: "POST" })
     await setConsultantTaskDone(data.id, data.done);
     return { ok: true as const };
   });
+
+export const testConsultantTelegramFn = createServerFn({ method: "POST" }).handler(async () => {
+  await requireAdmin();
+  const { notifyConsultantHandoff } = await import("./notify");
+  await notifyConsultantHandoff({
+    userKey: "test_preview",
+    reason: "purchase",
+    text: "Тестовое уведомление: проверка связи с менеджером BOVI",
+    customerName: "Тестовый менеджер",
+    customerUsername: "bovi_manager",
+    lastProducts: ["Комплект постельного белья Сатин", "Полотенце махровое 100х150"],
+  });
+  return { ok: true as const };
+});

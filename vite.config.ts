@@ -54,6 +54,15 @@ export default defineConfig({
           "/api/operator-cron/leads": {
             maxDuration: 60,
           },
+          "/api/public/zernio/webhook": {
+            maxDuration: 60,
+          },
+          "/api/cron/zernio-retry": {
+            maxDuration: 60,
+          },
+          "/api/cron/consultant-vtb": {
+            maxDuration: 60,
+          },
         },
       },
     }),

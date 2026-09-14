@@ -20,10 +20,11 @@ import {
   pollConsultantInboxFn,
   setConsultantRateFn,
   setConsultantTaskDoneFn,
+  testConsultantTelegramFn,
 } from "@/lib/consultant/consultant.functions";
 import { StoriesTab } from "./admin.stories-tab";
 import { Badge } from "@/components-ui/badge";
-import { CheckCircle2, Circle } from "lucide-react";
+import { CheckCircle2, Circle, Send } from "lucide-react";
 import { rateSourceKind } from "@/lib/consultant/vtb-parse";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
@@ -390,6 +391,12 @@ function ConsultantPage() {
     onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
+  const testTg = useMutation({
+    mutationFn: () => testConsultantTelegramFn(),
+    onSuccess: () => toast.success("Тестовое уведомление отправлено в Telegram!"),
+    onError: (e: unknown) => toast.error("Ошибка отправки в Telegram: " + errorMessage(e)),
+  });
+
     return (
     <div className="space-y-6 max-w-4xl">
       <div>
@@ -432,6 +439,27 @@ function ConsultantPage() {
                 ? `Последнее входящее: ${formatWhen(d.lastDirectAt, locale)} — ${d.lastDirectStatus}`
                 : "Отсутствует"}
             </p>
+          </section>
+
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="font-medium">Уведомления в Telegram</h2>
+                <p className="text-xs text-muted-foreground">
+                  При вызове менеджера или запросе на оформление бот присылает карточку диалога владельцу бота в Telegram.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={testTg.isPending}
+                onClick={() => testTg.mutate()}
+              >
+                <Send className="w-3.5 h-3.5 mr-1.5" />
+                {testTg.isPending ? "Отправка..." : "Проверить Telegram"}
+              </Button>
+            </div>
           </section>
 
           <section className="bg-card border rounded-lg p-4 space-y-2">

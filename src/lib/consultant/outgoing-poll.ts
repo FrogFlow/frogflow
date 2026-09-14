@@ -14,6 +14,9 @@ export async function pollOutgoingManagerMessages(): Promise<{ checked: number; 
   for (const acc of instagram.slice(0, 2)) {
     const convos = await listZernioConversations(acc._id, "instagram");
     for (const convo of convos.slice(0, 15)) {
+      const ts = convo.updatedTime ? Date.parse(convo.updatedTime) : 0;
+      if (ts && Date.now() - ts > 2 * 60 * 60 * 1000) continue;
+
       checked += 1;
       const messages = await listZernioConversationMessages(acc._id, convo.id);
       const last = [...messages].reverse().find((m) => m.message?.trim());
