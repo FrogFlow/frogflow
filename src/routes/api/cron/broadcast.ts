@@ -26,23 +26,7 @@ export const Route = createFileRoute("/api/cron/broadcast")({
         try {
           const webhook = await ensureTelegramWebhook();
 
-          let consultantInbox:
-            | { checked: number; replied: number; skipped: number }
-            | { error: string }
-            | undefined;
-          try {
-            const { isConsultantVertical } = await import("@/lib/verticals/registry");
-            const { currentVertical } = await import("@/lib/verticals/vertical.server");
-            if (isConsultantVertical(currentVertical())) {
-              const { pollIncomingConsultantMessages } = await import(
-                "@/lib/consultant/inbox-poll"
-              );
-              consultantInbox = await pollIncomingConsultantMessages();
-            }
-          } catch (e: unknown) {
-            console.error("[cron/broadcast] consultant inbox", e);
-            consultantInbox = { error: errorMessage(e) };
-          }
+          // Note: Consultant inbox polling is handled exclusively by cron/zernio-retry to prevent rate limit collisions.
 
           let total = 0;
           let done = false;

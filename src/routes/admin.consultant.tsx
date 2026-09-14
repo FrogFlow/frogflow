@@ -21,6 +21,9 @@ import {
   setConsultantRateFn,
   setConsultantTaskDoneFn,
 } from "@/lib/consultant/consultant.functions";
+import { StoriesTab } from "./admin.stories-tab";
+import { Badge } from "@/components-ui/badge";
+import { CheckCircle2, Circle } from "lucide-react";
 import { rateSourceKind } from "@/lib/consultant/vtb-parse";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
@@ -273,10 +276,28 @@ function ConsultantPage() {
   const [driveUrl, setDriveUrl] = useState("");
   const [shopUrl, setShopUrl] = useState("");
   const [manualRate, setManualRate] = useState("");
+  const [dialogSearch, setDialogSearch] = useState("");
+  const [dialogFilter, setDialogFilter] = useState<"all" | "paused" | "active">("all");
 
   const d = data.data;
   const sheetsValue = sheetsUrl || d?.sheetsUrl || "";
   const shopValue = shopUrl || d?.shopUrl || "";
+  const tasks = d?.tasks ?? [];
+  const pendingTasksCount = tasks.filter((t) => !t.done).length;
+
+  const filteredCustomers = (d?.customers ?? []).filter((row) => {
+    if (dialogFilter === "paused" && !row.paused) return false;
+    if (dialogFilter === "active" && row.paused) return false;
+    if (dialogSearch.trim()) {
+      const q = dialogSearch.toLowerCase();
+      const matchLabel = row.label.toLowerCase().includes(q);
+      const matchUser = row.userKey.toLowerCase().includes(q);
+      const matchTurn = (row.recent ?? []).some((turn) => turn.text.toLowerCase().includes(q));
+      const matchReply = (row.lastReply ?? "").toLowerCase().includes(q);
+      if (!matchLabel && !matchUser && !matchTurn && !matchReply) return false;
+    }
+    return true;
+  });
 
   const importCsv = useMutation({
     mutationFn: (csv: string) => importConsultantCatalogFn({ data: { csv, source: "csv" } }),
@@ -385,7 +406,16 @@ function ConsultantPage() {
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="flex flex-wrap h-auto gap-1 bg-muted p-1">
           <TabsTrigger value="overview">Обзор</TabsTrigger>
+          <TabsTrigger value="tasks" className="relative">
+            Задачи менеджера
+            {pendingTasksCount > 0 && (
+              <span className="ml-1.5 px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-destructive text-destructive-foreground">
+                {pendingTasksCount}
+              </span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="dialogs">Диалоги</TabsTrigger>
+          <TabsTrigger value="stories">Сторис</TabsTrigger>
           <TabsTrigger value="knowledge">База знаний</TabsTrigger>
           <TabsTrigger value="ai_setup">Настройка ИИ</TabsTrigger>
           <TabsTrigger value="diagnostics">Диагностика</TabsTrigger>
@@ -412,6 +442,90 @@ function ConsultantPage() {
           </section>
         </TabsContent>
 
+        <TabsContent value="tasks" className="space-y-6 mt-4">
+          <section className="bg-card border rounded-lg p-4 space-y-4">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                <h2 className="font-medium text-base">Задачи для менеджера</h2>
+                <p className="text-xs text-muted-foreground">
+                  Запросы на покупку и диалоги, переданные консультантом человеку.
+                </p>
+              </div>
+              <Badge variant="outline">
+                Активных: {pendingTasksCount} из {tasks.length}
+              </Badge>
+            </div>
+
+            {tasks.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                Задач пока нет — бот ещё не передавал оформление заказов менеджеру.
+              </div>
+            ) : (
+              <div className="divide-y border rounded-lg overflow-hidden">
+                {tasks.map((t) => {
+                  const isPurchase = t.reason === "purchase";
+                  return (
+                    <div
+                      key={t.id}
+                      className={`p-3.5 flex items-start justify-between gap-4 transition-colors ${
+                        t.done ? "bg-muted/20 opacity-60" : "bg-card hover:bg-muted/10"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => toggleTask.mutate({ id: t.id, done: !t.done })}
+                          disabled={toggleTask.isPending}
+                          className="mt-0.5 text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                          title={t.done ? "Вернуть в работу" : "Отметить как выполненную"}
+                        >
+                          {t.done ? (
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          ) : (
+                            <Circle className="w-5 h-5" />
+                          )}
+                        </button>
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{t.userKey}</span>
+                            <span
+                              className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                                isPurchase
+                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                                  : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                              }`}
+                            >
+                              {isPurchase ? "🛒 Оформление заказа" : "❓ Требуется менеджер"}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {formatWhen(t.at, locale)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground/90 bg-muted/40 rounded p-2 border">
+                            «{t.text}»
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button
+                          type="button"
+                          variant={t.done ? "ghost" : "outline"}
+                          size="sm"
+                          disabled={toggleTask.isPending}
+                          onClick={() => toggleTask.mutate({ id: t.id, done: !t.done })}
+                        >
+                          {t.done ? "Вернуть" : "Готово"}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </TabsContent>
+
         <TabsContent value="dialogs" className="space-y-6 mt-4">
           <section className="bg-card border rounded-lg p-4 space-y-3">
             <h2 className="font-medium">{c.pausedTitle}</h2>
@@ -420,9 +534,9 @@ function ConsultantPage() {
             ) : (
               <ul className="space-y-2">
                 {(d?.paused ?? []).map((row) => (
-                  <li key={row.userKey} className="flex items-center justify-between gap-4 text-sm">
+                  <li key={row.userKey} className="flex items-center justify-between gap-4 text-sm p-2 rounded border bg-muted/10">
                     <span className="truncate">
-                      {row.label}
+                      <span className="font-medium">{row.label}</span>
                       <span className="text-muted-foreground ml-2">
                         {" · "}
                         {c.pausedReason[row.pauseReason ?? "other"] ?? c.pausedReason.other}
@@ -445,37 +559,93 @@ function ConsultantPage() {
             )}
           </section>
 
-          <section className="bg-card border rounded-lg p-4 space-y-3">
-            <h2 className="font-medium">Диалоги</h2>
-            {(d?.customers ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground">Пока нет диалогов консультанта.</p>
+          <section className="bg-card border rounded-lg p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="font-medium">Диалоги с клиентами</h2>
+                <p className="text-xs text-muted-foreground">История общения консультанта в Instagram Direct</p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input
+                  value={dialogSearch}
+                  onChange={(e) => setDialogSearch(e.target.value)}
+                  placeholder="Поиск по клиенту / тексту..."
+                  className="h-8 text-xs w-48 sm:w-60"
+                />
+                <div className="flex rounded-md border bg-muted p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setDialogFilter("all")}
+                    className={`px-2 py-1 rounded ${dialogFilter === "all" ? "bg-background font-medium shadow-sm" : "text-muted-foreground"}`}
+                  >
+                    Все
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDialogFilter("paused")}
+                    className={`px-2 py-1 rounded ${dialogFilter === "paused" ? "bg-background font-medium shadow-sm" : "text-muted-foreground"}`}
+                  >
+                    Пауза
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDialogFilter("active")}
+                    className={`px-2 py-1 rounded ${dialogFilter === "active" ? "bg-background font-medium shadow-sm" : "text-muted-foreground"}`}
+                  >
+                    Активны
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {filteredCustomers.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">Диалогов не найдено.</p>
             ) : (
-              <ul className="space-y-4">
-                {(d?.customers ?? []).slice(0, 12).map((row) => (
-                  <li key={row.userKey} className="text-sm space-y-1">
-                    <div className="font-medium">
-                      {row.label} · {row.country ?? "—"} · {row.conversationState ?? "—"}
-                      {row.paused ? " · пауза" : ""}
+              <div className="space-y-3">
+                {filteredCustomers.map((row) => (
+                  <div key={row.userKey} className="border rounded-lg p-3 space-y-2 text-sm bg-card">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{row.label}</span>
+                        <span className="text-xs px-2 py-0.5 rounded bg-muted">
+                          {row.country ? (row.country === "KZ" ? "🇰🇿 Казахстан" : "🇷🇺 Россия") : "Страна не указана"}
+                        </span>
+                        {row.paused ? (
+                          <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                            ⏸ На паузе
+                          </span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            ▶ Бот активен
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground">{formatWhen(row.updatedAt, locale)}</span>
                     </div>
+
                     {(row.recent ?? []).length === 0 ? (
-                      <p className="text-muted-foreground">{row.lastReply || "Нет реплик"}</p>
+                      <p className="text-muted-foreground text-xs">{row.lastReply || "Нет недавних сообщений"}</p>
                     ) : (
-                      <ul className="space-y-0.5 text-muted-foreground">
+                      <div className="space-y-1 bg-muted/30 rounded p-2 text-xs">
                         {(row.recent ?? []).map((turn, i) => (
-                          <li key={`${row.userKey}-${i}`}>
-                            <span className="text-foreground">
-                              {turn.role === "customer" ? "Клиент" : "Бот"}:
-                            </span>{" "}
-                            {turn.text}
-                          </li>
+                          <div key={`${row.userKey}-${i}`} className="flex gap-2">
+                            <span className="font-semibold min-w-[50px] text-foreground/70">
+                              {turn.role === "customer" ? "Клиент:" : "Бот:"}
+                            </span>
+                            <span className="text-foreground/90">{turn.text}</span>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     )}
-                  </li>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
           </section>
+        </TabsContent>
+
+        <TabsContent value="stories" className="space-y-6 mt-4">
+          <StoriesTab />
         </TabsContent>
 
         <TabsContent value="knowledge" className="space-y-6 mt-4">
