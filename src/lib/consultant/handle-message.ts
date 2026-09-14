@@ -291,7 +291,7 @@ export async function decideConsultantReply(
     Boolean(budgetKzt) ||
     wantsBasket;
 
-  if (justCountry && !canClaude) {
+  if (justCountry) {
     void track(ctx.userKey, "country", text, bucket);
     return {
       text: pack.askProduct,
@@ -340,6 +340,14 @@ export async function decideConsultantReply(
   if (catalog.length === 0) {
     void track(ctx.userKey, "error", "catalog_empty", bucket);
     return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
+  }
+
+  if (matchMoreVariantsIntent(text)) {
+    const variants = replyMoreVariants(text, catalog, [], country, countryPatch, state, rateRow?.rate ?? null);
+    if (variants) {
+      void track(ctx.userKey, "variants", text, bucket);
+      return variants;
+    }
   }
 
   if (canClaude) {
