@@ -142,10 +142,19 @@ export function StoriesTab({ accountId }: { accountId?: string }) {
 
       {/* Auto-loaded stories from API */}
       <Card>
-        <CardHeader>
+        <CardHeader className="relative">
           <CardTitle>Активные сторис из Instagram</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            className="absolute top-4 right-4"
+            onClick={() => storiesQuery.refetch()}
+            disabled={storiesQuery.isFetching}
+          >
+            {storiesQuery.isFetching ? "Обновление..." : "Обновить"}
+          </Button>
           <CardDescription>
-            Автоматически подгруженные сторис. Если список пуст — используйте ручной ввод выше.
+            Автоматически подгруженные сторис. Если список пуст — используйте ручное привязывание выше.
           </CardDescription>
         </CardHeader>
         <CardContent>
