@@ -1964,7 +1964,7 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
         : [...(externalRes.posts || []), ...(zernioRes.posts || [])];
     const allPosts: ZernioPost[] = [
       ...regularPosts,
-      ...(Array.isArray(storiesRes) ? storiesRes : (storiesRes.stories || storiesRes.data || [])).map((story) => ({
+      ...(Array.isArray(storiesRes) ? storiesRes : (storiesRes.stories || (storiesRes as any).data || [])).map((story: any) => ({
         ...story,
         platformPostId: story.platformPostId || story.id || story._id,
         thumbnailUrl: story.thumbnailUrl || story.mediaUrl || story.media_url,
