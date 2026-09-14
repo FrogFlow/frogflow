@@ -2858,11 +2858,11 @@ function StoriesTab({ accountId }: { accountId?: string }) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {stories.map(story => {
-              const storyId = story.platformPostId || story._zernioPostId || story._id;
+              const storyId = String(story.platformPostId || story._zernioPostId || story._id || "");
               if (!storyId) return null;
               
-              const storyUrl = story.platformPostUrl || story.permalink || story._thumbnail || "";
-              const thumbnailUrl = story._thumbnail || "";
+              const storyUrl = String(story.platformPostUrl || story.permalink || story._thumbnail || "");
+              const thumbnailUrl = String(story._thumbnail || "");
               const existingTag = tags.find(t => t.story_id === storyId || (storyUrl && t.story_url === storyUrl));
               
               return (
@@ -2872,7 +2872,7 @@ function StoriesTab({ accountId }: { accountId?: string }) {
                   storyUrl={storyUrl}
                   thumbnailUrl={thumbnailUrl} 
                   existingTag={existingTag} 
-                  onSave={(productName, price) => upsertMutation.mutate({ storyId, storyUrl, thumbnailUrl, productName, productPriceKzt: price })} 
+                  onSave={(productName: string, price: number) => upsertMutation.mutate({ storyId, storyUrl, thumbnailUrl, productName, productPriceKzt: price })} 
                   isSaving={upsertMutation.isPending}
                 />
               );

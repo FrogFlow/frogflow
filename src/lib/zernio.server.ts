@@ -203,6 +203,7 @@ export type ZernioCommentAutomation = {
  */
 export type ZernioInteractiveMetadata = {
   /** Instagram: значение нажатой кнопки. */
+  story_id?: string;
   postbackPayload?: string;
   /** Instagram: видимая подпись кнопки; дублируется в `message.text`. */
   postbackTitle?: string;
