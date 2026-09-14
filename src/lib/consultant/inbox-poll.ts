@@ -96,6 +96,10 @@ export async function pollIncomingConsultantMessages(): Promise<{
       if (isFalseManagerPause(consultant, lastOutgoing?.message)) {
         consultant = await resumeConsultant(userKey);
       }
+      const outgoingTs = lastOutgoing?.createdAt ? Date.parse(lastOutgoing.createdAt) : 0;
+      if (consultant.automation_paused && outgoingTs > 0 && Date.now() - outgoingTs > 12 * 60 * 60 * 1000) {
+        consultant = await resumeConsultant(userKey);
+      }
       const incomingText = lastIncoming?.message?.trim() ?? "";
       const sameAsLastAnswered =
         Boolean(incomingText) && incomingText === (consultant.last_customer_text ?? "").trim();

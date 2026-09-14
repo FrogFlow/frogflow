@@ -346,10 +346,7 @@ export async function decideConsultantReply(
     try {
       let claudeText = text;
       if (ctx.storyId || ctx.storyMediaUrl) {
-        const name = state.last_product_ids?.[0]
-          ? catalog.find((p) => p.id === state.last_product_ids![0])?.name
-          : "товар";
-        claudeText = `[Customer sent a reply to our Instagram Story showing ${name}]\n\n${text}`;
+        claudeText = `[Customer replied to a story. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown]\n\n${text}`;
       }
 
       const ai = await runConsultantClaude({
@@ -667,8 +664,8 @@ async function handoffReply(
   const pauseReason = reason === "injection" ? "other" : reason === "other" ? "other" : reason;
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
-    void addConsultantTask({ userKey, reason, text });
-    void notifyConsultantHandoff({ userKey, reason, text });
+    await addConsultantTask({ userKey, reason, text });
+    await notifyConsultantHandoff({ userKey, reason, text });
   }
   return {
     text: message ?? pack.unrecognized,
