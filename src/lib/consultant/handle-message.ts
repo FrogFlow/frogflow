@@ -345,7 +345,7 @@ export async function decideConsultantReply(
   if (matchMoreVariantsIntent(text)) {
     const variants = replyMoreVariants(text, catalog, [], country, countryPatch, state, rateRow?.rate ?? null);
     if (variants) {
-      void track(ctx.userKey, "variants", text, bucket);
+      void track(ctx.userKey, "query", text, bucket);
       return variants;
     }
   }
