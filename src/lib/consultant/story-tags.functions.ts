@@ -69,11 +69,12 @@ export const deleteStoryTagFn = createServerFn({ method: "POST" })
 /** Find a story tag by story_id (used by the bot at runtime). */
 export async function findStoryTagById(storyId: string) {
   const s = await db();
-  const { data } = await s
+  const { data, error } = await s
     .from("story_product_tags")
     .select("*")
     .eq("story_id", storyId)
     .maybeSingle();
+  console.log("[findStoryTagById]", { storyId, found: !!data, error: error?.message });
   return data ?? null;
 }
 
@@ -84,7 +85,10 @@ export async function findStoryTagByUrl(url: string) {
   
   // Attempt exact match first
   let result = await s.from("story_product_tags").select("*").eq("story_url", url).maybeSingle();
-  if (result.data) return result.data;
+  if (result.data) {
+    console.log("[findStoryTagByUrl] exact match found for", url.slice(0, 80));
+    return result.data;
+  }
 
   // Fallback: extract the filename from the URL (without query parameters) and match using ilike
   try {
@@ -93,12 +97,26 @@ export async function findStoryTagByUrl(url: string) {
     const filename = parts[parts.length - 1];
     if (filename && filename.length > 5) {
       result = await s.from("story_product_tags").select("*").ilike("story_url", `%${filename}%`).maybeSingle();
-      if (result.data) return result.data;
+      if (result.data) {
+        console.log("[findStoryTagByUrl] filename match found for", filename);
+        return result.data;
+      }
     }
+    console.log("[findStoryTagByUrl] no match", { url: url.slice(0, 80), filename });
   } catch (e) {
-    // invalid URL
+    console.error("[findStoryTagByUrl] URL parse error", e);
   }
   
+  // Last resort: list ALL story tags and log them for debugging
+  try {
+    const { data: allTags } = await s.from("story_product_tags").select("story_id, story_url, product_name").limit(10);
+    console.log("[findStoryTagByUrl] all tags in DB:", JSON.stringify(allTags?.map(t => ({
+      id: t.story_id,
+      url: t.story_url?.slice(0, 60),
+      name: t.product_name,
+    }))));
+  } catch { /* ignore */ }
+
   return null;
 }
 

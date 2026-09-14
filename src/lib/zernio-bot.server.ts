@@ -1418,6 +1418,14 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    */
   if (consultantMode) {
     const { storyId, storyMediaUrl } = parseZernioMessage(payload);
+    if (storyId || storyMediaUrl) {
+      console.log("[webhook:consultant] story reply detected:", {
+        storyId,
+        storyMediaUrl: storyMediaUrl?.slice(0, 80),
+        text: text?.slice(0, 50),
+        attachments: JSON.stringify(payload.message?.attachments?.map(a => ({ type: a.type, url: a.url?.slice(0, 60) }))),
+      });
+    }
     const { handleConsultantZernioEvent } = await import("./consultant/handle-message");
     await handleConsultantZernioEvent({
       payload,

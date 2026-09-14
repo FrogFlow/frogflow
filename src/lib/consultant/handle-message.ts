@@ -341,6 +341,7 @@ export async function decideConsultantReply(
     try {
       let claudeText = text;
       if (ctx.storyId || ctx.storyMediaUrl) {
+        console.log("[consultant] story context detected:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
         claudeText = `[Customer replied to a story. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown]\n\n${text}`;
       }
 
