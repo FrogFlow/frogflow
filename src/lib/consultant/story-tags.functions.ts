@@ -97,6 +97,6 @@ export const getStoriesFn = createServerFn({ method: "GET" })
   });
 
 export const getConsultantCatalogFn = createServerFn({ method: "GET" }).handler(async () => {
-  const { getConsultantCatalog } = await import("@/lib/consultant/catalog");
-  return await getConsultantCatalog();
+  const { loadConsultantCatalog } = await import("@/lib/consultant/catalog");
+  return await loadConsultantCatalog();
 });

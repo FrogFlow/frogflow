@@ -488,25 +488,49 @@ function ConsultantPage() {
                 : c.catalogEmpty}
             </p>
             
-            <div className="flex gap-2">
-              <label className="flex-1 relative">
-                <input
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label>{c.uploadLabel}</Label>
+                <Input
                   type="file"
-                  accept=".csv, .xlsx"
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  disabled={uploadCatalog.isPending}
-                  onChange={(e) => {
-                    if (e.target.files?.[0]) uploadCatalog.mutate(e.target.files[0]);
+                  accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (/\.xlsx$/i.test(file.name)) {
+                      const buf = new Uint8Array(await file.arrayBuffer());
+                      let binary = "";
+                      buf.forEach((b) => {
+                        binary += String.fromCharCode(b);
+                      });
+                      importXlsx.mutate(btoa(binary));
+                    } else {
+                      importCsv.mutate(await file.text());
+                    }
+                    e.target.value = "";
                   }}
+                  disabled={importCsv.isPending || importXlsx.isPending}
                 />
-                <Button type="button" variant="outline" className="w-full" disabled={uploadCatalog.isPending}>
-                  {c.uploadLabel}
-                </Button>
-              </label>
-              
-              <Button type="button" variant="outline" disabled={true}>
-                {c.sheetsBtn}
-              </Button>
+              </div>
+
+              <div className="space-y-1">
+                <Label>{c.sheetsLabel}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={sheetsValue}
+                    onChange={(e) => setSheetsUrl(e.target.value)}
+                    placeholder={c.sheetsPlaceholder}
+                    className="flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => importSheets.mutate()}
+                    disabled={importSheets.isPending}
+                  >
+                    {c.sheetsBtn}
+                  </Button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -523,11 +547,11 @@ function ConsultantPage() {
               <Input
                 type="number"
                 placeholder="0.00"
-                value={rateInput}
-                onChange={(e) => setRateInput(e.target.value)}
+                value={manualRate}
+                onChange={(e) => setManualRate(e.target.value)}
                 className="w-24 h-9"
               />
-              <Button type="button" size="sm" onClick={() => saveRate.mutate(Number(rateInput))}>
+              <Button type="button" size="sm" onClick={() => saveRate.mutate()}>
                 Сохранить
               </Button>
             </div>
