@@ -130,6 +130,11 @@ export async function pollIncomingConsultantMessages(): Promise<{
         {},
         "instagram",
       );
+      const storyAtt = lastIncoming?.attachments?.find(
+        (a) => a.type === "story_reply" || a.type === "story_share" || a.type === "story" || a.type === "image"
+      );
+      const storyMediaUrl = storyAtt?.url;
+
       await handleConsultantZernioEvent({
         payload: {
           event: "message.received",
@@ -147,6 +152,7 @@ export async function pollIncomingConsultantMessages(): Promise<{
         text: lastIncoming!.message!.trim(),
         platform: "instagram",
         source: "poll",
+        storyMediaUrl,
       });
       replied += 1;
     }

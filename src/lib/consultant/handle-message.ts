@@ -252,11 +252,6 @@ export async function decideConsultantReply(
     return { text: formatThanksReply(), patch: { ab_bucket: bucket }, kind: "clarify" };
   }
 
-  if (matchPurchaseIntent(text)) {
-    void track(ctx.userKey, "purchase", text, bucket);
-    return handoffReply(pack, state, bucket, "purchase", text, ctx.userKey, pack.purchase);
-  }
-
   const country =
     matchCountryPostback(ctx.postback) ?? matchCountry(text) ?? state.country ?? undefined;
 
@@ -441,11 +436,6 @@ export async function decideConsultantReply(
   if (local) {
     void track(ctx.userKey, local.kind === "oos" ? "oos" : "query", text, bucket);
     return local;
-  }
-
-  if (matchDeliveryIntent(text)) {
-    void track(ctx.userKey, "query", text, bucket);
-    return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
   }
 
   const hasSig = queryHasCatalogSignal(text, catalog);

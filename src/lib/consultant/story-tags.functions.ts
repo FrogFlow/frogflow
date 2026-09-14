@@ -81,12 +81,25 @@ export async function findStoryTagById(storyId: string) {
 export async function findStoryTagByUrl(url: string) {
   if (!url) return null;
   const s = await db();
-  const { data } = await s
-    .from("story_product_tags")
-    .select("*")
-    .eq("story_url", url)
-    .maybeSingle();
-  return data ?? null;
+  
+  // Attempt exact match first
+  let result = await s.from("story_product_tags").select("*").eq("story_url", url).maybeSingle();
+  if (result.data) return result.data;
+
+  // Fallback: extract the filename from the URL (without query parameters) and match using ilike
+  try {
+    const parsed = new URL(url);
+    const parts = parsed.pathname.split("/");
+    const filename = parts[parts.length - 1];
+    if (filename && filename.length > 5) {
+      result = await s.from("story_product_tags").select("*").ilike("story_url", `%${filename}%`).maybeSingle();
+      if (result.data) return result.data;
+    }
+  } catch (e) {
+    // invalid URL
+  }
+  
+  return null;
 }
 
 export const getStoriesFn = createServerFn({ method: "GET" })
