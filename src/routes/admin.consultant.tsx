@@ -377,7 +377,7 @@ function ConsultantPage() {
         {d ? (
           <p className="text-xs text-muted-foreground mt-2">
             {c.usage(d.spend.count, d.spend.usdLabel, d.model)}
-            {!d.apiKeyConfigured ?  •  : ""}
+            {!d.apiKeyConfigured ? ` • ${c.noKey}` : ""}
           </p>
         ) : null}
       </div>
@@ -399,7 +399,7 @@ function ConsultantPage() {
             </p>
             <p className="text-sm">
               {d?.lastDirectAt
-                ? Последнее входящее:  — 
+                ? `Последнее входящее: ${formatWhen(d.lastDirectAt, locale)} — ${d.lastDirectStatus}`
                 : "Отсутствует"}
             </p>
           </section>

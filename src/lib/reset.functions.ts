@@ -88,7 +88,8 @@ export const resetAllData = createServerFn({ method: "POST" }).handler(async () 
   await s.from("story_product_tags").delete().neq("id", "00000000-0000-0000-0000-000000000000");
 
   // Reset checkout state so flows start fresh, without touching other tenants.
-  await s.from("bot_users").update({ state: {} }).eq("bot_id", botId);`n  await s.from("app_settings").upsert({ bot_id: botId, key: "consultant_reset_at", value: new Date().toISOString() }, { onConflict: "bot_id,key" });
+  await s.from("bot_users").update({ state: {} }).eq("bot_id", botId);
+  await s.from("app_settings").upsert({ bot_id: botId, key: "consultant_reset_at", value: new Date().toISOString() }, { onConflict: "bot_id,key" });
 
   // ── Storage: only the paths gathered above.
   await removeFiles("product-files", productFiles);
