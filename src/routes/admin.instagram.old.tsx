@@ -82,10 +82,8 @@ import {
   Inbox,
   UserCircle2,
   MessageSquareWarning,
-  ImagePlay,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
-import { StoriesTab } from "./admin.stories-tab";
 import {
   Card,
   CardContent,
@@ -2655,39 +2653,36 @@ function AdminInstagramPage() {
         </div>
       )}
 
-      <Tabs defaultValue={isConsultant ? "stories" : "automations"} className="space-y-6">
+      <Tabs defaultValue="automations" className="space-y-6">
+        {/*
+          Семь вкладок в один ряд на узком экране превращались в нечитаемую
+          полосу, а иконка MessageSquare стояла сразу у трёх из них
+          («Автоответчик», «Direct», «Аккаунты») — глазу не за что зацепиться.
+          Теперь ряд переносится, и у каждой вкладки свой знак. Подписи скрыты
+          только на самых узких экранах, где иначе не помещается ничего.
+        */}
         <TabsList className="flex h-auto flex-wrap justify-start gap-1">
-          {isConsultant && (
-            <TabsTrigger value="stories" className="gap-2">
-              <ImagePlay className="w-4 h-4" />{" "}
-              <span className="hidden sm:inline">Сторис</span>
-            </TabsTrigger>
-          )}
-          {!isConsultant && (
-            <>
-              <TabsTrigger value="direct-bot" className="gap-2">
-                <Bot className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabDirectBot}</span>
-              </TabsTrigger>
-              <TabsTrigger value="automations" className="gap-2">
-                <Settings2 className="w-4 h-4" />{" "}
-                <span className="hidden sm:inline">{tr.tabAutomations}</span>
-              </TabsTrigger>
-              <TabsTrigger value="publish" className="gap-2">
-                <CalendarClock className="w-4 h-4" />{" "}
-                <span className="hidden sm:inline">{tr.tabPublish}</span>
-              </TabsTrigger>
-              <TabsTrigger value="logs" className="gap-2">
-                <History className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabLogs}</span>
-              </TabsTrigger>
-              <TabsTrigger value="inbox" className="gap-2">
-                <Inbox className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabInbox}</span>
-              </TabsTrigger>
-              <TabsTrigger value="analytics" className="gap-2">
-                <BarChart3 className="w-4 h-4" />{" "}
-                <span className="hidden sm:inline">{tr.tabAnalytics}</span>
-              </TabsTrigger>
-            </>
-          )}
+          <TabsTrigger value="direct-bot" className="gap-2">
+            <Bot className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabDirectBot}</span>
+          </TabsTrigger>
+          <TabsTrigger value="automations" className="gap-2">
+            <Settings2 className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">{tr.tabAutomations}</span>
+          </TabsTrigger>
+          <TabsTrigger value="publish" className="gap-2">
+            <CalendarClock className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">{tr.tabPublish}</span>
+          </TabsTrigger>
+          <TabsTrigger value="logs" className="gap-2">
+            <History className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabLogs}</span>
+          </TabsTrigger>
+          <TabsTrigger value="inbox" className="gap-2">
+            <Inbox className="w-4 h-4" /> <span className="hidden sm:inline">{tr.tabInbox}</span>
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-2">
+            <BarChart3 className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">{tr.tabAnalytics}</span>
+          </TabsTrigger>
           <TabsTrigger value="accounts" className="gap-2">
             <UserCircle2 className="w-4 h-4" />{" "}
             <span className="hidden sm:inline">{tr.tabAccounts}</span>
@@ -2700,14 +2695,7 @@ function AdminInstagramPage() {
           переключателей поверх одних и тех же настроек, так что оператор не
           мог понять, где из них «настоящий».
         */}
-        {isConsultant && (
-          <TabsContent value="stories" className="space-y-6">
-            <StoriesTab accountId={acc?._id} />
-          </TabsContent>
-        )}
-        {!isConsultant && (
-          <>
-            <TabsContent value="direct-bot" className="space-y-6">
+        <TabsContent value="direct-bot" className="space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>{tr.directBotTitle}</CardTitle>
@@ -4144,9 +4132,7 @@ function AdminInstagramPage() {
               </div>
             </CardContent>
           </Card>
-          </TabsContent>
-          </>
-        )}
+        </TabsContent>
 
         {/* ACCOUNTS TAB */}
         <TabsContent value="accounts">
