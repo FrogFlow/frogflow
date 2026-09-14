@@ -5,10 +5,11 @@ export async function notifyConsultantHandoff(params: {
 }): Promise<void> {
   try {
     const { notifyOwner } = await import("@/lib/internal/internal-api.server");
-    await notifyOwner(
-      `Консультант: клиент ${params.userKey}\nПричина: ${params.reason}\n«${params.text.slice(0, 200)}»`,
+    const res = await notifyOwner(
+      `Консультант: диалог ${params.userKey}\nПричина: ${params.reason}\n<${params.text.slice(0, 200)}>`
     );
-  } catch {
-    /* владелец может быть не привязан */
+    console.log("[notifyConsultantHandoff] response:", res);
+  } catch (e) {
+    console.error("[notifyConsultantHandoff] error:", e);
   }
 }

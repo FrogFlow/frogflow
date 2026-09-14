@@ -130,10 +130,19 @@ export async function pollIncomingConsultantMessages(): Promise<{
         {},
         "instagram",
       );
-      const storyAtt = lastIncoming?.attachments?.find(
-        (a) => a.type === "story_reply" || a.type === "story_share" || a.type === "story" || a.type === "image"
-      );
-      const storyMediaUrl = storyAtt?.url;
+      let storyMediaUrl: string | undefined;
+      let storyId: string | undefined;
+      const recentIncoming = [...messages].reverse().filter(m => m.direction === "incoming").slice(0, 3);
+      for (const m of recentIncoming) {
+        const att = m.attachments?.find(
+          (a) => a.type === "story_reply" || a.type === "story_share" || a.type === "story" || a.type === "image"
+        );
+        if (att?.url) {
+          storyMediaUrl = att.url;
+          storyId = att.id; // Try to use the attachment ID as the story_id
+          break;
+        }
+      }
 
       await handleConsultantZernioEvent({
         payload: {
@@ -153,6 +162,7 @@ export async function pollIncomingConsultantMessages(): Promise<{
         platform: "instagram",
         source: "poll",
         storyMediaUrl,
+        storyId,
       });
       replied += 1;
     }
