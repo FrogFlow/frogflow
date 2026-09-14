@@ -447,15 +447,12 @@ export async function decideConsultantReply(
   }
 
   if (matchDeliveryIntent(text)) {
-    void track(ctx.userKey, "delivery", text, bucket);
-    const msg = [country === "KZ" ? pack.deliveryKz : country === "RU" ? pack.deliveryRu : ""]
-      .filter(Boolean)
-      .join("\n");
-    return { text: msg || pack.askProduct, patch: countryPatch, kind: "clarify" };
+    void track(ctx.userKey, "query", text, bucket);
+    return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
   }
 
   const hasSig = queryHasCatalogSignal(text, catalog);
-  void track(ctx.userKey, hasSig ? "query" : "other", text, bucket);
+  void track(ctx.userKey, "query", text, bucket);
 
   return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
 }
