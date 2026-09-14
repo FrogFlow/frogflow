@@ -5,7 +5,7 @@ import { Label } from "@/components-ui/label";
 import { Input } from "@/components-ui/input";
 import { Button } from "@/components-ui/button";
 import { toast } from "sonner";
-import { listStoryTagsFn, upsertStoryTagFn, getStoriesFn } from "@/lib/consultant/story-tags.functions";
+import { listStoryTagsFn, upsertStoryTagFn, getStoriesFn, getConsultantCatalogFn } from "@/lib/consultant/story-tags.functions";
 import { errorMessage } from "@/lib/error-message";
 
 export function StoriesTab({ accountId }: { accountId?: string }) {
@@ -57,6 +57,11 @@ export function StoriesTab({ accountId }: { accountId?: string }) {
 
   const stories = storiesQuery.data || [];
   const tags = tagsQuery.data || [];
+  const catalogQuery = useQuery({
+    queryKey: ["ig_consultant_catalog"],
+    queryFn: () => getConsultantCatalogFn(),
+  });
+  const catalog = catalogQuery.data || [];
 
   return (
     <div className="space-y-6">
@@ -75,15 +80,36 @@ export function StoriesTab({ accountId }: { accountId?: string }) {
               <Input value={manualId} onChange={(e: any) => setManualId(e.target.value)} placeholder="story_id или ссылка" className="h-8 text-sm" />
             </div>
             <div className="flex-1">
-              <Label className="text-xs mb-1 block">Название товара</Label>
-              <Input value={manualName} onChange={(e: any) => setManualName(e.target.value)} placeholder="Полотенце 70x140" className="h-8 text-sm" />
-            </div>
-            <div className="w-32">
-              <Label className="text-xs mb-1 block">Цена (₸)</Label>
-              <Input value={manualPrice} onChange={(e: any) => setManualPrice(e.target.value)} type="number" placeholder="12000" className="h-8 text-sm" />
+              <Label className="text-xs mb-1 block">Выберите товар</Label>
+              <select 
+                value={manualName} 
+                onChange={(e) => setManualName(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value="">-- Выберите товар из каталога --</option>
+                {catalog.map((p: any) => (
+                  <option key={p.id} value={JSON.stringify({ name: p.name, price: p.price_kzt })}>
+                    {p.name} ({p.price_kzt} ₸)
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex items-end">
-              <Button size="sm" disabled={!manualId.trim() || !manualName.trim() || upsertMutation.isPending} onClick={handleManualSave}>
+              <Button size="sm" disabled={!manualId.trim() || !manualName || upsertMutation.isPending} onClick={() => {
+                if (!manualId.trim() || !manualName) return;
+                try {
+                  const parsed = JSON.parse(manualName);
+                  upsertMutation.mutate({
+                    storyId: manualId.trim(),
+                    storyUrl: "",
+                    thumbnailUrl: "",
+                    productName: parsed.name,
+                    productPriceKzt: parsed.price,
+                  });
+                  setManualId("");
+                  setManualName("");
+                } catch (e) {}
+              }}>
                 Сохранить
               </Button>
             </div>
@@ -146,6 +172,7 @@ export function StoriesTab({ accountId }: { accountId?: string }) {
                     storyUrl={storyUrl}
                     thumbnailUrl={thumbnailUrl}
                     existingTag={existingTag}
+                    catalog={catalog}
                     onSave={(productName: string, price: number) =>
                       upsertMutation.mutate({ storyId, storyUrl, thumbnailUrl, productName, productPriceKzt: price })
                     }
@@ -161,9 +188,18 @@ export function StoriesTab({ accountId }: { accountId?: string }) {
   );
 }
 
-function StoryCard({ storyId, storyUrl, thumbnailUrl, existingTag, onSave, isSaving }: any) {
-  const [name, setName] = useState(existingTag?.product_name || "");
-  const [price, setPrice] = useState(existingTag?.product_price_kzt?.toString() || "");
+function StoryCard({ storyId, storyUrl, thumbnailUrl, existingTag, catalog, onSave, isSaving }: any) {
+  const [selectedProduct, setSelectedProduct] = useState(() => {
+    return existingTag ? JSON.stringify({ name: existingTag.product_name, price: existingTag.product_price_kzt }) : "";
+  });
+
+  const handleSave = () => {
+    if (!selectedProduct) return;
+    try {
+      const parsed = JSON.parse(selectedProduct);
+      onSave(parsed.name, parsed.price);
+    } catch (e) {}
+  };
 
   return (
     <div className="border rounded-lg overflow-hidden flex flex-col">
@@ -175,14 +211,21 @@ function StoryCard({ storyId, storyUrl, thumbnailUrl, existingTag, onSave, isSav
       <div className="p-3 flex flex-col gap-3">
         <div className="text-xs text-muted-foreground truncate">ID: {storyId}</div>
         <div>
-          <Label className="text-xs mb-1 block">Название товара</Label>
-          <Input value={name} onChange={(e: any) => setName(e.target.value)} placeholder="Полотенце 70x140" className="h-8 text-sm" />
+          <Label className="text-xs mb-1 block">Выберите товар</Label>
+          <select 
+            value={selectedProduct} 
+            onChange={(e) => setSelectedProduct(e.target.value)}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="">-- Не выбрано --</option>
+            {catalog.map((p: any) => (
+              <option key={p.id} value={JSON.stringify({ name: p.name, price: p.price_kzt })}>
+                {p.name} ({p.price_kzt} ₸)
+              </option>
+            ))}
+          </select>
         </div>
-        <div>
-          <Label className="text-xs mb-1 block">Цена (₸)</Label>
-          <Input value={price} onChange={(e: any) => setPrice(e.target.value)} type="number" placeholder="12000" className="h-8 text-sm" />
-        </div>
-        <Button size="sm" disabled={!name || isSaving} onClick={() => onSave(name, parseInt(price) || 0)}>
+        <Button size="sm" disabled={!selectedProduct || isSaving} onClick={handleSave}>
           {existingTag ? "Обновить" : "Сохранить"}
         </Button>
       </div>

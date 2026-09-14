@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components-ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { useAdminLocale } from "@/lib/admin-locale";
@@ -368,323 +369,211 @@ function ConsultantPage() {
     onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
-  return (
-    <div className="space-y-6 max-w-3xl">
+    return (
+    <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-semibold">{c.title}</h1>
         <p className="text-sm text-muted-foreground mt-1">{c.intro}</p>
         {d ? (
           <p className="text-xs text-muted-foreground mt-2">
             {c.usage(d.spend.count, d.spend.usdLabel, d.model)}
-            {!d.apiKeyConfigured ? ` · ${c.noKey}` : ""}
+            {!d.apiKeyConfigured ?  •  : ""}
           </p>
         ) : null}
       </div>
 
-      <section className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="font-medium">Instagram Direct</h2>
-        <p className="text-sm text-muted-foreground">
-          Пишите в сообщения аккаунта, не в комментарий под постом. Первое сообщение — обычный
-          текст, бот спросит страну.
-        </p>
-        <p className="text-sm">
-          {d?.lastDirectAt
-            ? `Последний входящий вебхук: ${formatWhen(d.lastDirectAt, locale)} · ${d.lastDirectStatus}`
-            : "Вебхуков message.received ещё не было — либо сообщение не дошло до сервера, либо пишете не в Direct."}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={pollInbox.isPending}
-          onClick={() => pollInbox.mutate()}
-        >
-          Проверить входящие и ответить
-        </Button>
-      </section>
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="flex flex-wrap h-auto gap-1 bg-muted p-1">
+          <TabsTrigger value="overview">Обзор</TabsTrigger>
+          <TabsTrigger value="dialogs">Диалоги</TabsTrigger>
+          <TabsTrigger value="knowledge">База знаний</TabsTrigger>
+          <TabsTrigger value="ai_setup">Настройка ИИ</TabsTrigger>
+          <TabsTrigger value="diagnostics">Диагностика</TabsTrigger>
+        </TabsList>
 
-      <section className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="font-medium">{c.catalogTitle}</h2>
-        <p className="text-sm text-muted-foreground">{c.catalogBody}</p>
-        <p className="text-sm">
-          {d?.catalogCount
-            ? c.catalogCount(d.catalogCount, formatWhen(d.meta?.importedAt, locale))
-            : c.catalogEmpty}
-        </p>
-        <div className="space-y-1">
-          <Label>{c.uploadLabel}</Label>
-          <Input
-            type="file"
-            accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              if (/\.xlsx$/i.test(file.name)) {
-                const buf = new Uint8Array(await file.arrayBuffer());
-                let binary = "";
-                buf.forEach((b) => {
-                  binary += String.fromCharCode(b);
-                });
-                importXlsx.mutate(btoa(binary));
-              } else {
-                importCsv.mutate(await file.text());
-              }
-              e.target.value = "";
-            }}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label>{c.sheetsLabel}</Label>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              value={sheetsValue}
-              onChange={(e) => setSheetsUrl(e.target.value)}
-              placeholder={c.sheetsPlaceholder}
-              className="flex-1 min-w-[16rem]"
-            />
-            <Button
-              type="button"
-              onClick={() => importSheets.mutate()}
-              disabled={importSheets.isPending}
-            >
-              {c.sheetsBtn}
-            </Button>
-          </div>
-        </div>
-        <div className="space-y-1">
-          <Label>Google Drive (файл или папка)</Label>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              value={driveUrl || d?.driveUrl || ""}
-              onChange={(e) => setDriveUrl(e.target.value)}
-              placeholder="https://drive.google.com/…"
-              className="flex-1 min-w-[16rem]"
-            />
-            <Button
-              type="button"
-              onClick={() => importDrive.mutate()}
-              disabled={importDrive.isPending}
-            >
-              Загрузить с Drive
-            </Button>
-          </div>
-        </div>
-        {(d?.preview ?? []).length > 0 && (
-          <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-auto">
-            {d!.preview.map((p) => (
-              <li key={p.id}>
-                {p.name} · {p.size} · {p.colors.join("/")} · {p.price_kzt} ₸ ·{" "}
-                {p.stock ? "есть" : "нет"}
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="space-y-1">
-          <Label>{c.shopLabel}</Label>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              value={shopValue}
-              onChange={(e) => setShopUrl(e.target.value)}
-              className="flex-1 min-w-[16rem]"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => saveShop.mutate()}
-              disabled={saveShop.isPending}
-            >
-              {c.saveShop}
-            </Button>
-          </div>
-        </div>
-      </section>
+        <TabsContent value="overview" className="space-y-6 mt-4">
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">Instagram Direct</h2>
+            <p className="text-sm text-muted-foreground">
+              {c.intro}
+            </p>
+            <p className="text-sm">
+              {d?.lastDirectAt
+                ? Последнее входящее:  — 
+                : "Отсутствует"}
+            </p>
+          </section>
 
-      <section className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="font-medium">{c.rateTitle}</h2>
-        <p className="text-sm text-muted-foreground">{c.rateBody}</p>
-        <p className="text-sm">
-          {d?.rate
-            ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} · ${c.rateSource[rateSourceKind(d.rate.source)]}`
-            : c.rateEmpty}
-          {d?.rateMissing ? " · курса нет — для РФ бот не назовёт ₽" : ""}
-          {d?.rateStale ? " · курс старше 2 часов" : ""}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            onClick={() => refreshRate.mutate()}
-            disabled={refreshRate.isPending}
-          >
-            {c.refreshRate}
-          </Button>
-          <Input
-            value={manualRate}
-            onChange={(e) => setManualRate(e.target.value)}
-            placeholder="5.15"
-            className="w-28"
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => saveRate.mutate()}
-            disabled={saveRate.isPending}
-          >
-            {c.manualRate}
-          </Button>
-        </div>
-      </section>
+          <section className="bg-card border rounded-lg p-4 space-y-2">
+            <h2 className="font-medium">Статус системы</h2>
+            <p className="text-xs text-muted-foreground">
+              Модель {d?.model}. {d?.spend.usdLabel}
+            </p>
+          </section>
+        </TabsContent>
 
-      <section className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="font-medium">{c.pausedTitle}</h2>
-        {(d?.paused ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">{c.pausedEmpty}</p>
-        ) : (
-          <ul className="space-y-2">
-            {(d?.paused ?? []).map((row) => (
-              <li
-                key={row.userKey}
-                className="flex flex-wrap items-center justify-between gap-2 text-sm"
-              >
-                <span>
-                  {row.label}
-                  <span className="text-muted-foreground">
-                    {" · "}
-                    {c.pausedReason[row.pauseReason ?? "other"] ?? c.pausedReason.other}
-                    {" · "}
-                    {formatWhen(row.updatedAt, locale)}
-                  </span>
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={resumeBot.isPending}
-                  onClick={() => resumeBot.mutate(row.userKey)}
-                >
-                  {c.pausedResume}
+        <TabsContent value="dialogs" className="space-y-6 mt-4">
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">{c.pausedTitle}</h2>
+            {(d?.paused ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">{c.pausedEmpty}</p>
+            ) : (
+              <ul className="space-y-2">
+                {(d?.paused ?? []).map((row) => (
+                  <li key={row.userKey} className="flex items-center justify-between gap-4 text-sm">
+                    <span className="truncate">
+                      {row.label}
+                      <span className="text-muted-foreground ml-2">
+                        {" · "}
+                        {c.pausedReason[row.pauseReason ?? "other"] ?? c.pausedReason.other}
+                        {" · "}
+                        {formatWhen(row.updatedAt, locale)}
+                      </span>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={resumeBot.isPending}
+                      onClick={() => resumeBot.mutate(row.userKey)}
+                    >
+                      {c.pausedResume}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">Диалоги</h2>
+            {(d?.customers ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Пока нет диалогов консультанта.</p>
+            ) : (
+              <ul className="space-y-4">
+                {(d?.customers ?? []).slice(0, 12).map((row) => (
+                  <li key={row.userKey} className="text-sm space-y-1">
+                    <div className="font-medium">
+                      {row.label} · {row.country ?? "—"} · {row.conversationState ?? "—"}
+                      {row.paused ? " · пауза" : ""}
+                    </div>
+                    {(row.recent ?? []).length === 0 ? (
+                      <p className="text-muted-foreground">{row.lastReply || "Нет реплик"}</p>
+                    ) : (
+                      <ul className="space-y-0.5 text-muted-foreground">
+                        {(row.recent ?? []).map((turn, i) => (
+                          <li key={${row.userKey}-}>
+                            <span className="text-foreground">
+                              {turn.role === "customer" ? "Клиент" : "Бот"}:
+                            </span>{" "}
+                            {turn.text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </TabsContent>
+
+        <TabsContent value="knowledge" className="space-y-6 mt-4">
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">{c.catalogTitle}</h2>
+            <p className="text-sm text-muted-foreground">{c.catalogBody}</p>
+            <p className="text-sm">
+              {d?.catalogCount
+                ? c.catalogCount(d.catalogCount, formatWhen(d.meta?.importedAt, locale))
+                : c.catalogEmpty}
+            </p>
+            
+            <div className="flex gap-2">
+              <label className="flex-1 relative">
+                <input
+                  type="file"
+                  accept=".csv, .xlsx"
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  disabled={uploadCatalog.isPending}
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) uploadCatalog.mutate(e.target.files[0]);
+                  }}
+                />
+                <Button type="button" variant="outline" className="w-full" disabled={uploadCatalog.isPending}>
+                  {c.uploadLabel}
                 </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="bg-card border rounded-lg p-4 space-y-3">
-        <h2 className="font-medium">Диалоги</h2>
-        {(d?.customers ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">Пока нет диалогов консультанта.</p>
-        ) : (
-          <ul className="space-y-4">
-            {(d?.customers ?? []).slice(0, 12).map((row) => (
-              <li key={row.userKey} className="text-sm space-y-1">
-                <div className="font-medium">
-                  {row.label} · {row.country ?? "—"} · {row.conversationState ?? "—"}
-                  {row.paused ? " · пауза" : ""}
-                </div>
-                {(row.recent ?? []).length === 0 ? (
-                  <p className="text-muted-foreground">{row.lastReply || "Нет реплик"}</p>
-                ) : (
-                  <ul className="space-y-0.5 text-muted-foreground">
-                    {(row.recent ?? []).map((turn, i) => (
-                      <li key={`${row.userKey}-${i}`}>
-                        <span className="text-foreground">
-                          {turn.role === "customer" ? "Клиент" : "Бот"}:
-                        </span>{" "}
-                        {turn.text}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="bg-card border rounded-lg p-4 space-y-2">
-        <h2 className="font-medium">Задачи менеджеру</h2>
-        <ul className="space-y-2 text-sm">
-          {(d?.tasks ?? []).map((task) => (
-            <li key={task.id} className="flex items-start justify-between gap-2">
-              <span>
-                {task.userKey}: {task.reason} — {task.text}
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => toggleTask.mutate({ id: task.id, done: !task.done })}
-              >
-                {task.done ? "Вернуть" : "Сделано"}
+              </label>
+              
+              <Button type="button" variant="outline" disabled={true}>
+                {c.sheetsBtn}
               </Button>
-            </li>
-          ))}
-          {(d?.tasks ?? []).length === 0 && <li className="text-muted-foreground">Задач нет.</li>}
-        </ul>
-      </section>
+            </div>
+          </section>
 
-      <section className="bg-card border rounded-lg p-4 space-y-2">
-        <h2 className="font-medium">Аналитика вопросов</h2>
-        <p className="text-sm text-muted-foreground">
-          Всего {d?.analytics.total ?? 0}. Часто нет в наличии:{" "}
-          {(d?.analytics.frequentOos ?? []).map((x) => `${x.text} (${x.count})`).join("; ") || "—"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          API Claude отдельно от абонентки 15 000 ₸. Модель {d?.model}. {d?.spend.usdLabel}
-        </p>
-      </section>
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <h2 className="font-medium">{c.rateTitle}</h2>
+            <p className="text-sm text-muted-foreground">{c.rateBody}</p>
+            <p className="text-sm">
+              {d?.rate
+                ? ${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — VTB
+                : c.rateEmpty}
+            </p>
+            
+            <div className="flex gap-2 items-center">
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={rateInput}
+                onChange={(e) => setRateInput(e.target.value)}
+                className="w-24 h-9"
+              />
+              <Button type="button" size="sm" onClick={() => saveRate.mutate(Number(rateInput))}>
+                Сохранить
+              </Button>
+            </div>
+          </section>
+        </TabsContent>
 
-      <section className="bg-card border rounded-lg p-4 space-y-2">
-        <h2 className="font-medium">A/B формулировок</h2>
-        <div className="flex gap-2">
-          {(["split", "a", "b"] as const).map((bucket) => (
-            <Button
-              key={bucket}
-              type="button"
-              size="sm"
-              variant={d?.ab === bucket ? "default" : "outline"}
-              onClick={() => saveAb.mutate(bucket)}
-            >
-              {bucket}
-            </Button>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          A — дословное ТЗ. B — короткий сухой вариант.
-        </p>
-      </section>
+        <TabsContent value="ai_setup" className="space-y-6 mt-4">
+          <section className="bg-card border rounded-lg p-4 space-y-2">
+            <h2 className="font-medium">A/B формулировок</h2>
+            <div className="flex gap-2">
+              {(["split", "a", "b"] as const).map((bucket) => (
+                <Button
+                  key={bucket}
+                  type="button"
+                  size="sm"
+                  variant={d?.ab === bucket ? "default" : "outline"}
+                  onClick={() => saveAb.mutate(bucket)}
+                >
+                  {bucket}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              A — дословное ТЗ. B — короткий сухой вариант.
+            </p>
+          </section>
+          
+          <section className="bg-card border rounded-lg p-4 space-y-2">
+            <h2 className="font-medium">{c.rulesTitle}</h2>
+            <ol className="list-decimal pl-5 text-sm space-y-1 text-muted-foreground">
+              {c.rules.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ol>
+          </section>
+        </TabsContent>
 
-      <section className="bg-card border rounded-lg p-4 space-y-2">
-        <h2 className="font-medium">Приёмка</h2>
-        <p className="text-xs text-muted-foreground">{d?.oneCNote}</p>
-        <p className="text-xs text-muted-foreground">{d?.paymentNote}</p>
-        {[
-          ["ig_live", "Реальный Instagram проверен"],
-          ["catalog_live", "Реальный ассортимент BOVI прогнан"],
-          ["manager_inbox", "Пауза из Inbox проверена"],
-          ["manager_app", "Пауза из приложения Instagram проверена"],
-          ["demo", "Демонстрация клиенту пройдена"],
-        ].map(([id, label]) => (
-          <label key={id} className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={Boolean(d?.checklist[id])}
-              onChange={(e) =>
-                saveChecks.mutate({ ...(d?.checklist ?? {}), [id]: e.target.checked })
-              }
-            />
-            {label}
-          </label>
-        ))}
-      </section>
-
-      <section className="bg-card border rounded-lg p-4 space-y-2">
-        <h2 className="font-medium">{c.rulesTitle}</h2>
-        <ol className="list-decimal pl-5 text-sm space-y-1 text-muted-foreground">
-          {c.rules.map((rule) => (
-            <li key={rule}>{rule}</li>
-          ))}
-        </ol>
-      </section>
+        <TabsContent value="diagnostics" className="space-y-6 mt-4">
+          <section className="bg-card border rounded-lg p-4 space-y-2">
+            <h2 className="font-medium">Статистика часов</h2>
+            <p className="text-sm text-muted-foreground">
+              Всего запросов: {d?.analytics.total ?? 0}. 
+            </p>
+          </section>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

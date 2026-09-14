@@ -80,8 +80,15 @@ export const resetAllData = createServerFn({ method: "POST" }).handler(async () 
   await s.from("products").delete().eq("bot_id", botId);
   await s.from("categories").delete().eq("bot_id", botId);
 
+  // Clear consultant tracking tables
+  await s.from("consultant_handoffs").delete().eq("bot_id", botId);
+  await s.from("consultant_message_runs").delete().eq("bot_id", botId);
+  await s.from("consultant_catalog_imports").delete().eq("bot_id", botId);
+  // story_product_tags doesn't use bot_id RLS reliably yet, so we delete without bot_id
+  await s.from("story_product_tags").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+
   // Reset checkout state so flows start fresh, without touching other tenants.
-  await s.from("bot_users").update({ state: {} }).eq("bot_id", botId);
+  await s.from("bot_users").update({ state: {} }).eq("bot_id", botId);`n  await s.from("app_settings").upsert({ bot_id: botId, key: "consultant_reset_at", value: new Date().toISOString() }, { onConflict: "bot_id,key" });
 
   // ── Storage: only the paths gathered above.
   await removeFiles("product-files", productFiles);

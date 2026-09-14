@@ -95,3 +95,8 @@ export const getStoriesFn = createServerFn({ method: "GET" })
     const { listZernioStories } = await import("@/lib/zernio.server");
     return await listZernioStories(input.accountId);
   });
+
+export const getConsultantCatalogFn = createServerFn({ method: "GET" }).handler(async () => {
+  const { getConsultantCatalog } = await import("@/lib/consultant/catalog");
+  return await getConsultantCatalog();
+});

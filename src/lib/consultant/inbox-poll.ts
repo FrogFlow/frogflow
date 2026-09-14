@@ -27,6 +27,7 @@ export function shouldAnswerLastIncoming(params: {
   recentlyReplied?: boolean;
   incomingLooksLikeBot?: boolean;
   sameAsLastAnswered?: boolean;
+  resetAt?: number;
 }): boolean {
   if (params.paused) return false;
   if (params.alreadyAnswered) return false;
@@ -38,6 +39,7 @@ export function shouldAnswerLastIncoming(params: {
   const now = params.now ?? Date.now();
   const incomingTs = params.incomingAt ? Date.parse(params.incomingAt) : NaN;
   if (Number.isFinite(incomingTs) && now - incomingTs > MAX_AGE_MS) return false;
+  if (params.resetAt && Number.isFinite(incomingTs) && incomingTs < params.resetAt) return false;
   return true;
 }
 
@@ -59,6 +61,9 @@ export async function pollIncomingConsultantMessages(): Promise<{
   let checked = 0;
   let replied = 0;
   let skipped = 0;
+  const db = await import("@/integrations-supabase/client.server").then(m => m.supabaseAdmin);
+  const resetRow = await db.from("app_settings").select("value").eq("key", "consultant_reset_at").maybeSingle();
+  const resetAt = resetRow.data?.value ? Date.parse(resetRow.data.value) : undefined;
   const requestId = consultantRequestId();
 
   for (const acc of accounts.slice(0, 2)) {
@@ -105,6 +110,7 @@ export async function pollIncomingConsultantMessages(): Promise<{
           recentlyReplied: recentlyReplied(consultant),
           incomingLooksLikeBot: looksLikeConsultantBotReply(lastIncoming?.message ?? ""),
           sameAsLastAnswered,
+          resetAt,
         })
       ) {
         skipped += 1;
@@ -168,6 +174,9 @@ export async function pollIncomingConsultantBurst(maxMs = BURST_MS): Promise<{
   let checked = 0;
   let replied = 0;
   let skipped = 0;
+  const db = await import("@/integrations-supabase/client.server").then(m => m.supabaseAdmin);
+  const resetRow = await db.from("app_settings").select("value").eq("key", "consultant_reset_at").maybeSingle();
+  const resetAt = resetRow.data?.value ? Date.parse(resetRow.data.value) : undefined;
   while (Date.now() - started < maxMs) {
     const once = await pollIncomingConsultantMessages();
     rounds += 1;
