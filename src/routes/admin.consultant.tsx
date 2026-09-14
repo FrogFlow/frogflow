@@ -462,7 +462,7 @@ function ConsultantPage() {
                     ) : (
                       <ul className="space-y-0.5 text-muted-foreground">
                         {(row.recent ?? []).map((turn, i) => (
-                          <li key={${row.userKey}-}>
+                          <li key={`${row.userKey}-${i}`}>
                             <span className="text-foreground">
                               {turn.role === "customer" ? "Клиент" : "Бот"}:
                             </span>{" "}
@@ -515,7 +515,7 @@ function ConsultantPage() {
             <p className="text-sm text-muted-foreground">{c.rateBody}</p>
             <p className="text-sm">
               {d?.rate
-                ? ${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — VTB
+                ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — VTB`
                 : c.rateEmpty}
             </p>
             
