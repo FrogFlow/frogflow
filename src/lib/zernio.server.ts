@@ -2075,6 +2075,33 @@ export async function listZernioPosts(accountId: string): Promise<ZernioPost[]> 
 }
 
 /**
+ * Lightweight stories-only fetch — a single API call to the Zernio stories
+ * endpoint.  Used by the admin Stories tab to avoid the 5-request fan-out of
+ * listZernioPosts and the resulting 429 rate-limit errors.
+ */
+export async function listZernioStories(accountId: string): Promise<Record<string, any>[]> {
+  try {
+    const res = await zernioRequest<{ stories?: Record<string, any>[]; data?: Record<string, any>[] }>(
+      `/accounts/${encodeURIComponent(accountId)}/instagram/stories`,
+    );
+    const raw: Record<string, any>[] = Array.isArray(res)
+      ? res
+      : (res.stories || res.data || []);
+    console.log("[listZernioStories] accountId:", accountId, "raw count:", raw.length);
+    return raw.map((s) => ({
+      ...s,
+      platformPostId: s.platformPostId || s.id || s._id || s.ig_id,
+      _thumbnail: s.thumbnailUrl || s.mediaUrl || s.media_url || s.thumbnail_url,
+      _isStory: true,
+      type: "story",
+    }));
+  } catch (e) {
+    console.error("[listZernioStories] error", e);
+    return [];
+  }
+}
+
+/**
  * Резолвит id записи Zernio по platformPostId одного конкретного поста —
  * запасной путь, когда пост не попал в listZernioPosts. Список там
  * ограничен `limit: 50` на каждый источник и отсортирован по дате: у

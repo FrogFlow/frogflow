@@ -87,12 +87,6 @@ export async function findStoryTagByUrl(url: string) {
 export const getStoriesFn = createServerFn({ method: "GET" })
   .validator(z.object({ accountId: z.string().min(1) }))
   .handler(async ({ data: input }) => {
-    const { listZernioPosts } = await import("@/lib/zernio.server");
-    const posts = await listZernioPosts(input.accountId);
-    const stories = posts.filter((p) => p._isStory);
-    console.log("[stories-tab] accountId:", input.accountId, "total posts:", posts.length, "stories:", stories.length, "types:", posts.map(p => p.type).filter(Boolean));
-    if (stories.length === 0 && posts.length > 0) {
-      console.log("[stories-tab] first 3 posts sample:", posts.slice(0, 3).map(p => ({ type: p.type, _isStory: p._isStory, id: p.platformPostId || p._id })));
-    }
-    return stories;
+    const { listZernioStories } = await import("@/lib/zernio.server");
+    return await listZernioStories(input.accountId);
   });
