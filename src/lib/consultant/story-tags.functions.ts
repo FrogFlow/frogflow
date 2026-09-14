@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 async function db() {
-  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  return supabaseAdmin;
+  const { supabaseService } = await import("@/integrations-supabase/client.server");
+  return supabaseService;
 }
 
 /** List all story product tags (admin panel). */
@@ -12,6 +12,7 @@ export const listStoryTagsFn = createServerFn({ method: "GET" }).handler(async (
   const { data, error } = await s
     .from("story_product_tags")
     .select("*")
+    .or(process.env.BOT_ID ? `bot_id.eq.${process.env.BOT_ID},bot_id.is.null` : 'bot_id.is.null')
     .order("created_at", { ascending: false })
     .limit(100);
   if (error) throw new Error(error.message);
@@ -36,6 +37,7 @@ export const upsertStoryTagFn = createServerFn({ method: "POST" })
     const expiresAt = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(); // 25h
     const { error } = await s.from("story_product_tags").upsert(
       {
+        bot_id: process.env.BOT_ID || null,
         story_id: input.storyId,
         story_url: input.storyUrl ?? null,
         thumbnail_url: input.thumbnailUrl ?? null,
