@@ -45,9 +45,12 @@ export const upsertStoryTagFn = createServerFn({ method: "POST" })
         notes: input.notes ?? null,
         expires_at: expiresAt,
       },
-      { onConflict: "bot_id,story_id" },
+      { onConflict: "story_id" },
     );
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("[upsertStoryTag] error:", error);
+      throw new Error(error.message);
+    }
     return { ok: true };
   });
 

@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS story_product_tags (
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   expires_at TIMESTAMPTZ,
-  UNIQUE(bot_id, story_id)
+  UNIQUE(story_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_story_product_tags_story_url ON story_product_tags (story_url);
