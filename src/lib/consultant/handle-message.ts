@@ -342,19 +342,14 @@ export async function decideConsultantReply(
     return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
   }
 
-  if (matchMoreVariantsIntent(text)) {
-    const variants = replyMoreVariants(text, catalog, [], country, countryPatch, state, rateRow?.rate ?? null);
-    if (variants) {
-      void track(ctx.userKey, "query", text, bucket);
-      return variants;
-    }
-  }
-
   if (canClaude) {
     try {
       let claudeText = text;
       if (ctx.storyId || ctx.storyMediaUrl) {
-        claudeText = `[Customer replied to a story. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown] ${text}`;
+        const name = state.last_product_ids?.[0]
+          ? catalog.find((p) => p.id === state.last_product_ids![0])?.name
+          : "товар";
+        claudeText = `[Customer sent a reply to our Instagram Story showing ${name}]\n\n${text}`;
       }
 
       const ai = await runConsultantClaude({
@@ -380,7 +375,7 @@ export async function decideConsultantReply(
         void track(ctx.userKey, "handoff", text, bucket);
         return handoffReply(
           pack,
-          { ...state, ...countryPatch, last_product_ids: ai.products.map((p) => p.id) },
+          { ...state, ...countryPatch, last_product_ids: appendIds(state.last_product_ids, ai.products.map((p) => p.id)) },
           bucket,
           "purchase",
           text,
@@ -391,12 +386,11 @@ export async function decideConsultantReply(
         const inStock = ai.products.filter((p) => p.stock);
         const check = validateConsultantReply(ai.text, ai.products, ai.extraNumbers);
         if (check.ok && ai.text.trim()) {
-          void track(ctx.userKey, "query", text, bucket);
           return {
             text: ai.text.trim(),
             patch: {
               ...countryPatch,
-              last_product_ids: inStock.map((p) => p.id),
+              last_product_ids: appendIds(state.last_product_ids, inStock.map((p) => p.id)),
               conversation_state: "consulting",
             },
             kind: inStock.length ? "product" : "clarify",
@@ -426,15 +420,15 @@ export async function decideConsultantReply(
             text: formatProductReply(inStock[0], country, rub, { includeCdek, pack }),
             patch: {
               ...countryPatch,
-              last_product_ids: inStock.map((p) => p.id),
+              last_product_ids: appendIds(state.last_product_ids, inStock.map((p) => p.id)),
               ru_cdek_sent: state.ru_cdek_sent || includeCdek,
             },
             kind: "product",
           };
         }
       }
-    } catch {
-      void track(ctx.userKey, "error", "claude_failed", bucket);
+    } catch (e: unknown) {
+      console.error("Consultant run error:", e);
     }
   }
 
@@ -452,24 +446,24 @@ export async function decideConsultantReply(
     return local;
   }
 
-  if (justCountry) {
-    void track(ctx.userKey, "country", text, bucket);
-    return {
-      text: pack.askProduct,
-      patch: { ...countryPatch, conversation_state: "awaiting_product" },
-      kind: "clarify",
-    };
+  if (matchDeliveryIntent(text)) {
+    void track(ctx.userKey, "delivery", text, bucket);
+    const msg = [country === "KZ" ? pack.deliveryKz : country === "RU" ? pack.deliveryRu : ""]
+      .filter(Boolean)
+      .join("\n");
+    return { text: msg || pack.askProduct, patch: countryPatch, kind: "clarify" };
   }
 
-  if (wantsAdvice || searchTokens(text).length === 0) {
-    return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
-  }
+  const hasSig = queryHasCatalogSignal(text, catalog);
+  void track(ctx.userKey, hasSig ? "query" : "other", text, bucket);
 
-  return {
-    text: pack.askProduct,
-    patch: { ...countryPatch, conversation_state: "awaiting_product" },
-    kind: "clarify",
-  };
+  return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
+}
+
+function appendIds(existing: string[] | undefined, next: string[]): string[] {
+  const set = new Set(existing ?? []);
+  for (const id of next) set.add(id);
+  return Array.from(set).slice(-20);
 }
 
 function replyMoreVariants(
@@ -488,14 +482,14 @@ function replyMoreVariants(
     fromSearch.length > 0 ? fromSearch.slice(0, 2) : relatedVariants(catalog, lastIds);
   if (picks.length === 0) {
     return {
-      text: "Других размеров и цветов в этой позиции сейчас нет. Напишите, что ещё посмотреть.",
+      text: "Других размеров и цветов в этой категории сейчас нет. Давайте покажу что-то еще.",
       patch: countryPatch,
       kind: "clarify",
     };
   }
   return {
     text: formatVariantsReply(picks, country, rate),
-    patch: { ...countryPatch, last_product_ids: picks.map((p) => p.id) },
+    patch: { ...countryPatch, last_product_ids: appendIds(state.last_product_ids, picks.map((p) => p.id)) },
     kind: "product",
   };
 }
@@ -528,7 +522,7 @@ function composeBudgetOrBasketReply(
       text: formatBasketReply(items, total, budget, country, rate),
       patch: {
         ...countryPatch,
-        last_product_ids: items.map((p) => p.id),
+        last_product_ids: appendIds(_state.last_product_ids, items.map((p) => p.id)),
       },
       kind: items.length ? "product" : "oos",
     };
@@ -545,7 +539,7 @@ function composeBudgetOrBasketReply(
     text: formatBudgetReply(picks, budget, country, rate),
     patch: {
       ...countryPatch,
-      last_product_ids: picks.map((p) => p.id),
+      last_product_ids: appendIds(_state.last_product_ids, picks.map((p) => p.id)),
     },
     kind: "product",
   };
@@ -584,7 +578,7 @@ export async function replyFromLocalCatalog(
       const rub = country === "RU" && rate ? priceRub(last[0].price_kzt, rate) : null;
       return {
         text: formatProductReply(last[0], country, rub, { includeCdek, pack }),
-        patch: { ...countryPatch, last_product_ids: [last[0].id] },
+        patch: { ...countryPatch, last_product_ids: appendIds(state.last_product_ids, [last[0].id]) },
         kind: "product",
       };
     }
@@ -615,7 +609,7 @@ export async function replyFromLocalCatalog(
         text: formatSizeOptionsReply(opts, country, rate, {
           includeCdek: country === "RU" && !state.ru_cdek_sent,
         }),
-        patch: { ...countryPatch, last_product_ids: opts.map((p) => p.id) },
+        patch: { ...countryPatch, last_product_ids: appendIds(state.last_product_ids, opts.map((p) => p.id)) },
         kind: "product",
       };
     }
@@ -638,7 +632,7 @@ export async function replyFromLocalCatalog(
       text: formatProductReply(hit, country, rub, { includeCdek, pack }),
       patch: {
         ...countryPatch,
-        last_product_ids: [hit.id],
+        last_product_ids: appendIds(state.last_product_ids, [hit.id]),
         ru_cdek_sent: state.ru_cdek_sent || includeCdek,
       },
       kind: "product",
@@ -652,7 +646,7 @@ export async function replyFromLocalCatalog(
         text: formatSizeOptionsReply(opts, country, rate, {
           includeCdek: country === "RU" && !state.ru_cdek_sent,
         }),
-        patch: { ...countryPatch, last_product_ids: opts.map((p) => p.id) },
+        patch: { ...countryPatch, last_product_ids: appendIds(state.last_product_ids, opts.map((p) => p.id)) },
         kind: "product",
       };
     }
