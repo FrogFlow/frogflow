@@ -655,7 +655,12 @@ async function handoffReply(
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
     await addConsultantTask({ userKey, reason, text });
-    await notifyConsultantHandoff({ userKey, reason, text });
+    await notifyConsultantHandoff({
+      userKey,
+      reason,
+      text,
+      lastProducts: state.last_product_ids?.slice(0, 3),
+    });
   }
   return {
     text: message ?? pack.unrecognized,
