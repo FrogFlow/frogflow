@@ -5,7 +5,7 @@ import { foldText } from "./synonyms";
 const PRICE_TOKEN_RE = /\d[\d\s]{2,}/g;
 
 const SHIPPING_QUOTE_RE =
-  /стоимост[ьи]\s+доставк|доставк\w{0,8}\s+\d|доставка\s+(стоит|обойд|составит|будет\s+\d)|рассчита\w*\s+доставк|доставка\s+\d/i;
+  /стоимост[ьи]\s+доставк\w*\s*[:—\-–]?\s*\d|доставк\w{0,8}\s*[:—\-–]?\s*\d|доставка\s+(?:стоит|обойд|составит|будет\s+\d)/i;
 
 const COLOR_STEMS = [
   "бел",
@@ -77,6 +77,9 @@ export function replyUsesUnknownPrice(text: string, known: Set<string>): boolean
 }
 
 export function replyQuotesShippingCost(text: string): boolean {
+  if (/по\s+тарифам|тарифам\s+сдэк|оплачивается\s+при\s+получении|рассчитывается\s+курьер/i.test(text)) {
+    return false;
+  }
   return SHIPPING_QUOTE_RE.test(text);
 }
 
