@@ -58,3 +58,29 @@ export async function setConsultantTaskDone(id: string, done: boolean): Promise<
     updated_at: new Date().toISOString(),
   });
 }
+
+export async function clearConsultantTasks(onlyDone = false): Promise<void> {
+  const s = await db();
+  const botId = process.env.BOT_ID?.trim();
+  if (onlyDone) {
+    const list = (await loadConsultantTasks()).filter((t) => !t.done);
+    await s.from("app_settings").upsert({
+      ...(botId ? { bot_id: botId } : {}),
+      key: KEY,
+      value: JSON.stringify(list),
+      updated_at: new Date().toISOString(),
+    });
+    return;
+  }
+  if (botId) {
+    await s.from("app_settings").delete().eq("key", KEY).eq("bot_id", botId);
+  }
+  await s.from("app_settings").delete().eq("key", KEY);
+  await s.from("app_settings").upsert({
+    ...(botId ? { bot_id: botId } : {}),
+    key: KEY,
+    value: "[]",
+    updated_at: new Date().toISOString(),
+  });
+}
+

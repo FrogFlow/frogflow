@@ -57,6 +57,21 @@ export async function loadConsultantEvents(): Promise<ConsultantEvent[]> {
   }
 }
 
+export async function clearConsultantEvents(): Promise<void> {
+  const s = await db();
+  const botId = process.env.BOT_ID?.trim();
+  if (botId) {
+    await s.from("app_settings").delete().eq("key", KEY).eq("bot_id", botId);
+  }
+  await s.from("app_settings").delete().eq("key", KEY);
+  await s.from("app_settings").upsert({
+    ...(botId ? { bot_id: botId } : {}),
+    key: KEY,
+    value: "[]",
+    updated_at: new Date().toISOString(),
+  });
+}
+
 export function summarizeConsultantEvents(events: ConsultantEvent[]) {
   const byKind: Record<string, number> = {};
   const oosTexts: Record<string, number> = {};

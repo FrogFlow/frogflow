@@ -23,7 +23,9 @@ import {
   setConsultantTaskDoneFn,
   testConsultantTelegramFn,
   toggleConsultantBotFn,
+  clearConsultantTasksFn,
 } from "@/lib/consultant/consultant.functions";
+import { confirmToast } from "@/lib/confirm-toast";
 import { StoriesTab } from "./admin.stories-tab";
 import { Badge } from "@/components-ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components-ui/table";
@@ -430,6 +432,26 @@ function ConsultantPage() {
     onError: (e: unknown) => toast.error(errorMessage(e)),
   });
 
+  const clearTasks = useMutation({
+    mutationFn: (onlyDone?: boolean) => clearConsultantTasksFn({ data: { onlyDone } }),
+    onSuccess: (_, onlyDone) => {
+      toast.success(onlyDone ? "Выполненные задачи очищены" : "Список задач менеджера сброшен");
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+
+  const onResetAllTasks = async () => {
+    const ok = await confirmToast("Сбросить ВСЕ задачи менеджера? Список будет полностью очищен.");
+    if (!ok) return;
+    clearTasks.mutate(false);
+  };
+
+  const onClearDoneTasks = async () => {
+    clearTasks.mutate(true);
+  };
+
+
   const isBotEnabled = d?.botEnabled !== false;
 
   return (
@@ -573,9 +595,35 @@ function ConsultantPage() {
                   Запросы на покупку и диалоги, переданные консультантом человеку.
                 </p>
               </div>
-              <Badge variant="outline">
-                Активных: {pendingTasksCount} из {tasks.length}
-              </Badge>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="outline">
+                  Активных: {pendingTasksCount} из {tasks.length}
+                </Badge>
+                {tasks.some((t) => t.done) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={clearTasks.isPending}
+                    onClick={onClearDoneTasks}
+                    className="text-xs h-8"
+                  >
+                    Очистить выполненные
+                  </Button>
+                )}
+                {tasks.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={clearTasks.isPending}
+                    onClick={onResetAllTasks}
+                    className="text-xs h-8 text-destructive hover:text-destructive"
+                  >
+                    {clearTasks.isPending ? "Сброс..." : "Сбросить задачи"}
+                  </Button>
+                )}
+              </div>
             </div>
 
             {tasks.length === 0 ? (

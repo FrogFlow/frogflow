@@ -19,7 +19,7 @@ import { getStoredVtbRate } from "./rate";
 import { listConsultantCustomers, listPausedConsultations, resumeConsultant } from "./state";
 import { refreshVtbRate, saveVtbRate } from "./vtb";
 import { loadConsultantEvents, summarizeConsultantEvents } from "./analytics";
-import { loadConsultantTasks, setConsultantTaskDone } from "./tasks";
+import { clearConsultantTasks, loadConsultantTasks, setConsultantTaskDone } from "./tasks";
 import { getForcedAbBucket, saveForcedAbBucket } from "./ab";
 import { importFromGoogleDriveUrl } from "./drive";
 import { decodeBase64Xlsx, parseCatalogXlsx } from "./xlsx-import";
@@ -268,3 +268,12 @@ export const toggleConsultantBotFn = createServerFn({ method: "POST" })
     const enabled = await setConsultantBotGloballyEnabled(data.enabled);
     return { ok: true as const, enabled };
   });
+
+export const clearConsultantTasksFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ onlyDone: z.boolean().optional() }).optional().parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    await clearConsultantTasks(data?.onlyDone ?? false);
+    return { ok: true as const };
+  });
+
