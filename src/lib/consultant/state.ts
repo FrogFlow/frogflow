@@ -1,5 +1,5 @@
 import type { Json } from "@/integrations-supabase/types";
-import { looksLikeConsultantBotReply } from "./copy";
+import { looksLikeConsultantBotReply, foldReply } from "./copy";
 import { isConsultantGreeting, type ConsultantCountry } from "./intent";
 
 export type PauseReason = "manager_intervention" | "purchase" | "error" | "other";

@@ -75,7 +75,7 @@ export const consultantCopy = {
   otherCategories: TZ_COPY.otherCategories,
 };
 
-function foldReply(text: string): string {
+export function foldReply(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
