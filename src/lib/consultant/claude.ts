@@ -165,31 +165,45 @@ export async function runConsultantClaude(params: {
   let lastText = "";
 
   for (let round = 0; round < CONSULTANT_MAX_TOOL_ROUNDS; round++) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: consultantModel(),
-        max_tokens: 600,
-        system: [
-          {
-            type: "text",
-            text: fullSystemPrompt,
-            cache_control: { type: "ephemeral" },
-          },
-        ],
-        tools: CONSULTANT_TOOLS.map((tool, i) =>
-          i === 0 ? { ...tool, cache_control: { type: "ephemeral" } } : tool,
-        ),
-        messages,
-        ...(params.forceTools && round === 0 ? { tool_choice: { type: "any" } } : {}),
-      }),
-      signal: AbortSignal.timeout(CONSULTANT_AI_TIMEOUT_MS),
-    });
+    let res: Response;
+    try {
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: consultantModel(),
+          max_tokens: 600,
+          system: [
+            {
+              type: "text",
+              text: fullSystemPrompt,
+              cache_control: { type: "ephemeral" },
+            },
+          ],
+          tools: CONSULTANT_TOOLS.map((tool, i) =>
+            i === 0 ? { ...tool, cache_control: { type: "ephemeral" } } : tool,
+          ),
+          messages,
+          ...(params.forceTools && round === 0 ? { tool_choice: { type: "any" } } : {}),
+        }),
+        signal: AbortSignal.timeout(CONSULTANT_AI_TIMEOUT_MS),
+      });
+    } catch (fetchErr: unknown) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      logger.warn("consultant.claude_fetch_failed", { error: msg });
+      return {
+        text: "",
+        products,
+        extraNumbers,
+        handoff: false,
+        usage,
+        error: `network_error:${msg.slice(0, 120)}`,
+      };
+    }
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -198,7 +212,7 @@ export async function runConsultantClaude(params: {
         text: "",
         products,
         extraNumbers,
-        handoff: true,
+        handoff: false,
         usage,
         error: `anthropic_${res.status}:${body.slice(0, 180)}`,
       };
@@ -294,7 +308,7 @@ export async function runConsultantClaude(params: {
       });
     }
     messages.push({ role: "user", content: toolResults });
-    if (handoff) {
+    if (handoff && (lastText.trim().length > 0 || round === CONSULTANT_MAX_TOOL_ROUNDS - 1)) {
       return { text: stripMarkdownFormatting(lastText), products, extraNumbers, handoff, handoffData, usage };
     }
   }

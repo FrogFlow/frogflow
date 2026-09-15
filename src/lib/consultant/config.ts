@@ -12,5 +12,5 @@ export function consultantApiKey(): string {
   return process.env.ANTHROPIC_API_KEY?.trim() || "";
 }
 
-export const CONSULTANT_AI_TIMEOUT_MS = 40_000;
+export const CONSULTANT_AI_TIMEOUT_MS = 15_000;
 export const CONSULTANT_MAX_TOOL_ROUNDS = 3;

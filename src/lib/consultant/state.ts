@@ -30,7 +30,7 @@ export type ConsultantState = {
   pending_product_query?: string;
 };
 
-const RECENT_LIMIT = 8;
+const RECENT_LIMIT = 24;
 
 export function appendRecent(
   state: ConsultantState,
@@ -204,30 +204,73 @@ export function isAutomationPaused(state: ConsultantState): boolean {
   return state.automation_paused === true;
 }
 
-function foldReply(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
+const recentBotOutgoingFingerprints = new Map<string, number>();
+
+export function registerBotOutgoingText(text: string): void {
+  const folded = foldReply(text);
+  if (!folded) return;
+  recentBotOutgoingFingerprints.set(folded, Date.now());
+  const cutoff = Date.now() - 5 * 60 * 1000;
+  for (const [key, ts] of recentBotOutgoingFingerprints.entries()) {
+    if (ts < cutoff) recentBotOutgoingFingerprints.delete(key);
+  }
+}
+
+export function isRecentBotOutgoingText(text: string): boolean {
+  const incoming = foldReply(text);
+  if (!incoming) return false;
+  if (recentBotOutgoingFingerprints.has(incoming)) return true;
+  for (const [key] of recentBotOutgoingFingerprints.entries()) {
+    if (
+      incoming.length >= 20 &&
+      (incoming.startsWith(key.slice(0, 20)) || key.startsWith(incoming.slice(0, 20)))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function isBotEcho(state: ConsultantState, text: string): boolean {
+  if (isRecentBotOutgoingText(text)) return true;
   const reply = foldReply(state.last_bot_reply ?? "");
   const incoming = foldReply(text);
-  if (!reply || !incoming) return false;
-  if (reply === incoming) return true;
-  return (
-    incoming.length >= 24 &&
-    (incoming.startsWith(reply.slice(0, 24)) || reply.startsWith(incoming.slice(0, 24)))
-  );
+  if (!incoming) return false;
+  if (
+    reply &&
+    (reply === incoming ||
+      (incoming.length >= 24 &&
+        (incoming.startsWith(reply.slice(0, 24)) || reply.startsWith(incoming.slice(0, 24)))))
+  ) {
+    return true;
+  }
+  // Also check all recent assistant messages in conversation history
+  const recent = state.recent ?? [];
+  for (const turn of recent) {
+    if (turn.role !== "assistant") continue;
+    const turnFolded = foldReply(turn.text);
+    if (turnFolded === incoming) return true;
+    if (
+      incoming.length >= 24 &&
+      (incoming.startsWith(turnFolded.slice(0, 24)) || turnFolded.startsWith(incoming.slice(0, 24)))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Пауза «менеджер» после нашей же карточки — бот тогда молчит навсегда. */
 export function isFalseManagerPause(state: ConsultantState, lastOutgoingText?: string): boolean {
   if (!isAutomationPaused(state)) return false;
   if (state.pause_reason && state.pause_reason !== "manager_intervention") return false;
-  return Boolean(lastOutgoingText && looksLikeConsultantBotReply(lastOutgoingText));
+  if (!lastOutgoingText) return false;
+  if (isBotEcho(state, lastOutgoingText)) return true;
+  return looksLikeConsultantBotReply(lastOutgoingText);
 }
 
 const IN_FLIGHT_MS = 15_000;
-const REPLY_TTL_MS = 3 * 60_000;
+const REPLY_TTL_MS = 25_000;
 const POLL_COOLDOWN_MS = 15 * 60_000;
 
 export function recentlyReplied(state: ConsultantState, now = Date.now(), windowMs = POLL_COOLDOWN_MS): boolean {

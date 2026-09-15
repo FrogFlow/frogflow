@@ -165,17 +165,18 @@ export async function loadConsultantCatalog(): Promise<ConsultantProduct[]> {
     .eq("key", CATALOG_KEY)
     .maybeSingle();
   if (!data?.value?.trim()) {
+    if (catalogCache?.products?.length) return catalogCache.products;
     catalogCache = { at: Date.now(), products: [] };
     return [];
   }
   try {
     const parsed = JSON.parse(data.value) as unknown;
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) return catalogCache?.products ?? [];
     const products = parsed.filter(isConsultantProduct);
     catalogCache = { at: Date.now(), products };
     return products;
   } catch {
-    return [];
+    return catalogCache?.products ?? [];
   }
 }
 
