@@ -1043,4 +1043,19 @@ describe("consultant — Instagram formatting & product resolution fixes", () =>
     expect(resultIds).not.toContain("TEST-005");
     expect(resultIds).not.toContain("TEST-009");
   });
+
+  it("флаги-эмодзи при выборе страны не считаются товарным запросом", () => {
+    expect(looksLikeProductQuery("Россия 🇷🇺")).toBe(false);
+    expect(looksLikeProductQuery("Казахстан 🇰🇿")).toBe(false);
+    expect(looksLikeProductQuery("Россия")).toBe(false);
+    expect(looksLikeProductQuery("Казахстан")).toBe(false);
+    expect(looksLikeProductQuery("Россия 🇷🇺 полотенце")).toBe(true);
+    expect(looksLikeProductQuery("Казахстан 🇰🇿 одеяло")).toBe(true);
+  });
+
+  it("в категориях affirmativeInterest и otherCategories отсутствуют посуда и матрасы", () => {
+    expect(TZ_COPY.affirmativeInterest).not.toMatch(/посуд|матрас/i);
+    expect(TZ_COPY.otherCategories).not.toMatch(/посуд|матрас/i);
+    expect(TZ_COPY.crossSell).toBe("");
+  });
 });

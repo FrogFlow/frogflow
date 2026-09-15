@@ -598,7 +598,10 @@ export async function decideConsultantReply(
           .map((id) => catalog.find((p) => p.id === id))
           .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
         const allKnownProducts = [...ai.products, ...historyProducts];
-        const check = validateConsultantReply(cleanAiText, allKnownProducts, ai.extraNumbers);
+        const rublePrices = country === "RU" && rateRow?.rate
+          ? allKnownProducts.map((p) => priceRub(p.price_kzt, rateRow.rate))
+          : [];
+        const check = validateConsultantReply(cleanAiText, allKnownProducts, [...ai.extraNumbers, ...rublePrices]);
         if (check.ok && cleanAiText.trim()) {
           return {
             text: cleanAiText.trim(),

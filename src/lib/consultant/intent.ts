@@ -104,15 +104,16 @@ export function looksLikeProductQuery(text: string): boolean {
       .replace(/я\s+из|из|страна|мы\s+из|город[еау]?|пос[её]лк\w*|прожива\w*/gi, " ")
       .replace(/[.!?…,]/g, " ")
       .trim();
-    const tokens = leftover.split(/\s+/).filter((w) => w.length > 1);
-    if (tokens.length === 0) return false;
+    const words = leftover.match(/[a-zа-яё0-9]{2,}/gi) ?? [];
+    if (words.length === 0) return false;
   }
   const leftoverHow = t
     .replace(/^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай)([.!?…\s,]|👋|🙏)*/i, " ")
     .replace(/как\s+(заказать|оформить|купить)\??/gi, " ")
     .replace(/[.!?…,]/g, " ")
     .trim();
-  if (!leftoverHow) return false;
+  const wordsHow = leftoverHow.match(/[a-zа-яё0-9]{2,}/gi) ?? [];
+  if (wordsHow.length === 0) return false;
   return true;
 }
 
