@@ -110,8 +110,10 @@ export function looksLikeConsultantBotReply(text: string): boolean {
     AB_COPY.crossSell,
     AB_COPY.affirmativeInterest,
     AB_COPY.declineReply,
-  ];
-  if (snippets.some((s) => t === foldReply(s) || t.includes(foldReply(s).slice(0, 32)))) {
+  ]
+    .map(foldReply)
+    .filter((s) => s.length >= 10);
+  if (snippets.some((s) => t === s || t.includes(s.slice(0, 32)))) {
     return true;
   }
   return (

@@ -196,7 +196,7 @@ async function handleConsultantZernioEventInternal(params: {
   const text = params.text.trim() || params.postback?.trim() || "";
   if (!text && !params.postback && !params.storyId && !params.storyMediaUrl) return;
 
-  if (isBotEcho(consultant, text) || looksLikeConsultantBotReply(text)) {
+  if (isBotEcho(consultant, text)) {
     logConsultantEvent(requestId, "skipped_echo", { userKey: params.userKey });
     return;
   }
