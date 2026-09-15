@@ -123,7 +123,11 @@ export function cleanForbiddenPhrases(text: string): string {
     res = res.replace(re, "$1");
   }
   res = res.replace(/^(?:отлично|прекрасно|замечательно)[!.,\s]*/i, "");
-  return res.trim();
+  res = res.trim();
+  if (res.length > 0) {
+    res = res.charAt(0).toUpperCase() + res.slice(1);
+  }
+  return res;
 }
 
 export function replyUsesUnknownProductName(_text: string, _products: ConsultantProduct[]): boolean {
