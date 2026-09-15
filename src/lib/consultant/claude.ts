@@ -7,10 +7,11 @@ import {
 import { CONSULTANT_TOOLS, executeConsultantTool } from "./tools";
 import type { ConsultantProduct } from "./catalog";
 import type { ConsultantCountry } from "./intent";
-import type { ConsultantState } from "./state";
+import type { ConsultantState, ConsultantTurn } from "./state";
 import { extractAnthropicUsage, type SmartSearchTokenUsage } from "@/lib/smart-search-cost";
 import { logger } from "@/lib/logger.server";
 import { stripMarkdownFormatting } from "./copy";
+import { cleanForbiddenPhrases, cleanScriptHallucinations } from "./validate";
 
 import { priceRub, getStoredVtbRate } from "./rate";
 
@@ -43,6 +44,14 @@ export function buildConsultantSystemPrompt(
 ГЛАВНЫЙ ПРИНЦИП
 Вы общаетесь как живой, внимательный человек в чате, а не робот и не сухой скрипт.
 Весь ассортимент и склад магазина находятся у вас перед глазами в блоке «АКТУАЛЬНЫЙ АССОРТИМЕНТ». Вы точно знаете все товары, размеры, цены и доступные цвета. Называйте только реальные характеристики из этого списка.
+
+СТРОГОЕ ПРАВИЛО ОДНОГО ОТВЕТА (ЗАПРЕТ НА СЦЕНАРИИ):
+Вы формируете РОВНО ОДИН ответ консультанта на последнее сообщение клиента.
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО:
+1. Писать за клиента или симулировать его ответы.
+2. Генерировать диалоги со сценариями (например: «customer: ... assistant: ...» или «клиент: ...»).
+3. Самостоятельно продолжать диалог за обе стороны и додумывать оформление заказа.
+Ваш ответ — это исключительно ваша текущая реплика клиенту.
 
 ФОРМАТ СООБЩЕНИЙ ДЛЯ INSTAGRAM DIRECT
 1. НИКАКОГО MARKDOWN И ЗВЁЗДОЧЕК: Instagram Direct не поддерживает разметку. Никогда не используйте звёздочки (ни **50x90 см**, ни *текст*). Они отображаются как битые символы.
@@ -109,6 +118,40 @@ export type ClaudeTurnResult = {
   error?: string;
 };
 
+export function buildAnthropicMessages(
+  recent: ConsultantTurn[] | undefined,
+  currentText: string,
+): Array<{ role: "user" | "assistant"; content: unknown }> {
+  const turns: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+  for (const t of recent ?? []) {
+    const role = t.role === "customer" ? "user" : "assistant";
+    const text = (t.text ?? "").trim();
+    if (!text) continue;
+
+    const last = turns[turns.length - 1];
+    if (last && last.role === role) {
+      last.content = `${last.content}\n${text}`;
+    } else {
+      turns.push({ role, content: text });
+    }
+  }
+
+  // Anthropic API requirement: conversation must start with a 'user' turn
+  while (turns.length > 0 && turns[0].role !== "user") {
+    turns.shift();
+  }
+
+  const userText = currentText.trim();
+  if (turns.length > 0 && turns[turns.length - 1].role === "user") {
+    turns[turns.length - 1].content = `${turns[turns.length - 1].content}\n${userText}`;
+  } else {
+    turns.push({ role: "user", content: userText || "Здравствуйте" });
+  }
+
+  return turns;
+}
+
 export async function runConsultantClaude(params: {
   text: string;
   state: ConsultantState;
@@ -138,20 +181,23 @@ export async function runConsultantClaude(params: {
   const fullSystemPrompt = buildConsultantSystemPrompt(catalog, rate, params.shopUrl);
 
   const country: ConsultantCountry | undefined = params.state.country;
-  const recent = (params.state.recent ?? []).map((t) => `${t.role}: ${t.text}`).join("\n");
-  const dynamic =
-    `STATE country=${country ?? "unknown"} paused=${params.state.automation_paused === true}` +
-    (params.state.customer_contact ? ` customer_contact="${params.state.customer_contact}"` : "") +
-    (params.shopUrl ? ` shop_url=${params.shopUrl}` : "") +
-    (params.state.last_product_ids?.length
-      ? ` last_shown=${params.state.last_product_ids.join(",")}`
-      : "") +
-    (recent ? `\nRECENT\n${recent}` : "") +
-    `\nCUSTOMER: ${params.text}`;
+  const sessionLines: string[] = ["ДАННЫЕ ТЕКУЩЕЙ СЕССИИ:"];
+  sessionLines.push(`• Страна клиента: ${country ?? "не определена (unknown)"}`);
+  if (params.state.customer_contact) {
+    sessionLines.push(`• Контактный номер клиента: ${params.state.customer_contact}`);
+  }
+  if (params.shopUrl) {
+    sessionLines.push(`• Сайт магазина: ${params.shopUrl}`);
+  }
+  if (params.state.last_product_ids?.length) {
+    sessionLines.push(`• Ранее предложенные товары (ID): ${params.state.last_product_ids.join(", ")}`);
+  }
+  if (params.state.automation_paused) {
+    sessionLines.push("• Внимание: автоматизация была временно на паузе");
+  }
+  const dynamicSessionContext = sessionLines.join("\n");
 
-  const messages: Array<{ role: "user" | "assistant"; content: unknown }> = [
-    { role: "user", content: dynamic },
-  ];
+  const messages = buildAnthropicMessages(params.state.recent, params.text);
 
   const products: ConsultantProduct[] = catalog.filter((p) => p.stock);
   const extraNumbers: number[] = [];
@@ -184,6 +230,20 @@ export async function runConsultantClaude(params: {
               text: fullSystemPrompt,
               cache_control: { type: "ephemeral" },
             },
+            {
+              type: "text",
+              text: dynamicSessionContext,
+            },
+          ],
+          stop_sequences: [
+            "\ncustomer:",
+            "\nCustomer:",
+            "\nклиент:",
+            "\nКлиент:",
+            "\nпокупатель:",
+            "\nПокупатель:",
+            "\nuser:",
+            "\nUser:",
           ],
           tools: CONSULTANT_TOOLS.map((tool, i) =>
             i === 0 ? { ...tool, cache_control: { type: "ephemeral" } } : tool,
@@ -239,11 +299,13 @@ export async function runConsultantClaude(params: {
     const texts = content.filter(
       (b): b is Extract<AnthropicContent, { type: "text" }> => b.type === "text",
     );
-    if (texts.length)
-      lastText = texts
+    if (texts.length) {
+      const rawText = texts
         .map((t) => t.text)
         .join("\n")
         .trim();
+      lastText = cleanForbiddenPhrases(cleanScriptHallucinations(rawText));
+    }
 
     if (toolUses.length === 0) {
       logger.info("consultant.claude_usage", {

@@ -69,13 +69,13 @@ export const CONSULTANT_TOOLS = [
     {
       name: "handoff_to_manager",
       description:
-        "Call ONLY when the customer explicitly wants to buy, pay, place an order, or talk to a human. Do NOT call this if a product is out of stock or not found - instead, output a normal text message saying it's unavailable.",
+        "Call ONLY when the customer explicitly wants to buy, pay, place an order, or talk to a human. Do NOT call this if the customer is merely selecting colors, sizes, or asking questions. Do NOT call this if a product is out of stock or not found - instead, output a normal text message saying it's unavailable.",
       input_schema: {
         type: "object",
         properties: {
           reason: { type: "string", description: "Reason for handoff (e.g. purchase, talk_to_human)" },
-          customer_phone: { type: "string", description: "Customer phone number if provided" },
-          delivery_city: { type: "string", description: "Customer delivery city if provided" },
+          customer_phone: { type: "string", description: "Customer phone number ONLY IF explicitly provided by the user in chat. NEVER invent or guess a number." },
+          delivery_city: { type: "string", description: "Customer delivery city if provided by the user" },
           order_summary: { type: "string", description: "Summary of products, sizes, colors, and total price" },
         },
       },
