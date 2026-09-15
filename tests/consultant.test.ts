@@ -925,4 +925,26 @@ describe("consultant — Instagram formatting & product resolution fixes", () =>
     const new2 = await searchProducts({ query: "скатерти" }, testCatalog);
     expect(new2.map((p) => p.id)).toContain("NEW-1");
   });
+
+  it("поиск по 'махровые полотенца' возвращает только махровые, а не обычные банные", async () => {
+    const { searchProducts } = await import("../src/lib/consultant/catalog");
+    const testCatalog = [
+      { id: "TEST-001", name: "Полотенце банное", category: "полотенца", size: "50x90", colors: ["белый"], price_kzt: 8900, stock: true },
+      { id: "TEST-005", name: "Полотенце банное", category: "полотенца", size: "70x140", colors: ["белый"], price_kzt: 14500, stock: true },
+      { id: "TEST-009", name: "Полотенце банное", category: "полотенца", size: "100x150", colors: ["белый"], price_kzt: 21900, stock: true },
+      { id: "TEST-013", name: "Полотенце банное махровое", category: "полотенца", size: "70x140", colors: ["белый"], price_kzt: 16900, stock: true },
+      { id: "TEST-016", name: "Полотенце банное махровое", category: "полотенца", size: "100x150", colors: ["белый"], price_kzt: 24900, stock: true },
+    ];
+
+    const results = await searchProducts({ query: "махровые полотенца" }, testCatalog);
+    const resultIds = results.map((p) => p.id);
+
+    // Должны вернуться ТОЛЬКО махровые
+    expect(resultIds).toContain("TEST-013");
+    expect(resultIds).toContain("TEST-016");
+    // Обычные банные НЕ должны возвращаться!
+    expect(resultIds).not.toContain("TEST-001");
+    expect(resultIds).not.toContain("TEST-005");
+    expect(resultIds).not.toContain("TEST-009");
+  });
 });
