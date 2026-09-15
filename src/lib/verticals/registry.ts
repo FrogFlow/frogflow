@@ -227,6 +227,61 @@ export const VERTICALS = {
       },
     },
   },
+  flowers: {
+    title: "Цветы и букеты",
+    mode: "shop",
+    defaultFulfillment: "physical",
+    botDescriptionIntro:
+      `🌸 Доставка авторских букетов и свежих цветов.\n` +
+      `→ Подбор букета по поводу и бюджету\n` +
+      `→ Срочная доставка (от 60 мин) или к точной дате\n` +
+      `→ Бесплатная открытка и фото букета перед отправкой`,
+    shortDescription:
+      "Доставка цветов и букетов. Нажимая /start, вы принимаете оферту и политику конфиденциальности.",
+    suggestedModules: ["whatsapp", "stock", "multi_currency", "manager_chat", "smart_search"],
+    locales: {
+      ru: {
+        welcomeGreeting: "Добро пожаловать в цветочную мастерскую!",
+        welcomeCatalog: "Каталог букетов, роз и подарков",
+        welcomePayment: "Оформление заказа и доставка",
+        contactBtn: "💬 Связаться с флористом",
+        instructionComingSoon:
+          "📖 Инструкция скоро появится.\nПока: выберите букет из каталога или напишите бюджет — флорист поможет оформить заказ и пришлёт фото перед отправкой.",
+        instructionDefaultCaption:
+          "📖 Как заказать цветы: выберите букет → укажите дату и адрес доставки → добавьте текст открытки. Перед отправкой мы пришлём фото букета.",
+      },
+      kk: {
+        welcomeGreeting: "Гүл шеберханасына қош келдіңіз!",
+        welcomeCatalog: "Гүл шоқтары мен сыйлықтар каталогы",
+        welcomePayment: "Тапсырыс беру және жеткізу",
+        contactBtn: "💬 Флористпен байланысу",
+        instructionComingSoon:
+          "📖 Нұсқаулық жақында қосылады.\nӘзірге: каталогтан гүл шоғын таңдаңыз немесе бюджетіңізді жазыңыз — флорист тапсырыс беруге көмектеседі.",
+        instructionDefaultCaption:
+          "📖 Гүлге қалай тапсырыс беру керек: гүл шоғын таңдаңыз → жеткізу күні мен мекенжайын көрсетіңіз → құттықтау хатын қосыңыз.",
+      },
+      en: {
+        welcomeGreeting: "Welcome to the flower boutique!",
+        welcomeCatalog: "Bouquets, roses, and gift arrangements",
+        welcomePayment: "Order placement and delivery",
+        contactBtn: "💬 Contact a florist",
+        instructionComingSoon:
+          "📖 The guide is coming soon.\nFor now: pick a bouquet from the catalog or name your budget — our florist will assist you and send a photo before delivery.",
+        instructionDefaultCaption:
+          "📖 How to order flowers: select a bouquet → specify delivery date and address → add a postcard message. We'll send a photo before dispatch.",
+      },
+      uz: {
+        welcomeGreeting: "Gul ustaxonasiga xush kelibsiz!",
+        welcomeCatalog: "Guldastalar, atirgullar va sovg‘alar katalogi",
+        welcomePayment: "Buyurtma berish va yetkazib berish",
+        contactBtn: "💬 Florist bilan bog‘lanish",
+        instructionComingSoon:
+          "📖 Yo‘riqnoma tez orada qo‘shiladi.\nHozircha: katalogdan guldastani tanlang yoki byudjetingizni yozing — florist yordam beradi.",
+        instructionDefaultCaption:
+          "📖 Qanday buyurtma beriladi: guldastani tanlang → yetkazish sanasi va manzilini ko‘rsating → tabriknoma matnini qo‘shing.",
+      },
+    },
+  },
 } as const satisfies Record<string, VerticalDef>;
 
 export type VerticalKey = keyof typeof VERTICALS;
@@ -237,7 +292,7 @@ export function verticalDef(key: VerticalKey): VerticalDef {
   return VERTICALS[key];
 }
 
-/** Кондитерская витрина: зоны, самовывоз, задаток. У консультанта — false. */
+/** Кондитерская и цветочная витрина: зоны, самовывоз, физическая доставка. */
 export function isPhysicalShopVertical(key: VerticalKey): boolean {
   const def = VERTICALS[key];
   return def.mode === "shop" && def.defaultFulfillment === "physical";
@@ -246,3 +301,8 @@ export function isPhysicalShopVertical(key: VerticalKey): boolean {
 export function isConsultantVertical(key: VerticalKey): boolean {
   return VERTICALS[key].mode === "consultant";
 }
+
+export function isFlowersVertical(key: VerticalKey): boolean {
+  return key === "flowers";
+}
+
