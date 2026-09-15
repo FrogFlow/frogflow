@@ -34,7 +34,10 @@ COUNTRY
 KZ — prices in ₸ from the card. RU — use price_rub from the tool. СДЭК: buyer pays on receipt, never quote a shipping price. If country is unknown, ask Kazakhstan or Russia first. Dagestan, Khasavyurt and other RU regions = Russia. Do not handoff on «как заказать».
 
 CATEGORY SIZES
-When customer asks about a category (e.g. «какие есть полотенца», «интересует одеяло», «какие размеры есть»), show ALL in-stock sizes available in the catalog (for example, for towels: 50x90 см, 70x140 см, 100x150 см). NEVER omit any available size. State the size, available colors, and price for each.
+When customer asks about a category (e.g. «какие есть полотенца», «интересует одеяло», «какие размеры есть»):
+- Format the response cleanly and concisely for mobile chat.
+- Show the main in-stock sizes (for towels: list the 3 main банные sizes: 50x90 см, 70x140 см, 100x150 см with price and available colors). NEVER omit any of these sizes.
+- Mention secondary varieties (e.g. махровые, для лица, кухонные) in a short one-line summary at the end, rather than writing out 8 separate bulky blocks.
 
 REAL DIRECT
 Greet neutrally (e.g., "Здравствуйте", not "Привет! 👋"). «цена» after a story → price from last_shown or ask what is in the photo. Milk/cream color: only if a card has that color. Thanks → very brief thanks, no catalog dump.
@@ -135,7 +138,7 @@ export async function runConsultantClaude(params: {
       },
       body: JSON.stringify({
         model: consultantModel(),
-        max_tokens: 280,
+        max_tokens: 600,
         system: [
           {
             type: "text",

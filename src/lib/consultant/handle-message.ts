@@ -363,7 +363,7 @@ export async function decideConsultantReply(
     const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
     const catalog = ctx.catalog ?? (await loadConsultantCatalog());
     const matched = resolveHandoffProductIds(state, text, catalog);
-    const productIds = matched.length > 0 ? matched : (state.last_product_ids ?? []);
+    const productIds = matched.length > 0 ? matched : (state.last_product_ids ?? []).slice(0, 1);
     if (!state.customer_contact && !hasPhone) {
       return {
         text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
@@ -458,10 +458,10 @@ export async function decideConsultantReply(
         const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
         const matched = resolveHandoffProductIds(state, text, catalog);
         const productIds = ai.products.length > 0
-          ? appendIds(state.last_product_ids, ai.products.map((p) => p.id))
+          ? ai.products.map((p) => p.id)
           : matched.length > 0
-          ? appendIds(state.last_product_ids, matched)
-          : (state.last_product_ids ?? []);
+          ? matched
+          : (state.last_product_ids ?? []).slice(0, 1);
         if (!state.customer_contact && !hasPhone) {
           return {
             text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
@@ -860,9 +860,9 @@ export function resolveHandoffProductIds(
     return [inImmediate[0].id];
   }
 
-  // 3. If state already has last_product_ids (e.g. from awaiting_contact or previous selection), use it!
+  // 3. If state already has last_product_ids (e.g. from awaiting_contact or previous selection), use the top one!
   if (state.last_product_ids && state.last_product_ids.length > 0) {
-    return state.last_product_ids.slice(0, 3);
+    return [state.last_product_ids[0]];
   }
 
   // 4. Search recent history backwards (newest to oldest), skipping catalog overview messages
@@ -896,8 +896,6 @@ async function handoffReply(
   const resolvedProducts =
     inCurrentText.length > 0
       ? [inCurrentText[0].id]
-      : state.last_product_ids && state.last_product_ids.length > 0
-      ? state.last_product_ids
       : resolveHandoffProductIds(state, text, catalog);
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
@@ -907,7 +905,7 @@ async function handoffReply(
       reason,
       text,
       customerContact: contact,
-      lastProducts: resolvedProducts.slice(0, 3),
+      lastProducts: reason === "purchase" ? resolvedProducts.slice(0, 1) : resolvedProducts.slice(0, 3),
     });
   }
   return {
