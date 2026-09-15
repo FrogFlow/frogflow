@@ -20,7 +20,9 @@ import {
   matchMoreVariantsIntent,
   matchOtherCategoriesIntent,
   extractBudgetKzt,
+  isAffirmativeInterest,
   isConsultantThanks,
+  isDeclineResponse,
   matchDeliveryIntent,
   matchPriceOnlyIntent,
 } from "../src/lib/consultant/intent";
@@ -121,6 +123,16 @@ describe("consultant — намерения", () => {
     expect(looksLikeProductQuery("как заказать")).toBe(false);
     expect(looksLikeProductQuery("Здравствуйте, как заказать?")).toBe(false);
     expect(looksLikeProductQuery("В городе Хасавюрт")).toBe(false);
+    expect(looksLikeProductQuery("Интересует")).toBe(false);
+    expect(looksLikeProductQuery("Да")).toBe(false);
+    expect(looksLikeProductQuery("Нет, спасибо")).toBe(false);
+    expect(isAffirmativeInterest("Интересует")).toBe(true);
+    expect(isAffirmativeInterest("Да, интересует")).toBe(true);
+    expect(isAffirmativeInterest("Конечно")).toBe(true);
+    expect(isAffirmativeInterest("Интересует плед")).toBe(false);
+    expect(isDeclineResponse("Нет, спасибо")).toBe(true);
+    expect(isDeclineResponse("Пока нет")).toBe(true);
+    expect(isDeclineResponse("Нет, хочу полотенце")).toBe(false);
     expect(isConsultantThanks("Очень круто, спасибо")).toBe(true);
     expect(matchDeliveryIntent("есть доставка в Россию?")).toBe(true);
     expect(matchPriceOnlyIntent("Добрый день цена")).toBe(true);
@@ -237,11 +249,25 @@ describe("consultant — pause / echo", () => {
         "poll",
       ),
     ).toBe(true);
+    // Менее 20 с после ответа — дубликат вебхука подавляется
     expect(
       alreadyAnsweredIncoming(
         {
           last_customer_text: "Здравствуйте",
-          last_bot_reply_at: new Date(now - 10_000).toISOString(),
+          last_bot_reply_at: new Date(now - 5_000).toISOString(),
+          conversation_state: "awaiting_country",
+        },
+        "Здравствуйте",
+        now,
+        "webhook",
+      ),
+    ).toBe(true);
+    // Через 30 с при отсутствии страны — повторный вебхук снова спрашивает страну, poll не дублирует
+    expect(
+      alreadyAnsweredIncoming(
+        {
+          last_customer_text: "Здравствуйте",
+          last_bot_reply_at: new Date(now - 30_000).toISOString(),
           conversation_state: "awaiting_country",
         },
         "Здравствуйте",
@@ -253,7 +279,7 @@ describe("consultant — pause / echo", () => {
       alreadyAnsweredIncoming(
         {
           last_customer_text: "Здравствуйте",
-          last_bot_reply_at: new Date(now - 10_000).toISOString(),
+          last_bot_reply_at: new Date(now - 30_000).toISOString(),
           conversation_state: "awaiting_country",
         },
         "Здравствуйте",

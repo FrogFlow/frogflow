@@ -14,6 +14,8 @@ export type ConsultantCopyPack = {
   catalogLink: (url: string) => string;
   crossSell: string;
   otherCategories: string;
+  affirmativeInterest: string;
+  declineReply: string;
   telegramIntro: string;
 };
 
@@ -33,6 +35,10 @@ export const TZ_COPY: ConsultantCopyPack = {
   crossSell: "Может, вас интересует что-нибудь ещё из нашего ассортимента?",
   otherCategories:
     "В нашем ассортименте также представлены: матрасы, одеяла, подушки, посуда, постельное бельё и полотенца. Напишите интересующую позицию или категорию для проверки наличия и стоимости.",
+  affirmativeInterest:
+    "В нашем ассортименте представлены: постельное бельё, одеяла, подушки, пледы, полотенца и посуда. Напишите интересующую позицию или категорию для проверки наличия и стоимости.",
+  declineReply:
+    "Хорошо. Если появятся вопросы или решите оформить заказ — пишите, ответим по наличию и стоимости.",
   telegramIntro:
     "Консультации по наличию и цене — в Instagram Direct. Напишите сюда страну и товар — ответим по прайсу.",
 };
@@ -43,6 +49,10 @@ const AB_COPY: ConsultantCopyPack = {
     "Здравствуйте! Напишите, пожалуйста, страну — Казахстан или Россия. От этого зависят цена и доставка.",
   askProduct: "Напишите товар, размер или цвет — проверим наличие и цену.",
   crossSell: "Нужно проверить ещё что-то из ассортимента?",
+  affirmativeInterest:
+    "У нас есть: постельное бельё, одеяла, подушки, пледы, полотенца и посуда. Напишите товар или категорию — проверим наличие и цену.",
+  declineReply:
+    "Хорошо. Если появятся вопросы или решите оформить заказ — пишите, всегда на связи.",
 };
 
 export type CopyBucket = "a" | "b";
@@ -92,10 +102,14 @@ export function looksLikeConsultantBotReply(text: string): boolean {
     TZ_COPY.purchase,
     TZ_COPY.otherCategories,
     TZ_COPY.crossSell,
+    TZ_COPY.affirmativeInterest,
+    TZ_COPY.declineReply,
     TZ_COPY.unrecognized,
     AB_COPY.askCountry,
     AB_COPY.askProduct,
     AB_COPY.crossSell,
+    AB_COPY.affirmativeInterest,
+    AB_COPY.declineReply,
   ];
   if (snippets.some((s) => t === foldReply(s) || t.includes(foldReply(s).slice(0, 32)))) {
     return true;

@@ -31,8 +31,10 @@ import {
 import { looksLikePromptInjection } from "./injection";
 import {
   extractBudgetKzt,
+  isAffirmativeInterest,
   isConsultantGreeting,
   isConsultantThanks,
+  isDeclineResponse,
   looksLikeProductQuery,
   looksLikeVagueHelp,
   matchAdviceIntent,
@@ -85,7 +87,49 @@ export type ConsultantReply = {
     | "injection";
 };
 
+const activeUserLocks = new Map<string, Promise<unknown>>();
+
+async function withUserLock<T>(userKey: string, fn: () => Promise<T>): Promise<T> {
+  const prev = activeUserLocks.get(userKey) ?? Promise.resolve();
+  let release: () => void = () => {};
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  activeUserLocks.set(
+    userKey,
+    prev.then(
+      () => current,
+      () => current,
+    ),
+  );
+
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    release();
+    if (activeUserLocks.get(userKey) === current) {
+      activeUserLocks.delete(userKey);
+    }
+  }
+}
+
 export async function handleConsultantZernioEvent(params: {
+  payload: ZernioWebhookMessagePayload;
+  conversationId: string;
+  accountId: string;
+  userKey: string;
+  text: string;
+  platform: ZernioPlatform;
+  postback?: string | null;
+  source?: "webhook" | "poll";
+  storyId?: string | null;
+  storyMediaUrl?: string | null;
+}): Promise<void> {
+  return withUserLock(params.userKey, () => handleConsultantZernioEventInternal(params));
+}
+
+async function handleConsultantZernioEventInternal(params: {
   payload: ZernioWebhookMessagePayload;
   conversationId: string;
   accountId: string;
@@ -182,10 +226,11 @@ export async function handleConsultantZernioEvent(params: {
   reply.text = stripMarkdownFormatting(reply.text);
 
   const { consultant: latest } = await loadConsultantState(params.userKey);
+  const lastReplyAt = Date.parse(latest.last_bot_reply_at ?? "");
+  const repliedRecently = Number.isFinite(lastReplyAt) && Date.now() - lastReplyAt < 45_000;
   if (
-    source === "poll" &&
     latest.last_bot_reply?.trim() === reply.text.trim() &&
-    alreadyAnsweredIncoming(latest, text, Date.now(), source)
+    (source === "poll" || repliedRecently || alreadyAnsweredIncoming(latest, text, Date.now(), source))
   ) {
     logConsultantEvent(requestId, "skipped_duplicate", {
       userKey: params.userKey,
@@ -194,9 +239,11 @@ export async function handleConsultantZernioEvent(params: {
     return;
   }
 
+  const replyTime = new Date().toISOString();
   await patchConsultantState(params.userKey, {
     last_customer_text: text,
     last_bot_reply: reply.text,
+    last_bot_reply_at: replyTime,
   });
 
   const send = (buttons: ConsultantReply["buttons"] | undefined) =>
@@ -213,6 +260,9 @@ export async function handleConsultantZernioEvent(params: {
   if (!sent && reply.buttons?.length) sent = await send(undefined);
   if (!sent) {
     logConsultantEvent(requestId, "send_failed", { userKey: params.userKey, kind: reply.kind });
+    await patchConsultantState(params.userKey, {
+      last_bot_reply_at: undefined,
+    });
     return;
   }
 
@@ -220,7 +270,7 @@ export async function handleConsultantZernioEvent(params: {
     ...reply.patch,
     last_customer_text: text,
     last_bot_reply: reply.text,
-    last_bot_reply_at: new Date().toISOString(),
+    last_bot_reply_at: replyTime,
     recent: appendRecent(consultant, text, reply.text),
   });
 
@@ -336,7 +386,9 @@ export async function decideConsultantReply(
     !looksLikeProductQuery(text) &&
     !matchCatalogIntent(text) &&
     !matchOtherCategoriesIntent(text) &&
-    !matchAdviceIntent(text);
+    !matchAdviceIntent(text) &&
+    !isAffirmativeInterest(text) &&
+    !isDeclineResponse(text);
 
   const canClaude = Boolean(consultantApiKey());
   const budgetKzt = extractBudgetKzt(text);
@@ -399,6 +451,24 @@ export async function decideConsultantReply(
       hasPhone ? text : state.customer_contact,
       catalog,
     );
+  }
+
+  if (isDeclineResponse(text)) {
+    void track(ctx.userKey, "clarify", text, bucket);
+    return {
+      text: stripMarkdownFormatting(pack.declineReply),
+      patch: { ...countryPatch, conversation_state: "consulting" },
+      kind: "clarify",
+    };
+  }
+
+  if (isAffirmativeInterest(text)) {
+    void track(ctx.userKey, "clarify", text, bucket);
+    return {
+      text: stripMarkdownFormatting(pack.affirmativeInterest),
+      patch: { ...countryPatch, conversation_state: "awaiting_product" },
+      kind: "clarify",
+    };
   }
 
   if (wantsAdvice && !canClaude && !budgetKzt && !wantsBasket) {
