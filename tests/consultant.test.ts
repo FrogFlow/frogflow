@@ -391,11 +391,22 @@ describe("consultant — decideConsultantReply без магазинного ч�
     expect(res?.patch.conversation_state).toBe("awaiting_country");
   });
 
-  it("после страны — запрос товара по ТЗ", async () => {
+  it("после страны — запрос товара по ТЗ (Какой товар вас интересует?)", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
     const res = await decideConsultantReply("Казахстан", {});
     expect(res?.text).toBe(TZ_COPY.askProduct);
+    expect(res?.text).toBe("Какой товар вас интересует?");
     expect(res?.patch.country).toBe("KZ");
+  });
+
+  it("если товар был назван до выбора страны — после страны сразу отвечает по товару", async () => {
+    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
+    const res = await decideConsultantReply("Казахстан", {
+      pending_product_query: "полотенце 70x140",
+    }, { catalog: [towel] });
+    expect(res?.text).toContain("Полотенце банное");
+    expect(res?.text).toContain("45 000 ₸");
+    expect(res?.text).not.toBe(TZ_COPY.askProduct);
   });
 
   it("«чем я могу помочь» — шаблон категорий, не свободный Claude", async () => {

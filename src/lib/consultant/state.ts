@@ -27,6 +27,7 @@ export type ConsultantState = {
   ru_cdek_sent?: boolean;
   ab_bucket?: "a" | "b";
   resumed_at?: string;
+  pending_product_query?: string;
 };
 
 const RECENT_LIMIT = 8;
