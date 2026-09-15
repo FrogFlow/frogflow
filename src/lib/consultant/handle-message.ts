@@ -193,8 +193,18 @@ async function handleConsultantZernioEventInternal(params: {
     }
   }
 
-  const text = params.text.trim() || params.postback?.trim() || "";
-  if (!text && !params.postback && !params.storyId && !params.storyMediaUrl) return;
+  let text = params.text.trim() || params.postback?.trim() || "";
+  if (!text && !params.postback && !params.storyId && !params.storyMediaUrl) {
+    const attachments = params.payload.message?.attachments;
+    if (attachments && attachments.length > 0) {
+      const isVoice = attachments.some((a) => a.type === "audio");
+      text = isVoice
+        ? "[Клиент отправил голосовое сообщение. Попросите написать текстом, так как бот принимает только текстовые сообщения]"
+        : "[Клиент прислал фото/картинку без текста. Поблагодарите за фото и уточните, какой именно товар, размер или цвет интересует]";
+    } else {
+      return;
+    }
+  }
 
   if (isBotEcho(consultant, text)) {
     logConsultantEvent(requestId, "skipped_echo", { userKey: params.userKey });
