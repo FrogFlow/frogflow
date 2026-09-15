@@ -67,15 +67,35 @@ export function looksLikeVagueHelp(text: string): boolean {
   );
 }
 
+const AFFIRMATIVE_RE =
+  /^(да|интересует|да\s+интересует|меня\s+интересует|очень\s+интересует|конечно|конечно\s+интересует|давайте|да\s+давайте|ага|хочу|да\s+хочу|покажите|да\s+покажите|расскажите|да\s+расскажите|интересно|что\s+ещ[её]\s+есть|что\s+у\s+вас\s+есть)$/i;
+
+/** Утвердительный ответ на кросс-сейл или общий интерес («Интересует», «Да», «Конечно»). */
+export function isAffirmativeInterest(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/[.!?…,:;()]/g, "").trim();
+  return AFFIRMATIVE_RE.test(t);
+}
+
+const DECLINE_RE =
+  /^(нет|нет\s+спасибо|не\s+нужно|не\s+надо|пока\s+нет|пока\s+вс[её]|ничего|больше\s+ничего|спасибо\s+пока\s+вс[её]|нет\s+не\s+надо|нет\s+не\s+нужно|нет\s+ничего)$/i;
+
+/** Вежливый отказ от дальнейших предложений («Нет», «Нет, спасибо», «Пока всё»). */
+export function isDeclineResponse(text: string): boolean {
+  const t = text.trim().toLowerCase().replace(/[.!?…,:;()]/g, "").trim();
+  return DECLINE_RE.test(t);
+}
+
 /**
  * После страны почти любой осмысленный текст — про товар.
- * «я из России» / «привет» не считаем запросом в прайс.
+ * «я из России» / «привет» / «интересует» не считаем запросом в прайс.
  */
 export function looksLikeProductQuery(text: string): boolean {
   const t = text.trim();
   if (!t || GREETING_RE.test(t)) return false;
   if (looksLikeVagueHelp(t)) return false;
   if (matchPurchaseIntent(t)) return false;
+  if (isAffirmativeInterest(t)) return false;
+  if (isDeclineResponse(t)) return false;
   const country = matchCountry(t);
   if (country) {
     const leftover = t

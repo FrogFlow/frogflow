@@ -252,6 +252,13 @@ export function alreadyAnsweredIncoming(
     now - claimed < IN_FLIGHT_MS &&
     (!Number.isFinite(replied) || replied < claimed);
   if (inFlight) return true;
+
+  // Если на этот же входящий текст уже ответили менее 20 с назад — это 100%
+  // дубликат доставки/retry вебхука. Никогда не отправлять дубликат в пределах 20 с.
+  if (Number.isFinite(replied) && now - replied < 20_000) {
+    return true;
+  }
+
   // Заняли эту реплику после последней отправки — ответа на неё ещё нет.
   if (Number.isFinite(claimed) && Number.isFinite(replied) && replied < claimed) {
     return false;
