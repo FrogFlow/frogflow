@@ -65,6 +65,7 @@ import { bucketForUser, getForcedAbBucket } from "./ab";
 import { recordConsultantEvent } from "./analytics";
 import { addConsultantTask } from "./tasks";
 import { notifyConsultantHandoff } from "./notify";
+import { haystackOf } from "./synonyms";
 
 export type ConsultantReply = {
   text: string;
@@ -453,7 +454,8 @@ export async function decideConsultantReply(
             },
             kind: inStock.length ? "product" : "clarify",
           };
-        } else {
+        }
+        if (!check.ok) {
           console.warn("[consultant] Claude reply rejected by validator:", check.reason, {
             aiText: ai.text,
             knownCount: allKnownProducts.length,
