@@ -87,6 +87,18 @@ export function replyUsesUnknownColor(text: string, known: Set<string>): boolean
   for (const stem of COLOR_STEMS) {
     if (!hasColorStem(lower, stem)) continue;
     if (hasColorStem(knownJoined, stem)) continue;
+    // Check if the color is actually being negated or marked as unavailable (e.g. "бежевого цвета нет", "закончился")
+    const negatedColorRe = new RegExp(
+      `(?:нет|закончил|не\\s+осталось|не\\s+(?:доступен|в\\s+наличии|представлен)|кроме)[^.!?\\n]*?${stem}`,
+      "i",
+    );
+    const colorAfterNegatedRe = new RegExp(
+      `${stem}[а-яё]*\\s+[^.!?\\n]*?(?:нет|закончил|не\\s+(?:доступен|в\\s+наличии))`,
+      "i",
+    );
+    if (negatedColorRe.test(lower) || colorAfterNegatedRe.test(lower)) {
+      continue;
+    }
     return true;
   }
   return false;

@@ -438,7 +438,11 @@ export async function decideConsultantReply(
         );
       } else if (!ai.error) {
         const inStock = ai.products.filter((p) => p.stock);
-        const check = validateConsultantReply(ai.text, ai.products, ai.extraNumbers);
+        const historyProducts = (state.last_product_ids ?? [])
+          .map((id) => catalog.find((p) => p.id === id))
+          .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
+        const allKnownProducts = [...ai.products, ...historyProducts];
+        const check = validateConsultantReply(ai.text, allKnownProducts, ai.extraNumbers);
         if (check.ok && ai.text.trim()) {
           return {
             text: ai.text.trim(),
@@ -449,6 +453,11 @@ export async function decideConsultantReply(
             },
             kind: inStock.length ? "product" : "clarify",
           };
+        } else {
+          console.warn("[consultant] Claude reply rejected by validator:", check.reason, {
+            aiText: ai.text,
+            knownCount: allKnownProducts.length,
+          });
         }
         if (inStock.length > 0) {
           const composed = composeBudgetOrBasketReply(
@@ -467,11 +476,33 @@ export async function decideConsultantReply(
           if (wantsAdvice && !budgetKzt && !wantsBasket && !queryHasCatalogSignal(text, catalog)) {
             return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
           }
+          const tokens = searchTokens(text);
+          const targetProduct =
+            inStock.find((p) => {
+              const hay = haystackOf([p.name, p.size, ...p.colors]);
+              return tokens.some((t) => hay.includes(t));
+            }) ?? inStock[0];
+          const requestedColor = [
+            "бежевый",
+            "серый",
+            "белый",
+            "графит",
+            "черный",
+            "розовый",
+            "голубой",
+            "синий",
+            "зеленый",
+            "молочный",
+          ].find((c) => new RegExp(c.slice(0, 4), "i").test(text));
           const includeCdek = country === "RU" && !state.ru_cdek_sent;
           const rub =
-            country === "RU" && rateRow?.rate ? priceRub(inStock[0].price_kzt, rateRow.rate) : null;
+            country === "RU" && rateRow?.rate ? priceRub(targetProduct.price_kzt, rateRow.rate) : null;
           return {
-            text: formatProductReply(inStock[0], country, rub, { includeCdek, pack }),
+            text: formatProductReply(targetProduct, country, rub, {
+              includeCdek,
+              pack,
+              selectedColor: requestedColor,
+            }),
             patch: {
               ...countryPatch,
               last_product_ids: appendIds(state.last_product_ids, inStock.map((p) => p.id)),
@@ -648,6 +679,14 @@ export async function replyFromLocalCatalog(
     }
   }
 
+  if (/\bне\s+банн/i.test(text)) {
+    return {
+      text: "В наличии сейчас только банные полотенца (размеры 50x90, 70x140 и 100x150 см). Полотенец для лица, рук или кухни сейчас нет в наличии.",
+      patch: countryPatch,
+      kind: "oos",
+    };
+  }
+
   if (isCategoryWithoutSize(text)) {
     const opts = sizeOptions(catalog, text, 3);
     if (opts.length > 0) {
@@ -672,10 +711,26 @@ export async function replyFromLocalCatalog(
   const found = await searchProducts({ query: text }, catalog);
   const hit = found.find((p) => p.stock);
   if (hit) {
+    const requestedColor = [
+      "бежевый",
+      "серый",
+      "белый",
+      "графит",
+      "черный",
+      "розовый",
+      "голубой",
+      "синий",
+      "зеленый",
+      "молочный",
+    ].find((c) => new RegExp(c.slice(0, 4), "i").test(text));
     const includeCdek = country === "RU" && !state.ru_cdek_sent;
     const rub = country === "RU" && rate ? priceRub(hit.price_kzt, rate) : null;
     return {
-      text: formatProductReply(hit, country, rub, { includeCdek, pack }),
+      text: formatProductReply(hit, country, rub, {
+        includeCdek,
+        pack,
+        selectedColor: requestedColor,
+      }),
       patch: {
         ...countryPatch,
         last_product_ids: appendIds(state.last_product_ids, [hit.id]),

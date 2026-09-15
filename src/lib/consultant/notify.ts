@@ -67,9 +67,24 @@ export async function notifyConsultantHandoff(params: {
 
     if (params.lastProducts && params.lastProducts.length > 0) {
       lines.push("");
-      lines.push(
-        `🏷 Товары: ${params.lastProducts.slice(0, 3).join(", ")}`,
-      );
+      try {
+        const { loadConsultantCatalog } = await import("./catalog");
+        const catalog = await loadConsultantCatalog();
+        const readable = params.lastProducts.slice(0, 3).map((id) => {
+          const p = catalog.find((item) => item.id === id);
+          if (!p) return id;
+          const sizeStr = p.size ? ` ${p.size}` : "";
+          const priceStr = p.price_kzt ? ` (${p.price_kzt.toLocaleString("ru-RU")} ₸)` : "";
+          return `${p.name}${sizeStr}${priceStr}`;
+        });
+        if (readable.length === 1) {
+          lines.push(`🏷 Товар: ${readable[0]}`);
+        } else {
+          lines.push(`🏷 Товары:\n${readable.map((r) => `  • ${r}`).join("\n")}`);
+        }
+      } catch {
+        lines.push(`🏷 Товары: ${params.lastProducts.slice(0, 3).join(", ")}`);
+      }
     }
 
     const message = lines.join("\n");

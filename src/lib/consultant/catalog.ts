@@ -34,9 +34,13 @@ function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
   }
   if (q.exclude_ids?.includes(product.id)) return false;
   if (q.query) {
+    const negated = extractNegatedWords(q.query);
+    for (const neg of negated) {
+      if (hay.includes(neg)) return false;
+    }
     const tokens = searchTokens(q.query);
-    if (tokens.length === 0) return false;
-    if (!tokens.every((t) => hay.includes(t))) return false;
+    if (tokens.length === 0 && negated.size === 0) return false;
+    if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) return false;
   }
   return true;
 }
@@ -275,6 +279,9 @@ export const QUERY_STOP = new Set([
   "цвет",
   "цвета",
   "расцветка",
+  "расцветки",
+  "оттенок",
+  "оттенки",
   "осень",
   "зима",
   "качество",
@@ -284,10 +291,57 @@ export const QUERY_STOP = new Set([
   "добрый",
   "день",
   "вечер",
+  "давайте",
+  "давай",
+  "хочу",
+  "хотим",
+  "хочется",
+  "возьму",
+  "возьмем",
+  "возьмём",
+  "берем",
+  "берём",
+  "беру",
+  "буду",
+  "будем",
+  "можно",
+  "пожалуйста",
+  "спасибо",
+  "благодарю",
+  "какой",
+  "какая",
+  "какое",
+  "какие",
+  "каком",
+  "наличие",
+  "наличии",
+  "подскажите",
+  "выбрать",
+  "выберите",
+  "этого",
+  "этому",
+  "этом",
+  "будет",
+  "хватит",
+  "достаточно",
 ]);
 
+export function extractNegatedWords(text: string): Set<string> {
+  const negated = new Set<string>();
+  const re = /\bне\s+([а-яa-z0-9]+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m[1]) {
+      negated.add(expandToken(m[1]));
+    }
+  }
+  return negated;
+}
+
 export function searchTokens(text: string): string[] {
+  const negated = extractNegatedWords(text);
   return tokenizeQuery(text).filter((t) => {
+    if (negated.has(t)) return false;
     if (QUERY_STOP.has(t) || /^\d+$/.test(t)) return false;
     if (/^[smlx]{1,3}$/i.test(t)) return true;
     return t.length > 2;
@@ -311,6 +365,7 @@ const SIZE_WORDS = /евро|семей|двуспальн|полутор|1\.5|�
 
 /** «Интересует одеяло» без 150×200 — менеджер сначала даёт размеры, не одну SKU. */
 export function isCategoryWithoutSize(text: string): boolean {
+  if (/\bне\s+/i.test(text)) return false;
   if (/\d+\s*[xх×*∗]\s*\d+/i.test(text)) return false;
   const tokens = searchTokens(text);
   if (tokens.length === 0) return false;

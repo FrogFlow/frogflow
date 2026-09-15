@@ -120,12 +120,11 @@ export function formatProductReply(
   product: ConsultantProduct,
   country: ConsultantCountry | undefined,
   priceRub: number | null,
-  opts: { includeCdek: boolean; shopUrl?: string; pack?: ConsultantCopyPack } = {
+  opts: { includeCdek: boolean; shopUrl?: string; pack?: ConsultantCopyPack; selectedColor?: string } = {
     includeCdek: false,
   },
 ): string {
   const pack = opts.pack ?? TZ_COPY;
-  const colors = product.colors.length > 0 ? product.colors.join(", ") : "уточните у менеджера";
   const size = product.size ? `${product.size}`.replace(/\s*см$/i, "") : "";
   const amount =
     country === "RU" && priceRub != null
@@ -133,9 +132,19 @@ export function formatProductReply(
       : `${product.price_kzt.toLocaleString("ru-RU")} ₸`;
   const title = product.name;
   const sizeBit = size ? ` ${size} см` : "";
-  const lines = [
-    `${title}${sizeBit} есть в наличии. Доступные расцветки: ${colors}. Стоимость — ${amount}.`,
-  ];
+
+  let headerLine: string;
+  if (
+    opts.selectedColor &&
+    product.colors.some((c) => c.toLowerCase().includes(opts.selectedColor!.toLowerCase()))
+  ) {
+    headerLine = `${title}${sizeBit}, цвет ${opts.selectedColor}, есть в наличии. Стоимость — ${amount}.`;
+  } else {
+    const colors = product.colors.length > 0 ? product.colors.join(", ") : "уточните у менеджера";
+    headerLine = `${title}${sizeBit} есть в наличии. Доступные расцветки: ${colors}. Стоимость — ${amount}.`;
+  }
+
+  const lines = [headerLine];
   if (country === "RU" && opts.includeCdek) lines.push(pack.cdek);
   lines.push(pack.crossSell);
   return lines.join("\n");
@@ -230,9 +239,15 @@ export function formatSizeOptionsReply(
   if (products.length === 0) {
     return "Напишите размер — проверю наличие и цену.";
   }
-  const lines = ["Размеры сейчас в наличии:"];
+  const lines = ["Размеры в наличии:"];
   for (const p of products) {
-    lines.push(moneyLine(p, country, rate));
+    const size = p.size ? `${p.size}`.replace(/\s*см$/i, "") : "";
+    const sizeBit = size ? ` ${size} см` : "";
+    const amount =
+      country === "RU" && rate != null
+        ? `${priceRubAmount(p.price_kzt, rate)} ₽`
+        : `${p.price_kzt.toLocaleString("ru-RU")} ₸`;
+    lines.push(`• ${p.name}${sizeBit} — ${amount}`);
   }
   if (country === "RU" && opts.includeCdek) lines.push(TZ_COPY.cdek);
   lines.push("Какой размер вам нужен?");
