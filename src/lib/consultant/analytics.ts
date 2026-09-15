@@ -1,5 +1,13 @@
 export type ConsultantEventKind =
-  "query" | "oos" | "purchase" | "handoff" | "catalog" | "country" | "error" | "injection";
+  | "query"
+  | "oos"
+  | "purchase"
+  | "handoff"
+  | "catalog"
+  | "country"
+  | "clarify"
+  | "error"
+  | "injection";
 
 export type ConsultantEvent = {
   at: string;
