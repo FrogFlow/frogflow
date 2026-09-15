@@ -3864,9 +3864,10 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    await say(
-      `Отлично! Страна сохранена (${chosen.name}).\nНапишите номер нужного материала (например, 018), и я покажу стоимость и реквизиты.`
-    );
+    await sendCatalogMenu(conversationId, accountId, {
+      ...user,
+      state: { ...flow.readDirectState(user.state), country_code: chosen.code, mode: undefined },
+    });
     return true;
   }
 
