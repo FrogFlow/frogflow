@@ -789,3 +789,56 @@ describe("consultant — разбор курса VTB", () => {
     expect(parseVtbBuyRate("<title>404 Страница не найдена — ВТБ Казахстан</title>")).toBeNull();
   });
 });
+
+describe("consultant — Instagram formatting & product resolution fixes", () => {
+  it("stripMarkdownFormatting удаляет звёздочки и форматирует списки", async () => {
+    const { stripMarkdownFormatting } = await import("../src/lib/consultant/copy");
+    const input = "**Полотенце банное** (50x90 см) — **8 900 ₸**\n* 70x140 см — 14 500 ₸\n### Доставка";
+    const cleaned = stripMarkdownFormatting(input);
+    expect(cleaned).not.toContain("**");
+    expect(cleaned).not.toContain("###");
+    expect(cleaned).toContain("Полотенце банное (50x90 см) — 8 900 ₸");
+    expect(cleaned).toContain("• 70x140 см — 14 500 ₸");
+  });
+
+  it("diversifyProducts возвращает все 3 размера полотенец в топе выборки", async () => {
+    const { diversifyProducts } = await import("../src/lib/consultant/catalog");
+    const testTowels = [
+      { id: "T-1", name: "Полотенце банное", category: "полотенца", size: "50x90", colors: ["белый"], price_kzt: 8900, stock: true },
+      { id: "T-2", name: "Полотенце банное", category: "полотенца", size: "50x90", colors: ["серый"], price_kzt: 8900, stock: true },
+      { id: "T-3", name: "Полотенце банное", category: "полотенца", size: "50x90", colors: ["бежевый"], price_kzt: 8900, stock: true },
+      { id: "T-4", name: "Полотенце банное", category: "полотенца", size: "50x90", colors: ["графит"], price_kzt: 8900, stock: true },
+      { id: "T-5", name: "Полотенце банное", category: "полотенца", size: "70x140", colors: ["белый"], price_kzt: 14500, stock: true },
+      { id: "T-6", name: "Полотенце банное", category: "полотенца", size: "70x140", colors: ["серый"], price_kzt: 14500, stock: true },
+      { id: "T-7", name: "Полотенце банное", category: "полотенца", size: "70x140", colors: ["бежевый"], price_kzt: 14500, stock: true },
+      { id: "T-8", name: "Полотенце банное", category: "полотенца", size: "70x140", colors: ["графит"], price_kzt: 14500, stock: true },
+      { id: "T-9", name: "Полотенце банное", category: "полотенца", size: "100x150", colors: ["белый"], price_kzt: 21900, stock: true },
+    ];
+    const diversified = diversifyProducts(testTowels, 12);
+    const top3Sizes = diversified.slice(0, 3).map((p) => p.size);
+    expect(top3Sizes).toContain("50x90");
+    expect(top3Sizes).toContain("70x140");
+    expect(top3Sizes).toContain("100x150");
+  });
+
+  it("resolveHandoffProductIds точно сопоставляет подтверждённый товар из контекста", async () => {
+    const { resolveHandoffProductIds } = await import("../src/lib/consultant/handle-message");
+    const testCatalog = [
+      { id: "BED-1", name: "Комплект постельного белья двуспальный", category: "постельное", size: "двуспальный", colors: ["серый"], price_kzt: 34900, stock: true },
+      { id: "TOWEL-1", name: "Полотенце банное", category: "полотенца", size: "50x90", colors: ["белый"], price_kzt: 8900, stock: true },
+      { id: "TOWEL-2", name: "Полотенце банное", category: "полотенца", size: "70x140", colors: ["белый"], price_kzt: 14500, stock: true },
+    ];
+    const state = {
+      last_product_ids: ["BED-1"],
+      last_bot_reply: "Полотенце банное 50x90 см, цвет белый, есть в наличии. Стоимость — 8 900 ₸.",
+      last_customer_text: "Давайте 50x90 белый",
+      recent: [
+        { role: "customer" as const, text: "Какие есть полотенца?" },
+        { role: "assistant" as const, text: "В наличии 50x90 см и 70x140 см" },
+      ],
+    };
+    const resolved = resolveHandoffProductIds(state, "+7 701 123 4567, Алматы", testCatalog);
+    expect(resolved).toEqual(["TOWEL-1"]);
+    expect(resolved).not.toContain("BED-1");
+  });
+});

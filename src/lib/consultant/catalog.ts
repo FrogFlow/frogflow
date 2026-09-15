@@ -381,7 +381,7 @@ export function categoryQuery(text: string): string | null {
 export function sizeOptions(
   catalog: ConsultantProduct[],
   query: string,
-  limit = 3,
+  limit = 5,
 ): ConsultantProduct[] {
   const tokens = searchTokens(query);
   const inStock = catalog.filter((p) => {
@@ -407,18 +407,56 @@ export function queryHasCatalogSignal(text: string, catalog: ConsultantProduct[]
   });
 }
 
+/**
+ * Разнообразит выборку: гарантирует, что каждый доступный размер и модель
+ * попадают в топ результатов, а не вытесняются несколькими расцветками одного размера.
+ */
+export function diversifyProducts(products: ConsultantProduct[], limit = 12): ConsultantProduct[] {
+  const inStock = products.filter((p) => p.stock);
+  const outOfStock = products.filter((p) => !p.stock);
+  const sorted = [...inStock, ...outOfStock];
+
+  const byGroup = new Map<string, ConsultantProduct[]>();
+  for (const p of sorted) {
+    const key = `${foldText(p.name)}|${foldText(p.size)}`;
+    const list = byGroup.get(key) ?? [];
+    list.push(p);
+    byGroup.set(key, list);
+  }
+
+  const result: ConsultantProduct[] = [];
+  let round = 0;
+  let added = true;
+  while (added && result.length < limit) {
+    added = false;
+    for (const list of byGroup.values()) {
+      if (round < list.length) {
+        result.push(list[round]);
+        added = true;
+        if (result.length >= limit) break;
+      }
+    }
+    round++;
+  }
+  return result;
+}
+
 export async function searchProducts(
   q: ProductSearchQuery,
   catalog?: ConsultantProduct[],
 ): Promise<ConsultantProduct[]> {
   const rows = catalog ?? (await loadConsultantCatalog());
   const hasFilter = Boolean(q.query || q.category || q.size || q.color || q.max_price_kzt);
-  if (!hasFilter) return rows.slice(0, 8);
+  if (!hasFilter) return diversifyProducts(rows, 12);
   const found = rows.filter((p) => matches(p, q));
   if (q.max_price_kzt) {
     found.sort((a, b) => Number(b.stock) - Number(a.stock) || b.price_kzt - a.price_kzt);
+    return found.slice(0, 12);
   }
-  return found.slice(0, 8);
+  if (q.size || q.color) {
+    return found.slice(0, 12);
+  }
+  return diversifyProducts(found, 12);
 }
 
 export function productsUnderBudget(

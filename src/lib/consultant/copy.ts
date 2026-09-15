@@ -69,6 +69,18 @@ function foldReply(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+/** Очистка markdown-разметки (*, **, #), которая не поддерживается в Instagram Direct. */
+export function stripMarkdownFormatting(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\*{2,}([\s\S]*?)\*{2,}/g, "$1")
+    .replace(/(^|[^*])\*([^*]+)\*([^*]|$)/g, "$1$2$3")
+    .replace(/\*{2,}/g, "")
+    .replace(/^(\s*)\*\s+/gm, "$1• ")
+    .replace(/^#{1,6}\s+/gm, "")
+    .trim();
+}
+
 /** Своя карточка/шаблон, а не реплика менеджера — по ней нельзя ставить паузу. */
 export function looksLikeConsultantBotReply(text: string): boolean {
   const t = foldReply(text);

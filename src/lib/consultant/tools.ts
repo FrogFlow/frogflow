@@ -12,7 +12,7 @@ export const CONSULTANT_TOOLS = [
   {
     name: "search_products",
     description:
-      "Search the live catalog by free text, category, size or color. Use before answering any stock or price question. Returns at most 8 cards. Empty list means nothing matched — do not invent items.",
+      "Search the live catalog by free text, category, size or color. Use before answering any stock or price question. Empty list means nothing matched — do not invent items.",
     input_schema: {
       type: "object",
       properties: {
@@ -116,7 +116,7 @@ export async function executeConsultantTool(
     const fromTool = Array.isArray(input.exclude_ids)
       ? input.exclude_ids.filter((id): id is string => typeof id === "string")
       : [];
-    const exclude = new Set([...(ctx.excludeIds ?? []), ...fromTool]);
+    const exclude = new Set(fromTool);
     let found = (await searchProducts(q, ctx.catalog)).filter((p) => !exclude.has(p.id));
     if (found.length === 0 && exclude.size > 0 && ctx.catalog) {
       found = relatedVariants(ctx.catalog, [...exclude]);

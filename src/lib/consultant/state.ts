@@ -119,6 +119,10 @@ export async function resumeConsultant(userKey: string): Promise<ConsultantState
     ...consultant,
     automation_paused: false,
     conversation_state: consultant.country ? "consulting" : "awaiting_country",
+    customer_contact: undefined,
+    last_product_ids: [],
+    recent: [],
+    ru_cdek_sent: false,
   };
   delete next.pause_reason;
   const s = await db();

@@ -25,11 +25,13 @@ import {
   formatThanksReply,
   formatVariantsReply,
   looksLikeConsultantBotReply,
+  stripMarkdownFormatting,
   type ConsultantCopyPack,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import {
   extractBudgetKzt,
+  isConsultantGreeting,
   isConsultantThanks,
   looksLikeProductQuery,
   looksLikeVagueHelp,
@@ -65,7 +67,7 @@ import { bucketForUser, getForcedAbBucket } from "./ab";
 import { recordConsultantEvent } from "./analytics";
 import { addConsultantTask } from "./tasks";
 import { notifyConsultantHandoff } from "./notify";
-import { haystackOf } from "./synonyms";
+import { foldText, haystackOf } from "./synonyms";
 
 export type ConsultantReply = {
   text: string;
@@ -126,7 +128,8 @@ export async function handleConsultantZernioEvent(params: {
     } catch {
       lastOutgoing = "";
     }
-    if (isFalseManagerPause(consultant, lastOutgoing)) {
+    const rawIncoming = params.text.trim() || params.postback?.trim() || "";
+    if (isFalseManagerPause(consultant, lastOutgoing) || isConsultantGreeting(rawIncoming)) {
       await resumeConsultant(params.userKey);
     } else {
       logConsultantEvent(requestId, "skipped_paused", {
@@ -168,6 +171,7 @@ export async function handleConsultantZernioEvent(params: {
     storyMediaUrl: params.storyMediaUrl,
   });
   if (!reply) return;
+  reply.text = stripMarkdownFormatting(reply.text);
 
   const { consultant: latest } = await loadConsultantState(params.userKey);
   if (
@@ -253,12 +257,45 @@ export async function decideConsultantReply(
     return { text: formatThanksReply(), patch: { ab_bucket: bucket }, kind: "clarify" };
   }
 
+  if (state.conversation_state === "handed_off") {
+    // Сброс контекста предыдущего завершённого заказа/хендоффа
+    state = {
+      ...state,
+      customer_contact: undefined,
+      last_product_ids: [],
+      recent: [],
+      conversation_state: state.country ? "consulting" : "awaiting_country",
+    };
+  }
+
   const country =
     matchCountryPostback(ctx.postback) ?? matchCountry(text) ?? state.country ?? undefined;
 
+  if (isConsultantGreeting(text)) {
+    const cleanPatch: Partial<ConsultantState> = {
+      customer_contact: undefined,
+      last_product_ids: [],
+      recent: [],
+      ab_bucket: bucket,
+      automation_paused: false,
+    };
+    if (!country) {
+      return {
+        text: stripMarkdownFormatting(pack.askCountry),
+        patch: { ...cleanPatch, conversation_state: "awaiting_country" },
+        kind: "country",
+      };
+    }
+    return {
+      text: stripMarkdownFormatting(pack.askProduct),
+      patch: { ...cleanPatch, country, conversation_state: "awaiting_product" },
+      kind: "clarify",
+    };
+  }
+
   if (!country) {
     return {
-      text: pack.askCountry,
+      text: stripMarkdownFormatting(pack.askCountry),
       patch: { conversation_state: "awaiting_country", ab_bucket: bucket },
       kind: "country",
     };
@@ -272,6 +309,7 @@ export async function decideConsultantReply(
 
   if (state.conversation_state === "awaiting_contact") {
     void track(ctx.userKey, "purchase", text, bucket);
+    const catalog = ctx.catalog ?? (await loadConsultantCatalog());
     return handoffReply(
       pack,
       { ...state, ...countryPatch, customer_contact: text },
@@ -281,6 +319,7 @@ export async function decideConsultantReply(
       ctx.userKey,
       pack.purchase,
       text,
+      catalog,
     );
   }
 
@@ -322,11 +361,15 @@ export async function decideConsultantReply(
   if (matchPurchaseIntent(text)) {
     void track(ctx.userKey, "purchase", text, bucket);
     const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
+    const catalog = ctx.catalog ?? (await loadConsultantCatalog());
+    const matched = resolveHandoffProductIds(state, text, catalog);
+    const productIds = matched.length > 0 ? matched : (state.last_product_ids ?? []);
     if (!state.customer_contact && !hasPhone) {
       return {
         text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
         patch: {
           ...countryPatch,
+          last_product_ids: productIds,
           conversation_state: "awaiting_contact",
         },
         kind: "clarify",
@@ -337,6 +380,7 @@ export async function decideConsultantReply(
       {
         ...state,
         ...countryPatch,
+        last_product_ids: productIds,
         customer_contact: hasPhone ? text : state.customer_contact,
       },
       bucket,
@@ -345,6 +389,7 @@ export async function decideConsultantReply(
       ctx.userKey,
       pack.purchase,
       hasPhone ? text : state.customer_contact,
+      catalog,
     );
   }
 
@@ -411,12 +456,18 @@ export async function decideConsultantReply(
       } else if (ai.handoff) {
         void track(ctx.userKey, "handoff", text, bucket);
         const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
+        const matched = resolveHandoffProductIds(state, text, catalog);
+        const productIds = ai.products.length > 0
+          ? appendIds(state.last_product_ids, ai.products.map((p) => p.id))
+          : matched.length > 0
+          ? appendIds(state.last_product_ids, matched)
+          : (state.last_product_ids ?? []);
         if (!state.customer_contact && !hasPhone) {
           return {
             text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
             patch: {
               ...countryPatch,
-              last_product_ids: appendIds(state.last_product_ids, ai.products.map((p) => p.id)),
+              last_product_ids: productIds,
               conversation_state: "awaiting_contact",
             },
             kind: "clarify",
@@ -427,7 +478,7 @@ export async function decideConsultantReply(
           {
             ...state,
             ...countryPatch,
-            last_product_ids: appendIds(state.last_product_ids, ai.products.map((p) => p.id)),
+            last_product_ids: productIds,
             customer_contact: hasPhone ? text : state.customer_contact,
           },
           bucket,
@@ -436,17 +487,19 @@ export async function decideConsultantReply(
           ctx.userKey,
           pack.purchase,
           hasPhone ? text : state.customer_contact,
+          catalog,
         );
       } else if (!ai.error) {
+        const cleanAiText = stripMarkdownFormatting(ai.text);
         const inStock = ai.products.filter((p) => p.stock);
         const historyProducts = (state.last_product_ids ?? [])
           .map((id) => catalog.find((p) => p.id === id))
           .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
         const allKnownProducts = [...ai.products, ...historyProducts];
-        const check = validateConsultantReply(ai.text, allKnownProducts, ai.extraNumbers);
-        if (check.ok && ai.text.trim()) {
+        const check = validateConsultantReply(cleanAiText, allKnownProducts, ai.extraNumbers);
+        if (check.ok && cleanAiText.trim()) {
           return {
-            text: ai.text.trim(),
+            text: cleanAiText.trim(),
             patch: {
               ...countryPatch,
               last_product_ids: appendIds(state.last_product_ids, inStock.map((p) => p.id)),
@@ -536,13 +589,12 @@ export async function decideConsultantReply(
   const hasSig = queryHasCatalogSignal(text, catalog);
   void track(ctx.userKey, "query", text, bucket);
 
-  return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
+  return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey, undefined, undefined, catalog);
 }
 
 function appendIds(existing: string[] | undefined, next: string[]): string[] {
-  const set = new Set(existing ?? []);
-  for (const id of next) set.add(id);
-  return Array.from(set).slice(-20);
+  const set = new Set([...next, ...(existing ?? [])]);
+  return Array.from(set).slice(0, 20);
 }
 
 function replyMoreVariants(
@@ -690,7 +742,7 @@ export async function replyFromLocalCatalog(
   }
 
   if (isCategoryWithoutSize(text)) {
-    const opts = sizeOptions(catalog, text, 3);
+    const opts = sizeOptions(catalog, text, 5);
     if (opts.length > 0) {
       return {
         text: formatSizeOptionsReply(opts, country, rate, {
@@ -743,7 +795,7 @@ export async function replyFromLocalCatalog(
   }
   const cat = categoryQuery(text);
   if (found.length === 0 && cat) {
-    const opts = sizeOptions(catalog, cat, 3);
+    const opts = sizeOptions(catalog, cat, 5);
     if (opts.length > 0) {
       return {
         text: formatSizeOptionsReply(opts, country, rate, {
@@ -761,6 +813,58 @@ export async function replyFromLocalCatalog(
   return null;
 }
 
+function matchProductsInText(
+  targetText: string,
+  catalog: import("./catalog").ConsultantProduct[],
+): import("./catalog").ConsultantProduct[] {
+  if (!targetText) return [];
+  const ctx = targetText.toLowerCase();
+  const scored: Array<{ product: import("./catalog").ConsultantProduct; score: number }> = [];
+  for (const p of catalog) {
+    if (!p.stock) continue;
+    const nameTokens = foldText(p.name).split(/\s+/).filter((t) => t.length > 3);
+    const matchedTokens = nameTokens.filter((t) => ctx.includes(t));
+    if (matchedTokens.length === 0) continue;
+    if (p.size) {
+      const cleanSize = p.size.toLowerCase().replace(/\s*см$/i, "").replace(/[×*]/g, "x").trim();
+      if (!ctx.includes(cleanSize)) continue;
+    }
+    const colorMatch = p.colors.some((c) => ctx.includes(c.toLowerCase()));
+    let score = matchedTokens.length / nameTokens.length;
+    if (colorMatch) score += 1;
+    scored.push({ product: p, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.product);
+}
+
+export function resolveHandoffProductIds(
+  state: ConsultantState,
+  text: string,
+  catalog?: import("./catalog").ConsultantProduct[],
+): string[] {
+  if (!catalog || catalog.length === 0) {
+    return (state.last_product_ids ?? []).slice(0, 3);
+  }
+
+  // 1. First priority: match exact product from the last bot reply or customer's choice
+  const immediateContext = [text, state.last_customer_text ?? "", state.last_bot_reply ?? ""].join(" ");
+  const inImmediate = matchProductsInText(immediateContext, catalog);
+  if (inImmediate.length > 0) {
+    return [inImmediate[0].id];
+  }
+
+  // 2. Second priority: search combined recent history
+  const recentTexts = (state.recent ?? []).map((r) => r.text).join(" ");
+  const inRecent = matchProductsInText(recentTexts, catalog);
+  if (inRecent.length > 0) {
+    return [inRecent[0].id];
+  }
+
+  // 3. Fallback to state.last_product_ids
+  return (state.last_product_ids ?? []).slice(0, 3);
+}
+
 async function handoffReply(
   pack: ConsultantCopyPack,
   state: ConsultantState,
@@ -770,9 +874,11 @@ async function handoffReply(
   userKey?: string,
   message?: string,
   customerContact?: string,
+  catalog?: import("./catalog").ConsultantProduct[],
 ): Promise<ConsultantReply> {
   const pauseReason = reason === "injection" ? "other" : reason === "other" ? "other" : reason;
   const contact = customerContact || state.customer_contact;
+  const resolvedProducts = resolveHandoffProductIds(state, text, catalog);
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
     await addConsultantTask({ userKey, reason, text, contact });
@@ -781,11 +887,11 @@ async function handoffReply(
       reason,
       text,
       customerContact: contact,
-      lastProducts: state.last_product_ids?.slice(0, 3),
+      lastProducts: resolvedProducts.slice(0, 3),
     });
   }
   return {
-    text: message ?? pack.unrecognized,
+    text: stripMarkdownFormatting(message ?? pack.unrecognized),
     patch: {
       ...state,
       ab_bucket: bucket,
@@ -794,6 +900,7 @@ async function handoffReply(
         pauseReason === "purchase" ? "purchase" : pauseReason === "error" ? "error" : "other",
       conversation_state: "handed_off",
       customer_contact: contact,
+      last_product_ids: resolvedProducts,
     },
     kind: reason === "purchase" ? "purchase" : reason === "injection" ? "injection" : "handoff",
   };

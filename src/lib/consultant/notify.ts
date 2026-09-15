@@ -70,20 +70,34 @@ export async function notifyConsultantHandoff(params: {
       try {
         const { loadConsultantCatalog } = await import("./catalog");
         const catalog = await loadConsultantCatalog();
-        const readable = params.lastProducts.slice(0, 3).map((id) => {
+        const seenLines = new Set<string>();
+        const readable: string[] = [];
+        for (const id of params.lastProducts) {
           const p = catalog.find((item) => item.id === id);
-          if (!p) return id;
+          if (!p) {
+            if (!seenLines.has(id)) {
+              seenLines.add(id);
+              readable.push(id);
+            }
+            continue;
+          }
           const sizeStr = p.size ? ` ${p.size}` : "";
+          const colorStr = p.colors?.length ? `, ${p.colors.join("/")}` : "";
           const priceStr = p.price_kzt ? ` (${p.price_kzt.toLocaleString("ru-RU")} ₸)` : "";
-          return `${p.name}${sizeStr}${priceStr}`;
-        });
+          const line = `${p.name}${sizeStr}${colorStr}${priceStr}`;
+          if (!seenLines.has(line)) {
+            seenLines.add(line);
+            readable.push(line);
+          }
+        }
         if (readable.length === 1) {
           lines.push(`🏷 Товар: ${readable[0]}`);
-        } else {
+        } else if (readable.length > 1) {
           lines.push(`🏷 Товары:\n${readable.map((r) => `  • ${r}`).join("\n")}`);
         }
       } catch {
-        lines.push(`🏷 Товары: ${params.lastProducts.slice(0, 3).join(", ")}`);
+        const unique = Array.from(new Set(params.lastProducts.slice(0, 3)));
+        lines.push(`🏷 Товары: ${unique.join(", ")}`);
       }
     }
 
