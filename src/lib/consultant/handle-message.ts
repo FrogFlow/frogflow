@@ -65,7 +65,7 @@ import {
   resumeConsultant,
   type ConsultantState,
 } from "./state";
-import { validateConsultantReply } from "./validate";
+import { cleanForbiddenPhrases, validateConsultantReply } from "./validate";
 import { bucketForUser, getForcedAbBucket } from "./ab";
 import { recordConsultantEvent } from "./analytics";
 import { addConsultantTask } from "./tasks";
@@ -502,17 +502,26 @@ export async function decideConsultantReply(
           catalog,
         );
       } else if (!ai.error) {
-        const cleanAiText = stripMarkdownFormatting(ai.text);
+        let cleanAiText = stripMarkdownFormatting(ai.text);
+        cleanAiText = cleanForbiddenPhrases(cleanAiText);
+
         const inStock = ai.products.filter((p) => p.stock);
         const historyProducts = (state.last_product_ids ?? [])
           .map((id) => catalog.find((p) => p.id === id))
           .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
-        const allKnownProducts = [...ai.products, ...historyProducts];
+        const allKnownProducts = [...catalog, ...historyProducts];
         const rublePrices = country === "RU" && rateRow?.rate
           ? allKnownProducts.map((p) => priceRub(p.price_kzt, rateRow.rate))
           : [];
         const check = validateConsultantReply(cleanAiText, allKnownProducts, [...ai.extraNumbers, ...rublePrices]);
-        if (check.ok && cleanAiText.trim()) {
+        if (!check.ok) {
+          console.warn("[consultant] Claude reply validator note:", check.reason, {
+            aiText: ai.text,
+            cleanAiText,
+            knownCount: allKnownProducts.length,
+          });
+        }
+        if (cleanAiText.trim()) {
           const mentionedProducts = matchProductsInText(cleanAiText, catalog);
           const newIds = mentionedProducts.length > 0
             ? mentionedProducts.map((p) => p.id)
@@ -526,12 +535,6 @@ export async function decideConsultantReply(
             },
             kind: mentionedProducts.length ? "product" : "clarify",
           };
-        }
-        if (!check.ok) {
-          console.warn("[consultant] Claude reply rejected by validator:", check.reason, {
-            aiText: ai.text,
-            knownCount: allKnownProducts.length,
-          });
         }
         if (inStock.length > 0) {
           const composed = composeBudgetOrBasketReply(

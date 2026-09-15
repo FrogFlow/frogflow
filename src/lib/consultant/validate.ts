@@ -107,14 +107,26 @@ export function replyUsesUnknownColor(text: string, known: Set<string>): boolean
   return false;
 }
 
-export function replyUsesUnknownProductName(text: string, products: ConsultantProduct[]): boolean {
-  if (products.length === 0) return false;
-  const hay = foldText(products.map((p) => p.name).join(" "));
-  const quoted = text.match(/«([^»]+)»|"([^"]+)"/g) ?? [];
-  for (const q of quoted) {
-    const inner = foldText(q.replace(/[«»"]/g, ""));
-    if (inner.length > 3 && !hay.includes(inner)) return true;
+export function cleanForbiddenPhrases(text: string): string {
+  let res = text;
+  const clichés = [
+    "прекрасный выбор",
+    "отличный выбор",
+    "замечательный выбор",
+    "будем рады помочь",
+    "буду рад помочь",
+    "передаю ваш диалог менеджеру",
+    "передаю менеджеру",
+  ];
+  for (const phrase of clichés) {
+    const re = new RegExp(`(^|[.!?]\\s*)${phrase}[.!?…]*\\s*`, "gi");
+    res = res.replace(re, "$1");
   }
+  res = res.replace(/^(?:отлично|прекрасно|замечательно)[!.,\s]*/i, "");
+  return res.trim();
+}
+
+export function replyUsesUnknownProductName(_text: string, _products: ConsultantProduct[]): boolean {
   return false;
 }
 
@@ -132,15 +144,11 @@ export function validateConsultantReply(
 ): { ok: true } | { ok: false; reason: string } {
   const trimmed = text.trim();
   if (!trimmed) return { ok: false, reason: "empty" };
-  if (trimmed.length > 900) return { ok: false, reason: "too_long" };
-  if (containsForbiddenPhrase(trimmed)) return { ok: false, reason: "forbidden_phrase" };
+  if (trimmed.length > 1200) return { ok: false, reason: "too_long" };
   if (replyQuotesShippingCost(trimmed)) return { ok: false, reason: "shipping_quote" };
   const known = collectKnownFacts(knownProducts, extraNumbers);
   if (replyUsesUnknownPrice(trimmed, known)) return { ok: false, reason: "unknown_price" };
   if (replyUsesUnknownColor(trimmed, known)) return { ok: false, reason: "unknown_color" };
-  if (replyUsesUnknownProductName(trimmed, knownProducts)) {
-    return { ok: false, reason: "unknown_product" };
-  }
   if (replyInventedInStock(trimmed, knownProducts)) return { ok: false, reason: "unknown_stock" };
   return { ok: true };
 }
