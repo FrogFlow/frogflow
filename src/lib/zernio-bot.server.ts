@@ -1376,14 +1376,20 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     "triggers",
   ].map((suffix) => `${settingsPrefix}${suffix}`);
 
+  const { resolveTenant } = await import("./tenant-router.server");
+  const tenant = await resolveTenant({
+    accountId,
+    username: senderUsername || payload.account?.username,
+  });
+
   const { data: settingRows } = await s
     .from("app_settings")
     .select("key, value")
-    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("bot_id", tenant.bot_id)
     .in("key", settingKeys);
 
   const setting = (suffix: string) =>
-    (settingRows ?? []).find((row) => row.key === `${settingsPrefix}${suffix}`)?.value?.trim() ||
+    (settingRows ?? []).find((row: any) => row.key === `${settingsPrefix}${suffix}`)?.value?.trim() ||
     "";
 
   /**
@@ -1392,9 +1398,10 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * выключенный магазинный бот глушит консультанта: человек пишет в
    * Instagram, реакции нет.
    */
-  const { isConsultantVertical } = await import("./verticals/registry");
+  const { isConsultantVertical, isUniversalConsultantVertical } = await import("./verticals/registry");
   const { currentVertical } = await import("./verticals/vertical.server");
-  const consultantMode = isConsultantVertical(currentVertical());
+  const activeVertical = (tenant.niche || currentVertical()) as any;
+  const consultantMode = isConsultantVertical(activeVertical);
 
   if (!consultantMode && setting("enabled") === "false") {
     console.log(
@@ -1490,6 +1497,25 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
         attachments: JSON.stringify(payload.message?.attachments?.map(a => ({ type: a.type, url: a.url?.slice(0, 60) }))),
       });
     }
+    if (isUniversalConsultantVertical(activeVertical)) {
+      const { handleUniversalConsultantEvent } = await import(
+        "./consultant-universal/handle-message"
+      );
+      await handleUniversalConsultantEvent({
+        payload,
+        conversationId,
+        accountId,
+        userKey: user.user_key,
+        text,
+        platform,
+        postback: postbackPayload,
+        storyId,
+        storyMediaUrl,
+        tenant,
+      });
+      return;
+    }
+
     const { handleConsultantZernioEvent } = await import("./consultant/handle-message");
     await handleConsultantZernioEvent({
       payload,
@@ -3367,11 +3393,14 @@ export async function handleZernioAccountDisconnected(payload: {
   const label = account.username ? `@${account.username}` : account.name || accountId;
 
   const s = await db();
+  const { resolveTenant } = await import("./tenant-router.server");
+  const tenant = await resolveTenant({ accountId, username: account.username });
+
   const key = "zernio_disconnect_notified";
   const { data: setting } = await s
     .from("app_settings")
     .select("value")
-    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("bot_id", tenant.bot_id)
     .eq("key", key)
     .maybeSingle();
 
@@ -3391,7 +3420,7 @@ export async function handleZernioAccountDisconnected(payload: {
   }
 
   await s.from("app_settings").upsert({
-    bot_id: process.env.BOT_ID?.trim() || "",
+    bot_id: tenant.bot_id,
     key,
     value: JSON.stringify({ accountId, at: new Date().toISOString() }),
     updated_at: new Date().toISOString(),
@@ -3400,7 +3429,7 @@ export async function handleZernioAccountDisconnected(payload: {
   const { data: adminSetting } = await s
     .from("app_settings")
     .select("value")
-    .eq("bot_id", process.env.BOT_ID?.trim() || "")
+    .eq("bot_id", tenant.bot_id)
     .eq("key", "admin_chat_id")
     .maybeSingle();
   const raw = adminSetting?.value?.trim();

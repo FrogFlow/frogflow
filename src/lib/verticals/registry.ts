@@ -171,7 +171,7 @@ export const VERTICALS = {
     },
   },
   consultant: {
-    title: "Консультант в Direct",
+    title: "Консультант (ун. BOVI)",
     mode: "consultant",
     // Товары физические (дом. текстиль и т.п.), но UI кондитерской не включаем —
     // см. isPhysicalShopVertical: mode === "shop" && defaultFulfillment === "physical".
@@ -282,6 +282,61 @@ export const VERTICALS = {
       },
     },
   },
+  consultant_universal: {
+    title: "Универсальный консультант",
+    mode: "consultant",
+    defaultFulfillment: "physical",
+    botDescriptionIntro:
+      `Интеллектуальный онлайн-консультант в Instagram Direct.\n` +
+      `→ Консультации по товарам, услугам и регламентам компании\n` +
+      `→ Быстрый ответ 24/7\n` +
+      `→ Бесшовная связь с менеджером`,
+    shortDescription:
+      "Универсальный онлайн-консультант. Нажимая /start, вы принимаете оферту и политику конфиденциальности.",
+    suggestedModules: ["instagram", "manager_chat", "smart_search", "multi_currency"],
+    locales: {
+      ru: {
+        welcomeGreeting: "Здравствуйте! Чем могу вам помочь?",
+        welcomeCatalog: "Консультация по ассортименту и услугам",
+        welcomePayment: "Оформление заказа через менеджера",
+        contactBtn: "💬 Связаться с менеджером",
+        instructionComingSoon:
+          "📖 Инструкция скоро появится.\nПока: напишите любой вопрос — консультант ответит по базе знаний компании.",
+        instructionDefaultCaption:
+          "📖 Задайте интересующий вопрос в Direct. Консультант предоставит информацию по услугам и товарам.",
+      },
+      kk: {
+        welcomeGreeting: "Сәлеметсіз бе! Сізге қалай көмектесе аламын?",
+        welcomeCatalog: "Тауарлар мен қызметтер бойынша кеңес",
+        welcomePayment: "Тапсырысты менеджер арқылы рәсімдеу",
+        contactBtn: "💬 Менеджермен байланысу",
+        instructionComingSoon:
+          "📖 Нұсқаулық жақында қосылады.\nӘзірге: кез келген сұрағыңызды жазыңыз — кеңесші компанияның білім базасы бойынша жауап береді.",
+        instructionDefaultCaption:
+          "📖 Direct-ке сұрағыңызды жазыңыз. Кеңесші қызметтер мен тауарлар туралы толық ақпарат береді.",
+      },
+      en: {
+        welcomeGreeting: "Hello! How can I assist you today?",
+        welcomeCatalog: "Assistance with products and services",
+        welcomePayment: "Order processing with a manager",
+        contactBtn: "💬 Contact a manager",
+        instructionComingSoon:
+          "📖 Guide coming soon.\nFor now: send any question — the assistant will answer based on company knowledge.",
+        instructionDefaultCaption:
+          "📖 Ask any question in Direct. The consultant will provide accurate details on products and services.",
+      },
+      uz: {
+        welcomeGreeting: "Salom! Sizga qanday yordam bera olaman?",
+        welcomeCatalog: "Mahsulotlar va xizmatlar bo'yicha maslahat",
+        welcomePayment: "Buyurtmani menejer orqali rasmiylashtirish",
+        contactBtn: "💬 Menejer bilan bog'lanish",
+        instructionComingSoon:
+          "📖 Yo'riqnoma tez orada qo'shiladi.\nHozircha: istalgan savolingizni yozing — maslahatchi kompaniya ma'lumotlari asosida javob beradi.",
+        instructionDefaultCaption:
+          "📖 Direct'ga savolingizni yozing. Maslahatchi tovarlar va xizmatlar haqida ma'lumot beradi.",
+      },
+    },
+  },
 } as const satisfies Record<string, VerticalDef>;
 
 export type VerticalKey = keyof typeof VERTICALS;
@@ -300,6 +355,14 @@ export function isPhysicalShopVertical(key: VerticalKey): boolean {
 
 export function isConsultantVertical(key: VerticalKey): boolean {
   return VERTICALS[key].mode === "consultant";
+}
+
+export function isBoviConsultantVertical(key: VerticalKey): boolean {
+  return key === "consultant";
+}
+
+export function isUniversalConsultantVertical(key: VerticalKey): boolean {
+  return key === "consultant_universal";
 }
 
 export function isFlowersVertical(key: VerticalKey): boolean {
