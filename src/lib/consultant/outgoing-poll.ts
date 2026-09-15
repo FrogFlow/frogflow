@@ -28,9 +28,13 @@ export async function pollOutgoingManagerMessages(): Promise<{ checked: number; 
         .maybeSingle();
       if (!data?.user_key) continue;
       const { consultant } = await loadConsultantState(data.user_key);
-      if (consultant.automation_paused) continue;
       if (isBotEcho(consultant, last.message || "")) continue;
       if (looksLikeConsultantBotReply(last.message || "")) continue;
+      const botReplyTs = Date.parse(consultant.last_bot_reply_at ?? "");
+      const msgTs = last.createdAt ? Date.parse(last.createdAt) : 0;
+      if (Number.isFinite(botReplyTs) && Number.isFinite(msgTs) && Math.abs(msgTs - botReplyTs) < 60_000) {
+        continue;
+      }
       await pauseConsultant(data.user_key, "manager_intervention");
       paused += 1;
       logConsultantEvent(consultantRequestId(), "paused_poll", { userKey: data.user_key });

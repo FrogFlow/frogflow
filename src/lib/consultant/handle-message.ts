@@ -62,6 +62,7 @@ import {
   loadConsultantState,
   patchConsultantState,
   pauseConsultant,
+  registerBotOutgoingText,
   resumeConsultant,
   type ConsultantState,
 } from "./state";
@@ -251,6 +252,7 @@ async function handleConsultantZernioEventInternal(params: {
   }
 
   const replyTime = new Date().toISOString();
+  registerBotOutgoingText(reply.text);
   await patchConsultantState(params.userKey, {
     last_customer_text: text,
     last_bot_reply: reply.text,
@@ -343,14 +345,14 @@ export async function decideConsultantReply(
     matchCountryPostback(ctx.postback) ?? matchCountry(text) ?? state.country ?? undefined;
 
   if (isConsultantGreeting(text)) {
-    const cleanPatch: Partial<ConsultantState> = {
-      customer_contact: undefined,
-      last_product_ids: [],
-      recent: [],
-      ab_bucket: bucket,
-      automation_paused: false,
-    };
     if (!country) {
+      const cleanPatch: Partial<ConsultantState> = {
+        customer_contact: undefined,
+        last_product_ids: [],
+        recent: [],
+        ab_bucket: bucket,
+        automation_paused: false,
+      };
       return {
         text: stripMarkdownFormatting(pack.askCountry),
         patch: { ...cleanPatch, conversation_state: "awaiting_country", pending_product_query: undefined },
@@ -358,11 +360,23 @@ export async function decideConsultantReply(
         kind: "country",
       };
     }
-    return {
-      text: stripMarkdownFormatting(pack.askProduct),
-      patch: { ...cleanPatch, country, conversation_state: "awaiting_product" },
-      kind: "clarify",
-    };
+    // If the customer already selected a country and is in an ongoing consultation, let Claude respond naturally without wiping memory!
+    if (canClaude && state.conversation_state === "consulting" && (state.recent?.length ?? 0) > 0) {
+      /* proceed to Claude with existing history intact */
+    } else {
+      const cleanPatch: Partial<ConsultantState> = {
+        customer_contact: undefined,
+        last_product_ids: [],
+        recent: [],
+        ab_bucket: bucket,
+        automation_paused: false,
+      };
+      return {
+        text: stripMarkdownFormatting(pack.askProduct),
+        patch: { ...cleanPatch, country, conversation_state: "awaiting_product" },
+        kind: "clarify",
+      };
+    }
   }
 
   if (!country) {
@@ -469,8 +483,9 @@ export async function decideConsultantReply(
       if (ai.usage) {
         void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
       }
-      if (ai.error === "no_api_key") {
-        /* fall through to local */
+      if (ai.error) {
+        // Any AI error (API 500/529, timeout, network error, no key) -> fall through to local catalog without triggering handoff!
+        console.warn("[consultant] Claude error, falling back to local catalog:", ai.error);
       } else if (ai.handoff) {
         void track(ctx.userKey, "handoff", text, bucket);
         const contactFromTool = ai.handoffData?.customer_phone;
@@ -567,7 +582,14 @@ export async function decideConsultantReply(
             inStock.find((p) => {
               const hay = haystackOf([p.name, p.size, ...p.colors]);
               return tokens.some((t) => hay.includes(t));
-            }) ?? inStock[0];
+            });
+          if (!targetProduct) {
+            return {
+              text: pack.otherCategories,
+              patch: countryPatch,
+              kind: "clarify",
+            };
+          }
           const requestedColor = [
             "бежевый",
             "серый",
@@ -1021,15 +1043,15 @@ async function handoffReply(
       ? [inCurrentText[0].id]
       : resolveHandoffProductIds(state, text, catalog);
   if (userKey) {
-    await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
-    await addConsultantTask({ userKey, reason, text, contact });
+    await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason).catch(() => {});
+    await addConsultantTask({ userKey, reason, text, contact }).catch(() => {});
     await notifyConsultantHandoff({
       userKey,
       reason,
       text,
       customerContact: contact,
       lastProducts: reason === "purchase" ? resolvedProducts.slice(0, 1) : resolvedProducts.slice(0, 3),
-    });
+    }).catch(() => {});
   }
   return {
     text: stripMarkdownFormatting(message ?? pack.unrecognized),
@@ -1062,5 +1084,5 @@ async function track(
   bucket: string,
 ) {
   if (!userKey) return;
-  await recordConsultantEvent({ userKey, kind, text, bucket });
+  await recordConsultantEvent({ userKey, kind, text, bucket }).catch(() => {});
 }

@@ -48,21 +48,43 @@ export function collectKnownFacts(
   extraNumbers: number[] = [],
 ): Set<string> {
   const facts = new Set<string>();
-  for (const n of extraNumbers) facts.add(String(n));
+  for (const n of extraNumbers) {
+    facts.add(String(n));
+    facts.add(n.toLocaleString("ru-RU"));
+  }
+  const prices: number[] = [];
   for (const p of products) {
     facts.add(String(p.price_kzt));
     facts.add(p.price_kzt.toLocaleString("ru-RU"));
+    prices.push(p.price_kzt);
     if (p.stock_qty != null) facts.add(String(p.stock_qty));
     facts.add(p.size);
     for (const c of p.colors) facts.add(c.toLowerCase());
     facts.add(p.name.toLowerCase());
     facts.add(foldText(p.name));
   }
+  // Allow pairwise and 3-item sums for basket sets / kits
+  for (let i = 0; i < prices.length; i++) {
+    for (let j = i; j < prices.length; j++) {
+      const sum2 = prices[i] + prices[j];
+      facts.add(String(sum2));
+      facts.add(sum2.toLocaleString("ru-RU"));
+      for (let k = j; k < prices.length && k < i + 4; k++) {
+        const sum3 = sum2 + prices[k];
+        facts.add(String(sum3));
+        facts.add(sum3.toLocaleString("ru-RU"));
+      }
+    }
+  }
   return facts;
 }
 
 export function replyUsesUnknownPrice(text: string, known: Set<string>): boolean {
-  const tokens = text.match(PRICE_TOKEN_RE) ?? [];
+  // Strip phone numbers like +7 701 123 45 67, 8 (701) 123-45-67, etc.
+  const withoutPhones = text.replace(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{2}[-.\s]?\d{2}/g, " ");
+  // Strip 4-digit years like 2024, 2025, 2026
+  const withoutYears = withoutPhones.replace(/\b202[0-9]\b/g, " ");
+  const tokens = withoutYears.match(PRICE_TOKEN_RE) ?? [];
   for (const raw of tokens) {
     const compact = raw.replace(/\s/g, "");
     const n = Number(compact);

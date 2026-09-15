@@ -1058,4 +1058,35 @@ describe("consultant — Instagram formatting & product resolution fixes", () =>
     expect(TZ_COPY.otherCategories).not.toMatch(/посуд|матрас/i);
     expect(TZ_COPY.crossSell).toBe("");
   });
+
+  it("распознает цифры 1 и 2 как страны без зацикливания", () => {
+    expect(matchCountry("1")).toBe("KZ");
+    expect(matchCountry("1.")).toBe("KZ");
+    expect(matchCountry("1)")).toBe("KZ");
+    expect(matchCountry("2")).toBe("RU");
+    expect(matchCountry("2.")).toBe("RU");
+    expect(matchCountry("2)")).toBe("RU");
+    expect(matchCountry("1 - Казахстан")).toBe("KZ");
+    expect(matchCountry("2 - Россия")).toBe("RU");
+  });
+
+  it("валидатор цен не бракует телефонные номера, года и суммы наборов", () => {
+    const mockProds: ConsultantProduct[] = [
+      { id: "p1", name: "Полотенце", category: "towels", size: "50х90", colors: ["белый"], price_kzt: 8900, stock: true },
+      { id: "p2", name: "Постельное", category: "bedding", size: "евро", colors: ["серый"], price_kzt: 25000, stock: true },
+    ];
+    const known = validateConsultantReply.__proto__ ? new Set(["8900", "8 900", "25000", "25 000", "33900", "33 900"]) : new Set();
+    const { collectKnownFacts, replyUsesUnknownPrice } = require("../src/lib/consultant/validate");
+    const facts = collectKnownFacts(mockProds);
+    expect(facts.has("33900") || facts.has("33 900")).toBe(true);
+
+    const withPhone = "Спасибо! Свяжемся по номеру +7 701 123 45 67 для подтверждения 8 900 ₸";
+    expect(replyUsesUnknownPrice(withPhone, facts)).toBe(false);
+
+    const withYear = "Коллекция 2026 года по цене 25 000 ₸";
+    expect(replyUsesUnknownPrice(withYear, facts)).toBe(false);
+
+    const withBasket = "Итоговая стоимость набора 33 900 ₸";
+    expect(replyUsesUnknownPrice(withBasket, facts)).toBe(false);
+  });
 });
