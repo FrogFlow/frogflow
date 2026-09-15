@@ -51,6 +51,7 @@ export type DirectState = {
   product_id?: string;
   country_code?: string;
   pending_order_id?: number;
+  pending_product_number?: string;
   /**
    * Язык покупателя. Тот же ключ, что и у Telegram-бота (`bot_users.state.locale`),
    * только запись живёт в отдельной строке `bot_users`, заведённой под
@@ -176,6 +177,7 @@ export type DirectState = {
 const FLOW_KEYS = [
   "mode",
   "product_id",
+  "pending_product_number",
   "pending_order_id",
   "email_optional",
   "misses",

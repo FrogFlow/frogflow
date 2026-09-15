@@ -1260,6 +1260,70 @@ async function sendLanguagePicker(conversationId: string, accountId: string, use
 }
 
 /**
+ * Показать выбор страны покупателю: при первом обращении или смене страны.
+ */
+async function sendCountryPicker(
+  conversationId: string,
+  accountId: string,
+  user: ZernioBotUser,
+  promptIntro?: string,
+) {
+  const flow = await import("./direct-purchase.server");
+  await flow.setDirectState(user.user_key, { mode: "awaiting_country" });
+  const options = await flow.listCountries();
+  const effectiveOptions =
+    options.length > 0
+      ? options
+      : [
+          { code: "KZ", name: "🇰🇿 Казахстан" },
+          { code: "RU", name: "🇷🇺 Россия" },
+        ];
+
+  const intro =
+    promptIntro ||
+    "Здравствуйте! Выберите вашу страну, чтобы цены и реквизиты отображались в нужной валюте:";
+  const lines = effectiveOptions.map((opt, idx) => `${idx + 1}. ${opt.name}`);
+  const promptText = `${intro}\n\n${lines.join("\n")}\n\nОтветьте номером или названием страны.`;
+
+  if (platformOf(user) !== "whatsapp" && effectiveOptions.length <= 3) {
+    const buttons = effectiveOptions.map((opt) => ({
+      type: "postback" as const,
+      title: opt.name.length > 20 ? opt.name.slice(0, 20) : opt.name,
+      payload: `COUNTRY:${opt.code}`,
+    }));
+    await reply(user, conversationId, accountId, promptText, buttons, true);
+    return;
+  }
+
+  if (platformOf(user) === "whatsapp") {
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      promptText,
+      undefined,
+      true,
+      whatsappList({
+        body: promptText,
+        buttonLabel: "Выбрать страну",
+        sections: [
+          {
+            title: "Страна",
+            rows: effectiveOptions.map((opt, idx) => ({
+              id: `${STEP_PREFIX}${idx + 1}`,
+              title: opt.name,
+            })),
+          },
+        ],
+      }),
+    );
+    return;
+  }
+
+  await reply(user, conversationId, accountId, promptText, undefined, true);
+}
+
+/**
  * Обработать входящее личное сообщение (DM) из Instagram Direct.
  * Соответствует спецификации Zernio Webhooks: payload.message, payload.conversation, payload.account
  */
@@ -1472,7 +1536,12 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
 
   if (activationAction === "start") {
     await startFlow.restartDirectFlow(user.user_key);
-    await sendLanguagePicker(conversationId, accountId, user);
+    await startFlow.setDirectState(user.user_key, { locale: "ru" });
+    if (!directState.country_code) {
+      await sendCountryPicker(conversationId, accountId, user);
+    } else {
+      await sendCatalogMenu(conversationId, accountId, user);
+    }
     return;
   }
   if (activationAction === "prompt") {
@@ -1491,34 +1560,40 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
   }
   if (activationAction === "wait") return;
 
-  /**
-   * Чем новый покупатель будит бота.
-   *
-   * В Instagram это только `/start` — сознательное решение (коммит «require
-   * start before Direct store activation»): бот не должен вклиниваться в
-   * обычную переписку продавца. Менять это здесь нечем и незачем.
-   *
-   * WhatsApp до этого места доходит только после отдельного activation gate
-   * выше: первое произвольное сообщение получает одну подсказку, а `/start`
-   * сразу переводит диалог на выбор языка.
-   */
   const wakesNewCustomer = isStartCommand;
 
-  /**
-   * Первое сообщение от нового отправителя — раньше чего бы то ни было ещё.
-   *
-   * У Instagram Direct нет команды `/start`, а значит нет и естественной
-   * точки, где, как в Telegram-боте, спросить язык. Заводим её сами: как
-   * только `upsertZernioUser` завела запись впервые, показываем выбор языка и
-   * останавливаемся — весь остальной разбор этого события подождёт следующего
-   * сообщения. Проверка нарочно ничего не знает про текст, вложение или
-   * постбэк: даже если самое первое событие от человека — вложение или нажатая
-   * кнопка автоматизации воронки, язык важнее и должен быть выбран раньше.
-   */
-  if (!directState.locale && !directState.mode) {
-    if (!wakesNewCustomer) return;
-    await sendLanguagePicker(conversationId, accountId, user);
-    return;
+  // Автоматически фиксируем русский язык по умолчанию
+  if (!directState.locale) {
+    await startFlow.setDirectState(user.user_key, { locale: "ru" });
+    directState.locale = "ru";
+  }
+
+  const { extractProductNumber } = await import("./direct-flow");
+  const initialProductNumber = extractProductNumber(text);
+
+  // Первое обращение покупателя: если страна ещё не выбрана
+  if (!directState.country_code && !directState.mode) {
+    if (initialProductNumber) {
+      const lookup = await startFlow.findProductByNumber(initialProductNumber);
+      if (lookup.kind === "found") {
+        await startFlow.setDirectState(user.user_key, {
+          pending_product_number: initialProductNumber,
+          mode: "awaiting_country",
+        });
+        await sendCountryPicker(
+          conversationId,
+          accountId,
+          user,
+          `Здравствуйте! Чтобы рассчитать стоимость «${lookup.product.name}» и показать способы оплаты, выберите вашу страну:`
+        );
+        return;
+      }
+    }
+
+    if (wakesNewCustomer || isStartCommand) {
+      await sendCountryPicker(conversationId, accountId, user);
+      return;
+    }
   }
 
   const lower = effectiveText.toLowerCase();
@@ -1596,7 +1671,8 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * Исключение — метка STEP:, она и есть ответ на текущий шаг и уходит в
    * сценарий ниже.
    */
-  const isStepAnswer = postbackPayload?.startsWith(STEP_PREFIX) ?? false;
+  const isCountryPostback = postbackPayload?.startsWith("COUNTRY:") ?? false;
+  const isStepAnswer = (postbackPayload?.startsWith(STEP_PREFIX) ?? false) || isCountryPostback;
   if (postbackPayload !== null && !isStepAnswer && !isStartCommand) {
     console.log(`[zernio-bot] postback from ${userKey}: "${postbackPayload}"`);
 
@@ -1737,7 +1813,11 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    * STEP:. Подставляем его как реплику покупателя, чтобы шаг разобрал ответ
    * тем же кодом, что и напечатанный вручную.
    */
-  const flowText = isStepAnswer ? postbackPayload!.slice(STEP_PREFIX.length) : effectiveText;
+  const flowText = isCountryPostback
+    ? postbackPayload!.slice("COUNTRY:".length)
+    : isStepAnswer
+      ? postbackPayload!.slice(STEP_PREFIX.length)
+      : effectiveText;
 
   const handledByFlow = await handlePurchaseFlow({
     conversationId,
@@ -1746,6 +1826,7 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     text: flowText,
     attachmentUrl,
     answersEverything,
+    isCountryPostback,
   });
   if (handledByFlow) return;
 
@@ -1795,6 +1876,10 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
    */
   if (command === "language") {
     await sendLanguagePicker(conversationId, accountId, user);
+    return;
+  }
+  if (command === "country") {
+    await sendCountryPicker(conversationId, accountId, user);
     return;
   }
 
@@ -2693,6 +2778,23 @@ async function startInstagramCheckout(
     return;
   }
 
+  if (platformOf(user) !== "whatsapp" && options.length <= 3) {
+    const buttons = options.map((opt) => ({
+      type: "postback" as const,
+      title: opt.name.length > 20 ? opt.name.slice(0, 20) : opt.name,
+      payload: `COUNTRY:${opt.code}`,
+    }));
+    await reply(
+      user,
+      conversationId,
+      accountId,
+      `${cartText}\n\n` + flow.renderCountryPrompt(options, locale),
+      buttons,
+      true,
+    );
+    return;
+  }
+
   await reply(
     user,
     conversationId,
@@ -3362,8 +3464,17 @@ async function handlePurchaseFlow(params: {
   attachmentUrl?: string;
   /** false — режим «только покупки»: на всё, кроме заказа, бот молчит. */
   answersEverything: boolean;
+  isCountryPostback?: boolean;
 }): Promise<boolean> {
-  const { conversationId, accountId, user, text, attachmentUrl, answersEverything } = params;
+  const {
+    conversationId,
+    accountId,
+    user,
+    text,
+    attachmentUrl,
+    answersEverything,
+    isCountryPostback,
+  } = params;
   const flow = await import("./direct-purchase.server");
   const {
     classifyIncoming,
@@ -3688,8 +3799,15 @@ async function handlePurchaseFlow(params: {
   }
 
   // ── Ждём страну ─────────────────────────────────────────────────────────
-  if (state.mode === "awaiting_country") {
-    const options = await flow.listCountries();
+  if (state.mode === "awaiting_country" || isCountryPostback) {
+    const rawOptions = await flow.listCountries();
+    const options =
+      rawOptions.length > 0
+        ? rawOptions
+        : [
+            { code: "KZ", name: "🇰🇿 Казахстан" },
+            { code: "RU", name: "🇷🇺 Россия" },
+          ];
     const chosen = flow.matchCountry(text, options);
     if (!chosen) {
       await flow.handleStepMiss({
@@ -3703,8 +3821,52 @@ async function handlePurchaseFlow(params: {
       return true;
     }
 
-    // Дальше — общий шаг с тем случаем, когда страну взяли из памяти.
-    await proceedToFulfillmentOrPayment(conversationId, accountId, user, chosen, false);
+    const pendingProductNumber = state.pending_product_number;
+    await flow.setDirectState(user.user_key, {
+      country_code: chosen.code,
+      mode: undefined,
+      pending_product_number: undefined,
+    });
+
+    if (pendingProductNumber) {
+      const lookup = await flow.findProductByNumber(pendingProductNumber);
+      if (lookup.kind === "found") {
+        const product = lookup.product;
+        if (!(await flow.productHasFiles(product.id))) {
+          await say(copy.productNoFiles(product.name));
+          return true;
+        }
+        if (!(await flow.cartAllowsProduct(user, product.id))) {
+          await say(copy.productMixedCart(product.name));
+          return true;
+        }
+        await flow.addToCart(user, product.id);
+        const cart = await flow.readCart(user);
+        const shown = await flow.priceCart(cart, chosen.code);
+        const line = shown.lines.find((item) => item.productId === product.id);
+        const priceLine = line ? `${line.sum} ${line.currency}` : "";
+
+        const added =
+          cart.length === 1
+            ? copy.addedSingle(product.name, priceLine)
+            : copy.addedMulti(product.name, priceLine, cart.length, flow.renderCart(shown.lines));
+
+        await reply(user, conversationId, accountId, `${added}\n\n${copy.addedFooter}`, [
+          { type: "postback", title: copy.btnCheckout, payload: "CHECKOUT" },
+        ]);
+        return true;
+      }
+    }
+
+    const cart = await flow.readCart(user);
+    if (cart.length > 0) {
+      await proceedToFulfillmentOrPayment(conversationId, accountId, user, chosen, false);
+      return true;
+    }
+
+    await say(
+      `Отлично! Страна сохранена (${chosen.name}).\nНапишите номер нужного материала (например, 018), и я покажу стоимость и реквизиты.`
+    );
     return true;
   }
 
@@ -4092,6 +4254,20 @@ async function handlePurchaseFallback(ctx: {
     }
     if (!(await flow.cartAllowsProduct(user, product.id))) {
       await say(copy.productMixedCart(product.name));
+      return true;
+    }
+
+    if (!state.country_code) {
+      await flow.setDirectState(user.user_key, {
+        pending_product_number: incoming.number,
+        mode: "awaiting_country",
+      });
+      await sendCountryPicker(
+        conversationId,
+        accountId,
+        user,
+        `Здравствуйте! Чтобы рассчитать стоимость «${product.name}» и показать способы оплаты, выберите вашу страну:`,
+      );
       return true;
     }
 

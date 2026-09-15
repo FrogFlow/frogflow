@@ -654,7 +654,7 @@ export function isCancel(text: string): boolean {
  * Целое сообщение такой ошибки сделать не может: «оплатить» — это команда,
  * «я оплатила 400тг» — это фраза человека, и путать их нельзя.
  */
-export type DirectCommand = "catalog" | "cart" | "checkout" | "orders" | "language";
+export type DirectCommand = "catalog" | "cart" | "checkout" | "orders" | "language" | "country";
 
 const COMMANDS: Array<[DirectCommand, string[]]> = [
   [
@@ -773,6 +773,7 @@ const COMMANDS: Array<[DirectCommand, string[]]> = [
    * называет само себя.
    */
   ["language", ["язык", "тіл", "til", "language", "/language"]],
+  ["country", ["страна", "ел", "country", "давлат", "/country", "валюта", "сменить страну"]],
 ];
 
 export function matchDirectCommand(text: string): DirectCommand | null {
