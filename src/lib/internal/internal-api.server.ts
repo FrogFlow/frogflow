@@ -92,7 +92,10 @@ export async function authenticateInternalRequest(request: Request): Promise<Int
 export type NotifyOwnerResult = { ok: true } | { ok: false; status: number; message: string };
 
 /** Шлёт текст владельцу от имени ЭТОГО бота, своим TELEGRAM_BOT_TOKEN. */
-export async function notifyOwner(text: string): Promise<NotifyOwnerResult> {
+export async function notifyOwner(
+  text: string,
+  replyMarkup?: Record<string, unknown>,
+): Promise<NotifyOwnerResult> {
   const s = await db();
   const { data, error } = await s
     .from("bots")
@@ -111,7 +114,11 @@ export async function notifyOwner(text: string): Promise<NotifyOwnerResult> {
   const { tg } = await import("@/lib/telegram.server");
   let res: { ok: boolean; description?: string };
   try {
-    res = await tg("sendMessage", { chat_id: Number(data.owner_telegram_id), text });
+    res = await tg("sendMessage", {
+      chat_id: Number(data.owner_telegram_id),
+      text,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
   } catch (e: unknown) {
     // Сюда попадает только незаданный TELEGRAM_BOT_TOKEN: сетевые сбои tg()
     // переживает сам и возвращает ok: false.

@@ -83,7 +83,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
   const lastDirect = lastHooks?.[0] ?? null;
   return {
     catalogCount: catalog.length,
-    preview: catalog.slice(0, 20),
+    catalog: catalog.slice(0, 300),
     meta,
     rate,
     rateStale: rateAgeHours != null && rateAgeHours > 2,

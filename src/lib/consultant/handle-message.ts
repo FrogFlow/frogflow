@@ -269,6 +269,20 @@ export async function decideConsultantReply(
     conversation_state: "consulting",
   };
 
+  if (state.conversation_state === "awaiting_contact") {
+    void track(ctx.userKey, "purchase", text, bucket);
+    return handoffReply(
+      pack,
+      { ...state, ...countryPatch, customer_contact: text },
+      bucket,
+      "purchase",
+      text,
+      ctx.userKey,
+      pack.purchase,
+      text,
+    );
+  }
+
   const justCountry =
     Boolean(matchCountryPostback(ctx.postback) ?? matchCountry(text)) &&
     !looksLikeProductQuery(text) &&
@@ -302,6 +316,35 @@ export async function decideConsultantReply(
       patch: countryPatch,
       kind: "catalog",
     };
+  }
+
+  if (matchPurchaseIntent(text)) {
+    void track(ctx.userKey, "purchase", text, bucket);
+    const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
+    if (!state.customer_contact && !hasPhone) {
+      return {
+        text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
+        patch: {
+          ...countryPatch,
+          conversation_state: "awaiting_contact",
+        },
+        kind: "clarify",
+      };
+    }
+    return handoffReply(
+      pack,
+      {
+        ...state,
+        ...countryPatch,
+        customer_contact: hasPhone ? text : state.customer_contact,
+      },
+      bucket,
+      "purchase",
+      text,
+      ctx.userKey,
+      pack.purchase,
+      hasPhone ? text : state.customer_contact,
+    );
   }
 
   if (wantsAdvice && !canClaude && !budgetKzt && !wantsBasket) {
@@ -366,14 +409,32 @@ export async function decideConsultantReply(
         /* fall through to local */
       } else if (ai.handoff) {
         void track(ctx.userKey, "handoff", text, bucket);
+        const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
+        if (!state.customer_contact && !hasPhone) {
+          return {
+            text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
+            patch: {
+              ...countryPatch,
+              last_product_ids: appendIds(state.last_product_ids, ai.products.map((p) => p.id)),
+              conversation_state: "awaiting_contact",
+            },
+            kind: "clarify",
+          };
+        }
         return handoffReply(
           pack,
-          { ...state, ...countryPatch, last_product_ids: appendIds(state.last_product_ids, ai.products.map((p) => p.id)) },
+          {
+            ...state,
+            ...countryPatch,
+            last_product_ids: appendIds(state.last_product_ids, ai.products.map((p) => p.id)),
+            customer_contact: hasPhone ? text : state.customer_contact,
+          },
           bucket,
           "purchase",
           text,
           ctx.userKey,
           pack.purchase,
+          hasPhone ? text : state.customer_contact,
         );
       } else if (!ai.error) {
         const inStock = ai.products.filter((p) => p.stock);
@@ -651,15 +712,18 @@ async function handoffReply(
   text: string,
   userKey?: string,
   message?: string,
+  customerContact?: string,
 ): Promise<ConsultantReply> {
   const pauseReason = reason === "injection" ? "other" : reason === "other" ? "other" : reason;
+  const contact = customerContact || state.customer_contact;
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
-    await addConsultantTask({ userKey, reason, text });
+    await addConsultantTask({ userKey, reason, text, contact });
     await notifyConsultantHandoff({
       userKey,
       reason,
       text,
+      customerContact: contact,
       lastProducts: state.last_product_ids?.slice(0, 3),
     });
   }
@@ -672,6 +736,7 @@ async function handoffReply(
       pause_reason:
         pauseReason === "purchase" ? "purchase" : pauseReason === "error" ? "error" : "other",
       conversation_state: "handed_off",
+      customer_contact: contact,
     },
     kind: reason === "purchase" ? "purchase" : reason === "injection" ? "injection" : "handoff",
   };

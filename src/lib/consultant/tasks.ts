@@ -4,6 +4,7 @@ export type ConsultantTask = {
   userKey: string;
   reason: string;
   text: string;
+  contact?: string;
   done: boolean;
 };
 
@@ -36,6 +37,7 @@ export async function addConsultantTask(
     done: false,
     ...input,
     text: input.text.slice(0, 400),
+    contact: input.contact ? input.contact.slice(0, 300) : undefined,
   };
   const list = [...(await loadConsultantTasks()), task].slice(-LIMIT);
   const s = await db();

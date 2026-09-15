@@ -65,7 +65,6 @@ export const Route = createFileRoute("/api/cron/broadcast")({
             done,
             deliveries,
             adminNotify,
-            consultantInbox,
             ...last,
           });
         } catch (e: unknown) {

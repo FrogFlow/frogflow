@@ -24,7 +24,8 @@ import {
 } from "@/lib/consultant/consultant.functions";
 import { StoriesTab } from "./admin.stories-tab";
 import { Badge } from "@/components-ui/badge";
-import { CheckCircle2, Circle, Send } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components-ui/table";
+import { CheckCircle2, Circle, ExternalLink, Package, Search, Send } from "lucide-react";
 import { rateSourceKind } from "@/lib/consultant/vtb-parse";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
@@ -279,12 +280,33 @@ function ConsultantPage() {
   const [manualRate, setManualRate] = useState("");
   const [dialogSearch, setDialogSearch] = useState("");
   const [dialogFilter, setDialogFilter] = useState<"all" | "paused" | "active">("all");
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [catalogStockFilter, setCatalogStockFilter] = useState<"all" | "in_stock" | "out_of_stock">("all");
+  const [catalogCategoryFilter, setCatalogCategoryFilter] = useState<string>("all");
 
   const d = data.data;
   const sheetsValue = sheetsUrl || d?.sheetsUrl || "";
   const shopValue = shopUrl || d?.shopUrl || "";
   const tasks = d?.tasks ?? [];
   const pendingTasksCount = tasks.filter((t) => !t.done).length;
+
+  const rawCatalog = d?.catalog ?? [];
+  const categories = Array.from(new Set(rawCatalog.map((p) => p.category).filter(Boolean)));
+
+  const filteredCatalog = rawCatalog.filter((p) => {
+    if (catalogStockFilter === "in_stock" && !p.stock) return false;
+    if (catalogStockFilter === "out_of_stock" && p.stock) return false;
+    if (catalogCategoryFilter !== "all" && p.category !== catalogCategoryFilter) return false;
+    if (catalogSearch.trim()) {
+      const q = catalogSearch.toLowerCase();
+      const matchName = p.name.toLowerCase().includes(q);
+      const matchCat = (p.category ?? "").toLowerCase().includes(q);
+      const matchSize = (p.size ?? "").toLowerCase().includes(q);
+      const matchColor = (p.colors ?? []).some((c) => c.toLowerCase().includes(q));
+      if (!matchName && !matchCat && !matchSize && !matchColor) return false;
+    }
+    return true;
+  });
 
   const filteredCustomers = (d?.customers ?? []).filter((row) => {
     if (dialogFilter === "paused" && !row.paused) return false;
@@ -529,6 +551,12 @@ function ConsultantPage() {
                               {formatWhen(t.at, locale)}
                             </span>
                           </div>
+                          {t.contact && (
+                            <div className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 rounded px-2 py-1 border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1.5 mt-0.5">
+                              <span>📞 Контакты:</span>
+                              <span className="text-foreground font-mono">{t.contact}</span>
+                            </div>
+                          )}
                           <p className="text-sm text-foreground/90 bg-muted/40 rounded p-2 border">
                             «{t.text}»
                           </p>
@@ -536,6 +564,19 @@ function ConsultantPage() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
+                        {t.userKey.startsWith("ig_") && (
+                          <Button variant="outline" size="sm" asChild>
+                            <a
+                              href="https://www.instagram.com/direct/inbox/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Открыть Instagram Direct"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 mr-1" />
+                              Direct
+                            </a>
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           variant={t.done ? "ghost" : "outline"}
@@ -730,6 +771,172 @@ function ConsultantPage() {
                 </div>
               </div>
             </div>
+          </section>
+
+          <section className="bg-card border rounded-lg p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="font-medium text-base flex items-center gap-2">
+                  <Package className="w-5 h-5 text-primary" />
+                  Товары в базе знаний
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Каталог, используемый ИИ-консультантом для проверки наличия и расчета цен (₸ / ₽)
+                </p>
+              </div>
+              <Badge variant="outline" className="self-start sm:self-auto">
+                Показано: {filteredCatalog.length} из {rawCatalog.length} {d?.catalogCount && d.catalogCount > rawCatalog.length ? `(всего в базе: ${d.catalogCount})` : ""}
+              </Badge>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                <Input
+                  value={catalogSearch}
+                  onChange={(e) => setCatalogSearch(e.target.value)}
+                  placeholder="Поиск по названию, цвету, размеру..."
+                  className="pl-8 h-9 text-xs"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {categories.length > 0 && (
+                  <select
+                    value={catalogCategoryFilter}
+                    onChange={(e) => setCatalogCategoryFilter(e.target.value)}
+                    className="h-9 px-2.5 rounded-md border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    <option value="all">Все категории ({categories.length})</option>
+                    {categories.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                <div className="flex rounded-md border bg-muted p-0.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setCatalogStockFilter("all")}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      catalogStockFilter === "all"
+                        ? "bg-background font-medium shadow-sm text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Все
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogStockFilter("in_stock")}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      catalogStockFilter === "in_stock"
+                        ? "bg-background font-medium shadow-sm text-emerald-600 dark:text-emerald-400"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    В наличии
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogStockFilter("out_of_stock")}
+                    className={`px-2.5 py-1 rounded transition-colors ${
+                      catalogStockFilter === "out_of_stock"
+                        ? "bg-background font-medium shadow-sm text-rose-600 dark:text-rose-400"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Нет
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {filteredCatalog.length === 0 ? (
+              <div className="text-center py-10 border rounded-lg bg-muted/10 text-sm text-muted-foreground">
+                {rawCatalog.length === 0
+                  ? "Каталог пуст. Загрузите файл прайса (CSV / XLSX) или укажите Google Sheets выше."
+                  : "По заданным фильтрам товаров не найдено."}
+              </div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="max-h-[480px] overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur z-10">
+                      <TableRow>
+                        <TableHead className="w-[35%]">Товар</TableHead>
+                        <TableHead className="w-[15%]">Категория</TableHead>
+                        <TableHead className="w-[12%]">Размер</TableHead>
+                        <TableHead className="w-[15%]">Цвета</TableHead>
+                        <TableHead className="w-[12%] text-right">Цена ₸</TableHead>
+                        <TableHead className="w-[11%] text-right">Цена ₽</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredCatalog.map((p) => {
+                        const rub =
+                          d?.rate?.rate && d.rate.rate > 0
+                            ? Math.round(p.price_kzt / (d.rate.rate * 0.95))
+                            : null;
+                        return (
+                          <TableRow key={p.id} className="text-xs">
+                            <TableCell className="font-medium">
+                              <div className="space-y-0.5">
+                                <div className="text-foreground">{p.name}</div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {p.stock ? (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                                      В наличии{p.stock_qty != null ? ` (${p.stock_qty} шт)` : ""}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                                      Нет в наличии
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-muted-foreground font-mono">
+                                    ID: {p.id}
+                                  </span>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {p.category || "—"}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {p.size || "—"}
+                            </TableCell>
+                            <TableCell>
+                              {p.colors?.length ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {p.colors.map((col, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="inline-block px-1.5 py-0.5 rounded bg-muted text-[10px]"
+                                    >
+                                      {col}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-medium font-mono text-foreground">
+                              {p.price_kzt ? `${p.price_kzt.toLocaleString("ru-RU")} ₸` : "—"}
+                            </TableCell>
+                            <TableCell className="text-right font-medium font-mono text-muted-foreground">
+                              {rub ? `${rub.toLocaleString("ru-RU")} ₽` : "—"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="bg-card border rounded-lg p-4 space-y-3">

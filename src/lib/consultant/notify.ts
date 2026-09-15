@@ -4,14 +4,15 @@ export async function notifyConsultantHandoff(params: {
   text: string;
   customerName?: string;
   customerUsername?: string;
+  customerContact?: string;
   lastProducts?: string[];
 }): Promise<void> {
   try {
     const { notifyOwner } = await import("@/lib/internal/internal-api.server");
 
-    // Resolve customer display name
-    let displayName = params.customerName || params.customerUsername || "";
-    if (!displayName) {
+    let directUsername = (params.customerUsername || "").replace(/^@/, "").trim();
+    let displayName = params.customerName || (params.customerUsername ? `@${directUsername}` : "");
+    if (!displayName || !directUsername) {
       try {
         const { supabaseService } = await import(
           "@/integrations-supabase/client.server"
@@ -22,10 +23,13 @@ export async function notifyConsultantHandoff(params: {
           .eq("user_key", params.userKey)
           .maybeSingle();
         if (data) {
-          if (data.username) displayName = `@${data.username}`;
-          else
+          if (data.username) {
+            directUsername = data.username.replace(/^@/, "").trim();
+            displayName = `@${directUsername}`;
+          } else if (!displayName) {
             displayName =
               [data.first_name, data.last_name].filter(Boolean).join(" ") || "";
+          }
         }
       } catch {
         /* ignore lookup failure */
@@ -50,6 +54,10 @@ export async function notifyConsultantHandoff(params: {
       lines.push(`👤 ${displayName}`);
     }
 
+    if (params.customerContact) {
+      lines.push(`📞 Контакты: ${params.customerContact}`);
+    }
+
     // Extract readable conversation ID (e.g. ig_2026778764876869 → show last 6 digits)
     const shortId = params.userKey.replace(/^ig_/, "…");
     lines.push(`💬 ${shortId}`);
@@ -66,7 +74,17 @@ export async function notifyConsultantHandoff(params: {
 
     const message = lines.join("\n");
 
-    const res = await notifyOwner(message);
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          directUsername
+            ? { text: "💬 Открыть диалог в Instagram", url: `https://ig.me/m/${directUsername}` }
+            : { text: "💬 Открыть Instagram Direct", url: "https://www.instagram.com/direct/inbox/" },
+        ],
+      ],
+    };
+
+    const res = await notifyOwner(message, replyMarkup);
     console.log("[notifyConsultantHandoff] response:", res);
   } catch (e) {
     console.error("[notifyConsultantHandoff] error:", e);

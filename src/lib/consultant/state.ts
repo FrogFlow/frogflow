@@ -4,7 +4,11 @@ import { isConsultantGreeting, type ConsultantCountry } from "./intent";
 
 export type PauseReason = "manager_intervention" | "purchase" | "error" | "other";
 export type ConsultantConversationState =
-  "awaiting_country" | "awaiting_product" | "consulting" | "handed_off";
+  | "awaiting_country"
+  | "awaiting_product"
+  | "consulting"
+  | "awaiting_contact"
+  | "handed_off";
 
 export type ConsultantTurn = { role: "customer" | "assistant"; text: string };
 
@@ -13,6 +17,7 @@ export type ConsultantState = {
   automation_paused?: boolean;
   pause_reason?: PauseReason;
   conversation_state?: ConsultantConversationState;
+  customer_contact?: string;
   last_product_ids?: string[];
   last_bot_reply?: string;
   last_bot_reply_at?: string;
