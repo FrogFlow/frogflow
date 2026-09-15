@@ -26,6 +26,7 @@ export type ConsultantState = {
   recent?: ConsultantTurn[];
   ru_cdek_sent?: boolean;
   ab_bucket?: "a" | "b";
+  resumed_at?: string;
 };
 
 const RECENT_LIMIT = 8;
@@ -115,9 +116,11 @@ export async function pauseConsultantByConversation(
 
 export async function resumeConsultant(userKey: string): Promise<ConsultantState> {
   const { raw, consultant } = await loadConsultantState(userKey);
+  const nowIso = new Date().toISOString();
   const next: ConsultantState = {
     ...consultant,
     automation_paused: false,
+    resumed_at: nowIso,
     conversation_state: consultant.country ? "consulting" : "awaiting_country",
     customer_contact: undefined,
     last_product_ids: [],
@@ -130,7 +133,7 @@ export async function resumeConsultant(userKey: string): Promise<ConsultantState
     .from("bot_users")
     .update({
       state: { ...raw, [KEY]: next } as unknown as Json,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     })
     .eq("user_key", userKey);
   return next;
@@ -384,12 +387,15 @@ export async function listConsultantCustomers(limit = 40): Promise<ConsultantCus
 }
 
 export const CONSULTANT_BOT_ENABLED_KEY = "consultant_bot_enabled";
+export const CONSULTANT_BOT_ENABLED_AT_KEY = "consultant_bot_enabled_at";
 
 let botEnabledCache: { at: number; enabled: boolean } | null = null;
+let botEnabledAtCache: number | null = null;
 const BOT_ENABLED_CACHE_MS = 10_000;
 
 export function invalidateBotEnabledCache(): void {
   botEnabledCache = null;
+  botEnabledAtCache = null;
 }
 
 export async function isConsultantBotGloballyEnabled(): Promise<boolean> {
@@ -408,13 +414,43 @@ export async function isConsultantBotGloballyEnabled(): Promise<boolean> {
   return enabled;
 }
 
+export async function getConsultantBotEnabledAt(): Promise<number | undefined> {
+  if (botEnabledAtCache != null) return botEnabledAtCache;
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", CONSULTANT_BOT_ENABLED_AT_KEY)
+    .maybeSingle();
+  if (data?.value) {
+    const ts = Date.parse(data.value);
+    if (Number.isFinite(ts)) {
+      botEnabledAtCache = ts;
+      return ts;
+    }
+  }
+  return undefined;
+}
+
 export async function setConsultantBotGloballyEnabled(enabled: boolean): Promise<boolean> {
   const s = await db();
+  const nowIso = new Date().toISOString();
   await s.from("app_settings").upsert({
     key: CONSULTANT_BOT_ENABLED_KEY,
     value: enabled ? "true" : "false",
-    updated_at: new Date().toISOString(),
+    updated_at: nowIso,
   });
+  if (enabled) {
+    await s.from("app_settings").upsert({
+      key: CONSULTANT_BOT_ENABLED_AT_KEY,
+      value: nowIso,
+      updated_at: nowIso,
+    });
+    botEnabledAtCache = Date.parse(nowIso);
+  } else {
+    botEnabledAtCache = null;
+  }
   botEnabledCache = { at: Date.now(), enabled };
   return enabled;
 }
+

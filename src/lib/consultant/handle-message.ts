@@ -135,7 +135,9 @@ export async function handleConsultantZernioEvent(params: {
       lastOutgoing = "";
     }
     const rawIncoming = params.text.trim() || params.postback?.trim() || "";
-    if (isFalseManagerPause(consultant, lastOutgoing) || isConsultantGreeting(rawIncoming)) {
+    const canGreetingResume =
+      consultant.pause_reason !== "manager_intervention" && isConsultantGreeting(rawIncoming);
+    if (isFalseManagerPause(consultant, lastOutgoing) || canGreetingResume) {
       await resumeConsultant(params.userKey);
     } else {
       logConsultantEvent(requestId, "skipped_paused", {

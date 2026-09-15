@@ -758,6 +758,65 @@ describe("consultant — добор входящих Direct", () => {
       }),
     ).toBe(true);
   });
+
+  it("не пишет клиентам, если исходящее было позже входящего или сообщение пришло до включения/возобновления", async () => {
+    const { shouldAnswerLastIncoming } = await import("../src/lib/consultant/inbox-poll");
+    const t0 = 1700000000000;
+    const tIncoming = new Date(t0).toISOString();
+    const tOutgoing = new Date(t0 + 5000).toISOString();
+
+    // 1. Исходящее отправлено после входящего (менеджер или бот уже ответил)
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: tIncoming,
+        outgoingAt: tOutgoing,
+        incomingText: "Сколько стоит?",
+        paused: false,
+      }),
+    ).toBe(false);
+
+    // 2. Сообщение пришло ДО того, как бот был включен
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: tIncoming,
+        incomingText: "Сколько стоит?",
+        paused: false,
+        botEnabledAt: t0 + 60000, // включен через минуту после сообщения
+      }),
+    ).toBe(false);
+
+    // 3. Сообщение пришло ПОСЛЕ включения бота
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: new Date(t0 + 70000).toISOString(),
+        incomingText: "Сколько стоит?",
+        paused: false,
+        botEnabledAt: t0 + 60000,
+        now: t0 + 80000,
+      }),
+    ).toBe(true);
+
+    // 4. Сообщение пришло во время паузы ДО снятия с паузы
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: tIncoming,
+        incomingText: "Сколько стоит?",
+        paused: false,
+        resumedAt: new Date(t0 + 10000).toISOString(), // снят с паузы позже
+      }),
+    ).toBe(false);
+
+    // 5. Сообщение пришло ПОСЛЕ снятия с паузы
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: new Date(t0 + 20000).toISOString(),
+        incomingText: "Сколько стоит?",
+        paused: false,
+        resumedAt: new Date(t0 + 10000).toISOString(),
+        now: t0 + 25000,
+      }),
+    ).toBe(true);
+  });
 });
 
 describe("consultant — разбор курса VTB", () => {

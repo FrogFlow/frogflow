@@ -13,7 +13,7 @@ import {
 } from "./state";
 import { logConsultantEvent, consultantRequestId } from "./log";
 
-const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_AGE_MS = 15 * 60 * 1000;
 const MAX_CONVOS = 12;
 
 export function shouldAnswerLastIncoming(params: {
@@ -28,18 +28,42 @@ export function shouldAnswerLastIncoming(params: {
   incomingLooksLikeBot?: boolean;
   sameAsLastAnswered?: boolean;
   resetAt?: number;
+  botEnabledAt?: number;
+  resumedAt?: string;
 }): boolean {
   if (params.paused) return false;
   if (params.alreadyAnswered) return false;
   if (params.incomingLooksLikeBot) return false;
-  // Не глушить follow-up вроде «А одеяла?» из‑за недавней карточки
-  // или того, что в Inbox последнее видимое ещё исходящее.
+
   const text = params.incomingText?.trim();
   if (!text) return false;
-  const now = params.now ?? Date.now();
+
   const incomingTs = params.incomingAt ? Date.parse(params.incomingAt) : NaN;
+  const outgoingTs = params.outgoingAt ? Date.parse(params.outgoingAt) : NaN;
+
+  // Если последнее исходящее было отправлено ПОСЛЕ или ОДНОВРЕМЕННО с входящим,
+  // значит на входящее уже ответили (менеджер или бот) — повторно не пишем!
+  if (Number.isFinite(outgoingTs) && Number.isFinite(incomingTs) && outgoingTs >= incomingTs) {
+    return false;
+  }
+
+  const now = params.now ?? Date.now();
   if (Number.isFinite(incomingTs) && now - incomingTs > MAX_AGE_MS) return false;
   if (params.resetAt && Number.isFinite(incomingTs) && incomingTs < params.resetAt) return false;
+
+  // Если входящее сообщение пришло ДО того, как бота включили — не отвечаем
+  if (params.botEnabledAt && Number.isFinite(incomingTs) && incomingTs < params.botEnabledAt) {
+    return false;
+  }
+
+  // Если входящее сообщение пришло ДО или ВО ВРЕМЯ снятия пользователя с паузы — не отвечаем
+  if (params.resumedAt && Number.isFinite(incomingTs)) {
+    const resumedTs = Date.parse(params.resumedAt);
+    if (Number.isFinite(resumedTs) && incomingTs <= resumedTs) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -52,10 +76,11 @@ export async function pollIncomingConsultantMessages(): Promise<{
   replied: number;
   skipped: number;
 }> {
-  const { isConsultantBotGloballyEnabled } = await import("./state");
+  const { isConsultantBotGloballyEnabled, getConsultantBotEnabledAt } = await import("./state");
   if (!(await isConsultantBotGloballyEnabled())) {
     return { checked: 0, replied: 0, skipped: 0 };
   }
+  const botEnabledAt = await getConsultantBotEnabledAt();
 
   const { listZernioAccounts, listZernioConversations, listZernioConversationMessages } =
     await import("@/lib/zernio.server");
@@ -117,10 +142,14 @@ export async function pollIncomingConsultantMessages(): Promise<{
       const lastText = [...messages].reverse().find((m) => m.message?.trim());
       if (isFalseManagerPause(consultant, lastOutgoing?.message)) {
         consultant = await resumeConsultant(userKey);
+        skipped += 1;
+        continue;
       }
       const outgoingTs = lastOutgoing?.createdAt ? Date.parse(lastOutgoing.createdAt) : 0;
       if (consultant.automation_paused && outgoingTs > 0 && Date.now() - outgoingTs > 12 * 60 * 60 * 1000) {
         consultant = await resumeConsultant(userKey);
+        skipped += 1;
+        continue;
       }
       const incomingText = lastIncoming?.message?.trim() ?? "";
       const sameAsLastAnswered =
@@ -137,6 +166,8 @@ export async function pollIncomingConsultantMessages(): Promise<{
           incomingLooksLikeBot: looksLikeConsultantBotReply(lastIncoming?.message ?? ""),
           sameAsLastAnswered,
           resetAt,
+          botEnabledAt,
+          resumedAt: consultant.resumed_at,
         })
       ) {
         skipped += 1;
