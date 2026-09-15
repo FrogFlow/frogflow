@@ -27,6 +27,7 @@ import {
   looksLikeConsultantBotReply,
   stripMarkdownFormatting,
   type ConsultantCopyPack,
+  COUNTRY_BUTTONS,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import {
@@ -340,7 +341,8 @@ export async function decideConsultantReply(
     if (!country) {
       return {
         text: stripMarkdownFormatting(pack.askCountry),
-        patch: { ...cleanPatch, conversation_state: "awaiting_country" },
+        patch: { ...cleanPatch, conversation_state: "awaiting_country", pending_product_query: undefined },
+        buttons: COUNTRY_BUTTONS,
         kind: "country",
       };
     }
@@ -352,9 +354,17 @@ export async function decideConsultantReply(
   }
 
   if (!country) {
+    const isProduct =
+      (looksLikeProductQuery(text) || Boolean(ctx.storyId || ctx.storyMediaUrl)) &&
+      !isConsultantGreeting(text);
     return {
       text: stripMarkdownFormatting(pack.askCountry),
-      patch: { conversation_state: "awaiting_country", ab_bucket: bucket },
+      patch: {
+        conversation_state: "awaiting_country",
+        ab_bucket: bucket,
+        pending_product_query: isProduct ? text : undefined,
+      },
+      buttons: COUNTRY_BUTTONS,
       kind: "country",
     };
   }
@@ -363,6 +373,7 @@ export async function decideConsultantReply(
     country,
     ab_bucket: bucket,
     conversation_state: "consulting",
+    pending_product_query: undefined,
   };
 
   if (state.conversation_state === "awaiting_contact") {
@@ -402,9 +413,22 @@ export async function decideConsultantReply(
 
   if (justCountry) {
     void track(ctx.userKey, "country", text, bucket);
+    if (state.pending_product_query) {
+      const pendingText = state.pending_product_query;
+      return decideConsultantReply(
+        pendingText,
+        {
+          ...state,
+          ...countryPatch,
+          pending_product_query: undefined,
+          conversation_state: "consulting",
+        },
+        { ...ctx, postback: undefined },
+      );
+    }
     return {
       text: pack.askProduct,
-      patch: { ...countryPatch, conversation_state: "awaiting_product" },
+      patch: { ...countryPatch, conversation_state: "awaiting_product", pending_product_query: undefined },
       kind: "clarify",
     };
   }
