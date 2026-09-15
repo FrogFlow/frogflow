@@ -116,7 +116,8 @@ export function replyUsesUnknownProductName(text: string, products: ConsultantPr
 }
 
 export function replyInventedInStock(text: string, products: ConsultantProduct[]): boolean {
-  if (!/есть в наличии|в наличии/i.test(text)) return false;
+  const stripped = text.replace(/(?:нет|не)\s+в\s+наличии/gi, "");
+  if (!/есть в наличии|в наличии/i.test(stripped)) return false;
   if (products.length === 0) return true;
   return products.every((p) => !p.stock);
 }

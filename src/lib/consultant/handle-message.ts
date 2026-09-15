@@ -312,7 +312,9 @@ export async function decideConsultantReply(
     return handoffReply(pack, state, bucket, "injection", text, ctx.userKey);
   }
 
-  if (isConsultantThanks(text)) {
+  const canClaude = Boolean(consultantApiKey());
+
+  if (!canClaude && isConsultantThanks(text)) {
     return { text: formatThanksReply(), patch: { ab_bucket: bucket }, kind: "clarify" };
   }
 
@@ -376,7 +378,9 @@ export async function decideConsultantReply(
     pending_product_query: undefined,
   };
 
-  if (state.conversation_state === "awaiting_contact") {
+  const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
+
+  if (state.conversation_state === "awaiting_contact" && hasPhone) {
     void track(ctx.userKey, "purchase", text, bucket);
     const catalog = ctx.catalog ?? (await loadConsultantCatalog());
     return handoffReply(
@@ -401,16 +405,6 @@ export async function decideConsultantReply(
     !isAffirmativeInterest(text) &&
     !isDeclineResponse(text);
 
-  const canClaude = Boolean(consultantApiKey());
-  const budgetKzt = extractBudgetKzt(text);
-  const wantsBasket = matchBasketIntent(text);
-  const wantsAdvice =
-    looksLikeVagueHelp(text) ||
-    matchAdviceIntent(text) ||
-    matchOtherCategoriesIntent(text) ||
-    Boolean(budgetKzt) ||
-    wantsBasket;
-
   if (justCountry) {
     void track(ctx.userKey, "country", text, bucket);
     if (state.pending_product_query) {
@@ -433,6 +427,177 @@ export async function decideConsultantReply(
     };
   }
 
+  const catalog = ctx.catalog ?? (await loadConsultantCatalog());
+  const rateRow =
+    ctx.catalog != null || ctx.rate !== undefined
+      ? ctx.rate != null
+        ? { rate: ctx.rate, updatedAt: "test", source: "test" }
+        : null
+      : await getStoredVtbRate();
+  if (catalog.length === 0) {
+    void track(ctx.userKey, "error", "catalog_empty", bucket);
+    return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
+  }
+
+  if (canClaude) {
+    try {
+      let claudeText = text;
+      if (ctx.storyId || ctx.storyMediaUrl) {
+        console.log("[consultant] story context detected:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
+        claudeText = `[Customer replied to a story. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown]\n\n${text}`;
+      }
+
+      const ai = await runConsultantClaude({
+        text: claudeText,
+        state: { ...state, ...countryPatch },
+        catalog,
+        rate: rateRow?.rate ?? null,
+        shopUrl: await getShopUrlSafe(),
+        forceTools: Boolean(ctx.storyId || ctx.storyMediaUrl),
+        composeAfterTools: true,
+      });
+      if (ai.usage) {
+        void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
+      }
+      if (ai.error === "no_api_key") {
+        /* fall through to local */
+      } else if (ai.handoff) {
+        void track(ctx.userKey, "handoff", text, bucket);
+        const contactFromTool = ai.handoffData?.customer_phone;
+        const customerContact = contactFromTool || (hasPhone ? text : state.customer_contact);
+        const matched = resolveHandoffProductIds(state, text, catalog);
+        const productIds = ai.products.length > 0
+          ? ai.products.map((p) => p.id)
+          : matched.length > 0
+          ? matched
+          : (state.last_product_ids ?? []).slice(0, 1);
+        if (!customerContact) {
+          const askContactText = ai.text.trim()
+            ? stripMarkdownFormatting(ai.text)
+            : "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲";
+          return {
+            text: askContactText,
+            patch: {
+              ...countryPatch,
+              last_product_ids: productIds,
+              conversation_state: "awaiting_contact",
+            },
+            kind: "clarify",
+          };
+        }
+        return handoffReply(
+          pack,
+          {
+            ...state,
+            ...countryPatch,
+            last_product_ids: productIds,
+            customer_contact: customerContact,
+          },
+          bucket,
+          "purchase",
+          text,
+          ctx.userKey,
+          ai.text.trim() ? stripMarkdownFormatting(ai.text) : pack.purchase,
+          customerContact,
+          catalog,
+        );
+      } else if (!ai.error) {
+        const cleanAiText = stripMarkdownFormatting(ai.text);
+        const inStock = ai.products.filter((p) => p.stock);
+        const historyProducts = (state.last_product_ids ?? [])
+          .map((id) => catalog.find((p) => p.id === id))
+          .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
+        const allKnownProducts = [...ai.products, ...historyProducts];
+        const rublePrices = country === "RU" && rateRow?.rate
+          ? allKnownProducts.map((p) => priceRub(p.price_kzt, rateRow.rate))
+          : [];
+        const check = validateConsultantReply(cleanAiText, allKnownProducts, [...ai.extraNumbers, ...rublePrices]);
+        if (check.ok && cleanAiText.trim()) {
+          const mentionedProducts = matchProductsInText(cleanAiText, catalog);
+          const newIds = mentionedProducts.length > 0
+            ? mentionedProducts.map((p) => p.id)
+            : (state.last_product_ids ?? []);
+          return {
+            text: cleanAiText.trim(),
+            patch: {
+              ...countryPatch,
+              last_product_ids: newIds,
+              conversation_state: "consulting",
+            },
+            kind: mentionedProducts.length ? "product" : "clarify",
+          };
+        }
+        if (!check.ok) {
+          console.warn("[consultant] Claude reply rejected by validator:", check.reason, {
+            aiText: ai.text,
+            knownCount: allKnownProducts.length,
+          });
+        }
+        if (inStock.length > 0) {
+          const composed = composeBudgetOrBasketReply(
+            text,
+            catalog,
+            inStock,
+            country,
+            countryPatch,
+            pack,
+            state,
+            rateRow?.rate ?? null,
+          );
+          if (composed) return composed;
+          const variants = replyMoreVariants(text, catalog, inStock, country, countryPatch, state, rateRow?.rate ?? null);
+          if (variants) return variants;
+          const tokens = searchTokens(text);
+          const targetProduct =
+            inStock.find((p) => {
+              const hay = haystackOf([p.name, p.size, ...p.colors]);
+              return tokens.some((t) => hay.includes(t));
+            }) ?? inStock[0];
+          const requestedColor = [
+            "бежевый",
+            "серый",
+            "белый",
+            "графит",
+            "черный",
+            "розовый",
+            "голубой",
+            "синий",
+            "зеленый",
+            "молочный",
+          ].find((c) => new RegExp(c.slice(0, 4), "i").test(text));
+          const includeCdek = country === "RU" && !state.ru_cdek_sent;
+          const rub =
+            country === "RU" && rateRow?.rate ? priceRub(targetProduct.price_kzt, rateRow.rate) : null;
+          return {
+            text: formatProductReply(targetProduct, country, rub, {
+              includeCdek,
+              pack,
+              selectedColor: requestedColor,
+            }),
+            patch: {
+              ...countryPatch,
+              last_product_ids: appendIds(state.last_product_ids, inStock.map((p) => p.id)),
+              ru_cdek_sent: state.ru_cdek_sent || includeCdek,
+            },
+            kind: "product",
+          };
+        }
+      }
+    } catch (e: unknown) {
+      console.error("Consultant run error:", e);
+    }
+  }
+
+  // ================= FALLBACK DETERMINISTIC LOGIC (when Claude is unavailable or fails) =================
+  const budgetKzt = extractBudgetKzt(text);
+  const wantsBasket = matchBasketIntent(text);
+  const wantsAdvice =
+    looksLikeVagueHelp(text) ||
+    matchAdviceIntent(text) ||
+    matchOtherCategoriesIntent(text) ||
+    Boolean(budgetKzt) ||
+    wantsBasket;
+
   if (matchCatalogIntent(text)) {
     void track(ctx.userKey, "catalog", text, bucket);
     return {
@@ -444,8 +609,6 @@ export async function decideConsultantReply(
 
   if (matchPurchaseIntent(text)) {
     void track(ctx.userKey, "purchase", text, bucket);
-    const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
-    const catalog = ctx.catalog ?? (await loadConsultantCatalog());
     const matched = resolveHandoffProductIds(state, text, catalog);
     const productIds = matched.length > 0 ? matched : (state.last_product_ids ?? []).slice(0, 1);
     if (!state.customer_contact && !hasPhone) {
@@ -495,11 +658,10 @@ export async function decideConsultantReply(
     };
   }
 
-  if (wantsAdvice && !canClaude && !budgetKzt && !wantsBasket) {
+  if (wantsAdvice && !budgetKzt && !wantsBasket) {
     let namedProduct = false;
     try {
-      const catalogPreview = ctx.catalog ?? (await loadConsultantCatalog());
-      namedProduct = queryHasCatalogSignal(text, catalogPreview);
+      namedProduct = queryHasCatalogSignal(text, catalog);
     } catch {
       namedProduct = false;
     }
@@ -508,173 +670,12 @@ export async function decideConsultantReply(
     }
   }
 
-  if (!looksLikeProductQuery(text) && !justCountry && !wantsAdvice && !canClaude) {
+  if (!looksLikeProductQuery(text) && !justCountry && !wantsAdvice) {
     return {
       text: pack.askProduct,
       patch: { ...countryPatch, conversation_state: "awaiting_product" },
       kind: "clarify",
     };
-  }
-
-  const catalog = ctx.catalog ?? (await loadConsultantCatalog());
-  const rateRow =
-    ctx.catalog != null || ctx.rate !== undefined
-      ? ctx.rate != null
-        ? { rate: ctx.rate, updatedAt: "test", source: "test" }
-        : null
-      : await getStoredVtbRate();
-  if (catalog.length === 0) {
-    void track(ctx.userKey, "error", "catalog_empty", bucket);
-    return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
-  }
-
-  if (canClaude) {
-    try {
-      let claudeText = text;
-      if (ctx.storyId || ctx.storyMediaUrl) {
-        console.log("[consultant] story context detected:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
-        claudeText = `[Customer replied to a story. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown]\n\n${text}`;
-      }
-
-      const ai = await runConsultantClaude({
-        text: claudeText,
-        state: { ...state, ...countryPatch },
-        catalog,
-        shopUrl: await getShopUrlSafe(),
-        forceTools:
-          looksLikeProductQuery(text) ||
-          wantsAdvice ||
-          matchMoreVariantsIntent(text) ||
-          matchDeliveryIntent(text) ||
-          matchPriceOnlyIntent(text) ||
-          Boolean(ctx.storyId || ctx.storyMediaUrl),
-        composeAfterTools: true,
-      });
-      if (ai.usage) {
-        void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
-      }
-      if (ai.error === "no_api_key") {
-        /* fall through to local */
-      } else if (ai.handoff) {
-        void track(ctx.userKey, "handoff", text, bucket);
-        const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
-        const matched = resolveHandoffProductIds(state, text, catalog);
-        const productIds = ai.products.length > 0
-          ? ai.products.map((p) => p.id)
-          : matched.length > 0
-          ? matched
-          : (state.last_product_ids ?? []).slice(0, 1);
-        if (!state.customer_contact && !hasPhone) {
-          return {
-            text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
-            patch: {
-              ...countryPatch,
-              last_product_ids: productIds,
-              conversation_state: "awaiting_contact",
-            },
-            kind: "clarify",
-          };
-        }
-        return handoffReply(
-          pack,
-          {
-            ...state,
-            ...countryPatch,
-            last_product_ids: productIds,
-            customer_contact: hasPhone ? text : state.customer_contact,
-          },
-          bucket,
-          "purchase",
-          text,
-          ctx.userKey,
-          pack.purchase,
-          hasPhone ? text : state.customer_contact,
-          catalog,
-        );
-      } else if (!ai.error) {
-        const cleanAiText = stripMarkdownFormatting(ai.text);
-        const inStock = ai.products.filter((p) => p.stock);
-        const historyProducts = (state.last_product_ids ?? [])
-          .map((id) => catalog.find((p) => p.id === id))
-          .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
-        const allKnownProducts = [...ai.products, ...historyProducts];
-        const rublePrices = country === "RU" && rateRow?.rate
-          ? allKnownProducts.map((p) => priceRub(p.price_kzt, rateRow.rate))
-          : [];
-        const check = validateConsultantReply(cleanAiText, allKnownProducts, [...ai.extraNumbers, ...rublePrices]);
-        if (check.ok && cleanAiText.trim()) {
-          return {
-            text: cleanAiText.trim(),
-            patch: {
-              ...countryPatch,
-              last_product_ids: appendIds(state.last_product_ids, inStock.map((p) => p.id)),
-              conversation_state: "consulting",
-            },
-            kind: inStock.length ? "product" : "clarify",
-          };
-        }
-        if (!check.ok) {
-          console.warn("[consultant] Claude reply rejected by validator:", check.reason, {
-            aiText: ai.text,
-            knownCount: allKnownProducts.length,
-          });
-        }
-        if (inStock.length > 0) {
-          const composed = composeBudgetOrBasketReply(
-            text,
-            catalog,
-            inStock,
-            country,
-            countryPatch,
-            pack,
-            state,
-            rateRow?.rate ?? null,
-          );
-          if (composed) return composed;
-          const variants = replyMoreVariants(text, catalog, inStock, country, countryPatch, state, rateRow?.rate ?? null);
-          if (variants) return variants;
-          if (wantsAdvice && !budgetKzt && !wantsBasket && !queryHasCatalogSignal(text, catalog)) {
-            return { text: pack.otherCategories, patch: countryPatch, kind: "clarify" };
-          }
-          const tokens = searchTokens(text);
-          const targetProduct =
-            inStock.find((p) => {
-              const hay = haystackOf([p.name, p.size, ...p.colors]);
-              return tokens.some((t) => hay.includes(t));
-            }) ?? inStock[0];
-          const requestedColor = [
-            "бежевый",
-            "серый",
-            "белый",
-            "графит",
-            "черный",
-            "розовый",
-            "голубой",
-            "синий",
-            "зеленый",
-            "молочный",
-          ].find((c) => new RegExp(c.slice(0, 4), "i").test(text));
-          const includeCdek = country === "RU" && !state.ru_cdek_sent;
-          const rub =
-            country === "RU" && rateRow?.rate ? priceRub(targetProduct.price_kzt, rateRow.rate) : null;
-          return {
-            text: formatProductReply(targetProduct, country, rub, {
-              includeCdek,
-              pack,
-              selectedColor: requestedColor,
-            }),
-            patch: {
-              ...countryPatch,
-              last_product_ids: appendIds(state.last_product_ids, inStock.map((p) => p.id)),
-              ru_cdek_sent: state.ru_cdek_sent || includeCdek,
-            },
-            kind: "product",
-          };
-        }
-      }
-    } catch (e: unknown) {
-      console.error("Consultant run error:", e);
-    }
   }
 
   const local = await replyFromLocalCatalog(
