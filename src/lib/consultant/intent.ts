@@ -54,7 +54,7 @@ export function containsForbiddenPhrase(text: string): boolean {
 }
 
 const GREETING_RE =
-  /^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай)([.!?…\s]|👋|🙏)*$/i;
+  /^(привет|здравствуйте|добрый\s+(день|вечер)|hi|hello|хай|сәлеметсіз\s*бе|сәлем|ассалаумағалейкум|ассаламу\s*алейкум)([.!?…\s]|👋|🙏)*$/i;
 
 export function isConsultantGreeting(text: string): boolean {
   return GREETING_RE.test(text.trim());
@@ -177,7 +177,7 @@ export function matchDeliveryIntent(text: string): boolean {
 }
 
 export function isConsultantThanks(text: string): boolean {
-  return /^(спасибо|благодар|очень\s+круто.{0,24}спасибо|круто,?\s*спасибо)([.!?…\s❤🌸🙏]*)$/i.test(
+  return /^(спасибо|благодар|очень\s+круто.{0,24}спасибо|круто,?\s*спасибо|рахмет|көп\s*рахмет)([.!?…\s❤🌸🙏]*)$/i.test(
     text.trim(),
   );
 }

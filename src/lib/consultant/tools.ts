@@ -72,9 +72,14 @@ export const CONSULTANT_TOOLS = [
         "Call ONLY when the customer explicitly wants to buy, pay, place an order, or talk to a human. Do NOT call this if a product is out of stock or not found - instead, output a normal text message saying it's unavailable.",
       input_schema: {
         type: "object",
-      properties: { reason: { type: "string" } },
+        properties: {
+          reason: { type: "string", description: "Reason for handoff (e.g. purchase, talk_to_human)" },
+          customer_phone: { type: "string", description: "Customer phone number if provided" },
+          delivery_city: { type: "string", description: "Customer delivery city if provided" },
+          order_summary: { type: "string", description: "Summary of products, sizes, colors, and total price" },
+        },
+      },
     },
-  },
 ] as const;
 
 export type ToolFactCard = ConsultantProduct & { price_rub?: number | null };
@@ -200,7 +205,13 @@ export async function executeConsultantTool(
 
   if (name === "handoff_to_manager") {
     return {
-      result: { paused: true, reason: typeof input.reason === "string" ? input.reason : "handoff" },
+      result: {
+        paused: true,
+        reason: typeof input.reason === "string" ? input.reason : "handoff",
+        customer_phone: typeof input.customer_phone === "string" ? input.customer_phone : undefined,
+        delivery_city: typeof input.delivery_city === "string" ? input.delivery_city : undefined,
+        order_summary: typeof input.order_summary === "string" ? input.order_summary : undefined,
+      },
       products: [],
       handoff: true,
     };
