@@ -1,4 +1,5 @@
 import {
+  enrichProductColors,
   getProduct,
   relatedVariants,
   searchProducts,
@@ -121,9 +122,12 @@ export async function executeConsultantTool(
     if (found.length === 0 && exclude.size > 0 && ctx.catalog) {
       found = relatedVariants(ctx.catalog, [...exclude]);
     }
+    const enriched = ctx.catalog
+      ? found.map((p) => enrichProductColors(p, ctx.catalog!))
+      : found;
     return {
-      result: { products: found.map((p) => presentCard(p, ctx.country, rate)) },
-      products: found,
+      result: { products: enriched.map((p) => presentCard(p, ctx.country, rate)) },
+      products: enriched,
       handoff: false,
     };
   }
@@ -131,9 +135,10 @@ export async function executeConsultantTool(
   if (name === "get_product") {
     const id = typeof input.id === "string" ? input.id : "";
     const product = id ? await getProduct(id, ctx.catalog) : null;
+    const enriched = product && ctx.catalog ? enrichProductColors(product, ctx.catalog) : product;
     return {
-      result: product ? presentCard(product, ctx.country, rate) : { error: "not_found" },
-      products: product ? [product] : [],
+      result: enriched ? presentCard(enriched, ctx.country, rate) : { error: "not_found" },
+      products: enriched ? [enriched] : [],
       handoff: false,
     };
   }

@@ -841,4 +841,45 @@ describe("consultant — Instagram formatting & product resolution fixes", () =>
     expect(resolved).toEqual(["TOWEL-1"]);
     expect(resolved).not.toContain("BED-1");
   });
+
+  it("enrichProductColors объединяет доступные в наличии расцветки для модели и размера", async () => {
+    const { enrichProductColors } = await import("../src/lib/consultant/catalog");
+    const testCatalog = [
+      { id: "T-1", name: "Полотенце банное", category: "полотенца", size: "100x150", colors: ["белый"], price_kzt: 21900, stock: true },
+      { id: "T-2", name: "Полотенце банное", category: "полотенца", size: "100x150", colors: ["серый"], price_kzt: 21900, stock: true },
+      { id: "T-3", name: "Полотенце банное", category: "полотенца", size: "100x150", colors: ["бежевый"], price_kzt: 21900, stock: false }, // out of stock!
+      { id: "T-4", name: "Полотенце банное", category: "полотенца", size: "100x150", colors: ["графит"], price_kzt: 21900, stock: true },
+    ];
+    const enriched = enrichProductColors(testCatalog[0], testCatalog);
+    expect(enriched.colors).toContain("белый");
+    expect(enriched.colors).toContain("серый");
+    expect(enriched.colors).toContain("графит");
+    expect(enriched.colors).not.toContain("бежевый"); // Не в наличии — не включаем
+  });
+
+  it("resolveHandoffProductIds сохраняет выбранный 100x150 при вводе телефона в awaiting_contact", async () => {
+    const { resolveHandoffProductIds } = await import("../src/lib/consultant/handle-message");
+    const testCatalog = [
+      { id: "TEST-001", name: "Полотенце банное", category: "полотенца", size: "50x90", colors: ["белый"], price_kzt: 8900, stock: true },
+      { id: "TEST-005", name: "Полотенце банное", category: "полотенца", size: "70x140", colors: ["белый"], price_kzt: 14500, stock: true },
+      { id: "TEST-009", name: "Полотенце банное", category: "полотенца", size: "100x150", colors: ["белый"], price_kzt: 21900, stock: true },
+    ];
+    // Стейт в шаге ввода телефона: клиент сказал "Да", бот попросил телефон, товар зафиксирован
+    const state = {
+      conversation_state: "awaiting_contact" as const,
+      last_product_ids: ["TEST-009"],
+      last_customer_text: "Да",
+      last_bot_reply: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
+      recent: [
+        { role: "customer" as const, text: "У вас есть полотенца?" },
+        { role: "assistant" as const, text: "В наличии банные полотенца: • 50x90 см — 8 900 ₸ • 70x140 см — 14 500 ₸ • 100x150 см — 21 900 ₸" },
+        { role: "customer" as const, text: "Давайте банное большое" },
+        { role: "assistant" as const, text: "Банное полотенце 100x150 см, белый — 21 900 ₸. Оформить заказ для вас?" },
+        { role: "customer" as const, text: "Да" },
+      ],
+    };
+    const resolved = resolveHandoffProductIds(state, "+76686765 костанай", testCatalog);
+    expect(resolved).toEqual(["TEST-009"]);
+    expect(resolved).not.toContain("TEST-001");
+  });
 });

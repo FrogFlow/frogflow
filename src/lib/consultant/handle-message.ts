@@ -847,22 +847,36 @@ export function resolveHandoffProductIds(
     return (state.last_product_ids ?? []).slice(0, 3);
   }
 
-  // 1. First priority: match exact product from the last bot reply or customer's choice
-  const immediateContext = [text, state.last_customer_text ?? "", state.last_bot_reply ?? ""].join(" ");
+  // 1. If customer explicitly named a product in their current message, that takes absolute priority
+  const inCurrentText = matchProductsInText(text, catalog);
+  if (inCurrentText.length > 0) {
+    return [inCurrentText[0].id];
+  }
+
+  // 2. Check immediate context: customer's previous text and bot's previous reply
+  const immediateContext = [state.last_customer_text ?? "", state.last_bot_reply ?? ""].join(" ");
   const inImmediate = matchProductsInText(immediateContext, catalog);
   if (inImmediate.length > 0) {
     return [inImmediate[0].id];
   }
 
-  // 2. Second priority: search combined recent history
-  const recentTexts = (state.recent ?? []).map((r) => r.text).join(" ");
-  const inRecent = matchProductsInText(recentTexts, catalog);
-  if (inRecent.length > 0) {
-    return [inRecent[0].id];
+  // 3. If state already has last_product_ids (e.g. from awaiting_contact or previous selection), use it!
+  if (state.last_product_ids && state.last_product_ids.length > 0) {
+    return state.last_product_ids.slice(0, 3);
   }
 
-  // 3. Fallback to state.last_product_ids
-  return (state.last_product_ids ?? []).slice(0, 3);
+  // 4. Search recent history backwards (newest to oldest), skipping catalog overview messages
+  const recent = state.recent ?? [];
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const r = recent[i];
+    if (/вот\s+все\s+размеры|в\s+наличии\s+банные\s+полотенца.*•/i.test(r.text)) continue;
+    const inTurn = matchProductsInText(r.text, catalog);
+    if (inTurn.length > 0) {
+      return [inTurn[0].id];
+    }
+  }
+
+  return [];
 }
 
 async function handoffReply(
@@ -878,7 +892,13 @@ async function handoffReply(
 ): Promise<ConsultantReply> {
   const pauseReason = reason === "injection" ? "other" : reason === "other" ? "other" : reason;
   const contact = customerContact || state.customer_contact;
-  const resolvedProducts = resolveHandoffProductIds(state, text, catalog);
+  const inCurrentText = catalog ? matchProductsInText(text, catalog) : [];
+  const resolvedProducts =
+    inCurrentText.length > 0
+      ? [inCurrentText[0].id]
+      : state.last_product_ids && state.last_product_ids.length > 0
+      ? state.last_product_ids
+      : resolveHandoffProductIds(state, text, catalog);
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason);
     await addConsultantTask({ userKey, reason, text, contact });

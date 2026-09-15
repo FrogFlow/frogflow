@@ -441,6 +441,41 @@ export function diversifyProducts(products: ConsultantProduct[], limit = 12): Co
   return result;
 }
 
+/**
+ * Обогащает карточку всеми доступными в наличии расцветками для данной модели и размера.
+ * В исходном прайсе/CSV каждый цвет — отдельная строка (SKU).
+ * Чтобы модель видела полный спектр расцветок (и валидатор не блокировал их),
+ * агрегируем расцветки из всех товаров в наличии с тем же именем и размером.
+ */
+export function enrichProductColors(
+  product: ConsultantProduct,
+  catalog: ConsultantProduct[],
+): ConsultantProduct {
+  const matching = catalog.filter(
+    (p) =>
+      p.stock &&
+      foldText(p.name) === foldText(product.name) &&
+      foldText(p.size) === foldText(product.size),
+  );
+  if (matching.length <= 1) return product;
+
+  const colorSet = new Set<string>();
+  for (const c of product.colors) {
+    if (c && c.trim()) colorSet.add(c.trim());
+  }
+  for (const p of matching) {
+    for (const c of p.colors) {
+      if (c && c.trim()) colorSet.add(c.trim());
+    }
+  }
+  if (colorSet.size === 0) return product;
+
+  return {
+    ...product,
+    colors: Array.from(colorSet),
+  };
+}
+
 export async function searchProducts(
   q: ProductSearchQuery,
   catalog?: ConsultantProduct[],
