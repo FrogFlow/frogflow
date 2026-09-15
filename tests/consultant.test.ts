@@ -882,4 +882,47 @@ describe("consultant — Instagram formatting & product resolution fixes", () =>
     expect(resolved).toEqual(["TEST-009"]);
     expect(resolved).not.toContain("TEST-001");
   });
+
+  it("автоматический стеммер находит товары в любых падежах без ручных синонимов", async () => {
+    const { searchProducts } = await import("../src/lib/consultant/catalog");
+    const { stemWord, expandToken } = await import("../src/lib/consultant/synonyms");
+
+    // Проверка самого стеммера
+    expect(stemWord("розового")).toBe("розов");
+    expect(stemWord("розовый")).toBe("розов");
+    expect(stemWord("розовому")).toBe("розов");
+    expect(stemWord("розовые")).toBe("розов");
+    expect(stemWord("серого")).toBe("сер");
+    expect(stemWord("лавандового")).toBe("лавандов");
+    expect(stemWord("лавандовый")).toBe("лавандов");
+
+    // expandToken нормализует к каноническому или стеммированному виду
+    expect(expandToken("розового")).toBe("розовый");
+    expect(expandToken("серого")).toBe("серый");
+    expect(expandToken("лавандового")).toBe("лавандов");
+
+    const testCatalog = [
+      { id: "FACE-WHITE", name: "Полотенце для лица", category: "полотенца", size: "50x90", colors: ["белый"], price_kzt: 6500, stock: true },
+      { id: "FACE-GRAY", name: "Полотенце для лица", category: "полотенца", size: "50x90", colors: ["серый"], price_kzt: 6500, stock: true },
+      { id: "FACE-PINK", name: "Полотенце для лица", category: "полотенца", size: "50x90", colors: ["розовый"], price_kzt: 6500, stock: true },
+      // Новый товар с новым цветом, которого не было в словарях:
+      { id: "NEW-1", name: "Скатерть муслиновая", category: "скатерти", size: "140x200", colors: ["лавандовый"], price_kzt: 12000, stock: true },
+    ];
+
+    // Поиск по "розового цвета"
+    const pink1 = await searchProducts({ query: "розового цвета" }, testCatalog);
+    expect(pink1.map((p) => p.id)).toContain("FACE-PINK");
+
+    // Поиск с фильтром color: "розового"
+    const pink2 = await searchProducts({ color: "розового" }, testCatalog);
+    expect(pink2.map((p) => p.id)).toContain("FACE-PINK");
+
+    // Поиск по новому товару и новому цвету ("лавандового цвета")
+    const new1 = await searchProducts({ query: "лавандового цвета" }, testCatalog);
+    expect(new1.map((p) => p.id)).toContain("NEW-1");
+
+    // Поиск по форме множественного числа новой категории ("скатерти")
+    const new2 = await searchProducts({ query: "скатерти" }, testCatalog);
+    expect(new2.map((p) => p.id)).toContain("NEW-1");
+  });
 });
