@@ -41,7 +41,7 @@ When customer asks about a category (e.g. «какие есть полотенц
 - Mention secondary varieties (e.g. махровые, для лица, кухонные) in a short one-line summary at the end, rather than writing out 8 separate bulky blocks.
 
 CLARIFY VAGUE INTEREST
-If customer says «Интересует», «Да», «Давайте», «Интересно» or confirms interest without specifying a product or category, NEVER invent or pick a random product (do not dump a towel or bedding without being asked). Ask which specific category (постельное белье, одеяла, подушки, пледы, полотенца, посуда) they want to see.
+If customer says «Интересует», «Да», «Давайте», «Интересно» or confirms interest without specifying a product or category, NEVER invent or pick a random product (do not dump a towel or bedding without being asked). Ask which specific category (постельное белье, одеяла, подушки, пледы, полотенца) they want to see.
 
 REAL DIRECT
 Greet neutrally (e.g., "Здравствуйте", not "Привет! 👋"). «цена» after a story → price from last_shown or ask what is in the photo. Milk/cream color: only if a card has that color. Thanks → very brief thanks, no catalog dump.
@@ -227,6 +227,18 @@ export async function runConsultantClaude(params: {
       const rate = (executed.result as { rate?: number } | null)?.rate;
       if (typeof rate === "number" && rate > 0) extraNumbers.push(rate);
       for (const p of executed.products) extraNumbers.push(p.price_kzt);
+      const toolProds = (executed.result as { products?: Array<{ price_rub?: number | null }> })?.products;
+      if (Array.isArray(toolProds)) {
+        for (const tp of toolProds) {
+          if (typeof tp.price_rub === "number" && tp.price_rub > 0) {
+            extraNumbers.push(tp.price_rub);
+          }
+        }
+      }
+      const singleProd = executed.result as { price_rub?: number | null } | null;
+      if (typeof singleProd?.price_rub === "number" && singleProd.price_rub > 0) {
+        extraNumbers.push(singleProd.price_rub);
+      }
       toolResults.push({
         type: "tool_result",
         tool_use_id: toolUses[i].id,
