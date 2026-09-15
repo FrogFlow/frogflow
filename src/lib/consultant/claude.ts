@@ -141,6 +141,7 @@ export async function runConsultantClaude(params: {
   const recent = (params.state.recent ?? []).map((t) => `${t.role}: ${t.text}`).join("\n");
   const dynamic =
     `STATE country=${country ?? "unknown"} paused=${params.state.automation_paused === true}` +
+    (params.state.customer_contact ? ` customer_contact="${params.state.customer_contact}"` : "") +
     (params.shopUrl ? ` shop_url=${params.shopUrl}` : "") +
     (params.state.last_product_ids?.length
       ? ` last_shown=${params.state.last_product_ids.join(",")}`
