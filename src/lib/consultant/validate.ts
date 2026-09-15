@@ -129,6 +129,15 @@ export function replyUsesUnknownColor(text: string, known: Set<string>): boolean
   return false;
 }
 
+export function cleanScriptHallucinations(text: string): string {
+  if (!text) return "";
+  const scriptIdx = text.search(/(?:^|\n)\s*(?:customer|client|user|клиент|покупатель|пользователь|assistant|ассистент)\s*:/i);
+  if (scriptIdx !== -1) {
+    return text.slice(0, scriptIdx).trim();
+  }
+  return text;
+}
+
 export function cleanForbiddenPhrases(text: string): string {
   let res = text;
   const clichés = [
@@ -176,5 +185,8 @@ export function validateConsultantReply(
   if (replyUsesUnknownPrice(trimmed, known)) return { ok: false, reason: "unknown_price" };
   if (replyUsesUnknownColor(trimmed, known)) return { ok: false, reason: "unknown_color" };
   if (replyInventedInStock(trimmed, knownProducts)) return { ok: false, reason: "unknown_stock" };
+  if (/(?:^|\n)\s*(?:customer|client|user|клиент|покупатель|пользователь|assistant|ассистент)\s*:/i.test(trimmed)) {
+    return { ok: false, reason: "script_hallucination" };
+  }
   return { ok: true };
 }

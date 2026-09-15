@@ -66,7 +66,7 @@ import {
   resumeConsultant,
   type ConsultantState,
 } from "./state";
-import { cleanForbiddenPhrases, validateConsultantReply } from "./validate";
+import { cleanForbiddenPhrases, cleanScriptHallucinations, validateConsultantReply } from "./validate";
 import { bucketForUser, getForcedAbBucket } from "./ab";
 import { recordConsultantEvent } from "./analytics";
 import { addConsultantTask } from "./tasks";
@@ -496,9 +496,10 @@ export async function decideConsultantReply(
           : matched.length > 0
           ? matched
           : (state.last_product_ids ?? []).slice(0, 1);
+        let handoffText = cleanScriptHallucinations(cleanForbiddenPhrases(stripMarkdownFormatting(ai.text)));
         if (!customerContact) {
-          const askContactText = ai.text.trim()
-            ? stripMarkdownFormatting(ai.text)
+          const askContactText = handoffText.trim()
+            ? handoffText
             : "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲";
           return {
             text: askContactText,
@@ -522,13 +523,12 @@ export async function decideConsultantReply(
           "purchase",
           text,
           ctx.userKey,
-          ai.text.trim() ? stripMarkdownFormatting(ai.text) : pack.purchase,
+          handoffText.trim() ? handoffText : pack.purchase,
           customerContact,
           catalog,
         );
       } else if (!ai.error) {
-        let cleanAiText = stripMarkdownFormatting(ai.text);
-        cleanAiText = cleanForbiddenPhrases(cleanAiText);
+        let cleanAiText = cleanScriptHallucinations(cleanForbiddenPhrases(stripMarkdownFormatting(ai.text)));
 
         const inStock = ai.products.filter((p) => p.stock);
         const historyProducts = (state.last_product_ids ?? [])

@@ -26,7 +26,8 @@ import {
   matchDeliveryIntent,
   matchPriceOnlyIntent,
 } from "../src/lib/consultant/intent";
-import { validateConsultantReply } from "../src/lib/consultant/validate";
+import { validateConsultantReply, cleanScriptHallucinations, cleanForbiddenPhrases } from "../src/lib/consultant/validate";
+import { buildAnthropicMessages } from "../src/lib/consultant/claude";
 import { looksLikePromptInjection } from "../src/lib/consultant/injection";
 import {
   formatBasketReply,
@@ -1088,5 +1089,63 @@ describe("consultant — Instagram formatting & product resolution fixes", () =>
 
     const withBasket = "Итоговая стоимость набора 33 900 ₸";
     expect(replyUsesUnknownPrice(withBasket, facts)).toBe(false);
+  });
+
+  it("cleanScriptHallucinations отсекает галлюцинации со сценарием диалога (customer: ... assistant: ...)", () => {
+    const rawScreenshotReply =
+      "Отлично! Полотенце банное махровое 70х140 см в белом цвете — 16 900 ₸. Это всё, или вам ещё что-то нужно?\n" +
+      "customer: Да ещё хочу постельное бельё\n" +
+      "assistant: Какой размер вас интересует?\n" +
+      "customer: Евро\n" +
+      "assistant: Менеджер свяжется с вами!";
+
+    const cleaned = cleanScriptHallucinations(rawScreenshotReply);
+    expect(cleaned).toBe(
+      "Отлично! Полотенце банное махровое 70х140 см в белом цвете — 16 900 ₸. Это всё, или вам ещё что-то нужно?",
+    );
+
+    const fullyCleaned = cleanForbiddenPhrases(cleaned);
+    expect(fullyCleaned).toBe(
+      "Полотенце банное махровое 70х140 см в белом цвете — 16 900 ₸. Это всё, или вам ещё что-то нужно?",
+    );
+  });
+
+  it("validateConsultantReply бракует реплики, содержащие имитацию реплик клиента", () => {
+    const scriptReply = "Полотенце 16 900 ₸\nклиент: беру\nассистент: оформляю";
+    const res = validateConsultantReply(scriptReply, [
+      { id: "1", name: "Полотенце", category: "towels", size: "70x140", colors: ["белый"], price_kzt: 16900, stock: true },
+    ]);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.reason).toBe("script_hallucination");
+    }
+  });
+
+  it("buildAnthropicMessages формирует правильную структуру сообщений без смешивания истории в плоскую строку", () => {
+    const recent = [
+      { role: "customer" as const, text: "Здравствуйте, есть полотенца?" },
+      { role: "assistant" as const, text: "Здравствуйте! У нас есть 50х90, 70х140 и 100х150 см." },
+    ];
+    const msgs = buildAnthropicMessages(recent, "Белое махровое");
+    expect(msgs).toEqual([
+      { role: "user", content: "Здравствуйте, есть полотенца?" },
+      { role: "assistant", content: "Здравствуйте! У нас есть 50х90, 70х140 и 100х150 см." },
+      { role: "user", content: "Белое махровое" },
+    ]);
+  });
+
+  it("buildAnthropicMessages объединяет последовательные сообщения одной роли и гарантирует старт с user", () => {
+    const recent = [
+      { role: "assistant" as const, text: "Старое приветствие" },
+      { role: "customer" as const, text: "Полотенца" },
+      { role: "customer" as const, text: "Махровые" },
+      { role: "assistant" as const, text: "Вот варианты" },
+    ];
+    const msgs = buildAnthropicMessages(recent, "Белое 70х140");
+    expect(msgs[0].role).toBe("user");
+    expect(msgs[0].content).toBe("Полотенца\nМахровые");
+    expect(msgs[1].role).toBe("assistant");
+    expect(msgs[2].role).toBe("user");
+    expect(msgs[2].content).toBe("Белое 70х140");
   });
 });
