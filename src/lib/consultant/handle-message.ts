@@ -102,6 +102,12 @@ export async function handleConsultantZernioEvent(params: {
   const direction = params.payload.message?.direction;
   const { consultant } = await loadConsultantState(params.userKey);
 
+  const { isConsultantBotGloballyEnabled } = await import("./state");
+  if (!(await isConsultantBotGloballyEnabled())) {
+    logConsultantEvent(requestId, "skipped_globally_disabled", { userKey: params.userKey });
+    return;
+  }
+
   if (direction === "outgoing") {
     if (isBotEcho(consultant, params.text) || looksLikeConsultantBotReply(params.text)) return;
     if (params.text.trim()) {

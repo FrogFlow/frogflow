@@ -6,6 +6,7 @@ import { Button } from "@/components-ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
+import { Switch } from "@/components-ui/switch";
 import { useAdminLocale } from "@/lib/admin-locale";
 import {
   getConsultantAdminFn,
@@ -21,6 +22,7 @@ import {
   setConsultantRateFn,
   setConsultantTaskDoneFn,
   testConsultantTelegramFn,
+  toggleConsultantBotFn,
 } from "@/lib/consultant/consultant.functions";
 import { StoriesTab } from "./admin.stories-tab";
 import { Badge } from "@/components-ui/badge";
@@ -419,7 +421,18 @@ function ConsultantPage() {
     onError: (e: unknown) => toast.error("Ошибка отправки в Telegram: " + errorMessage(e)),
   });
 
-    return (
+  const toggleBot = useMutation({
+    mutationFn: (enabled: boolean) => toggleConsultantBotFn({ data: { enabled } }),
+    onSuccess: (res) => {
+      toast.success(res.enabled ? "Автоконсультант включен" : "Автоконсультант полностью выключен");
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+
+  const isBotEnabled = d?.botEnabled !== false;
+
+  return (
     <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-semibold">{c.title}</h1>
@@ -430,6 +443,65 @@ function ConsultantPage() {
             {!d.apiKeyConfigured ? ` • ${c.noKey}` : ""}
           </p>
         ) : null}
+      </div>
+
+      {/* Главный переключатель работы бота */}
+      <div
+        className={`p-4 rounded-xl border transition-colors shadow-sm flex items-center justify-between gap-4 flex-wrap ${
+          isBotEnabled
+            ? "bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+            : "bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
+        }`}
+      >
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5">
+            <span
+              className={`inline-block w-3 h-3 rounded-full ${
+                isBotEnabled ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+              }`}
+            />
+            <h2 className="text-base font-semibold">
+              {isBotEnabled ? "Автоконсультант включен" : "Автоконсультант выключен"}
+            </h2>
+            <Badge
+              variant={isBotEnabled ? "default" : "secondary"}
+              className={
+                isBotEnabled
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-amber-600 hover:bg-amber-700 text-white"
+              }
+            >
+              {isBotEnabled ? "Активен" : "На паузе"}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {isBotEnabled
+              ? "Бот автоматически отвечает клиентам в Instagram Direct на вопросы по наличию, ценам и товарам."
+              : "Бот полностью отключен. Все входящие сообщения в Direct обрабатываются менеджерами вручную."}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="bot-master-toggle"
+              checked={isBotEnabled}
+              disabled={toggleBot.isPending}
+              onCheckedChange={(checked) => toggleBot.mutate(checked)}
+            />
+            <Label htmlFor="bot-master-toggle" className="text-sm font-medium cursor-pointer">
+              {isBotEnabled ? "Вкл" : "Выкл"}
+            </Label>
+          </div>
+          <Button
+            variant={isBotEnabled ? "outline" : "default"}
+            size="sm"
+            disabled={toggleBot.isPending}
+            onClick={() => toggleBot.mutate(!isBotEnabled)}
+            className="font-medium"
+          >
+            {isBotEnabled ? "Выключить бота" : "Включить бота"}
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="overview" className="w-full">

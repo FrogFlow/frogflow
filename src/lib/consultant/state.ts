@@ -382,3 +382,39 @@ export async function listConsultantCustomers(limit = 40): Promise<ConsultantCus
     })
     .slice(0, limit);
 }
+
+export const CONSULTANT_BOT_ENABLED_KEY = "consultant_bot_enabled";
+
+let botEnabledCache: { at: number; enabled: boolean } | null = null;
+const BOT_ENABLED_CACHE_MS = 10_000;
+
+export function invalidateBotEnabledCache(): void {
+  botEnabledCache = null;
+}
+
+export async function isConsultantBotGloballyEnabled(): Promise<boolean> {
+  if (botEnabledCache && Date.now() - botEnabledCache.at < BOT_ENABLED_CACHE_MS) {
+    return botEnabledCache.enabled;
+  }
+  const s = await db();
+  const { data } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", CONSULTANT_BOT_ENABLED_KEY)
+    .maybeSingle();
+  const val = data?.value?.trim()?.toLowerCase();
+  const enabled = val !== "false" && val !== "0" && val !== "disabled";
+  botEnabledCache = { at: Date.now(), enabled };
+  return enabled;
+}
+
+export async function setConsultantBotGloballyEnabled(enabled: boolean): Promise<boolean> {
+  const s = await db();
+  await s.from("app_settings").upsert({
+    key: CONSULTANT_BOT_ENABLED_KEY,
+    value: enabled ? "true" : "false",
+    updated_at: new Date().toISOString(),
+  });
+  botEnabledCache = { at: Date.now(), enabled };
+  return enabled;
+}

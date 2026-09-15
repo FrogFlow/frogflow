@@ -52,6 +52,11 @@ export async function pollIncomingConsultantMessages(): Promise<{
   replied: number;
   skipped: number;
 }> {
+  const { isConsultantBotGloballyEnabled } = await import("./state");
+  if (!(await isConsultantBotGloballyEnabled())) {
+    return { checked: 0, replied: 0, skipped: 0 };
+  }
+
   const { listZernioAccounts, listZernioConversations, listZernioConversationMessages } =
     await import("@/lib/zernio.server");
   const { upsertZernioUser } = await import("@/lib/zernio-bot.server");

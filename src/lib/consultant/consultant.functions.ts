@@ -105,6 +105,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     oneCNote: "1С API недоступно по ТЗ. Источник — Excel/CSV/Sheets/Drive.",
     lastDirectAt: lastDirect?.created_at ?? null,
     lastDirectStatus: lastDirect?.status ?? null,
+    botEnabled: await (await import("./state")).isConsultantBotGloballyEnabled(),
   };
 });
 
@@ -258,3 +259,12 @@ export const testConsultantTelegramFn = createServerFn({ method: "POST" }).handl
   });
   return { ok: true as const };
 });
+
+export const toggleConsultantBotFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ enabled: z.boolean() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const { setConsultantBotGloballyEnabled } = await import("./state");
+    const enabled = await setConsultantBotGloballyEnabled(data.enabled);
+    return { ok: true as const, enabled };
+  });

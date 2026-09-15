@@ -136,6 +136,11 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
             return new Response("ok");
           }
           if ((await botStatus()) !== "active") return new Response("ok");
+        } else {
+          const { isConsultantBotGloballyEnabled } = await import("@/lib/consultant/state");
+          if (!(await isConsultantBotGloballyEnabled())) {
+            return new Response("consultant_disabled", { status: 200 });
+          }
         }
 
         const eventId =
