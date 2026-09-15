@@ -547,8 +547,10 @@ export async function decideConsultantReply(
           if (composed) return composed;
           const variants = replyMoreVariants(text, catalog, inStock, country, countryPatch, state, rateRow?.rate ?? null);
           if (variants) return variants;
+          const matched = matchProductsInText(text, inStock);
           const tokens = searchTokens(text);
           const targetProduct =
+            matched[0] ??
             inStock.find((p) => {
               const hay = haystackOf([p.name, p.size, ...p.colors]);
               return tokens.some((t) => hay.includes(t));
@@ -924,7 +926,9 @@ function matchProductsInText(
   catalog: import("./catalog").ConsultantProduct[],
 ): import("./catalog").ConsultantProduct[] {
   if (!targetText) return [];
-  const ctx = targetText.toLowerCase();
+  const ctx = targetText
+    .toLowerCase()
+    .replace(/(\d+)\s*[-–—/xх*×]\s*(\d+)/g, "$1x$2");
   const scored: Array<{ product: import("./catalog").ConsultantProduct; score: number }> = [];
   for (const p of catalog) {
     if (!p.stock) continue;
@@ -932,7 +936,7 @@ function matchProductsInText(
     const matchedTokens = nameTokens.filter((t) => ctx.includes(t));
     if (matchedTokens.length === 0) continue;
     if (p.size) {
-      const cleanSize = p.size.toLowerCase().replace(/\s*см$/i, "").replace(/[×*]/g, "x").trim();
+      const cleanSize = p.size.toLowerCase().replace(/\s*см$/i, "").replace(/[-–—/xх*×]/g, "x").trim();
       if (!ctx.includes(cleanSize)) continue;
     }
     const colorMatch = p.colors.some((c) => ctx.includes(c.toLowerCase()));
