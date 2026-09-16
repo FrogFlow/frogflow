@@ -91,17 +91,17 @@ const copy: Record<
     saveShop: "Сохранить ссылку",
     rateTitle: "Курс VTB Казахстан",
     rateBody:
-      "RUB = ₸ / (курс покупки × 0,95). Сначала касса VTB; если страница недоступна — официальный курс НБРК. Кассу VTB всегда можно ввести вручную.",
+      "RUB = ₸ / (курс покупки × 0,95 в будни / 0,93 в выходные). Подтягивается из официального ВТБ Онлайн (online.vtb.kz). Если банк недоступен — резервный курс НБРК.",
     rateEmpty: "Курса ещё нет. Обновите или введите вручную.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
     rateSource: {
-      vtb: "источник: VTB",
-      nbk: "источник: НБРК (касса VTB сейчас не публикует курс)",
+      vtb: "источник: ВТБ Онлайн",
+      nbk: "источник: НБРК (резервный курс)",
       manual: "источник: вручную",
       other: "источник: внешний URL",
     },
-    rateNbkToast: "Страница VTB недоступна — записан курс НБРК. Кассу банка введите вручную, если нужна именно она.",
-    refreshRate: "Обновить курс",
+    rateNbkToast: "Сервис ВТБ временно недоступен — записан курс НБРК. Можно ввести курс вручную.",
+    refreshRate: "Обновить курс (ВТБ)",
     manualRate: "Записать курс вручную",
     usage: (count, usd, model) => `Claude: ${count} вызовов · ${usd} · модель ${model}`,
     noKey: "ANTHROPIC_API_KEY не задан — товарные ответы пойдут упрощённым поиском по прайсу.",
@@ -1065,7 +1065,13 @@ function ConsultantPage() {
             <p className="text-sm text-muted-foreground">{c.rateBody}</p>
             <p className="text-sm">
               {d?.rate
-                ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — ${d.rate.source?.includes("nationalbank") ? "НБРК (официальный курс)" : "VTB / ручной"}`
+                ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — ${
+                    d.rate.source?.includes("vtb")
+                      ? "ВТБ Онлайн (официальный курс)"
+                      : d.rate.source?.includes("nationalbank")
+                      ? "НБРК (резервный курс)"
+                      : "вручную"
+                  }`
                 : c.rateEmpty}
             </p>
             
@@ -1088,7 +1094,7 @@ function ConsultantPage() {
                 disabled={refreshRate.isPending}
               >
                 <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshRate.isPending ? "animate-spin" : ""}`} />
-                {refreshRate.isPending ? "Обновление..." : "Подтянуть курс (НБРК)"}
+                {refreshRate.isPending ? "Обновление..." : "Подтянуть курс (ВТБ)"}
               </Button>
             </div>
           </section>
