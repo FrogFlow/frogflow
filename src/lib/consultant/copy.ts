@@ -168,14 +168,15 @@ export function formatProductReply(
   const title = product.name;
   const sizeBit = size ? ` ${size} см` : "";
 
+  const safeColors = Array.isArray(product.colors) ? product.colors : [];
   let headerLine: string;
   if (
     opts.selectedColor &&
-    product.colors.some((c) => c.toLowerCase().includes(opts.selectedColor!.toLowerCase()))
+    safeColors.some((c) => c.toLowerCase().includes(opts.selectedColor!.toLowerCase()))
   ) {
     headerLine = `${title}${sizeBit}, цвет ${opts.selectedColor}, есть в наличии. Стоимость — ${amount}.`;
   } else {
-    const colors = product.colors.length > 0 ? product.colors.join(", ") : "уточните у менеджера";
+    const colors = safeColors.length > 0 ? safeColors.join(", ") : "уточните у менеджера";
     headerLine = `${title}${sizeBit} есть в наличии. Доступные расцветки: ${colors}. Стоимость — ${amount}.`;
   }
 

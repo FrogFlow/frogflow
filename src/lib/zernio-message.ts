@@ -135,20 +135,63 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   let storyMediaUrl: string | null = null;
 
   const rawMeta = interactive as any;
-  if (rawMeta.story_id) storyId = String(rawMeta.story_id);
-  else if (rawMeta.reel_id) storyId = String(rawMeta.reel_id);
-  else if (rawMeta.post_id) storyId = String(rawMeta.post_id);
-  else if (rawMeta.story?.id) storyId = String(rawMeta.story.id);
-  else if (rawMeta.reel?.id) storyId = String(rawMeta.reel.id);
+  const rawMsg = message as any;
+  const rawPayload = payload as any;
 
-  if (!storyMediaUrl) {
-    if (rawMeta.story_url) storyMediaUrl = String(rawMeta.story_url);
-    else if (rawMeta.reel_url) storyMediaUrl = String(rawMeta.reel_url);
-    else if (rawMeta.story?.url) storyMediaUrl = String(rawMeta.story.url);
-    else if (rawMeta.reel?.url) storyMediaUrl = String(rawMeta.reel.url);
+  const candidateMetaId =
+    rawMeta.storyReply?.storyId ||
+    rawMeta.storyReply?.story_id ||
+    rawMeta.storyReply?.id ||
+    rawMeta.story_reply?.story_id ||
+    rawMeta.story_reply?.storyId ||
+    rawMeta.story_reply?.id ||
+    rawMeta.reelReply?.reelId ||
+    rawMeta.reelReply?.reel_id ||
+    rawMeta.reelReply?.id ||
+    rawMeta.reel_reply?.reel_id ||
+    rawMeta.storyId ||
+    rawMeta.story_id ||
+    rawMeta.reelId ||
+    rawMeta.reel_id ||
+    rawMeta.postId ||
+    rawMeta.post_id ||
+    rawMeta.story?.id ||
+    rawMeta.story?.storyId ||
+    rawMeta.reel?.id ||
+    rawMeta.reel?.reelId ||
+    rawMsg.storyReply?.storyId ||
+    rawMsg.storyReply?.story_id ||
+    rawPayload.storyReply?.storyId;
+
+  if (candidateMetaId) {
+    storyId = String(candidateMetaId);
   }
 
-  const rawMsg = message as any;
+  const candidateMetaUrl =
+    rawMeta.storyReply?.storyUrl ||
+    rawMeta.storyReply?.story_url ||
+    rawMeta.storyReply?.url ||
+    rawMeta.story_reply?.story_url ||
+    rawMeta.story_reply?.storyUrl ||
+    rawMeta.story_reply?.url ||
+    rawMeta.reelReply?.reelUrl ||
+    rawMeta.reelReply?.reel_url ||
+    rawMeta.reelReply?.url ||
+    rawMeta.storyUrl ||
+    rawMeta.story_url ||
+    rawMeta.reelUrl ||
+    rawMeta.reel_url ||
+    rawMeta.story?.url ||
+    rawMeta.story?.storyUrl ||
+    rawMeta.reel?.url ||
+    rawMsg.storyReply?.storyUrl ||
+    rawMsg.storyReply?.story_url ||
+    rawPayload.storyReply?.storyUrl;
+
+  if (!storyMediaUrl && candidateMetaUrl) {
+    storyMediaUrl = String(candidateMetaUrl);
+  }
+
   if (!storyId && rawMsg?.referral) {
     const ref =
       rawMsg.referral.reel_id ||
