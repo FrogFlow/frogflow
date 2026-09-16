@@ -134,31 +134,62 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   let storyId: string | null = null;
   let storyMediaUrl: string | null = null;
 
-  if (typeof interactive.story_id === "string") {
-    storyId = interactive.story_id;
-  }
-  if (!storyId && typeof (interactive as any).reel_id === "string") {
-    storyId = (interactive as any).reel_id;
-  }
-  if (!storyId && typeof (interactive as any).post_id === "string") {
-    storyId = (interactive as any).post_id;
+  const rawMeta = interactive as any;
+  if (rawMeta.story_id) storyId = String(rawMeta.story_id);
+  else if (rawMeta.reel_id) storyId = String(rawMeta.reel_id);
+  else if (rawMeta.post_id) storyId = String(rawMeta.post_id);
+  else if (rawMeta.story?.id) storyId = String(rawMeta.story.id);
+  else if (rawMeta.reel?.id) storyId = String(rawMeta.reel.id);
+
+  if (!storyMediaUrl) {
+    if (rawMeta.story_url) storyMediaUrl = String(rawMeta.story_url);
+    else if (rawMeta.reel_url) storyMediaUrl = String(rawMeta.reel_url);
+    else if (rawMeta.story?.url) storyMediaUrl = String(rawMeta.story.url);
+    else if (rawMeta.reel?.url) storyMediaUrl = String(rawMeta.reel.url);
   }
 
   const rawMsg = message as any;
   if (!storyId && rawMsg?.referral) {
-    storyId = String(
+    const ref =
       rawMsg.referral.reel_id ||
-        rawMsg.referral.target_id ||
-        rawMsg.referral.video_id ||
-        rawMsg.referral.ref ||
-        "",
-    );
+      rawMsg.referral.story_id ||
+      rawMsg.referral.target_id ||
+      rawMsg.referral.video_id ||
+      rawMsg.referral.ref;
+    if (ref) storyId = String(ref);
   }
+
+  if (!storyId && rawMsg?.story) {
+    const sId = rawMsg.story.id || rawMsg.story_id;
+    if (sId) storyId = String(sId);
+  }
+  if (!storyMediaUrl && rawMsg?.story?.url) {
+    storyMediaUrl = String(rawMsg.story.url);
+  }
+
+  if (!storyId && rawMsg?.reel) {
+    const rId = rawMsg.reel.id || rawMsg.reel_id;
+    if (rId) storyId = String(rId);
+  }
+  if (!storyMediaUrl && rawMsg?.reel?.url) {
+    storyMediaUrl = String(rawMsg.reel.url);
+  }
+
   if (!storyId && rawMsg?.reply_to) {
-    storyId = String(rawMsg.reply_to.story?.id || rawMsg.reply_to.reel?.id || "");
-    if (!storyMediaUrl) {
-      storyMediaUrl = rawMsg.reply_to.story?.url || rawMsg.reply_to.reel?.url || null;
-    }
+    const repId =
+      rawMsg.reply_to.story?.id ||
+      rawMsg.reply_to.reel?.id ||
+      rawMsg.reply_to.story_id ||
+      rawMsg.reply_to.reel_id ||
+      rawMsg.reply_to.id;
+    if (repId) storyId = String(repId);
+  }
+  if (!storyMediaUrl && rawMsg?.reply_to) {
+    const repUrl =
+      rawMsg.reply_to.story?.url ||
+      rawMsg.reply_to.reel?.url ||
+      rawMsg.reply_to.url;
+    if (repUrl) storyMediaUrl = String(repUrl);
   }
 
   const RELEVANT_ATTACHMENT_TYPES = new Set([
@@ -178,25 +209,36 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
     for (const att of message.attachments) {
       const attType = String(att.type || "").toLowerCase();
       if (RELEVANT_ATTACHMENT_TYPES.has(attType)) {
-        const attPayload = (att.payload ?? {}) as Record<string, any>;
+        const attPayload = ((att as any).payload ?? {}) as Record<string, any>;
         const candidateUrl =
           (typeof att.url === "string" && att.url ? att.url : null) ||
-          (typeof attPayload.url === "string" && attPayload.url ? attPayload.url : null);
+          (typeof attPayload.url === "string" && attPayload.url ? attPayload.url : null) ||
+          (typeof attPayload.story?.url === "string" && attPayload.story.url ? attPayload.story.url : null) ||
+          (typeof attPayload.reel?.url === "string" && attPayload.reel.url ? attPayload.reel.url : null) ||
+          (typeof attPayload.share?.url === "string" && attPayload.share.url ? attPayload.share.url : null);
         if (!storyMediaUrl && candidateUrl) {
           storyMediaUrl = candidateUrl;
         }
 
         const candidateId =
-          attPayload.reel_id ||
+          attPayload.story?.id ||
+          attPayload.reel?.id ||
+          attPayload.share?.id ||
           attPayload.story_id ||
+          attPayload.reel_id ||
           attPayload.id ||
           attPayload.media_id ||
+          attPayload.target_id ||
           (att as any).id;
         if (!storyId && candidateId) {
           storyId = String(candidateId);
         }
       }
     }
+  }
+
+  if (storyId) {
+    storyId = storyId.trim();
   }
 
   if (storyMediaUrl) {

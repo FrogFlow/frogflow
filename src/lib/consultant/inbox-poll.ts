@@ -200,16 +200,48 @@ export async function pollIncomingConsultantMessages(): Promise<{
         "image",
       ]);
       for (const m of recentIncoming) {
+        const rawM = m as any;
+        if (!storyId) {
+          const directId =
+            rawM.story?.id ||
+            rawM.reel?.id ||
+            rawM.story_id ||
+            rawM.reel_id ||
+            rawM.reply_to?.story?.id ||
+            rawM.reply_to?.reel?.id ||
+            rawM.reply_to?.story_id ||
+            rawM.reply_to?.reel_id;
+          if (directId) storyId = String(directId);
+        }
+        if (!storyMediaUrl) {
+          const directUrl =
+            rawM.story?.url ||
+            rawM.reel?.url ||
+            rawM.reply_to?.story?.url ||
+            rawM.reply_to?.reel?.url;
+          if (directUrl) storyMediaUrl = String(directUrl);
+        }
+
         const att = m.attachments?.find((a) => POLL_STORY_TYPES.has(String(a.type || "").toLowerCase()));
         if (att) {
-          const candidateUrl = att.url || (att as any).payload?.url;
-          if (candidateUrl) storyMediaUrl = candidateUrl;
+          const p = ((att as any).payload ?? {}) as Record<string, any>;
+          const candidateUrl =
+            att.url ||
+            p.url ||
+            p.story?.url ||
+            p.reel?.url ||
+            p.share?.url;
+          if (!storyMediaUrl && candidateUrl) storyMediaUrl = candidateUrl;
           const candidateId =
-            (att as any).payload?.reel_id ||
-            (att as any).payload?.story_id ||
-            (att as any).payload?.id ||
+            p.story?.id ||
+            p.reel?.id ||
+            p.share?.id ||
+            p.reel_id ||
+            p.story_id ||
+            p.id ||
+            p.media_id ||
             att.id;
-          if (candidateId) storyId = String(candidateId);
+          if (!storyId && candidateId) storyId = String(candidateId);
           if (!storyId && storyMediaUrl) {
             const info = extractInstagramMediaInfo(storyMediaUrl);
             if (info.shortcode) storyId = info.shortcode;

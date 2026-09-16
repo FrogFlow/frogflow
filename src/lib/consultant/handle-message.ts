@@ -552,7 +552,48 @@ export async function decideConsultantReply(
         ? { rate: ctx.rate, updatedAt: "test", source: "test" }
         : null
       : await getStoredVtbRate();
-  if (catalog.length === 0) {
+  let storyTag: any = null;
+  let storyProduct: ConsultantProduct | null = null;
+  if (ctx.storyId || ctx.storyMediaUrl) {
+    try {
+      const { findStoryTag } = await import("./story-tags.functions");
+      storyTag = await findStoryTag(ctx.storyId, ctx.storyMediaUrl);
+      if (storyTag) {
+        if (storyTag.product_id) {
+          storyProduct = await getProduct(storyTag.product_id, catalog);
+        }
+        if (!storyProduct && storyTag.product_name) {
+          const matched = matchProductsInText(storyTag.product_name, catalog);
+          if (matched[0]) {
+            storyProduct = {
+              ...matched[0],
+              name: storyTag.product_name,
+              price_kzt: storyTag.product_price_kzt || matched[0].price_kzt,
+            };
+          }
+        }
+        if (!storyProduct) {
+          storyProduct = {
+            id: storyTag.product_id || `story_${storyTag.story_id}`,
+            name: storyTag.product_name,
+            category: "текстиль",
+            size: "",
+            colors: [],
+            price_kzt: storyTag.product_price_kzt || 0,
+            stock: true,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("[consultant] findStoryTag error:", err);
+    }
+  }
+
+  const effectiveCatalog = storyProduct && !catalog.some((p) => p.id === storyProduct!.id)
+    ? [...catalog, storyProduct]
+    : catalog;
+
+  if (effectiveCatalog.length === 0) {
     void track(ctx.userKey, "error", "catalog_empty", bucket);
     return handoffReply(pack, { ...state, ...countryPatch }, bucket, "other", text, ctx.userKey);
   }
@@ -560,19 +601,38 @@ export async function decideConsultantReply(
   if (canClaude) {
     try {
       let claudeText = text;
-      if (ctx.storyId || ctx.storyMediaUrl) {
-        console.log("[consultant] story context detected:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
+      if (storyProduct) {
+        const kztPrice = storyProduct.price_kzt;
+        const rubPrice = rateRow?.rate ? priceRub(kztPrice, rateRow.rate) : null;
+        const priceNotice =
+          country === "RU"
+            ? `${rubPrice ? `${rubPrice} ₽` : "уточняется"}`
+            : `${kztPrice.toLocaleString("ru-RU")} ₸`;
+
+        const userPrompt = text.trim() || "Здравствуйте! Подскажите подробнее про этот товар";
+
+        claudeText = `[КОНТЕКСТ INSTAGRAM: Клиент ответил на Story или Reel (ID: ${storyTag?.story_id || ctx.storyId}).
+В этой публикации представлен товар нашего бренда BOVI: «${storyProduct.name}» (категория: ${storyProduct.category}, цена: ${priceNotice}, в наличии).
+Запрос клиента: "${userPrompt}".
+ИНСТРУКЦИИ ДЛЯ ОТВЕТА:
+1. Подтвердите клиенту, что в публикации представлен товар «${storyProduct.name}».
+2. Обязательно назовите актуальную цену (${priceNotice}) и подтвердите наличие.
+3. Опишите качество и характеристики (натуральные премиальные материалы, фирменный стандарт BOVI).
+4. Задайте вопрос по размеру или расцветке, либо предложите оформить заказ.
+Категорически запрещено писать "я не понимаю, на что вы ссылаетесь" или спрашивать о каком товаре речь — вы точно знаете, что это «${storyProduct.name}».]`;
+      } else if (ctx.storyId || ctx.storyMediaUrl) {
+        console.log("[consultant] story context detected without pre-fetched tag:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
         const userPrompt = text.trim() || "Здравствуйте! Подскажите цену и наличие этого товара";
-        claudeText = `[Customer replied to an Instagram story or reel. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown. If the customer asks about price or availability, answer with the tagged product's price and details]\n\n${userPrompt}`;
+        claudeText = `[Customer replied to an Instagram story or reel with ID "${ctx.storyId || ""}". Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown. If the customer asks about price or availability, answer with the tagged product's price and details. If no product is found, politely ask which home textile item from the story they liked]\n\n${userPrompt}`;
       }
 
       const ai = await runConsultantClaude({
         text: claudeText,
         state: { ...state, ...countryPatch },
-        catalog,
+        catalog: effectiveCatalog,
         rate: rateRow?.rate ?? null,
         shopUrl: await getShopUrlSafe(),
-        forceTools: Boolean(ctx.storyId || ctx.storyMediaUrl),
+        forceTools: Boolean(!storyProduct && (ctx.storyId || ctx.storyMediaUrl)),
         composeAfterTools: true,
       });
       if (ai.usage) {
@@ -585,7 +645,7 @@ export async function decideConsultantReply(
         void track(ctx.userKey, "handoff", text, bucket);
         const contactFromTool = ai.handoffData?.customer_phone;
         const customerContact = contactFromTool || (hasPhone ? text : state.customer_contact);
-        const matched = resolveHandoffProductIds(state, text, catalog);
+        const matched = resolveHandoffProductIds(state, text, effectiveCatalog);
         const productIds = ai.products.length > 0
           ? ai.products.map((p) => p.id)
           : matched.length > 0
@@ -620,16 +680,16 @@ export async function decideConsultantReply(
           ctx.userKey,
           handoffText.trim() ? handoffText : pack.purchase,
           customerContact,
-          catalog,
+          effectiveCatalog,
         );
       } else if (!ai.error) {
         let cleanAiText = cleanScriptHallucinations(cleanForbiddenPhrases(stripMarkdownFormatting(ai.text)));
 
         const inStock = ai.products.filter((p) => p.stock);
         const historyProducts = (state.last_product_ids ?? [])
-          .map((id) => catalog.find((p) => p.id === id))
+          .map((id) => effectiveCatalog.find((p) => p.id === id))
           .filter((p): p is import("./catalog").ConsultantProduct => Boolean(p));
-        const allKnownProducts = [...catalog, ...historyProducts];
+        const allKnownProducts = [...effectiveCatalog, ...historyProducts];
         const rublePrices = country === "RU" && rateRow?.rate
           ? allKnownProducts.map((p) => priceRub(p.price_kzt, rateRow.rate))
           : [];
@@ -642,10 +702,10 @@ export async function decideConsultantReply(
           });
         }
         if (cleanAiText.trim()) {
-          const mentionedProducts = matchProductsInText(cleanAiText, catalog);
+          const mentionedProducts = matchProductsInText(cleanAiText, effectiveCatalog);
           const newIds = mentionedProducts.length > 0
             ? mentionedProducts.map((p) => p.id)
-            : (state.last_product_ids ?? []);
+            : (storyProduct ? [storyProduct.id] : (state.last_product_ids ?? []));
           return {
             text: cleanAiText.trim(),
             patch: {
@@ -653,7 +713,7 @@ export async function decideConsultantReply(
               last_product_ids: newIds,
               conversation_state: "consulting",
             },
-            kind: mentionedProducts.length ? "product" : "clarify",
+            kind: (mentionedProducts.length || storyProduct) ? "product" : "clarify",
           };
         }
         if (inStock.length > 0) {
@@ -721,25 +781,19 @@ export async function decideConsultantReply(
   }
 
   // ================= FALLBACK DETERMINISTIC LOGIC (when Claude is unavailable or fails) =================
-  if (ctx.storyId || ctx.storyMediaUrl) {
-    const { findStoryTag } = await import("./story-tags.functions");
-    const tag = await findStoryTag(ctx.storyId, ctx.storyMediaUrl);
-    if (tag) {
-      let targetProduct: ConsultantProduct | null = null;
-      if (tag.product_id) {
-        targetProduct = await getProduct(tag.product_id, catalog);
-      }
-      if (!targetProduct) {
-        targetProduct = {
-          id: tag.product_id || `story_${tag.story_id}`,
-          name: tag.product_name,
-          category: "story",
-          size: "",
-          colors: [],
-          price_kzt: tag.product_price_kzt || 0,
-          stock: true,
-        };
-      }
+  if (storyProduct || ctx.storyId || ctx.storyMediaUrl) {
+    const tag = storyTag ?? ((ctx.storyId || ctx.storyMediaUrl) ? await (await import("./story-tags.functions")).findStoryTag(ctx.storyId, ctx.storyMediaUrl) : null);
+    const targetProduct = storyProduct ?? (tag ? (tag.product_id ? await getProduct(tag.product_id, catalog) : null) ?? {
+      id: tag.product_id || `story_${tag.story_id}`,
+      name: tag.product_name,
+      category: "текстиль",
+      size: "",
+      colors: [],
+      price_kzt: tag.product_price_kzt || 0,
+      stock: true,
+    } : null);
+
+    if (targetProduct) {
       const includeCdek = country === "RU" && !state.ru_cdek_sent;
       const rub =
         country === "RU" && rateRow?.rate ? priceRub(targetProduct.price_kzt, rateRow.rate) : null;
