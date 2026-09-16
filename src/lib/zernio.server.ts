@@ -2363,7 +2363,14 @@ export async function handleZernioCommentTwoStep(payload: {
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   const secondText = meta.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
-  const buttons = meta.secondDmButtons || matchedAuto.buttons || [];
+  let buttons = meta.secondDmButtons || matchedAuto.buttons || [];
+  if (!buttons || buttons.length === 0) {
+    const { getCachedBotUrl } = await import("./bot-url.server");
+    const botUrl = await getCachedBotUrl();
+    if (botUrl) {
+      buttons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
+    }
+  }
 
   await startInstagramConversation({
     accountId,

@@ -212,18 +212,26 @@ export async function runCommentDmFallback(): Promise<{
         );
         if (result.ok) {
           sent++;
-          if (isTwoStep && automation.buttons && automation.buttons.length > 0) {
+          if (isTwoStep) {
             await new Promise((r) => setTimeout(r, 1500));
             const commenterUsername = comment.from?.username;
             const secondText =
               automation.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
-            if (commenterUsername) {
+            let targetButtons = automation.buttons;
+            if (!targetButtons || targetButtons.length === 0) {
+              const { getCachedBotUrl } = await import("./bot-url.server");
+              const botUrl = await getCachedBotUrl();
+              if (botUrl) {
+                targetButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
+              }
+            }
+            if (commenterUsername && targetButtons && targetButtons.length > 0) {
               const { startInstagramConversation } = await import("./zernio.server");
               await startInstagramConversation({
                 accountId: automation.accountId,
                 username: commenterUsername,
                 message: secondText,
-                buttons: automation.buttons,
+                buttons: targetButtons,
               });
             }
           }

@@ -1394,7 +1394,13 @@ function catchupNeedsReply(
  * (instagram.functions.ts), так что даже "выбрать все" уходит партиями, а
  * не одним запросом на сотню человек.
  */
-function CatchupReplySection({ accountId }: { accountId: string | null }) {
+function CatchupReplySection({
+  accountId,
+  botUrl,
+}: {
+  accountId: string | null;
+  botUrl?: string;
+}) {
   const [postId, setPostId] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
   const [comments, setComments] = useState<CatchupComment[] | null>(null);
@@ -1650,13 +1656,40 @@ function CatchupReplySection({ accountId }: { accountId: string | null }) {
                 <Input
                   value={buttonTitle}
                   onChange={(e) => setButtonTitle(e.target.value)}
-                  placeholder="Текст кнопки (обязательно для холодного охвата)"
+                  placeholder="Текст кнопки (например: Открыть в Telegram ✈️)"
                 />
                 <Input
                   value={buttonUrl}
                   onChange={(e) => setButtonUrl(e.target.value)}
-                  placeholder="https://... (пусто — кнопка-postback, без ссылки)"
+                  placeholder={botUrl || "https://... (пусто — кнопка-postback, без ссылки)"}
                 />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[10px] text-muted-foreground">Пресеты:</span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-5 text-[10px] px-2 py-0"
+                  onClick={() => {
+                    setButtonTitle("Открыть в Telegram ✈️");
+                    if (botUrl) setButtonUrl(botUrl);
+                  }}
+                >
+                  ✈️ Вставить ссылку на Telegram-бот
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-5 text-[10px] px-2 py-0"
+                  onClick={() => {
+                    setButtonTitle("Получить материалы 🎁");
+                    if (botUrl) setButtonUrl(botUrl);
+                  }}
+                >
+                  🎁 Получить материалы
+                </Button>
               </div>
             </div>
 
@@ -1903,6 +1936,7 @@ function AdminInstagramPage() {
 
   const accounts = accountsQuery.data?.accounts || [];
   const acc = accounts[0];
+  const botUrl = (automationsQuery.data as { botUrl?: string } | undefined)?.botUrl || "";
   // p._date can be either a ms timestamp or an ISO string (Zernio's
   // publishedAt) — Number() on the latter is NaN, so this must go through
   // `new Date()` directly rather than forcing it to a number first.
@@ -2544,7 +2578,19 @@ function AdminInstagramPage() {
     setPostId(auto.platformPostId || auto.postId || "ALL_POSTS");
     setIsActive(auto.isActive ?? true);
     setTrigger(auto.trigger || "comment");
-    setButtons(auto.buttons || []);
+    const initialButtons =
+      auto.buttons && auto.buttons.length > 0
+        ? auto.buttons
+        : Boolean(auto.twoStepDm)
+          ? [
+              {
+                type: "url" as const,
+                title: "Открыть в Telegram ✈️",
+                url: botUrl || "https://t.me/",
+              },
+            ]
+          : [];
+    setButtons(initialButtons);
     setDmVariations(auto.dmMessageVariations || []);
     setReplyVariations(auto.commentReplyVariations || []);
     setLinkTracking(auto.linkTracking !== false);
@@ -2553,9 +2599,38 @@ function AdminInstagramPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handleToggleTwoStepDm = (checked: boolean) => {
+    setTwoStepDm(checked);
+    if (checked) {
+      if (!secondDmMessage.trim()) {
+        setSecondDmMessage("Для перехода в бот и получения материалов нажмите кнопку ниже 👇");
+      }
+      if (buttons.length === 0) {
+        setButtons([
+          {
+            type: "url",
+            title: "Открыть в Telegram ✈️",
+            url: botUrl || "https://t.me/",
+          },
+        ]);
+      }
+    }
+  };
+
   const handleAddButton = () => {
     if (buttons.length >= 3) return;
-    setButtons([...buttons, { type: "url", title: tr.buyBtnDefault, url: "" }]);
+    setButtons([
+      ...buttons,
+      {
+        type: "url",
+        title: twoStepDm
+          ? "Открыть в Telegram ✈️"
+          : isPhysicalShop
+            ? tr.buyBtnDefault
+            : "Открыть в Telegram ✈️",
+        url: botUrl || "",
+      },
+    ]);
   };
 
   const handleRemoveButton = (index: number) => {
@@ -3140,60 +3215,72 @@ function AdminInstagramPage() {
                           <Switch
                             id="two_step_dm"
                             checked={twoStepDm}
-                            onCheckedChange={setTwoStepDm}
+                            onCheckedChange={handleToggleTwoStepDm}
                           />
                         </div>
                       </div>
 
-                      <div className="space-y-2">
-                        <Label className="flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-primary" />
-                          {twoStepDm
-                            ? "1-е сообщение: Первичный ответ в Direct (без кнопок)"
-                            : "Личное сообщение (DM)"}
-                        </Label>
-                        <Textarea
-                          value={dmText}
-                          onChange={(e) => setDmText(e.target.value)}
-                          placeholder={
-                            twoStepDm
-                              ? "Здравствуйте! Отправили вам информацию. Нажмите кнопку в сообщении ниже 👇"
-                              : isPhysicalShop
-                                ? tr.dmPlaceholderPhysical
-                                : tr.dmPlaceholder
-                          }
-                          rows={3}
-                        />
-                        {twoStepDm && (
-                          <span className="text-[10px] text-muted-foreground block">
-                            💡 Это сообщение Meta проверяет как ответ на комментарий. Оставьте чистый текст без ссылок и кнопок.
-                          </span>
-                        )}
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <Zap className="w-4 h-4 text-primary" />
+                            {twoStepDm
+                              ? "1-е сообщение: Первичный ответ в Direct (чистый текст без кнопок)"
+                              : "Личное сообщение (Direct)"}
+                          </Label>
+                          <Textarea
+                            value={dmText}
+                            onChange={(e) => setDmText(e.target.value)}
+                            placeholder={
+                              twoStepDm
+                                ? "Здравствуйте! Отправили вам информацию. Нажмите кнопку в сообщении ниже 👇"
+                                : isPhysicalShop
+                                  ? tr.dmPlaceholderPhysical
+                                  : tr.dmPlaceholder
+                            }
+                            rows={3}
+                          />
+                          {twoStepDm && (
+                            <span className="text-[10px] text-muted-foreground block">
+                              💡 Это сообщение Meta проверяет как ответ на комментарий. Оставьте чистый текст без ссылок и кнопок.
+                            </span>
+                          )}
+                        </div>
 
                         {twoStepDm && (
-                          <div className="space-y-2 pt-2 border-t mt-3">
-                            <Label className="flex items-center gap-2 text-xs font-semibold">
-                              <MessageSquare className="w-3.5 h-3.5 text-primary" />
-                              2-е сообщение: Текст перед кнопкой перехода (следом в Direct)
-                            </Label>
-                            <Textarea
-                              value={secondDmMessage}
-                              onChange={(e) => setSecondDmMessage(e.target.value)}
-                              placeholder="Для перехода в Telegram-бот и получения материалов нажмите кнопку ниже 👇"
-                              rows={2}
-                            />
-                            <span className="text-[10px] text-muted-foreground block">
-                              Отправляется через 1.5 секунды уже внутри открытого диалога Direct вместе с кнопками ниже.
-                            </span>
+                          <div className="space-y-3 pt-3 border-t bg-muted/20 p-3 rounded-lg border">
+                            <div className="space-y-1">
+                              <Label className="flex items-center gap-2 text-xs font-semibold">
+                                <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                                2-е сообщение: Текст перед кнопкой перехода (следом в Direct)
+                              </Label>
+                              <Textarea
+                                value={secondDmMessage}
+                                onChange={(e) => setSecondDmMessage(e.target.value)}
+                                placeholder="Для перехода в бот и получения материалов нажмите кнопку ниже 👇"
+                                rows={2}
+                              />
+                              <span className="text-[10px] text-muted-foreground block">
+                                Отправляется через 1.5 секунды уже внутри открытого диалога Direct вместе с кнопкой перехода ниже.
+                              </span>
+                            </div>
                           </div>
                         )}
 
-                        {/* Buttons inside DM */}
-                        <div className="space-y-2 pt-2">
+                        {/* Настройка кнопок в Direct */}
+                        <div className="space-y-3 pt-2 border-t">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                              {twoStepDm ? "Кнопки ко 2-му сообщению" : "Кнопки в DM"} ({buttons.length}/3)
-                            </span>
+                            <div>
+                              <Label className="text-xs font-semibold flex items-center gap-1.5">
+                                <Link2 className="w-3.5 h-3.5 text-primary" />
+                                {twoStepDm ? "Кнопка ко 2-му сообщению" : "Кнопки в Direct"} ({buttons.length}/3)
+                              </Label>
+                              <p className="text-[11px] text-muted-foreground">
+                                {twoStepDm
+                                  ? "Настройте текст и ссылку кнопки, которая придёт во 2-м сообщении для перехода подписчика в бот или на сайт."
+                                  : "Интерактивные кнопки, прикрепляемые к сообщению в Direct."}
+                              </p>
+                            </div>
                             <Button
                               type="button"
                               variant="outline"
@@ -3202,68 +3289,240 @@ function AdminInstagramPage() {
                               disabled={buttons.length >= 3}
                               className="h-7 text-[10px]"
                             >
-                              + Добавить
+                              + Добавить кнопку
                             </Button>
                           </div>
-                          <div className="grid grid-cols-1 gap-2">
+
+                          {/* Quick Presets */}
+                          <div className="flex flex-wrap items-center gap-1.5 bg-muted/30 p-2 rounded-md border text-xs">
+                            <span className="text-[11px] font-medium text-muted-foreground">Пресеты:</span>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="h-6 text-[11px] px-2 py-0"
+                              onClick={() => {
+                                if (buttons.length === 0) {
+                                  setButtons([{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl || "https://t.me/" }]);
+                                } else {
+                                  handleUpdateButton(0, "title", "Открыть в Telegram ✈️");
+                                  if (botUrl) handleUpdateButton(0, "url", botUrl);
+                                }
+                              }}
+                            >
+                              ✈️ Открыть в Telegram
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="h-6 text-[11px] px-2 py-0"
+                              onClick={() => {
+                                if (buttons.length === 0) {
+                                  setButtons([{ type: "url", title: "Получить материалы 🎁", url: botUrl || "https://t.me/" }]);
+                                } else {
+                                  handleUpdateButton(0, "title", "Получить материалы 🎁");
+                                  if (botUrl) handleUpdateButton(0, "url", botUrl);
+                                }
+                              }}
+                            >
+                              🎁 Получить материалы
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="h-6 text-[11px] px-2 py-0"
+                              onClick={() => {
+                                if (buttons.length === 0) {
+                                  setButtons([{ type: "url", title: "Перейти в бот 🤖", url: botUrl || "https://t.me/" }]);
+                                } else {
+                                  handleUpdateButton(0, "title", "Перейти в бот 🤖");
+                                  if (botUrl) handleUpdateButton(0, "url", botUrl);
+                                }
+                              }}
+                            >
+                              🤖 Перейти в бот
+                            </Button>
+                            {botUrl && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-6 text-[11px] px-2 py-0 text-primary border-primary/30"
+                                onClick={() => {
+                                  if (buttons.length === 0) {
+                                    setButtons([{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }]);
+                                  } else {
+                                    handleUpdateButton(0, "url", botUrl);
+                                  }
+                                  toast.success("Вставлена ссылка на Telegram-бот");
+                                }}
+                              >
+                                🔗 {botUrl.replace(/^https?:\/\//, "")}
+                              </Button>
+                            )}
+                          </div>
+
+                          {/* List of buttons with clear field labels */}
+                          <div className="grid grid-cols-1 gap-2.5">
                             {buttons.map((btn, i) => (
                               <div
                                 key={i}
-                                className="flex items-start gap-2 p-2 border rounded-md bg-muted/20 relative group"
+                                className="p-3 border rounded-lg bg-card space-y-2.5 shadow-xs"
                               >
-                                <div className="flex-1 grid grid-cols-2 gap-2">
-                                  <Input
-                                    value={btn.title}
-                                    onChange={(e) => handleUpdateButton(i, "title", e.target.value)}
-                                    placeholder="Текст"
-                                    className="h-7 text-[11px]"
-                                  />
-                                  <Select
-                                    value={btn.type}
-                                    onValueChange={(v) => handleUpdateButton(i, "type", v)}
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1.5">
+                                    <span className="w-4 h-4 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px]">
+                                      {i + 1}
+                                    </span>
+                                    Кнопка {i + 1}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRemoveButton(i)}
+                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                    title="Удалить кнопку"
                                   >
-                                    <SelectTrigger className="h-7 text-[11px]">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="url">🔗 URL</SelectItem>
-                                      <SelectItem value="postback">🤖 CMD</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  {btn.type === "url" ? (
-                                    <Input
-                                      value={btn.url}
-                                      onChange={(e) => handleUpdateButton(i, "url", e.target.value)}
-                                      placeholder="https://..."
-                                      className="h-7 text-[11px] col-span-2"
-                                    />
-                                  ) : (
-                                    <>
-                                      <Input
-                                        value={btn.payload}
-                                        onChange={(e) =>
-                                          handleUpdateButton(i, "payload", e.target.value)
-                                        }
-                                        placeholder={tr.buttonCmdPlaceholder}
-                                        className="h-7 text-[11px] col-span-2"
-                                      />
-                                      <p className="col-span-2 text-[10px] text-muted-foreground leading-snug">
-                                        {tr.buttonCmdHint}
-                                      </p>
-                                    </>
-                                  )}
+                                    <X className="w-3.5 h-3.5" />
+                                  </Button>
                                 </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleRemoveButton(i)}
-                                  className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100"
-                                >
-                                  <X className="w-3 h-3" />
-                                </Button>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                                  <div className="md:col-span-2 space-y-1">
+                                    <Label className="text-[11px] text-muted-foreground font-medium">
+                                      Текст на кнопке (название)
+                                    </Label>
+                                    <Input
+                                      value={btn.title}
+                                      onChange={(e) => handleUpdateButton(i, "title", e.target.value)}
+                                      placeholder="Например: Открыть в Telegram ✈️"
+                                      className="h-8 text-xs font-medium"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-[11px] text-muted-foreground font-medium">
+                                      Действие
+                                    </Label>
+                                    <Select
+                                      value={btn.type}
+                                      onValueChange={(v) => handleUpdateButton(i, "type", v)}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="url">🔗 Ссылка (URL)</SelectItem>
+                                        <SelectItem value="postback">🤖 Команда (Postback)</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="md:col-span-3 space-y-1">
+                                    {btn.type === "url" ? (
+                                      <>
+                                        <Label className="text-[11px] text-muted-foreground font-medium">
+                                          Куда ведёт кнопка (URL адрес)
+                                        </Label>
+                                        <Input
+                                          value={btn.url}
+                                          onChange={(e) => handleUpdateButton(i, "url", e.target.value)}
+                                          placeholder={botUrl || "https://t.me/your_bot"}
+                                          className="h-8 text-xs font-mono"
+                                        />
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Label className="text-[11px] text-muted-foreground font-medium">
+                                          Команда боту (payload)
+                                        </Label>
+                                        <Input
+                                          value={btn.payload}
+                                          onChange={(e) =>
+                                            handleUpdateButton(i, "payload", e.target.value)
+                                          }
+                                          placeholder={tr.buttonCmdPlaceholder}
+                                          className="h-8 text-xs font-mono"
+                                        />
+                                        <p className="text-[10px] text-muted-foreground leading-snug">
+                                          {tr.buttonCmdHint}
+                                        </p>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             ))}
+
+                            {buttons.length === 0 && (
+                              <div className="p-3 border border-dashed rounded-lg text-center bg-muted/10 space-y-1.5">
+                                <p className="text-xs text-muted-foreground">
+                                  {twoStepDm
+                                    ? "Кнопка ко 2-му сообщению не настроена. Рекомендуется добавить кнопку для перехода подписчика в бот."
+                                    : "Кнопки в Direct не добавлены. Сообщение уйдёт только текстом."}
+                                </p>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={handleAddButton}
+                                  className="h-7 text-xs"
+                                >
+                                  + Добавить кнопку перехода
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Live preview in Direct */}
+                          <div className="p-3 bg-muted/40 rounded-lg border border-dashed space-y-2 mt-2">
+                            <div className="flex items-center gap-1.5 font-semibold text-muted-foreground text-[10px] uppercase tracking-wide">
+                              <Eye className="w-3.5 h-3.5 text-primary" /> Предпросмотр диалога в Instagram Direct
+                            </div>
+                            <div className="space-y-2 max-w-sm pt-1">
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] text-muted-foreground font-medium uppercase">
+                                  {twoStepDm ? "1-е сообщение (на комментарий)" : "Сообщение в Direct"}
+                                </span>
+                                <div className="bg-primary/10 text-foreground p-2.5 rounded-2xl rounded-bl-xs text-xs border border-primary/20 leading-relaxed">
+                                  {dmText.trim() || (twoStepDm ? "Здравствуйте! Отправили вам информацию. Нажмите кнопку в сообщении ниже 👇" : (isPhysicalShop ? tr.dmPlaceholderPhysical : tr.dmPlaceholder))}
+                                </div>
+                              </div>
+                              {twoStepDm && (
+                                <div className="space-y-0.5">
+                                  <span className="text-[9px] text-muted-foreground font-medium uppercase">
+                                    2-е сообщение (через 1.5 сек с кнопками)
+                                  </span>
+                                  <div className="bg-primary/10 text-foreground p-2.5 rounded-2xl rounded-bl-xs text-xs border border-primary/20 space-y-2 leading-relaxed">
+                                    <div>
+                                      {secondDmMessage.trim() || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇"}
+                                    </div>
+                                    {buttons.map((b, idx) => (
+                                      <div
+                                        key={idx}
+                                        className="bg-background text-primary font-medium text-center py-1.5 px-3 rounded-lg border border-primary/30 text-xs shadow-xs flex items-center justify-center gap-1.5"
+                                      >
+                                        <ExternalLink className="w-3 h-3" />
+                                        {b.title || "Открыть в Telegram ✈️"}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {!twoStepDm && buttons.length > 0 && (
+                                <div className="space-y-1 pt-1">
+                                  {buttons.map((b, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="bg-background text-primary font-medium text-center py-1.5 px-3 rounded-lg border border-primary/30 text-xs shadow-xs flex items-center justify-center gap-1.5"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      {b.title || "Кнопка перехода"}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -3432,6 +3691,46 @@ function AdminInstagramPage() {
                                 ) : null}
                               </div>
                             )}
+
+                            {/* Messages & Button preview */}
+                            <div className="mt-2 text-xs space-y-1 bg-muted/20 p-2 rounded-md border">
+                              <div className="text-muted-foreground line-clamp-1">
+                                <span className="font-semibold text-foreground">1-е DM: </span>
+                                {auto.dmMessage || "—"}
+                              </div>
+                              {auto.twoStepDm && auto.secondDmMessage && (
+                                <div className="text-muted-foreground line-clamp-1">
+                                  <span className="font-semibold text-foreground">2-е DM: </span>
+                                  {auto.secondDmMessage}
+                                </div>
+                              )}
+                              {auto.buttons && auto.buttons.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                  <span className="text-[10px] text-muted-foreground font-semibold">
+                                    Кнопки:
+                                  </span>
+                                  {auto.buttons.map((b, idx) => (
+                                    <Badge
+                                      key={idx}
+                                      variant="secondary"
+                                      className="text-[10px] h-5 gap-1 font-normal"
+                                    >
+                                      {b.type === "url" ? (
+                                        <Link2 className="w-2.5 h-2.5 text-primary" />
+                                      ) : (
+                                        <Bot className="w-2.5 h-2.5 text-primary" />
+                                      )}
+                                      <span className="font-medium text-foreground">{b.title}</span>
+                                      {b.url && (
+                                        <span className="text-muted-foreground truncate max-w-[140px]">
+                                          ({b.url})
+                                        </span>
+                                      )}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <Button
@@ -3714,7 +4013,7 @@ function AdminInstagramPage() {
               )}
             </div>
           </div>
-          <CatchupReplySection accountId={acc?._id ?? null} />
+          <CatchupReplySection accountId={acc?._id ?? null} botUrl={botUrl} />
         </TabsContent>
 
         {/* PUBLISH TAB */}

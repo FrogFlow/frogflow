@@ -441,6 +441,8 @@ export const getAutomationsFn = createServerFn({ method: "GET" }).handler(async 
   const { listCommentAutomations } = await import("./zernio.server");
   await requireAdminWithModule();
   const res = await listCommentAutomations();
+  const { getCachedBotUrl } = await import("./bot-url.server");
+  const botUrl = await getCachedBotUrl();
 
   // Добавляем флаг replyToAll для удобства фронтенда
   if (res.automations) {
@@ -450,7 +452,7 @@ export const getAutomationsFn = createServerFn({ method: "GET" }).handler(async 
     }));
   }
 
-  return res;
+  return { ...res, botUrl: botUrl || undefined };
 });
 
 /**
@@ -739,20 +741,28 @@ export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
         data.message,
         isTwoStep ? [] : (data.buttons ?? []),
       );
-      if (result.ok && isTwoStep && data.buttons && data.buttons.length > 0) {
+      if (result.ok && isTwoStep) {
         await new Promise((r) => setTimeout(r, 1500));
         const secondText =
           data.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+        let targetButtons = data.buttons;
+        if (!targetButtons || targetButtons.length === 0) {
+          const { getCachedBotUrl } = await import("./bot-url.server");
+          const botUrl = await getCachedBotUrl();
+          if (botUrl) {
+            targetButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
+          }
+        }
         const { listInstagramComments, startInstagramConversation } = await import("./zernio.server");
         const { comments } = await listInstagramComments(data.postId, data.accountId);
         const c = comments.find((x) => x.id === commentId);
-        const username = c?.from?.username || c?.username;
-        if (username) {
+        const username = c?.from?.username || (c as { username?: string } | undefined)?.username;
+        if (username && targetButtons && targetButtons.length > 0) {
           await startInstagramConversation({
             accountId: data.accountId,
             username,
             message: secondText,
-            buttons: data.buttons,
+            buttons: targetButtons,
           });
         }
       }
