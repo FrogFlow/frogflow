@@ -152,6 +152,46 @@ export async function resumeConsultantByConversation(conversationId: string): Pr
   return true;
 }
 
+/**
+ * Полный сброс диалога с консультантом:
+ * Забывает страну, историю реплик, предложенные товары, контакты, снимает паузу.
+ * Позволяет покупателю или владельцу протестировать сценарий заново с чистого листа.
+ */
+export async function resetConsultantState(userKey: string): Promise<ConsultantState> {
+  const { raw } = await loadConsultantState(userKey);
+  const nowIso = new Date().toISOString();
+  const resetState: ConsultantState = {
+    conversation_state: "awaiting_country",
+    automation_paused: false,
+    resumed_at: nowIso,
+    last_product_ids: [],
+    recent: [],
+    ru_cdek_sent: false,
+  };
+
+  const s = await db();
+  await s
+    .from("bot_users")
+    .update({
+      state: { ...raw, [KEY]: resetState } as unknown as Json,
+      updated_at: nowIso,
+    })
+    .eq("user_key", userKey);
+  return resetState;
+}
+
+export async function resetConsultantByConversation(conversationId: string): Promise<boolean> {
+  const s = await db();
+  const { data } = await s
+    .from("bot_users")
+    .select("user_key")
+    .eq("zernio_conversation_id", conversationId)
+    .maybeSingle();
+  if (!data?.user_key) return false;
+  await resetConsultantState(data.user_key);
+  return true;
+}
+
 export type PausedConsultation = {
   userKey: string;
   label: string;

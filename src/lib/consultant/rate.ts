@@ -1,10 +1,39 @@
 /**
- * RUB = KZT / (VTB KZ buy rate × 0.95). Считает backend, не Claude.
- * Пример из ТЗ: 45 000 / (5.15 × 0.95) ≈ 9 198.
+ * Определение выходного дня по времени Алматы (Asia/Almaty, UTC+5).
  */
-export function priceRub(priceKzt: number, vtbBuyRate: number): number {
+export function isWeekendInAlmaty(date: Date = new Date()): boolean {
+  try {
+    const weekday = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Almaty",
+      weekday: "short",
+    }).format(date);
+    return weekday === "Sat" || weekday === "Sun";
+  } catch {
+    const utcDay = new Date(date.getTime() + 5 * 60 * 60 * 1000).getUTCDay();
+    return utcDay === 0 || utcDay === 6;
+  }
+}
+
+/**
+ * Коэффициент конвертации:
+ * - Будние дни: Покупка рубля ВТБ Казахстан - 5% (множитель 0.95).
+ * - Выходные (Сб, Вс): Покупка рубля ВТБ Казахстан - 7% (множитель 0.93).
+ *   За базу берётся последняя цена пятницы.
+ * - В понедельник: автоматический возврат к обычной формуле (0.95).
+ */
+export function getRubMultiplier(date: Date = new Date()): number {
+  return isWeekendInAlmaty(date) ? 0.93 : 0.95;
+}
+
+/**
+ * RUB = KZT / (VTB KZ buy rate × multiplier). Считает backend, не Claude.
+ * Пример из ТЗ (будни): 45 000 / (5.15 × 0.95) ≈ 9 198 ₽.
+ * Выходные: 45 000 / (5.15 × 0.93) ≈ 9 396 ₽.
+ */
+export function priceRub(priceKzt: number, vtbBuyRate: number, date: Date = new Date()): number {
   if (!(priceKzt > 0) || !(vtbBuyRate > 0)) return 0;
-  return Math.round(priceKzt / (vtbBuyRate * 0.95));
+  const multiplier = getRubMultiplier(date);
+  return Math.round(priceKzt / (vtbBuyRate * multiplier));
 }
 
 export type StoredVtbRate = {

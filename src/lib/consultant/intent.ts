@@ -62,6 +62,14 @@ export function isConsultantGreeting(text: string): boolean {
   return GREETING_RE.test(text.trim());
 }
 
+const RESET_RE =
+  /^(?:\/reset|\/start|reset|restart|заново|сброс|нач(?:ни|ать)\s+(?:заново|сначала)|сбрось|сбросить|очистить|забудь(?:те)?\s+меня)(?:[.!?…\s]|$)/i;
+
+/** Явный сброс диалога клиентом или оператором для повторного тестирования. */
+export function isResetIntent(text: string): boolean {
+  return RESET_RE.test(text.trim());
+}
+
 /** Свободные «чем помочь / мы продаём» — не запрос в прайс и не реплика клиента. */
 export function looksLikeVagueHelp(text: string): boolean {
   return /чем\s+(я\s+)?могу\s+помочь|напишите[,\s]+что\s+вас\s+интересует|жду\s+вашего|я\s+здесь[,\s]+чтобы|мы\s+прода[её]м|что\s+вас\s+интересует|я\s+жду\s+вашего/i.test(

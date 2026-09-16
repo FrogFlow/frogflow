@@ -48,6 +48,7 @@ import {
   matchOtherCategoriesIntent,
   matchPriceOnlyIntent,
   matchPurchaseIntent,
+  isResetIntent,
 } from "./intent";
 import { consultantApiKey } from "./config";
 import { consultantRequestId, logConsultantEvent } from "./log";
@@ -63,6 +64,7 @@ import {
   patchConsultantState,
   pauseConsultant,
   registerBotOutgoingText,
+  resetConsultantState,
   resumeConsultant,
   type ConsultantState,
 } from "./state";
@@ -163,6 +165,33 @@ async function handleConsultantZernioEventInternal(params: {
         reason: "manager_intervention",
       });
     }
+  const rawIncoming = params.text.trim() || params.postback?.trim() || "";
+
+  if (isResetIntent(rawIncoming)) {
+    await resetConsultantState(params.userKey);
+    const bucket = consultant.ab_bucket ?? "a";
+    const pack = copyForBucket(bucket);
+    const welcomeText =
+      "Здравствуйте! Рады приветствовать вас в бутике домашнего текстиля BOVI.\n\n" +
+      stripMarkdownFormatting(pack.askCountry);
+
+    await sendDirectReply({
+      conversationId: params.conversationId,
+      accountId: params.accountId,
+      userKey: params.userKey,
+      text: welcomeText,
+      buttons: COUNTRY_BUTTONS,
+      platform: params.platform,
+      force: true,
+    });
+    registerBotOutgoingText(welcomeText);
+    await patchConsultantState(params.userKey, {
+      last_bot_reply: welcomeText,
+      last_bot_reply_at: new Date().toISOString(),
+      last_customer_text: rawIncoming,
+      conversation_state: "awaiting_country",
+    });
+    logConsultantEvent(requestId, "reset", { userKey: params.userKey });
     return;
   }
 
@@ -322,6 +351,25 @@ export async function decideConsultantReply(
   if (looksLikePromptInjection(text)) {
     void track(ctx.userKey, "injection", text, bucket);
     return handoffReply(pack, state, bucket, "injection", text, ctx.userKey);
+  }
+
+  if (isResetIntent(text)) {
+    const cleanPatch: Partial<ConsultantState> = {
+      customer_contact: undefined,
+      last_product_ids: [],
+      recent: [],
+      ab_bucket: bucket,
+      automation_paused: false,
+      country: undefined,
+      conversation_state: "awaiting_country",
+      pending_product_query: undefined,
+    };
+    return {
+      text: stripMarkdownFormatting(pack.askCountry),
+      patch: cleanPatch,
+      buttons: COUNTRY_BUTTONS,
+      kind: "country",
+    };
   }
 
   const canClaude = Boolean(consultantApiKey());

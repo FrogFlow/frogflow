@@ -13,6 +13,8 @@ export type ConsultantProduct = {
   price_kzt: number;
   stock: boolean;
   stock_qty?: number;
+  material?: string;
+  description?: string;
 };
 
 export type ProductSearchQuery = {

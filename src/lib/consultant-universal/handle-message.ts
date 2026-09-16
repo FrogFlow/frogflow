@@ -184,6 +184,24 @@ export async function handleUniversalConsultantEvent(
   // 1. Загрузка состояния диалога
   const { raw, state } = await loadUniversalState(userKey);
 
+  // Сброс диалога для повторного тестирования
+  const isReset =
+    /^(?:\/reset|\/start|reset|restart|заново|сброс|нач(?:ни|ать)\s+(?:заново|сначала)|сбрось|сбросить|очистить|забудь(?:те)?\s+меня)(?:[.!?…\s]|$)/i.test(
+      incomingText,
+    );
+  if (isReset) {
+    const { profile } = await loadProfileAndKnowledge(tenant);
+    await saveUniversalState(userKey, raw, {
+      automation_paused: false,
+      recent: [],
+      last_reply_at: new Date().toISOString(),
+      customer_contact: undefined,
+    });
+    const welcome = `Здравствуйте! Рады приветствовать вас в «${profile.brand_name}». Чем могу помочь вам сегодня?`;
+    await sendZernioInboxMessage(conversationId, accountId, welcome, { platform });
+    return { ok: true, replyText: welcome };
+  }
+
   // Если автоматизация на паузе (менеджер перехватил диалог)
   if (state.automation_paused) {
     logger.info("universal_consultant.paused_manager_in_charge", { userKey });

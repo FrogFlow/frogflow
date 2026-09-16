@@ -34,6 +34,17 @@ const HEADER_ALIASES: Record<keyof ConsultantProduct | "skip", string[]> = {
   ],
   stock: ["stock", "наличие", "in_stock", "вналичии"],
   stock_qty: ["stock_qty", "qty", "количество", "кол-во", "остаток", "остатоксклад", "колво"],
+  material: [
+    "material",
+    "ткань",
+    "состав",
+    "материал",
+    "качество",
+    "плотность",
+    "fabric",
+    "composition",
+  ],
+  description: ["description", "описание", "характеристики", "описаниетовара"],
   skip: [],
 };
 
@@ -196,6 +207,8 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
       price_kzt: row.price_kzt,
       stock,
       ...(qty != null ? { stock_qty: qty } : {}),
+      ...(row.material ? { material: String(row.material).trim() } : {}),
+      ...(row.description ? { description: String(row.description).trim() } : {}),
     });
   }
 
