@@ -10,6 +10,7 @@ import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Textarea } from "@/components-ui/textarea";
 import { Checkbox } from "@/components-ui/checkbox";
+import { Switch } from "@/components-ui/switch";
 import {
   getInstagramConnectUrlFn,
   getInstagramAccountsFn,
@@ -2222,6 +2223,8 @@ function AdminInstagramPage() {
   const [replyToAll, setReplyToAll] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [dmText, setDmText] = useState("");
+  const [twoStepDm, setTwoStepDm] = useState(false);
+  const [secondDmMessage, setSecondDmMessage] = useState("");
   const [postId, setPostId] = useState("ALL_POSTS");
   const [isActive, setIsActive] = useState(true);
   const [trigger, setTrigger] = useState<"comment" | "story_reply">("comment");
@@ -2481,6 +2484,8 @@ function AdminInstagramPage() {
         commentReplyVariations: replyVariations.filter(Boolean),
         linkTracking,
         clickTag: clickTag || undefined,
+        twoStepDm,
+        secondDmMessage: twoStepDm ? secondDmMessage : undefined,
         isActive,
       };
 
@@ -2508,6 +2513,8 @@ function AdminInstagramPage() {
     setReplyToAll(false);
     setReplyText("");
     setDmText("");
+    setTwoStepDm(false);
+    setSecondDmMessage("");
     setPostId("ALL_POSTS");
     setIsActive(true);
     setTrigger("comment");
@@ -2532,6 +2539,8 @@ function AdminInstagramPage() {
     setReplyToAll(!!auto.replyToAll);
     setReplyText(auto.commentReply || "");
     setDmText(auto.dmMessage || "");
+    setTwoStepDm(Boolean(auto.twoStepDm));
+    setSecondDmMessage(auto.secondDmMessage || "");
     setPostId(auto.platformPostId || auto.postId || "ALL_POSTS");
     setIsActive(auto.isActive ?? true);
     setTrigger(auto.trigger || "comment");
@@ -3108,22 +3117,82 @@ function AdminInstagramPage() {
                         </div>
                       </div>
 
+                      {/* Безопасный режим Meta (2 сообщения) */}
+                      <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="space-y-0.5 min-w-0">
+                            <Label
+                              htmlFor="two_step_dm"
+                              className="text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                            >
+                              🛡️ Безопасный режим Meta (2 сообщения)
+                              <Badge
+                                variant="outline"
+                                className="text-[9px] bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/30"
+                              >
+                                Защита от блокировок
+                              </Badge>
+                            </Label>
+                            <p className="text-[11px] text-muted-foreground">
+                              1-е сообщение уходит чистым текстом без кнопок, 2-е сообщение приходит следом с кнопками. Алгоритмы Meta видят естественный диалог и не блокируют посты.
+                            </p>
+                          </div>
+                          <Switch
+                            id="two_step_dm"
+                            checked={twoStepDm}
+                            onCheckedChange={setTwoStepDm}
+                          />
+                        </div>
+                      </div>
+
                       <div className="space-y-2">
                         <Label className="flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-primary" /> Личное сообщение (DM)
+                          <Zap className="w-4 h-4 text-primary" />
+                          {twoStepDm
+                            ? "1-е сообщение: Первичный ответ в Direct (без кнопок)"
+                            : "Личное сообщение (DM)"}
                         </Label>
                         <Textarea
                           value={dmText}
                           onChange={(e) => setDmText(e.target.value)}
-                          placeholder={isPhysicalShop ? tr.dmPlaceholderPhysical : tr.dmPlaceholder}
+                          placeholder={
+                            twoStepDm
+                              ? "Здравствуйте! Отправили вам информацию. Нажмите кнопку в сообщении ниже 👇"
+                              : isPhysicalShop
+                                ? tr.dmPlaceholderPhysical
+                                : tr.dmPlaceholder
+                          }
                           rows={3}
                         />
+                        {twoStepDm && (
+                          <span className="text-[10px] text-muted-foreground block">
+                            💡 Это сообщение Meta проверяет как ответ на комментарий. Оставьте чистый текст без ссылок и кнопок.
+                          </span>
+                        )}
+
+                        {twoStepDm && (
+                          <div className="space-y-2 pt-2 border-t mt-3">
+                            <Label className="flex items-center gap-2 text-xs font-semibold">
+                              <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                              2-е сообщение: Текст перед кнопкой перехода (следом в Direct)
+                            </Label>
+                            <Textarea
+                              value={secondDmMessage}
+                              onChange={(e) => setSecondDmMessage(e.target.value)}
+                              placeholder="Для перехода в Telegram-бот и получения материалов нажмите кнопку ниже 👇"
+                              rows={2}
+                            />
+                            <span className="text-[10px] text-muted-foreground block">
+                              Отправляется через 1.5 секунды уже внутри открытого диалога Direct вместе с кнопками ниже.
+                            </span>
+                          </div>
+                        )}
 
                         {/* Buttons inside DM */}
-                        <div className="space-y-2">
+                        <div className="space-y-2 pt-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                              Кнопки в DM ({buttons.length}/3)
+                              {twoStepDm ? "Кнопки ко 2-му сообщению" : "Кнопки в DM"} ({buttons.length}/3)
                             </span>
                             <Button
                               type="button"
@@ -3304,6 +3373,14 @@ function AdminInstagramPage() {
                                   className="text-[9px] h-4 bg-purple-50 text-purple-600 border-purple-200"
                                 >
                                   Story
+                                </Badge>
+                              )}
+                              {auto.twoStepDm && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] h-4 bg-green-50 text-green-700 border-green-200"
+                                >
+                                  🛡️ 2 сообщения
                                 </Badge>
                               )}
                             </div>

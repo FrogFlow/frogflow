@@ -202,15 +202,34 @@ export async function runCommentDmFallback(): Promise<{
         }
 
         sendsThisRun++;
+        const isTwoStep = Boolean(automation.twoStepDm);
         const result = await sendCommentPrivateReply(
           postId,
           commentId,
           automation.accountId,
           automation.dmMessage,
-          automation.buttons ?? [],
+          isTwoStep ? [] : (automation.buttons ?? []),
         );
-        if (result.ok) sent++;
-        else failed++;
+        if (result.ok) {
+          sent++;
+          if (isTwoStep && automation.buttons && automation.buttons.length > 0) {
+            await new Promise((r) => setTimeout(r, 1500));
+            const commenterUsername = comment.from?.username;
+            const secondText =
+              automation.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+            if (commenterUsername) {
+              const { startInstagramConversation } = await import("./zernio.server");
+              await startInstagramConversation({
+                accountId: automation.accountId,
+                username: commenterUsername,
+                message: secondText,
+                buttons: automation.buttons,
+              });
+            }
+          }
+        } else {
+          failed++;
+        }
 
         // Эскалация — только если наш собственный private-reply тоже не
         // прошёл (второй провал: родная автоматизация Zernio + наш резерв).

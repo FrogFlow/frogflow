@@ -956,14 +956,26 @@ export async function sendFileToUser(
   // Cloud Bot API hard limit ~50MB; Local Bot API can go higher via TELEGRAM_API_BASE
   const CLOUD_TG_MAX = 50 * 1024 * 1024;
 
+  async function sendViaSignedLink(): Promise<boolean> {
+    if (!signed?.signedUrl) return false;
+    const mb = fileSize > 0 ? Math.round(fileSize / (1024 * 1024)) : 0;
+    const sizeStr = mb > 0 ? ` (${mb} МБ)` : "";
+    const safeCaption = caption
+      ? `📁 <b>${caption.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</b>\n\n`
+      : "";
+    const res = await tg("sendMessage", {
+      chat_id,
+      text: `${safeCaption}📥 <a href="${signed.signedUrl}">Нажмите здесь, чтобы скачать файл${sizeStr}</a>\n\n<i>Ссылка действует 7 дней</i>`,
+      parse_mode: "HTML",
+    });
+    return Boolean(res?.ok);
+  }
+
   async function sendViaTelegramUrl(): Promise<boolean> {
     if (!signed?.signedUrl || !telegramUrlTypes.has(ext)) return false;
-    if (
-      fileSize > 0 &&
-      fileSize > Math.min(TG_MAX, CLOUD_TG_MAX) &&
-      !process.env.TELEGRAM_API_BASE
-    ) {
-      // URL method also capped ~20MB by Telegram for some cases; still try below for pdf
+    // Telegram Bot API URL method is strictly capped at ~20MB for cloud API
+    if (fileSize > 20 * 1024 * 1024 && !process.env.TELEGRAM_API_BASE) {
+      return false;
     }
     const res = await tg("sendDocument", {
       chat_id,
@@ -982,11 +994,18 @@ export async function sendFileToUser(
     if (await sendViaTelegramUrl()) return { delivered: true };
   }
 
+  // Large files (> 25MB) take too long to download + re-upload via Vercel multipart and risk timeout/OOM.
+  // Send direct signed URL link immediately.
+  if (fileSize > 25 * 1024 * 1024) {
+    if (await sendViaSignedLink()) return { delivered: true };
+  }
+
   const { data: dl, error: dlErr } = await supabaseAdmin.storage
     .from("product-files")
     .download(path);
   if (dlErr || !dl) {
     if (await sendViaTelegramUrl()) return { delivered: true };
+    if (await sendViaSignedLink()) return { delivered: true };
     console.error("[orders] storage download failed", path, dlErr);
     await tg("sendMessage", {
       chat_id,
@@ -994,6 +1013,11 @@ export async function sendFileToUser(
     });
     // Хранилище не отдаёт файл — повтор ничего не изменит, это ручная выдача.
     return { delivered: false, retry: false, reason: "хранилище не отдало файл" };
+  }
+
+  // If dl is larger than 25MB, prefer signed link over risky multipart upload
+  if (dl.size > 25 * 1024 * 1024) {
+    if (await sendViaSignedLink()) return { delivered: true };
   }
 
   // Прокидываем Blob напрямую в FormData через обновленный tgSendMultipart
@@ -1011,6 +1035,7 @@ export async function sendFileToUser(
 
   if (dl.size > TG_MAX) {
     if (await sendViaTelegramUrl()) return { delivered: true };
+    if (await sendViaSignedLink()) return { delivered: true };
     await tg("sendMessage", {
       chat_id,
       text: `⚠️ Файл «${caption}» слишком большой (${Math.round(dl.size / (1024 * 1024))} МБ, лимит ${Math.round(TG_MAX / (1024 * 1024))} МБ). Продавец вышлет вручную.`,
@@ -1043,6 +1068,7 @@ export async function sendFileToUser(
 
   console.error("[orders] sendDocument multipart failed", res);
   if (await sendViaTelegramUrl()) return { delivered: true };
+  if (await sendViaSignedLink()) return { delivered: true };
 
   if (dl.size > CLOUD_TG_MAX) {
     await tg("sendMessage", {

@@ -492,6 +492,8 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
         commentReplyVariations: z.array(z.string()).max(5).optional(),
         linkTracking: z.boolean().optional(),
         clickTag: z.string().max(100).optional(),
+        twoStepDm: z.boolean().optional(),
+        secondDmMessage: z.string().max(1000).optional(),
         isActive: z.boolean().optional(),
       })
       .parse(d),
@@ -719,12 +721,15 @@ export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
         commentIds: z.array(z.string().min(1)).min(1).max(25),
         message: z.string().min(1),
         buttons: z.array(CatchupButtonSchema).max(3).optional(),
+        twoStepDm: z.boolean().optional(),
+        secondDmMessage: z.string().optional(),
       })
       .parse(d),
   )
   .handler(async ({ data }) => {
     const { sendCommentPrivateReply } = await import("./zernio.server");
     await requireAdminWithModule();
+    const isTwoStep = Boolean(data.twoStepDm);
     const results: Array<{ commentId: string; ok: boolean; error?: string }> = [];
     for (const commentId of data.commentIds) {
       const result = await sendCommentPrivateReply(
@@ -732,8 +737,25 @@ export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
         commentId,
         data.accountId,
         data.message,
-        data.buttons ?? [],
+        isTwoStep ? [] : (data.buttons ?? []),
       );
+      if (result.ok && isTwoStep && data.buttons && data.buttons.length > 0) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const secondText =
+          data.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+        const { listInstagramComments, startInstagramConversation } = await import("./zernio.server");
+        const { comments } = await listInstagramComments(data.postId, data.accountId);
+        const c = comments.find((x) => x.id === commentId);
+        const username = c?.from?.username || c?.username;
+        if (username) {
+          await startInstagramConversation({
+            accountId: data.accountId,
+            username,
+            message: secondText,
+            buttons: data.buttons,
+          });
+        }
+      }
       results.push({ commentId, ...result });
     }
     return { results };

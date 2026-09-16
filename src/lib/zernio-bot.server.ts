@@ -4194,31 +4194,52 @@ async function handlePurchaseFallback(ctx: {
     say,
   } = ctx;
   if (attachmentUrl) {
-    const notifiedRecently =
-      Boolean(state.notified_at) && Date.now() - Date.parse(state.notified_at!) < 60 * 60 * 1000;
+    // Вне сценария (не awaiting_proof и не awaiting_email):
+    // Проверяем, есть ли у пользователя актуальный заказ в статусе ожидания оплаты.
+    // Если заказа нет — это обычное вложение/фото в чате (вопрос по товару, макияж, скриншот).
+    // Не спамим админа в Telegram ложными тревогами «оплатил, минуя бота» и не пишем strayAttachmentAck.
+    let pendingOrderId = state.pending_order_id;
+    if (!pendingOrderId) {
+      try {
+        const s = await db();
+        const { data: recentOrder } = await s
+          .from("orders")
+          .select("id, order_no")
+          .eq("user_key", user.user_key)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (recentOrder) {
+          pendingOrderId = recentOrder.id;
+        }
+      } catch (err) {
+        console.warn("[zernio-bot] failed to check pending orders for attachment", err);
+      }
+    }
 
-    if (!notifiedRecently) {
-      const stored = await flow.storeReceipt(attachmentUrl, `${user.user_key}/unmatched`, {
+    if (pendingOrderId) {
+      const stored = await flow.storeReceipt(attachmentUrl, user.user_key, {
         platform: platformOf(user),
         accountId,
       });
-      await flow.notifyAdminAboutQuestion({
-        question:
-          "Прислал вложение (похоже на чек), но заказа у него нет — оплатил, минуя бота." +
-          (stored ? `\nФайл: payment-proofs/${stored.path}` : "\nФайл сохранить не удалось."),
-        senderName: user.first_name || "покупатель",
-        senderUsername: user.username || "",
-        platform: platformOf(user),
-      });
-      await flow.setDirectState(user.user_key, { notified_at: new Date().toISOString() });
+      if (stored) {
+        const s = await db();
+        await s
+          .from("orders")
+          .update({ payment_proof_path: stored.path })
+          .eq("id", pendingOrderId);
+      }
+      await say(copy.receiptProcessing);
+      return true;
     }
 
-    // Вложение — осознанное действие покупателя, даже если состояние заказа
-    // потерялось из-за сбоя записи или пришло из старого сценария. В режиме
-    // «только покупки» обычный текст можно оставить продавцу, но картинку-чек
-    // нельзя проглатывать молча: человек должен понять, что она замечена.
-    await say(copy.strayAttachmentAck);
-    return true;
+    // Активного заказа нет — не перехватываем вложение ложным чеком.
+    // Если покупатель прикрепил текст (например, номер материала) — продолжаем его обработку.
+    // Если текста нет — тихо оставляем диалог продавцу в Direct.
+    if (!text.trim()) {
+      return false;
+    }
   }
 
   // ── Сценарий не начат: разбираем свободную реплику ──────────────────────

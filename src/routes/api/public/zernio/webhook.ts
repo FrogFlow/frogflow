@@ -201,6 +201,11 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
               // дальше типизированная форма — то, что обработчики реально читают.
               if (eventType === "message.received") {
                 await handleZernioMessage(payload as Parameters<typeof handleZernioMessage>[0]);
+              } else if (eventType === "comment.received") {
+                const { handleZernioCommentTwoStep } = await import("@/lib/zernio.server");
+                await handleZernioCommentTwoStep(
+                  payload as Parameters<typeof handleZernioCommentTwoStep>[0],
+                );
               } else if (eventType === "account.disconnected") {
                 await handleZernioAccountDisconnected(
                   payload as Parameters<typeof handleZernioAccountDisconnected>[0],
