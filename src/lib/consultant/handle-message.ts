@@ -437,7 +437,12 @@ export async function decideConsultantReply(
 
   if (!country) {
     const isProduct =
-      (looksLikeProductQuery(text) || Boolean(ctx.storyId || ctx.storyMediaUrl)) &&
+      (looksLikeProductQuery(text) ||
+        matchPurchaseIntent(text) ||
+        matchCatalogIntent(text) ||
+        matchAdviceIntent(text) ||
+        Boolean(ctx.storyId || ctx.storyMediaUrl) ||
+        text.trim().length >= 2) &&
       !isConsultantGreeting(text);
     return {
       text: stripMarkdownFormatting(pack.askCountry),
