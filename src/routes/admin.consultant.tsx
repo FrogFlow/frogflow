@@ -29,8 +29,9 @@ import { confirmToast } from "@/lib/confirm-toast";
 import { StoriesTab } from "./admin.stories-tab";
 import { Badge } from "@/components-ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components-ui/table";
-import { CheckCircle2, Circle, ExternalLink, Package, Search, Send } from "lucide-react";
+import { CheckCircle2, Circle, ExternalLink, Package, RefreshCw, Search, Send } from "lucide-react";
 import { rateSourceKind } from "@/lib/consultant/vtb-parse";
+import { priceRub } from "@/lib/consultant/rate";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
 import { rejectNonConsultantPage } from "@/lib/verticals/consultant-admin-guard";
@@ -998,7 +999,7 @@ function ConsultantPage() {
                       {filteredCatalog.map((p) => {
                         const rub =
                           d?.rate?.rate && d.rate.rate > 0
-                            ? Math.round(p.price_kzt / (d.rate.rate * 0.95))
+                            ? priceRub(p.price_kzt, d.rate.rate)
                             : null;
                         return (
                           <TableRow key={p.id} className="text-xs">
@@ -1064,20 +1065,30 @@ function ConsultantPage() {
             <p className="text-sm text-muted-foreground">{c.rateBody}</p>
             <p className="text-sm">
               {d?.rate
-                ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — VTB`
+                ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — ${d.rate.source?.includes("nationalbank") ? "НБРК (официальный курс)" : "VTB / ручной"}`
                 : c.rateEmpty}
             </p>
             
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               <Input
                 type="number"
                 placeholder="0.00"
                 value={manualRate}
                 onChange={(e) => setManualRate(e.target.value)}
-                className="w-24 h-9"
+                className="w-28 h-9"
               />
-              <Button type="button" size="sm" onClick={() => saveRate.mutate()}>
-                Сохранить
+              <Button type="button" size="sm" onClick={() => saveRate.mutate()} disabled={saveRate.isPending}>
+                Сохранить вручную
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => refreshRate.mutate()}
+                disabled={refreshRate.isPending}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshRate.isPending ? "animate-spin" : ""}`} />
+                {refreshRate.isPending ? "Обновление..." : "Подтянуть курс (НБРК)"}
               </Button>
             </div>
           </section>
