@@ -1,4 +1,5 @@
 import { USER_KEY_PREFIX } from "@/lib/zernio-platform";
+import { extractInstagramMediaInfo } from "@/lib/instagram-media";
 import { looksLikeConsultantBotReply } from "./copy";
 import { handleConsultantZernioEvent } from "./handle-message";
 import {
@@ -186,13 +187,33 @@ export async function pollIncomingConsultantMessages(): Promise<{
       let storyMediaUrl: string | undefined;
       let storyId: string | undefined;
       const recentIncoming = [...messages].reverse().filter(m => m.direction === "incoming").slice(0, 3);
+      const POLL_STORY_TYPES = new Set([
+        "story_reply",
+        "story_share",
+        "story",
+        "share",
+        "reel",
+        "ig_reel",
+        "reels",
+        "media_share",
+        "video",
+        "image",
+      ]);
       for (const m of recentIncoming) {
-        const att = m.attachments?.find(
-          (a) => a.type === "story_reply" || a.type === "story_share" || a.type === "story" || a.type === "image"
-        );
-        if (att?.url) {
-          storyMediaUrl = att.url;
-          storyId = att.id; // Try to use the attachment ID as the story_id
+        const att = m.attachments?.find((a) => POLL_STORY_TYPES.has(String(a.type || "").toLowerCase()));
+        if (att) {
+          const candidateUrl = att.url || (att as any).payload?.url;
+          if (candidateUrl) storyMediaUrl = candidateUrl;
+          const candidateId =
+            (att as any).payload?.reel_id ||
+            (att as any).payload?.story_id ||
+            (att as any).payload?.id ||
+            att.id;
+          if (candidateId) storyId = String(candidateId);
+          if (!storyId && storyMediaUrl) {
+            const info = extractInstagramMediaInfo(storyMediaUrl);
+            if (info.shortcode) storyId = info.shortcode;
+          }
           break;
         }
       }

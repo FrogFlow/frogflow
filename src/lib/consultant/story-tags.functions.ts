@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { extractInstagramMediaInfo } from "@/lib/instagram-media";
 
 async function db() {
   const { supabaseService } = await import("@/integrations-supabase/client.server");
@@ -34,18 +35,21 @@ export const upsertStoryTagFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data: input }) => {
     const s = await db();
-    const expiresAt = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(); // 25h
+    const info = extractInstagramMediaInfo(input.storyId || input.storyUrl);
+    const effectiveStoryId = info.shortcode || input.storyId.trim();
+    const effectiveStoryUrl = input.storyUrl?.trim() || info.cleanUrl || null;
+
     const { error } = await s.from("story_product_tags").upsert(
       {
         bot_id: process.env.BOT_ID || null,
-        story_id: input.storyId,
-        story_url: input.storyUrl ?? null,
+        story_id: effectiveStoryId,
+        story_url: effectiveStoryUrl,
         thumbnail_url: input.thumbnailUrl ?? null,
         product_name: input.productName,
         product_price_kzt: input.productPriceKzt ?? null,
         product_id: input.productId ?? null,
         notes: input.notes ?? null,
-        expires_at: expiresAt,
+        expires_at: null, // Reels and permanent story tags do not expire
       },
       { onConflict: "story_id" },
     );
@@ -53,7 +57,7 @@ export const upsertStoryTagFn = createServerFn({ method: "POST" })
       console.error("[upsertStoryTag] error:", error);
       throw new Error(error.message);
     }
-    return { ok: true };
+    return { ok: true, storyId: effectiveStoryId };
   });
 
 /** Delete a story product tag by id. */
@@ -66,58 +70,103 @@ export const deleteStoryTagFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Comprehensive lookup for a story or reel tag by story_id, shortcode, or URL. */
+export async function findStoryTag(storyId?: string | null, storyUrl?: string | null) {
+  const s = await db();
+  const idCandidate = (storyId ?? "").trim();
+  const urlCandidate = (storyUrl ?? "").trim();
+  if (!idCandidate && !urlCandidate) return null;
+
+  // 1. Direct match on story_id
+  if (idCandidate) {
+    const byId = await s.from("story_product_tags").select("*").eq("story_id", idCandidate).maybeSingle();
+    if (byId.data) {
+      console.log("[findStoryTag] matched by story_id:", idCandidate);
+      return byId.data;
+    }
+  }
+
+  // 2. Direct match on story_url
+  if (urlCandidate) {
+    const byUrl = await s.from("story_product_tags").select("*").eq("story_url", urlCandidate).maybeSingle();
+    if (byUrl.data) {
+      console.log("[findStoryTag] matched by exact story_url:", urlCandidate.slice(0, 60));
+      return byUrl.data;
+    }
+  }
+
+  // 3. Shortcode / clean URL matching
+  const urlInfo = extractInstagramMediaInfo(urlCandidate || idCandidate);
+  if (urlInfo.shortcode) {
+    // Check if story_id equals shortcode
+    const byShortcode = await s.from("story_product_tags").select("*").eq("story_id", urlInfo.shortcode).maybeSingle();
+    if (byShortcode.data) {
+      console.log("[findStoryTag] matched by shortcode in story_id:", urlInfo.shortcode);
+      return byShortcode.data;
+    }
+
+    // Check if cleanUrl matches story_url
+    if (urlInfo.cleanUrl) {
+      const byCleanUrl = await s.from("story_product_tags").select("*").eq("story_url", urlInfo.cleanUrl).maybeSingle();
+      if (byCleanUrl.data) {
+        console.log("[findStoryTag] matched by cleanUrl:", urlInfo.cleanUrl);
+        return byCleanUrl.data;
+      }
+    }
+
+    // Check ilike on story_url or story_id
+    const byIlikeUrl = await s.from("story_product_tags").select("*").ilike("story_url", `%${urlInfo.shortcode}%`).maybeSingle();
+    if (byIlikeUrl.data) {
+      console.log("[findStoryTag] matched by ilike story_url:", urlInfo.shortcode);
+      return byIlikeUrl.data;
+    }
+
+    const byIlikeId = await s.from("story_product_tags").select("*").ilike("story_id", `%${urlInfo.shortcode}%`).maybeSingle();
+    if (byIlikeId.data) {
+      console.log("[findStoryTag] matched by ilike story_id:", urlInfo.shortcode);
+      return byIlikeId.data;
+    }
+  }
+
+  // 4. Match URL without query string
+  if (urlCandidate && urlCandidate.includes("?")) {
+    const noQuery = urlCandidate.split("?")[0];
+    const byNoQuery = await s.from("story_product_tags").select("*").ilike("story_url", `%${noQuery}%`).maybeSingle();
+    if (byNoQuery.data) {
+      console.log("[findStoryTag] matched by url without query:", noQuery.slice(0, 60));
+      return byNoQuery.data;
+    }
+  }
+
+  // 5. Filename / path end match (for CDN images/videos)
+  if (urlCandidate) {
+    try {
+      const parsed = new URL(urlCandidate);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      const filename = parts[parts.length - 1];
+      if (filename && filename.length > 5) {
+        const byFilename = await s.from("story_product_tags").select("*").ilike("story_url", `%${filename}%`).maybeSingle();
+        if (byFilename.data) {
+          console.log("[findStoryTag] matched by filename:", filename);
+          return byFilename.data;
+        }
+      }
+    } catch {
+      // not a standard URL
+    }
+  }
+
+  return null;
+}
+
 /** Find a story tag by story_id (used by the bot at runtime). */
 export async function findStoryTagById(storyId: string) {
-  const s = await db();
-  const { data, error } = await s
-    .from("story_product_tags")
-    .select("*")
-    .eq("story_id", storyId)
-    .maybeSingle();
-  console.log("[findStoryTagById]", { storyId, found: !!data, error: error?.message });
-  return data ?? null;
+  return findStoryTag(storyId, null);
 }
 
 /** Find a story tag by matching the attachment URL (fallback when story_id is unavailable). */
 export async function findStoryTagByUrl(url: string) {
-  if (!url) return null;
-  const s = await db();
-  
-  // Attempt exact match first
-  let result = await s.from("story_product_tags").select("*").eq("story_url", url).maybeSingle();
-  if (result.data) {
-    console.log("[findStoryTagByUrl] exact match found for", url.slice(0, 80));
-    return result.data;
-  }
-
-  // Fallback: extract the filename from the URL (without query parameters) and match using ilike
-  try {
-    const parsed = new URL(url);
-    const parts = parsed.pathname.split("/");
-    const filename = parts[parts.length - 1];
-    if (filename && filename.length > 5) {
-      result = await s.from("story_product_tags").select("*").ilike("story_url", `%${filename}%`).maybeSingle();
-      if (result.data) {
-        console.log("[findStoryTagByUrl] filename match found for", filename);
-        return result.data;
-      }
-    }
-    console.log("[findStoryTagByUrl] no match", { url: url.slice(0, 80), filename });
-  } catch (e) {
-    console.error("[findStoryTagByUrl] URL parse error", e);
-  }
-  
-  // Last resort: list ALL story tags and log them for debugging
-  try {
-    const { data: allTags } = await s.from("story_product_tags").select("story_id, story_url, product_name").limit(10);
-    console.log("[findStoryTagByUrl] all tags in DB:", JSON.stringify(allTags?.map(t => ({
-      id: t.story_id,
-      url: t.story_url?.slice(0, 60),
-      name: t.product_name,
-    }))));
-  } catch { /* ignore */ }
-
-  return null;
+  return findStoryTag(null, url);
 }
 
 export const getStoriesFn = createServerFn({ method: "GET" })

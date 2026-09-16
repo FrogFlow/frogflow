@@ -1,6 +1,7 @@
 import type { Json } from "@/integrations-supabase/types";
 import type { ZernioWebhookMessagePayload } from "./zernio.server";
 import { isZernioPlatform, USER_KEY_PREFIX, type ZernioPlatform } from "./zernio-platform";
+import { extractInstagramMediaInfo } from "./instagram-media";
 
 /**
  * Разбор события `message.received` — отдельно от обработки и без побочных
@@ -136,13 +137,79 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   if (typeof interactive.story_id === "string") {
     storyId = interactive.story_id;
   }
-  
+  if (!storyId && typeof (interactive as any).reel_id === "string") {
+    storyId = (interactive as any).reel_id;
+  }
+  if (!storyId && typeof (interactive as any).post_id === "string") {
+    storyId = (interactive as any).post_id;
+  }
+
+  const rawMsg = message as any;
+  if (!storyId && rawMsg?.referral) {
+    storyId = String(
+      rawMsg.referral.reel_id ||
+        rawMsg.referral.target_id ||
+        rawMsg.referral.video_id ||
+        rawMsg.referral.ref ||
+        "",
+    );
+  }
+  if (!storyId && rawMsg?.reply_to) {
+    storyId = String(rawMsg.reply_to.story?.id || rawMsg.reply_to.reel?.id || "");
+    if (!storyMediaUrl) {
+      storyMediaUrl = rawMsg.reply_to.story?.url || rawMsg.reply_to.reel?.url || null;
+    }
+  }
+
+  const RELEVANT_ATTACHMENT_TYPES = new Set([
+    "story_reply",
+    "story_share",
+    "story",
+    "share",
+    "reel",
+    "ig_reel",
+    "reels",
+    "media_share",
+    "video",
+    "image",
+  ]);
+
   if (message.attachments && Array.isArray(message.attachments)) {
     for (const att of message.attachments) {
-      if (att.type === "story_reply" || att.type === "story_share" || att.type === "story") {
-        if (!storyMediaUrl && att.url) storyMediaUrl = att.url;
-        if (!storyId && att.payload?.story_id) storyId = String(att.payload.story_id);
+      const attType = String(att.type || "").toLowerCase();
+      if (RELEVANT_ATTACHMENT_TYPES.has(attType)) {
+        const attPayload = (att.payload ?? {}) as Record<string, any>;
+        const candidateUrl =
+          (typeof att.url === "string" && att.url ? att.url : null) ||
+          (typeof attPayload.url === "string" && attPayload.url ? attPayload.url : null);
+        if (!storyMediaUrl && candidateUrl) {
+          storyMediaUrl = candidateUrl;
+        }
+
+        const candidateId =
+          attPayload.reel_id ||
+          attPayload.story_id ||
+          attPayload.id ||
+          attPayload.media_id ||
+          (att as any).id;
+        if (!storyId && candidateId) {
+          storyId = String(candidateId);
+        }
       }
+    }
+  }
+
+  if (storyMediaUrl) {
+    const info = extractInstagramMediaInfo(storyMediaUrl);
+    if (info.shortcode) {
+      storyId = info.shortcode;
+    }
+  }
+  if (storyId && (storyId.includes("instagram.com") || storyId.includes("http"))) {
+    const info = extractInstagramMediaInfo(storyId);
+    if (info.shortcode) {
+      if (!storyMediaUrl) storyMediaUrl = info.cleanUrl || storyId;
+      storyId = info.shortcode;
     }
   }
 

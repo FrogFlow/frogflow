@@ -28,6 +28,8 @@ export type ConsultantState = {
   ab_bucket?: "a" | "b";
   resumed_at?: string;
   pending_product_query?: string;
+  pending_story_id?: string;
+  pending_story_url?: string;
 };
 
 const RECENT_LIMIT = 24;

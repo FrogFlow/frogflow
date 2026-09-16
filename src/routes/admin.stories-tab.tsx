@@ -60,7 +60,7 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
       productId?: string;
     }) => upsertStoryTagFn({ data }),
     onSuccess: () => {
-      toast.success("Товар привязан к сторис");
+      toast.success("Товар привязан к Reels / Сторис");
       qc.invalidateQueries({ queryKey: ["ig_story_tags"] });
     },
     onError: (e: any) => {
@@ -83,9 +83,10 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
     if (!manualId.trim() || !manualSelected) return;
     try {
       const parsed = JSON.parse(manualSelected);
+      const raw = manualId.trim();
       upsertMutation.mutate({
-        storyId: manualId.trim(),
-        storyUrl: "",
+        storyId: raw,
+        storyUrl: raw.startsWith("http") ? raw : "",
         thumbnailUrl: "",
         productId: parsed.id || undefined,
         productName: parsed.name,
@@ -107,19 +108,19 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
       {/* Manual entry card */}
       <Card>
         <CardHeader>
-          <CardTitle>Ручная привязка товара</CardTitle>
+          <CardTitle>Привязка товаров к Reels и Сторис</CardTitle>
           <CardDescription>
-            Введите ID сторис или ссылку вручную, если автоподгрузка не нашла нужную историю.
+            Введите ссылку на Instagram Reel (например, https://www.instagram.com/reel/...) или ID публикации вручную.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="flex-1">
-              <Label className="text-xs mb-1 block">ID сторис или ссылка</Label>
+              <Label className="text-xs mb-1 block">Ссылка на Reel / Сторис или ID</Label>
               <Input
                 value={manualId}
                 onChange={(e: any) => setManualId(e.target.value)}
-                placeholder="story_id или URL"
+                placeholder="https://www.instagram.com/reel/... или ID"
                 className="h-9 text-sm"
               />
             </div>
@@ -159,9 +160,9 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
       {tags.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Привязанные товары ({tags.length})</CardTitle>
+            <CardTitle>Привязанные публикации ({tags.length})</CardTitle>
             <CardDescription>
-              Консультант автоматически назовет эти товары и цены, когда клиент ответит на сторис.
+              Консультант автоматически назовет эти товары и цены, когда клиент напишет из этого Reels или ответит на Stories.
             </CardDescription>
           </CardHeader>
           <CardContent>

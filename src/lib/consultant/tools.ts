@@ -149,10 +149,11 @@ export async function executeConsultantTool(
   }
 
   if (name === "get_story_product") {
-    const { findStoryTagById, findStoryTagByUrl } = await import("./story-tags.functions");
-    const tag =
-      (typeof input.story_id === "string" && input.story_id ? await findStoryTagById(input.story_id) : null) ||
-      (typeof input.attachment_url === "string" && input.attachment_url ? await findStoryTagByUrl(input.attachment_url) : null);
+    const { findStoryTag } = await import("./story-tags.functions");
+    const tag = await findStoryTag(
+      typeof input.story_id === "string" ? input.story_id : null,
+      typeof input.attachment_url === "string" ? input.attachment_url : null,
+    );
     
     if (tag) {
       // If we have a product_id mapped, we can return the full product.

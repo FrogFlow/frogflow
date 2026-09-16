@@ -5,6 +5,8 @@ import { runConsultantClaude } from "./claude";
 import {
   getConsultantShopUrl,
   loadConsultantCatalog,
+  getProduct,
+  type ConsultantProduct,
   categoryQuery,
   isCategoryWithoutSize,
   packBasket,
@@ -371,6 +373,8 @@ export async function decideConsultantReply(
       country: undefined,
       conversation_state: "awaiting_country",
       pending_product_query: undefined,
+      pending_story_id: undefined,
+      pending_story_url: undefined,
     };
     return {
       text: stripMarkdownFormatting(pack.askCountry),
@@ -411,7 +415,13 @@ export async function decideConsultantReply(
       };
       return {
         text: stripMarkdownFormatting(pack.askCountry),
-        patch: { ...cleanPatch, conversation_state: "awaiting_country", pending_product_query: undefined },
+        patch: {
+          ...cleanPatch,
+          conversation_state: "awaiting_country",
+          pending_product_query: undefined,
+          pending_story_id: undefined,
+          pending_story_url: undefined,
+        },
         buttons: COUNTRY_BUTTONS,
         kind: "country",
       };
@@ -436,12 +446,13 @@ export async function decideConsultantReply(
   }
 
   if (!country) {
+    const hasStoryContext = Boolean(ctx.storyId || ctx.storyMediaUrl);
     const isProduct =
       (looksLikeProductQuery(text) ||
         matchPurchaseIntent(text) ||
         matchCatalogIntent(text) ||
         matchAdviceIntent(text) ||
-        Boolean(ctx.storyId || ctx.storyMediaUrl) ||
+        hasStoryContext ||
         text.trim().length >= 2) &&
       !isConsultantGreeting(text);
     return {
@@ -449,7 +460,9 @@ export async function decideConsultantReply(
       patch: {
         conversation_state: "awaiting_country",
         ab_bucket: bucket,
-        pending_product_query: isProduct ? text : undefined,
+        pending_product_query: isProduct ? (text || (hasStoryContext ? "[story]" : undefined)) : undefined,
+        pending_story_id: ctx.storyId || undefined,
+        pending_story_url: ctx.storyMediaUrl || undefined,
       },
       buttons: COUNTRY_BUTTONS,
       kind: "country",
@@ -461,6 +474,8 @@ export async function decideConsultantReply(
     ab_bucket: bucket,
     conversation_state: "consulting",
     pending_product_query: undefined,
+    pending_story_id: undefined,
+    pending_story_url: undefined,
   };
 
   const hasPhone = /\+?[0-9\s\-()]{10,}/.test(text) && /\d{7,}/.test(text.replace(/\D/g, ""));
@@ -492,22 +507,40 @@ export async function decideConsultantReply(
 
   if (justCountry) {
     void track(ctx.userKey, "country", text, bucket);
-    if (state.pending_product_query) {
-      const pendingText = state.pending_product_query;
+    const pendingStoryId = state.pending_story_id;
+    const pendingStoryUrl = state.pending_story_url;
+    const hasPendingStory = Boolean(pendingStoryId || pendingStoryUrl);
+
+    if (state.pending_product_query || hasPendingStory) {
+      const rawPendingText = state.pending_product_query ?? "";
+      const pendingText = rawPendingText === "[story]" ? "" : rawPendingText;
       return decideConsultantReply(
         pendingText,
         {
           ...state,
           ...countryPatch,
           pending_product_query: undefined,
+          pending_story_id: undefined,
+          pending_story_url: undefined,
           conversation_state: "consulting",
         },
-        { ...ctx, postback: undefined },
+        {
+          ...ctx,
+          postback: undefined,
+          storyId: pendingStoryId || ctx.storyId,
+          storyMediaUrl: pendingStoryUrl || ctx.storyMediaUrl,
+        },
       );
     }
     return {
       text: pack.askProduct,
-      patch: { ...countryPatch, conversation_state: "awaiting_product", pending_product_query: undefined },
+      patch: {
+        ...countryPatch,
+        conversation_state: "awaiting_product",
+        pending_product_query: undefined,
+        pending_story_id: undefined,
+        pending_story_url: undefined,
+      },
       kind: "clarify",
     };
   }
@@ -529,7 +562,8 @@ export async function decideConsultantReply(
       let claudeText = text;
       if (ctx.storyId || ctx.storyMediaUrl) {
         console.log("[consultant] story context detected:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
-        claudeText = `[Customer replied to a story. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown]\n\n${text}`;
+        const userPrompt = text.trim() || "Здравствуйте! Подскажите цену и наличие этого товара";
+        claudeText = `[Customer replied to an Instagram story or reel. Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown. If the customer asks about price or availability, answer with the tagged product's price and details]\n\n${userPrompt}`;
       }
 
       const ai = await runConsultantClaude({
@@ -687,6 +721,43 @@ export async function decideConsultantReply(
   }
 
   // ================= FALLBACK DETERMINISTIC LOGIC (when Claude is unavailable or fails) =================
+  if (ctx.storyId || ctx.storyMediaUrl) {
+    const { findStoryTag } = await import("./story-tags.functions");
+    const tag = await findStoryTag(ctx.storyId, ctx.storyMediaUrl);
+    if (tag) {
+      let targetProduct: ConsultantProduct | null = null;
+      if (tag.product_id) {
+        targetProduct = await getProduct(tag.product_id, catalog);
+      }
+      if (!targetProduct) {
+        targetProduct = {
+          id: tag.product_id || `story_${tag.story_id}`,
+          name: tag.product_name,
+          category: "story",
+          size: "",
+          colors: [],
+          price_kzt: tag.product_price_kzt || 0,
+          stock: true,
+        };
+      }
+      const includeCdek = country === "RU" && !state.ru_cdek_sent;
+      const rub =
+        country === "RU" && rateRow?.rate ? priceRub(targetProduct.price_kzt, rateRow.rate) : null;
+      return {
+        text: formatProductReply(targetProduct, country, rub, {
+          includeCdek,
+          pack,
+        }),
+        patch: {
+          ...countryPatch,
+          last_product_ids: appendIds(state.last_product_ids, [targetProduct.id]),
+          ru_cdek_sent: state.ru_cdek_sent || includeCdek,
+        },
+        kind: "product",
+      };
+    }
+  }
+
   const budgetKzt = extractBudgetKzt(text);
   const wantsBasket = matchBasketIntent(text);
   const wantsAdvice =
