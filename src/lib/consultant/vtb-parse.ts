@@ -52,14 +52,59 @@ function tryJsonRate(body: string): number | null {
   const trimmed = body.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
   try {
-    const parsed = JSON.parse(trimmed) as {
-      rate?: unknown;
-      buy?: unknown;
-      rub?: { buy?: unknown };
-    };
-    const raw = parsed.rate ?? parsed.buy ?? parsed.rub?.buy;
-    const n = Number(raw);
-    if (n > 1 && n < 20) return n;
+    const parsed = JSON.parse(trimmed);
+
+    // 1. Массив курсов ВТБ Онлайн (https://online-api.vtb.kz/api/exchange-rate/by-currencyMob/)
+    if (Array.isArray(parsed)) {
+      const rubKzt =
+        parsed.find(
+          (item: any) =>
+            item?.baseCurrencyIsoCode === "RUB" &&
+            item?.currencyIsoCode === "KZT" &&
+            (item?.typeId === 2 || item?.type?.value === "CASHLESS")
+        ) ||
+        parsed.find(
+          (item: any) =>
+            item?.baseCurrencyIsoCode === "RUB" &&
+            item?.currencyIsoCode === "KZT"
+        );
+      if (rubKzt) {
+        const n = Number(rubKzt.coursePurchase);
+        if (n > 1 && n < 20) return n;
+      }
+    }
+
+    // 2. Объект со списком курсов или прямыми полями
+    if (parsed && typeof parsed === "object") {
+      const list = (parsed as any).data || (parsed as any).items || (parsed as any).rates;
+      if (Array.isArray(list)) {
+        const rubKzt =
+          list.find(
+            (item: any) =>
+              item?.baseCurrencyIsoCode === "RUB" &&
+              item?.currencyIsoCode === "KZT" &&
+              (item?.typeId === 2 || item?.type?.value === "CASHLESS")
+          ) ||
+          list.find(
+            (item: any) =>
+              item?.baseCurrencyIsoCode === "RUB" &&
+              item?.currencyIsoCode === "KZT"
+          );
+        if (rubKzt) {
+          const n = Number(rubKzt.coursePurchase);
+          if (n > 1 && n < 20) return n;
+        }
+      }
+
+      const raw =
+        (parsed as any).rate ??
+        (parsed as any).buy ??
+        (parsed as any).coursePurchase ??
+        (parsed as any).rub?.buy ??
+        (parsed as any).rub?.coursePurchase;
+      const n = Number(raw);
+      if (n > 1 && n < 20) return n;
+    }
   } catch {
     return null;
   }

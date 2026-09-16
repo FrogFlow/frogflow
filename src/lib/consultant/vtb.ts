@@ -35,11 +35,16 @@ export async function saveVtbRate(rate: number, source: string): Promise<StoredV
   return stored;
 }
 
+export const VTB_ONLINE_API_URL = "https://online-api.vtb.kz/api/exchange-rate/by-currencyMob/";
+
 async function readRateFromUrl(url: string): Promise<number | null> {
   const res = await fetch(url, {
     headers: {
-      accept: "text/html,application/xml,application/json;q=0.9,*/*;q=0.8",
-      "user-agent": UA,
+      accept: "application/json,text/html,application/xml;q=0.9,*/*;q=0.8",
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      referer: "https://online.vtb.kz/unAuth/exchange-rates",
+      origin: "https://online.vtb.kz",
     },
     signal: AbortSignal.timeout(FETCH_MS),
   });
@@ -48,14 +53,19 @@ async function readRateFromUrl(url: string): Promise<number | null> {
 }
 
 /**
- * Сначала касса VTB / CONSULTANT_VTB_RATE_URL. Страница
- * `/personal/currency/` у банка сейчас 404, главная курс не содержит —
- * без запасного источника кнопка всегда писала «Курс не получен».
- * Дальше официальный RSS НБРК.
+ * Сначала официальный API ВТБ Онлайн (online.vtb.kz / online-api.vtb.kz) или CONSULTANT_VTB_RATE_URL.
+ * Если недоступно — старые страницы кассы VTB и официальный RSS НБРК.
  */
 export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string } | null> {
+  const envUrl = process.env.CONSULTANT_VTB_RATE_URL?.trim();
+  const normalizedEnvUrl =
+    envUrl && /online\.vtb\.kz\/unauth\/exchange-rates/i.test(envUrl)
+      ? VTB_ONLINE_API_URL
+      : envUrl;
+
   const vtbUrls = [
-    process.env.CONSULTANT_VTB_RATE_URL?.trim(),
+    normalizedEnvUrl,
+    VTB_ONLINE_API_URL,
     "https://www.vtb-bank.kz/personal/currency/",
     "https://vtb-bank.kz/personal/currency/",
     "https://www.vtb-bank.kz/",
