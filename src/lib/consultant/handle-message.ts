@@ -174,9 +174,7 @@ async function handleConsultantZernioEventInternal(params: {
     await resetConsultantState(params.userKey);
     const bucket = consultant.ab_bucket ?? "a";
     const pack = copyForBucket(bucket);
-    const welcomeText =
-      "Здравствуйте! Рады приветствовать вас в бутике домашнего текстиля BOVI.\n\n" +
-      stripMarkdownFormatting(pack.askCountry);
+    const welcomeText = stripMarkdownFormatting(pack.askCountry);
 
     await sendDirectReply({
       conversationId: params.conversationId,
