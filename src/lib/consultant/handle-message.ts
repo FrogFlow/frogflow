@@ -165,6 +165,9 @@ async function handleConsultantZernioEventInternal(params: {
         reason: "manager_intervention",
       });
     }
+    return;
+  }
+
   const rawIncoming = params.text.trim() || params.postback?.trim() || "";
 
   if (isResetIntent(rawIncoming)) {
@@ -190,10 +193,17 @@ async function handleConsultantZernioEventInternal(params: {
       last_bot_reply_at: new Date().toISOString(),
       last_customer_text: rawIncoming,
       conversation_state: "awaiting_country",
+      automation_paused: false,
+      pause_reason: undefined,
+      country: undefined,
+      customer_contact: undefined,
+      last_product_ids: [],
+      recent: [],
     });
     logConsultantEvent(requestId, "reset", { userKey: params.userKey });
     return;
   }
+
 
   if (isAutomationPaused(consultant)) {
     let lastOutgoing = "";
