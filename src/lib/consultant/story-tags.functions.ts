@@ -156,6 +156,38 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
     }
   }
 
+  // 6. Match numeric digits inside URL against story_id or story_url
+  const digits = `${idCandidate} ${urlCandidate}`.match(/\d{10,25}/g);
+  if (digits && digits.length > 0) {
+    for (const d of digits) {
+      const byDigitId = await s.from("story_product_tags").select("*").eq("story_id", d).maybeSingle();
+      if (byDigitId.data) {
+        console.log("[findStoryTag] matched by digit ID:", d);
+        return byDigitId.data;
+      }
+      const byDigitUrl = await s.from("story_product_tags").select("*").ilike("story_url", `%${d}%`).maybeSingle();
+      if (byDigitUrl.data) {
+        console.log("[findStoryTag] matched by digit in story_url:", d);
+        return byDigitUrl.data;
+      }
+    }
+  }
+
+  // 7. Resilient fallback: If story context is present (customer replied to a story/reel)
+  // but Meta CDN URL or ephemeral ID didn't match directly, fall back to the most recent tagged story
+  const fallback = await s
+    .from("story_product_tags")
+    .select("*")
+    .or(process.env.BOT_ID ? `bot_id.eq.${process.env.BOT_ID},bot_id.is.null` : 'bot_id.is.null')
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (fallback.data) {
+    console.log("[findStoryTag] matched latest active story fallback:", fallback.data.product_name, fallback.data.story_id);
+    return fallback.data;
+  }
+
   return null;
 }
 
