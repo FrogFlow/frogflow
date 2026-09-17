@@ -128,10 +128,39 @@ function parseBoolStock(raw: string, qty: number | undefined): boolean {
   return true;
 }
 
+/**
+ * Цена из выгрузки 1С.
+ *
+ * Боевой отчёт «Остатки товара по складам с ценами» пишет цену как
+ * «47,000   KZT», и запятая в нём — разделитель ТЫСЯЧ, а не дробной части:
+ * во всех 879 строках после неё ровно три цифры, а позиции вида
+ * «1,200,000   KZT» не оставляют других толкований. Прежний разбор снимал
+ * пробелы и менял запятую на точку, получая «47.000KZT» → NaN, то есть не
+ * читал ни одной строки; а «починка» одной только валюты дала бы 47 ₸
+ * вместо 47 000 — ошибку в тысячу раз, которую бот отдал бы покупателю.
+ */
 function parsePrice(raw: string): number | null {
-  const cleaned = raw.replace(/\s/g, "").replace(",", ".");
+  const cleaned = raw.replace(/[^\d.,]/g, "");
   if (!cleaned) return null;
-  const n = Number(cleaned);
+
+  const lastDot = cleaned.lastIndexOf(".");
+  const lastComma = cleaned.lastIndexOf(",");
+  const lastSep = Math.max(lastDot, lastComma);
+
+  let normalized = cleaned;
+  if (lastSep >= 0) {
+    const tail = cleaned.slice(lastSep + 1);
+    // Последний разделитель дробный, только если после него 1–2 цифры либо
+    // в числе присутствуют оба вида разделителей («1,234.56»). Три цифры
+    // после разделителя — это группировка тысяч.
+    const bothKinds = lastDot >= 0 && lastComma >= 0;
+    const isDecimal = bothKinds || (tail.length > 0 && tail.length <= 2);
+    normalized = isDecimal
+      ? `${cleaned.slice(0, lastSep).replace(/[.,]/g, "")}.${tail}`
+      : cleaned.replace(/[.,]/g, "");
+  }
+
+  const n = Number(normalized);
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
 }
@@ -285,7 +314,13 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
         return;
       }
       if (field === "stock_qty") {
-        const n = Number(String(value).replace(",", "."));
+        // Пустая ячейка — это «остатка нет в отчёте», а не «остаток ноль».
+        // Number("") === 0, и из-за этого строки-папки иерархического отчёта
+        // 1С выглядели товаром с нулевым остатком, а товар без колонки
+        // количества уезжал в «нет в наличии».
+        const v = String(value).trim();
+        if (!v) return;
+        const n = Number(v.replace(",", "."));
         if (Number.isFinite(n)) row.stock_qty = n;
         return;
       }
@@ -310,8 +345,10 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
     }
 
     if (row.price_kzt == null) {
-      if (!hasExplicitCategory) {
-        // Hierarchical folder row in 1C
+      // Строка-папка в иерархическом отчёте 1С: только название, ни цены, ни
+      // остатка. Если остаток есть, это товар с непрочитанной ценой — и
+      // молчать об этом нельзя, иначе прайс «импортируется» наполовину.
+      if (!hasExplicitCategory && row.stock_qty == null) {
         currentCategory = name;
       } else {
         errors.push({ row: i + 1, message: `нет цены: ${name || row.id}` });
@@ -348,6 +385,17 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
       ...(row.material ? { material: String(row.material).trim() } : {}),
       ...(row.description ? { description: String(row.description).trim() } : {}),
       ...(hardness ? { hardness } : {}),
+    });
+  }
+
+  // Разобрали ноль позиций и при этом ни на что не пожаловались — так уже
+  // было: формат цены сменился, каждая строка выглядела «папкой», и импорт
+  // молча заканчивался пустым каталогом. Пустой результат обязан быть ошибкой.
+  if (products.length === 0 && errors.length === 0 && lines.length > dataStartRow) {
+    errors.push({
+      row: dataStartRow + 1,
+      message:
+        "ни одной позиции с ценой — проверьте колонку цены и разделители в выгрузке",
     });
   }
 
