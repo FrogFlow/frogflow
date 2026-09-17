@@ -84,6 +84,26 @@ describe("учёт кеша промпта", () => {
   });
 });
 
+describe("сложение раундов внутри одного сообщения", () => {
+  // На одно сообщение клиента приходится до четырёх вызовов подряд, и каждый
+  // несёт весь промпт. Складывать надо все четыре счётчика: раньше со второго
+  // раунда пересобирался объект из двух полей, и токены кеша — почти весь
+  // ввод — пропадали из учёта.
+  const accumulate = (a: typeof one, b: typeof one) => ({
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheCreationTokens: (a.cacheCreationTokens ?? 0) + (b.cacheCreationTokens ?? 0),
+    cacheReadTokens: (a.cacheReadTokens ?? 0) + (b.cacheReadTokens ?? 0),
+  });
+  const one = { inputTokens: 180, outputTokens: 120, cacheCreationTokens: 0, cacheReadTokens: CACHED_PROMPT };
+
+  it("четыре раунда стоят вчетверо, а не как один", () => {
+    const total = [one, one, one].reduce(accumulate, one);
+    expect(total.cacheReadTokens).toBe(CACHED_PROMPT * 4);
+    expect(estimateUsdFromTokens(total)).toBeCloseTo(estimateUsdFromTokens(one) * 4, 10);
+  });
+});
+
 describe("накопленный расход", () => {
   it("читает старую запись без полей кеша", () => {
     const old = JSON.stringify({ count: 390, inputTokens: 1_240_353, outputTokens: 52_411, usd: 1.5 });
