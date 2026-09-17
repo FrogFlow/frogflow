@@ -63,10 +63,17 @@ export function priceRub(priceKzt: number, vtbBuyRate: number, date: Date = new 
 }
 
 export type StoredVtbRate = {
+  /** Курс покупки рубля банком — от него считается цена в ₽. */
   rate: number;
   updatedAt: string;
   /** URL источника или `manual`. */
   source?: string;
+  /**
+   * Курс продажи из той же котировки. В расчёте не участвует и нужен только
+   * для показа в админке: продавец спрашивал, не подставляем ли мы продажу
+   * вместо покупки, и по двум числам рядом это видно сразу.
+   */
+  sell?: number;
 };
 
 let rateCache: { at: number; value: StoredVtbRate | null } | null = null;
@@ -96,10 +103,12 @@ export async function getStoredVtbRate(): Promise<StoredVtbRate | null> {
       rememberStoredVtbRate(null);
       return null;
     }
+    const sell = Number(parsed.sell);
     const value = {
       rate,
       updatedAt: String(parsed.updatedAt),
       source: parsed.source ? String(parsed.source) : undefined,
+      ...(sell > 0 ? { sell } : {}),
     };
     rememberStoredVtbRate(value);
     return value;

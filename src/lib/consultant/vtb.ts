@@ -1,7 +1,12 @@
 import { getStoredVtbRate, rememberStoredVtbRate, type StoredVtbRate } from "./rate";
-import { parseVtbBuyRate, rateSourceKind, type RateSourceKind } from "./vtb-parse";
+import {
+  parseVtbRateQuote,
+  rateSourceKind,
+  type RateSourceKind,
+  type VtbRateQuote,
+} from "./vtb-parse";
 
-export { parseVtbBuyRate, rateSourceKind } from "./vtb-parse";
+export { parseVtbBuyRate, parseVtbRateQuote, rateSourceKind } from "./vtb-parse";
 export type { RateSourceKind } from "./vtb-parse";
 
 export const VTB_RATE_KEY = "consultant_vtb_buy_rate";
@@ -13,11 +18,16 @@ async function db() {
   return supabaseAdmin;
 }
 
-export async function saveVtbRate(rate: number, source: string): Promise<StoredVtbRate> {
+export async function saveVtbRate(
+  rate: number,
+  source: string,
+  sell?: number,
+): Promise<StoredVtbRate> {
   const stored: StoredVtbRate = {
     rate,
     updatedAt: new Date().toISOString(),
     source,
+    ...(sell && sell > 0 ? { sell } : {}),
   };
   const s = await db();
   await s.from("app_settings").upsert({
@@ -31,7 +41,7 @@ export async function saveVtbRate(rate: number, source: string): Promise<StoredV
 
 export const VTB_ONLINE_API_URL = "https://online-api.vtb.kz/api/exchange-rate/by-currencyMob/";
 
-async function readRateFromUrl(url: string, sendReferer = true): Promise<number | null> {
+async function readRateFromUrl(url: string, sendReferer = true): Promise<VtbRateQuote | null> {
   const headers: Record<string, string> = {
     accept: "application/json,text/html,application/xml;q=0.9,*/*;q=0.8",
     "user-agent":
@@ -46,14 +56,19 @@ async function readRateFromUrl(url: string, sendReferer = true): Promise<number 
     signal: AbortSignal.timeout(FETCH_MS),
   });
   if (!res.ok) return null;
-  return parseVtbBuyRate(await res.text());
+  return parseVtbRateQuote(await res.text());
 }
 
 /**
  * Получение курса покупки рубля исключительно из официального API ВТБ Казахстан (online-api.vtb.kz).
  * Никаких сторонних банков или НБРК — клиенту требуется строго курс покупки ВТБ.
  */
-export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string; log?: string[] } | null> {
+export async function fetchVtbBuyRate(): Promise<{
+  rate: number;
+  sell?: number;
+  source: string;
+  log?: string[];
+} | null> {
   const log: string[] = [];
   const envUrl = process.env.CONSULTANT_VTB_RATE_URL?.trim();
   const normalizedEnvUrl =
@@ -68,24 +83,17 @@ export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string;
   ].filter((u): u is string => Boolean(u));
 
   for (const url of vtbUrls) {
-    try {
-      const rate = await readRateFromUrl(url, true);
-      if (rate) {
-        log.push(`${url}: OK (${rate})`);
-        return { rate, source: url, log };
+    for (const withReferer of [true, false]) {
+      const label = withReferer ? url : `${url} (plain)`;
+      try {
+        const quote = await readRateFromUrl(url, withReferer);
+        if (quote) {
+          log.push(`${label}: OK (покупка ${quote.buy}${quote.sell ? `, продажа ${quote.sell}` : ""})`);
+          return { rate: quote.buy, sell: quote.sell, source: url, log };
+        }
+      } catch (err: any) {
+        log.push(`${label}: ${err?.message || err}`);
       }
-    } catch (err: any) {
-      log.push(`${url} (with referer): ${err?.message || err}`);
-    }
-
-    try {
-      const rate = await readRateFromUrl(url, false);
-      if (rate) {
-        log.push(`${url} (plain): OK (${rate})`);
-        return { rate, source: url, log };
-      }
-    } catch (err: any) {
-      log.push(`${url} (plain): ${err?.message || err}`);
     }
   }
 
@@ -103,7 +111,7 @@ export async function refreshVtbRate(): Promise<{
 }> {
   const fetched = await fetchVtbBuyRate();
   if (fetched) {
-    const stored = await saveVtbRate(fetched.rate, fetched.source);
+    const stored = await saveVtbRate(fetched.rate, fetched.source, fetched.sell);
     return { ok: true, stored, fetched: true, kind: rateSourceKind(fetched.source), log: fetched.log };
   }
   const last = await getStoredVtbRate();

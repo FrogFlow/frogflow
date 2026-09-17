@@ -95,7 +95,7 @@ const copy: Record<
     rateTitle: string;
     rateBody: string;
     rateEmpty: string;
-    rateValue: (rate: number, at: string) => string;
+    rateValue: (rate: number, at: string, sell?: number) => string;
     rateSource: Record<RateSourceKind, string>;
     rateKeptToast: string;
     refreshRate: string;
@@ -129,7 +129,8 @@ const copy: Record<
     rateBody:
       "RUB = ₸ / (курс покупки × 0,95 в будни / 0,93 в выходные). Подтягивается исключительно из официального API ВТБ Онлайн (online-api.vtb.kz).",
     rateEmpty: "Курса ещё нет. Обновите или введите вручную.",
-    rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateValue: (rate, at, sell) =>
+      `покупка ${rate} ₸/₽${sell ? ` · продажа ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "источник: ВТБ Онлайн (официальный курс)",
       manual: "источник: вручную",
@@ -174,7 +175,8 @@ const copy: Record<
     rateTitle: "VTB Қазақстан бағамы",
     rateBody: "RUB = ₸ / (сатып алу бағамы × 0,95). Тек ресми VTB Онлайн бағамы (online-api.vtb.kz).",
     rateEmpty: "Бағам жоқ.",
-    rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateValue: (rate, at, sell) =>
+      `сатып алу ${rate} ₸/₽${sell ? ` · сату ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "көз: VTB Онлайн",
       manual: "көз: қолмен",
@@ -222,7 +224,8 @@ const copy: Record<
     rateBody:
       "RUB = ₸ / (buy rate × 0.95 on weekdays, × 0.93 at weekends). Taken only from the official VTB Online API (online-api.vtb.kz).",
     rateEmpty: "No rate yet. Refresh or enter it manually.",
-    rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateValue: (rate, at, sell) =>
+      `buy ${rate} ₸/₽${sell ? ` · sell ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "source: VTB",
       manual: "source: manual",
@@ -268,7 +271,8 @@ const copy: Record<
     rateTitle: "VTB Qozog‘iston kursi",
     rateBody: "RUB = ₸ / (sotib olish kursi × 0,95). Faqat rasmiy VTB Online kursi (online-api.vtb.kz).",
     rateEmpty: "Kurs yo‘q.",
-    rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
+    rateValue: (rate, at, sell) =>
+      `sotib olish ${rate} ₸/₽${sell ? ` · sotish ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "manba: VTB",
       manual: "manba: qo‘lda",
@@ -445,7 +449,11 @@ function ConsultantPage() {
     mutationFn: () => refreshConsultantRateFn(),
     onSuccess: (res) => {
       if (res.fetched && res.kind === "vtb") {
-        toast.success(`Курс ВТБ Онлайн успешно обновлён: ${res.stored?.rate} ₸/₽`);
+        toast.success(
+          `Курс ВТБ Онлайн обновлён. Покупка ${res.stored?.rate} ₸/₽${
+            res.stored?.sell ? ` (продажа ${res.stored.sell} — в расчёте не участвует)` : ""
+          }`,
+        );
       } else if (res.fetched) {
         toast.success("Курс обновлён");
       } else if (res.stored) {
@@ -1530,7 +1538,7 @@ function ConsultantPage() {
             <p className="text-sm text-muted-foreground">{c.rateBody}</p>
             <p className="text-sm">
               {d?.rate
-                ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — ${
+                ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale), d.rate.sell)} — ${
                     d.rate.source?.includes("vtb")
                       ? "ВТБ Онлайн (официальный курс)"
                       : "вручную"
