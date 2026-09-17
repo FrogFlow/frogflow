@@ -153,18 +153,46 @@ export function extractSizeFromName(name: string): string {
   return "";
 }
 
+function cleanRussianColor(raw: string): string {
+  let c = raw.trim().toLowerCase().replace(/[.]+$/, "");
+  if (c === "слонов.кость" || c === "слон.кость") return "слоновая кость";
+  if (c === "светло-корич" || c === "светло-корич.") return "светло-коричневый";
+  if (c === "серебр" || c === "серебр.") return "серебристый";
+  if (c === "голуб" || c === "голуб.") return "голубой";
+  if (c === "роз" || c === "роз.") return "розовый";
+  if (c === "беж" || c === "беж.") return "бежевый";
+  return c;
+}
+
 export function extractColorsFromName(name: string): string[] {
   const match = name.match(
-    /цв(?:ет|[.])\s*([A-Za-zА-Яа-яЁё0-9\s/+_.-]+?)(?=[,;()]|\s*(?:высота|размер|\d+\s*см)|$)/i,
+    /цв(?:ет|[.])\s*([A-Za-zА-Яа-яЁё0-9\s/+_.-]+?)(?=[,;()]|\s*(?:высота|размер|\d+\s*см|\d+\s*[lLлЛ])|$)/i,
   );
   if (!match) return [];
   let rawColor = match[1].trim().replace(/[.]+$/, "");
   rawColor = rawColor.replace(/^\d+\s+/, "");
   if (!rawColor) return [];
   if (rawColor.includes("/")) {
-    return rawColor.split("/").map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const parts = rawColor.split("/").map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 2) {
+      const hasCyr1 = /[а-яА-ЯёЁ]/.test(parts[0]);
+      const hasLat1 = /[a-zA-Z]/.test(parts[0]);
+      const hasCyr2 = /[а-яА-ЯёЁ]/.test(parts[1]);
+      const hasLat2 = /[a-zA-Z]/.test(parts[1]);
+
+      if (hasLat1 && hasCyr2 && !hasLat2) {
+        const lat = parts[0];
+        const ru = cleanRussianColor(parts[1]);
+        return [`${ru} (${lat})`];
+      } else if (hasCyr1 && hasLat2 && !hasLat1) {
+        const ru = cleanRussianColor(parts[0]);
+        const lat = parts[1];
+        return [`${ru} (${lat})`];
+      }
+    }
+    return parts.map((c) => cleanRussianColor(c));
   }
-  return [rawColor.toLowerCase()];
+  return [cleanRussianColor(rawColor)];
 }
 
 function slugId(name: string, index: number): string {

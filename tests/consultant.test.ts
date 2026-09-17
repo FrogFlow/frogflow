@@ -718,6 +718,22 @@ describe("consultant — импорт CSV / Sheets URL", () => {
     expect(parsed.products[2].stock_qty).toBe(0);
   });
 
+  it("извлекает двуязычные расцветки из 1C и нормализует русский цвет (латиница в скобках)", async () => {
+    const { extractColorsFromName } = await import("../src/lib/consultant/catalog-import");
+    expect(
+      extractColorsFromName("Graccioza Egoist коврик в ванную 70x120 цвет fog/светло-бежевый"),
+    ).toEqual(["светло-бежевый (fog)"]);
+    expect(
+      extractColorsFromName("Blomus SONO Диспенсер для мыла, цвет Black/черный"),
+    ).toEqual(["черный (Black)"]);
+    expect(
+      extractColorsFromName("Blomus SONO Мыльница, цвет Moon Beam/слонов.кость"),
+    ).toEqual(["слоновая кость (Moon Beam)"]);
+    expect(
+      extractColorsFromName("Aquanova Коврик в ванную Maks 60х60, цвет 10 слон.кость"),
+    ).toEqual(["слоновая кость"]);
+  });
+
   it("строит export URL для Google Sheet", async () => {
     const { googleSheetsCsvUrl } = await import("../src/lib/consultant/catalog-import");
     expect(googleSheetsCsvUrl("https://docs.google.com/spreadsheets/d/abcDEF123/edit#gid=7")).toBe(
