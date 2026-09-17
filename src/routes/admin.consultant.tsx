@@ -767,6 +767,10 @@ function ConsultantPage() {
               <div className="divide-y border rounded-lg overflow-hidden">
                 {tasks.map((t) => {
                   const isPurchase = t.reason === "purchase";
+                  // Вопрос от ask_manager — бот на паузу не встал и продолжает
+                  // вести диалог. Менеджер должен видеть разницу: здесь с него
+                  // только ответ, а не перехват переписки.
+                  const isQuestion = t.reason === "question";
                   return (
                     <div
                       key={t.id}
@@ -795,10 +799,16 @@ function ConsultantPage() {
                               className={`px-2 py-0.5 text-xs rounded-full font-medium ${
                                 isPurchase
                                   ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                                  : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                  : isQuestion
+                                    ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                                    : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                               }`}
                             >
-                              {isPurchase ? "🛒 Оформление заказа" : "❓ Требуется менеджер"}
+                              {isPurchase
+                                ? "🛒 Оформление заказа"
+                                : isQuestion
+                                  ? "💬 Вопрос — бот продолжает диалог"
+                                  : "❓ Требуется менеджер"}
                             </span>
                             <span className="text-xs text-muted-foreground">
                               {formatWhen(t.at, locale)}

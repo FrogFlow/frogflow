@@ -654,6 +654,7 @@ export async function decideConsultantReply(
         shopUrl: await getShopUrlSafe(),
         forceTools: Boolean(!storyProduct && (ctx.storyId || ctx.storyMediaUrl)),
         composeAfterTools: true,
+        userKey: ctx.userKey,
       });
       if (ai.usage) {
         void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));

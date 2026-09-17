@@ -81,6 +81,21 @@ export const CONSULTANT_TOOLS = [
       }
     }
   },
+  {
+    name: "ask_manager",
+    description:
+      "Use when the customer asks something neither the catalog nor the knowledge base answers: a comparison between models, a material detail that is not in the card, a promise about dates. It files the question for a human manager and does NOT pause the chat. After calling it, say you will check with the manager and come back with the answer, then ask whether there is anything else you can help with right now. Never invent an answer instead, and never go silent.",
+    input_schema: {
+      type: "object",
+      properties: {
+        question: {
+          type: "string",
+          description: "The customer question, close to verbatim, so the manager can answer it.",
+        },
+      },
+      required: ["question"],
+    },
+  },
     {
       name: "handoff_to_manager",
       description:
@@ -124,6 +139,7 @@ export async function executeConsultantTool(
     catalog?: ConsultantProduct[];
     shopUrl?: string;
     excludeIds?: string[];
+    userKey?: string;
   },
 ): Promise<{ result: unknown; products: ConsultantProduct[]; handoff: boolean }> {
   const rateRow = await getStoredVtbRate();
@@ -233,6 +249,23 @@ export async function executeConsultantTool(
   if (name === "get_catalog_link") {
     const url = ctx.shopUrl || (await import("./catalog")).DEFAULT_SHOP_URL;
     return { result: { url }, products: [], handoff: false };
+  }
+
+  if (name === "ask_manager") {
+    const question = typeof input.question === "string" ? input.question.trim() : "";
+    if (question) {
+      const { addConsultantTask } = await import("./tasks");
+      await addConsultantTask({
+        userKey: ctx.userKey || "unknown",
+        reason: "question",
+        text: question,
+      }).catch((err: unknown) => {
+        // Вопрос не записался — это повод показать ошибку в логах, но не
+        // повод замолчать в диалоге: клиенту всё равно отвечаем честно.
+        console.warn("[consultant] ask_manager: не удалось записать вопрос", err);
+      });
+    }
+    return { result: { queued: Boolean(question) }, products: [], handoff: false };
   }
 
   if (name === "handoff_to_manager") {
