@@ -4,6 +4,8 @@ import { expandToken, foldText, haystackOf, tokenizeQuery } from "./synonyms";
  * Нормализованная карточка. Claude видит только результаты search/get,
  * не весь прайс и не «память» модели.
  */
+export type ProductHardness = "soft" | "medium" | "firm";
+
 export type ConsultantProduct = {
   id: string;
   name: string;
@@ -15,6 +17,12 @@ export type ConsultantProduct = {
   stock_qty?: number;
   material?: string;
   description?: string;
+  /**
+   * Жёсткость матраса или топпера. В прайсе 1С отдельной колонки под неё нет —
+   * фабрика пишет её в названии («Dorelan LEVANT R4 SOFT 160x200»), поэтому
+   * поле необязательное, а читать жёсткость надо через productHardness().
+   */
+  hardness?: ProductHardness;
 };
 
 export type ProductSearchQuery = {
@@ -22,15 +30,105 @@ export type ProductSearchQuery = {
   category?: string;
   size?: string;
   color?: string;
+  hardness?: ProductHardness;
   max_price_kzt?: number;
   exclude_ids?: string[];
+  /** Переопределяет BROWSE_LIMIT / NARROW_LIMIT — нужен точечно, обычно не задаётся. */
+  limit?: number;
 };
+
+const HARDNESS_PATTERNS: [ProductHardness, RegExp][] = [
+  ["soft", /(?:^|[^a-z])soft(?:[^a-z]|$)|мягк/i],
+  ["medium", /(?:^|[^a-z])medium(?:[^a-z]|$)|(?:^|[^a-zа-яё])средн/i],
+  ["firm", /(?:^|[^a-z])(?:firm|hard)(?:[^a-z]|$)|жестк|жёстк/i],
+];
+
+/** Жёсткость из свободного текста: «TRESOR R3 SOFT», «что есть в жёсткости soft». */
+export function extractHardness(text: string): ProductHardness | null {
+  if (!text) return null;
+  for (const [kind, re] of HARDNESS_PATTERNS) {
+    if (re.test(text)) return kind;
+  }
+  return null;
+}
+
+/**
+ * Жёсткость товара: поле, если импорт его проставил, иначе вывод из названия.
+ * Вывод из названия обязателен — каталог в базе загружен прежним импортом,
+ * без поля hardness, и переимпорт ради поиска по жёсткости требовать нельзя.
+ */
+export function productHardness(product: ConsultantProduct): ProductHardness | null {
+  return product.hardness ?? extractHardness(`${product.name} ${product.size}`);
+}
+
+/**
+ * Допуск по размеру. Продавец подтвердил: фабрика выпускает 182×202 вместо
+ * 180×200, и для покупателя это один и тот же размер — расхождение до 3 см
+ * по каждой стороне считается совпадением, иначе поиск отвечает «нет»
+ * на товар, который лежит на складе.
+ */
+export const SIZE_TOLERANCE_CM = 3;
+
+function parseSizeDims(text: string): number[] | null {
+  const m = foldText(text).match(/(\d{2,3})x(\d{2,3})(?:x(\d{1,3}))?/);
+  if (!m) return null;
+  const dims = [Number(m[1]), Number(m[2])];
+  if (m[3]) dims.push(Number(m[3]));
+  return dims.every((n) => Number.isFinite(n) && n > 0) ? dims : null;
+}
+
+/**
+ * Кухонные полотенца. У BOVI это отдельное назначение (SANDER), всё остальное —
+ * банные и для лица. Продавец попросил не подмешивать кухонные в общий запрос
+ * про полотенца и предлагать их, только когда спросили именно кухонные.
+ */
+const KITCHEN_TOWEL_RE = /кухон|kitchen|tea\s*towel/i;
+
+export function isKitchenTowel(product: ConsultantProduct): boolean {
+  return KITCHEN_TOWEL_RE.test(`${product.name} ${product.category}`);
+}
+
+/**
+ * Прячем кухонные только в запросе именно про полотенца: поиск по бренду
+ * SANDER или по цвету должен их находить, иначе они станут ненаходимыми.
+ */
+function hidesKitchenTowels(q: ProductSearchQuery): boolean {
+  const text = `${q.query ?? ""} ${q.category ?? ""}`;
+  if (!/полотенц|towel/i.test(foldText(text))) return false;
+  return !KITCHEN_TOWEL_RE.test(text);
+}
+
+/** Точное вхождение либо расхождение не больше SIZE_TOLERANCE_CM по каждой стороне. */
+export function sizeMatches(productSize: string, querySize: string): boolean {
+  const want = foldText(querySize);
+  if (!want) return true;
+  if (foldText(productSize).includes(want)) return true;
+  const have = parseSizeDims(productSize);
+  const asked = parseSizeDims(querySize);
+  if (!have || !asked) return false;
+  const shared = Math.min(have.length, asked.length);
+  if (shared < 2) return false;
+  for (let i = 0; i < shared; i++) {
+    if (Math.abs(have[i] - asked[i]) > SIZE_TOLERANCE_CM) return false;
+  }
+  return true;
+}
 
 function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
   const hay = haystackOf([product.name, product.category, product.size, product.colors.join(" ")]);
-  if (q.category && !hay.includes(expandToken(q.category))) return false;
-  if (q.size && !foldText(product.size).includes(foldText(q.size))) return false;
+  // Категорию сверяем только с названием и категорией товара. Раньше она
+  // искалась по общему стогу вместе с расцветками и размером, и подбор по
+  // цвету сползал в соседнюю категорию: на «голубые полотенца 50x70»
+  // выдавалось голубое постельное бельё.
+  if (q.category && !haystackOf([product.category, product.name]).includes(expandToken(q.category))) {
+    return false;
+  }
+  if (q.size && !sizeMatches(product.size, q.size)) return false;
   if (q.color && !hay.includes(expandToken(q.color))) return false;
+  // Жёсткость названа явно — другая жёсткость это не «похожий вариант», а
+  // не тот товар: на запрос про soft выдавался TRESOR R2 MEDIUM.
+  if (q.hardness && productHardness(product) !== q.hardness) return false;
+  if (isKitchenTowel(product) && hidesKitchenTowels(q)) return false;
   if (typeof q.max_price_kzt === "number" && q.max_price_kzt > 0 && product.price_kzt > q.max_price_kzt) {
     return false;
   }
@@ -479,22 +577,61 @@ export function enrichProductColors(
   };
 }
 
+/** Свободный просмотр без единого фильтра — короткая витрина, а не весь прайс. */
+const BROWSE_LIMIT = 12;
+
+/**
+ * Запрос с явным фильтром (размер, цвет, жёсткость, категория, бюджет).
+ * Прежний потолок в 12 позиций резал выдачу молча: на «что есть в жёсткости
+ * soft» продавец получил три матраса из восьми и сказал, что так работать
+ * нельзя. Потолок оставлен только как страховка от выгрузки всего прайса в
+ * контекст модели, а сколько позиций нашлось всего, возвращается отдельно —
+ * чтобы ответ мог назвать полное число, а не делать вид, что их столько и есть.
+ */
+const NARROW_LIMIT = 40;
+
+/**
+ * Полный список совпадений и то, что реально уходит в ответ.
+ * Вызывающему нужен именно `all.length`: без него «показано 12» и «всего 12»
+ * неразличимы.
+ */
+export function findProducts(
+  q: ProductSearchQuery,
+  rows: ConsultantProduct[],
+): { all: ConsultantProduct[]; shown: ConsultantProduct[] } {
+  const hasFilter = Boolean(
+    q.query || q.category || q.size || q.color || q.hardness || q.max_price_kzt,
+  );
+  if (!hasFilter) {
+    return { all: rows, shown: diversifyProducts(rows, q.limit ?? BROWSE_LIMIT) };
+  }
+  const all = rows.filter((p) => matches(p, q));
+  const limit = q.limit ?? NARROW_LIMIT;
+  if (q.max_price_kzt) {
+    const sorted = [...all].sort(
+      (a, b) => Number(b.stock) - Number(a.stock) || b.price_kzt - a.price_kzt,
+    );
+    return { all: sorted, shown: sorted.slice(0, limit) };
+  }
+  if (q.size || q.color || q.hardness) {
+    return { all, shown: all.slice(0, limit) };
+  }
+  return { all, shown: diversifyProducts(all, limit) };
+}
+
+export async function searchProductsDetailed(
+  q: ProductSearchQuery,
+  catalog?: ConsultantProduct[],
+): Promise<{ all: ConsultantProduct[]; shown: ConsultantProduct[] }> {
+  const rows = catalog ?? (await loadConsultantCatalog());
+  return findProducts(q, rows);
+}
+
 export async function searchProducts(
   q: ProductSearchQuery,
   catalog?: ConsultantProduct[],
 ): Promise<ConsultantProduct[]> {
-  const rows = catalog ?? (await loadConsultantCatalog());
-  const hasFilter = Boolean(q.query || q.category || q.size || q.color || q.max_price_kzt);
-  if (!hasFilter) return diversifyProducts(rows, 12);
-  const found = rows.filter((p) => matches(p, q));
-  if (q.max_price_kzt) {
-    found.sort((a, b) => Number(b.stock) - Number(a.stock) || b.price_kzt - a.price_kzt);
-    return found.slice(0, 12);
-  }
-  if (q.size || q.color) {
-    return found.slice(0, 12);
-  }
-  return diversifyProducts(found, 12);
+  return (await searchProductsDetailed(q, catalog)).shown;
 }
 
 export function productsUnderBudget(

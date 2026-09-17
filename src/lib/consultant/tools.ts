@@ -2,8 +2,9 @@ import {
   enrichProductColors,
   getProduct,
   relatedVariants,
-  searchProducts,
+  searchProductsDetailed,
   type ConsultantProduct,
+  type ProductHardness,
   type ProductSearchQuery,
 } from "./catalog";
 import { getStoredVtbRate, priceRub } from "./rate";
@@ -13,14 +14,28 @@ export const CONSULTANT_TOOLS = [
   {
     name: "search_products",
     description:
-      "Search the live catalog by free text, category, size or color. Use before answering any stock or price question. Empty list means nothing matched — do not invent items.",
+      "Search the live catalog by free text, category, size, firmness or color. Use before answering any stock or price question. Empty list means nothing matched — do not invent items and do not offer a different category instead. The result reports total_matches: when it is larger than the number of returned cards, say the total out loud and offer to narrow the choice.",
     input_schema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Free-text product query" },
-        category: { type: "string" },
-        size: { type: "string" },
+        category: {
+          type: "string",
+          description:
+            "Always pass it when the customer names a category (towels, bedding, mattress…). Without it a color or size search returns other categories too.",
+        },
+        size: {
+          type: "string",
+          description:
+            "Size as the customer said it, e.g. 180x200. Sizes within 3 cm per side match as well — the factory makes 182x202 as the 180x200 equivalent.",
+        },
         color: { type: "string" },
+        hardness: {
+          type: "string",
+          enum: ["soft", "medium", "firm"],
+          description:
+            "Mattress or topper firmness. Pass it whenever the customer names one (soft/medium/firm, мягкий/средний/жёсткий). A different firmness is a different product, never a substitute.",
+        },
         max_price_kzt: {
           type: "number",
           description: "Only cards at or below this KZT price. Use when the customer names a budget.",
@@ -95,6 +110,12 @@ export function presentCard(
   };
 }
 
+function readHardness(value: unknown): ProductHardness | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().toLowerCase();
+  return v === "soft" || v === "medium" || v === "firm" ? v : undefined;
+}
+
 export async function executeConsultantTool(
   name: string,
   input: Record<string, unknown>,
@@ -114,6 +135,7 @@ export async function executeConsultantTool(
       category: typeof input.category === "string" ? input.category : undefined,
       size: typeof input.size === "string" ? input.size : undefined,
       color: typeof input.color === "string" ? input.color : undefined,
+      hardness: readHardness(input.hardness),
       max_price_kzt:
         typeof input.max_price_kzt === "number" && input.max_price_kzt > 0
           ? input.max_price_kzt
@@ -123,7 +145,9 @@ export async function executeConsultantTool(
       ? input.exclude_ids.filter((id): id is string => typeof id === "string")
       : [];
     const exclude = new Set(fromTool);
-    let found = (await searchProducts(q, ctx.catalog)).filter((p) => !exclude.has(p.id));
+    const { all, shown } = await searchProductsDetailed(q, ctx.catalog);
+    let found = shown.filter((p) => !exclude.has(p.id));
+    const totalMatches = all.filter((p) => !exclude.has(p.id)).length;
     if (found.length === 0 && exclude.size > 0 && ctx.catalog) {
       found = relatedVariants(ctx.catalog, [...exclude]);
     }
@@ -131,7 +155,14 @@ export async function executeConsultantTool(
       ? found.map((p) => enrichProductColors(p, ctx.catalog!))
       : found;
     return {
-      result: { products: enriched.map((p) => presentCard(p, ctx.country, rate)) },
+      result: {
+        products: enriched.map((p) => presentCard(p, ctx.country, rate)),
+        returned: enriched.length,
+        // Сколько позиций подошло всего. Без этого числа ответ не отличает
+        // «нашлось три» от «показали три из восьми» — ровно та выборочная
+        // выдача, на которую пожаловался продавец.
+        total_matches: Math.max(totalMatches, enriched.length),
+      },
       products: enriched,
       handoff: false,
     };

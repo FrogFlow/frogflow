@@ -1,4 +1,4 @@
-import type { ConsultantProduct } from "./catalog";
+import { extractHardness, type ConsultantProduct } from "./catalog";
 
 export type CatalogImportError = { row: number; message: string };
 
@@ -58,6 +58,7 @@ const HEADER_ALIASES: Record<keyof ConsultantProduct | "skip", string[]> = {
     "composition",
   ],
   description: ["description", "описание", "характеристики", "описаниетовара"],
+  hardness: ["hardness", "жесткость", "жёсткость", "жесткостьматраса", "firmness"],
   skip: ["итого", "всего"],
 };
 
@@ -330,6 +331,10 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
       hasExplicitSize && row.size ? String(row.size).trim() : extractSizeFromName(name);
     const colors =
       hasExplicitColor && row.colors?.length ? row.colors : extractColorsFromName(name);
+    // Колонки жёсткости в выгрузках 1С обычно нет — фабрика пишет её в
+    // названии («LEVANT R4 SOFT»), поэтому берём колонку, если она есть,
+    // иначе разбираем название.
+    const hardness = extractHardness(String(row.hardness ?? "")) ?? extractHardness(name);
 
     products.push({
       id,
@@ -342,6 +347,7 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
       ...(qty != null ? { stock_qty: qty } : {}),
       ...(row.material ? { material: String(row.material).trim() } : {}),
       ...(row.description ? { description: String(row.description).trim() } : {}),
+      ...(hardness ? { hardness } : {}),
     });
   }
 
