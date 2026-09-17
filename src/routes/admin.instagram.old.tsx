@@ -1323,7 +1323,7 @@ const copy: Record<
   },
 };
 
-export const Route = createFileRoute("/admin/instagram/old")({
+export const Route = createFileRoute("/admin/instagram")({
   beforeLoad: ({ context }) => {
     if (!context.modules.instagram) throw redirect({ to: "/admin" });
   },
