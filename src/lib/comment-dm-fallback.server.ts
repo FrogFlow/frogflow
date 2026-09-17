@@ -131,7 +131,78 @@ export async function runCommentDmFallback(): Promise<{
         if (!commentId || comment.from?.isOwner) continue;
         commentsChecked++;
 
-        if (sentByZernio.has(commentId)) continue; // штатно отработало
+        const isTwoStep = Boolean(automation.twoStepDm);
+        if (sentByZernio.has(commentId)) {
+          if (!isTwoStep) continue; // для обычных правил — штатно отработало
+
+          // Для двухшагового режима: проверяем, ушло ли 2-е сообщение
+          const { data: twoStepLog } = await s
+            .from("zernio_logs")
+            .select("status")
+            .eq("event_id", `two-step-dm:${commentId}`)
+            .maybeSingle();
+
+          if (twoStepLog?.status === "processed") {
+            continue; // и 1-е, и 2-е сообщение доставлены
+          }
+
+          // 1-е сообщение доставлено родным Zernio, а 2-е нет!
+          const commenterUsername = comment.from?.username;
+          if (!commenterUsername) continue;
+
+          const secondText =
+            automation.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+          let targetButtons = automation.buttons;
+          if (!targetButtons || targetButtons.length === 0) {
+            const { getCachedBotUrl } = await import("./bot-url.server");
+            const botUrl = await getCachedBotUrl();
+            if (botUrl) {
+              targetButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
+            }
+          }
+          const { normalizeDmButtons, startInstagramConversation } = await import("./zernio.server");
+          const normButtons = normalizeDmButtons(targetButtons);
+
+          const result = await startInstagramConversation({
+            accountId: automation.accountId,
+            username: commenterUsername,
+            message: secondText,
+            buttons: normButtons,
+          });
+
+          if (result.ok) {
+            await s.from("zernio_logs").upsert(
+              {
+                event_id: `two-step-dm:${commentId}`,
+                event_type: "two_step_dm_sent",
+                status: "processed",
+                payload: { commentId, username: commenterUsername, automationId },
+              },
+              { onConflict: "event_id" },
+            );
+            sent++;
+          } else {
+            await s.from("zernio_logs").upsert(
+              {
+                event_id: `two-step-dm:${commentId}`,
+                event_type: "two_step_dm_pending",
+                status: "pending",
+                error_message: result.error,
+                payload: {
+                  commentId,
+                  username: commenterUsername,
+                  accountId: automation.accountId,
+                  automationId,
+                  secondText,
+                  buttons: normButtons,
+                  createdAt: new Date().toISOString(),
+                },
+              },
+              { onConflict: "event_id" },
+            );
+          }
+          continue;
+        }
         if (
           !commentMatchesAutomation(
             comment.message ?? "",
@@ -225,14 +296,45 @@ export async function runCommentDmFallback(): Promise<{
                 targetButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
               }
             }
-            if (commenterUsername && targetButtons && targetButtons.length > 0) {
-              const { startInstagramConversation } = await import("./zernio.server");
-              await startInstagramConversation({
+            const { normalizeDmButtons, startInstagramConversation } = await import("./zernio.server");
+            const normButtons = normalizeDmButtons(targetButtons);
+            if (commenterUsername && normButtons && normButtons.length > 0) {
+              const startRes = await startInstagramConversation({
                 accountId: automation.accountId,
                 username: commenterUsername,
                 message: secondText,
-                buttons: targetButtons,
+                buttons: normButtons,
               });
+              if (startRes.ok) {
+                await s.from("zernio_logs").upsert(
+                  {
+                    event_id: `two-step-dm:${commentId}`,
+                    event_type: "two_step_dm_sent",
+                    status: "processed",
+                    payload: { commentId, username: commenterUsername, automationId },
+                  },
+                  { onConflict: "event_id" },
+                );
+              } else {
+                await s.from("zernio_logs").upsert(
+                  {
+                    event_id: `two-step-dm:${commentId}`,
+                    event_type: "two_step_dm_pending",
+                    status: "pending",
+                    error_message: startRes.error,
+                    payload: {
+                      commentId,
+                      username: commenterUsername,
+                      accountId: automation.accountId,
+                      automationId,
+                      secondText,
+                      buttons: normButtons,
+                      createdAt: new Date().toISOString(),
+                    },
+                  },
+                  { onConflict: "event_id" },
+                );
+              }
             }
           }
         } else {

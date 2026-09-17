@@ -141,6 +141,31 @@ export function buildInstagramInboxMessageBody(
   return { accountId, message };
 }
 
+/**
+ * Приводит кнопки к строгому формату Meta/Zernio:
+ *  - если есть URL (начинается с http), тип строго "url", payload опускаем.
+ *  - если URL нет, тип "postback", и гарантируем непустой payload.
+ *  - максимум 3 кнопки (ограничение Direct/Messenger).
+ */
+export function normalizeDmButtons(buttons?: ZernioDmButton[]): ZernioDmButton[] {
+  if (!Array.isArray(buttons)) return [];
+  return buttons
+    .filter((b) => b && typeof b.title === "string" && b.title.trim())
+    .map((b) => {
+      const title = b.title.trim();
+      const rawUrl = typeof b.url === "string" ? b.url.trim() : "";
+      if (rawUrl && /^https?:\/\//i.test(rawUrl)) {
+        return { type: "url" as const, title, url: rawUrl };
+      }
+      return {
+        type: "postback" as const,
+        title,
+        payload: (typeof b.payload === "string" && b.payload.trim()) || "/start",
+      };
+    })
+    .slice(0, 3);
+}
+
 export type ZernioCommentAutomation = {
   id?: string;
   _id?: string;
@@ -777,7 +802,8 @@ export function describeZernioWebhookFit(
   if (!current) return { fit: "missing" };
   const events = current.events ?? [];
   const listensForDm = events.includes("message.received");
-  if (!zernioWebhookIsActive(current) || current.url !== expectedUrl || !listensForDm) {
+  const listensForComment = events.includes("comment.received");
+  if (!zernioWebhookIsActive(current) || current.url !== expectedUrl || !listensForDm || !listensForComment) {
     return { fit: "stale", current };
   }
   return { fit: "ok", current };
@@ -1404,8 +1430,9 @@ export async function startInstagramConversation(params: {
     identifierType: "username",
     message: params.message,
   };
-  if (params.buttons && params.buttons.length > 0) {
-    body.buttons = params.buttons.slice(0, 3);
+  const normalizedButtons = normalizeDmButtons(params.buttons);
+  if (normalizedButtons.length > 0) {
+    body.buttons = normalizedButtons;
   }
   try {
     const { idempotencyKeyFor } = await import("./zernio-event-context.server");
@@ -1419,11 +1446,6 @@ export async function startInstagramConversation(params: {
       idempotencyKey: idempotencyKeyFor(body),
     });
     const convId = conversationIdFromStart(result);
-    if (convId && params.buttons && params.buttons.length > 0) {
-      await sendZernioInboxMessage(convId, params.accountId, params.message, {
-        buttons: params.buttons,
-      });
-    }
     return { ok: true, conversationId: convId };
   } catch (e) {
     console.error("[zernio] startInstagramConversation failed", e);
@@ -2303,9 +2325,11 @@ export async function syncExternalPostByUrl(
  * Обработка comment.received для безопасного двухшагового режима Meta.
  * Первое сообщение (чистый текст без кнопок) отправляет Zernio через родное правило.
  * Второе сообщение (с кнопками) отправляем через 1.5с в открывшийся Direct.
+ * Если Direct ещё закрыт политикой Meta (24h window), ставим в очередь pending,
+ * и доставляем мгновенно при первом же ответе покупателя в Direct.
  */
 export async function handleZernioCommentTwoStep(payload: {
-  account?: { accountId?: string; id?: string };
+  account?: { accountId?: string; id?: string; username?: string };
   post?: { platformPostId?: string; id?: string };
   comment?: {
     id?: string;
@@ -2321,6 +2345,14 @@ export async function handleZernioCommentTwoStep(payload: {
   const commentId = payload.comment?.id;
 
   if (!accountId || !username || !commentId) return;
+
+  // Игнорируем собственные комментарии магазина
+  if (
+    payload.comment?.author?.id === payload.account?.id ||
+    (payload.account?.username && username.toLowerCase() === payload.account.username.toLowerCase())
+  ) {
+    return;
+  }
 
   const metaMap = await getCommentAutomationsMeta();
   const activeTwoStepIds = Object.keys(metaMap).filter((id) => metaMap[id]?.twoStepDm);
@@ -2346,16 +2378,17 @@ export async function handleZernioCommentTwoStep(payload: {
   const meta = metaMap[autoId];
   if (!meta?.twoStepDm) return;
 
-  // Идемпотентность: не отправляем второе сообщение повторно на один и тот же комментарий
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const idempotencyKey = `two-step-dm:${commentId}`;
-  const { error: insertErr } = await supabaseAdmin.from("zernio_logs").insert({
-    event_id: idempotencyKey,
-    event_type: "two_step_dm_sent",
-    status: "processed",
-    payload: { commentId, username, automationId: autoId },
-  });
-  if (insertErr && insertErr.code === "23505") {
+
+  // Проверяем, не отправлено ли уже
+  const { data: existingLog } = await supabaseAdmin
+    .from("zernio_logs")
+    .select("status")
+    .eq("event_id", idempotencyKey)
+    .maybeSingle();
+
+  if (existingLog?.status === "processed") {
     return;
   }
 
@@ -2363,19 +2396,134 @@ export async function handleZernioCommentTwoStep(payload: {
   await new Promise((resolve) => setTimeout(resolve, 1500));
 
   const secondText = meta.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
-  let buttons = meta.secondDmButtons || matchedAuto.buttons || [];
-  if (!buttons || buttons.length === 0) {
+  let rawButtons = meta.secondDmButtons || matchedAuto.buttons || [];
+  if (!rawButtons || rawButtons.length === 0) {
     const { getCachedBotUrl } = await import("./bot-url.server");
     const botUrl = await getCachedBotUrl();
     if (botUrl) {
-      buttons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
+      rawButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
     }
   }
+  const buttons = normalizeDmButtons(rawButtons);
 
-  await startInstagramConversation({
-    accountId,
-    username,
-    message: secondText,
-    buttons,
+  // Проверяем, есть ли уже открытый диалог с этим пользователем в bot_users
+  const { data: knownUser } = await supabaseAdmin
+    .from("bot_users")
+    .select("zernio_conversation_id")
+    .eq("username", username)
+    .maybeSingle();
+
+  let sendResult: { ok: boolean; conversationId?: string; error?: string };
+  if (knownUser?.zernio_conversation_id) {
+    const res = await sendZernioInboxMessage(knownUser.zernio_conversation_id, accountId, secondText, {
+      buttons,
+    });
+    sendResult = { ok: res.ok, conversationId: knownUser.zernio_conversation_id, error: res.error };
+  } else {
+    sendResult = await startInstagramConversation({
+      accountId,
+      username,
+      message: secondText,
+      buttons,
+    });
+  }
+
+  if (sendResult.ok) {
+    await supabaseAdmin.from("zernio_logs").upsert(
+      {
+        event_id: idempotencyKey,
+        event_type: "two_step_dm_sent",
+        status: "processed",
+        payload: {
+          commentId,
+          username,
+          automationId: autoId,
+          conversationId: sendResult.conversationId,
+        },
+      },
+      { onConflict: "event_id" },
+    );
+  } else {
+    console.warn(
+      `[zernio] twoStepDm immediate send failed for @${username} (queued for delivery on next DM):`,
+      sendResult.error,
+    );
+    await supabaseAdmin.from("zernio_logs").upsert(
+      {
+        event_id: idempotencyKey,
+        event_type: "two_step_dm_pending",
+        status: "pending",
+        error_message: sendResult.error,
+        payload: {
+          commentId,
+          username,
+          accountId,
+          automationId: autoId,
+          secondText,
+          buttons,
+          createdAt: new Date().toISOString(),
+        },
+      },
+      { onConflict: "event_id" },
+    );
+  }
+}
+
+/**
+ * Доставляет отложенное 2-е сообщение автоворонки комментариев, когда пользователь
+ * написал любое сообщение или нажал кнопку в Instagram Direct.
+ */
+export async function deliverPendingTwoStepDm(params: {
+  accountId: string;
+  conversationId: string;
+  username?: string;
+  userKey?: string;
+}): Promise<boolean> {
+  const { accountId, conversationId, username } = params;
+  if (!accountId || !conversationId) return false;
+
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: logs, error } = await supabaseAdmin
+    .from("zernio_logs")
+    .select("id, event_id, payload")
+    .eq("event_type", "two_step_dm_pending")
+    .eq("status", "pending")
+    .gte("created_at", cutoff)
+    .order("created_at", { ascending: false });
+
+  if (error || !logs || logs.length === 0) return false;
+
+  const matched = (logs as Array<{ id: string; event_id: string; payload: unknown }>).find((l) => {
+    const p = l.payload as Record<string, unknown> | null;
+    if (!p) return false;
+    if (username && typeof p.username === "string" && p.username.toLowerCase() === username.toLowerCase()) {
+      return true;
+    }
+    return false;
   });
+
+  if (!matched) return false;
+  const p = matched.payload as Record<string, unknown>;
+  const secondText =
+    (typeof p.secondText === "string" && p.secondText.trim()) ||
+    "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+  const buttons = normalizeDmButtons(Array.isArray(p.buttons) ? (p.buttons as ZernioDmButton[]) : []);
+
+  const sendRes = await sendZernioInboxMessage(conversationId, accountId, secondText, {
+    buttons: buttons.length > 0 ? buttons : undefined,
+  });
+
+  if (sendRes.ok) {
+    await supabaseAdmin
+      .from("zernio_logs")
+      .update({
+        event_type: "two_step_dm_sent",
+        status: "processed",
+      })
+      .eq("id", matched.id);
+    return true;
+  }
+  return false;
 }

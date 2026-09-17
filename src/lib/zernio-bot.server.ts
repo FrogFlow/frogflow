@@ -1348,6 +1348,37 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
     return;
   }
 
+  // Безопасный 2-шаговый Comment-to-DM: если покупатель оставил комментарий под постом,
+  // получил 1-е текстовое сообщение и теперь открыл Direct/написал что угодно —
+  // немедленно отдаём ему обещанное 2-е сообщение с кнопками.
+  if (platform === "instagram" && senderUsername) {
+    const { deliverPendingTwoStepDm } = await import("./zernio.server");
+    const delivered = await deliverPendingTwoStepDm({
+      accountId,
+      conversationId,
+      username: senderUsername,
+      userKey,
+    });
+    if (delivered) {
+      console.log(`[zernio-bot] Delivered pending two-step DM to @${senderUsername}`);
+      const cleanText = (text || "").trim().toLowerCase();
+      if (
+        !cleanText ||
+        cleanText === "." ||
+        cleanText === "+" ||
+        cleanText === "1" ||
+        cleanText === "да" ||
+        cleanText === "ссылка" ||
+        cleanText === "материалы" ||
+        cleanText === "купить" ||
+        cleanText === "старт" ||
+        cleanText === "/start"
+      ) {
+        return;
+      }
+    }
+  }
+
   const s = await db();
 
   /**

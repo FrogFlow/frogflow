@@ -567,23 +567,32 @@ export const saveAutomationFn = createServerFn({ method: "POST" })
     // цели: правило пересоздавалось, счётчик срабатываний обнулялся при
     // каждом редактировании catch-all автоматизации, даже без правки цели.
     const normalizePostId = (v: string | null | undefined) => v || null;
+    let saveResult: { ok: boolean; error?: string; automation?: any };
     if (automationId) {
       if (
         normalizePostId(originalPlatformPostId) === normalizePostId(data.platformPostId) &&
         normalizePostId(originalPostId) === normalizePostId(data.postId) &&
         (originalTrigger || "comment") === data.trigger
       ) {
-        return await updateCommentAutomation(automationId, automation);
+        saveResult = await updateCommentAutomation(automationId, automation);
+      } else {
+        const created = await createCommentAutomation(automation);
+        if (!created.ok) return created;
+        const deleted = await deleteCommentAutomation(automationId);
+        if (!deleted.ok) throw new Error("Новое правило создано, но старое не удалось удалить");
+        saveResult = created;
       }
-      // Target changed: create first. This keeps the old working rule intact
-      // when Zernio rejects the new post ID or returns a validation error.
-      const created = await createCommentAutomation(automation);
-      if (!created.ok) return created;
-      const deleted = await deleteCommentAutomation(automationId);
-      if (!deleted.ok) throw new Error("Новое правило создано, но старое не удалось удалить");
-      return created;
+    } else {
+      saveResult = await createCommentAutomation(automation);
     }
-    return await createCommentAutomation(automation);
+
+    if (saveResult.ok && data.twoStepDm) {
+      const { ensureZernioWebhook } = await import("./zernio.server");
+      await ensureZernioWebhook({ force: true }).catch((e) =>
+        console.error("[zernio] ensureZernioWebhook failed after saving 2-step automation", e),
+      );
+    }
+    return saveResult;
   });
 
 /**
@@ -753,17 +762,49 @@ export const sendCatchupPrivateRepliesFn = createServerFn({ method: "POST" })
             targetButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
           }
         }
-        const { listInstagramComments, startInstagramConversation } = await import("./zernio.server");
+        const { listInstagramComments, normalizeDmButtons, startInstagramConversation } =
+          await import("./zernio.server");
+        const normButtons = normalizeDmButtons(targetButtons);
         const { comments } = await listInstagramComments(data.postId, data.accountId);
         const c = comments.find((x) => x.id === commentId);
         const username = c?.from?.username || (c as { username?: string } | undefined)?.username;
-        if (username && targetButtons && targetButtons.length > 0) {
-          await startInstagramConversation({
+        if (username && normButtons && normButtons.length > 0) {
+          const startRes = await startInstagramConversation({
             accountId: data.accountId,
             username,
             message: secondText,
-            buttons: targetButtons,
+            buttons: normButtons,
           });
+          const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+          if (startRes.ok) {
+            await supabaseAdmin.from("zernio_logs").upsert(
+              {
+                event_id: `two-step-dm:${commentId}`,
+                event_type: "two_step_dm_sent",
+                status: "processed",
+                payload: { commentId, username, accountId: data.accountId },
+              },
+              { onConflict: "event_id" },
+            );
+          } else {
+            await supabaseAdmin.from("zernio_logs").upsert(
+              {
+                event_id: `two-step-dm:${commentId}`,
+                event_type: "two_step_dm_pending",
+                status: "pending",
+                error_message: startRes.error,
+                payload: {
+                  commentId,
+                  username,
+                  accountId: data.accountId,
+                  secondText,
+                  buttons: normButtons,
+                  createdAt: new Date().toISOString(),
+                },
+              },
+              { onConflict: "event_id" },
+            );
+          }
         }
       }
       results.push({ commentId, ...result });

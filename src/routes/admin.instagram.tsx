@@ -2639,7 +2639,11 @@ function AdminInstagramPage() {
 
   const handleUpdateButton = (index: number, field: string, value: string) => {
     const newButtons = [...buttons];
-    newButtons[index] = { ...newButtons[index], [field]: value };
+    const updated = { ...newButtons[index], [field]: value };
+    if (field === "url" && value.trim()) {
+      updated.type = "url";
+    }
+    newButtons[index] = updated;
     setButtons(newButtons);
   };
 
