@@ -297,6 +297,7 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
   const usedIds = new Set<string>();
   const hasExplicitCategory = headers.includes("category");
   const hasExplicitSize = headers.includes("size");
+  const hasExplicitQty = headers.includes("stock_qty");
   const hasExplicitColor = headers.includes("colors");
 
   let currentCategory = "";
@@ -361,7 +362,12 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
     usedIds.add(id);
 
     const qty = row.stock_qty;
-    const stock = row.stock ?? (qty == null ? true : qty > 0);
+    // Пустая ячейка количества в отчёте ОБ ОСТАТКАХ — это «неизвестно», и
+    // обещать наличие по ней нельзя: бот предложит то, чего нет на складе.
+    // Поэтому товар без числа считается отсутствующим, когда колонка
+    // остатка в выгрузке вообще есть. Прайс без такой колонки — другое
+    // дело: там наличие просто не ведётся, и всё считается доступным.
+    const stock = row.stock ?? (qty != null ? qty > 0 : !hasExplicitQty);
 
     const category = String(row.category ?? "").trim() || currentCategory;
     const size =
