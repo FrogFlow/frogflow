@@ -73,7 +73,13 @@ import {
   resumeConsultant,
   type ConsultantState,
 } from "./state";
-import { cleanForbiddenPhrases, cleanScriptHallucinations, validateConsultantReply } from "./validate";
+import {
+  cleanDiscontinuedMattressOffers,
+  cleanForbiddenPhrases,
+  cleanScriptHallucinations,
+  DISCONTINUED_MEDIUM_MATTRESS_REPLY,
+  validateConsultantReply,
+} from "./validate";
 import { bucketForUser, getForcedAbBucket } from "./ab";
 import { recordConsultantEvent } from "./analytics";
 import { addConsultantTask } from "./tasks";
@@ -299,7 +305,15 @@ async function handleConsultantZernioEventInternal(params: {
   // Единственная точка выхода наружу: через неё проходят и ответы модели, и
   // локальные шаблоны, поэтому запрет на восклицательные знаки и эмодзи
   // применяется здесь, а не в каждом месте, где собирается текст.
-  reply.text = stripExclamationsAndEmoji(stripMarkdownFormatting(reply.text));
+  const beforeDiscontinuedGuard = reply.text;
+  reply.text = stripExclamationsAndEmoji(
+    stripMarkdownFormatting(cleanDiscontinuedMattressOffers(reply.text)),
+  );
+  // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
+  // отвечаем честно про среднюю жёсткость.
+  if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
+    reply.text = DISCONTINUED_MEDIUM_MATTRESS_REPLY;
+  }
 
   const { consultant: latest } = await loadConsultantState(params.userKey);
   const lastReplyAt = Date.parse(latest.last_bot_reply_at ?? "");

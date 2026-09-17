@@ -76,6 +76,39 @@ describe("бренды латиницей", () => {
     const text = "Traumina Cube Junior Natur 40x60";
     expect(fixBrandSpelling(text, brands)).toBe(text);
   });
+
+  /**
+   * Живой случай от продавца: в перечне категорий бот написал «Матрасы и
+   * topper» и «Постельное belle». Слова TOPPER и Belle попали в словарь марок
+   * из середины названий («Dorelan TOPPER RE:ACTIVE», «Sander Belle Epoque»),
+   * и транслитерация русских слов дотянулась до них.
+   */
+  const WITH_COLLECTIONS: ConsultantProduct[] = [
+    ...CATALOG,
+    p({ id: "t1", name: "Dorelan TOPPER RE:ACTIVE 160x200", category: "топперы" }),
+    p({ id: "s1", name: "Sander Belle Epoque скатерть", category: "скатерти" }),
+  ];
+
+  it("перечень категорий не переводится в латиницу", () => {
+    const vocabulary = brandVocabulary(WITH_COLLECTIONS);
+    const list = "Матрасы и топперы\nПостельное бельё\nПолотенца\nНаматрасники\nПледы\nХалаты";
+    expect(fixBrandSpelling(list, vocabulary)).toBe(list);
+  });
+
+  it("в словарь марок попадает только первое латинское слово названия", () => {
+    const vocabulary = brandVocabulary(WITH_COLLECTIONS);
+    expect(vocabulary).toContain("Dorelan");
+    expect(vocabulary).toContain("Sander");
+    expect(vocabulary).not.toContain("TOPPER");
+    expect(vocabulary).not.toContain("Belle");
+  });
+
+  it("марку по-прежнему возвращает к фабричному написанию", () => {
+    const vocabulary = brandVocabulary(WITH_COLLECTIONS);
+    expect(fixBrandSpelling("топперы Дорелан в наличии", vocabulary)).toBe(
+      "топперы Dorelan в наличии",
+    );
+  });
 });
 
 describe("восклицательные знаки и эмодзи", () => {

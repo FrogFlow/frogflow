@@ -46,8 +46,42 @@ function editDistance(a: string, b: string): number {
 const NOT_A_BRAND = new Set(["см", "cm", "wk", "set", "new", "the", "and"]);
 
 /**
- * Латинские слова из названий каталога — рабочий список брендов и коллекций.
- * Второго списка не заводим: он устареет на первой же новой марке в прайсе.
+ * Русские слова, которые исправлению не подлежат никогда.
+ *
+ * Разбор жалобы продавца: в перечне категорий бот написал «Матрасы и topper»
+ * и «Постельное belle». Словарь марок собирался из всех латинских слов
+ * названия, и туда попали TOPPER из «Dorelan TOPPER RE:ACTIVE» и Belle из
+ * «Belle Epoque» — обычные слова каталога, а не марки. «Топперы» и «бельё»
+ * оказались к ним достаточно близки по транслитерации, и правка сработала.
+ *
+ * Две защиты сразу: марка берётся только первым латинским словом названия
+ * (марка в прайсе всегда идёт первой), а товарная лексика перечислена здесь
+ * основами — «топпер», «топперы», «топперов» отсекаются одной строкой.
+ */
+const RU_NEVER_A_BRAND = [
+  "топпер", "белье", "матрас", "наматрасник", "подушк", "одеял", "плед",
+  "халат", "полотенц", "коврик", "простын", "наволочк", "пододеяльник",
+  "скатерт", "салфетк", "покрывал", "чехол", "комплект", "размер", "цвет",
+  "налич", "доставк", "магазин", "стоимост", "жестк", "хлопок", "хлопков",
+  "бамбук", "шерст", "сатин", "махров", "вафельн", "постельн", "спальн",
+  "детск", "взросл", "текстил", "менеджер", "консультант", "вариант",
+  "качеств", "производств", "гаранти", "заказ", "оплат", "самовывоз",
+  "гипоаллерген", "сертификат", "коллекц", "модель", "артикул",
+];
+
+function isCommonRussianWord(word: string): boolean {
+  const folded = word.toLowerCase().replace(/ё/g, "е");
+  return RU_NEVER_A_BRAND.some((stem) => folded.startsWith(stem));
+}
+
+/**
+ * Марки из названий каталога — рабочий список, второго не заводим: он
+ * устареет на первой же новой марке в прайсе.
+ *
+ * Берётся ровно первое латинское слово названия: «Dorelan матрас LEVANT R4
+ * SOFT» → Dorelan, «Traumina Cube Junior Natur» → Traumina. Остальные
+ * латинские слова — линейки, коллекции и просто английские слова, и как
+ * образец для исправления русского текста они опасны.
  */
 export function brandVocabulary(catalog: ConsultantProduct[]): string[] {
   const seen = new Map<string, string>();
@@ -55,8 +89,9 @@ export function brandVocabulary(catalog: ConsultantProduct[]): string[] {
     for (const raw of p.name.split(/[^A-Za-z]+/)) {
       if (raw.length < 5) continue;
       const key = raw.toLowerCase();
-      if (NOT_A_BRAND.has(key) || seen.has(key)) continue;
-      seen.set(key, raw);
+      // Первое подходящее латинское слово названия — и переходим к товару.
+      if (!NOT_A_BRAND.has(key) && !seen.has(key)) seen.set(key, raw);
+      break;
     }
   }
   return [...seen.values()];
@@ -73,6 +108,7 @@ export function fixBrandSpelling(text: string, brands: string[]): string {
   if (!text || brands.length === 0) return text;
   const lower = brands.map((b) => [b.toLowerCase(), b] as const);
   return text.replace(/[А-Яа-яЁё]{5,}/g, (word) => {
+    if (isCommonRussianWord(word)) return word;
     const lat = translit(word);
     let best: { brand: string; dist: number } | null = null;
     for (const [low, original] of lower) {

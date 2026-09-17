@@ -57,6 +57,16 @@ describe("жёсткость матраса", () => {
     expect(all.some((p) => p.id === "L180F")).toBe(false);
   });
 
+  it("понимает слова продавца «комфортный» и «упругий»", () => {
+    // Продавец просил называть жёсткость покупателю так: комфортный (Soft) и
+    // упругий (Firm). Покупатель отвечает теми же словами — разбор запроса
+    // обязан их понимать, иначе фильтр по жёсткости молча пропадает.
+    expect(extractHardness("нужен комфортный матрас")).toBe("soft");
+    expect(extractHardness("упругий, 180x200")).toBe("firm");
+    const { all } = findProducts({ hardness: extractHardness("упругий") ?? undefined }, MATTRESSES);
+    expect(all.map((p) => p.id)).toEqual(["L180F"]);
+  });
+
   it("отдаёт все позиции нужной жёсткости, а не первые три", () => {
     const { all, shown } = findProducts({ hardness: "soft" }, MATTRESSES);
     expect(shown).toHaveLength(all.length);

@@ -37,10 +37,15 @@ export type ProductSearchQuery = {
   limit?: number;
 };
 
+/**
+ * «Комфортный» и «упругий» — то, как продавец просит называть жёсткость
+ * покупателю (Soft и Firm соответственно). Раз бот говорит этими словами,
+ * покупатель ими же и отвечает, поэтому разбор запроса обязан их понимать.
+ */
 const HARDNESS_PATTERNS: [ProductHardness, RegExp][] = [
-  ["soft", /(?:^|[^a-z])soft(?:[^a-z]|$)|мягк/i],
+  ["soft", /(?:^|[^a-z])soft(?:[^a-z]|$)|мягк|комфортн/i],
   ["medium", /(?:^|[^a-z])medium(?:[^a-z]|$)|(?:^|[^a-zа-яё])средн/i],
-  ["firm", /(?:^|[^a-z])(?:firm|hard)(?:[^a-z]|$)|жестк|жёстк/i],
+  ["firm", /(?:^|[^a-z])(?:firm|hard)(?:[^a-z]|$)|жестк|жёстк|упруг/i],
 ];
 
 /** Жёсткость из свободного текста: «TRESOR R3 SOFT», «что есть в жёсткости soft». */
@@ -59,6 +64,61 @@ export function extractHardness(text: string): ProductHardness | null {
  */
 export function productHardness(product: ConsultantProduct): ProductHardness | null {
   return product.hardness ?? extractHardness(`${product.name} ${product.size}`);
+}
+
+/**
+ * Снятое с производства. Продавец: «матрасов средней жёсткости мы не
+ * упоминаем — сняты с производства». Выгрузка 1С отдаёт их, пока остатки
+ * числятся на складе, поэтому отсекаем при чтении каталога, а не при
+ * импорте: вернут в производство — правка одной строки здесь, без
+ * переимпорта прайса и без потери остатков в выгрузке.
+ *
+ * Правило намеренно узкое — только матрасы. Подушка, наматрасник или чехол
+ * со словом MEDIUM в названии остаются обычным товаром: спрятать их значит
+ * потерять продажу там, где продавец ни о чём не просил.
+ */
+const DISCONTINUED_MATTRESS_HARDNESS: ProductHardness = "medium";
+
+/**
+ * «Наматрасник» и «чехол на матрас» — не матрас: отрицательный просмотр назад
+ * отсекает слово, приклеенное к приставке. Без него защитный наматрасник
+ * Traumina MEDIUM исчез бы из продажи вместе со снятыми матрасами.
+ */
+const MATTRESS_RE = /(?<![а-яё])матрас|mattress/i;
+
+export function isMattress(product: ConsultantProduct): boolean {
+  return MATTRESS_RE.test(`${product.category} ${product.name}`);
+}
+
+/**
+ * Наматрасники и чехлы: слово «матрас» сидит в них подстрокой, и запрос про
+ * матрасы вытаскивал защитный чехол наравне с матрасом. После снятия средней
+ * жёсткости это особенно заметно — на «матрас средней жёсткости» в ответ
+ * приезжал наматрасник MEDIUM и выглядел как тот самый матрас.
+ */
+const MATTRESS_ACCESSORY_RE = /наматрасник|чехол|чехлы/i;
+
+export function isMattressAccessory(product: ConsultantProduct): boolean {
+  return MATTRESS_ACCESSORY_RE.test(`${product.category} ${product.name}`);
+}
+
+function asksForMattress(q: ProductSearchQuery): boolean {
+  const asked = `${q.category ?? ""} ${q.query ?? ""}`;
+  return MATTRESS_RE.test(asked) && !MATTRESS_ACCESSORY_RE.test(asked);
+}
+
+export function isDiscontinuedProduct(product: ConsultantProduct): boolean {
+  return isMattress(product) && productHardness(product) === DISCONTINUED_MATTRESS_HARDNESS;
+}
+
+/**
+ * Каталог без снятого с производства — ровно то, что консультанту видно.
+ * Фильтр стоит в одном месте (loadConsultantCatalog), а не в поиске: в промпт
+ * каталог уходит целиком, и отсечь позицию только в поиске значит оставить её
+ * модели на глазах — она и назовёт её сама, без всякого поиска.
+ */
+export function sellableProducts(rows: ConsultantProduct[]): ConsultantProduct[] {
+  return rows.filter((p) => !isDiscontinuedProduct(p));
 }
 
 /**
@@ -129,6 +189,8 @@ function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
   // не тот товар: на запрос про soft выдавался TRESOR R2 MEDIUM.
   if (q.hardness && productHardness(product) !== q.hardness) return false;
   if (isKitchenTowel(product) && hidesKitchenTowels(q)) return false;
+  // Спросили матрас — наматрасник и чехол это не он.
+  if (isMattressAccessory(product) && asksForMattress(q)) return false;
   if (typeof q.max_price_kzt === "number" && q.max_price_kzt > 0 && product.price_kzt > q.max_price_kzt) {
     return false;
   }
@@ -240,12 +302,29 @@ export async function saveConsultantCatalog(
     { key: CATALOG_KEY, value: JSON.stringify(products), updated_at: now },
     { key: CATALOG_META_KEY, value: JSON.stringify(meta), updated_at: now },
   ]);
-  catalogCache = { at: Date.now(), products };
+  catalogCache = snapshotOf(products);
   return meta;
 }
 
-let catalogCache: { at: number; products: ConsultantProduct[] } | null = null;
+type CatalogSnapshot = {
+  at: number;
+  /** Что консультант может показывать. */
+  products: ConsultantProduct[];
+  /** Снятое с производства: продавцу в админке видно, покупателю — нет. */
+  hidden: ConsultantProduct[];
+};
+
+let catalogCache: CatalogSnapshot | null = null;
 const CATALOG_CACHE_MS = 45_000;
+
+function snapshotOf(rows: ConsultantProduct[]): CatalogSnapshot {
+  const hidden = rows.filter(isDiscontinuedProduct);
+  return {
+    at: Date.now(),
+    products: hidden.length > 0 ? sellableProducts(rows) : rows,
+    hidden,
+  };
+}
 
 export function invalidateConsultantCatalogCache(): void {
   catalogCache = null;
@@ -255,8 +334,25 @@ export function invalidateConsultantCatalogCache(): void {
  * Снимок прайса. Пустой = честный «нет в наличии», не догадка модели.
  */
 export async function loadConsultantCatalog(): Promise<ConsultantProduct[]> {
+  return (await loadCatalogSnapshot()).products;
+}
+
+/**
+ * То же чтение, но с отдельным списком скрытых позиций — нужен админке,
+ * чтобы продавец видел, что часть прайса намеренно не показывается, а не
+ * гадал, почему в каталоге 877 строк, а консультант знает о 871.
+ */
+export async function loadConsultantCatalogSnapshot(): Promise<{
+  products: ConsultantProduct[];
+  hidden: ConsultantProduct[];
+}> {
+  const snap = await loadCatalogSnapshot();
+  return { products: snap.products, hidden: snap.hidden };
+}
+
+async function loadCatalogSnapshot(): Promise<CatalogSnapshot> {
   if (catalogCache && Date.now() - catalogCache.at < CATALOG_CACHE_MS) {
-    return catalogCache.products;
+    return catalogCache;
   }
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const { data } = await supabaseAdmin
@@ -265,18 +361,17 @@ export async function loadConsultantCatalog(): Promise<ConsultantProduct[]> {
     .eq("key", CATALOG_KEY)
     .maybeSingle();
   if (!data?.value?.trim()) {
-    if (catalogCache?.products?.length) return catalogCache.products;
-    catalogCache = { at: Date.now(), products: [] };
-    return [];
+    if (catalogCache?.products?.length) return catalogCache;
+    catalogCache = snapshotOf([]);
+    return catalogCache;
   }
   try {
     const parsed = JSON.parse(data.value) as unknown;
-    if (!Array.isArray(parsed)) return catalogCache?.products ?? [];
-    const products = parsed.filter(isConsultantProduct);
-    catalogCache = { at: Date.now(), products };
-    return products;
+    if (!Array.isArray(parsed)) return catalogCache ?? snapshotOf([]);
+    catalogCache = snapshotOf(parsed.filter(isConsultantProduct));
+    return catalogCache;
   } catch {
-    return catalogCache?.products ?? [];
+    return catalogCache ?? snapshotOf([]);
   }
 }
 
@@ -599,13 +694,17 @@ export function findProducts(
   q: ProductSearchQuery,
   rows: ConsultantProduct[],
 ): { all: ConsultantProduct[]; shown: ConsultantProduct[] } {
+  // Вторая линия защиты. Каталог отфильтрован уже при чтении, но поиск
+  // принимает и переданный массив — а снятое с производства не должно
+  // всплыть ни по одному пути.
+  const pool = sellableProducts(rows);
   const hasFilter = Boolean(
     q.query || q.category || q.size || q.color || q.hardness || q.max_price_kzt,
   );
   if (!hasFilter) {
-    return { all: rows, shown: diversifyProducts(rows, q.limit ?? BROWSE_LIMIT) };
+    return { all: pool, shown: diversifyProducts(pool, q.limit ?? BROWSE_LIMIT) };
   }
-  const all = rows.filter((p) => matches(p, q));
+  const all = pool.filter((p) => matches(p, q));
   const limit = q.limit ?? NARROW_LIMIT;
   if (q.max_price_kzt) {
     const sorted = [...all].sort(

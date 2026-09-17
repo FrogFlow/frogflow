@@ -161,6 +161,67 @@ export function cleanForbiddenPhrases(text: string): string {
   return res;
 }
 
+/**
+ * Матрасы средней жёсткости сняты с производства — продавец просил не
+ * упоминать их вовсе. Из каталога они вычищены (catalog.ts,
+ * isDiscontinuedProduct), но те же линейки описаны в PDF базы знаний, а она
+ * целиком уходит в промпт: модель может назвать MEDIUM, ничего не искав.
+ * Поэтому запрет не только правилом в промпте, но и механически — здесь.
+ *
+ * Вырезается предложение, где матрас предлагается в средней жёсткости.
+ * Честный отказ («матрасов средней жёсткости сейчас нет») остаётся: это
+ * ровно то, что нужно ответить, когда клиент спросил про неё сам.
+ */
+const MATTRESS_WORD_RE = /(?<![а-яё])матрас|mattress/i;
+
+/**
+ * Линейки матрасов из ассортимента магазина. Слово «матрас» модель в
+ * предложении часто опускает — пишет «Могу предложить TRESOR R2 MEDIUM», и
+ * проверка только по слову «матрас» такую фразу пропускала. Топперы
+ * (MOUSSE, GREEM, RE:ACTIVE) и наматрасники Traumina в список не входят
+ * намеренно: их средняя жёсткость с производства не снята.
+ */
+const MATTRESS_LINE_RE =
+  /(?<![a-zа-яё])(?:former|levant|tresor|sfera|epic|frankenstolz)(?![a-zа-яё])/i;
+
+function mentionsMattress(sentence: string): boolean {
+  return MATTRESS_WORD_RE.test(sentence) || MATTRESS_LINE_RE.test(sentence);
+}
+
+// \w в JavaScript — только латиница: «средн\w*» на слове «средней» не
+// срабатывает. Поэтому окончания перечислены кириллическим классом.
+const MEDIUM_HARDNESS_RE =
+  /(?<![a-zа-яё])medium(?![a-zа-яё])|средн[а-яё]*\s+(?:по\s+)?(?:жёстк|жестк)[а-яё]*|(?:жёстк|жестк)[а-яё]*\s+средн[а-яё]*/i;
+
+const HARDNESS_DENIAL_RE =
+  /(?<![а-яё])нет(?![а-яё])|не\s+прода|сн[ня]т[а-яё]*\s+с\s+производств|не\s+выпуска|закончил|не\s+остал|больше\s+не|отсутству/i;
+
+export function offersDiscontinuedMattress(sentence: string): boolean {
+  if (!mentionsMattress(sentence)) return false;
+  if (!MEDIUM_HARDNESS_RE.test(sentence)) return false;
+  return !HARDNESS_DENIAL_RE.test(sentence);
+}
+
+/** Ответ на случай, когда от текста после вырезания ничего не осталось. */
+export const DISCONTINUED_MEDIUM_MATTRESS_REPLY =
+  "Матрасов средней жёсткости сейчас нет — эту линейку сняли с производства. Есть комфортные (Soft) и упругие (Firm), показать варианты?";
+
+export function cleanDiscontinuedMattressOffers(text: string): string {
+  if (!text) return "";
+  const lines = text.split("\n");
+  const kept: string[] = [];
+  for (const line of lines) {
+    const parts = line.split(/(?<=[.!?…])\s+/);
+    const keptParts = parts.filter((part) => !offersDiscontinuedMattress(part));
+    const joined = keptParts.join(" ").trim();
+    // Строка была целиком про снятую жёсткость — убираем её вместе с переводом
+    // строки, чтобы в ответе не осталось дырки из пустых абзацев.
+    if (keptParts.length !== parts.length && !joined) continue;
+    kept.push(joined);
+  }
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export function replyUsesUnknownProductName(_text: string, _products: ConsultantProduct[]): boolean {
   return false;
 }

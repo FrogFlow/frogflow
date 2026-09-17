@@ -182,6 +182,24 @@ last good snapshot and records the failure. Catalog version and import time
 are attached to every response trace. A missing or unacceptably stale
 snapshot cannot be used to promise price or stock.
 
+### Mattress firmness
+
+Firmness is read from the product name when the export has no column for it
+(`Dorelan LEVANT R4 SOFT`). A different firmness is a different product and
+is never offered as a substitute.
+
+MEDIUM mattresses are discontinued. They are filtered out when the catalog is
+read, so they reach neither the search tools nor the prompt, and a sentence
+that offers one is removed from the outgoing reply. Mattress protectors,
+toppers and pillows are not affected: only mattresses are withdrawn. When the
+customer asks for medium firmness, the answer says plainly that it is not
+sold and offers the firmness levels that are, without naming a return date.
+
+Firmness is named to the customer as «комфортный (Soft)» and «упругий
+(Firm)» — the seller's wording. Factory model names keep their own spelling.
+Both Russian words are understood on the way in as well, so a customer who
+repeats them still gets a filtered search.
+
 ## Currency and delivery
 
 KZ uses the KZT price from the current catalog.

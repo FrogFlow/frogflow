@@ -1380,6 +1380,7 @@ function ConsultantPage() {
               </div>
               <Badge variant="outline" className="self-start sm:self-auto">
                 Показано: {filteredCatalog.length} из {rawCatalog.length} {d?.catalogCount && d.catalogCount > rawCatalog.length ? `(всего в базе: ${d.catalogCount})` : ""}
+                {d?.discontinuedCount ? ` · скрыто снятых с производства: ${d.discontinuedCount}` : ""}
               </Badge>
             </div>
 

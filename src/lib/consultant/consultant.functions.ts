@@ -10,7 +10,7 @@ import {
   getConsultantShopUrl,
   importCatalogFromSheetsUrl,
   loadCatalogMeta,
-  loadConsultantCatalog,
+  loadConsultantCatalogSnapshot,
   saveConsultantCatalog,
 } from "./catalog";
 import { parseCatalogCsv } from "./catalog-import";
@@ -36,7 +36,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
   await requireAdmin();
   const s = await db();
   const [
-    catalog,
+    catalogSnapshot,
     meta,
     rate,
     shopUrl,
@@ -50,7 +50,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     driveRow,
     checkRow,
   ] = await Promise.all([
-    loadConsultantCatalog(),
+    loadConsultantCatalogSnapshot(),
     loadCatalogMeta(),
     getStoredVtbRate(),
     getConsultantShopUrl(),
@@ -64,6 +64,10 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     s.from("app_settings").select("value").eq("key", DRIVE_URL_KEY).maybeSingle(),
     s.from("app_settings").select("value").eq("key", CHECKLIST_KEY).maybeSingle(),
   ]);
+  // Каталог для админки — тот же, что видит консультант. Снятое с
+  // производства идёт отдельным числом: продавцу видно, что строки в прайсе
+  // есть, а покупателю они не показываются.
+  const catalog = catalogSnapshot.products;
   const spend = parseSmartSearchLifetime(spendRow.data?.value);
   let checklist: Record<string, boolean> = {};
   try {
@@ -91,6 +95,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     return {
       catalogCount: catalog.length,
       catalog,
+      discontinuedCount: catalogSnapshot.hidden.length,
       meta,
       rate,
       rateStale: rateAgeHours != null && rateAgeHours > 2,

@@ -1,5 +1,6 @@
 import {
   enrichProductColors,
+  extractHardness,
   getProduct,
   priceFloorInScope,
   relatedVariants,
@@ -35,7 +36,7 @@ export const CONSULTANT_TOOLS = [
           type: "string",
           enum: ["soft", "medium", "firm"],
           description:
-            "Mattress or topper firmness. Pass it whenever the customer names one (soft/medium/firm, мягкий/средний/жёсткий). A different firmness is a different product, never a substitute.",
+            "Mattress or topper firmness. Pass it whenever the customer names one (soft/medium/firm, мягкий/средний/жёсткий). A different firmness is a different product, never a substitute. MEDIUM mattresses are discontinued and no longer sold: still pass hardness: \"medium\" when the customer asks for one — the empty result comes back with medium_mattresses_discontinued so you can say it plainly.",
         },
         max_price_kzt: {
           type: "number",
@@ -130,7 +131,11 @@ export function presentCard(
 function readHardness(value: unknown): ProductHardness | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim().toLowerCase();
-  return v === "soft" || v === "medium" || v === "firm" ? v : undefined;
+  if (v === "soft" || v === "medium" || v === "firm") return v;
+  // Модель разговаривает с покупателем словами «комфортный» и «упругий» и
+  // может передать их сюда вместо кода жёсткости — разбираем, а не теряем
+  // фильтр молча.
+  return extractHardness(v) ?? undefined;
 }
 
 export async function executeConsultantTool(
@@ -195,6 +200,11 @@ export async function executeConsultantTool(
         // «нашлось три» от «показали три из восьми» — ровно та выборочная
         // выдача, на которую пожаловался продавец.
         total_matches: Math.max(totalMatches, enriched.length),
+        // Матрасы средней жёсткости сняты с производства и вычищены из
+        // каталога. Пустая выдача сама по себе значит «не нашёл» — модель
+        // тогда додумывает причину. Здесь причина названа фактом, а не
+        // правилом в промпте, которое можно не заметить.
+        ...(q.hardness === "medium" ? { medium_mattresses_discontinued: true } : {}),
       },
       products: enriched,
       handoff: false,
