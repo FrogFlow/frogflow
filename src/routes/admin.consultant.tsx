@@ -1044,6 +1044,27 @@ function ConsultantPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
+                <label className="inline-flex items-center justify-center rounded-md text-xs font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 cursor-pointer transition-colors shadow-sm">
+                  <FileText className="w-3.5 h-3.5 mr-1.5 text-primary" />
+                  Загрузить файл (.txt, .md)
+                  <input
+                    type="file"
+                    className="sr-only"
+                    accept=".txt,.md,.text,text/plain,text/markdown"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        const text = await file.text();
+                        importKnowledge.mutate(text);
+                      } catch {
+                        toast.error("Не удалось прочитать файл");
+                      }
+                      e.target.value = "";
+                    }}
+                    disabled={importKnowledge.isPending}
+                  />
+                </label>
                 <Button
                   type="button"
                   variant="outline"
