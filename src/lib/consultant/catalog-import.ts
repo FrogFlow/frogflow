@@ -31,9 +31,22 @@ const HEADER_ALIASES: Record<keyof ConsultantProduct | "skip", string[]> = {
     "ценарозничная",
     "розничнаяцена",
     "ценатенге",
+    "розничная",
+    "стоимость",
+    "розничнаяценатенге",
   ],
   stock: ["stock", "наличие", "in_stock", "вналичии"],
-  stock_qty: ["stock_qty", "qty", "количество", "кол-во", "остаток", "остатоксклад", "колво"],
+  stock_qty: [
+    "stock_qty",
+    "qty",
+    "количество",
+    "кол-во",
+    "остаток",
+    "остатоксклад",
+    "колво",
+    "остатоктовара",
+    "конечныйостаток",
+  ],
   material: [
     "material",
     "ткань",
@@ -45,7 +58,7 @@ const HEADER_ALIASES: Record<keyof ConsultantProduct | "skip", string[]> = {
     "composition",
   ],
   description: ["description", "описание", "характеристики", "описаниетовара"],
-  skip: [],
+  skip: ["итого", "всего"],
 };
 
 function normHeader(raw: string): string {
@@ -91,12 +104,17 @@ function parseCsvLine(line: string, delimiter: string): string[] {
   return out.map((c) => c.trim());
 }
 
-function detectDelimiter(headerLine: string): string {
-  const commas = (headerLine.match(/,/g) ?? []).length;
-  const semis = (headerLine.match(/;/g) ?? []).length;
-  const tabs = (headerLine.match(/\t/g) ?? []).length;
-  if (tabs > commas && tabs > semis) return "\t";
-  return semis > commas ? ";" : ",";
+function detectDelimiter(lines: string[]): string {
+  let totalCommas = 0;
+  let totalSemis = 0;
+  let totalTabs = 0;
+  for (let i = 0; i < Math.min(15, lines.length); i++) {
+    totalCommas += (lines[i].match(/,/g) ?? []).length;
+    totalSemis += (lines[i].match(/;/g) ?? []).length;
+    totalTabs += (lines[i].match(/\t/g) ?? []).length;
+  }
+  if (totalTabs > totalCommas && totalTabs > totalSemis) return "\t";
+  return totalSemis > totalCommas ? ";" : ",";
 }
 
 function parseBoolStock(raw: string, qty: number | undefined): boolean {
@@ -111,8 +129,9 @@ function parseBoolStock(raw: string, qty: number | undefined): boolean {
 
 function parsePrice(raw: string): number | null {
   const cleaned = raw.replace(/\s/g, "").replace(",", ".");
+  if (!cleaned) return null;
   const n = Number(cleaned);
-  if (!Number.isFinite(n) || n < 0) return null;
+  if (!Number.isFinite(n) || n <= 0) return null;
   return n;
 }
 
@@ -121,6 +140,31 @@ function parseColors(raw: string): string[] {
     .split(/[,/;|]/)
     .map((c) => c.trim())
     .filter(Boolean);
+}
+
+export function extractSizeFromName(name: string): string {
+  const dimMatch = name.match(
+    /(\d{2,3}\s*[xхXХ*×]\s*\d{2,3}(?:\s*[-–/]\s*\d{2,3}\s*[xхXХ*×]\s*\d{2,3})?(?:\s*[xхXХ*×]\s*\d{1,3})?)/,
+  );
+  if (dimMatch) return dimMatch[1].replace(/\s+/g, "");
+  const sizeNamedMatch =
+    name.match(/размер[.\s]+([A-Za-z0-9/+-]+)/i) || name.match(/разм[.\s]+([A-Za-z0-9/+-]+)/i);
+  if (sizeNamedMatch) return sizeNamedMatch[1].trim();
+  return "";
+}
+
+export function extractColorsFromName(name: string): string[] {
+  const match = name.match(
+    /цв(?:ет|[.])\s*([A-Za-zА-Яа-яЁё0-9\s/+_.-]+?)(?=[,;()]|\s*(?:высота|размер|\d+\s*см)|$)/i,
+  );
+  if (!match) return [];
+  let rawColor = match[1].trim().replace(/[.]+$/, "");
+  rawColor = rawColor.replace(/^\d+\s+/, "");
+  if (!rawColor) return [];
+  if (rawColor.includes("/")) {
+    return rawColor.split("/").map((c) => c.trim().toLowerCase()).filter(Boolean);
+  }
+  return [rawColor.toLowerCase()];
 }
 
 function slugId(name: string, index: number): string {
@@ -132,7 +176,7 @@ function slugId(name: string, index: number): string {
   return base ? `${base}-${index}` : `row-${index}`;
 }
 
-/** Разбор ежедневной выгрузки Excel/CSV. Цена и наличие живут здесь, не в prompt. */
+/** Разбор ежедневной выгрузки Excel/CSV (включая иерархические отчеты 1C). */
 export function parseCatalogCsv(text: string): CatalogImportResult {
   const normalized = text
     .replace(/^\uFEFF/, "")
@@ -141,9 +185,49 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
   const lines = normalized.split("\n").filter((l) => l.trim().length > 0);
   if (lines.length === 0) return { products: [], errors: [{ row: 0, message: "пустой файл" }] };
 
-  const delimiter = detectDelimiter(lines[0]);
-  const headers = parseCsvLine(lines[0], delimiter).map(resolveHeader);
-  if (!headers.includes("name") && !headers.includes("id")) {
+  const delimiter = detectDelimiter(lines);
+
+  // Scan up to 30 lines to locate the header row (supporting metadata prefixes in 1C exports)
+  let headerRowIndex = -1;
+  let headers: Array<keyof ConsultantProduct | null> = [];
+  let dataStartRow = -1;
+
+  for (let r = 0; r < Math.min(30, lines.length); r++) {
+    const rowCells = parseCsvLine(lines[r], delimiter);
+    const resolved = rowCells.map(resolveHeader);
+
+    if (resolved.includes("name") || resolved.includes("id")) {
+      headerRowIndex = r;
+      headers = resolved;
+      dataStartRow = r + 1;
+
+      // Check if next row can be merged (e.g. 1C multi-line header: Row 1 'Розничная', Row 2 'Цена / Остаток')
+      if (r + 1 < lines.length) {
+        const nextRowCells = parseCsvLine(lines[r + 1], delimiter);
+        const mergedHeaders: Array<keyof ConsultantProduct | null> = [];
+        let mergedHelped = false;
+        const maxLen = Math.max(rowCells.length, nextRowCells.length);
+        for (let c = 0; c < maxLen; c++) {
+          const c1 = rowCells[c] || "";
+          const c2 = nextRowCells[c] || "";
+          const combined = (c1 + " " + c2).trim();
+          const res = resolveHeader(combined) || resolveHeader(c1) || resolveHeader(c2);
+          mergedHeaders.push(res);
+          if (res && !resolved[c]) mergedHelped = true;
+        }
+        if (
+          mergedHelped &&
+          (mergedHeaders.includes("price_kzt") || mergedHeaders.includes("stock_qty"))
+        ) {
+          headers = mergedHeaders;
+          dataStartRow = r + 2;
+        }
+      }
+      break;
+    }
+  }
+
+  if (headerRowIndex === -1 || (!headers.includes("name") && !headers.includes("id"))) {
     return {
       products: [],
       errors: [{ row: 1, message: "нет колонки названия или артикула" }],
@@ -153,10 +237,16 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
   const products: ConsultantProduct[] = [];
   const errors: CatalogImportError[] = [];
   const usedIds = new Set<string>();
+  const hasExplicitCategory = headers.includes("category");
+  const hasExplicitSize = headers.includes("size");
+  const hasExplicitColor = headers.includes("colors");
 
-  for (let i = 1; i < lines.length; i++) {
+  let currentCategory = "";
+
+  for (let i = dataStartRow; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i], delimiter);
     const row: Partial<ConsultantProduct> & { stock_qty?: number } = {};
+
     headers.forEach((field, idx) => {
       if (!field) return;
       const value = cells[idx] ?? "";
@@ -183,11 +273,20 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
 
     const name = String(row.name ?? "").trim();
     if (!name && !row.id) {
-      errors.push({ row: i + 1, message: "пустая строка без названия" });
       continue;
     }
+
+    if (/^(итого|всего)\b/i.test(name)) {
+      continue;
+    }
+
     if (row.price_kzt == null) {
-      errors.push({ row: i + 1, message: `нет цены: ${name || row.id}` });
+      if (!hasExplicitCategory) {
+        // Hierarchical folder row in 1C
+        currentCategory = name;
+      } else {
+        errors.push({ row: i + 1, message: `нет цены: ${name || row.id}` });
+      }
       continue;
     }
 
@@ -198,12 +297,18 @@ export function parseCatalogCsv(text: string): CatalogImportResult {
     const qty = row.stock_qty;
     const stock = row.stock ?? (qty == null ? true : qty > 0);
 
+    const category = String(row.category ?? "").trim() || currentCategory;
+    const size =
+      hasExplicitSize && row.size ? String(row.size).trim() : extractSizeFromName(name);
+    const colors =
+      hasExplicitColor && row.colors?.length ? row.colors : extractColorsFromName(name);
+
     products.push({
       id,
       name: name || id,
-      category: String(row.category ?? "").trim(),
-      size: String(row.size ?? "").trim(),
-      colors: row.colors ?? [],
+      category,
+      size,
+      colors,
       price_kzt: row.price_kzt,
       stock,
       ...(qty != null ? { stock_qty: qty } : {}),

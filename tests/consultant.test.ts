@@ -685,6 +685,39 @@ describe("consultant — импорт CSV / Sheets URL", () => {
     expect(parsed.products[1].stock).toBe(false);
   });
 
+  it("разбирает иерархический отчет 1С с папками, двухстрочным заголовком и извлечением размера/цвета", async () => {
+    const { parseCatalogCsv } = await import("../src/lib/consultant/catalog-import");
+    const raw1c =
+      "Сформирован: 10.09.2026 15:52:22;;;;;;;\n" +
+      "Остатки товара по складам с ценами;;;;;;;\n" +
+      "Параметры:;;Тип цен: Розничная;;;;;\n" +
+      ";;;;;;;\n" +
+      "Номенклатура;;;;;Розничная;;\n" +
+      ";;;;;Цена;;Остаток\n" +
+      "Aquanova (Бельгия);;;;;;;\n" +
+      "Коврики LONDON;;;;;;;\n" +
+      "Aquanova Коврик в ванную LONDON 60x100, цвет 43 белый;;;;;47000;;1\n" +
+      "Aquanova Коврик в ванную LONDON 70х120, цвет 43 белый;;;;;67000;;5\n" +
+      "Халаты;;;;;;;\n" +
+      "Aquanova Халат вафельный Viggo размер S, цвет 43 белый;;;;;67000;;0\n" +
+      "Итого;;;;;181000;;6\n";
+    const parsed = parseCatalogCsv(raw1c);
+    expect(parsed.errors).toHaveLength(0);
+    expect(parsed.products).toHaveLength(3);
+    expect(parsed.products[0].name).toBe("Aquanova Коврик в ванную LONDON 60x100, цвет 43 белый");
+    expect(parsed.products[0].category).toBe("Коврики LONDON");
+    expect(parsed.products[0].size).toBe("60x100");
+    expect(parsed.products[0].colors).toEqual(["белый"]);
+    expect(parsed.products[0].price_kzt).toBe(47000);
+    expect(parsed.products[0].stock).toBe(true);
+    expect(parsed.products[0].stock_qty).toBe(1);
+
+    expect(parsed.products[2].category).toBe("Халаты");
+    expect(parsed.products[2].size).toBe("S");
+    expect(parsed.products[2].stock).toBe(false);
+    expect(parsed.products[2].stock_qty).toBe(0);
+  });
+
   it("строит export URL для Google Sheet", async () => {
     const { googleSheetsCsvUrl } = await import("../src/lib/consultant/catalog-import");
     expect(googleSheetsCsvUrl("https://docs.google.com/spreadsheets/d/abcDEF123/edit#gid=7")).toBe(
