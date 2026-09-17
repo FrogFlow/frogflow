@@ -2334,6 +2334,7 @@ export async function handleZernioCommentTwoStep(payload: {
   comment?: {
     id?: string;
     text?: string;
+    postId?: string;
     platformPostId?: string;
     author?: { id?: string; username?: string };
   };
@@ -2364,7 +2365,19 @@ export async function handleZernioCommentTwoStep(payload: {
     const id = a.id || a._id;
     if (!id || !metaMap[id]?.twoStepDm) return false;
     if (a.isActive === false) return false;
-    if (a.platformPostId && platformPostId && a.platformPostId !== platformPostId) return false;
+
+    const autoPostId = a.platformPostId || a.postId;
+    const commentPostId =
+      platformPostId ||
+      payload.comment?.platformPostId ||
+      payload.comment?.postId ||
+      payload.post?.platformPostId ||
+      payload.post?.id;
+
+    if (autoPostId && (!commentPostId || String(autoPostId).trim() !== String(commentPostId).trim())) {
+      return false;
+    }
+
     if (!a.keywords || a.keywords.length === 0) return true;
     const matchMode = a.matchMode || "contains";
     return a.keywords.some((kw) => {
@@ -2471,17 +2484,17 @@ export async function handleZernioCommentTwoStep(payload: {
 
 /**
  * Доставляет отложенное 2-е сообщение автоворонки комментариев, когда пользователь
- * написал любое сообщение или нажал кнопку в Instagram Direct.
+ * написал ответ в Instagram Direct.
+ * Срабатывает СТРОГО если в очереди two_step_dm_pending есть ожидающая запись для этого username.
  */
 export async function deliverPendingTwoStepDm(params: {
   accountId: string;
   conversationId: string;
   username?: string;
   userKey?: string;
-  incomingText?: string;
 }): Promise<boolean> {
-  const { accountId, conversationId, username, incomingText } = params;
-  if (!accountId || !conversationId) return false;
+  const { accountId, conversationId, username } = params;
+  if (!accountId || !conversationId || !username) return false;
 
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -2530,107 +2543,5 @@ export async function deliverPendingTwoStepDm(params: {
     return false;
   }
 
-  // 2. Резервная самовосстанавливающаяся доставка:
-  // Если comment.received ещё не пришёл от Zernio или вебхук был задержан,
-  // но покупатель уже получил 1-е текстовое сообщение и ответил в Direct!
-  const metaMap = await getCommentAutomationsMeta();
-  const activeEntries = Object.entries(metaMap).filter(([_, m]) => m?.twoStepDm);
-  if (activeEntries.length === 0) return false;
-
-  // Проверяем, не отправляли ли уже 2-й шаг этому пользователю в последние 24 часа
-  const { data: recentSent } = await supabaseAdmin
-    .from("zernio_logs")
-    .select("id, payload")
-    .eq("event_type", "two_step_dm_sent")
-    .eq("status", "processed")
-    .gte("created_at", cutoff)
-    .limit(50);
-
-  const alreadyDelivered = (recentSent || []).some((r: any) => {
-    const p = r.payload as Record<string, unknown> | null;
-    return (
-      (username && typeof p?.username === "string" && p.username.toLowerCase() === username.toLowerCase()) ||
-      (conversationId && typeof p?.conversationId === "string" && p.conversationId === conversationId)
-    );
-  });
-
-  if (alreadyDelivered) return false;
-
-  // Проверяем характер входящего сообщения.
-  // 1-й шаг воронки просит прислать точку, плюсик, цифру, слово или ответ.
-  const clean = (incomingText || "").trim().toLowerCase();
-  const isTriggerLike =
-    !clean ||
-    clean.length <= 15 ||
-    clean === "." ||
-    clean === "+" ||
-    clean === "1" ||
-    clean === "да" ||
-    clean === "хочу" ||
-    clean === "ссылка" ||
-    clean === "материалы" ||
-    clean === "купить" ||
-    clean === "старт" ||
-    clean === "/start" ||
-    clean.includes("материал") ||
-    clean.includes("шаблон") ||
-    clean.includes("наклейк") ||
-    clean.includes("слово");
-
-  let isCommenter = isTriggerLike;
-  if (!isCommenter) {
-    try {
-      const { automations } = await listCommentAutomations();
-      for (const auto of automations) {
-        if (auto.platformPostId && metaMap[String(auto.id || auto._id || "")]?.twoStepDm) {
-          const { comments } = await listInstagramComments(auto.platformPostId, accountId);
-          if (comments.some((c) => (c.from?.username || "").toLowerCase() === username?.toLowerCase())) {
-            isCommenter = true;
-            break;
-          }
-        }
-      }
-    } catch {
-      // игнорируем ошибку чтения комментариев
-    }
-  }
-
-  if (!isCommenter) return false;
-
-  const [autoId, autoMeta] = activeEntries[0];
-  const secondText =
-    autoMeta.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
-  let rawButtons = autoMeta.secondDmButtons || [];
-  if (!rawButtons || rawButtons.length === 0) {
-    const { getCachedBotUrl } = await import("./bot-url.server");
-    const botUrl = await getCachedBotUrl();
-    if (botUrl) {
-      rawButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
-    }
-  }
-  const buttons = normalizeDmButtons(rawButtons);
-
-  const sendRes = await sendZernioInboxMessage(conversationId, accountId, secondText, {
-    buttons: buttons.length > 0 ? buttons : undefined,
-  });
-
-  if (sendRes.ok) {
-    await supabaseAdmin.from("zernio_logs").insert({
-      event_id: `two-step-dm:direct:${conversationId}:${Date.now()}`,
-      event_type: "two_step_dm_sent",
-      status: "processed",
-      payload: {
-        conversationId,
-        username,
-        accountId,
-        automationId: autoId,
-        secondText,
-        buttons,
-        deliveredVia: "direct_reply_fallback",
-        incomingText: clean,
-      },
-    });
-    return true;
-  }
   return false;
 }
