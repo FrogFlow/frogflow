@@ -49,7 +49,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { rateSourceKind } from "@/lib/consultant/vtb-parse";
+import { rateSourceKind, type RateSourceKind } from "@/lib/consultant/vtb-parse";
 import { priceRub } from "@/lib/consultant/rate";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
@@ -79,8 +79,8 @@ const copy: Record<
     rateBody: string;
     rateEmpty: string;
     rateValue: (rate: number, at: string) => string;
-    rateSource: Record<"vtb" | "nbk" | "manual" | "other", string>;
-    rateNbkToast: string;
+    rateSource: Record<RateSourceKind, string>;
+    rateKeptToast: string;
     refreshRate: string;
     manualRate: string;
     usage: (count: number, usd: string, model: string) => string;
@@ -118,7 +118,7 @@ const copy: Record<
       manual: "источник: вручную",
       other: "источник: внешний URL",
     },
-    rateNbkToast: "Сервис ВТБ временно недоступен — сохранён текущий курс ВТБ. Можно ввести курс вручную.",
+    rateKeptToast: "Сервис ВТБ временно недоступен — сохранён текущий курс ВТБ. Можно ввести курс вручную.",
     refreshRate: "Обновить курс (ВТБ)",
     manualRate: "Записать курс вручную",
     usage: (count, usd, model) => `Claude: ${count} вызовов · ${usd} · модель ${model}`,
@@ -163,7 +163,7 @@ const copy: Record<
       manual: "көз: қолмен",
       other: "көз: сыртқы URL",
     },
-    rateNbkToast: "VTB сервисі уақытша қолжетімсіз — соңғы VTB бағамы сақталды.",
+    rateKeptToast: "VTB сервисі уақытша қолжетімсіз — соңғы VTB бағамы сақталды.",
     refreshRate: "Бағамды жаңарту",
     manualRate: "Қолмен жазу",
     usage: (count, usd, model) => `Claude: ${count} · ${usd} · ${model}`,
@@ -203,16 +203,15 @@ const copy: Record<
     saveShop: "Save URL",
     rateTitle: "VTB Kazakhstan rate",
     rateBody:
-      "RUB = ₸ / (buy rate × 0.95). VTB first; if their page is down we store the official NBK rate. You can still type the VTB till rate.",
+      "RUB = ₸ / (buy rate × 0.95 on weekdays, × 0.93 at weekends). Taken only from the official VTB Online API (online-api.vtb.kz).",
     rateEmpty: "No rate yet. Refresh or enter it manually.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
     rateSource: {
       vtb: "source: VTB",
-      nbk: "source: NBK (VTB till rate is not published)",
       manual: "source: manual",
       other: "source: custom URL",
     },
-    rateNbkToast: "VTB page is down — stored the official NBK rate. Enter the till rate manually if you need VTB.",
+    rateKeptToast: "VTB service is temporarily unavailable — kept the last VTB rate. You can enter a rate manually.",
     refreshRate: "Refresh rate",
     manualRate: "Save manual rate",
     usage: (count, usd, model) => `Claude: ${count} calls · ${usd} · ${model}`,
@@ -250,16 +249,15 @@ const copy: Record<
     shopLabel: "To‘liq assortiment havolasi",
     saveShop: "Havolani saqlash",
     rateTitle: "VTB Qozog‘iston kursi",
-    rateBody: "RUB = ₸ / (sotib olish kursi × 0,95). VTB yo‘q bo‘lsa — NBK.",
+    rateBody: "RUB = ₸ / (sotib olish kursi × 0,95). Faqat rasmiy VTB Online kursi (online-api.vtb.kz).",
     rateEmpty: "Kurs yo‘q.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
     rateSource: {
       vtb: "manba: VTB",
-      nbk: "manba: NBK (VTB kassasi e’lon qilmaydi)",
       manual: "manba: qo‘lda",
       other: "manba: tashqi URL",
     },
-    rateNbkToast: "VTB sahifasi yo‘q — NBK kursi yozildi.",
+    rateKeptToast: "VTB xizmati vaqtincha ishlamayapti — oxirgi VTB kursi saqlandi.",
     refreshRate: "Kursni yangilash",
     manualRate: "Qo‘lda yozish",
     usage: (count, usd, model) => `Claude: ${count} · ${usd} · ${model}`,
@@ -431,12 +429,10 @@ function ConsultantPage() {
     onSuccess: (res) => {
       if (res.fetched && res.kind === "vtb") {
         toast.success(`Курс ВТБ Онлайн успешно обновлён: ${res.stored?.rate} ₸/₽`);
-      } else if (res.fetched && res.kind === "nbk") {
-        toast.message(c.rateNbkToast);
       } else if (res.fetched) {
         toast.success("Курс обновлён");
       } else if (res.stored) {
-        toast.message("Запрос не прошёл — оставлен последний курс");
+        toast.message(c.rateKeptToast);
       } else {
         toast.error("Курс не получен");
       }

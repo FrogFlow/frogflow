@@ -35,12 +35,13 @@ import { Route as AdminRobokassaRouteImport } from './routes/admin.robokassa'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminVipRouteImport } from './routes/admin.vip'
 import { Route as AdminWhatsappRouteImport } from './routes/admin.whatsapp'
-import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
 import { Route as FilesTokenRouteImport } from './routes/files.$token'
+import { Route as LegalSlugRouteImport } from './routes/legal/$slug'
 import { Route as MiniAppLibraryRouteImport } from './routes/mini-app.library'
 import { Route as MiniAppOrdersRouteImport } from './routes/mini-app.orders'
 import { Route as OperatorAuthedRouteImport } from './routes/operator._authed'
 import { Route as OperatorLoginRouteImport } from './routes/operator.login'
+import { Route as AdminInstagramOldRouteImport } from './routes/admin.instagram.old'
 import { Route as AdminVipIndexRouteImport } from './routes/admin.vip.index'
 import { Route as AdminVipSettingsRouteImport } from './routes/admin.vip.settings'
 import { Route as AdminVipSubscribersRouteImport } from './routes/admin.vip.subscribers'
@@ -57,15 +58,15 @@ import { Route as ApiCronMiscRetentionRouteImport } from './routes/api/cron/misc
 import { Route as ApiCronZernioLogsPruneRouteImport } from './routes/api/cron/zernio-logs-prune'
 import { Route as ApiCronZernioRetryRouteImport } from './routes/api/cron/zernio-retry'
 import { Route as ApiInternalAiUsageRouteImport } from './routes/api/internal/ai-usage'
-import { Route as ApiInternalReceiptAuditRouteImport } from './routes/api/internal/receipt-audit'
 import { Route as ApiInternalDiagnosticsRouteImport } from './routes/api/internal/diagnostics'
 import { Route as ApiInternalHealthRouteImport } from './routes/api/internal/health'
 import { Route as ApiInternalNotifyOwnerRouteImport } from './routes/api/internal/notify-owner'
+import { Route as ApiInternalReceiptAuditRouteImport } from './routes/api/internal/receipt-audit'
 import { Route as ApiInternalReloadRouteImport } from './routes/api/internal/reload'
 import { Route as ApiInternalSetWebhookRouteImport } from './routes/api/internal/set-webhook'
 import { Route as ApiOperatorCronHealthSnapshotRouteImport } from './routes/api/operator-cron/health-snapshot'
-import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
 import { Route as ApiOperatorCronLeadsRouteImport } from './routes/api/operator-cron/leads'
+import { Route as ApiOperatorCronRetentionRouteImport } from './routes/api/operator-cron/retention'
 import { Route as ApiOperatorCronSubscriptionsRouteImport } from './routes/api/operator-cron/subscriptions'
 import { Route as ApiOperatorZernioWebhookRouteImport } from './routes/api/operator/zernio-webhook'
 import { Route as MiniAppProductProductIdRouteImport } from './routes/mini-app.product.$productId'
@@ -225,14 +226,14 @@ const AdminWhatsappRoute = AdminWhatsappRouteImport.update({
   path: '/whatsapp',
   getParentRoute: () => AdminRoute,
 } as any)
-const LegalSlugRoute = LegalSlugRouteImport.update({
-  id: '/legal/$slug',
-  path: '/legal/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const FilesTokenRoute = FilesTokenRouteImport.update({
   id: '/files/$token',
   path: '/files/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalSlugRoute = LegalSlugRouteImport.update({
+  id: '/legal/$slug',
+  path: '/legal/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MiniAppLibraryRoute = MiniAppLibraryRouteImport.update({
@@ -253,6 +254,11 @@ const OperatorLoginRoute = OperatorLoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => OperatorRoute,
+} as any)
+const AdminInstagramOldRoute = AdminInstagramOldRouteImport.update({
+  id: '/old',
+  path: '/old',
+  getParentRoute: () => AdminInstagramRoute,
 } as any)
 const AdminVipIndexRoute = AdminVipIndexRouteImport.update({
   id: '/',
@@ -336,11 +342,6 @@ const ApiInternalAiUsageRoute = ApiInternalAiUsageRouteImport.update({
   path: '/api/internal/ai-usage',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiInternalReceiptAuditRoute = ApiInternalReceiptAuditRouteImport.update({
-  id: '/api/internal/receipt-audit',
-  path: '/api/internal/receipt-audit',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiInternalDiagnosticsRoute = ApiInternalDiagnosticsRouteImport.update({
   id: '/api/internal/diagnostics',
   path: '/api/internal/diagnostics',
@@ -354,6 +355,11 @@ const ApiInternalHealthRoute = ApiInternalHealthRouteImport.update({
 const ApiInternalNotifyOwnerRoute = ApiInternalNotifyOwnerRouteImport.update({
   id: '/api/internal/notify-owner',
   path: '/api/internal/notify-owner',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternalReceiptAuditRoute = ApiInternalReceiptAuditRouteImport.update({
+  id: '/api/internal/receipt-audit',
+  path: '/api/internal/receipt-audit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiInternalReloadRoute = ApiInternalReloadRouteImport.update({
@@ -372,26 +378,27 @@ const ApiOperatorCronHealthSnapshotRoute =
     path: '/api/operator-cron/health-snapshot',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiOperatorCronLeadsRoute = ApiOperatorCronLeadsRouteImport.update({
+  id: '/api/operator-cron/leads',
+  path: '/api/operator-cron/leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiOperatorCronRetentionRoute =
   ApiOperatorCronRetentionRouteImport.update({
     id: '/api/operator-cron/retention',
     path: '/api/operator-cron/retention',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiOperatorCronLeadsRoute = ApiOperatorCronLeadsRouteImport.update({
-  id: '/api/operator-cron/leads',
-  path: '/api/operator-cron/leads',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiOperatorZernioWebhookRoute = ApiOperatorZernioWebhookRouteImport.update({
-  id: '/api/operator/zernio-webhook',
-  path: '/api/operator/zernio-webhook',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiOperatorCronSubscriptionsRoute =
   ApiOperatorCronSubscriptionsRouteImport.update({
     id: '/api/operator-cron/subscriptions',
     path: '/api/operator-cron/subscriptions',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiOperatorZernioWebhookRoute =
+  ApiOperatorZernioWebhookRouteImport.update({
+    id: '/api/operator/zernio-webhook',
+    path: '/api/operator/zernio-webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
 const MiniAppProductProductIdRoute = MiniAppProductProductIdRouteImport.update({
@@ -546,7 +553,7 @@ export interface FileRoutesByFullPath {
   '/admin/consultant': typeof AdminConsultantRoute
   '/admin/delivery-zones': typeof AdminDeliveryZonesRoute
   '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
-  '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/instagram': typeof AdminInstagramRouteWithChildren
   '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
@@ -557,12 +564,13 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/whatsapp': typeof AdminWhatsappRoute
-  '/legal/$slug': typeof LegalSlugRoute
   '/files/$token': typeof FilesTokenRoute
+  '/legal/$slug': typeof LegalSlugRoute
   '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/login': typeof OperatorLoginRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/instagram/old': typeof AdminInstagramOldRoute
   '/admin/vip/settings': typeof AdminVipSettingsRoute
   '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
   '/admin/vip/tariffs': typeof AdminVipTariffsRoute
@@ -578,17 +586,17 @@ export interface FileRoutesByFullPath {
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/ai-usage': typeof ApiInternalAiUsageRoute
-  '/api/internal/receipt-audit': typeof ApiInternalReceiptAuditRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
+  '/api/internal/receipt-audit': typeof ApiInternalReceiptAuditRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
-  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
-  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
+  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
+  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
@@ -631,7 +639,7 @@ export interface FileRoutesByTo {
   '/admin/consultant': typeof AdminConsultantRoute
   '/admin/delivery-zones': typeof AdminDeliveryZonesRoute
   '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
-  '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/instagram': typeof AdminInstagramRouteWithChildren
   '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
@@ -641,12 +649,13 @@ export interface FileRoutesByTo {
   '/admin/robokassa': typeof AdminRobokassaRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
-  '/legal/$slug': typeof LegalSlugRoute
   '/files/$token': typeof FilesTokenRoute
+  '/legal/$slug': typeof LegalSlugRoute
   '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/login': typeof OperatorLoginRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/instagram/old': typeof AdminInstagramOldRoute
   '/admin/vip/settings': typeof AdminVipSettingsRoute
   '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
   '/admin/vip/tariffs': typeof AdminVipTariffsRoute
@@ -662,17 +671,17 @@ export interface FileRoutesByTo {
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/ai-usage': typeof ApiInternalAiUsageRoute
-  '/api/internal/receipt-audit': typeof ApiInternalReceiptAuditRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
+  '/api/internal/receipt-audit': typeof ApiInternalReceiptAuditRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
-  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
-  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
+  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
+  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/broadcast': typeof OperatorAuthedBroadcastRoute
@@ -716,7 +725,7 @@ export interface FileRoutesById {
   '/admin/consultant': typeof AdminConsultantRoute
   '/admin/delivery-zones': typeof AdminDeliveryZonesRoute
   '/admin/gift-certificates': typeof AdminGiftCertificatesRoute
-  '/admin/instagram': typeof AdminInstagramRoute
+  '/admin/instagram': typeof AdminInstagramRouteWithChildren
   '/admin/manager-chat': typeof AdminManagerChatRoute
   '/admin/modules': typeof AdminModulesRoute
   '/admin/orders': typeof AdminOrdersRoute
@@ -727,13 +736,14 @@ export interface FileRoutesById {
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/vip': typeof AdminVipRouteWithChildren
   '/admin/whatsapp': typeof AdminWhatsappRoute
-  '/legal/$slug': typeof LegalSlugRoute
   '/files/$token': typeof FilesTokenRoute
+  '/legal/$slug': typeof LegalSlugRoute
   '/mini-app/library': typeof MiniAppLibraryRoute
   '/mini-app/orders': typeof MiniAppOrdersRoute
   '/operator/_authed': typeof OperatorAuthedRouteWithChildren
   '/operator/login': typeof OperatorLoginRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/instagram/old': typeof AdminInstagramOldRoute
   '/admin/vip/settings': typeof AdminVipSettingsRoute
   '/admin/vip/subscribers': typeof AdminVipSubscribersRoute
   '/admin/vip/tariffs': typeof AdminVipTariffsRoute
@@ -749,17 +759,17 @@ export interface FileRoutesById {
   '/api/cron/zernio-logs-prune': typeof ApiCronZernioLogsPruneRoute
   '/api/cron/zernio-retry': typeof ApiCronZernioRetryRoute
   '/api/internal/ai-usage': typeof ApiInternalAiUsageRoute
-  '/api/internal/receipt-audit': typeof ApiInternalReceiptAuditRoute
   '/api/internal/diagnostics': typeof ApiInternalDiagnosticsRoute
   '/api/internal/health': typeof ApiInternalHealthRoute
   '/api/internal/notify-owner': typeof ApiInternalNotifyOwnerRoute
+  '/api/internal/receipt-audit': typeof ApiInternalReceiptAuditRoute
   '/api/internal/reload': typeof ApiInternalReloadRoute
   '/api/internal/set-webhook': typeof ApiInternalSetWebhookRoute
   '/api/operator-cron/health-snapshot': typeof ApiOperatorCronHealthSnapshotRoute
-  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/leads': typeof ApiOperatorCronLeadsRoute
-  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
+  '/api/operator-cron/retention': typeof ApiOperatorCronRetentionRoute
   '/api/operator-cron/subscriptions': typeof ApiOperatorCronSubscriptionsRoute
+  '/api/operator/zernio-webhook': typeof ApiOperatorZernioWebhookRoute
   '/mini-app/product/$productId': typeof MiniAppProductProductIdRoute
   '/operator/_authed/$botId': typeof OperatorAuthedBotIdRoute
   '/operator/_authed/broadcast': typeof OperatorAuthedBroadcastRoute
@@ -816,12 +826,13 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/vip'
     | '/admin/whatsapp'
-    | '/legal/$slug'
     | '/files/$token'
+    | '/legal/$slug'
     | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/login'
     | '/admin/'
+    | '/admin/instagram/old'
     | '/admin/vip/settings'
     | '/admin/vip/subscribers'
     | '/admin/vip/tariffs'
@@ -837,17 +848,17 @@ export interface FileRouteTypes {
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/ai-usage'
-    | '/api/internal/receipt-audit'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
+    | '/api/internal/receipt-audit'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
     | '/api/operator-cron/health-snapshot'
-    | '/api/operator-cron/retention'
     | '/api/operator-cron/leads'
-    | '/api/operator/zernio-webhook'
+    | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
+    | '/api/operator/zernio-webhook'
     | '/mini-app/product/$productId'
     | '/operator/$botId'
     | '/operator/broadcast'
@@ -900,12 +911,13 @@ export interface FileRouteTypes {
     | '/admin/robokassa'
     | '/admin/settings'
     | '/admin/whatsapp'
-    | '/legal/$slug'
     | '/files/$token'
+    | '/legal/$slug'
     | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/login'
     | '/admin'
+    | '/admin/instagram/old'
     | '/admin/vip/settings'
     | '/admin/vip/subscribers'
     | '/admin/vip/tariffs'
@@ -921,17 +933,17 @@ export interface FileRouteTypes {
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/ai-usage'
-    | '/api/internal/receipt-audit'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
+    | '/api/internal/receipt-audit'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
     | '/api/operator-cron/health-snapshot'
-    | '/api/operator-cron/retention'
     | '/api/operator-cron/leads'
-    | '/api/operator/zernio-webhook'
+    | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
+    | '/api/operator/zernio-webhook'
     | '/mini-app/product/$productId'
     | '/operator/$botId'
     | '/operator/broadcast'
@@ -985,13 +997,14 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/vip'
     | '/admin/whatsapp'
-    | '/legal/$slug'
     | '/files/$token'
+    | '/legal/$slug'
     | '/mini-app/library'
     | '/mini-app/orders'
     | '/operator/_authed'
     | '/operator/login'
     | '/admin/'
+    | '/admin/instagram/old'
     | '/admin/vip/settings'
     | '/admin/vip/subscribers'
     | '/admin/vip/tariffs'
@@ -1007,17 +1020,17 @@ export interface FileRouteTypes {
     | '/api/cron/zernio-logs-prune'
     | '/api/cron/zernio-retry'
     | '/api/internal/ai-usage'
-    | '/api/internal/receipt-audit'
     | '/api/internal/diagnostics'
     | '/api/internal/health'
     | '/api/internal/notify-owner'
+    | '/api/internal/receipt-audit'
     | '/api/internal/reload'
     | '/api/internal/set-webhook'
     | '/api/operator-cron/health-snapshot'
-    | '/api/operator-cron/retention'
     | '/api/operator-cron/leads'
-    | '/api/operator/zernio-webhook'
+    | '/api/operator-cron/retention'
     | '/api/operator-cron/subscriptions'
+    | '/api/operator/zernio-webhook'
     | '/mini-app/product/$productId'
     | '/operator/_authed/$botId'
     | '/operator/_authed/broadcast'
@@ -1055,8 +1068,8 @@ export interface RootRouteChildren {
   MiniAppRuntimeRoute: typeof MiniAppRuntimeRoute
   OperatorRoute: typeof OperatorRouteWithChildren
   ShopRoute: typeof ShopRoute
-  LegalSlugRoute: typeof LegalSlugRoute
   FilesTokenRoute: typeof FilesTokenRoute
+  LegalSlugRoute: typeof LegalSlugRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiCronBroadcastRoute: typeof ApiCronBroadcastRoute
   ApiCronCartReminderRoute: typeof ApiCronCartReminderRoute
@@ -1069,17 +1082,17 @@ export interface RootRouteChildren {
   ApiCronZernioLogsPruneRoute: typeof ApiCronZernioLogsPruneRoute
   ApiCronZernioRetryRoute: typeof ApiCronZernioRetryRoute
   ApiInternalAiUsageRoute: typeof ApiInternalAiUsageRoute
-  ApiInternalReceiptAuditRoute: typeof ApiInternalReceiptAuditRoute
   ApiInternalDiagnosticsRoute: typeof ApiInternalDiagnosticsRoute
   ApiInternalHealthRoute: typeof ApiInternalHealthRoute
   ApiInternalNotifyOwnerRoute: typeof ApiInternalNotifyOwnerRoute
+  ApiInternalReceiptAuditRoute: typeof ApiInternalReceiptAuditRoute
   ApiInternalReloadRoute: typeof ApiInternalReloadRoute
   ApiInternalSetWebhookRoute: typeof ApiInternalSetWebhookRoute
   ApiOperatorCronHealthSnapshotRoute: typeof ApiOperatorCronHealthSnapshotRoute
-  ApiOperatorCronRetentionRoute: typeof ApiOperatorCronRetentionRoute
   ApiOperatorCronLeadsRoute: typeof ApiOperatorCronLeadsRoute
-  ApiOperatorZernioWebhookRoute: typeof ApiOperatorZernioWebhookRoute
+  ApiOperatorCronRetentionRoute: typeof ApiOperatorCronRetentionRoute
   ApiOperatorCronSubscriptionsRoute: typeof ApiOperatorCronSubscriptionsRoute
+  ApiOperatorZernioWebhookRoute: typeof ApiOperatorZernioWebhookRoute
   ApiAdminFileSplatRoute: typeof ApiAdminFileSplatRoute
   ApiPublicImgSplatRoute: typeof ApiPublicImgSplatRoute
   ApiPublicMiniAppCartRoute: typeof ApiPublicMiniAppCartRoute
@@ -1283,18 +1296,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminWhatsappRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/legal/$slug': {
-      id: '/legal/$slug'
-      path: '/legal/$slug'
-      fullPath: '/legal/$slug'
-      preLoaderRoute: typeof LegalSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/files/$token': {
       id: '/files/$token'
       path: '/files/$token'
       fullPath: '/files/$token'
       preLoaderRoute: typeof FilesTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal/$slug': {
+      id: '/legal/$slug'
+      path: '/legal/$slug'
+      fullPath: '/legal/$slug'
+      preLoaderRoute: typeof LegalSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mini-app/library': {
@@ -1324,6 +1337,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/operator/login'
       preLoaderRoute: typeof OperatorLoginRouteImport
       parentRoute: typeof OperatorRoute
+    }
+    '/admin/instagram/old': {
+      id: '/admin/instagram/old'
+      path: '/old'
+      fullPath: '/admin/instagram/old'
+      preLoaderRoute: typeof AdminInstagramOldRouteImport
+      parentRoute: typeof AdminInstagramRoute
     }
     '/admin/vip/': {
       id: '/admin/vip/'
@@ -1437,13 +1457,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalAiUsageRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/internal/receipt-audit': {
-      id: '/api/internal/receipt-audit'
-      path: '/api/internal/receipt-audit'
-      fullPath: '/api/internal/receipt-audit'
-      preLoaderRoute: typeof ApiInternalReceiptAuditRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/internal/diagnostics': {
       id: '/api/internal/diagnostics'
       path: '/api/internal/diagnostics'
@@ -1463,6 +1476,13 @@ declare module '@tanstack/react-router' {
       path: '/api/internal/notify-owner'
       fullPath: '/api/internal/notify-owner'
       preLoaderRoute: typeof ApiInternalNotifyOwnerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/receipt-audit': {
+      id: '/api/internal/receipt-audit'
+      path: '/api/internal/receipt-audit'
+      fullPath: '/api/internal/receipt-audit'
+      preLoaderRoute: typeof ApiInternalReceiptAuditRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/internal/reload': {
@@ -1486,13 +1506,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOperatorCronHealthSnapshotRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/operator-cron/retention': {
-      id: '/api/operator-cron/retention'
-      path: '/api/operator-cron/retention'
-      fullPath: '/api/operator-cron/retention'
-      preLoaderRoute: typeof ApiOperatorCronRetentionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/operator-cron/leads': {
       id: '/api/operator-cron/leads'
       path: '/api/operator-cron/leads'
@@ -1500,11 +1513,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiOperatorCronLeadsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/operator/zernio-webhook': {
-      id: '/api/operator/zernio-webhook'
-      path: '/api/operator/zernio-webhook'
-      fullPath: '/api/operator/zernio-webhook'
-      preLoaderRoute: typeof ApiOperatorZernioWebhookRouteImport
+    '/api/operator-cron/retention': {
+      id: '/api/operator-cron/retention'
+      path: '/api/operator-cron/retention'
+      fullPath: '/api/operator-cron/retention'
+      preLoaderRoute: typeof ApiOperatorCronRetentionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/operator-cron/subscriptions': {
@@ -1512,6 +1525,13 @@ declare module '@tanstack/react-router' {
       path: '/api/operator-cron/subscriptions'
       fullPath: '/api/operator-cron/subscriptions'
       preLoaderRoute: typeof ApiOperatorCronSubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/operator/zernio-webhook': {
+      id: '/api/operator/zernio-webhook'
+      path: '/api/operator/zernio-webhook'
+      fullPath: '/api/operator/zernio-webhook'
+      preLoaderRoute: typeof ApiOperatorZernioWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mini-app/product/$productId': {
@@ -1699,6 +1719,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AdminInstagramRouteChildren {
+  AdminInstagramOldRoute: typeof AdminInstagramOldRoute
+}
+
+const AdminInstagramRouteChildren: AdminInstagramRouteChildren = {
+  AdminInstagramOldRoute: AdminInstagramOldRoute,
+}
+
+const AdminInstagramRouteWithChildren = AdminInstagramRoute._addFileChildren(
+  AdminInstagramRouteChildren,
+)
+
 interface AdminVipRouteChildren {
   AdminVipSettingsRoute: typeof AdminVipSettingsRoute
   AdminVipSubscribersRoute: typeof AdminVipSubscribersRoute
@@ -1725,7 +1757,7 @@ interface AdminRouteChildren {
   AdminConsultantRoute: typeof AdminConsultantRoute
   AdminDeliveryZonesRoute: typeof AdminDeliveryZonesRoute
   AdminGiftCertificatesRoute: typeof AdminGiftCertificatesRoute
-  AdminInstagramRoute: typeof AdminInstagramRoute
+  AdminInstagramRoute: typeof AdminInstagramRouteWithChildren
   AdminManagerChatRoute: typeof AdminManagerChatRoute
   AdminModulesRoute: typeof AdminModulesRoute
   AdminOrdersRoute: typeof AdminOrdersRoute
@@ -1747,7 +1779,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminConsultantRoute: AdminConsultantRoute,
   AdminDeliveryZonesRoute: AdminDeliveryZonesRoute,
   AdminGiftCertificatesRoute: AdminGiftCertificatesRoute,
-  AdminInstagramRoute: AdminInstagramRoute,
+  AdminInstagramRoute: AdminInstagramRouteWithChildren,
   AdminManagerChatRoute: AdminManagerChatRoute,
   AdminModulesRoute: AdminModulesRoute,
   AdminOrdersRoute: AdminOrdersRoute,
@@ -1826,8 +1858,8 @@ const rootRouteChildren: RootRouteChildren = {
   MiniAppRuntimeRoute: MiniAppRuntimeRoute,
   OperatorRoute: OperatorRouteWithChildren,
   ShopRoute: ShopRoute,
-  LegalSlugRoute: LegalSlugRoute,
   FilesTokenRoute: FilesTokenRoute,
+  LegalSlugRoute: LegalSlugRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiCronBroadcastRoute: ApiCronBroadcastRoute,
   ApiCronCartReminderRoute: ApiCronCartReminderRoute,
@@ -1840,17 +1872,17 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCronZernioLogsPruneRoute: ApiCronZernioLogsPruneRoute,
   ApiCronZernioRetryRoute: ApiCronZernioRetryRoute,
   ApiInternalAiUsageRoute: ApiInternalAiUsageRoute,
-  ApiInternalReceiptAuditRoute: ApiInternalReceiptAuditRoute,
   ApiInternalDiagnosticsRoute: ApiInternalDiagnosticsRoute,
   ApiInternalHealthRoute: ApiInternalHealthRoute,
   ApiInternalNotifyOwnerRoute: ApiInternalNotifyOwnerRoute,
+  ApiInternalReceiptAuditRoute: ApiInternalReceiptAuditRoute,
   ApiInternalReloadRoute: ApiInternalReloadRoute,
   ApiInternalSetWebhookRoute: ApiInternalSetWebhookRoute,
   ApiOperatorCronHealthSnapshotRoute: ApiOperatorCronHealthSnapshotRoute,
-  ApiOperatorCronRetentionRoute: ApiOperatorCronRetentionRoute,
   ApiOperatorCronLeadsRoute: ApiOperatorCronLeadsRoute,
-  ApiOperatorZernioWebhookRoute: ApiOperatorZernioWebhookRoute,
+  ApiOperatorCronRetentionRoute: ApiOperatorCronRetentionRoute,
   ApiOperatorCronSubscriptionsRoute: ApiOperatorCronSubscriptionsRoute,
+  ApiOperatorZernioWebhookRoute: ApiOperatorZernioWebhookRoute,
   ApiAdminFileSplatRoute: ApiAdminFileSplatRoute,
   ApiPublicImgSplatRoute: ApiPublicImgSplatRoute,
   ApiPublicMiniAppCartRoute: ApiPublicMiniAppCartRoute,

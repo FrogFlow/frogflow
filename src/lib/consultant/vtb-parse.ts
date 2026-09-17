@@ -27,23 +27,6 @@ export function parseVtbBuyRate(body: string): number | null {
   return null;
 }
 
-/** Официальный RUB/KZT из RSS НБРК (`<title>RUB</title><description>5.33</description>`). */
-export function parseNbkRubRate(body: string): number | null {
-  for (const chunk of body.matchAll(/<item>([\s\S]*?)<\/item>/gi)) {
-    const item = chunk[1];
-    if (!/<title>\s*RUB\s*<\/title>/i.test(item)) continue;
-    const desc = item.match(/<description>\s*([\d.,]+)\s*<\/description>/i);
-    const quantRaw = item.match(/<quant>\s*([\d.,]+)\s*<\/quant>/i);
-    if (!desc) return null;
-    const raw = Number(desc[1].replace(",", "."));
-    const quant = Number((quantRaw?.[1] ?? "1").replace(",", "."));
-    const n = quant > 1 ? raw / quant : raw;
-    if (n > 1 && n < 20) return n;
-    return null;
-  }
-  return null;
-}
-
 function tryJsonRate(body: string): number | null {
   const trimmed = body.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
