@@ -20,20 +20,79 @@ import { brandVocabulary, fixBrandSpelling } from "./style";
 
 import { priceRub, getStoredVtbRate } from "./rate";
 
+/**
+ * Каталог для системного промпта.
+ *
+ * Формат компактный намеренно. Каталог — это 73% промпта, а промпт уходит в
+ * каждый вызов; подписи «Размер:», «Категория:», «Цена:», «Доступные
+ * расцветки:» и хвост «| В наличии» повторялись на каждой из 877 строк и
+ * стоили 13 500 токенов на вызов, не неся ни байта сведений. Порядок полей
+ * объявлен один раз в заголовке, единицы (₸, ₽) и метки «цв:», «сост:»
+ * оставлены, чтобы поля не путались между собой, когда какое-то пустое.
+ */
 export function formatCatalogForPrompt(catalog: ConsultantProduct[], rate: number | null): string {
   if (!catalog || catalog.length === 0) return "АКТУАЛЬНЫЙ АССОРТИМЕНТ МАГАЗИНА: данных нет.";
   const inStock = catalog.filter((p) => p.stock);
   if (inStock.length === 0) return "АКТУАЛЬНЫЙ АССОРТИМЕНТ МАГАЗИНА: все позиции временно распроданы.";
-  const lines: string[] = ["АКТУАЛЬНЫЙ АССОРТИМЕНТ И НАЛИЧИЕ НА СКЛАДЕ МАГАЗИНА:"];
+  const lines: string[] = [
+    "АКТУАЛЬНЫЙ АССОРТИМЕНТ И НАЛИЧИЕ НА СКЛАДЕ МАГАЗИНА.",
+    "Всё перечисленное ниже есть в наличии. Формат строки:",
+    "• название | размер | категория | цена в тенге ₸ | цена в рублях ₽ | цв: расцветки | сост: состав",
+    "Поля размера, расцветок и состава могут отсутствовать, если их нет в прайсе.",
+  ];
   for (const p of inStock) {
-    const rub = rate ? `${priceRub(p.price_kzt, rate).toLocaleString("ru-RU")} ₽` : "по курсу";
-    const kzt = `${p.price_kzt.toLocaleString("ru-RU")} ₸`;
-    const size = p.size ? ` | Размер: ${p.size}` : "";
-    const colors = p.colors.length > 0 ? ` | Доступные расцветки: ${p.colors.join(", ")}` : "";
-    const mat = p.material ? ` | Ткань/состав: ${p.material}` : "";
-    lines.push(`• ${p.name}${size} | Категория: ${p.category} | Цена: ${kzt} (${rub})${colors}${mat} | В наличии`);
+    const parts: string[] = [p.name];
+    if (p.size) parts.push(p.size);
+    if (p.category) parts.push(p.category);
+    parts.push(`${p.price_kzt.toLocaleString("ru-RU")} ₸`);
+    parts.push(rate ? `${priceRub(p.price_kzt, rate).toLocaleString("ru-RU")} ₽` : "₽ по курсу");
+    if (p.colors.length > 0) parts.push(`цв: ${p.colors.join(", ")}`);
+    if (p.material) parts.push(`сост: ${p.material}`);
+    lines.push(`• ${parts.join(" | ")}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * Брейкпоинт кеша на хвосте переписки.
+ *
+ * История диалога, контекст сессии и результаты инструментов идут после
+ * системного промпта и меняются каждое сообщение, поэтому оплачивались по
+ * полной цене — на боевых данных это 3 180 токенов на сообщение. Пометка на
+ * последнем блоке делает уже отправленную часть переписки кешируемой:
+ * следующий раунд того же сообщения и следующая реплика того же клиента
+ * читают её из кеша вместо того, чтобы слать заново.
+ *
+ * TTL здесь короткий, в отличие от системного промпта. Системный промпт
+ * общий для всех покупателей и ждёт следующего часами — ему нужен часовой.
+ * Хвост живёт внутри одного диалога, где раунды идут секундами, а реплики
+ * минутами: пятиминутный кеш до них доживает, а его запись стоит 1,25 против
+ * 2 у часового.
+ */
+function withTailCacheBreakpoint(
+  messages: Array<{ role: "user" | "assistant"; content: unknown }>,
+): Array<{ role: "user" | "assistant"; content: unknown }> {
+  if (messages.length === 0) return messages;
+  const out = messages.slice();
+  const last = out[out.length - 1];
+  const mark = { type: "ephemeral" as const };
+
+  if (typeof last.content === "string") {
+    out[out.length - 1] = {
+      role: last.role,
+      content: [{ type: "text", text: last.content, cache_control: mark }],
+    };
+    return out;
+  }
+  if (Array.isArray(last.content) && last.content.length > 0) {
+    const blocks = last.content.slice();
+    const tail = blocks[blocks.length - 1];
+    if (tail && typeof tail === "object") {
+      blocks[blocks.length - 1] = { ...(tail as Record<string, unknown>), cache_control: mark };
+      out[out.length - 1] = { role: last.role, content: blocks };
+    }
+  }
+  return out;
 }
 
 export function buildConsultantSystemPrompt(
@@ -96,8 +155,8 @@ export function buildConsultantSystemPrompt(
    - РАСЦВЕТКИ (СТРОГО): Всегда называйте цвета на понятном русском языке (например: светло-бежевый, розовый, голубой, серый, белый, слоновая кость), либо указывайте фабричный код в скобках: «розовый (blush)», «светло-бежевый (fog)», «голубой (sea mist)». КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО оставлять список расцветок только на английском языке без перевода (например, писать «(fog, linen, silver, steel)» запрещено).
 
 СТРАНА И ЦЕНЫ
-- Казахстан (country=KZ): цены всегда называйте в тенге (₸). Используйте первое число из строки «Цена:» (например, из «Цена: 260 000 ₸ (51 834 ₽)» называйте 260 000 ₸). Стандартная доставка по Казахстану.
-- Россия (country=RU): цены ВСЕГДА называйте ИСКЛЮЧИТЕЛЬНО в рублях (₽). Используйте ТОЛЬКО рублёвую цену, указанную в скобках после тенговой. Например, из строки «Цена: 260 000 ₸ (51 834 ₽)» для клиента из РФ называйте именно 51 834 ₽, а НЕ 260 000 ₽. Никогда не подставляйте тенговое число с символом рубля. Доставка в РФ осуществляется курьерской службой СДЭК и оплачивается покупателем при получении по тарифам СДЭК (никогда не называйте фиксированную цену доставки в РФ, только по тарифам СДЭК).
+- Казахстан (country=KZ): цены всегда называйте в тенге (₸) — это поле со знаком ₸ в строке товара (например, из «… | 260 000 ₸ | 51 834 ₽ | …» называйте 260 000 ₸). Стандартная доставка по Казахстану.
+- Россия (country=RU): цены ВСЕГДА называйте ИСКЛЮЧИТЕЛЬНО в рублях (₽). Используйте ТОЛЬКО поле со знаком ₽, которое идёт сразу после тенгового. Например, из строки «… | 260 000 ₸ | 51 834 ₽ | …» для клиента из РФ называйте именно 51 834 ₽, а НЕ 260 000 ₽. Никогда не подставляйте тенговое число с символом рубля. Доставка в РФ осуществляется курьерской службой СДЭК и оплачивается покупателем при получении по тарифам СДЭК (никогда не называйте фиксированную цену доставки в РФ, только по тарифам СДЭК).
 - Если страна неизвестна (country=unknown): вежливо спросите, из какой страны обращается клиент (Казахстан или Россия), чтобы показать актуальные цены и условия доставки.
 
 АДРЕС МАГАЗИНА, САМОВЫВОЗ И КОНТАКТЫ
@@ -337,7 +396,7 @@ export async function runConsultantClaude(params: {
               ? { ...tool, cache_control: { type: "ephemeral", ttl: CONSULTANT_CACHE_TTL } }
               : tool,
           ),
-          messages,
+          messages: withTailCacheBreakpoint(messages),
           ...(params.forceTools && round === 0 ? { tool_choice: { type: "any" } } : {}),
         }),
         signal: AbortSignal.timeout(CONSULTANT_AI_TIMEOUT_MS),
