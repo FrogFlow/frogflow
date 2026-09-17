@@ -24,6 +24,7 @@ import {
   formatMissingColorReply,
   formatProductReply,
   formatSizeOptionsReply,
+  formatStoreLocationReply,
   formatThanksReply,
   formatVariantsReply,
   looksLikeConsultantBotReply,
@@ -38,15 +39,15 @@ import {
   isConsultantGreeting,
   isConsultantThanks,
   isDeclineResponse,
+  isNegationQuery,
+  isStoreLocationOrPickupIntent,
   looksLikeProductQuery,
-  looksLikeVagueHelp,
   matchAdviceIntent,
   matchBasketIntent,
   matchCatalogIntent,
   matchCountry,
   matchCountryPostback,
   matchDeliveryIntent,
-  matchMoreVariantsIntent,
   matchOtherCategoriesIntent,
   matchPriceOnlyIntent,
   matchPurchaseIntent,
@@ -54,7 +55,7 @@ import {
 } from "./intent";
 import { consultantApiKey } from "./config";
 import { consultantRequestId, logConsultantEvent } from "./log";
-import { getStoredVtbRate, priceRub } from "./rate";
+import { getStoredVtbRate, priceRub, isOffHoursInAlmaty } from "./rate";
 import {
   alreadyAnsweredIncoming,
   appendRecent,
@@ -653,9 +654,12 @@ export async function decideConsultantReply(
           : (state.last_product_ids ?? []).slice(0, 1);
         let handoffText = cleanScriptHallucinations(cleanForbiddenPhrases(stripMarkdownFormatting(ai.text)));
         if (!customerContact) {
-          const askContactText = handoffText.trim()
-            ? handoffText
-            : "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲";
+          const isOffHours = isOffHoursInAlmaty();
+          const askContactText = isOffHours
+            ? "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки — сейчас нерабочие часы магазина, наш менеджер свяжется с вами утром для оформления заказа 📲"
+            : (handoffText.trim()
+                ? handoffText
+                : "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲");
           return {
             text: askContactText,
             patch: {
@@ -835,8 +839,11 @@ export async function decideConsultantReply(
     const matched = resolveHandoffProductIds(state, text, catalog);
     const productIds = matched.length > 0 ? matched : (state.last_product_ids ?? []).slice(0, 1);
     if (!state.customer_contact && !hasPhone) {
+      const askContactText = isOffHoursInAlmaty()
+        ? "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки — сейчас нерабочие часы магазина, наш менеджер свяжется с вами утром для оформления заказа 📲"
+        : "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲";
       return {
-        text: "Спасибо! Уточните, пожалуйста, ваш номер телефона и город доставки, чтобы менеджер связался с вами для оформления заказа 📲",
+        text: askContactText,
         patch: {
           ...countryPatch,
           last_product_ids: productIds,
@@ -861,6 +868,17 @@ export async function decideConsultantReply(
       hasPhone ? text : state.customer_contact,
       catalog,
     );
+  }
+
+  if (isStoreLocationOrPickupIntent(text)) {
+    void track(ctx.userKey, "clarify", text, bucket);
+    const { getConsultantStoreInfo } = await import("./store-info");
+    const storeInfo = await getConsultantStoreInfo();
+    return {
+      text: formatStoreLocationReply(storeInfo),
+      patch: { ...countryPatch, conversation_state: "consulting" },
+      kind: "clarify",
+    };
   }
 
   if (isDeclineResponse(text)) {
@@ -1239,8 +1257,17 @@ async function handoffReply(
       lastProducts: reason === "purchase" ? resolvedProducts.slice(0, 1) : resolvedProducts.slice(0, 3),
     }).catch(() => {});
   }
+  const isOffHours = isOffHoursInAlmaty();
+  let defaultReply = pack.unrecognized;
+  if (reason === "purchase") {
+    defaultReply = isOffHours ? pack.purchaseOffHours : pack.purchase;
+  }
+  let replyText = message ?? defaultReply;
+  if (reason === "purchase" && isOffHours && (!message || message === pack.purchase)) {
+    replyText = pack.purchaseOffHours;
+  }
   return {
-    text: stripMarkdownFormatting(message ?? pack.unrecognized),
+    text: stripMarkdownFormatting(replyText),
     patch: {
       ...state,
       ab_bucket: bucket,

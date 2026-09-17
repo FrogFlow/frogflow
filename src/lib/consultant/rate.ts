@@ -15,6 +15,32 @@ export function isWeekendInAlmaty(date: Date = new Date()): boolean {
 }
 
 /**
+ * Текущий час по времени Алматы (0..23).
+ */
+export function getAlmatyHour(date: Date = new Date()): number {
+  try {
+    const hourStr = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Almaty",
+      hour: "numeric",
+      hour12: false,
+    }).format(date);
+    const parsed = parseInt(hourStr, 10);
+    return isNaN(parsed) ? 12 : parsed % 24;
+  } catch {
+    const utcHour = new Date(date.getTime() + 5 * 60 * 60 * 1000).getUTCHours();
+    return utcHour;
+  }
+}
+
+/**
+ * Нерабочие часы магазина в Алматы (после 21:00 и ночью до 10:00 утра).
+ */
+export function isOffHoursInAlmaty(date: Date = new Date()): boolean {
+  const hour = getAlmatyHour(date);
+  return hour >= 21 || hour < 10;
+}
+
+/**
  * Коэффициент конвертации:
  * - Будние дни: Покупка рубля ВТБ Казахстан - 5% (множитель 0.95).
  * - Выходные (Сб, Вс): Покупка рубля ВТБ Казахстан - 7% (множитель 0.93).

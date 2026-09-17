@@ -8,6 +8,7 @@ export type ConsultantCopyPack = {
   askProduct: string;
   oos: string;
   purchase: string;
+  purchaseOffHours: string;
   unrecognized: string;
   catalogEmpty: string;
   cdek: string;
@@ -25,6 +26,8 @@ export const TZ_COPY: ConsultantCopyPack = {
   askProduct: "Какой товар вас интересует?",
   oos: "Данного товара сейчас нет в наличии. В ближайшее время с вами свяжется менеджер и предложит доступные альтернативы.",
   purchase: "Спасибо! В ближайшее время с вами свяжется менеджер для оформления заказа.",
+  purchaseOffHours:
+    "Спасибо! Мы приняли вашу заявку. Сейчас нерабочие часы магазина — наш менеджер свяжется с вами утром в рабочее время для оформления заказа 📲",
   unrecognized:
     "Спасибо за обращение! В ближайшее время с вами свяжется менеджер для консультации.",
   catalogEmpty:
@@ -49,6 +52,8 @@ const AB_COPY: ConsultantCopyPack = {
     "Здравствуйте! Из какой вы страны обращаетесь?\n\n🇰🇿 Казахстан\n🇷🇺 Россия",
   askProduct: "Какой товар вас интересует?",
   crossSell: "",
+  purchaseOffHours:
+    "Спасибо! Заявка принята. Сейчас нерабочие часы — менеджер свяжется с вами утром в рабочее время для оформления заказа 📲",
   affirmativeInterest:
     "У нас есть: постельное бельё, одеяла, подушки, пледы и полотенца. Напишите товар или категорию — проверим наличие и цену.",
   declineReply:
@@ -67,6 +72,7 @@ export const consultantCopy = {
   catalogEmpty: TZ_COPY.catalogEmpty,
   oos: TZ_COPY.oos,
   purchase: TZ_COPY.purchase,
+  purchaseOffHours: TZ_COPY.purchaseOffHours,
   clarify: TZ_COPY.askProduct,
   apiError: TZ_COPY.unrecognized,
   cdek: TZ_COPY.cdek,
@@ -100,6 +106,7 @@ export function looksLikeConsultantBotReply(text: string): boolean {
     TZ_COPY.askProduct,
     TZ_COPY.oos,
     TZ_COPY.purchase,
+    TZ_COPY.purchaseOffHours,
     TZ_COPY.otherCategories,
     TZ_COPY.crossSell,
     TZ_COPY.affirmativeInterest,
@@ -107,6 +114,7 @@ export function looksLikeConsultantBotReply(text: string): boolean {
     TZ_COPY.unrecognized,
     AB_COPY.askCountry,
     AB_COPY.askProduct,
+    AB_COPY.purchaseOffHours,
     AB_COPY.crossSell,
     AB_COPY.affirmativeInterest,
     AB_COPY.declineReply,
@@ -297,4 +305,15 @@ export function formatThanksReply(): string {
 export function formatMissingColorReply(wanted: string, alternatives: string[]): string {
   const alts = alternatives.length ? alternatives.join(", ") : "белый и бежевый";
   return `${wanted} сейчас нет в наличии. Есть ${alts}. Напишите, какой ближе, или пришлите фото с видео.`;
+}
+
+export function formatStoreLocationReply(info: { address: string; phone: string; hours: string }): string {
+  return [
+    "Наш магазин находится по адресу:",
+    `📍 ${info.address}`,
+    `🕒 Режим работы: ${info.hours}`,
+    `📞 Телефон для связи: ${info.phone}`,
+    "",
+    "Вы можете приехать к нам, посмотреть и выбрать текстиль вживую, а также оформить заказ на самовывоз! Если вас интересует конкретная позиция перед визитом — напишите, я сразу проверю наличие на складе.",
+  ].join("\n");
 }

@@ -203,3 +203,23 @@ export function matchCountryPostback(payload: string | null | undefined): Consul
   if (payload === "CONSULTANT_COUNTRY:RU") return "RU";
   return null;
 }
+
+/**
+ * Вопрос про адрес магазина, физическое посещение («приехать посмотреть вживую», «пощупать») или самовывоз.
+ */
+export function isStoreLocationOrPickupIntent(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  return (
+    /где\s+(вы\s+)?(находитесь|расположены|ваш\s+магазин|бутик|шоурум)/i.test(t) ||
+    /какой\s+(у\s+вас\s+)?адрес/i.test(t) ||
+    /адрес\s+(магазина|шоурума|бутика)/i.test(t) ||
+    /самовывоз/i.test(t) ||
+    /забрать\s+(самому|самостоятельно|из\s+магазина)/i.test(t) ||
+    /приехать\s+(к\s+вам|посмотреть|выбрать|пощупать)/i.test(t) ||
+    /посмотреть\s+вживую/i.test(t) ||
+    /пощупать/i.test(t) ||
+    /есть\s+ли\s+(магазин|шоурум|бутик|точка)/i.test(t) ||
+    /в\s+каком\s+городе/i.test(t) ||
+    /колибри|colibri/i.test(t)
+  );
+}

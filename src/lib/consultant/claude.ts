@@ -35,8 +35,14 @@ export function buildConsultantSystemPrompt(
   catalog: ConsultantProduct[],
   rate: number | null,
   shopUrl = "https://bovi.kz",
+  storeInfo?: { address: string; phone: string; hours: string },
+  knowledgeSection?: string,
 ): string {
   const catalogSection = formatCatalogForPrompt(catalog, rate);
+  const storeAddress = storeInfo?.address || "г. Алматы, ул. Сатпаева, 3 (бутик-молл COLIBRI, 1-й этаж)";
+  const storePhone = storeInfo?.phone || "+7 (777) 333 08 08";
+  const storeHours = storeInfo?.hours || "ежедневно с 10:00 до 22:00";
+  const knowledgeBlock = knowledgeSection?.trim() ? `\n\n${knowledgeSection.trim()}` : "";
 
   return `РОЛЬ
 Вы — умный, заботливый, экспертный онлайн-консультант магазина домашнего текстиля BOVI в Instagram Direct.
@@ -72,6 +78,14 @@ export function buildConsultantSystemPrompt(
 - Россия (country=RU): цены всегда называйте в рублях (₽). Доставка в РФ осуществляется курьерской службой СДЭК и оплачивается покупателем при получении по тарифам СДЭК (никогда не называйте фиксированную цену доставки в РФ, только по тарифам СДЭК).
 - Если страна неизвестна (country=unknown): вежливо спросите, из какой страны обращается клиент (Казахстан или Россия), чтобы показать актуальные цены и условия доставки.
 
+АДРЕС МАГАЗИНА, САМОВЫВОЗ И КОНТАКТЫ
+• Физический бутик BOVI: ${storeAddress}
+• Режим работы: ${storeHours}
+• Телефон для связи: ${storePhone}
+• САМОВЫВОЗ: Самовывоз доступен в часы работы магазина.
+• ПОСЕЩЕНИЕ И ВЫБОР ВЖИВУЮ: Клиенты всегда могут приехать в бутик, посмотреть ткани и расцветки вживую, пощупать качество и выбрать на месте.
+Когда клиент спрашивает «Где вы находитесь?», «Какой адрес?», «Можно приехать посмотреть?» или «Есть ли самовывоз?» — всегда вежливо называйте точный адрес, режим работы и телефон, и приглашайте в магазин!
+
 РЕГЛАМЕНТ КОНСУЛЬТАЦИЙ ПО ТОВАРАМ
 1. ПОЛОТЕНЦА: Когда клиент спрашивает о полотенцах в целом («у вас есть полотенца?», «какие размеры есть?»), покажите основную линейку из 3 банных размеров:
    • 50х90 см — цена и доступные расцветки
@@ -99,6 +113,7 @@ export function buildConsultantSystemPrompt(
 4. ПРАВИЛА СТИРКИ И ДЕЛИКАТНОГО УХОДА:
    • Стирка при 40°C жидкими средствами без хлора и отбеливателей.
    • Для махры рекомендуется сушка в расправленном виде или в сушильной машине на низких оборотах для вспушивания петель.
+${knowledgeBlock}
 
 ОФОРМЛЕНИЕ ЗАКАЗА И ПЕРЕДАЧА МЕНЕДЖЕРУ
 Когда клиент определился с выбором и готов сделать заказ («оформляем», «хочу заказать», «беру», «куда платить?») или просит связать с человеком:
@@ -195,7 +210,19 @@ export async function runConsultantClaude(params: {
       ? params.rate
       : (await getStoredVtbRate())?.rate ?? null;
   const catalog = params.catalog ?? [];
-  const fullSystemPrompt = buildConsultantSystemPrompt(catalog, rate, params.shopUrl);
+  const { getConsultantStoreInfo } = await import("./store-info");
+  const storeInfo = await getConsultantStoreInfo().catch(() => undefined);
+  const { loadConsultantKnowledge, formatKnowledgeForPrompt } = await import("./knowledge");
+  const knowledgeArticles = await loadConsultantKnowledge().catch(() => []);
+  const knowledgeSection = formatKnowledgeForPrompt(knowledgeArticles);
+
+  const fullSystemPrompt = buildConsultantSystemPrompt(
+    catalog,
+    rate,
+    params.shopUrl,
+    storeInfo,
+    knowledgeSection,
+  );
 
   const country: ConsultantCountry | undefined = params.state.country;
   const sessionLines: string[] = ["ДАННЫЕ ТЕКУЩЕЙ СЕССИИ:"];

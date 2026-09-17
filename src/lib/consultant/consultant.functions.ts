@@ -81,33 +81,42 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     .order("created_at", { ascending: false })
     .limit(1);
   const lastDirect = lastHooks?.[0] ?? null;
-  return {
-    catalogCount: catalog.length,
-    catalog: catalog.slice(0, 300),
-    meta,
-    rate,
-    rateStale: rateAgeHours != null && rateAgeHours > 2,
-    rateMissing: !rate,
-    shopUrl,
-    sheetsUrl: sheetsRow.data?.value?.trim() || "",
-    driveUrl: driveRow.data?.value?.trim() || "",
-    model: consultantModel(),
-    apiKeyConfigured: Boolean(consultantApiKey()),
-    spend: { ...spend, usdLabel: formatUsd(spend.usd) },
-    paused,
-    customers,
-    analytics: summarizeConsultantEvents(events),
-    events: events.slice(-20).reverse(),
-    tasks,
-    ab: ab ?? "split",
-    checklist,
-    paymentNote: "Оплата в боте не делается — только handoff менеджеру (ТЗ).",
-    oneCNote: "1С API недоступно по ТЗ. Источник — Excel/CSV/Sheets/Drive.",
-    lastDirectAt: lastDirect?.created_at ?? null,
-    lastDirectStatus: lastDirect?.status ?? null,
-    botEnabled: await (await import("./state")).isConsultantBotGloballyEnabled(),
-  };
-});
+    const { getConsultantStoreInfo } = await import("./store-info");
+    const { loadConsultantKnowledge } = await import("./knowledge");
+    const [storeInfo, knowledge] = await Promise.all([
+      getConsultantStoreInfo(),
+      loadConsultantKnowledge(),
+    ]);
+
+    return {
+      catalogCount: catalog.length,
+      catalog: catalog.slice(0, 300),
+      meta,
+      rate,
+      rateStale: rateAgeHours != null && rateAgeHours > 2,
+      rateMissing: !rate,
+      shopUrl,
+      sheetsUrl: sheetsRow.data?.value?.trim() || "",
+      driveUrl: driveRow.data?.value?.trim() || "",
+      model: consultantModel(),
+      apiKeyConfigured: Boolean(consultantApiKey()),
+      spend: { ...spend, usdLabel: formatUsd(spend.usd) },
+      paused,
+      customers,
+      analytics: summarizeConsultantEvents(events),
+      events: events.slice(-20).reverse(),
+      tasks,
+      ab: ab ?? "split",
+      checklist,
+      storeInfo,
+      knowledge,
+      paymentNote: "Оплата в боте не делается — только handoff менеджеру (ТЗ).",
+      oneCNote: "1С API недоступно по ТЗ. Источник — Excel/CSV/Sheets/Drive.",
+      lastDirectAt: lastDirect?.created_at ?? null,
+      lastDirectStatus: lastDirect?.status ?? null,
+      botEnabled: await (await import("./state")).isConsultantBotGloballyEnabled(),
+    };
+  });
 
 export const pollConsultantInboxFn = createServerFn({ method: "POST" }).handler(async () => {
   await requireAdmin();
@@ -275,5 +284,61 @@ export const clearConsultantTasksFn = createServerFn({ method: "POST" })
     await requireAdmin();
     await clearConsultantTasks(data?.onlyDone ?? false);
     return { ok: true as const };
+  });
+
+export const saveConsultantStoreInfoFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        address: z.string().optional(),
+        phone: z.string().optional(),
+        hours: z.string().optional(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const { saveConsultantStoreInfo } = await import("./store-info");
+    await saveConsultantStoreInfo(data);
+    return { ok: true as const };
+  });
+
+export const saveConsultantKnowledgeFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        articles: z.array(
+          z.object({
+            id: z.string(),
+            title: z.string(),
+            tags: z.array(z.string()),
+            content: z.string(),
+            updatedAt: z.string(),
+          }),
+        ),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const { saveConsultantKnowledge } = await import("./knowledge");
+    await saveConsultantKnowledge(data.articles);
+    return { ok: true as const };
+  });
+
+export const importConsultantKnowledgeFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ text: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const { parseKnowledgeArticlesFromText, loadConsultantKnowledge, saveConsultantKnowledge } =
+      await import("./knowledge");
+    const newArticles = parseKnowledgeArticlesFromText(data.text);
+    if (newArticles.length === 0) {
+      return { ok: false as const, error: "Не удалось выделить статьи из текста. Используйте разделители ### или --- и теги." };
+    }
+    const existing = await loadConsultantKnowledge();
+    const merged = [...existing, ...newArticles];
+    await saveConsultantKnowledge(merged);
+    return { ok: true as const, count: newArticles.length, total: merged.length };
   });
 

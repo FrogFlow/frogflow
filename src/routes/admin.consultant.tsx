@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { Input } from "@/components-ui/input";
 import { Label } from "@/components-ui/label";
 import { Switch } from "@/components-ui/switch";
+import { Textarea } from "@/components-ui/textarea";
 import { useAdminLocale } from "@/lib/admin-locale";
 import {
   getConsultantAdminFn,
@@ -24,12 +25,30 @@ import {
   testConsultantTelegramFn,
   toggleConsultantBotFn,
   clearConsultantTasksFn,
+  saveConsultantStoreInfoFn,
+  saveConsultantKnowledgeFn,
+  importConsultantKnowledgeFn,
 } from "@/lib/consultant/consultant.functions";
+import type { ConsultantKnowledgeArticle } from "@/lib/consultant/knowledge";
 import { confirmToast } from "@/lib/confirm-toast";
 import { StoriesTab } from "./admin.stories-tab";
 import { Badge } from "@/components-ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components-ui/table";
-import { CheckCircle2, Circle, ExternalLink, Package, RefreshCw, Search, Send } from "lucide-react";
+import {
+  BookOpen,
+  CheckCircle2,
+  Circle,
+  ExternalLink,
+  FileText,
+  MapPin,
+  Package,
+  Plus,
+  RefreshCw,
+  Search,
+  Send,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { rateSourceKind } from "@/lib/consultant/vtb-parse";
 import { priceRub } from "@/lib/consultant/rate";
 import { errorMessage } from "@/lib/error-message";
@@ -289,11 +308,52 @@ function ConsultantPage() {
   const [catalogStockFilter, setCatalogStockFilter] = useState<"all" | "in_stock" | "out_of_stock">("all");
   const [catalogCategoryFilter, setCatalogCategoryFilter] = useState<string>("all");
 
+  const [storeAddress, setStoreAddress] = useState<string | null>(null);
+  const [storePhone, setStorePhone] = useState<string | null>(null);
+  const [storeHours, setStoreHours] = useState<string | null>(null);
+
+  const [knowledgeSearch, setKnowledgeSearch] = useState("");
+  const [knowledgeTagFilter, setKnowledgeTagFilter] = useState("all");
+  const [showAddArticle, setShowAddArticle] = useState(false);
+  const [newArticleTitle, setNewArticleTitle] = useState("");
+  const [newArticleTags, setNewArticleTags] = useState("");
+  const [newArticleContent, setNewArticleContent] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [importKnowledgeText, setImportKnowledgeText] = useState("");
+
   const d = data.data;
   const sheetsValue = sheetsUrl || d?.sheetsUrl || "";
   const shopValue = shopUrl || d?.shopUrl || "";
   const tasks = d?.tasks ?? [];
   const pendingTasksCount = tasks.filter((t) => !t.done).length;
+
+  const currentAddress = storeAddress !== null ? storeAddress : (d?.storeInfo?.address ?? "");
+  const currentPhone = storePhone !== null ? storePhone : (d?.storeInfo?.phone ?? "");
+  const currentHours = storeHours !== null ? storeHours : (d?.storeInfo?.hours ?? "");
+
+  const knowledgeArticles: ConsultantKnowledgeArticle[] = d?.knowledge ?? [];
+  const allKnowledgeTags = Array.from(
+    new Set(
+      knowledgeArticles
+        .flatMap((a) => a.tags || [])
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+
+  const filteredKnowledgeArticles = knowledgeArticles.filter((art) => {
+    if (knowledgeTagFilter !== "all" && !art.tags?.some((t) => t.toLowerCase() === knowledgeTagFilter)) {
+      return false;
+    }
+    if (knowledgeSearch.trim()) {
+      const q = knowledgeSearch.toLowerCase();
+      const matchTitle = art.title.toLowerCase().includes(q);
+      const matchContent = art.content.toLowerCase().includes(q);
+      const matchTags = (art.tags || []).some((t) => t.toLowerCase().includes(q));
+      if (!matchTitle && !matchContent && !matchTags) return false;
+    }
+    return true;
+  });
 
   const rawCatalog = d?.catalog ?? [];
   const categories = Array.from(new Set(rawCatalog.map((p) => p.category).filter(Boolean)));
@@ -450,6 +510,77 @@ function ConsultantPage() {
 
   const onClearDoneTasks = async () => {
     clearTasks.mutate(true);
+  };
+
+  const saveStoreInfo = useMutation({
+    mutationFn: () =>
+      saveConsultantStoreInfoFn({
+        data: {
+          address: currentAddress,
+          phone: currentPhone,
+          hours: currentHours,
+        },
+      }),
+    onSuccess: () => {
+      toast.success("Адрес и контакты магазина сохранены");
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+
+  const saveKnowledge = useMutation({
+    mutationFn: (articles: ConsultantKnowledgeArticle[]) =>
+      saveConsultantKnowledgeFn({ data: { articles } }),
+    onSuccess: () => {
+      toast.success("База знаний обновлена");
+      qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+
+  const importKnowledge = useMutation({
+    mutationFn: (text: string) => importConsultantKnowledgeFn({ data: { text } }),
+    onSuccess: (res) => {
+      if (res.ok) {
+        toast.success(`Добавлено ${res.count} статей в базу знаний (всего: ${res.total})`);
+        setImportKnowledgeText("");
+        setShowImport(false);
+        qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+      } else {
+        toast.error(res.error || "Ошибка импорта");
+      }
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+
+  const handleAddArticle = () => {
+    if (!newArticleTitle.trim() || !newArticleContent.trim()) {
+      toast.error("Укажите заголовок и текст статьи");
+      return;
+    }
+    const tags = newArticleTags
+      .split(",")
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+    const newArt: ConsultantKnowledgeArticle = {
+      id: `art_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: newArticleTitle.trim(),
+      tags,
+      content: newArticleContent.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    saveKnowledge.mutate([newArt, ...knowledgeArticles]);
+    setNewArticleTitle("");
+    setNewArticleTags("");
+    setNewArticleContent("");
+    setShowAddArticle(false);
+  };
+
+  const handleDeleteArticle = async (id: string, title: string) => {
+    const ok = await confirmToast(`Удалить статью "${title}" из базы знаний?`);
+    if (!ok) return;
+    const remaining = knowledgeArticles.filter((a) => a.id !== id);
+    saveKnowledge.mutate(remaining);
   };
 
 
@@ -839,6 +970,260 @@ function ConsultantPage() {
         </TabsContent>
 
         <TabsContent value="knowledge" className="space-y-6 mt-4">
+          {/* Store Info & Pickup */}
+          <section className="bg-card border rounded-lg p-4 space-y-4">
+            <div>
+              <h2 className="font-medium text-base flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-primary" />
+                Адрес бутика и контакты для самовывоза
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                Когда клиент спрашивает, где находится магазин, можно ли забрать заказ самовывозом или приехать посмотреть текстиль вживую, бот автоматически отправляет эти контакты и адрес.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Адрес бутика / шоурума</Label>
+                <Input
+                  value={currentAddress}
+                  onChange={(e) => setStoreAddress(e.target.value)}
+                  placeholder="г. Алматы, ул. Сатпаева 3, ТЦ COLIBRI, 1 этаж"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Контактный телефон / WhatsApp</Label>
+                <Input
+                  value={currentPhone}
+                  onChange={(e) => setStorePhone(e.target.value)}
+                  placeholder="+7 (777) 333 08 08"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Режим работы</Label>
+                <Input
+                  value={currentHours}
+                  onChange={(e) => setStoreHours(e.target.value)}
+                  placeholder="Ежедневно с 10:00 до 21:00"
+                  className="h-9 text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => saveStoreInfo.mutate()}
+                disabled={saveStoreInfo.isPending}
+              >
+                {saveStoreInfo.isPending ? "Сохранение..." : "Сохранить адрес и контакты"}
+              </Button>
+            </div>
+          </section>
+
+          {/* Knowledge Base Articles */}
+          <section className="bg-card border rounded-lg p-4 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="font-medium text-base flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-primary" />
+                  База знаний (фабрики, ткани, сертификаты, уход)
+                </h2>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Ежедневный файл 1С содержит только цены и остатки. Эти статьи дополняют знания Claude о происхождении текстиля, фабриках (Португалия, Турция), сертификатах (OEKO-TEX), плотности сатина (300 TC) и правилах стирки.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowImport(!showImport)}
+                >
+                  <Upload className="w-3.5 h-3.5 mr-1.5" />
+                  {showImport ? "Скрыть импорт" : "Импорт текстом"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setShowAddArticle(!showAddArticle)}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1.5" />
+                  {showAddArticle ? "Отмена" : "Добавить статью"}
+                </Button>
+              </div>
+            </div>
+
+            {showImport && (
+              <div className="bg-muted/40 border rounded-lg p-3 space-y-2">
+                <Label className="text-xs font-medium">
+                  Массовый импорт статей с тегами
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Формат: <code>### Заголовок статьи [тег1, тег2]</code>, затем текст статьи. Статьи разделяются тройной решёткой (###).
+                </p>
+                <Textarea
+                  value={importKnowledgeText}
+                  onChange={(e) => setImportKnowledgeText(e.target.value)}
+                  placeholder={`### Фабрика в Португалии [португалия, фабрика, европа]\nBOVI производит текстиль на сертифицированной фабрике в Португалии...\n\n### Сатин 300 TC [сатин, хлопок, плотность]\nДля комплектов белья используется мерсеризованный хлопок 300 нитей/дюйм...`}
+                  rows={6}
+                  className="text-xs font-mono"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => importKnowledge.mutate(importKnowledgeText)}
+                    disabled={importKnowledge.isPending || !importKnowledgeText.trim()}
+                  >
+                    {importKnowledge.isPending ? "Импорт..." : "Импортировать в базу"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {showAddArticle && (
+              <div className="bg-muted/40 border rounded-lg p-3 space-y-3">
+                <Label className="text-xs font-medium">Новая статья базы знаний</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Заголовок</Label>
+                    <Input
+                      value={newArticleTitle}
+                      onChange={(e) => setNewArticleTitle(e.target.value)}
+                      placeholder="Например: Плотность махровых полотенец"
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Теги (через запятую)</Label>
+                    <Input
+                      value={newArticleTags}
+                      onChange={(e) => setNewArticleTags(e.target.value)}
+                      placeholder="полотенца, махра, плотность, хлопок"
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-[11px] text-muted-foreground">Содержание статьи</Label>
+                  <Textarea
+                    value={newArticleContent}
+                    onChange={(e) => setNewArticleContent(e.target.value)}
+                    placeholder="Подробный ответ консультанта о материале, фабрике или свойствах..."
+                    rows={3}
+                    className="text-xs mt-1"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleAddArticle}
+                    disabled={saveKnowledge.isPending}
+                  >
+                    Сохранить статью
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center justify-between">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
+                <Input
+                  value={knowledgeSearch}
+                  onChange={(e) => setKnowledgeSearch(e.target.value)}
+                  placeholder="Поиск по статьям и тегам..."
+                  className="pl-8 h-9 text-xs"
+                />
+              </div>
+
+              {allKnowledgeTags.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-muted-foreground">Тег:</span>
+                  <button
+                    type="button"
+                    onClick={() => setKnowledgeTagFilter("all")}
+                    className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                      knowledgeTagFilter === "all"
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Все ({knowledgeArticles.length})
+                  </button>
+                  {allKnowledgeTags.slice(0, 8).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setKnowledgeTagFilter(t)}
+                      className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                        knowledgeTagFilter === t
+                          ? "bg-primary text-primary-foreground font-medium"
+                          : "bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {filteredKnowledgeArticles.length === 0 ? (
+              <div className="text-center py-6 border rounded-lg bg-muted/10 text-xs text-muted-foreground">
+                {knowledgeArticles.length === 0
+                  ? "База знаний пока пуста. Добавьте статьи выше."
+                  : "По заданному фильтру статей не найдено."}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {filteredKnowledgeArticles.map((art) => (
+                  <div
+                    key={art.id}
+                    className="border rounded-lg p-3 bg-background hover:bg-muted/20 transition-colors space-y-1.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-primary" />
+                          {art.title}
+                        </h3>
+                        <div className="flex items-center gap-1 flex-wrap mt-1">
+                          {(art.tags || []).map((t, idx) => (
+                            <Badge
+                              key={idx}
+                              variant="secondary"
+                              className="text-[10px] py-0 px-1.5 font-normal"
+                            >
+                              #{t}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteArticle(art.id, art.title)}
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {art.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
           <section className="bg-card border rounded-lg p-4 space-y-3">
             <h2 className="font-medium">{c.catalogTitle}</h2>
             <p className="text-sm text-muted-foreground">{c.catalogBody}</p>
