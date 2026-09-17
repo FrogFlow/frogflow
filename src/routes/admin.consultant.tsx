@@ -28,6 +28,7 @@ import {
   saveConsultantStoreInfoFn,
   saveConsultantKnowledgeFn,
   importConsultantKnowledgeFn,
+  importConsultantKnowledgeFileFn,
 } from "@/lib/consultant/consultant.functions";
 import type { ConsultantKnowledgeArticle } from "@/lib/consultant/knowledge";
 import { confirmToast } from "@/lib/confirm-toast";
@@ -54,6 +55,22 @@ import { priceRub } from "@/lib/consultant/rate";
 import { errorMessage } from "@/lib/error-message";
 import type { Locale } from "@/lib/i18n";
 import { rejectNonConsultantPage } from "@/lib/verticals/consultant-admin-guard";
+import { KNOWLEDGE_FILE_MAX_MB } from "@/lib/consultant/doc-text";
+
+/**
+ * Файл в base64 для серверной функции — тем же способом, что и загрузка
+ * прайса .xlsx выше по странице. Кодируем кусками: у String.fromCharCode
+ * на мегабайтном массиве переполняется стек аргументов.
+ */
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
 
 export const Route = createFileRoute("/admin/consultant")({
   beforeLoad: ({ context }) => rejectNonConsultantPage(context),
@@ -546,6 +563,26 @@ function ConsultantPage() {
         toast.success(`Добавлено ${res.count} статей в базу знаний (всего: ${res.total})`);
         setImportKnowledgeText("");
         setShowImport(false);
+        qc.invalidateQueries({ queryKey: ["consultant-admin"] });
+      } else {
+        toast.error(res.error || "Ошибка импорта");
+      }
+    },
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
+
+  const importKnowledgeFile = useMutation({
+    mutationFn: (file: File) =>
+      fileToBase64(file).then((base64) =>
+        importConsultantKnowledgeFileFn({ data: { fileName: file.name, base64 } }),
+      ),
+    onSuccess: (res) => {
+      if (res.ok) {
+        toast.success(
+          res.truncated
+            ? `Добавлено ${res.count} статей (всего: ${res.total}). Длинный текст обрезан до ${res.maxChars.toLocaleString("ru-RU")} символов на статью — вся база знаний уходит в каждый запрос к Claude.`
+            : `Добавлено ${res.count} статей в базу знаний (всего: ${res.total})`,
+        );
         qc.invalidateQueries({ queryKey: ["consultant-admin"] });
       } else {
         toast.error(res.error || "Ошибка импорта");
@@ -1050,23 +1087,34 @@ function ConsultantPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <label className="inline-flex items-center justify-center rounded-md text-xs font-medium border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3 cursor-pointer transition-colors shadow-sm">
                   <FileText className="w-3.5 h-3.5 mr-1.5 text-primary" />
-                  Загрузить файл (.txt, .md)
+                  Загрузить файл (.pdf, .docx, .txt, .md — до {KNOWLEDGE_FILE_MAX_MB} МБ)
                   <input
                     type="file"
                     className="sr-only"
-                    accept=".txt,.md,.text,text/plain,text/markdown"
+                    accept=".txt,.md,.text,.pdf,.docx,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
+                      e.target.value = "";
                       if (!file) return;
+                      if (file.size > KNOWLEDGE_FILE_MAX_MB * 1024 * 1024) {
+                        toast.error(
+                          `Файл больше ${KNOWLEDGE_FILE_MAX_MB} МБ — разделите его на части или вставьте текст через «Импорт текстом».`,
+                        );
+                        return;
+                      }
+                      // PDF и Word разбирает сервер: unpdf и mammoth в
+                      // браузерный бандл не тянем.
+                      if (/\.(pdf|docx)$/i.test(file.name)) {
+                        importKnowledgeFile.mutate(file);
+                        return;
+                      }
                       try {
-                        const text = await file.text();
-                        importKnowledge.mutate(text);
+                        importKnowledge.mutate(await file.text());
                       } catch {
                         toast.error("Не удалось прочитать файл");
                       }
-                      e.target.value = "";
                     }}
-                    disabled={importKnowledge.isPending}
+                    disabled={importKnowledge.isPending || importKnowledgeFile.isPending}
                   />
                 </label>
                 <Button

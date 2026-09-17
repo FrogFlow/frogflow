@@ -326,6 +326,78 @@ export const saveConsultantKnowledgeFn = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+export const importConsultantKnowledgeFileFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        fileName: z.string().min(1).max(200),
+        // Потолок на строку base64 с запасом; настоящая проверка размера идёт
+        // по распакованным байтам ниже, здесь — только защита от гигантского
+        // тела запроса.
+        base64: z.string().min(1).max(6_000_000),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    await requireAdmin();
+    const {
+      decodeBase64,
+      extractDocumentText,
+      hasSectionMarkers,
+      titleFromFileName,
+      KNOWLEDGE_ARTICLE_MAX_CHARS,
+      KNOWLEDGE_FILE_MAX_MB,
+    } = await import("./doc-text");
+
+    const bytes = decodeBase64(data.base64);
+    if (bytes.length > KNOWLEDGE_FILE_MAX_MB * 1024 * 1024) {
+      return {
+        ok: false as const,
+        error: `Файл больше ${KNOWLEDGE_FILE_MAX_MB} МБ — разделите его на части или вставьте текст через «Импорт текстом».`,
+      };
+    }
+
+    const extracted = await extractDocumentText(bytes, data.fileName);
+    if (!extracted.ok) return { ok: false as const, error: extracted.error };
+
+    const { parseKnowledgeArticlesFromText, loadConsultantKnowledge, saveConsultantKnowledge } =
+      await import("./knowledge");
+
+    let newArticles = parseKnowledgeArticlesFromText(extracted.text);
+    if (newArticles.length === 0) {
+      return { ok: false as const, error: "Не удалось выделить текст из файла." };
+    }
+
+    // В PDF от фабрики разделителей ### и --- нет, поэтому файл становится
+    // одной статьёй. Заголовком берём имя файла: иначе им станет случайная
+    // первая строка вёрстки, и статью потом не найти в списке.
+    if (newArticles.length === 1 && !hasSectionMarkers(extracted.text)) {
+      newArticles = [
+        { ...newArticles[0], title: titleFromFileName(data.fileName), content: extracted.text },
+      ];
+    }
+
+    const capped = newArticles.map((a) => ({
+      ...a,
+      content: a.content.slice(0, KNOWLEDGE_ARTICLE_MAX_CHARS),
+    }));
+    const truncated: boolean = capped.some(
+      (a, i) => a.content.length < newArticles[i].content.length,
+    );
+    newArticles = capped;
+
+    const existing = await loadConsultantKnowledge();
+    const merged = [...existing, ...newArticles];
+    await saveConsultantKnowledge(merged);
+    return {
+      ok: true as const,
+      count: newArticles.length,
+      total: merged.length,
+      truncated,
+      maxChars: KNOWLEDGE_ARTICLE_MAX_CHARS,
+    };
+  });
+
 export const importConsultantKnowledgeFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ text: z.string() }).parse(d))
   .handler(async ({ data }) => {
