@@ -61,13 +61,15 @@ describe("smart search cost", () => {
       date: "2026-09-02",
       inputTokens: 10,
       outputTokens: 2,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
       usd: 0.04,
     });
   });
 
   it("накапливает токены и USD за день", () => {
     const first = addDailySpend(
-      { date: "2026-09-02", inputTokens: 0, outputTokens: 0, usd: 0 },
+      { date: "2026-09-02", inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, usd: 0 },
       { inputTokens: 10_000, outputTokens: 1_000 },
       "2026-09-02",
     );
@@ -81,6 +83,10 @@ describe("smart search cost", () => {
     expect(extractAnthropicUsage({ usage: { input_tokens: 1200, output_tokens: 80 } })).toEqual({
       inputTokens: 1200,
       outputTokens: 80,
+      // Ответ без кеширования: поля кеша пустые, но присутствуют — считать
+      // их надо наравне с остальным вводом, см. consultant-cache-cost.test.ts.
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
     });
     expect(extractAnthropicUsage({ error: "nope" })).toBeNull();
   });

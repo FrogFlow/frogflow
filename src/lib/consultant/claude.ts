@@ -8,7 +8,11 @@ import { CONSULTANT_TOOLS, executeConsultantTool } from "./tools";
 import type { ConsultantProduct } from "./catalog";
 import type { ConsultantCountry } from "./intent";
 import type { ConsultantState, ConsultantTurn } from "./state";
-import { extractAnthropicUsage, type SmartSearchTokenUsage } from "@/lib/smart-search-cost";
+import {
+  CONSULTANT_CACHE_TTL,
+  extractAnthropicUsage,
+  type SmartSearchTokenUsage,
+} from "@/lib/smart-search-cost";
 import { logger } from "@/lib/logger.server";
 import { stripMarkdownFormatting } from "./copy";
 import { cleanForbiddenPhrases, cleanScriptHallucinations } from "./validate";
@@ -302,7 +306,7 @@ export async function runConsultantClaude(params: {
             {
               type: "text",
               text: fullSystemPrompt,
-              cache_control: { type: "ephemeral" },
+              cache_control: { type: "ephemeral", ttl: CONSULTANT_CACHE_TTL },
             },
             {
               type: "text",
@@ -320,7 +324,9 @@ export async function runConsultantClaude(params: {
             "\nUser:",
           ],
           tools: CONSULTANT_TOOLS.map((tool, i) =>
-            i === 0 ? { ...tool, cache_control: { type: "ephemeral" } } : tool,
+            i === 0
+              ? { ...tool, cache_control: { type: "ephemeral", ttl: CONSULTANT_CACHE_TTL } }
+              : tool,
           ),
           messages,
           ...(params.forceTools && round === 0 ? { tool_choice: { type: "any" } } : {}),

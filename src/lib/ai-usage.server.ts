@@ -51,7 +51,14 @@ export async function recordSmartSearchLifetime(usage: SmartSearchTokenUsage): P
 }
 
 export async function recordConsultantLifetime(usage: SmartSearchTokenUsage): Promise<void> {
-  if (usage.inputTokens <= 0 && usage.outputTokens <= 0) return;
+  // При работающем кеше почти весь ввод приходит в полях кеша, а input_tokens
+  // может быть крошечным — вызов всё равно стоит денег и должен учитываться.
+  const total =
+    usage.inputTokens +
+    usage.outputTokens +
+    (usage.cacheCreationTokens ?? 0) +
+    (usage.cacheReadTokens ?? 0);
+  if (total <= 0) return;
   try {
     const s = await db();
     const { data } = await s

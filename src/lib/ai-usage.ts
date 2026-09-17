@@ -16,11 +16,22 @@ export type SmartSearchLifetimeSpend = {
   count: number;
   inputTokens: number;
   outputTokens: number;
+  /** Записано в кеш промпта; тарифицируется дороже обычного ввода. */
+  cacheCreationTokens: number;
+  /** Прочитано из кеша; дешевле обычного ввода в десять раз. */
+  cacheReadTokens: number;
   usd: number;
 };
 
 export function emptySmartSearchLifetime(): SmartSearchLifetimeSpend {
-  return { count: 0, inputTokens: 0, outputTokens: 0, usd: 0 };
+  return {
+    count: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    usd: 0,
+  };
 }
 
 export function parseSmartSearchLifetime(raw: string | null | undefined): SmartSearchLifetimeSpend {
@@ -31,6 +42,11 @@ export function parseSmartSearchLifetime(raw: string | null | undefined): SmartS
       count: Math.max(0, Math.floor(Number(parsed.count) || 0)),
       inputTokens: Math.max(0, Number(parsed.inputTokens) || 0),
       outputTokens: Math.max(0, Number(parsed.outputTokens) || 0),
+      // Накопленное до этой правки полей кеша не содержит: там нули, и сумма
+      // за прошлый период так и остаётся заниженной. Считать её задним
+      // числом не по чему — API отдаёт разбивку только в ответе на вызов.
+      cacheCreationTokens: Math.max(0, Number(parsed.cacheCreationTokens) || 0),
+      cacheReadTokens: Math.max(0, Number(parsed.cacheReadTokens) || 0),
       usd: Math.max(0, Number(parsed.usd) || 0),
     };
   } catch {
@@ -46,6 +62,8 @@ export function addSmartSearchLifetime(
     count: current.count + 1,
     inputTokens: current.inputTokens + Math.max(0, usage.inputTokens),
     outputTokens: current.outputTokens + Math.max(0, usage.outputTokens),
+    cacheCreationTokens: current.cacheCreationTokens + Math.max(0, usage.cacheCreationTokens ?? 0),
+    cacheReadTokens: current.cacheReadTokens + Math.max(0, usage.cacheReadTokens ?? 0),
     usd: current.usd + estimateUsdFromTokens(usage),
   };
 }
