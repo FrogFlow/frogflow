@@ -41,6 +41,13 @@ export async function saveConsultantStoreInfo(info: Partial<ConsultantStoreInfo>
   if (typeof info.hours === "string") entries.push({ key: STORE_HOURS_KEY, value: info.hours.trim() });
 
   for (const entry of entries) {
-    await s.from("app_settings").upsert(entry, { onConflict: "key" });
+    // Тот же случай, что и в knowledge.ts: ON CONFLICT (key) не совпадает с
+    // первичным ключом (bot_id, key) из MIGRATION-02, вставка падает, а
+    // ошибка до сих пор терялась — адрес, телефон и часы работы молча
+    // оставались прежними.
+    const { error } = await s.from("app_settings").upsert(entry);
+    if (error) {
+      throw new Error(`Не удалось сохранить «${entry.key}»: ${error.message}`);
+    }
   }
 }

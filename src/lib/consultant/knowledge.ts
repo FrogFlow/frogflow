@@ -90,13 +90,20 @@ export async function saveConsultantKnowledge(
   articles: ConsultantKnowledgeArticle[],
 ): Promise<void> {
   const s = await db();
-  await s.from("app_settings").upsert(
-    {
-      key: KNOWLEDGE_KEY,
-      value: JSON.stringify(articles),
-    },
-    { onConflict: "key" },
-  );
+  // Без onConflict. Первичный ключ app_settings — (bot_id, key) начиная с
+  // MIGRATION-02, и явное ON CONFLICT (key) Postgres отвергает целиком
+  // («no unique or exclusion constraint matching the ON CONFLICT
+  // specification»). Об этом предупреждает шапка самой миграции; остальные
+  // места пишут в app_settings обычным upsert и работают.
+  const { error } = await s.from("app_settings").upsert({
+    key: KNOWLEDGE_KEY,
+    value: JSON.stringify(articles),
+  });
+  // Ошибку глотать нельзя: вызывающий рапортует «добавлено N статей», и
+  // молчаливый отказ выглядит как успех, после которого ничего не появилось.
+  if (error) {
+    throw new Error(`Не удалось сохранить базу знаний: ${error.message}`);
+  }
 }
 
 /**
