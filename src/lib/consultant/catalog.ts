@@ -634,6 +634,26 @@ export async function searchProducts(
   return (await searchProductsDetailed(q, catalog)).shown;
 }
 
+/**
+ * Ценовое дно и потолок того же среза каталога, но БЕЗ ограничения по цене.
+ *
+ * Нужно, чтобы ответ про бюджет опирался на факт, а не на догадку. На запрос
+ * «одеяло за 100 000 ₸» бот ответил «это довольно узкий ценовой сегмент» и
+ * подставил подушку за 30 000, хотя правда простая: одеял дешевле 170 000 в
+ * каталоге нет вообще. С этим числом на руках сказать правду проще, чем
+ * смягчить.
+ */
+export function priceFloorInScope(
+  q: ProductSearchQuery,
+  rows: ConsultantProduct[],
+): { cheapest: ConsultantProduct; count: number } | null {
+  const { max_price_kzt: _ignored, ...scope } = q;
+  const inScope = rows.filter((p) => p.stock && p.price_kzt > 0 && matches(p, scope));
+  if (inScope.length === 0) return null;
+  const cheapest = inScope.reduce((a, b) => (b.price_kzt < a.price_kzt ? b : a));
+  return { cheapest, count: inScope.length };
+}
+
 export function productsUnderBudget(
   catalog: ConsultantProduct[],
   maxPriceKzt: number,
@@ -643,13 +663,24 @@ export function productsUnderBudget(
     .sort((a, b) => b.price_kzt - a.price_kzt);
 }
 
-/** Две позиции из разных категорий в бюджет — не одна случайная первая. */
+/**
+ * Две позиции из разных категорий в бюджет — не одна случайная первая.
+ *
+ * `category` сужает подбор, когда клиент назвал категорию: разброс по
+ * категориям задумывался под «соберите набор», а на «одеяло за 100 000»
+ * он выдавал подушку. Разные категории внутри среза по-прежнему
+ * предпочитаются — но только внутри него.
+ */
 export function suggestForBudget(
   catalog: ConsultantProduct[],
   maxPriceKzt: number,
   limit = 2,
+  category?: string,
 ): ConsultantProduct[] {
-  const under = productsUnderBudget(catalog, maxPriceKzt);
+  const scoped = category
+    ? catalog.filter((p) => matches(p, { category }))
+    : catalog;
+  const under = productsUnderBudget(scoped, maxPriceKzt);
   const picks: ConsultantProduct[] = [];
   const seen = new Set<string>();
   for (const p of under) {

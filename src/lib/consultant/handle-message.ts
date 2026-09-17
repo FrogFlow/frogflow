@@ -8,6 +8,7 @@ import {
   getProduct,
   type ConsultantProduct,
   categoryQuery,
+  priceFloorInScope,
   isCategoryWithoutSize,
   packBasket,
   queryHasCatalogSignal,
@@ -78,6 +79,7 @@ import { recordConsultantEvent } from "./analytics";
 import { addConsultantTask } from "./tasks";
 import { notifyConsultantHandoff } from "./notify";
 import { foldText, haystackOf } from "./synonyms";
+import { stripExclamationsAndEmoji } from "./style";
 
 export type ConsultantReply = {
   text: string;
@@ -294,7 +296,10 @@ async function handleConsultantZernioEventInternal(params: {
     storyMediaUrl: params.storyMediaUrl,
   });
   if (!reply) return;
-  reply.text = stripMarkdownFormatting(reply.text);
+  // Единственная точка выхода наружу: через неё проходят и ответы модели, и
+  // локальные шаблоны, поэтому запрет на восклицательные знаки и эмодзи
+  // применяется здесь, а не в каждом месте, где собирается текст.
+  reply.text = stripExclamationsAndEmoji(stripMarkdownFormatting(reply.text));
 
   const { consultant: latest } = await loadConsultantState(params.userKey);
   const lastReplyAt = Date.parse(latest.last_bot_reply_at ?? "");
@@ -1025,8 +1030,24 @@ function composeBudgetOrBasketReply(
       kind: items.length ? "product" : "oos",
     };
   }
-  const picks = suggestForBudget(pool, budget);
+  // Категория из фразы клиента не даёт подбору уехать в соседнюю: на
+  // «одеяло за 100 000» иначе приходит подушка.
+  const askedCategory = categoryQuery(text) ?? undefined;
+  const picks = suggestForBudget(pool, budget, 2, askedCategory);
   if (picks.length === 0) {
+    const floor = priceFloorInScope(
+      { ...(askedCategory ? { category: askedCategory } : {}) },
+      pool,
+    );
+    if (floor) {
+      return {
+        text:
+          `В бюджет ${budget.toLocaleString("ru-RU")} ₸ таких позиций нет. ` +
+          `Самая доступная — ${floor.cheapest.name} за ${floor.cheapest.price_kzt.toLocaleString("ru-RU")} ₸. Показать?`,
+        patch: { ...countryPatch, last_product_ids: [floor.cheapest.id] },
+        kind: "oos",
+      };
+    }
     return {
       text: `В бюджет ${budget.toLocaleString("ru-RU")} ₸ сейчас нет позиций в наличии. Могу показать соседние категории — напишите, что ближе.`,
       patch: { ...countryPatch, last_product_ids: [] },

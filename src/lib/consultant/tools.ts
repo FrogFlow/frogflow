@@ -1,6 +1,7 @@
 import {
   enrichProductColors,
   getProduct,
+  priceFloorInScope,
   relatedVariants,
   searchProductsDetailed,
   type ConsultantProduct,
@@ -38,7 +39,8 @@ export const CONSULTANT_TOOLS = [
         },
         max_price_kzt: {
           type: "number",
-          description: "Only cards at or below this KZT price. Use when the customer names a budget.",
+          description:
+            "Only cards at or below this KZT price. Use when the customer names a budget, and ALWAYS pass category too when they named one — a bare price sweep returns every category and will hand you a pillow when they asked about blankets. The result carries cheapest_ignoring_price_limit: the cheapest card in the same scope with the price cap removed. When the list comes back empty or off-target, say plainly that nothing fits the budget and name that cheapest card instead of padding the answer.",
         },
         exclude_ids: {
           type: "array",
@@ -162,6 +164,12 @@ export async function executeConsultantTool(
       : [];
     const exclude = new Set(fromTool);
     const { all, shown } = await searchProductsDetailed(q, ctx.catalog);
+    // Когда задан потолок цены, к выдаче прикладывается ценовое дно того же
+    // среза без этого потолка. Иначе ответ про бюджет строится на догадке:
+    // на «одеяло за 100 000 ₸» бот выдал подушку за 30 000 и назвал
+    // 100–150 тысяч «узким сегментом», хотя одеял дешевле 170 000 нет вовсе.
+    const floor =
+      q.max_price_kzt && ctx.catalog ? priceFloorInScope(q, ctx.catalog) : null;
     let found = shown.filter((p) => !exclude.has(p.id));
     const totalMatches = all.filter((p) => !exclude.has(p.id)).length;
     if (found.length === 0 && exclude.size > 0 && ctx.catalog) {
@@ -174,6 +182,15 @@ export async function executeConsultantTool(
       result: {
         products: enriched.map((p) => presentCard(p, ctx.country, rate)),
         returned: enriched.length,
+        ...(floor
+          ? {
+              cheapest_ignoring_price_limit: {
+                name: floor.cheapest.name,
+                price_kzt: floor.cheapest.price_kzt,
+                total_in_scope: floor.count,
+              },
+            }
+          : {}),
         // Сколько позиций подошло всего. Без этого числа ответ не отличает
         // «нашлось три» от «показали три из восьми» — ровно та выборочная
         // выдача, на которую пожаловался продавец.

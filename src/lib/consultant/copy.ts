@@ -1,3 +1,11 @@
+/**
+ * Тексты консультанта.
+ *
+ * Восклицательные знаки и эмодзи из этих строк снимаются перед отправкой
+ * покупателю единой доводкой (style.ts, вызывается в handle-message на
+ * выходе), поэтому добавлять их сюда бессмысленно: продавец просил ровный
+ * деловой тон без восторгов и пиктограмм.
+ */
 import type { ConsultantCountry } from "./intent";
 import type { ConsultantProduct } from "./catalog";
 import { priceRub } from "./rate";

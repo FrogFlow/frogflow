@@ -282,7 +282,12 @@ describe("consultant — матрица живых диалогов", () => {
   it("крошечный и большой бюджет", async () => {
     const tiny = await say("у меня только 1000 что купить?");
     expect(tiny.kind).toBe("oos");
-    expect(tiny.text).toMatch(/нет позиций|нет в наличии/i);
+    expect(tiny.text).toMatch(/позиций нет|нет позиций|нет в наличии/i);
+    // Раньше ответ упирался в «могу показать соседние категории». Теперь
+    // называется реальная самая доступная позиция: продавец жаловался, что
+    // бот смягчает пустую выдачу вместо прямого ответа.
+    expect(tiny.text).toMatch(/Самая доступная/i);
+    expect(tiny.patch.last_product_ids ?? []).toHaveLength(1);
 
     const big = await say("корзину на 100000");
     expect(big.kind).toBe("product");
