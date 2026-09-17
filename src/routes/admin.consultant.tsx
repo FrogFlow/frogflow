@@ -431,10 +431,17 @@ function ConsultantPage() {
   const refreshRate = useMutation({
     mutationFn: () => refreshConsultantRateFn(),
     onSuccess: (res) => {
-      if (res.fetched && res.kind === "nbk") toast.message(c.rateNbkToast);
-      else if (res.fetched) toast.success("Курс обновлён");
-      else if (res.stored) toast.message("Запрос не прошёл — оставлен последний курс");
-      else toast.error("Курс не получен");
+      if (res.fetched && res.kind === "vtb") {
+        toast.success(`Курс ВТБ Онлайн успешно обновлён: ${res.stored?.rate} ₸/₽`);
+      } else if (res.fetched && res.kind === "nbk") {
+        toast.message(c.rateNbkToast);
+      } else if (res.fetched) {
+        toast.success("Курс обновлён");
+      } else if (res.stored) {
+        toast.message("Запрос не прошёл — оставлен последний курс");
+      } else {
+        toast.error("Курс не получен");
+      }
       qc.invalidateQueries({ queryKey: ["consultant-admin"] });
     },
     onError: (e: unknown) => toast.error(errorMessage(e)),

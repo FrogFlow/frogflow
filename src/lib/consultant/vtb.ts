@@ -37,15 +37,18 @@ export async function saveVtbRate(rate: number, source: string): Promise<StoredV
 
 export const VTB_ONLINE_API_URL = "https://online-api.vtb.kz/api/exchange-rate/by-currencyMob/";
 
-async function readRateFromUrl(url: string): Promise<number | null> {
+async function readRateFromUrl(url: string, sendReferer = true): Promise<number | null> {
+  const headers: Record<string, string> = {
+    accept: "application/json,text/html,application/xml;q=0.9,*/*;q=0.8",
+    "user-agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  };
+  if (sendReferer && /vtb\.kz/i.test(url)) {
+    headers.referer = "https://online.vtb.kz/unAuth/exchange-rates";
+  }
+
   const res = await fetch(url, {
-    headers: {
-      accept: "application/json,text/html,application/xml;q=0.9,*/*;q=0.8",
-      "user-agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      referer: "https://online.vtb.kz/unAuth/exchange-rates",
-      origin: "https://online.vtb.kz",
-    },
+    headers,
     signal: AbortSignal.timeout(FETCH_MS),
   });
   if (!res.ok) return null;
@@ -53,10 +56,11 @@ async function readRateFromUrl(url: string): Promise<number | null> {
 }
 
 /**
- * Сначала официальный API ВТБ Онлайн (online.vtb.kz / online-api.vtb.kz) или CONSULTANT_VTB_RATE_URL.
- * Если недоступно — старые страницы кассы VTB и официальный RSS НБРК.
+ * Сначала официальный API ВТБ Онлайн (online.vtb.kz / online-api.vtb.kz).
+ * Если недоступно — резервный курс НБРК.
  */
-export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string } | null> {
+export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string; log?: string[] } | null> {
+  const log: string[] = [];
   const envUrl = process.env.CONSULTANT_VTB_RATE_URL?.trim();
   const normalizedEnvUrl =
     envUrl && /online\.vtb\.kz\/unauth\/exchange-rates/i.test(envUrl)
@@ -64,30 +68,46 @@ export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string 
       : envUrl;
 
   const vtbUrls = [
-    normalizedEnvUrl,
     VTB_ONLINE_API_URL,
-    "https://www.vtb-bank.kz/personal/currency/",
-    "https://vtb-bank.kz/personal/currency/",
-    "https://www.vtb-bank.kz/",
+    "https://online-api.vtb.kz/api/exchange-rate/by-currencyMob",
+    normalizedEnvUrl,
   ].filter((u): u is string => Boolean(u));
 
   for (const url of vtbUrls) {
     try {
-      const rate = await readRateFromUrl(url);
-      if (rate) return { rate, source: url };
-    } catch {
-      /* следующий источник */
+      const rate = await readRateFromUrl(url, true);
+      if (rate) {
+        log.push(`${url}: OK (${rate})`);
+        return { rate, source: url, log };
+      }
+    } catch (err: any) {
+      log.push(`${url} (with referer): ${err?.message || err}`);
+    }
+
+    try {
+      const rate = await readRateFromUrl(url, false);
+      if (rate) {
+        log.push(`${url} (plain): OK (${rate})`);
+        return { rate, source: url, log };
+      }
+    } catch (err: any) {
+      log.push(`${url} (plain): ${err?.message || err}`);
     }
   }
 
   for (const url of NBK_RATES_URLS) {
     try {
-      const rate = await readRateFromUrl(url);
-      if (rate) return { rate, source: url };
-    } catch {
-      /* следующий источник */
+      const rate = await readRateFromUrl(url, false);
+      if (rate) {
+        log.push(`${url}: OK (${rate})`);
+        return { rate, source: url, log };
+      }
+    } catch (err: any) {
+      log.push(`${url}: ${err?.message || err}`);
     }
   }
+
+  console.warn("[vtb-rate] All sources failed:", log);
   return null;
 }
 
@@ -97,11 +117,12 @@ export async function refreshVtbRate(): Promise<{
   fetched: boolean;
   kind?: RateSourceKind;
   error?: string;
+  log?: string[];
 }> {
   const fetched = await fetchVtbBuyRate();
   if (fetched) {
     const stored = await saveVtbRate(fetched.rate, fetched.source);
-    return { ok: true, stored, fetched: true, kind: rateSourceKind(fetched.source) };
+    return { ok: true, stored, fetched: true, kind: rateSourceKind(fetched.source), log: fetched.log };
   }
   const last = await getStoredVtbRate();
   return {
