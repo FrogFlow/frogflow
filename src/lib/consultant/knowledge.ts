@@ -94,8 +94,9 @@ export async function saveConsultantKnowledge(
  * ---
  */
 export function parseKnowledgeArticlesFromText(text: string): ConsultantKnowledgeArticle[] {
-  const sections = text.split(/(?:^|
-)(?:---+|###+|##+)s*/g).filter((s) => s.trim().length > 0);
+  const sections = text
+    .split(/(?:^|\r?\n)(?:---+|###+|##+)\s*/g)
+    .filter((s) => s.trim().length > 0);
   if (sections.length === 0) return [];
 
   const articles: ConsultantKnowledgeArticle[] = [];
@@ -111,9 +112,19 @@ export function parseKnowledgeArticlesFromText(text: string): ConsultantKnowledg
     const remainingLines: string[] = [];
     const tags: string[] = [];
 
+    const bracketMatch = title.match(/\[(.*?)\]/);
+    if (bracketMatch) {
+      const bTags = bracketMatch[1]
+        .split(/[,;#]+/)
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
+      tags.push(...bTags);
+      title = title.replace(/\[(.*?)\]/, "").trim();
+    }
+
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
-      const matchTags = line.match(/^(?:теги|tags|метки|категории):s*(.+)$/i);
+      const matchTags = line.match(/^(?:теги|tags|метки|категории):\s*(.+)$/i);
       if (matchTags) {
         const parsed = matchTags[1]
           .split(/[,;#]+/)
