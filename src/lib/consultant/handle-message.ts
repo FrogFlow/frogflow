@@ -175,6 +175,24 @@ async function handleConsultantZernioEventInternal(params: {
   const rawIncoming = params.text.trim() || params.postback?.trim() || "";
 
   if (isResetIntent(rawIncoming)) {
+    // Guard against duplicate delivery (webhook + poll both fire /start)
+    const source = params.source ?? "webhook";
+    if (alreadyAnsweredIncoming(consultant, rawIncoming, Date.now(), source)) {
+      logConsultantEvent(requestId, "skipped_duplicate", {
+        userKey: params.userKey,
+        reason: "reset_dedup",
+      });
+      return;
+    }
+    const claimed = await claimIncomingMessage(params.userKey, rawIncoming, source);
+    if (!claimed) {
+      logConsultantEvent(requestId, "skipped_duplicate", {
+        userKey: params.userKey,
+        reason: "reset_claim_lost",
+      });
+      return;
+    }
+
     await resetConsultantState(params.userKey);
     const bucket = consultant.ab_bucket ?? "a";
     const pack = copyForBucket(bucket);
