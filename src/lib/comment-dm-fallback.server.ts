@@ -273,7 +273,6 @@ export async function runCommentDmFallback(): Promise<{
         }
 
         sendsThisRun++;
-        const isTwoStep = Boolean(automation.twoStepDm);
         const result = await sendCommentPrivateReply(
           postId,
           commentId,
