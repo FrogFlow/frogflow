@@ -39,19 +39,20 @@ import {
   isConsultantGreeting,
   isConsultantThanks,
   isDeclineResponse,
-  isNegationQuery,
+  isResetIntent,
   isStoreLocationOrPickupIntent,
   looksLikeProductQuery,
+  looksLikeVagueHelp,
   matchAdviceIntent,
   matchBasketIntent,
   matchCatalogIntent,
   matchCountry,
   matchCountryPostback,
   matchDeliveryIntent,
+  matchMoreVariantsIntent,
   matchOtherCategoriesIntent,
   matchPriceOnlyIntent,
   matchPurchaseIntent,
-  isResetIntent,
 } from "./intent";
 import { consultantApiKey } from "./config";
 import { consultantRequestId, logConsultantEvent } from "./log";

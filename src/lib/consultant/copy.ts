@@ -46,7 +46,7 @@ export const TZ_COPY: ConsultantCopyPack = {
     "Консультации по наличию и цене — в Instagram Direct. Напишите сюда страну и товар — ответим по прайсу.",
 };
 
-const AB_COPY: ConsultantCopyPack = {
+export const AB_COPY: ConsultantCopyPack = {
   ...TZ_COPY,
   askCountry:
     "Здравствуйте! Из какой вы страны обращаетесь?\n\n🇰🇿 Казахстан\n🇷🇺 Россия",

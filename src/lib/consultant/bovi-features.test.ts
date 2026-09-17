@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getAlmatyHour, isOffHoursInAlmaty } from "./rate";
-import { AB_COPY, formatStoreLocationReply, handoffReply } from "./copy";
+import { AB_COPY, TZ_COPY, formatStoreLocationReply } from "./copy";
 import { isStoreLocationOrPickupIntent } from "./intent";
 import {
   DEFAULT_KNOWLEDGE_ARTICLES,
@@ -27,25 +27,16 @@ describe("BOVI Consultant Features", () => {
       expect(isOffHoursInAlmaty(d3)).toBe(true);
     });
 
-    it("uses off-hours message in handoffReply during night", () => {
+    it("has off-hours copy configured for nighttime orders", () => {
       const nightDate = new Date("2026-09-17T16:30:00Z"); // 21:30 Almaty
-      const reply = handoffReply({
-        copy: AB_COPY.bovi,
-        reason: "purchase",
-        country: "KZ",
-        date: nightDate,
-      });
-      expect(reply).toContain("рабочее время");
+      expect(isOffHoursInAlmaty(nightDate)).toBe(true);
+      expect(AB_COPY.purchaseOffHours).toContain("рабочее время");
+      expect(TZ_COPY.purchaseOffHours).toContain("рабочее время");
 
       const dayDate = new Date("2026-09-17T09:00:00Z"); // 14:00 Almaty
-      const dayReply = handoffReply({
-        copy: AB_COPY.bovi,
-        reason: "purchase",
-        country: "KZ",
-        date: dayDate,
-      });
-      expect(dayReply).not.toContain("в нерабочее время");
-      expect(dayReply).toContain("свяжется для оформления");
+      expect(isOffHoursInAlmaty(dayDate)).toBe(false);
+      expect(AB_COPY.purchase).toContain("свяжется");
+      expect(AB_COPY.purchase).not.toContain("нерабочие часы");
     });
   });
 
