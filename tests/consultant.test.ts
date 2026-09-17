@@ -918,16 +918,30 @@ describe("consultant — разбор курса VTB", () => {
     expect(parseVtbBuyRate(html)).toBe(5.15);
   });
 
-  it("достаёт RUB из RSS НБРК", async () => {
-    const { parseNbkRubRate, parseVtbBuyRate, rateSourceKind } =
+  it("парсит курс покупки рубля из официального API ВТБ Онлайн", async () => {
+    const { parseVtbBuyRate, rateSourceKind } =
       await import("../src/lib/consultant/vtb-parse");
-    const xml = `<?xml version="1.0"?><rss><channel>
-      <item><title>USD</title><description>323.21</description><quant>1</quant></item>
-      <item><title>RUB</title><description>5.33</description><quant>1</quant></item>
-    </channel></rss>`;
-    expect(parseNbkRubRate(xml)).toBe(5.33);
-    expect(parseVtbBuyRate(xml)).toBe(5.33);
-    expect(rateSourceKind("https://www.nationalbank.kz/rss/rates_all.xml")).toBe("nbk");
+    const vtbJson = JSON.stringify([
+      {
+        baseCurrencyIsoCode: "USD",
+        currencyIsoCode: "KZT",
+        coursePurchase: 437.0,
+        courseSale: 450.0,
+      },
+      {
+        baseCurrencyIsoCode: "RUB",
+        currencyIsoCode: "KZT",
+        typeId: 2,
+        coursePurchase: 4.79,
+        courseSale: 5.79,
+      },
+    ]);
+    expect(parseVtbBuyRate(vtbJson)).toBe(4.79);
+    expect(rateSourceKind("https://online-api.vtb.kz/api/exchange-rate/by-currencyMob/")).toBe("vtb");
+
+    // НБРК больше не принимается за курс ВТБ
+    const nbkXml = `<rss><item><title>RUB</title><description>5.33</description></item></rss>`;
+    expect(parseVtbBuyRate(nbkXml)).toBeNull();
   });
 
   it("не принимает 404-страницу VTB за курс", async () => {

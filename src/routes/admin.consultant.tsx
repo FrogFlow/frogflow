@@ -110,16 +110,15 @@ const copy: Record<
     saveShop: "Сохранить ссылку",
     rateTitle: "Курс VTB Казахстан",
     rateBody:
-      "RUB = ₸ / (курс покупки × 0,95 в будни / 0,93 в выходные). Подтягивается из официального ВТБ Онлайн (online.vtb.kz). Если банк недоступен — резервный курс НБРК.",
+      "RUB = ₸ / (курс покупки × 0,95 в будни / 0,93 в выходные). Подтягивается исключительно из официального API ВТБ Онлайн (online-api.vtb.kz).",
     rateEmpty: "Курса ещё нет. Обновите или введите вручную.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
     rateSource: {
-      vtb: "источник: ВТБ Онлайн",
-      nbk: "источник: НБРК (резервный курс)",
+      vtb: "источник: ВТБ Онлайн (официальный курс)",
       manual: "источник: вручную",
       other: "источник: внешний URL",
     },
-    rateNbkToast: "Сервис ВТБ временно недоступен — записан курс НБРК. Можно ввести курс вручную.",
+    rateNbkToast: "Сервис ВТБ временно недоступен — сохранён текущий курс ВТБ. Можно ввести курс вручную.",
     refreshRate: "Обновить курс (ВТБ)",
     manualRate: "Записать курс вручную",
     usage: (count, usd, model) => `Claude: ${count} вызовов · ${usd} · модель ${model}`,
@@ -156,16 +155,15 @@ const copy: Record<
     shopLabel: "Толық ассортимент сілтемесі",
     saveShop: "Сілтемені сақтау",
     rateTitle: "VTB Қазақстан бағамы",
-    rateBody: "RUB = ₸ / (сатып алу бағамы × 0,95). VTB жоқ болса — НБРК.",
+    rateBody: "RUB = ₸ / (сатып алу бағамы × 0,95). Тек ресми VTB Онлайн бағамы (online-api.vtb.kz).",
     rateEmpty: "Бағам жоқ.",
     rateValue: (rate, at) => `${rate} ₸/₽ · ${at}`,
     rateSource: {
-      vtb: "көз: VTB",
-      nbk: "көз: НБРК (VTB кассасы жарияламайды)",
+      vtb: "көз: VTB Онлайн",
       manual: "көз: қолмен",
       other: "көз: сыртқы URL",
     },
-    rateNbkToast: "VTB беті жоқ — НБРК бағамы жазылды.",
+    rateNbkToast: "VTB сервисі уақытша қолжетімсіз — соңғы VTB бағамы сақталды.",
     refreshRate: "Бағамды жаңарту",
     manualRate: "Қолмен жазу",
     usage: (count, usd, model) => `Claude: ${count} · ${usd} · ${model}`,
@@ -1481,8 +1479,6 @@ function ConsultantPage() {
                 ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale))} — ${
                     d.rate.source?.includes("vtb")
                       ? "ВТБ Онлайн (официальный курс)"
-                      : d.rate.source?.includes("nationalbank")
-                      ? "НБРК (резервный курс)"
                       : "вручную"
                   }`
                 : c.rateEmpty}

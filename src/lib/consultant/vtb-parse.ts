@@ -1,23 +1,19 @@
-export type RateSourceKind = "vtb" | "nbk" | "manual" | "other";
+export type RateSourceKind = "vtb" | "manual" | "other";
 
 export function rateSourceKind(source: string | undefined): RateSourceKind {
   if (!source) return "other";
   if (source === "manual") return "manual";
-  if (/nationalbank\.kz/i.test(source)) return "nbk";
   if (/vtb/i.test(source)) return "vtb";
   return "other";
 }
 
 /**
- * Курс покупки RUB в ₸: JSON, RSS НБРК или HTML кассы VTB.
- * Страница VTB `/personal/currency/` сейчас 404 — HTML-ветка на живом сайте
- * часто не срабатывает.
+ * Курс покупки RUB в ₸: официальный API ВТБ Онлайн или HTML кассы VTB.
+ * Никаких сторонних банков (НБРК) — клиенту требуется исключительно ВТБ.
  */
 export function parseVtbBuyRate(body: string): number | null {
   const json = tryJsonRate(body);
   if (json != null) return json;
-  const nbk = parseNbkRubRate(body);
-  if (nbk != null) return nbk;
 
   const compact = body.replace(/\s+/g, " ");
   const nearRub =

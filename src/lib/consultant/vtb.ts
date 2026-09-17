@@ -1,18 +1,12 @@
 import { getStoredVtbRate, rememberStoredVtbRate, type StoredVtbRate } from "./rate";
 import { parseVtbBuyRate, rateSourceKind, type RateSourceKind } from "./vtb-parse";
 
-export { parseNbkRubRate, parseVtbBuyRate, rateSourceKind } from "./vtb-parse";
+export { parseVtbBuyRate, rateSourceKind } from "./vtb-parse";
 export type { RateSourceKind } from "./vtb-parse";
 
 export const VTB_RATE_KEY = "consultant_vtb_buy_rate";
 
 const FETCH_MS = 12_000;
-const UA = "Mozilla/5.0 (compatible; FrogFlowConsultant/1.0)";
-
-export const NBK_RATES_URLS = [
-  "https://www.nationalbank.kz/rss/rates_all.xml",
-  "https://nationalbank.kz/rss/rates_all.xml",
-] as const;
 
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
@@ -56,8 +50,8 @@ async function readRateFromUrl(url: string, sendReferer = true): Promise<number 
 }
 
 /**
- * Сначала официальный API ВТБ Онлайн (online.vtb.kz / online-api.vtb.kz).
- * Если недоступно — резервный курс НБРК.
+ * Получение курса покупки рубля исключительно из официального API ВТБ Казахстан (online-api.vtb.kz).
+ * Никаких сторонних банков или НБРК — клиенту требуется строго курс покупки ВТБ.
  */
 export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string; log?: string[] } | null> {
   const log: string[] = [];
@@ -95,19 +89,7 @@ export async function fetchVtbBuyRate(): Promise<{ rate: number; source: string;
     }
   }
 
-  for (const url of NBK_RATES_URLS) {
-    try {
-      const rate = await readRateFromUrl(url, false);
-      if (rate) {
-        log.push(`${url}: OK (${rate})`);
-        return { rate, source: url, log };
-      }
-    } catch (err: any) {
-      log.push(`${url}: ${err?.message || err}`);
-    }
-  }
-
-  console.warn("[vtb-rate] All sources failed:", log);
+  console.warn("[vtb-rate] VTB API fetch failed:", log);
   return null;
 }
 
