@@ -83,7 +83,10 @@ export async function runCommentDmFallback(): Promise<{
     sendCommentPrivateReply,
     postCommentReply,
     sendZernioInboxMessage,
+    getCommentAutomationsMeta,
   } = await import("./zernio.server");
+
+  const metaMap: Record<string, any> = await getCommentAutomationsMeta().catch(() => ({}));
 
   const { automations } = await listCommentAutomations();
   const perPost = automations
@@ -131,7 +134,8 @@ export async function runCommentDmFallback(): Promise<{
         if (!commentId || comment.from?.isOwner) continue;
         commentsChecked++;
 
-        const isTwoStep = Boolean(automation.twoStepDm);
+        const autoMeta = metaMap[automationId];
+        const isTwoStep = Boolean(automation.twoStepDm || autoMeta?.twoStepDm);
         if (sentByZernio.has(commentId)) {
           if (!isTwoStep) continue; // для обычных правил — штатно отработало
 
@@ -151,8 +155,10 @@ export async function runCommentDmFallback(): Promise<{
           if (!commenterUsername) continue;
 
           const secondText =
-            automation.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
-          let targetButtons = automation.buttons;
+            autoMeta?.secondDmMessage ||
+            automation.secondDmMessage ||
+            "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+          let targetButtons = autoMeta?.secondDmButtons || automation.buttons;
           if (!targetButtons || targetButtons.length === 0) {
             const { getCachedBotUrl } = await import("./bot-url.server");
             const botUrl = await getCachedBotUrl();
@@ -286,8 +292,10 @@ export async function runCommentDmFallback(): Promise<{
             await new Promise((r) => setTimeout(r, 1500));
             const commenterUsername = comment.from?.username;
             const secondText =
-              automation.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
-            let targetButtons = automation.buttons;
+              autoMeta?.secondDmMessage ||
+              automation.secondDmMessage ||
+              "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+            let targetButtons = autoMeta?.secondDmButtons || automation.buttons;
             if (!targetButtons || targetButtons.length === 0) {
               const { getCachedBotUrl } = await import("./bot-url.server");
               const botUrl = await getCachedBotUrl();

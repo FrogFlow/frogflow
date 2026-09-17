@@ -2478,13 +2478,15 @@ export async function deliverPendingTwoStepDm(params: {
   conversationId: string;
   username?: string;
   userKey?: string;
+  incomingText?: string;
 }): Promise<boolean> {
-  const { accountId, conversationId, username } = params;
+  const { accountId, conversationId, username, incomingText } = params;
   if (!accountId || !conversationId) return false;
 
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
+  // 1. Проверяем, есть ли запись в очереди pending
   const { data: logs, error } = await supabaseAdmin
     .from("zernio_logs")
     .select("id, event_id, payload")
@@ -2493,36 +2495,141 @@ export async function deliverPendingTwoStepDm(params: {
     .gte("created_at", cutoff)
     .order("created_at", { ascending: false });
 
-  if (error || !logs || logs.length === 0) return false;
+  const matched = (!error && logs)
+    ? (logs as Array<{ id: string; event_id: string; payload: unknown }>).find((l) => {
+        const p = l.payload as Record<string, unknown> | null;
+        if (!p) return false;
+        if (username && typeof p.username === "string" && p.username.toLowerCase() === username.toLowerCase()) {
+          return true;
+        }
+        return false;
+      })
+    : null;
 
-  const matched = (logs as Array<{ id: string; event_id: string; payload: unknown }>).find((l) => {
-    const p = l.payload as Record<string, unknown> | null;
-    if (!p) return false;
-    if (username && typeof p.username === "string" && p.username.toLowerCase() === username.toLowerCase()) {
+  if (matched) {
+    const p = matched.payload as Record<string, unknown>;
+    const secondText =
+      (typeof p.secondText === "string" && p.secondText.trim()) ||
+      "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+    const buttons = normalizeDmButtons(Array.isArray(p.buttons) ? (p.buttons as ZernioDmButton[]) : []);
+
+    const sendRes = await sendZernioInboxMessage(conversationId, accountId, secondText, {
+      buttons: buttons.length > 0 ? buttons : undefined,
+    });
+
+    if (sendRes.ok) {
+      await supabaseAdmin
+        .from("zernio_logs")
+        .update({
+          event_type: "two_step_dm_sent",
+          status: "processed",
+        })
+        .eq("id", matched.id);
       return true;
     }
     return false;
+  }
+
+  // 2. Резервная самовосстанавливающаяся доставка:
+  // Если comment.received ещё не пришёл от Zernio или вебхук был задержан,
+  // но покупатель уже получил 1-е текстовое сообщение и ответил в Direct!
+  const metaMap = await getCommentAutomationsMeta();
+  const activeEntries = Object.entries(metaMap).filter(([_, m]) => m?.twoStepDm);
+  if (activeEntries.length === 0) return false;
+
+  // Проверяем, не отправляли ли уже 2-й шаг этому пользователю в последние 24 часа
+  const { data: recentSent } = await supabaseAdmin
+    .from("zernio_logs")
+    .select("id, payload")
+    .eq("event_type", "two_step_dm_sent")
+    .eq("status", "processed")
+    .gte("created_at", cutoff)
+    .limit(50);
+
+  const alreadyDelivered = (recentSent || []).some((r: any) => {
+    const p = r.payload as Record<string, unknown> | null;
+    return (
+      (username && typeof p?.username === "string" && p.username.toLowerCase() === username.toLowerCase()) ||
+      (conversationId && typeof p?.conversationId === "string" && p.conversationId === conversationId)
+    );
   });
 
-  if (!matched) return false;
-  const p = matched.payload as Record<string, unknown>;
+  if (alreadyDelivered) return false;
+
+  // Проверяем характер входящего сообщения.
+  // 1-й шаг воронки просит прислать точку, плюсик, цифру, слово или ответ.
+  const clean = (incomingText || "").trim().toLowerCase();
+  const isTriggerLike =
+    !clean ||
+    clean.length <= 15 ||
+    clean === "." ||
+    clean === "+" ||
+    clean === "1" ||
+    clean === "да" ||
+    clean === "хочу" ||
+    clean === "ссылка" ||
+    clean === "материалы" ||
+    clean === "купить" ||
+    clean === "старт" ||
+    clean === "/start" ||
+    clean.includes("материал") ||
+    clean.includes("шаблон") ||
+    clean.includes("наклейк") ||
+    clean.includes("слово");
+
+  let isCommenter = isTriggerLike;
+  if (!isCommenter) {
+    try {
+      const { automations } = await listCommentAutomations();
+      for (const auto of automations) {
+        if (auto.platformPostId && metaMap[String(auto.id || auto._id || "")]?.twoStepDm) {
+          const { comments } = await listInstagramComments(auto.platformPostId, accountId);
+          if (comments.some((c) => (c.from?.username || "").toLowerCase() === username?.toLowerCase())) {
+            isCommenter = true;
+            break;
+          }
+        }
+      }
+    } catch {
+      // игнорируем ошибку чтения комментариев
+    }
+  }
+
+  if (!isCommenter) return false;
+
+  const [autoId, autoMeta] = activeEntries[0];
   const secondText =
-    (typeof p.secondText === "string" && p.secondText.trim()) ||
-    "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
-  const buttons = normalizeDmButtons(Array.isArray(p.buttons) ? (p.buttons as ZernioDmButton[]) : []);
+    autoMeta.secondDmMessage || "Для перехода в бот и получения материалов нажмите кнопку ниже 👇";
+  let rawButtons = autoMeta.secondDmButtons || [];
+  if (!rawButtons || rawButtons.length === 0) {
+    const { getCachedBotUrl } = await import("./bot-url.server");
+    const botUrl = await getCachedBotUrl();
+    if (botUrl) {
+      rawButtons = [{ type: "url", title: "Открыть в Telegram ✈️", url: botUrl }];
+    }
+  }
+  const buttons = normalizeDmButtons(rawButtons);
 
   const sendRes = await sendZernioInboxMessage(conversationId, accountId, secondText, {
     buttons: buttons.length > 0 ? buttons : undefined,
   });
 
   if (sendRes.ok) {
-    await supabaseAdmin
-      .from("zernio_logs")
-      .update({
-        event_type: "two_step_dm_sent",
-        status: "processed",
-      })
-      .eq("id", matched.id);
+    await supabaseAdmin.from("zernio_logs").insert({
+      event_id: `two-step-dm:direct:${conversationId}:${Date.now()}`,
+      event_type: "two_step_dm_sent",
+      status: "processed",
+      payload: {
+        conversationId,
+        username,
+        accountId,
+        automationId: autoId,
+        secondText,
+        buttons,
+        deliveredVia: "direct_reply_fallback",
+        incomingText: clean,
+      },
+    });
     return true;
   }
   return false;

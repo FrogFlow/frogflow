@@ -1358,24 +1358,11 @@ export async function handleZernioMessage(payload: ZernioWebhookMessagePayload) 
       conversationId,
       username: senderUsername,
       userKey,
+      incomingText: text,
     });
     if (delivered) {
-      console.log(`[zernio-bot] Delivered pending two-step DM to @${senderUsername}`);
-      const cleanText = (text || "").trim().toLowerCase();
-      if (
-        !cleanText ||
-        cleanText === "." ||
-        cleanText === "+" ||
-        cleanText === "1" ||
-        cleanText === "да" ||
-        cleanText === "ссылка" ||
-        cleanText === "материалы" ||
-        cleanText === "купить" ||
-        cleanText === "старт" ||
-        cleanText === "/start"
-      ) {
-        return;
-      }
+      console.log(`[zernio-bot] Delivered two-step DM to @${senderUsername}`);
+      return;
     }
   }
 
