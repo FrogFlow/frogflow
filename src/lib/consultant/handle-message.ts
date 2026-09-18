@@ -74,6 +74,7 @@ import {
   type ConsultantState,
 } from "./state";
 import {
+  cleanCatalogExcuses,
   cleanDiscontinuedMattressOffers,
   cleanForbiddenPhrases,
   cleanScriptHallucinations,
@@ -307,7 +308,7 @@ async function handleConsultantZernioEventInternal(params: {
   // применяется здесь, а не в каждом месте, где собирается текст.
   const beforeDiscontinuedGuard = reply.text;
   reply.text = stripExclamationsAndEmoji(
-    stripMarkdownFormatting(cleanDiscontinuedMattressOffers(reply.text)),
+    stripMarkdownFormatting(cleanCatalogExcuses(cleanDiscontinuedMattressOffers(reply.text))),
   );
   // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
   // отвечаем честно про среднюю жёсткость.

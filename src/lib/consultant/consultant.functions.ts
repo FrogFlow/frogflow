@@ -17,7 +17,7 @@ import { parseCatalogCsv } from "./catalog-import";
 import { consultantApiKey, consultantModel } from "./config";
 import { getStoredVtbRate } from "./rate";
 import { listConsultantCustomers, listPausedConsultations, resumeConsultant } from "./state";
-import { refreshVtbRate, saveVtbRate } from "./vtb";
+import { loadVtbAttemptLog, refreshVtbRate, saveVtbRate } from "./vtb";
 import { loadConsultantEvents, summarizeConsultantEvents } from "./analytics";
 import { clearConsultantTasks, loadConsultantTasks, setConsultantTaskDone } from "./tasks";
 import { getForcedAbBucket, saveForcedAbBucket } from "./ab";
@@ -49,6 +49,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     ab,
     driveRow,
     checkRow,
+    rateAttempt,
   ] = await Promise.all([
     loadConsultantCatalogSnapshot(),
     loadCatalogMeta(),
@@ -63,6 +64,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     getForcedAbBucket(),
     s.from("app_settings").select("value").eq("key", DRIVE_URL_KEY).maybeSingle(),
     s.from("app_settings").select("value").eq("key", CHECKLIST_KEY).maybeSingle(),
+    loadVtbAttemptLog(),
   ]);
   // Каталог для админки — тот же, что видит консультант. Снятое с
   // производства идёт отдельным числом: продавцу видно, что строки в прайсе
@@ -100,6 +102,10 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
       rate,
       rateStale: rateAgeHours != null && rateAgeHours > 2,
       rateMissing: !rate,
+      rateAgeHours,
+      // Последняя попытка обновления и её причина отказа: без этого «курс не
+      // подтягивается» выглядит как загадка и разбирается перепиской.
+      rateAttempt,
       shopUrl,
       sheetsUrl: sheetsRow.data?.value?.trim() || "",
       driveUrl: driveRow.data?.value?.trim() || "",

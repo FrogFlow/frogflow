@@ -16,7 +16,7 @@ export const CONSULTANT_TOOLS = [
   {
     name: "search_products",
     description:
-      "Search the live catalog by free text, category, size, firmness or color. Use before answering any stock or price question. Empty list means nothing matched — do not invent items and do not offer a different category instead. The result reports total_matches: when it is larger than the number of returned cards, say the total out loud and offer to narrow the choice.",
+      "Search the live catalog by free text, category, size, firmness or color. Use before answering any stock or price question. Empty list means nothing matched — do not invent items and do not offer a different category instead. The result reports total_matches: when it is larger than the number of returned cards, say the total out loud and offer to narrow the choice. A broad request (only a brand or a category, no size and no color) comes back as a summary with ask_size_and_color: then do NOT list items — confirm in one or two lines that they are in stock, say what the brand is known for, and ask which size and color the customer needs.",
     input_schema: {
       type: "object",
       properties: {
@@ -47,6 +47,11 @@ export const CONSULTANT_TOOLS = [
           type: "array",
           items: { type: "string" },
           description: "Ids already shown. Use for «ещё варианты» so the same card is not repeated.",
+        },
+        show_all: {
+          type: "boolean",
+          description:
+            "Pass true only when the customer explicitly asks to see everything («покажите все», «весь список», «какие есть варианты» after you already offered to narrow). It turns off the summary and returns every matching card.",
         },
       },
     },
@@ -114,6 +119,28 @@ export const CONSULTANT_TOOLS = [
       },
     },
 ] as const;
+
+/**
+ * С какого числа совпадений широкий запрос превращается в сводку. Три-четыре
+ * позиции покупателю проще увидеть сразу, чем отвечать на уточняющий вопрос.
+ */
+const BROAD_SUMMARY_FROM = 4;
+
+/** Уникальные непустые значения, не больше двенадцати — это выбор, а не список. */
+function distinct(values: string[], limit = 12): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const value = raw?.trim();
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
 
 export type ToolFactCard = ConsultantProduct & { price_rub?: number | null };
 
@@ -183,6 +210,51 @@ export async function executeConsultantTool(
     const enriched = ctx.catalog
       ? found.map((p) => enrichProductColors(p, ctx.catalog!))
       : found;
+
+    /**
+     * Широкий запрос — сводка вместо списка.
+     *
+     * Продавец: «когда я спрашиваю о товаре, он сразу выдаёт все виды товара
+     * какие есть — неправильно. Надо сказать, что у нас есть в наличии
+     * полотенца Feiler, две строчки о качестве и компании, потом спросить,
+     * какой размер и цвет интересует».
+     *
+     * Правилом в промпте это не держится: пока модель видит сорок карточек,
+     * она их перечисляет. Поэтому на запрос без размера, цвета, жёсткости и
+     * бюджета карточки не отдаются вовсе — только чем выбирать дальше.
+     * Требование «перечислять все позиции, а не первые три» остаётся в силе
+     * для запросов с фильтром и для прямого «покажите все» (show_all).
+     */
+    const narrowed = Boolean(q.size || q.color || q.hardness || q.max_price_kzt);
+    const showAll = input.show_all === true;
+    if (!narrowed && !showAll && totalMatches > BROAD_SUMMARY_FROM) {
+      const matched = all.filter((p) => !exclude.has(p.id));
+      const prices = matched.map((p) => p.price_kzt).filter((n) => n > 0);
+      const from = Math.min(...prices);
+      const to = Math.max(...prices);
+      return {
+        result: {
+          in_stock: true,
+          total_matches: totalMatches,
+          // Списка карточек здесь нет намеренно — перечислять нечего.
+          products: [],
+          returned: 0,
+          ask_size_and_color: true,
+          sizes: distinct(matched.map((p) => p.size)),
+          colors: distinct(matched.flatMap((p) => p.colors)),
+          price_kzt: prices.length ? { from, to } : null,
+          price_rub:
+            prices.length && ctx.country === "RU" && rate
+              ? { from: priceRub(from, rate), to: priceRub(to, rate) }
+              : null,
+        },
+        // Карточки модель не видит, но знать о них должна проверка ответа:
+        // иначе названная вилка цен читается как выдуманное число.
+        products: matched.slice(0, 60),
+        handoff: false,
+      };
+    }
+
     return {
       result: {
         products: enriched.map((p) => presentCard(p, ctx.country, rate)),

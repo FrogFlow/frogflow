@@ -156,6 +156,16 @@ after a model/tool failure or after a useful clarification is impossible.
    available; otherwise it asks what product is shown.
 9. Thanks receives a short polite response and no unsolicited catalog.
 10. No follow-up is sent without a new customer message.
+11. A broad request — a brand or a category with no size and no color —
+    is answered in three lines: the goods are in stock, one or two lines
+    about the brand taken from the knowledge base, and a question about size
+    and color. The search tool returns a summary with no cards for such a
+    request, so there is nothing to list. The full list belongs to a request
+    that already carries a filter, or to an explicit «покажите все».
+12. A question about one product is answered with what is known about it and
+    with what the knowledge base says about its brand and collection. The
+    reply never explains that the catalog lacks a field; a manager is offered
+    only for a specific figure that exists nowhere and is needed to decide.
 
 ## Catalog
 
@@ -201,6 +211,15 @@ Both Russian words are understood on the way in as well, so a customer who
 repeats them still gets a filtered search.
 
 ## Currency and delivery
+
+VTB Kazakhstan answers only requests coming from inside Kazakhstan; from
+anywhere else the connection is dropped. The deployment runs abroad, so the
+direct call cannot succeed there and no combination of headers changes that.
+`CONSULTANT_VTB_RELAY_URL` names an address inside Kazakhstan that returns the
+VTB response unchanged and is tried first; the direct addresses stay in place
+for a deployment that ever runs in Kazakhstan. Without a relay the rate is
+entered by hand in the panel, which shows the last attempt and why it failed
+rather than leaving a silently stale rate.
 
 KZ uses the KZT price from the current catalog.
 

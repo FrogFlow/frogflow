@@ -1546,6 +1546,24 @@ function ConsultantPage() {
                   }`
                 : c.rateEmpty}
             </p>
+            {d?.rateAttempt && !d.rateAttempt.ok ? (
+              <div className="text-xs text-muted-foreground border rounded-md p-2 space-y-1">
+                <p className="font-medium text-foreground">
+                  Автообновление не проходит. Последняя попытка:{" "}
+                  {formatWhen(d.rateAttempt.at, locale)}
+                </p>
+                {d.rateAttempt.attempts.slice(0, 4).map((line) => (
+                  <p key={line} className="break-all">
+                    {line}
+                  </p>
+                ))}
+                <p>
+                  ВТБ Казахстан отвечает только на запросы из Казахстана, а деплой стоит за
+                  границей. Пока не задан ретранслятор (переменная CONSULTANT_VTB_RELAY_URL с
+                  адресом внутри Казахстана), курс вводится вручную — поле слева.
+                </p>
+              </div>
+            ) : null}
             
             <div className="flex gap-2 items-center flex-wrap">
               <Input

@@ -206,20 +206,48 @@ export function offersDiscontinuedMattress(sentence: string): boolean {
 export const DISCONTINUED_MEDIUM_MATTRESS_REPLY =
   "Матрасов средней жёсткости сейчас нет — эту линейку сняли с производства. Есть комфортные (Soft) и упругие (Firm), показать варианты?";
 
-export function cleanDiscontinuedMattressOffers(text: string): string {
+/** Убирает из текста предложения, на которые сработало условие. */
+function dropSentences(text: string, drop: (sentence: string) => boolean): string {
   if (!text) return "";
-  const lines = text.split("\n");
   const kept: string[] = [];
-  for (const line of lines) {
+  for (const line of text.split("\n")) {
     const parts = line.split(/(?<=[.!?…])\s+/);
-    const keptParts = parts.filter((part) => !offersDiscontinuedMattress(part));
+    const keptParts = parts.filter((part) => !drop(part));
     const joined = keptParts.join(" ").trim();
-    // Строка была целиком про снятую жёсткость — убираем её вместе с переводом
-    // строки, чтобы в ответе не осталось дырки из пустых абзацев.
+    // Строка ушла целиком — убираем её вместе с переводом строки, чтобы в
+    // ответе не осталось дырки из пустых абзацев.
     if (keptParts.length !== parts.length && !joined) continue;
     kept.push(joined);
   }
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export function cleanDiscontinuedMattressOffers(text: string): string {
+  return dropSentences(text, offersDiscontinuedMattress);
+}
+
+/**
+ * Отговорка про каталог.
+ *
+ * Продавец о живом ответе: «спросил про это конкретное полотенце — про
+ * качество самой компании сказал хорошо, по тому файлу, а тут нельзя так
+ * говорить: не знаю, спросите у менеджера. Сколько есть инфо, пусть даст».
+ * Покупателю не объясняют устройство нашей базы — ему отвечают тем, что
+ * известно. Предложение с такой отговоркой вырезается, остальной ответ (имя
+ * коллекции, цвет, цена, слова о марке из базы знаний) остаётся.
+ */
+const CATALOG_EXCUSE_RE =
+  /в (?:нашем\s+)?каталоге\s+(?:не\s+(?:указан|прописан|содержится|представлен)|нет\s+(?:детальн|подробн|информац)|отсутству)|(?:детальн|подробн)[а-яё]*\s+характеристик[а-яё]*[^.]{0,40}не\s+указан|у\s+меня\s+нет\s+(?:детальн[а-яё]*\s+)?информации\s+о\s+(?:состав|материал)/i;
+
+export function isCatalogExcuse(sentence: string): boolean {
+  return CATALOG_EXCUSE_RE.test(sentence);
+}
+
+export function cleanCatalogExcuses(text: string): string {
+  const cleaned = dropSentences(text, isCatalogExcuse);
+  // Если от ответа ничего не осталось, отговорка была всем ответом — тогда
+  // лучше исходный текст, чем пустое сообщение.
+  return cleaned.trim() ? cleaned : text;
 }
 
 export function replyUsesUnknownProductName(_text: string, _products: ConsultantProduct[]): boolean {
