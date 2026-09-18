@@ -81,6 +81,24 @@ describe("допуск по размеру", () => {
     expect(sizeMatches("40x70x10", "40x70")).toBe(true);
   });
 
+  it("140x70 и 70x140 — один размер", () => {
+    // Живой случай продавца: на «полотенце 140x70» бот ответил, что такого
+    // размера в каталоге нет, и предложил «близкий» 70x140 — то же полотенце.
+    expect(sizeMatches("70x140", "140x70")).toBe(true);
+    expect(sizeMatches("140x70", "70x140")).toBe(true);
+    expect(sizeMatches("202x182", "180x200")).toBe(true);
+    const TOWELS: ConsultantProduct[] = [
+      product({ id: "T70", name: "Bedding House PIP Les Fleurs", category: "полотенца", size: "70x140" }),
+      product({ id: "T50", name: "Feiler Полотенце махровое", category: "полотенца", size: "50x100" }),
+    ];
+    expect(findProducts({ size: "140x70" }, TOWELS).all.map((p) => p.id)).toEqual(["T70"]);
+  });
+
+  it("понимает размер, названный словом «на»", () => {
+    expect(sizeMatches("70x140", "70 на 140")).toBe(true);
+    expect(sizeMatches("70x140", "140 на 70")).toBe(true);
+  });
+
   it("не растягивает допуск на соседние размеры", () => {
     expect(sizeMatches("160x200", "180x200")).toBe(false);
     expect(sizeMatches("200x200", "180x200")).toBe(false);

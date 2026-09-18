@@ -130,11 +130,27 @@ export function sellableProducts(rows: ConsultantProduct[]): ConsultantProduct[]
 export const SIZE_TOLERANCE_CM = 3;
 
 function parseSizeDims(text: string): number[] | null {
-  const m = foldText(text).match(/(\d{2,3})x(\d{2,3})(?:x(\d{1,3}))?/);
+  // «70 на 140» — живая речь покупателя; foldText приводит к «x» только
+  // значки (× х * ), слово «на» остаётся, и размер переставал распознаваться.
+  const folded = foldText(text).replace(/(\d)\s*на\s*(\d)/g, "$1x$2");
+  const m = folded.match(/(\d{2,3})x(\d{2,3})(?:x(\d{1,3}))?/);
   if (!m) return null;
   const dims = [Number(m[1]), Number(m[2])];
   if (m[3]) dims.push(Number(m[3]));
   return dims.every((n) => Number.isFinite(n) && n > 0) ? dims : null;
+}
+
+/**
+ * Стороны размера по убыванию, обрезанные до нужного количества и снова по
+ * возрастанию — вид, в котором «140x70» и «70x140» это одно и то же.
+ * Для трёхмерных размеров (подушка 40x70x10) при сравнении с двумя сторонами
+ * берутся две большие: высота в запросе покупателя обычно не участвует.
+ */
+function sizeKey(dims: number[], take: number): number[] {
+  return [...dims]
+    .sort((a, b) => b - a)
+    .slice(0, take)
+    .sort((a, b) => a - b);
 }
 
 /**
@@ -158,7 +174,13 @@ function hidesKitchenTowels(q: ProductSearchQuery): boolean {
   return !KITCHEN_TOWEL_RE.test(text);
 }
 
-/** Точное вхождение либо расхождение не больше SIZE_TOLERANCE_CM по каждой стороне. */
+/**
+ * Точное вхождение либо расхождение не больше SIZE_TOLERANCE_CM по каждой
+ * стороне. Порядок сторон значения не имеет: продавец прислал живой случай,
+ * где на «полотенце 140x70» бот ответил «такого размера в каталоге нет» и
+ * предложил «близкий» 70x140 — то же самое полотенце, просто записанное с
+ * другой стороны.
+ */
 export function sizeMatches(productSize: string, querySize: string): boolean {
   const want = foldText(querySize);
   if (!want) return true;
@@ -168,8 +190,10 @@ export function sizeMatches(productSize: string, querySize: string): boolean {
   if (!have || !asked) return false;
   const shared = Math.min(have.length, asked.length);
   if (shared < 2) return false;
+  const haveKey = sizeKey(have, shared);
+  const askedKey = sizeKey(asked, shared);
   for (let i = 0; i < shared; i++) {
-    if (Math.abs(have[i] - asked[i]) > SIZE_TOLERANCE_CM) return false;
+    if (Math.abs(haveKey[i] - askedKey[i]) > SIZE_TOLERANCE_CM) return false;
   }
   return true;
 }

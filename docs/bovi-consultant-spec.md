@@ -162,7 +162,11 @@ after a model/tool failure or after a useful clarification is impossible.
     and color. The search tool returns a summary with no cards for such a
     request, so there is nothing to list. The full list belongs to a request
     that already carries a filter, or to an explicit «покажите все».
-12. A question about one product is answered with what is known about it and
+12. A question about one property — a mattress height, a composition, a
+    filling, a weight, care — is answered with that property in a line or two
+    and a question about whether details are wanted. A price list does not
+    belong in that answer; positions appear when the customer asks for them.
+13. A question about one product is answered with what is known about it and
     with what the knowledge base says about its brand and collection. The
     reply never explains that the catalog lacks a field; a manager is offered
     only for a specific figure that exists nowhere and is needed to decide.
@@ -191,6 +195,14 @@ Imports are validated and published atomically. A failed import keeps the
 last good snapshot and records the failure. Catalog version and import time
 are attached to every response trace. A missing or unacceptably stale
 snapshot cannot be used to promise price or stock.
+
+### Sizes
+
+A size matches when it is written either way round: `140x70` and `70x140` are
+the same towel, and the customer is never told that one of them is missing
+from the catalog. Sides are compared as an unordered pair within the 3 cm
+tolerance the factory works to; a three-sided size (a pillow with a height) is
+compared on its two largest sides. `70 на 140` is understood as well.
 
 ### Mattress firmness
 

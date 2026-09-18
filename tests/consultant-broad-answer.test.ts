@@ -88,6 +88,20 @@ describe("широкий вопрос не разворачивается в п�
     expect(payload.returned).toBe(6);
   });
 
+  it("четыре позиции — уже сводка, а не список", async () => {
+    // Живой случай: на вопрос о высоте матраса бот назвал высоту и следом
+    // выложил четыре модели LEVANT с ценами. Продавец: «остальным грузить
+    // клиента не надо».
+    const res = await executeConsultantTool(
+      "search_products",
+      { query: "полотенца Feiler" },
+      { catalog: TOWELS.slice(0, 4) },
+    );
+    const payload = res.result as { ask_size_and_color?: boolean; total_matches: number };
+    expect(payload.ask_size_and_color).toBe(true);
+    expect(payload.total_matches).toBe(4);
+  });
+
   it("две-три позиции показываются сразу, без уточняющего вопроса", async () => {
     const res = await executeConsultantTool(
       "search_products",
