@@ -224,14 +224,22 @@ repeats them still gets a filtered search.
 
 ## Currency and delivery
 
-VTB Kazakhstan answers only requests coming from inside Kazakhstan; from
-anywhere else the connection is dropped. The deployment runs abroad, so the
-direct call cannot succeed there and no combination of headers changes that.
-`CONSULTANT_VTB_RELAY_URL` names an address inside Kazakhstan that returns the
-VTB response unchanged and is tried first; the direct addresses stay in place
-for a deployment that ever runs in Kazakhstan. Without a relay the rate is
-entered by hand in the panel, which shows the last attempt and why it failed
-rather than leaving a silently stale rate.
+The ruble price is computed from a Kazakh bank's ruble buy rate. VTB Kazakhstan
+answers only requests coming from inside Kazakhstan and the deployment runs
+abroad, so its own API is unreachable there; the banks' own sites render rates
+in the browser and serve none in the response. finkaz.kz serves them as plain
+text and answers from anywhere, so the rate is read from the bank page named by
+`CONSULTANT_RATE_URL` (Kaspi by default; another bank is a different URL, not a
+code change). `CONSULTANT_RATE_SOURCE=vtb` switches back to the direct VTB call
+for a deployment or relay inside Kazakhstan.
+
+The source is third-party, so the reading is checked three ways: the number must
+sit in a plausible band with buy below sell, the page's own timestamp must be
+under a day old, and a jump of more than 15% from the last stored rate is
+refused with the reason recorded for the panel. A rate older than three days is
+not used for pricing at all: the consultant then names the tenge price, says the
+manager will confirm the ruble amount, and calls the manager, rather than
+quoting a stale conversion. The rate can always be typed by hand in the panel.
 
 KZ uses the KZT price from the current catalog.
 

@@ -125,19 +125,20 @@ const copy: Record<
     sheetsBtn: "Загрузить из таблицы",
     shopLabel: "Ссылка на полный ассортимент",
     saveShop: "Сохранить ссылку",
-    rateTitle: "Курс VTB Казахстан",
+    rateTitle: "Курс рубля",
     rateBody:
-      "RUB = ₸ / (курс покупки × 0,95 в будни / 0,93 в выходные). Подтягивается исключительно из официального API ВТБ Онлайн (online-api.vtb.kz).",
+      "RUB = ₸ / (курс покупки × 0,95 в будни / 0,93 в выходные). Источник — курс покупки рубля банком со страницы finkaz.kz (по умолчанию Kaspi): сам ВТБ отвечает только внутри Казахстана, а деплой стоит за границей.",
     rateEmpty: "Курса ещё нет. Обновите или введите вручную.",
     rateValue: (rate, at, sell) =>
       `покупка ${rate} ₸/₽${sell ? ` · продажа ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "источник: ВТБ Онлайн (официальный курс)",
+      finkaz: "источник: курс покупки банка с finkaz.kz",
       manual: "источник: вручную",
       other: "источник: внешний URL",
     },
-    rateKeptToast: "Сервис ВТБ временно недоступен — сохранён текущий курс ВТБ. Можно ввести курс вручную.",
-    refreshRate: "Обновить курс (ВТБ)",
+    rateKeptToast: "Источник курса недоступен или число не прошло проверку — оставлен прежний курс. Можно ввести вручную.",
+    refreshRate: "Обновить курс",
     manualRate: "Записать курс вручную",
     usage: (count, usd, model) => `Claude: ${count} вызовов · ${usd} · модель ${model}`,
     noKey: "ANTHROPIC_API_KEY не задан — товарные ответы пойдут упрощённым поиском по прайсу.",
@@ -179,6 +180,7 @@ const copy: Record<
       `сатып алу ${rate} ₸/₽${sell ? ` · сату ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "көз: VTB Онлайн",
+      finkaz: "көз: finkaz.kz",
       manual: "көз: қолмен",
       other: "көз: сыртқы URL",
     },
@@ -228,6 +230,7 @@ const copy: Record<
       `buy ${rate} ₸/₽${sell ? ` · sell ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "source: VTB",
+      finkaz: "source: bank buy rate from finkaz.kz",
       manual: "source: manual",
       other: "source: custom URL",
     },
@@ -275,6 +278,7 @@ const copy: Record<
       `sotib olish ${rate} ₸/₽${sell ? ` · sotish ${sell}` : ""} · ${at}`,
     rateSource: {
       vtb: "manba: VTB",
+      finkaz: "manba: finkaz.kz",
       manual: "manba: qo‘lda",
       other: "manba: tashqi URL",
     },
@@ -455,7 +459,11 @@ function ConsultantPage() {
           }`,
         );
       } else if (res.fetched) {
-        toast.success("Курс обновлён");
+        toast.success(
+          `Курс обновлён. Покупка ${res.stored?.rate} ₸/₽${
+            res.stored?.sell ? ` (продажа ${res.stored.sell} — в расчёте не участвует)` : ""
+          }`,
+        );
       } else if (res.stored) {
         toast.message(c.rateKeptToast);
       } else {
@@ -1540,9 +1548,7 @@ function ConsultantPage() {
             <p className="text-sm">
               {d?.rate
                 ? `${c.rateValue(d.rate.rate, formatWhen(d.rate.updatedAt, locale), d.rate.sell)} — ${
-                    d.rate.source?.includes("vtb")
-                      ? "ВТБ Онлайн (официальный курс)"
-                      : "вручную"
+                    c.rateSource[rateSourceKind(d.rate.source)]
                   }`
                 : c.rateEmpty}
             </p>
@@ -1558,11 +1564,10 @@ function ConsultantPage() {
                   </p>
                 ))}
                 <p>
-                  ВТБ Казахстан отвечает только на запросы из Казахстана, а деплой стоит за
-                  границей. Чтобы курс подтягивался сам, на сайт магазина (он в Алматы)
-                  кладётся файл scripts/vtb-relay.php из репозитория, а его адрес
-                  прописывается в переменную CONSULTANT_VTB_RELAY_URL. Пока этого нет, курс
-                  вводится вручную — поле слева.
+                  Курс берётся со страницы банка на finkaz.kz (переменная CONSULTANT_RATE_URL,
+                  по умолчанию Kaspi). Если источник не отвечает или число разошлось с прошлым
+                  больше чем на 15%, курс остаётся прежним, а причина видна выше. Курс всегда
+                  можно ввести вручную — поле слева.
                 </p>
               </div>
             ) : null}
@@ -1586,7 +1591,7 @@ function ConsultantPage() {
                 disabled={refreshRate.isPending}
               >
                 <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshRate.isPending ? "animate-spin" : ""}`} />
-                {refreshRate.isPending ? "Обновление..." : "Подтянуть курс (ВТБ)"}
+                {refreshRate.isPending ? "Обновление..." : "Подтянуть курс"}
               </Button>
             </div>
           </section>

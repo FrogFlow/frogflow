@@ -57,7 +57,7 @@ import {
 } from "./intent";
 import { consultantApiKey } from "./config";
 import { consultantRequestId, logConsultantEvent } from "./log";
-import { getStoredVtbRate, priceRub, isOffHoursInAlmaty } from "./rate";
+import { getFreshVtbRate, priceRub, isOffHoursInAlmaty } from "./rate";
 import {
   alreadyAnsweredIncoming,
   appendRecent,
@@ -591,7 +591,7 @@ export async function decideConsultantReply(
       ? ctx.rate != null
         ? { rate: ctx.rate, updatedAt: "test", source: "test" }
         : null
-      : await getStoredVtbRate();
+      : await getFreshVtbRate();
   let storyTag: any = null;
   let storyProduct: ConsultantProduct | null = null;
   if (ctx.storyId || ctx.storyMediaUrl) {

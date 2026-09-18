@@ -83,6 +83,33 @@ export function rememberStoredVtbRate(value: StoredVtbRate | null): void {
   rateCache = { at: Date.now(), value };
 }
 
+/**
+ * Сколько курс годится для расчёта цены.
+ *
+ * Компромисс между двумя потерями. Совсем старый курс — это неправильная
+ * цена в рублях у покупателя, и заметят её не скоро. Слишком строгий срок —
+ * это бот, который на выходных перестаёт называть цены россиянам из-за
+ * сломавшегося на час источника, и потерянные продажи. Трое суток: за это
+ * время курс уходит на проценты, а не в разы, и продавец успевает увидеть
+ * предупреждение в панели (оно загорается уже через два часа).
+ */
+export const RATE_MAX_AGE_HOURS = 72;
+
+export function isRateFresh(rate: StoredVtbRate | null, now: number = Date.now()): boolean {
+  if (!rate?.rate) return false;
+  const ageHours = (now - Date.parse(rate.updatedAt)) / 36e5;
+  return Number.isFinite(ageHours) && ageHours <= RATE_MAX_AGE_HOURS;
+}
+
+/**
+ * Курс для расчёта цены покупателю. Протухший не отдаём: пусть бот честно
+ * скажет, что рублёвую сумму подтвердит менеджер, чем назовёт позапрошлую.
+ */
+export async function getFreshVtbRate(): Promise<StoredVtbRate | null> {
+  const stored = await getStoredVtbRate();
+  return isRateFresh(stored) ? stored : null;
+}
+
 /** Последний успешно сохранённый курс. Cron / ручное обновление пишут сюда. */
 export async function getStoredVtbRate(): Promise<StoredVtbRate | null> {
   if (rateCache && Date.now() - rateCache.at < RATE_CACHE_MS) return rateCache.value;

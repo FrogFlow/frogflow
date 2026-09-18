@@ -1,8 +1,9 @@
-export type RateSourceKind = "vtb" | "manual" | "other";
+export type RateSourceKind = "vtb" | "finkaz" | "manual" | "other";
 
 export function rateSourceKind(source: string | undefined): RateSourceKind {
   if (!source) return "other";
   if (source === "manual") return "manual";
+  if (/finkaz\.kz/i.test(source)) return "finkaz";
   if (/vtb/i.test(source)) return "vtb";
   return "other";
 }

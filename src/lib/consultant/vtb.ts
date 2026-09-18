@@ -1,4 +1,5 @@
 import { getStoredVtbRate, rememberStoredVtbRate, type StoredVtbRate } from "./rate";
+import { bankNameFromFinkazUrl, parseFinkazRubQuote } from "./finkaz-parse";
 import {
   parseVtbRateQuote,
   rateSourceKind,
@@ -86,6 +87,68 @@ export async function saveVtbRate(
 
 export const VTB_ONLINE_API_URL = "https://online-api.vtb.kz/api/exchange-rate/by-currencyMob/";
 
+/**
+ * Основной источник курса — страница банка на finkaz.kz.
+ *
+ * Клиент выбрал Kaspi: ВТБ из-за границы недоступен в принципе, а finkaz
+ * отдаёт курс обычным текстом и открывается снаружи. Банк меняется одной
+ * переменной окружения, код при этом не трогаем: CONSULTANT_RATE_URL —
+ * адрес страницы нужного банка (halyk-bank, fortebank, centrkredit…).
+ */
+export const FINKAZ_KASPI_URL = "https://finkaz.kz/kaspi-bank/exchange-rates";
+
+/** Курс со страницы старше суток не берём: сайт мог застыть. */
+const SOURCE_MAX_AGE_HOURS = 24;
+
+/**
+ * Насколько курс вправе отличаться от прошлого значения. Разметка на чужом
+ * сайте может поехать, и тогда в число попадёт спред или курс евро. Скачок
+ * больше этого — не обновляемся и пишем причину в панель.
+ */
+const MAX_RATE_JUMP = 0.15;
+const JUMP_GUARD_MAX_AGE_HOURS = 72;
+
+export type RateSourceMode = "finkaz" | "vtb";
+
+export function rateSourceMode(): RateSourceMode {
+  return process.env.CONSULTANT_RATE_SOURCE?.trim().toLowerCase() === "vtb" ? "vtb" : "finkaz";
+}
+
+export function rateSourceUrl(): string {
+  return process.env.CONSULTANT_RATE_URL?.trim() || FINKAZ_KASPI_URL;
+}
+
+/** «Kaspi (finkaz.kz)» — то, что показывается продавцу в панели. */
+export function rateSourceLabel(source: string | undefined): string {
+  if (!source) return "источник неизвестен";
+  if (source === "manual") return "введён вручную";
+  const bank = bankNameFromFinkazUrl(source);
+  if (bank) return `${bank} (finkaz.kz)`;
+  if (/vtb/i.test(source)) return "ВТБ Онлайн";
+  return source;
+}
+
+async function readFinkazQuote(url: string): Promise<{ quote: ReturnType<typeof parseFinkazRubQuote>; note: string }> {
+  const res = await fetch(url, {
+    headers: {
+      accept: "text/html,application/xhtml+xml,*/*;q=0.8",
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    },
+    signal: AbortSignal.timeout(FETCH_MS),
+  });
+  if (!res.ok) return { quote: null, note: `ответ ${res.status}` };
+  const quote = parseFinkazRubQuote(await res.text());
+  if (!quote) return { quote: null, note: "страница открылась, но строки RUB / KZT в ней нет" };
+  if (quote.sourceUpdatedAt) {
+    const ageHours = (Date.now() - Date.parse(quote.sourceUpdatedAt)) / 36e5;
+    if (Number.isFinite(ageHours) && ageHours > SOURCE_MAX_AGE_HOURS) {
+      return { quote: null, note: `курс на сайте от ${quote.sourceUpdatedAt}, старше суток` };
+    }
+  }
+  return { quote, note: "" };
+}
+
 async function readRateFromUrl(url: string, sendReferer = true): Promise<VtbRateQuote | null> {
   const headers: Record<string, string> = {
     accept: "application/json,text/html,application/xml;q=0.9,*/*;q=0.8",
@@ -116,6 +179,29 @@ export async function fetchVtbBuyRate(): Promise<{
 } | null> {
   const log: string[] = [];
   const startedAt = Date.now();
+
+  if (rateSourceMode() === "finkaz") {
+    const url = rateSourceUrl();
+    try {
+      const { quote, note } = await readFinkazQuote(url);
+      if (quote) {
+        log.push(
+          `${rateSourceLabel(url)}: OK (покупка ${quote.buy}${quote.sell ? `, продажа ${quote.sell}` : ""}${
+            quote.sourceUpdatedAt ? `, обновлено ${quote.sourceUpdatedAt}` : ""
+          })`,
+        );
+        await saveVtbAttemptLog({ at: new Date().toISOString(), ok: true, attempts: log });
+        return { rate: quote.buy, sell: quote.sell, source: url, log };
+      }
+      log.push(`${url}: ${note}`);
+    } catch (err: unknown) {
+      log.push(`${url}: ${errorText(err)}`);
+    }
+    console.warn("[rate] finkaz fetch failed:", log);
+    await saveVtbAttemptLog({ at: new Date().toISOString(), ok: false, attempts: log });
+    return null;
+  }
+
   const envUrl = process.env.CONSULTANT_VTB_RATE_URL?.trim();
   const normalizedEnvUrl =
     envUrl && /online\.vtb\.kz\/unauth\/exchange-rates/i.test(envUrl)
@@ -167,6 +253,19 @@ export async function fetchVtbBuyRate(): Promise<{
   return null;
 }
 
+/**
+ * Насколько новое значение разошлось с прошлым. null — расхождение в норме
+ * или сравнивать не с чем (курса ещё нет, либо прошлый уже трёхдневной
+ * давности и настоящее движение за это время возможно).
+ */
+function rateJump(previous: StoredVtbRate | null, next: number): number | null {
+  if (!previous?.rate || !(previous.rate > 0)) return null;
+  const ageHours = (Date.now() - Date.parse(previous.updatedAt)) / 36e5;
+  if (!Number.isFinite(ageHours) || ageHours > JUMP_GUARD_MAX_AGE_HOURS) return null;
+  const diff = Math.abs(next - previous.rate) / previous.rate;
+  return diff > MAX_RATE_JUMP ? diff : null;
+}
+
 function errorText(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   // «fetch failed» без причины в панели бесполезно: разворачиваем в то, что
@@ -186,8 +285,31 @@ export async function refreshVtbRate(): Promise<{
   error?: string;
   log?: string[];
 }> {
+  const previous = await getStoredVtbRate();
   const fetched = await fetchVtbBuyRate();
   if (fetched) {
+    const jump = rateJump(previous, fetched.rate);
+    if (jump) {
+      // Источник сторонний: скачок вдвое чаще означает съехавшую разметку,
+      // чем настоящее движение курса. Старое значение надёжнее нового.
+      const note = `курс ${fetched.rate} отличается от прошлого ${previous?.rate} на ${Math.round(
+        jump * 100,
+      )}% — не приняли, оставили прежний`;
+      console.warn("[rate] jump rejected:", note);
+      await saveVtbAttemptLog({
+        at: new Date().toISOString(),
+        ok: false,
+        attempts: [...(fetched.log ?? []), note],
+      });
+      return {
+        ok: Boolean(previous),
+        stored: previous,
+        fetched: false,
+        kind: previous ? rateSourceKind(previous.source) : undefined,
+        error: "rate_jump_rejected",
+        log: [...(fetched.log ?? []), note],
+      };
+    }
     const stored = await saveVtbRate(fetched.rate, fetched.source, fetched.sell);
     return { ok: true, stored, fetched: true, kind: rateSourceKind(fetched.source), log: fetched.log };
   }

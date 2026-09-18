@@ -9,7 +9,7 @@ import {
   type ProductHardness,
   type ProductSearchQuery,
 } from "./catalog";
-import { getStoredVtbRate, priceRub } from "./rate";
+import { getFreshVtbRate, priceRub } from "./rate";
 import type { ConsultantCountry } from "./intent";
 
 export const CONSULTANT_TOOLS = [
@@ -177,7 +177,7 @@ export async function executeConsultantTool(
     userKey?: string;
   },
 ): Promise<{ result: unknown; products: ConsultantProduct[]; handoff: boolean }> {
-  const rateRow = await getStoredVtbRate();
+  const rateRow = await getFreshVtbRate();
   const rate = rateRow?.rate ?? null;
 
   if (name === "search_products") {

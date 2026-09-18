@@ -18,7 +18,7 @@ import { stripMarkdownFormatting } from "./copy";
 import { cleanForbiddenPhrases, cleanScriptHallucinations } from "./validate";
 import { brandVocabulary, fixBrandSpelling } from "./style";
 
-import { priceRub, getStoredVtbRate } from "./rate";
+import { priceRub, getFreshVtbRate } from "./rate";
 
 /**
  * Каталог для системного промпта.
@@ -166,6 +166,7 @@ export function buildConsultantSystemPrompt(
 
 СТРАНА И ЦЕНЫ
 - Казахстан (country=KZ): цены всегда называйте в тенге (₸) — это поле со знаком ₸ в строке товара (например, из «… | 260 000 ₸ | 51 834 ₽ | …» называйте 260 000 ₸). Стандартная доставка по Казахстану.
+- Если в строке товара вместо рублёвой цены стоит «₽ по курсу», значит курс сегодня недоступен. Тогда рублёвую сумму НЕ называйте и НЕ считайте сами: назовите товар, скажите, что рублёвую сумму подтвердит менеджер по актуальному курсу, и вызовите ask_manager. Пересчитывать тенге в рубли в уме запрещено.
 - Россия (country=RU): цены ВСЕГДА называйте ИСКЛЮЧИТЕЛЬНО в рублях (₽). Используйте ТОЛЬКО поле со знаком ₽, которое идёт сразу после тенгового. Например, из строки «… | 260 000 ₸ | 51 834 ₽ | …» для клиента из РФ называйте именно 51 834 ₽, а НЕ 260 000 ₽. Никогда не подставляйте тенговое число с символом рубля. Доставка в РФ осуществляется курьерской службой СДЭК и оплачивается покупателем при получении по тарифам СДЭК (никогда не называйте фиксированную цену доставки в РФ, только по тарифам СДЭК).
 - Если страна неизвестна (country=unknown): вежливо спросите, из какой страны обращается клиент (Казахстан или Россия), чтобы показать актуальные цены и условия доставки.
 
@@ -322,7 +323,7 @@ export async function runConsultantClaude(params: {
   const rate =
     params.rate !== undefined && params.rate !== null
       ? params.rate
-      : (await getStoredVtbRate())?.rate ?? null;
+      : (await getFreshVtbRate())?.rate ?? null;
   const catalog = params.catalog ?? [];
   const { getConsultantStoreInfo } = await import("./store-info");
   const storeInfo = await getConsultantStoreInfo().catch(() => undefined);
