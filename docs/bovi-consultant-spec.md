@@ -222,6 +222,24 @@ Firmness is named to the customer as «комфортный (Soft)» and «уп�
 Both Russian words are understood on the way in as well, so a customer who
 repeats them still gets a filtered search.
 
+### Knowledge base
+
+The seller's documents answer what something is made of, how good a brand is
+and how to care for it. A base small enough to be cheap stays inline in the
+prompt; a large one (BOVI's is about a fifth of the prompt) is replaced by an
+index of titles and tags, and the article itself is fetched with
+`search_knowledge` when a question needs it. The answer quotes the source
+wording rather than retelling it, and an empty result is not a licence to
+invent: it is the manager's question.
+
+### Message ledger
+
+Every answered message writes one row to `consultant_message_runs` with its
+token counts and cost. The panel reads a week of it: messages, spend, price per
+message and the share of input served from cache. A single running total
+cannot show whether caching works or what an answer costs, which is what the
+optimisation work needs.
+
 ## Currency and delivery
 
 The ruble price is computed from a Kazakh bank's ruble buy rate. VTB Kazakhstan

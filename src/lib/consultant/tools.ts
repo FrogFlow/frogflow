@@ -57,6 +57,21 @@ export const CONSULTANT_TOOLS = [
     },
   },
   {
+    name: "search_knowledge",
+    description:
+      "Look up what the shop's own knowledge base says about a brand, a material, a collection, care or delivery — the seller's documents, not your memory. Call it whenever the customer asks what something is made of, how good a brand is, how to wash it, or why it costs what it costs. The prompt carries only the titles; this returns the text, and the answer must use the source wording rather than a retelling.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Words of the customer's question: a brand, a material, a category or a topic.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "get_product",
     description:
       "Get one catalog card by id from a previous search. Use for exact price and stock.",
@@ -280,6 +295,26 @@ export async function executeConsultantTool(
         ...(q.hardness === "medium" ? { medium_mattresses_discontinued: true } : {}),
       },
       products: enriched,
+      handoff: false,
+    };
+  }
+
+  if (name === "search_knowledge") {
+    const query = typeof input.query === "string" ? input.query : "";
+    const { loadConsultantKnowledge, searchKnowledge } = await import("./knowledge");
+    const articles = await loadConsultantKnowledge().catch(() => []);
+    const found = searchKnowledge(query, articles);
+    return {
+      result: {
+        // Статья из PDF может быть на двадцать тысяч знаков: в ответ идёт
+        // начало, этого хватает на вопрос о материале или марке.
+        articles: found.map((a) => ({ title: a.title, content: a.content.slice(0, 3000) })),
+        returned: found.length,
+        // Пусто — в базе продавца об этом ничего нет. Придумывать нельзя:
+        // либо ответить тем, что известно о товаре, либо спросить менеджера.
+        ...(found.length === 0 ? { nothing_found: true } : {}),
+      },
+      products: [],
       handoff: false,
     };
   }

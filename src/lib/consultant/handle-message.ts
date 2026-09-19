@@ -73,6 +73,8 @@ import {
   resumeConsultant,
   type ConsultantState,
 } from "./state";
+import { consultantModel } from "./config";
+import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
   cleanDiscontinuedMattressOffers,
@@ -295,12 +297,18 @@ async function handleConsultantZernioEventInternal(params: {
     return;
   }
 
+  let runUsage: import("@/lib/smart-search-cost").SmartSearchTokenUsage | null = null;
+  let runModel: string | null = null;
   const reply = await decideConsultantReply(text, consultant, {
     userKey: params.userKey,
     postback: params.postback,
     requestId,
     storyId: params.storyId,
     storyMediaUrl: params.storyMediaUrl,
+    onUsage: (usage, model) => {
+      runUsage = usage;
+      runModel = model;
+    },
   });
   if (!reply) return;
   // Единственная точка выхода наружу: через неё проходят и ответы модели, и
@@ -372,6 +380,21 @@ async function handleConsultantZernioEventInternal(params: {
     latencyMs: Date.now() - started,
     tools: reply.patch.last_product_ids?.length ?? 0,
   });
+
+  // Строка журнала на сообщение: из неё считается цена одного ответа и доля
+  // кеша. Ответ покупателю уже ушёл, поэтому ошибка записи ничего не ломает.
+  void recordConsultantRun({
+    messageId: params.payload.message?.id || params.payload.id || requestId,
+    conversationId: params.conversationId,
+    accountId: params.accountId,
+    userKey: params.userKey,
+    source,
+    incomingText: text,
+    replyText: reply.text,
+    replyKind: reply.kind,
+    model: runModel,
+    usage: runUsage,
+  });
 }
 
 export async function decideConsultantReply(
@@ -385,6 +408,8 @@ export async function decideConsultantReply(
     rate?: number | null;
     storyId?: string | null;
     storyMediaUrl?: string | null;
+    /** Сколько токенов стоил ответ модели — журналу сообщений и панели. */
+    onUsage?: (usage: import("@/lib/smart-search-cost").SmartSearchTokenUsage, model: string) => void;
   } = {},
 ): Promise<ConsultantReply | null> {
   let bucket = state.ab_bucket ?? "a";
@@ -678,6 +703,7 @@ export async function decideConsultantReply(
       });
       if (ai.usage) {
         void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
+        ctx.onUsage?.(ai.usage, consultantModel());
       }
       if (ai.error) {
         // Any AI error (API 500/529, timeout, network error, no key) -> fall through to local catalog without triggering handoff!

@@ -1,3 +1,5 @@
+import { haystackOf } from "./synonyms";
+import { searchTokens } from "./catalog";
 export const KNOWLEDGE_KEY = "consultant_knowledge_json";
 
 export type ConsultantKnowledgeArticle = {
@@ -177,6 +179,73 @@ export function parseKnowledgeArticlesFromText(text: string): ConsultantKnowledg
   }
 
   return articles;
+}
+
+/**
+ * Сколько символов базы знаний ещё дешевле держать в промпте, чем ходить за
+ * ними инструментом. Маленькая база (несколько абзацев) стоит копейки и
+ * экономит раунд обращения к модели; большая — три четверти счёта за ввод.
+ */
+export const KNOWLEDGE_INLINE_MAX_CHARS = 6000;
+
+export function knowledgeSize(articles: ConsultantKnowledgeArticle[]): number {
+  return articles.reduce((sum, a) => sum + a.content.length + a.title.length, 0);
+}
+
+export function knowledgeFitsInPrompt(articles: ConsultantKnowledgeArticle[]): boolean {
+  return knowledgeSize(articles) <= KNOWLEDGE_INLINE_MAX_CHARS;
+}
+
+/**
+ * Оглавление вместо самой базы: названия статей и теги, без содержимого.
+ * Модель видит, что в базе есть, и забирает нужную статью инструментом
+ * search_knowledge. У BOVI полная база — это около двадцати процентов
+ * промпта, а нужна она в одном разговоре из нескольких.
+ */
+export function formatKnowledgeIndexForPrompt(articles: ConsultantKnowledgeArticle[]): string {
+  if (!articles || articles.length === 0) return "";
+  const lines: string[] = [
+    "БАЗА ЗНАНИЙ О ТОВАРАХ, ПРОИЗВОДИТЕЛЯХ И МАТЕРИАЛАХ BOVI — ОГЛАВЛЕНИЕ.",
+    "Сами тексты статей здесь не приводятся: нужную забирайте инструментом search_knowledge и цитируйте её формулировками.",
+  ];
+  for (const a of articles) {
+    const tagStr = a.tags.length > 0 ? ` [${a.tags.slice(0, 8).join(", ")}]` : "";
+    lines.push(`• ${a.title}${tagStr}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Поиск по базе знаний: статьи, чьи название, теги или текст пересекаются с
+ * запросом. Ранжирование простое — сколько слов запроса нашлось; название и
+ * теги весят больше текста, потому что именно они описывают тему статьи.
+ */
+export function searchKnowledge(
+  query: string,
+  articles: ConsultantKnowledgeArticle[],
+  limit = 3,
+): ConsultantKnowledgeArticle[] {
+  // Сравниваем по началу слова, а не по целому: стеммер каталога оставляет
+  // «стирать» как есть, а в статье написано «стирка», и точное совпадение
+  // такую пару не ловит. Слова короче четырёх букв («как», «что») выкидываем.
+  const keys = searchTokens(query)
+    .filter((t) => t.length >= 4)
+    .map((t) => t.slice(0, 4));
+  if (keys.length === 0) return [];
+  const scored = articles
+    .map((a) => {
+      const head = haystackOf([a.title, a.tags.join(" ")]);
+      const body = haystackOf([a.content]);
+      let score = 0;
+      for (const key of keys) {
+        if (head.includes(key)) score += 3;
+        else if (body.includes(key)) score += 1;
+      }
+      return { a, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((x, y) => y.score - x.score);
+  return scored.slice(0, limit).map((x) => x.a);
 }
 
 export function formatKnowledgeForPrompt(articles: ConsultantKnowledgeArticle[]): string {

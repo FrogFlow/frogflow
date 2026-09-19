@@ -50,6 +50,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     driveRow,
     checkRow,
     rateAttempt,
+    usageStats,
   ] = await Promise.all([
     loadConsultantCatalogSnapshot(),
     loadCatalogMeta(),
@@ -65,6 +66,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     s.from("app_settings").select("value").eq("key", DRIVE_URL_KEY).maybeSingle(),
     s.from("app_settings").select("value").eq("key", CHECKLIST_KEY).maybeSingle(),
     loadVtbAttemptLog(),
+    (await import("./runs")).loadConsultantUsageStats(7),
   ]);
   // Каталог для админки — тот же, что видит консультант. Снятое с
   // производства идёт отдельным числом: продавцу видно, что строки в прайсе
@@ -112,6 +114,10 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
       model: consultantModel(),
       apiKeyConfigured: Boolean(consultantApiKey()),
       spend: { ...spend, usdLabel: formatUsd(spend.usd) },
+      // Цена одного сообщения и доля кеша за неделю — из журнала сообщений,
+      // а не из накопительной суммы: по одной цифре «всего потрачено»
+      // оптимизировать нечего.
+      usageStats,
       paused,
       customers,
       analytics: summarizeConsultantEvents(events),

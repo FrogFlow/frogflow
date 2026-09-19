@@ -121,7 +121,7 @@ export function buildConsultantSystemPrompt(
 
 Но и отговорка запрещена. Не пишите «в каталоге не указаны детальные характеристики этой модели» — покупателю нет дела до того, как устроена наша база. Порядок такой:
 1. Скажите то, что знаете о самом товаре: название, коллекция, размер, цвет, цена, наличие.
-2. Добавьте то, что написано о бренде и коллекции в базе знаний — теми же словами, что в документе. Если про марку сказано, из чего и как она делается, это и есть ответ про качество.
+2. Добавьте то, что написано о бренде и коллекции в базе знаний. Текстов статей в промпте нет — есть оглавление; нужную статью забирайте инструментом search_knowledge и приводите её формулировками, не пересказом. Вопрос про состав, материал, наполнитель, плотность, уход, стирку или репутацию марки — это всегда повод вызвать search_knowledge, а не отвечать по памяти.
 3. Менеджера предлагайте только тогда, когда не хватает конкретной величины, которой нет нигде (точный состав в процентах, вес, сертификат), и нужна она для решения о покупке. Это отдельное короткое предложение в конце, а не весь ответ.
 
 ВОПРОС ПРО ОДНО СВОЙСТВО — ОТВЕТ РОВНО ПРО НЕГО:
@@ -327,9 +327,15 @@ export async function runConsultantClaude(params: {
   const catalog = params.catalog ?? [];
   const { getConsultantStoreInfo } = await import("./store-info");
   const storeInfo = await getConsultantStoreInfo().catch(() => undefined);
-  const { loadConsultantKnowledge, formatKnowledgeForPrompt } = await import("./knowledge");
+  const { loadConsultantKnowledge, formatKnowledgeForPrompt, formatKnowledgeIndexForPrompt, knowledgeFitsInPrompt } =
+    await import("./knowledge");
   const knowledgeArticles = await loadConsultantKnowledge().catch(() => []);
-  const knowledgeSection = formatKnowledgeForPrompt(knowledgeArticles);
+  // Большая база знаний в промпт не едет: в неё ходят инструментом
+  // search_knowledge. Маленькая остаётся целиком — лишний раунд обращения к
+  // модели дороже, чем пара абзацев в промпте.
+  const knowledgeSection = knowledgeFitsInPrompt(knowledgeArticles)
+    ? formatKnowledgeForPrompt(knowledgeArticles)
+    : formatKnowledgeIndexForPrompt(knowledgeArticles);
 
   const fullSystemPrompt = buildConsultantSystemPrompt(
     catalog,

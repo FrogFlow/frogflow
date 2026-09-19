@@ -764,10 +764,59 @@ function ConsultantPage() {
             </div>
           </section>
 
-          <section className="bg-card border rounded-lg p-4 space-y-2">
-            <h2 className="font-medium">Статус системы</h2>
-            <p className="text-xs text-muted-foreground">
-              Модель {d?.model}. {d?.spend.usdLabel}
+          <section className="bg-card border rounded-lg p-4 space-y-3">
+            <div>
+              <h2 className="font-medium">Расход за неделю</h2>
+              <p className="text-xs text-muted-foreground">
+                Считается по журналу сообщений, а не по общей сумме: цена одного ответа и доля
+                ввода, прочитанная из кеша. Чем выше доля кеша, тем дешевле сообщение.
+              </p>
+            </div>
+            {d?.usageStats && d.usageStats.messages > 0 ? (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Сообщений</div>
+                    <div className="font-medium">{d.usageStats.messages}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Потрачено</div>
+                    <div className="font-medium">${d.usageStats.usd.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Цена сообщения</div>
+                    <div className="font-medium">
+                      {(d.usageStats.usdPerMessage * 100).toFixed(2)} ¢
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Из кеша</div>
+                    <div className="font-medium">
+                      {Math.round(d.usageStats.cacheReadShare * 100)}%
+                    </div>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  {d.usageStats.days.map((day) => (
+                    <div key={day.date} className="flex justify-between gap-2">
+                      <span>{day.date}</span>
+                      <span>
+                        {day.messages} сообщ. · ${day.usd.toFixed(2)} ·{" "}
+                        {day.messages > 0 ? ((day.usd / day.messages) * 100).toFixed(2) : "0.00"} ¢
+                        за сообщение
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Пока нечего показать: журнал наполняется с первого ответа покупателю после
+                этого обновления.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground border-t pt-2">
+              Модель {d?.model}. Всего с последнего сброса: {d?.spend.usdLabel}
             </p>
           </section>
         </TabsContent>
