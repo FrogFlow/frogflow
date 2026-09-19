@@ -1559,13 +1559,19 @@ async function deliverOrderByEmail(
           `[orders] заказ ${orderId}: нет TELEGRAM_BOT_TOKEN/PUBLIC_APP_URL — кнопка файлов в Direct не собралась`,
         );
       }
-      const text = filesPageUrl
-        ? `Оплата подтверждена — заказ №${displayNo}.\n\n` +
-          `Нажмите кнопку: откроется страница с вашими файлами. Они не скачиваются сами — выберите, когда будете готовы.\n\n` +
-          `Дубликат отправили на ${email}. Если письма нет — папка «Спам». Ссылки действуют ${EMAIL_LINK_DAYS} дней.`
-        : `Оплата подтверждена — материалы по заказу №${displayNo} отправлены на ${email}.\n\n` +
-          `Ссылки в письме действуют ${EMAIL_LINK_DAYS} дней, лучше скачать файлы сразу.\n\n` +
-          "Если письма нет — проверьте папку «Спам» и напишите сюда, поможем.";
+      const { buildInstagramDeliveryText, DELIVERY_NOTE_KEY } = await import("./delivery-message");
+      const { data: noteRow } = await supabaseAdmin
+        .from("app_settings")
+        .select("value")
+        .eq("key", DELIVERY_NOTE_KEY)
+        .maybeSingle();
+      const text = buildInstagramDeliveryText({
+        displayNo,
+        email,
+        linkDays: EMAIL_LINK_DAYS,
+        note: noteRow?.value,
+        filesPageUrl,
+      });
       await sendZernioInboxMessage(buyer.zernio_conversation_id, buyer.zernio_account_id, text, {
         buttons: filesPageUrl
           ? [{ type: "url", title: instagramFilesButtonTitle(files.length), url: filesPageUrl }]

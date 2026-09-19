@@ -670,6 +670,8 @@ function SettingsPage() {
   const [receiptOcrAutoSaved, setReceiptOcrAutoSaved] = useState(false);
 
   const [instructionCaption, setInstructionCaption] = useState("");
+  const [deliveryNote, setDeliveryNote] = useState("");
+  const [deliveryNoteSaved, setDeliveryNoteSaved] = useState(false);
   const [instructionVideoPath, setInstructionVideoPath] = useState("");
   const [instructionUploading, setInstructionUploading] = useState(false);
   const [instructionSaved, setInstructionSaved] = useState(false);
@@ -678,6 +680,7 @@ function SettingsPage() {
     setAdminChatId(settings.data?.admin_chat_id ?? "");
     setAdminContactLink(settings.data?.admin_contact_link ?? "");
     setInstructionCaption(settings.data?.instruction_caption ?? "");
+    setDeliveryNote(settings.data?.delivery_email_note ?? "");
     setInstructionVideoPath(settings.data?.instruction_video_path ?? "");
     setDeliveryLangTiming(settings.data?.delivery_lang_timing === "before" ? "before" : "after");
     const pm = settings.data?.payment_mode;
@@ -894,6 +897,17 @@ function SettingsPage() {
       toast.success(tr.miniAppCopied(link));
     } catch {
       prompt(tr.miniAppCopyPrompt, link);
+    }
+  }
+
+  async function onSaveDeliveryNote() {
+    try {
+      await saveSetting({ data: { key: "delivery_email_note", value: deliveryNote } });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      setDeliveryNoteSaved(true);
+      setTimeout(() => setDeliveryNoteSaved(false), 2000);
+    } catch (e: unknown) {
+      toast.error(tr.saveError(errorMessage(e) || tr.unknownError));
     }
   }
 
@@ -1435,6 +1449,29 @@ function SettingsPage() {
             <div className="flex items-center gap-2">
               <Button onClick={onSaveInstruction}>{tr.saveInstructionBtn}</Button>
               {instructionSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
+            </div>
+          </div>
+
+          <div className="bg-card border rounded-lg p-4 space-y-4">
+            <div className="space-y-1">
+              <h2 className="font-medium">Приписка к сообщению о выдаче</h2>
+              <p className="text-sm text-muted-foreground">
+                Идёт последним абзацем в сообщении покупателю в Instagram Direct после
+                подтверждения оплаты. Номер заказа, адрес почты и срок жизни ссылок бот
+                подставляет сам — здесь ваши правила: что делать, если письмо не пришло, и на
+                каких условиях вы отправляете материалы повторно. Пусто — отправится текст по
+                умолчанию про папку «Спам».
+              </p>
+            </div>
+            <Textarea
+              rows={6}
+              value={deliveryNote}
+              onChange={(e) => setDeliveryNote(e.target.value)}
+              placeholder={"Если письма нет — проверьте папку «Спам» и напишите сюда, поможем."}
+            />
+            <div className="flex items-center gap-2">
+              <Button onClick={onSaveDeliveryNote}>{tr.saveInstructionBtn}</Button>
+              {deliveryNoteSaved && <span className="text-sm text-green-600">{tr.savedLabel}</span>}
             </div>
           </div>
         </TabsContent>
