@@ -62,13 +62,26 @@ const towel: ConsultantProduct = {
 };
 
 describe("consultant — курс и карточка", () => {
+  /**
+   * Дата задаётся явно. Без неё тест брал сегодняшний день, а по выходным
+   * действует коэффициент 0,93 вместо 0,95 — и оба теста падали каждую
+   * субботу и воскресенье, независимо от кода.
+   */
+  const WEEKDAY = new Date("2026-09-16T09:00:00.000Z"); // среда
+  const WEEKEND = new Date("2026-09-19T09:00:00.000Z"); // суббота
+
   it("RUB = ₸ / (VTB buy × 0.95): 45000 / (5.15 × 0.95) = 9198", () => {
-    expect(priceRub(45000, 5.15)).toBe(9198);
+    expect(priceRub(45000, 5.15, WEEKDAY)).toBe(9198);
+  });
+
+  it("в выходные коэффициент 0,93: 45000 / (5.15 × 0.93) = 9396", () => {
+    expect(priceRub(45000, 5.15, WEEKEND)).toBe(9396);
   });
 
   it("presentCard считает RUB на backend, не оставляет это модели", () => {
     const card = presentCard(towel, "RU", 5.15);
-    expect(card.price_rub).toBe(9198);
+    expect(card.price_rub).toBe(priceRub(towel.price_kzt, 5.15));
+    expect(card.price_rub).toBeGreaterThan(0);
     expect(presentCard(towel, "KZ", 5.15).price_rub).toBeNull();
   });
 });
