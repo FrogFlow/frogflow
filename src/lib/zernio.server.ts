@@ -116,6 +116,17 @@ export type ZernioInboxMessage = {
   message?: string;
   direction?: "incoming" | "outgoing";
   createdAt?: string;
+  /**
+   * Те же поля под именами из вебхука. В событии message.received текст
+   * приходит как `text`, а время как `sentAt` — проверено по живому журналу
+   * (zernio_logs). Читать надо оба написания: какое из них отдаёт список
+   * переписки, гадать нельзя, а промах означает, что сообщение для нас
+   * пустое и его как будто нет.
+   */
+  text?: string;
+  sentAt?: string;
+  /** Чем отправлено: через Zernio или из приложения Instagram. */
+  sentVia?: string;
   attachments?: Array<{
     id: string;
     type: string;
@@ -124,6 +135,17 @@ export type ZernioInboxMessage = {
     previewUrl?: string | null;
   }>;
 };
+
+/**
+ * Приводит сообщение к одному виду: message + createdAt заполнены, откуда бы
+ * Zernio их ни прислал. Вызывается сразу после запроса, чтобы ни один
+ * потребитель не разбирался в двух написаниях.
+ */
+export function normalizeInboxMessage(m: ZernioInboxMessage): ZernioInboxMessage {
+  const message = m.message ?? m.text;
+  const createdAt = m.createdAt ?? m.sentAt;
+  return { ...m, ...(message != null ? { message } : {}), ...(createdAt ? { createdAt } : {}) };
+}
 
 export type ZernioDmButton = {
   type: "url" | "postback" | "phone";
@@ -1262,7 +1284,7 @@ export async function listZernioConversationMessages(
         query: { accountId, limit: "100", sortOrder: "asc" },
       },
     );
-    return result.messages || [];
+    return (result.messages || []).map(normalizeInboxMessage);
   } catch (e) {
     console.error("[zernio] listZernioConversationMessages error", e);
     return [];
