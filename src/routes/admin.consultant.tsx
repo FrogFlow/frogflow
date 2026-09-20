@@ -514,7 +514,19 @@ function ConsultantPage() {
 
   const testTg = useMutation({
     mutationFn: () => testConsultantTelegramFn(),
-    onSuccess: () => toast.success("Тестовое уведомление отправлено в Telegram!"),
+    onSuccess: (res) => {
+      const failed = res.failed
+        .map((f) => `${f.chatId} — ${f.error}`)
+        .join("; ");
+      if (!res.ok) {
+        toast.error(failed || res.message || "Не доставлено никому");
+        return;
+      }
+      toast.success(
+        `Доставлено: ${res.delivered.join(", ")}` + (failed ? `. Не дошло: ${failed}` : ""),
+        { duration: failed ? 12000 : 4000 },
+      );
+    },
     onError: (e: unknown) => toast.error("Ошибка отправки в Telegram: " + errorMessage(e)),
   });
 

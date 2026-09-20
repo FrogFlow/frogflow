@@ -275,7 +275,7 @@ export const setConsultantTaskDoneFn = createServerFn({ method: "POST" })
 export const testConsultantTelegramFn = createServerFn({ method: "POST" }).handler(async () => {
   await requireAdmin();
   const { notifyConsultantHandoff } = await import("./notify");
-  await notifyConsultantHandoff({
+  const res = await notifyConsultantHandoff({
     userKey: "test_preview",
     reason: "purchase",
     text: "Тестовое уведомление: проверка связи с менеджером BOVI",
@@ -283,7 +283,15 @@ export const testConsultantTelegramFn = createServerFn({ method: "POST" }).handl
     customerUsername: "bovi_manager",
     lastProducts: ["Комплект постельного белья Сатин", "Полотенце махровое 100х150"],
   });
-  return { ok: true as const };
+  // Возвращаем поимённый итог: кому дошло, кому нет и почему. Прежнее
+  // «ok: true» печаталось даже тогда, когда Telegram отказал всем.
+  const deliveries = res.deliveries ?? [];
+  return {
+    ok: res.ok,
+    delivered: deliveries.filter((d) => d.ok).map((d) => d.chatId),
+    failed: deliveries.filter((d) => !d.ok).map((d) => ({ chatId: d.chatId, error: d.error ?? "" })),
+    message: res.ok ? "" : res.message,
+  };
 });
 
 export const toggleConsultantBotFn = createServerFn({ method: "POST" })

@@ -1,3 +1,8 @@
+/**
+ * Уведомление менеджерам о передаче диалога. Возвращает результат доставки:
+ * кнопка проверки в панели раньше рапортовала «отправлено» независимо от
+ * того, дошло ли хоть кому-то.
+ */
 export async function notifyConsultantHandoff(params: {
   userKey: string;
   reason: string;
@@ -6,7 +11,7 @@ export async function notifyConsultantHandoff(params: {
   customerUsername?: string;
   customerContact?: string;
   lastProducts?: string[];
-}): Promise<void> {
+}): Promise<import("@/lib/internal/internal-api.server").NotifyOwnerResult> {
   try {
     const { notifyOwner } = await import("@/lib/internal/internal-api.server");
 
@@ -115,7 +120,9 @@ export async function notifyConsultantHandoff(params: {
 
     const res = await notifyOwner(message, replyMarkup);
     console.log("[notifyConsultantHandoff] response:", res);
+    return res;
   } catch (e) {
     console.error("[notifyConsultantHandoff] error:", e);
+    return { ok: false as const, status: 500, message: String(e) };
   }
 }

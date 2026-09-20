@@ -89,52 +89,104 @@ export async function authenticateInternalRequest(request: Request): Promise<Int
   return { ok: true };
 }
 
-export type NotifyOwnerResult = { ok: true } | { ok: false; status: number; message: string };
+export type NotifyDelivery = { chatId: string; ok: boolean; error?: string };
 
-/** Шлёт текст владельцу от имени ЭТОГО бота, своим TELEGRAM_BOT_TOKEN. */
-export async function notifyOwner(
-  text: string,
-  replyMarkup?: Record<string, unknown>,
-): Promise<NotifyOwnerResult> {
+export type NotifyOwnerResult =
+  | { ok: true; deliveries?: NotifyDelivery[] }
+  | { ok: false; status: number; message: string; deliveries?: NotifyDelivery[] };
+
+/**
+ * Кому уходят уведомления этого бота: владелец из карточки плюс все ID,
+ * перечисленные в настройках («Telegram менеджеров», app_settings
+ * admin_chat_id). Раньше консультант знал только владельца, и продавец,
+ * заполнив в панели пять ID, получал уведомления на один — тот, который
+ * случайно совпал с владельцем. Магазинная ветка при этом всегда рассылала
+ * по списку: два разных представления об одном и том же.
+ */
+export async function notifyRecipients(): Promise<string[]> {
   const s = await db();
-  const { data, error } = await s
+  const ids: string[] = [];
+  const { data: bot } = await s
     .from("bots")
     .select("owner_telegram_id")
     .eq("id", requireBotId())
     .single();
+  if (bot?.owner_telegram_id) ids.push(String(bot.owner_telegram_id));
 
-  if (error || !data) {
-    return { ok: false, status: 500, message: `Не удалось прочитать владельца: ${error?.message}` };
+  const { data: setting } = await s
+    .from("app_settings")
+    .select("value")
+    .eq("key", "admin_chat_id")
+    .maybeSingle();
+  for (const part of (setting?.value ?? "").split(/[,;\s]+/)) {
+    const id = part.trim();
+    if (id) ids.push(id);
   }
-  if (!data.owner_telegram_id) {
-    // Не 500: деплой исправен, просто в панели не заполнен Telegram ID владельца.
-    return { ok: false, status: 409, message: "owner_telegram_id не заполнен в панели" };
+  return [...new Set(ids)];
+}
+
+/**
+ * Шлёт текст всем получателям от имени ЭТОГО бота, своим TELEGRAM_BOT_TOKEN.
+ * Отказ одного получателя не отменяет остальных, и каждый отказ возвращается
+ * наружу: «отправлено» вместо «дошло до двоих из пяти» — это та же ложь, что
+ * и молчаливая потеря сообщения.
+ */
+export async function notifyOwner(
+  text: string,
+  replyMarkup?: Record<string, unknown>,
+): Promise<NotifyOwnerResult> {
+  let recipients: string[];
+  try {
+    recipients = await notifyRecipients();
+  } catch (e: unknown) {
+    return { ok: false, status: 500, message: `Не удалось прочитать получателей: ${errorMessage(e) || e}` };
+  }
+  if (recipients.length === 0) {
+    // Не 500: деплой исправен, просто некому слать.
+    return { ok: false, status: 409, message: "Не задан ни владелец, ни Telegram ID менеджеров" };
   }
 
   const { tg } = await import("@/lib/telegram.server");
-  let res: { ok: boolean; description?: string };
-  try {
-    res = await tg("sendMessage", {
-      chat_id: Number(data.owner_telegram_id),
-      text,
-      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-    });
-  } catch (e: unknown) {
-    // Сюда попадает только незаданный TELEGRAM_BOT_TOKEN: сетевые сбои tg()
-    // переживает сам и возвращает ok: false.
-    return { ok: false, status: 500, message: `Отправка не удалась: ${errorMessage(e) || e}` };
+  const deliveries: NotifyDelivery[] = [];
+  for (const chatId of recipients) {
+    try {
+      // tg() не бросает при отказе Telegram, а возвращает ok: false.
+      const res = await tg("sendMessage", {
+        chat_id: chatId,
+        text,
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      });
+      deliveries.push(
+        res.ok ? { chatId, ok: true } : { chatId, ok: false, error: describeTelegramError(res.description) },
+      );
+    } catch (e: unknown) {
+      // Сюда попадает только незаданный TELEGRAM_BOT_TOKEN.
+      deliveries.push({ chatId, ok: false, error: errorMessage(e) || String(e) });
+    }
   }
-  // tg() не бросает при отказе Telegram, а возвращает ok: false. Проглотить
-  // это значило бы отрапортовать панели об успешной доставке несуществующего
-  // сообщения — ровно та ошибка, против которой написан §6 плана.
-  if (!res.ok) {
+
+  const delivered = deliveries.filter((d) => d.ok).length;
+  if (delivered === 0) {
     return {
       ok: false,
       status: 502,
-      message: `Telegram отклонил отправку: ${res.description || "неизвестная ошибка"}`,
+      message: `Ни одному получателю не доставлено: ${deliveries.map((d) => `${d.chatId} — ${d.error}`).join("; ")}`,
+      deliveries,
     };
   }
-  return { ok: true };
+  return { ok: true, deliveries };
+}
+
+/** Отказ Telegram человеческими словами: продавцу нужно понять, что делать. */
+export function describeTelegramError(description: string | undefined): string {
+  const raw = (description || "").toLowerCase();
+  if (raw.includes("chat not found")) {
+    return "этот человек ещё не написал боту — пусть откроет бота и отправит /start";
+  }
+  if (raw.includes("bot was blocked")) return "бот заблокирован этим пользователем";
+  if (raw.includes("deactivated")) return "аккаунт удалён";
+  if (raw.includes("too many requests")) return "Telegram просит подождать, попробуйте ещё раз";
+  return description || "неизвестная ошибка";
 }
 
 /** Один бот арендатора: магазинный или VIP. */
