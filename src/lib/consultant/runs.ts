@@ -101,6 +101,30 @@ export async function recordConsultantRun(run: ConsultantRunRecord): Promise<voi
   }
 }
 
+/**
+ * Что бот говорил в этом диалоге — по журналу, а не по памяти процесса.
+ *
+ * Отличить своё сообщение от менеджерского по памяти нельзя: на serverless
+ * каждый запрос может обслужить новый экземпляр, и уже через минуту бот не
+ * помнит собственных слов. Журнал помнит.
+ */
+export async function loadRecentBotReplies(userKey: string, limit = 20): Promise<string[]> {
+  try {
+    const s = await db();
+    const { data } = await s
+      .from("consultant_message_runs")
+      .select("reply_text")
+      .eq("user_key", userKey)
+      .not("reply_text", "is", null)
+      .order("received_at", { ascending: false })
+      .limit(limit);
+    return (data ?? []).map((r) => String(r.reply_text ?? "")).filter(Boolean);
+  } catch (e) {
+    console.error("[consultant] не удалось прочитать свои прошлые ответы", e);
+    return [];
+  }
+}
+
 export type ConsultantUsageDay = {
   /** Дата по Алматы: продавец считает сутки своими, а не по UTC. */
   date: string;

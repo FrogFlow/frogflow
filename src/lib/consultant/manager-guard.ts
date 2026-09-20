@@ -38,14 +38,25 @@ const TAIL = 12;
 
 export type ManagerMessage = { text: string; at: number };
 
+/**
+ * Менеджер, написавший недавно, остаётся в чате, даже если бот успел
+ * ответить после него. Поэтому окно не сводится к «после нашего последнего
+ * ответа»: последние полчаса переписки смотрим всегда.
+ */
+export const ACTIVE_MANAGER_WINDOW_MS = 30 * 60 * 1000;
+
 export function findManagerMessage(
   messages: ZernioInboxMessage[],
   state: ConsultantState,
   now: number = Date.now(),
+  ourReplies: string[] = [],
 ): ManagerMessage | null {
   const botAt = Date.parse(state.last_bot_reply_at ?? "");
-  const since = Number.isFinite(botAt) ? botAt + BOT_ECHO_GRACE_MS : now - MANAGER_LOOKBACK_MS;
+  const since = Number.isFinite(botAt)
+    ? Math.min(botAt + BOT_ECHO_GRACE_MS, now - ACTIVE_MANAGER_WINDOW_MS)
+    : now - MANAGER_LOOKBACK_MS;
   const ourLast = foldReply(state.last_bot_reply ?? "");
+  const ourVoice = new Set(ourReplies.map(foldReply).filter(Boolean));
   const tail = messages.slice(-TAIL);
   for (let i = tail.length - 1; i >= 0; i--) {
     const m = tail[i];
@@ -59,6 +70,9 @@ export function findManagerMessage(
     if (isBotEcho(state, text)) continue;
     if (looksLikeConsultantBotReply(text)) continue;
     if (ourLast && foldReply(text) === ourLast) continue;
+    // Свои прошлые ответы знаем по журналу: память процесса на serverless
+    // живёт минуты, а менеджер приходит и через час.
+    if (ourVoice.has(foldReply(text))) continue;
     return { text, at };
   }
   return null;
@@ -115,6 +129,7 @@ function describeMessages(messages: ZernioInboxMessage[], state: ConsultantState
 export async function managerSpokeInConversation(params: {
   accountId?: string | null;
   conversationId?: string | null;
+  userKey?: string;
   state: ConsultantState;
 }): Promise<ManagerCheck> {
   if (!params.accountId || !params.conversationId) {
@@ -124,7 +139,9 @@ export async function managerSpokeInConversation(params: {
     const { listZernioConversationMessages } = await import("@/lib/zernio.server");
     const messages = await listZernioConversationMessages(params.accountId, params.conversationId);
     if (messages.length === 0) return { status: "empty", checked: 0 };
-    const found = findManagerMessage(messages, params.state);
+    const { loadRecentBotReplies } = await import("./runs");
+    const ourReplies = params.userKey ? await loadRecentBotReplies(params.userKey) : [];
+    const found = findManagerMessage(messages, params.state, Date.now(), ourReplies);
     const stats = describeMessages(messages, params.state, Date.now());
     return found
       ? { status: "found", checked: messages.length, message: found, stats }

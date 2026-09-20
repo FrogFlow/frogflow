@@ -304,6 +304,7 @@ async function handleConsultantZernioEventInternal(params: {
   const managerCheck = await managerSpokeInConversation({
     accountId: params.accountId,
     conversationId: params.conversationId,
+    userKey: params.userKey,
     state: consultant,
   });
   if (managerCheck.status === "found") {

@@ -62,6 +62,36 @@ describe("менеджер в чате", () => {
     ).toBeNull();
   });
 
+  it("менеджер недавно писал — молчим, даже если бот успел ответить после него", () => {
+    // Ровно случай продавца: менеджер написал, бот перебил и ответил, и по
+    // прежнему правилу «смотрим только после нашего ответа» менеджер уходил
+    // из поля зрения навсегда.
+    const afterBotSpoke: ConsultantState = {
+      last_bot_reply: "Хорошо, понимаю. Если передумаете — обращайтесь.",
+      last_bot_reply_at: at(1),
+    };
+    const found = findManagerMessage(
+      [
+        msg("outgoing", "сейчас не работаем", 18),
+        msg("incoming", "А окей", 17),
+        msg("outgoing", afterBotSpoke.last_bot_reply!, 1),
+      ],
+      afterBotSpoke,
+      NOW,
+    );
+    expect(found?.text).toBe("сейчас не работаем");
+  });
+
+  it("свои прошлые ответы узнаёт по журналу", () => {
+    const earlier = "Спасибо за интерес. Если появятся вопросы — пишите.";
+    const st: ConsultantState = { last_bot_reply: "Хорошо, понимаю.", last_bot_reply_at: at(1) };
+    const messages = [msg("outgoing", earlier, 10), msg("outgoing", st.last_bot_reply!, 1)];
+    // Без журнала прошлый ответ бота выглядит как чужой.
+    expect(findManagerMessage(messages, st, NOW)?.text).toBe(earlier);
+    // С журналом — свой.
+    expect(findManagerMessage(messages, st, NOW, [earlier])).toBeNull();
+  });
+
   it("пустая переписка ничего не ломает", () => {
     expect(findManagerMessage([], state, NOW)).toBeNull();
   });
