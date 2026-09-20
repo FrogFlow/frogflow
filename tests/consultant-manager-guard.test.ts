@@ -1,0 +1,68 @@
+import { describe, expect, it } from "vitest";
+import { findManagerMessage, MANAGER_LOOKBACK_MS } from "../src/lib/consultant/manager-guard";
+import type { ConsultantState } from "../src/lib/consultant/state";
+
+/**
+ * Жалоба продавца: бот не понимает, что в чате уже отвечает менеджер, и не
+ * умолкает. В базе это подтвердилось — тринадцать диалогов BOVI и ни одной
+ * паузы с причиной manager_intervention.
+ */
+const NOW = Date.parse("2026-09-20T10:00:00.000Z");
+const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
+
+function msg(direction: "incoming" | "outgoing", message: string, minutesAgo: number) {
+  return { direction, message, createdAt: at(minutesAgo) } as never;
+}
+
+const state: ConsultantState = {
+  last_bot_reply: "Полотенца Uchino 50x70 есть. Какой цвет предпочитаете?",
+  last_bot_reply_at: at(30),
+};
+
+describe("менеджер в чате", () => {
+  it("ловит ответ менеджера, даже если после него написал покупатель", () => {
+    const found = findManagerMessage(
+      [
+        msg("incoming", "Какие есть полотенца?", 35),
+        msg("outgoing", state.last_bot_reply!, 30),
+        msg("outgoing", "Здравствуйте, это Айгуль, подберу вам комплект", 10),
+        msg("incoming", "Спасибо, жду", 5),
+      ],
+      state,
+      NOW,
+    );
+    expect(found?.text).toContain("Айгуль");
+  });
+
+  it("свой же ответ бота менеджером не считает", () => {
+    const found = findManagerMessage(
+      [msg("incoming", "привет", 31), msg("outgoing", state.last_bot_reply!, 30)],
+      state,
+      NOW,
+    );
+    expect(found).toBeNull();
+  });
+
+  it("сообщение бота, пришедшее в ленту с задержкой, тоже не менеджер", () => {
+    // Отправили ответ, в ленте Zernio он появился на минуту позже.
+    const found = findManagerMessage([msg("outgoing", state.last_bot_reply!, 29)], state, NOW);
+    expect(found).toBeNull();
+  });
+
+  it("старое сообщение менеджера бота не глушит", () => {
+    const old = { last_bot_reply: undefined, last_bot_reply_at: undefined } as ConsultantState;
+    const longAgo = MANAGER_LOOKBACK_MS / 60_000 + 60;
+    expect(findManagerMessage([msg("outgoing", "Добрый день", longAgo)], old, NOW)).toBeNull();
+    expect(findManagerMessage([msg("outgoing", "Добрый день", 60)], old, NOW)?.text).toBe("Добрый день");
+  });
+
+  it("входящие сообщения менеджером не считаются", () => {
+    expect(
+      findManagerMessage([msg("incoming", "а можно скидку?", 1)], state, NOW),
+    ).toBeNull();
+  });
+
+  it("пустая переписка ничего не ломает", () => {
+    expect(findManagerMessage([], state, NOW)).toBeNull();
+  });
+});

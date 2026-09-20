@@ -1,0 +1,86 @@
+/**
+ * «В чате уже отвечает менеджер» — проверка перед тем, как бот заговорит.
+ *
+ * Как было. Пауза ставилась двумя путями, и оба не работали. Вебхук ловит
+ * только message.received: исходящих событий Zernio нам не шлёт вовсе (в
+ * журнале за последние сутки только message.received и comment.received),
+ * поэтому ветка direction === "outgoing" в обработчике не срабатывала ни
+ * разу. Оставался опрос раз в пятнадцать минут, и тот требовал, чтобы
+ * сообщение менеджера было в переписке последним: ответил менеджер, следом
+ * написал покупатель — и опрос проходит мимо. В базе это видно прямо:
+ * тринадцать диалогов BOVI и ни одной паузы с причиной manager_intervention.
+ *
+ * Как стало. На каждое входящее сообщение смотрим хвост переписки глазами
+ * Zernio: есть ли там исходящее, которое отправляли не мы и которое новее
+ * нашего последнего ответа. Есть — ставим паузу и молчим. Это один лишний
+ * запрос к Zernio на сообщение, и он того стоит: бот, перебивающий живого
+ * менеджера, дороже.
+ */
+import type { ZernioInboxMessage } from "@/lib/zernio.server";
+import { foldReply, looksLikeConsultantBotReply } from "./copy";
+import { isBotEcho, type ConsultantState } from "./state";
+
+/**
+ * Наше собственное сообщение появляется в ленте Zernio не мгновенно, а его
+ * время может разойтись с нашим на секунды. Полторы минуты запаса.
+ */
+export const BOT_ECHO_GRACE_MS = 90_000;
+
+/**
+ * Если бот в этом диалоге ещё не отвечал, сравнивать не с чем. Тогда
+ * менеджером считается только свежее исходящее: переписка недельной
+ * давности бота глушить не должна.
+ */
+export const MANAGER_LOOKBACK_MS = 12 * 60 * 60 * 1000;
+
+/** Сколько последних сообщений переписки смотрим. */
+const TAIL = 12;
+
+export type ManagerMessage = { text: string; at: number };
+
+export function findManagerMessage(
+  messages: ZernioInboxMessage[],
+  state: ConsultantState,
+  now: number = Date.now(),
+): ManagerMessage | null {
+  const botAt = Date.parse(state.last_bot_reply_at ?? "");
+  const since = Number.isFinite(botAt) ? botAt + BOT_ECHO_GRACE_MS : now - MANAGER_LOOKBACK_MS;
+  const ourLast = foldReply(state.last_bot_reply ?? "");
+  const tail = messages.slice(-TAIL);
+  for (let i = tail.length - 1; i >= 0; i--) {
+    const m = tail[i];
+    if (m.direction !== "outgoing") continue;
+    const text = (m.message ?? "").trim();
+    if (!text) continue;
+    const at = m.createdAt ? Date.parse(m.createdAt) : 0;
+    if (!Number.isFinite(at) || at <= since) continue;
+    // Наши же слова: свежая отправка, знакомый шаблон или дословный повтор
+    // последнего ответа бота.
+    if (isBotEcho(state, text)) continue;
+    if (looksLikeConsultantBotReply(text)) continue;
+    if (ourLast && foldReply(text) === ourLast) continue;
+    return { text, at };
+  }
+  return null;
+}
+
+/**
+ * Тот же вопрос, но с походом в Zernio. Ошибка запроса не должна затыкать
+ * бота: не смогли проверить — отвечаем, как раньше.
+ */
+export async function managerSpokeInConversation(params: {
+  accountId?: string | null;
+  conversationId?: string | null;
+  state: ConsultantState;
+}): Promise<ManagerMessage | null> {
+  if (!params.accountId || !params.conversationId) return null;
+  try {
+    const { listZernioConversationMessages } = await import("@/lib/zernio.server");
+    const messages = await listZernioConversationMessages(params.accountId, params.conversationId);
+    if (messages.length === 0) return null;
+    return findManagerMessage(messages, params.state);
+  } catch (e) {
+    console.error("[consultant] не удалось проверить, писал ли менеджер", e);
+    return null;
+  }
+}

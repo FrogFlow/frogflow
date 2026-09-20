@@ -232,6 +232,18 @@ index of titles and tags, and the article itself is fetched with
 wording rather than retelling it, and an empty result is not a licence to
 invent: it is the manager's question.
 
+### Manager in the chat
+
+Zernio delivers `message.received` only: no event ever reports a message the
+shop sent, so a webhook can never tell the consultant that a human has stepped
+in. Before every reply the consultant therefore reads the tail of the
+conversation through the Zernio API and looks for an outgoing message that is
+newer than its own last reply and is not its own words. Finding one pauses the
+dialogue with `manager_intervention` and the reply is not sent. The fifteen
+minute poll stays as a backstop and now scans the tail as well, instead of
+requiring the manager's message to be the last one in the conversation — a
+customer answering the manager used to hide it completely.
+
 ### Message ledger
 
 Every answered message writes one row to `consultant_message_runs` with its

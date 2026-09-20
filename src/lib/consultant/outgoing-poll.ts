@@ -1,5 +1,5 @@
-import { looksLikeConsultantBotReply } from "./copy";
-import { isBotEcho, loadConsultantState, pauseConsultant } from "./state";
+import { findManagerMessage } from "./manager-guard";
+import { loadConsultantState, pauseConsultant } from "./state";
 import { logConsultantEvent, consultantRequestId } from "./log";
 
 /** Запасной детектор исходящего менеджера, если webhook не прислал outgoing. */
@@ -19,8 +19,7 @@ export async function pollOutgoingManagerMessages(): Promise<{ checked: number; 
 
       checked += 1;
       const messages = await listZernioConversationMessages(acc._id, convo.id);
-      const last = [...messages].reverse().find((m) => m.message?.trim());
-      if (!last || last.direction !== "outgoing") continue;
+      if (messages.length === 0) continue;
       const { data } = await s
         .from("bot_users")
         .select("user_key, state")
@@ -28,13 +27,10 @@ export async function pollOutgoingManagerMessages(): Promise<{ checked: number; 
         .maybeSingle();
       if (!data?.user_key) continue;
       const { consultant } = await loadConsultantState(data.user_key);
-      if (isBotEcho(consultant, last.message || "")) continue;
-      if (looksLikeConsultantBotReply(last.message || "")) continue;
-      const botReplyTs = Date.parse(consultant.last_bot_reply_at ?? "");
-      const msgTs = last.createdAt ? Date.parse(last.createdAt) : 0;
-      if (Number.isFinite(botReplyTs) && Number.isFinite(msgTs) && Math.abs(msgTs - botReplyTs) < 60_000) {
-        continue;
-      }
+      // Ищем сообщение менеджера в хвосте переписки, а не только последнее:
+      // ответил менеджер, следом написал покупатель — и прежняя проверка
+      // проходила мимо, потому что последним оказывалось входящее.
+      if (!findManagerMessage(messages, consultant)) continue;
       await pauseConsultant(data.user_key, "manager_intervention");
       paused += 1;
       logConsultantEvent(consultantRequestId(), "paused_poll", { userKey: data.user_key });

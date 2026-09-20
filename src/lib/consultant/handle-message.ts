@@ -74,6 +74,7 @@ import {
   type ConsultantState,
 } from "./state";
 import { consultantModel } from "./config";
+import { managerSpokeInConversation } from "./manager-guard";
 import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
@@ -293,6 +294,24 @@ async function handleConsultantZernioEventInternal(params: {
     logConsultantEvent(requestId, "skipped_duplicate", {
       userKey: params.userKey,
       reason: "claim_lost",
+    });
+    return;
+  }
+
+  // В чате уже отвечает менеджер? Тогда бот молчит. Проверяем перед каждым
+  // ответом: событий об исходящих Zernio не шлёт, а опрос раз в пятнадцать
+  // минут ловит только случай, когда сообщение менеджера последнее.
+  const managerMessage = await managerSpokeInConversation({
+    accountId: params.accountId,
+    conversationId: params.conversationId,
+    state: consultant,
+  });
+  if (managerMessage) {
+    await pauseConsultant(params.userKey, "manager_intervention");
+    logConsultantEvent(requestId, "paused", {
+      userKey: params.userKey,
+      reason: "manager_intervention",
+      source: "pre_reply_check",
     });
     return;
   }
