@@ -65,6 +65,20 @@ export function findManagerMessage(
 }
 
 /**
+ * Результат проверки. Он же пишется в журнал сообщений: когда в следующий
+ * раз бот перебьёт менеджера, по строке журнала будет видно, что именно
+ * увидела проверка, а не придётся гадать между «код не доехал», «Zernio не
+ * отдал переписку» и «сообщение не распознано».
+ */
+export type ManagerCheck = {
+  status: "found" | "clear" | "no_conversation" | "empty" | "error";
+  /** Сколько сообщений вернул Zernio. */
+  checked: number;
+  message?: ManagerMessage;
+  error?: string;
+};
+
+/**
  * Тот же вопрос, но с походом в Zernio. Ошибка запроса не должна затыкать
  * бота: не смогли проверить — отвечаем, как раньше.
  */
@@ -72,15 +86,20 @@ export async function managerSpokeInConversation(params: {
   accountId?: string | null;
   conversationId?: string | null;
   state: ConsultantState;
-}): Promise<ManagerMessage | null> {
-  if (!params.accountId || !params.conversationId) return null;
+}): Promise<ManagerCheck> {
+  if (!params.accountId || !params.conversationId) {
+    return { status: "no_conversation", checked: 0 };
+  }
   try {
     const { listZernioConversationMessages } = await import("@/lib/zernio.server");
     const messages = await listZernioConversationMessages(params.accountId, params.conversationId);
-    if (messages.length === 0) return null;
-    return findManagerMessage(messages, params.state);
+    if (messages.length === 0) return { status: "empty", checked: 0 };
+    const found = findManagerMessage(messages, params.state);
+    return found
+      ? { status: "found", checked: messages.length, message: found }
+      : { status: "clear", checked: messages.length };
   } catch (e) {
     console.error("[consultant] не удалось проверить, писал ли менеджер", e);
-    return null;
+    return { status: "error", checked: 0, error: e instanceof Error ? e.message : String(e) };
   }
 }

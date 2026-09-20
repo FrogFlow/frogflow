@@ -301,17 +301,30 @@ async function handleConsultantZernioEventInternal(params: {
   // В чате уже отвечает менеджер? Тогда бот молчит. Проверяем перед каждым
   // ответом: событий об исходящих Zernio не шлёт, а опрос раз в пятнадцать
   // минут ловит только случай, когда сообщение менеджера последнее.
-  const managerMessage = await managerSpokeInConversation({
+  const managerCheck = await managerSpokeInConversation({
     accountId: params.accountId,
     conversationId: params.conversationId,
     state: consultant,
   });
-  if (managerMessage) {
+  if (managerCheck.status === "found") {
     await pauseConsultant(params.userKey, "manager_intervention");
     logConsultantEvent(requestId, "paused", {
       userKey: params.userKey,
       reason: "manager_intervention",
       source: "pre_reply_check",
+    });
+    // Пауза тоже попадает в журнал: иначе «бот промолчал» неотличимо от
+    // «бот не получил сообщение».
+    void recordConsultantRun({
+      messageId: params.payload.message?.id || params.payload.id || requestId,
+      conversationId: params.conversationId,
+      accountId: params.accountId,
+      userKey: params.userKey,
+      source,
+      incomingText: text,
+      replyKind: "paused_manager",
+      status: "cancelled",
+      managerCheck,
     });
     return;
   }
@@ -413,6 +426,7 @@ async function handleConsultantZernioEventInternal(params: {
     replyKind: reply.kind,
     model: runModel,
     usage: runUsage,
+    managerCheck,
   });
 }
 

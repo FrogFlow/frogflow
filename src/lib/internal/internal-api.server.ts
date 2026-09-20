@@ -317,7 +317,26 @@ export type HealthReport = {
   /** Последняя ошибка доставки со стороны Telegram — самый честный признак «бот сломан». */
   last_error: string | null;
   last_error_at: string | null;
+  /**
+   * Какая версия кода сейчас живёт на деплое. Без этого разбор жалобы
+   * упирается в догадку: поправили и выложили, а поведение прежнее — код
+   * не доехал или дело в чём-то другом? Vercel подставляет эти переменные
+   * сам, на своей машине разработчика их просто нет.
+   */
+  deploy: {
+    commit: string | null;
+    branch: string | null;
+    env: string | null;
+  };
 };
+
+export function deployFingerprint(): HealthReport["deploy"] {
+  return {
+    commit: process.env.VERCEL_GIT_COMMIT_SHA?.trim().slice(0, 7) || null,
+    branch: process.env.VERCEL_GIT_COMMIT_REF?.trim() || null,
+    env: process.env.VERCEL_ENV?.trim() || null,
+  };
+}
 
 /**
  * Состояние бота глазами Telegram. Панель спрашивает деплой, деплой
@@ -373,6 +392,7 @@ export async function botHealth(): Promise<
         last_error_at: info?.last_error_date
           ? new Date(info.last_error_date * 1000).toISOString()
           : null,
+        deploy: deployFingerprint(),
       },
     };
   } catch (e: unknown) {

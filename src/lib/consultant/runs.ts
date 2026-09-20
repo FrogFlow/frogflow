@@ -29,6 +29,10 @@ export type ConsultantRunRecord = {
   usage?: SmartSearchTokenUsage | null;
   rate?: { value?: number | null; updatedAt?: string | null; source?: string | null };
   errorCode?: string | null;
+  /** Что увидела проверка «в чате уже отвечает менеджер». */
+  managerCheck?: import("./manager-guard").ManagerCheck;
+  /** По умолчанию replied; пауза из-за менеджера пишется как cancelled. */
+  status?: "replied" | "cancelled" | "terminal_failed";
 };
 
 async function db() {
@@ -56,7 +60,7 @@ export async function recordConsultantRun(run: ConsultantRunRecord): Promise<voi
         user_key: run.userKey,
         direction: "incoming",
         source: run.source,
-        status: run.errorCode ? "terminal_failed" : "replied",
+        status: run.status ?? (run.errorCode ? "terminal_failed" : "replied"),
         incoming_text: run.incomingText?.slice(0, 2000) ?? null,
         reply_text: run.replyText?.slice(0, 4000) ?? null,
         reply_kind: run.replyKind ?? null,
@@ -73,8 +77,19 @@ export async function recordConsultantRun(run: ConsultantRunRecord): Promise<voi
               usd: runUsd(usage),
             }
           : {},
+        tool_trace: run.managerCheck
+          ? [
+              {
+                check: "manager_in_chat",
+                status: run.managerCheck.status,
+                messages_seen: run.managerCheck.checked,
+                ...(run.managerCheck.message ? { text: run.managerCheck.message.text.slice(0, 200) } : {}),
+                ...(run.managerCheck.error ? { error: run.managerCheck.error.slice(0, 200) } : {}),
+              },
+            ]
+          : [],
         error_code: run.errorCode ?? null,
-        sent_at: run.errorCode ? null : new Date().toISOString(),
+        sent_at: run.errorCode || run.status === "cancelled" ? null : new Date().toISOString(),
         completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
