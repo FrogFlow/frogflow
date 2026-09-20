@@ -76,7 +76,37 @@ export type ManagerCheck = {
   checked: number;
   message?: ManagerMessage;
   error?: string;
+  /**
+   * Из чего состоял ответ Zernio. Без этого «менеджера не видно» значит
+   * одинаково и «его там правда нет», и «мы читаем не те поля»: первый раз
+   * разбор упёрся ровно в это.
+   */
+  stats?: {
+    /** Сколько сообщений по каждому значению direction. */
+    directions: Record<string, number>;
+    /** У скольких пустой текст — признак, что читаем не то поле. */
+    emptyText: number;
+    /** Время самого свежего исходящего, как его отдал Zernio. */
+    lastOutgoingAt?: string;
+    /** С какого момента сообщение считается ответом менеджера. */
+    since: string;
+  };
 };
+
+function describeMessages(messages: ZernioInboxMessage[], state: ConsultantState, now: number) {
+  const directions: Record<string, number> = {};
+  let emptyText = 0;
+  let lastOutgoingAt: string | undefined;
+  for (const m of messages) {
+    const dir = m.direction ?? "(нет поля)";
+    directions[dir] = (directions[dir] ?? 0) + 1;
+    if (!(m.message ?? "").trim()) emptyText += 1;
+    if (dir === "outgoing" && m.createdAt) lastOutgoingAt = m.createdAt;
+  }
+  const botAt = Date.parse(state.last_bot_reply_at ?? "");
+  const since = Number.isFinite(botAt) ? botAt + BOT_ECHO_GRACE_MS : now - MANAGER_LOOKBACK_MS;
+  return { directions, emptyText, lastOutgoingAt, since: new Date(since).toISOString() };
+}
 
 /**
  * Тот же вопрос, но с походом в Zernio. Ошибка запроса не должна затыкать
@@ -95,9 +125,10 @@ export async function managerSpokeInConversation(params: {
     const messages = await listZernioConversationMessages(params.accountId, params.conversationId);
     if (messages.length === 0) return { status: "empty", checked: 0 };
     const found = findManagerMessage(messages, params.state);
+    const stats = describeMessages(messages, params.state, Date.now());
     return found
-      ? { status: "found", checked: messages.length, message: found }
-      : { status: "clear", checked: messages.length };
+      ? { status: "found", checked: messages.length, message: found, stats }
+      : { status: "clear", checked: messages.length, stats };
   } catch (e) {
     console.error("[consultant] не удалось проверить, писал ли менеджер", e);
     return { status: "error", checked: 0, error: e instanceof Error ? e.message : String(e) };

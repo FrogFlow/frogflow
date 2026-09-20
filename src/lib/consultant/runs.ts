@@ -85,6 +85,7 @@ export async function recordConsultantRun(run: ConsultantRunRecord): Promise<voi
                 messages_seen: run.managerCheck.checked,
                 ...(run.managerCheck.message ? { text: run.managerCheck.message.text.slice(0, 200) } : {}),
                 ...(run.managerCheck.error ? { error: run.managerCheck.error.slice(0, 200) } : {}),
+                ...(run.managerCheck.stats ? { seen: run.managerCheck.stats } : {}),
               },
             ]
           : [],

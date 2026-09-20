@@ -441,3 +441,79 @@ export async function selfDiagnostics(): Promise<Diagnostics> {
 
   return { bot_id: botId, app_origin: origin, checks };
 }
+
+/**
+ * Форма ответа Zernio на запрос переписки — только имена полей и счётчики,
+ * ни одного слова из сообщений: ответ уезжает в панель оператора.
+ *
+ * Появилось при разборе жалобы «бот перебивает менеджера»: проверка честно
+ * сообщала, что менеджера не видно, при сотне полученных сообщений, и
+ * отличить «его там нет» от «читаем не то поле» было нечем.
+ */
+export async function consultantDialogueProbe(conversationId?: string): Promise<{
+  conversationId: string | null;
+  accountId: string | null;
+  messages: number;
+  /** Какие ключи есть у последнего сообщения. */
+  keys: string[];
+  directions: Record<string, number>;
+  /** У скольких сообщений после нормализации пустой текст. */
+  emptyText: number;
+  lastOutgoingAt: string | null;
+  error?: string;
+}> {
+  const empty = {
+    conversationId: conversationId ?? null,
+    accountId: null,
+    messages: 0,
+    keys: [],
+    directions: {},
+    emptyText: 0,
+    lastOutgoingAt: null,
+  };
+  try {
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    let convId = conversationId ?? null;
+    let accId: string | null = null;
+    const query = supabaseAdmin
+      .from("bot_users")
+      .select("zernio_conversation_id, zernio_account_id, updated_at")
+      .not("zernio_conversation_id", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    const { data } = convId
+      ? await supabaseAdmin
+          .from("bot_users")
+          .select("zernio_conversation_id, zernio_account_id, updated_at")
+          .eq("zernio_conversation_id", convId)
+          .limit(1)
+      : await query;
+    const row = data?.[0];
+    convId = convId ?? row?.zernio_conversation_id ?? null;
+    accId = row?.zernio_account_id ?? null;
+    if (!convId || !accId) return { ...empty, conversationId: convId, error: "нет диалога с Zernio" };
+
+    const { listZernioConversationMessages } = await import("@/lib/zernio.server");
+    const messages = await listZernioConversationMessages(accId, convId);
+    const directions: Record<string, number> = {};
+    let emptyText = 0;
+    let lastOutgoingAt: string | null = null;
+    for (const m of messages) {
+      const dir = m.direction ?? "(нет поля)";
+      directions[dir] = (directions[dir] ?? 0) + 1;
+      if (!(m.message ?? "").trim()) emptyText += 1;
+      if (dir === "outgoing" && m.createdAt) lastOutgoingAt = m.createdAt;
+    }
+    return {
+      conversationId: convId,
+      accountId: accId ? "есть" : null,
+      messages: messages.length,
+      keys: messages.length ? Object.keys(messages[messages.length - 1]) : [],
+      directions,
+      emptyText,
+      lastOutgoingAt,
+    };
+  } catch (e) {
+    return { ...empty, error: e instanceof Error ? e.message : String(e) };
+  }
+}

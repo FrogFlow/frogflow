@@ -15,8 +15,18 @@ export const Route = createFileRoute("/api/internal/diagnostics")({
         if (!auth.ok) {
           return Response.json({ ok: false, error: auth.message }, { status: auth.status });
         }
-        const { selfDiagnostics } = await import("@/lib/internal/diagnostics.server");
-        return Response.json({ ok: true, diagnostics: await selfDiagnostics() });
+        const body = (await request.json().catch(() => ({}))) as {
+          probe?: string;
+          conversationId?: string;
+        };
+        const mod = await import("@/lib/internal/diagnostics.server");
+        if (body.probe === "consultant-dialogue") {
+          return Response.json({
+            ok: true,
+            probe: await mod.consultantDialogueProbe(body.conversationId),
+          });
+        }
+        return Response.json({ ok: true, diagnostics: await mod.selfDiagnostics() });
       },
     },
   },
