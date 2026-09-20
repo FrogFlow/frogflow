@@ -19,8 +19,12 @@ export type SmartSearchTokenUsage = {
   /** Токены, посчитанные по полной цене: мимо кеша. */
   inputTokens: number;
   outputTokens: number;
-  /** Записано в кеш промпта. */
+  /** Записано в кеш промпта — всего, по всем точкам. */
   cacheCreationTokens?: number;
+  /** Из записи — то, что легло в пятиминутный кеш (хвост переписки). */
+  cacheCreation5mTokens?: number;
+  /** Из записи — то, что легло в часовой кеш (системный промпт и инструменты). */
+  cacheCreation1hTokens?: number;
   /** Прочитано из кеша промпта. */
   cacheReadTokens?: number;
 };
@@ -46,6 +50,11 @@ export function todayUtcDate(): string {
  * токенов, и при работающем кеше в input_tokens приходит лишь несколько
  * процентов от него. Клиенту этот счёт выставляют, поэтому недосчёт — это
  * деньги мимо кассы.
+ *
+ * Точек кеша у консультанта две, и ставки у них разные: системный промпт с
+ * инструментами пишется на час (×2), хвост переписки — на пять минут (×1,25).
+ * Одна общая цифра записи, посчитанная по часовой ставке, завышает счёт на
+ * хвосте. Перерасчёт клиенту в его же пользу — такая же ошибка, как недосчёт.
  */
 export function estimateUsdFromTokens(
   usage: SmartSearchTokenUsage,
@@ -53,12 +62,51 @@ export function estimateUsdFromTokens(
 ): number {
   const input = Math.max(0, usage.inputTokens);
   const output = Math.max(0, usage.outputTokens);
-  const written = Math.max(0, usage.cacheCreationTokens ?? 0);
   const read = Math.max(0, usage.cacheReadTokens ?? 0);
-  const inputUsd =
-    (input + written * CACHE_WRITE_MULTIPLIER[ttl] + read * CACHE_READ_MULTIPLIER) *
-    HAIKU_INPUT_USD_PER_MTOK;
+  const written5m = Math.max(0, usage.cacheCreation5mTokens ?? 0);
+  const written1h = Math.max(0, usage.cacheCreation1hTokens ?? 0);
+  // Общая цифра и разбивка должны сходиться; если ответ дал только общую,
+  // остаток считается по TTL вызова — как считалось до появления разбивки.
+  const written = Math.max(Math.max(0, usage.cacheCreationTokens ?? 0), written5m + written1h);
+  const writtenRest = Math.max(0, written - written5m - written1h);
+  const writtenUsd =
+    written5m * CACHE_WRITE_MULTIPLIER["5m"] +
+    written1h * CACHE_WRITE_MULTIPLIER["1h"] +
+    writtenRest * CACHE_WRITE_MULTIPLIER[ttl];
+  const inputUsd = (input + writtenUsd + read * CACHE_READ_MULTIPLIER) * HAIKU_INPUT_USD_PER_MTOK;
   return (inputUsd + output * HAIKU_OUTPUT_USD_PER_MTOK) / 1_000_000;
+}
+
+/**
+ * Сложение двух замеров расхода.
+ *
+ * На одно сообщение покупателя приходится до четырёх вызовов модели подряд, и
+ * складывать их надо целиком. Раньше сложение писалось на месте по полям, и
+ * при добавлении нового поля оно молча выпадало из счёта со второго раунда.
+ * Поэтому сложение живёт рядом с типом, а не у места вызова.
+ */
+export function addTokenUsage(
+  a: SmartSearchTokenUsage | null | undefined,
+  b: SmartSearchTokenUsage | null | undefined,
+): SmartSearchTokenUsage | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  const sum = (x?: number, y?: number) => Math.max(0, x ?? 0) + Math.max(0, y ?? 0);
+  const out: SmartSearchTokenUsage = {
+    inputTokens: sum(a.inputTokens, b.inputTokens),
+    outputTokens: sum(a.outputTokens, b.outputTokens),
+    cacheCreationTokens: sum(a.cacheCreationTokens, b.cacheCreationTokens),
+    cacheReadTokens: sum(a.cacheReadTokens, b.cacheReadTokens),
+  };
+  // Разбивку по TTL несём дальше только если её дал хотя бы один раунд:
+  // пустые нули превратили бы часовую запись в неразобранный остаток.
+  if (a.cacheCreation5mTokens !== undefined || b.cacheCreation5mTokens !== undefined) {
+    out.cacheCreation5mTokens = sum(a.cacheCreation5mTokens, b.cacheCreation5mTokens);
+  }
+  if (a.cacheCreation1hTokens !== undefined || b.cacheCreation1hTokens !== undefined) {
+    out.cacheCreation1hTokens = sum(a.cacheCreation1hTokens, b.cacheCreation1hTokens);
+  }
+  return out;
 }
 
 export function parseDailyCount(raw: string | null | undefined, today = todayUtcDate()): number {
@@ -131,6 +179,10 @@ export function extractAnthropicUsage(payload: unknown): SmartSearchTokenUsage |
         output_tokens?: unknown;
         cache_creation_input_tokens?: unknown;
         cache_read_input_tokens?: unknown;
+        cache_creation?: {
+          ephemeral_5m_input_tokens?: unknown;
+          ephemeral_1h_input_tokens?: unknown;
+        };
       };
     }
   ).usage;
@@ -138,12 +190,23 @@ export function extractAnthropicUsage(payload: unknown): SmartSearchTokenUsage |
   const inputTokens = Number(usage.input_tokens);
   const outputTokens = Number(usage.output_tokens);
   if (!Number.isFinite(inputTokens) && !Number.isFinite(outputTokens)) return null;
+  // Разбивка записи по TTL приходит отдельным объектом. Поля может не быть —
+  // тогда остаёмся на общей цифре, и она считается по TTL вызова.
+  const breakdown = usage.cache_creation;
+  const has5m = breakdown && breakdown.ephemeral_5m_input_tokens !== undefined;
+  const has1h = breakdown && breakdown.ephemeral_1h_input_tokens !== undefined;
   return {
     inputTokens: Math.max(0, inputTokens || 0),
     outputTokens: Math.max(0, outputTokens || 0),
     // Эти два поля раньше выбрасывались, и вместе с ними — почти весь ввод.
     cacheCreationTokens: Math.max(0, Number(usage.cache_creation_input_tokens) || 0),
     cacheReadTokens: Math.max(0, Number(usage.cache_read_input_tokens) || 0),
+    ...(has5m
+      ? { cacheCreation5mTokens: Math.max(0, Number(breakdown.ephemeral_5m_input_tokens) || 0) }
+      : {}),
+    ...(has1h
+      ? { cacheCreation1hTokens: Math.max(0, Number(breakdown.ephemeral_1h_input_tokens) || 0) }
+      : {}),
   };
 }
 

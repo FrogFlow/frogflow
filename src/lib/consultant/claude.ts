@@ -10,6 +10,7 @@ import type { ConsultantCountry } from "./intent";
 import type { ConsultantState, ConsultantTurn } from "./state";
 import {
   CONSULTANT_CACHE_TTL,
+  addTokenUsage,
   extractAnthropicUsage,
   type SmartSearchTokenUsage,
 } from "@/lib/smart-search-cost";
@@ -449,18 +450,10 @@ export async function runConsultantClaude(params: {
     const json = (await res.json()) as AnthropicMessage;
     const roundUsage = extractAnthropicUsage(json);
     if (roundUsage) {
-      // Складывать надо все четыре счётчика. Раньше здесь пересобирался
-      // объект из двух полей, и у сообщения с несколькими раундами токены
-      // кеша — то есть почти весь ввод — терялись начиная со второго.
-      usage = usage
-        ? {
-            inputTokens: usage.inputTokens + roundUsage.inputTokens,
-            outputTokens: usage.outputTokens + roundUsage.outputTokens,
-            cacheCreationTokens:
-              (usage.cacheCreationTokens ?? 0) + (roundUsage.cacheCreationTokens ?? 0),
-            cacheReadTokens: (usage.cacheReadTokens ?? 0) + (roundUsage.cacheReadTokens ?? 0),
-          }
-        : roundUsage;
+      // Складывать надо все счётчики целиком. Раньше сложение стояло здесь и
+      // собирало объект из двух полей, и у сообщения с несколькими раундами
+      // токены кеша — то есть почти весь ввод — терялись начиная со второго.
+      usage = addTokenUsage(usage, roundUsage);
     }
 
     const content = json.content ?? [];

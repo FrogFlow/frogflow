@@ -73,6 +73,14 @@ export async function recordConsultantRun(run: ConsultantRunRecord): Promise<voi
               input: usage.inputTokens,
               output: usage.outputTokens,
               cache_write: usage.cacheCreationTokens ?? 0,
+              // Разбивка записи по TTL: по ней счёт за токены можно
+              // пересчитать и проверить, не заглядывая в ответ API.
+              ...(usage.cacheCreation5mTokens !== undefined
+                ? { cache_write_5m: usage.cacheCreation5mTokens }
+                : {}),
+              ...(usage.cacheCreation1hTokens !== undefined
+                ? { cache_write_1h: usage.cacheCreation1hTokens }
+                : {}),
               cache_read: usage.cacheReadTokens ?? 0,
               usd: runUsd(usage),
             }

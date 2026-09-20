@@ -3,6 +3,7 @@ import {
   CACHE_READ_MULTIPLIER,
   CACHE_WRITE_MULTIPLIER,
   CONSULTANT_CACHE_TTL,
+  addTokenUsage,
   estimateUsdFromTokens,
   extractAnthropicUsage,
 } from "../src/lib/smart-search-cost";
@@ -128,5 +129,115 @@ describe("накопленный расход", () => {
     expect(next.count).toBe(1);
     expect(next.cacheReadTokens).toBe(CACHED_PROMPT);
     expect(next.usd).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Точек кеша две, ставки разные: системный промпт с инструментами пишется на
+ * час (×2), хвост переписки — на пять минут (×1,25). Пока запись считалась
+ * одной цифрой по часовой ставке, счёт на хвосте завышался. С клиента этот
+ * счёт берут по факту, поэтому завышение — такая же ошибка, как недосчёт.
+ */
+describe("запись в кеш по двум TTL", () => {
+  const TAIL = 3_180; // хвост переписки на боевых данных
+
+  it("забирает разбивку записи по TTL из ответа API", () => {
+    const usage = extractAnthropicUsage({
+      usage: {
+        input_tokens: 3,
+        output_tokens: 240,
+        cache_creation_input_tokens: CACHED_PROMPT + TAIL,
+        cache_read_input_tokens: 0,
+        cache_creation: {
+          ephemeral_5m_input_tokens: TAIL,
+          ephemeral_1h_input_tokens: CACHED_PROMPT,
+        },
+      },
+    });
+    expect(usage?.cacheCreation5mTokens).toBe(TAIL);
+    expect(usage?.cacheCreation1hTokens).toBe(CACHED_PROMPT);
+    expect(usage?.cacheCreationTokens).toBe(CACHED_PROMPT + TAIL);
+  });
+
+  it("каждая часть записи считается по своей ставке", () => {
+    const split = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: CACHED_PROMPT + TAIL,
+      cacheCreation5mTokens: TAIL,
+      cacheCreation1hTokens: CACHED_PROMPT,
+    };
+    expect(estimateUsdFromTokens(split)).toBeCloseTo(
+      (CACHED_PROMPT * 2 + TAIL * 1.25) / 1e6,
+      10,
+    );
+    // Прежний расчёт брал часовую ставку на всё — хвост выходил дороже.
+    const allAtHourly = estimateUsdFromTokens({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: CACHED_PROMPT + TAIL,
+    });
+    expect(allAtHourly).toBeGreaterThan(estimateUsdFromTokens(split));
+  });
+
+  it("без разбивки считает по TTL вызова — как раньше", () => {
+    const flat = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: CACHED_PROMPT };
+    expect(estimateUsdFromTokens(flat, "1h")).toBeCloseTo((CACHED_PROMPT * 2) / 1e6, 10);
+  });
+
+  it("разбивка больше общей цифры не теряется", () => {
+    // Защита от рассинхрона полей: платим за то, что реально записано.
+    const odd = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheCreation1hTokens: CACHED_PROMPT,
+    };
+    expect(estimateUsdFromTokens(odd)).toBeCloseTo((CACHED_PROMPT * 2) / 1e6, 10);
+  });
+});
+
+describe("сложение раундов не теряет полей", () => {
+  it("складывает разбивку по TTL вместе с остальным", () => {
+    const round = {
+      inputTokens: 3,
+      outputTokens: 120,
+      cacheCreationTokens: 3_180,
+      cacheCreation5mTokens: 3_180,
+      cacheCreation1hTokens: 0,
+      cacheReadTokens: CACHED_PROMPT,
+    };
+    const total = addTokenUsage(addTokenUsage(round, round), round);
+    expect(total).toEqual({
+      inputTokens: 9,
+      outputTokens: 360,
+      cacheCreationTokens: 9_540,
+      cacheCreation5mTokens: 9_540,
+      cacheCreation1hTokens: 0,
+      cacheReadTokens: CACHED_PROMPT * 3,
+    });
+    expect(estimateUsdFromTokens(total!)).toBeCloseTo(estimateUsdFromTokens(round) * 3, 10);
+  });
+
+  it("первый раунд без пары возвращается как есть", () => {
+    const one = { inputTokens: 10, outputTokens: 5 };
+    expect(addTokenUsage(null, one)).toEqual(one);
+    expect(addTokenUsage(one, null)).toEqual(one);
+    expect(addTokenUsage(null, null)).toBeNull();
+  });
+
+  it("раунд без разбивки не подменяет часовую запись пятиминутной", () => {
+    // Если поля нет, оно не должно появиться нулём: неразобранный остаток
+    // считается по часовой ставке, а не по пятиминутной.
+    const withSplit = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: CACHED_PROMPT,
+      cacheCreation1hTokens: CACHED_PROMPT,
+    };
+    const plain = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 1_000 };
+    const total = addTokenUsage(withSplit, plain)!;
+    expect(total.cacheCreation5mTokens).toBeUndefined();
+    expect(estimateUsdFromTokens(total)).toBeCloseTo(((CACHED_PROMPT + 1_000) * 2) / 1e6, 10);
   });
 });
