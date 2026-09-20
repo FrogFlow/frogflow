@@ -1278,13 +1278,28 @@ export async function listZernioConversationMessages(
   conversationId: string,
 ): Promise<ZernioInboxMessage[]> {
   try {
+    /**
+     * sortOrder: "desc" — берём сто ПОСЛЕДНИХ сообщений, а не сто первых.
+     *
+     * Было "asc", и в живом диалоге BOVI со ста с лишним сообщениями функция
+     * честно отдавала начало переписки: самое свежее исходящее в ответе было
+     * пятидневной давности. Из-за этого проверка «в чате уже отвечает
+     * менеджер» смотрела в прошлую неделю и ничего не находила, а бот
+     * продолжал говорить поверх живого человека.
+     *
+     * Порядок наружу остаётся прежним, от старых к новым: сортируем сами, а
+     * не разворачиваем ответ, чтобы не зависеть от того, понял ли Zernio
+     * параметр сортировки.
+     */
     const result = await zernioRequest<{ messages?: ZernioInboxMessage[] }>(
       `/inbox/conversations/${encodeURIComponent(conversationId)}/messages`,
       {
-        query: { accountId, limit: "100", sortOrder: "asc" },
+        query: { accountId, limit: "100", sortOrder: "desc" },
       },
     );
-    return (result.messages || []).map(normalizeInboxMessage);
+    return (result.messages || [])
+      .map(normalizeInboxMessage)
+      .sort((a, b) => Date.parse(a.createdAt ?? "") - Date.parse(b.createdAt ?? ""));
   } catch (e) {
     console.error("[zernio] listZernioConversationMessages error", e);
     return [];
