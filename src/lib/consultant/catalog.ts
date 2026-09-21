@@ -1,4 +1,4 @@
-import { expandToken, foldText, haystackOf, tokenizeQuery } from "./synonyms";
+import { expandToken, expandTokenAll, foldText, haystackOf, tokenizeQuery } from "./synonyms";
 
 /**
  * Нормализованная карточка. Claude видит только результаты search/get,
@@ -298,7 +298,13 @@ function matches(product: ConsultantProduct, q: ProductSearchQuery): boolean {
     }
     const tokens = searchTokens(q.query);
     if (tokens.length === 0 && negated.size === 0) return false;
-    if (tokens.length > 0 && !tokens.every((t) => hay.includes(t))) return false;
+    // Слово может значить несколько товаров сразу: «португальские» — и Bovi,
+    // и Graccioza. Достаточно совпадения с любым из значений, иначе половина
+    // ответа теряется.
+    const groups = searchTokenAlternatives(q.query);
+    if (groups.length > 0 && !groups.every((alts) => alts.some((a) => hay.includes(a)))) {
+      return false;
+    }
   }
   return true;
 }
@@ -664,6 +670,24 @@ export function extractNegatedWords(text: string): Set<string> {
     }
   }
   return negated;
+}
+
+/**
+ * То же, что searchTokens, но каждое слово — со всеми своими значениями.
+ * Используется подбором: совпадения с любым значением достаточно.
+ */
+export function searchTokenAlternatives(text: string): string[][] {
+  // Варианты берём от ИСХОДНОГО слова, а не от свёрнутого: tokenizeQuery уже
+  // выбрала одно значение из нескольких, и спросить у неё про остальные
+  // нельзя — «португальские» к этому моменту стали просто «graccioza».
+  const kept = new Set(searchTokens(text));
+  const out: string[][] = [];
+  for (const raw of foldText(text).split(" ")) {
+    if (raw.length <= 1) continue;
+    if (!kept.has(expandToken(raw))) continue;
+    out.push(expandTokenAll(raw));
+  }
+  return out;
 }
 
 export function searchTokens(text: string): string[] {

@@ -81,7 +81,39 @@ function buildLookup(groups: string[][]): Map<string, string> {
   return map;
 }
 
+/**
+ * Одно слово — несколько товаров.
+ *
+ * «Португальские» — это и Bovi, и Graccioza; «итальянские» — Rivolta и
+ * Dorelan; «немецкие» — Sander и Traumina. Сведение к одному бренду теряло бы
+ * половину ответа, а объединение брендов в одну группу путало бы их между
+ * собой: спросили Bovi — не должно приезжать Graccioza.
+ *
+ * Поэтому слово помнит ВСЕ группы, где встречается, и при подборе достаточно
+ * совпадения с любой из них.
+ */
+function buildAlternatives(groups: string[][]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  const add = (key: string, canon: string) => {
+    if (!key) return;
+    const list = map.get(key);
+    if (!list) map.set(key, [canon]);
+    else if (!list.includes(canon)) list.push(canon);
+  };
+  for (const group of groups) {
+    const canon = foldText(group[0] ?? "");
+    if (!canon) continue;
+    for (const w of group) {
+      const folded = foldText(w);
+      add(folded, canon);
+      add(stemWord(folded), canon);
+    }
+  }
+  return map;
+}
+
 const LOOKUP = buildLookup(SYNONYM_GROUPS);
+const ALTERNATIVES = buildAlternatives(SYNONYM_GROUPS);
 
 /**
  * Синонимы продавца поверх зашитых.
@@ -93,9 +125,11 @@ const LOOKUP = buildLookup(SYNONYM_GROUPS);
  * правкой кода на каждое новое слово.
  */
 let DYNAMIC: Map<string, string> = new Map();
+let DYNAMIC_ALTS: Map<string, string[]> = new Map();
 
 export function setDynamicSynonyms(groups: string[][]): void {
   DYNAMIC = buildLookup(groups);
+  DYNAMIC_ALTS = buildAlternatives(groups);
 }
 
 /**
@@ -125,6 +159,25 @@ export function expandToken(token: string): string {
   const fromStem = DYNAMIC.get(stemmed) ?? LOOKUP.get(stemmed);
   if (fromStem) return fromStem;
   return stemmed;
+}
+
+/**
+ * Все значения слова — для подбора товара, где достаточно совпадения с любым.
+ * Порядок: список продавца, затем зашитый, затем само слово.
+ */
+export function expandTokenAll(token: string): string[] {
+  const folded = foldText(token);
+  const stemmed = stemWord(folded);
+  const out: string[] = [];
+  for (const map of [DYNAMIC_ALTS, ALTERNATIVES]) {
+    for (const key of [folded, stemmed]) {
+      for (const canon of map.get(key) ?? []) {
+        if (!out.includes(canon)) out.push(canon);
+      }
+    }
+  }
+  if (out.length === 0) out.push(expandToken(token));
+  return out;
 }
 
 export function tokenizeQuery(text: string): string[] {
