@@ -31,7 +31,6 @@ import {
   looksLikeConsultantBotReply,
   stripMarkdownFormatting,
   type ConsultantCopyPack,
-  COUNTRY_BUTTONS,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import {
@@ -48,6 +47,7 @@ import {
   matchBasketIntent,
   matchCatalogIntent,
   matchCountry,
+  DEFAULT_CONSULTANT_COUNTRY,
   matchCountryPostback,
   matchDeliveryIntent,
   matchMoreVariantsIntent,
@@ -218,14 +218,13 @@ async function handleConsultantZernioEventInternal(params: {
     await resetConsultantState(params.userKey);
     const bucket = consultant.ab_bucket ?? "a";
     const pack = copyForBucket(bucket);
-    const welcomeText = stripMarkdownFormatting(pack.askCountry);
+    const welcomeText = stripMarkdownFormatting(pack.askProduct);
 
     await sendDirectReply({
       conversationId: params.conversationId,
       accountId: params.accountId,
       userKey: params.userKey,
       text: welcomeText,
-      buttons: COUNTRY_BUTTONS,
       platform: params.platform,
       force: true,
     });
@@ -234,10 +233,10 @@ async function handleConsultantZernioEventInternal(params: {
       last_bot_reply: welcomeText,
       last_bot_reply_at: new Date().toISOString(),
       last_customer_text: rawIncoming,
-      conversation_state: "awaiting_country",
+      country: DEFAULT_CONSULTANT_COUNTRY,
+      conversation_state: "awaiting_product",
       automation_paused: false,
       pause_reason: undefined,
-      country: undefined,
       customer_contact: undefined,
       last_product_ids: [],
       recent: [],
@@ -530,17 +529,16 @@ export async function decideConsultantReply(
       recent: [],
       ab_bucket: bucket,
       automation_paused: false,
-      country: undefined,
-      conversation_state: "awaiting_country",
+      country: DEFAULT_CONSULTANT_COUNTRY,
+      conversation_state: "awaiting_product",
       pending_product_query: undefined,
       pending_story_id: undefined,
       pending_story_url: undefined,
     };
     return {
-      text: stripMarkdownFormatting(pack.askCountry),
+      text: stripMarkdownFormatting(pack.askProduct),
       patch: cleanPatch,
-      buttons: COUNTRY_BUTTONS,
-      kind: "country",
+      kind: "clarify",
     };
   }
 
@@ -574,16 +572,16 @@ export async function decideConsultantReply(
         automation_paused: false,
       };
       return {
-        text: stripMarkdownFormatting(pack.askCountry),
+        text: stripMarkdownFormatting(pack.askProduct),
         patch: {
           ...cleanPatch,
-          conversation_state: "awaiting_country",
+          country: DEFAULT_CONSULTANT_COUNTRY,
+          conversation_state: "awaiting_product",
           pending_product_query: undefined,
           pending_story_id: undefined,
           pending_story_url: undefined,
         },
-        buttons: COUNTRY_BUTTONS,
-        kind: "country",
+        kind: "clarify",
       };
     }
     // If the customer already selected a country and is in an ongoing consultation, let Claude respond naturally without wiping memory!
@@ -605,32 +603,14 @@ export async function decideConsultantReply(
     }
   }
 
-  if (!country) {
-    const hasStoryContext = Boolean(ctx.storyId || ctx.storyMediaUrl);
-    const isProduct =
-      (looksLikeProductQuery(text) ||
-        matchPurchaseIntent(text) ||
-        matchCatalogIntent(text) ||
-        matchAdviceIntent(text) ||
-        hasStoryContext ||
-        text.trim().length >= 2) &&
-      !isConsultantGreeting(text);
-    return {
-      text: stripMarkdownFormatting(pack.askCountry),
-      patch: {
-        conversation_state: "awaiting_country",
-        ab_bucket: bucket,
-        pending_product_query: isProduct ? (text || (hasStoryContext ? "[story]" : undefined)) : undefined,
-        pending_story_id: ctx.storyId || undefined,
-        pending_story_url: ctx.storyMediaUrl || undefined,
-      },
-      buttons: COUNTRY_BUTTONS,
-      kind: "country",
-    };
-  }
+  // Страну больше не спрашиваем заранее. Человек написал «сколько стоит» —
+  // ему называют цену, а не анкету: на вопрос-шлагбаум разговор затухал, не
+  // начавшись. Прайс в тенге, поэтому умолчание KZ; «Россия» или просьба
+  // назвать в рублях переключат страну в любой момент разговора.
+  const effectiveCountry = country ?? DEFAULT_CONSULTANT_COUNTRY;
 
   const countryPatch: Partial<ConsultantState> = {
-    country,
+    country: effectiveCountry,
     ab_bucket: bucket,
     conversation_state: "consulting",
     pending_product_query: undefined,

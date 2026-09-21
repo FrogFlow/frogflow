@@ -65,15 +65,26 @@ function nextState(state: ConsultantState, reply: ConsultantReply, text: string)
 }
 
 describe("consultant — матрица живых диалогов", () => {
-  it("старт: приветствие и товар без страны → сначала KZ/RU", async () => {
+  /**
+   * Раньше страну спрашивали шлагбаумом до любого ответа, и на «сколько
+   * стоит» приходило «из какой вы страны?» — разговор затухал, не начавшись.
+   * Продавец попросил называть цену сразу в тенге, а рубли давать тем, кто
+   * попросит. Магазин в Алматы, прайс в тенге — отсюда умолчание.
+   */
+  it("старт: на приветствие спрашиваем товар, а не страну", async () => {
     for (const hello of ["Здравствуйте", "привет", "добрый день", "Hello"]) {
       const res = await say(hello, {});
-      expect(res.kind, hello).toBe("country");
-      expect(res.text).toContain("Казахстан");
+      expect(res.kind, hello).toBe("clarify");
+      expect(res.text, hello).not.toContain("Казахстан");
+      expect(res.patch.country, hello).toBe("KZ");
     }
+  });
+
+  it("на вопрос о товаре отвечаем товаром, а не анкетой", async () => {
     const productFirst = await say("А подушки у вас есть?", {});
-    expect(productFirst.kind).toBe("country");
-    expect(productFirst.text).not.toMatch(/есть в наличии/);
+    expect(productFirst.kind).toBe("product");
+    expect(productFirst.text).toMatch(/Подушка/);
+    expect(productFirst.text).not.toContain("из какой вы страны");
   });
 
   it("страна кнопкой, словом и вместе с товаром", async () => {
@@ -97,12 +108,8 @@ describe("consultant — матрица живых диалогов", () => {
   it("скрин: привет → подушки → одеяла → бюджет → корзина", async () => {
     let state: ConsultantState = {};
     const hello = await say("Здравствуйте", state);
-    expect(hello.kind).toBe("country");
+    expect(hello.kind).toBe("clarify");
     state = nextState(state, hello, "Здравствуйте");
-
-    const country = await say("Казахстан", state);
-    expect(country.patch.country).toBe("KZ");
-    state = nextState(state, country, "Казахстан");
 
     const pillows = await say("А подушки у вас есть?", state);
     expect(pillows.kind).toBe("product");
@@ -474,9 +481,9 @@ describe("consultant — таблица намерений, чтобы не ло
 });
 
 describe("consultant — сценарии из живого Direct клиента", () => {
-  it("Сafi: «как заказать» → страна; Дагестан / Хасавюрт = РФ", async () => {
+  it("Сafi: «как заказать» отвечаем сразу; Дагестан / Хасавюрт = РФ", async () => {
     const how = await say("Здравствуйте, как заказать?", {});
-    expect(how.kind).toBe("country");
+    expect(how.kind).not.toBe("country");
     expect(matchPurchaseIntent("Здравствуйте, как заказать?")).toBe(false);
 
     const dag = await say("В Дагестане", {});

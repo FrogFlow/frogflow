@@ -398,11 +398,19 @@ describe("consultant — decideConsultantReply без магазинного ч�
     expect(res?.patch.pause_reason).toBe("purchase");
   });
 
-  it("без страны — сначала KZ/RU, не поиск товара", async () => {
+  /**
+   * Продавец: на «сколько стоит» бот отвечал «из какой вы страны?», и диалог
+   * затухал. Теперь страну не спрашиваем — прайс в тенге, а рубли называем
+   * тем, кто попросит.
+   */
+  it("без страны — ищем товар, а не спрашиваем страну", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
-    const res = await decideConsultantReply("есть белое полотенце?", {});
-    expect(res?.text).toBe(consultantCopy.askCountry);
-    expect(res?.patch.conversation_state).toBe("awaiting_country");
+    const res = await decideConsultantReply("есть белое полотенце?", {}, { catalog: [towel] });
+    expect(res?.text).not.toBe(consultantCopy.askCountry);
+    expect(res?.kind).not.toBe("country");
+    expect(res?.patch.country).toBe("KZ");
+    // Цена в тенге сразу, без промежуточной анкеты.
+    expect(res?.text).toContain("Полотенце банное");
   });
 
   it("после страны — запрос товара по ТЗ (Какой товар вас интересует?)", async () => {
@@ -430,13 +438,23 @@ describe("consultant — decideConsultantReply без магазинного ч�
     expect(res?.text).toBe(TZ_COPY.otherCategories);
   });
 
-  it("повторное «здравствуйте» снова спрашивает страну", async () => {
+  it("повторное «здравствуйте» спрашивает про товар", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
     const res = await decideConsultantReply("Здравствуйте", {
       conversation_state: "awaiting_country",
     });
-    expect(res?.text).toBe(TZ_COPY.askCountry);
-    expect(res?.kind).toBe("country");
+    expect(res?.text).toBe(TZ_COPY.askProduct);
+    expect(res?.kind).toBe("clarify");
+  });
+
+  it("рубли остаются доступны тому, кто о них попросит", async () => {
+    // Умолчание в тенге не должно отрезать российских покупателей: слово
+    // «Россия» переключает страну в любой момент разговора.
+    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
+    const ru = await decideConsultantReply("я из России", {});
+    expect(ru?.patch.country).toBe("RU");
+    const city = await decideConsultantReply("В городе Хасавюрт", { country: "KZ" });
+    expect(city?.patch.country).toBe("RU");
   });
 
   it("полный каталог — абзац сайта", async () => {
