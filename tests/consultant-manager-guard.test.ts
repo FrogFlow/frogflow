@@ -96,3 +96,48 @@ describe("менеджер в чате", () => {
     expect(findManagerMessage([], state, NOW)).toBeNull();
   });
 });
+
+/**
+ * Живой случай 21.09, 17:45. Менеджер написал в чат, бот встал на паузу,
+ * человек нажал в панели «вернуть бота» — и на следующем же сообщении бот
+ * снова замолчал: окно в полчаса нашло ту же реплику менеджера и поставило
+ * паузу заново. Так ушли без ответа и тестовое «Какие варианты есть от bovi?»,
+ * и «Казахстан», и живой покупатель с «В рублях, пожалуйста».
+ */
+describe("ручное включение переживает окно обнаружения", () => {
+  const now = Date.parse("2026-09-21T11:46:00.000Z");
+  const min = (m: number) => new Date(now - m * 60_000).toISOString();
+
+  const managerTail = (at: string) => [
+    { message: "Добрый день!", direction: "outgoing" as const, createdAt: at },
+  ];
+
+  it("реплика менеджера ДО включения паузу не возвращает", () => {
+    const state = {
+      last_bot_reply_at: min(10),
+      last_bot_reply: "Размеры 30x50, 40x60 и 50x70 см подойдут для лица.",
+      resumed_at: min(2),
+    } as never;
+    expect(findManagerMessage(managerTail(min(5)), state, now)).toBeNull();
+  });
+
+  it("реплика менеджера ПОСЛЕ включения паузу возвращает", () => {
+    const state = {
+      last_bot_reply_at: min(10),
+      last_bot_reply: "Размеры 30x50, 40x60 и 50x70 см подойдут для лица.",
+      resumed_at: min(5),
+    } as never;
+    const found = findManagerMessage(managerTail(min(2)), state, now);
+    expect(found?.text).toBe("Добрый день!");
+  });
+
+  it("без включения окно работает как прежде", () => {
+    // Защита от обратного: тихое снятие паузы не должно стать побочным
+    // эффектом этой правки.
+    const state = {
+      last_bot_reply_at: min(10),
+      last_bot_reply: "Размеры 30x50, 40x60 и 50x70 см подойдут для лица.",
+    } as never;
+    expect(findManagerMessage(managerTail(min(5)), state, now)?.text).toBe("Добрый день!");
+  });
+})

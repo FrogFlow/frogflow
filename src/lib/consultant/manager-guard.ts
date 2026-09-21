@@ -128,9 +128,17 @@ export function findManagerMessage(
   ourReplies: string[] = [],
 ): ManagerMessage | null {
   const botAt = Date.parse(state.last_bot_reply_at ?? "");
-  const since = Number.isFinite(botAt)
+  const base = Number.isFinite(botAt)
     ? Math.min(botAt + BOT_ECHO_GRACE_MS, now - ACTIVE_MANAGER_WINDOW_MS)
     : now - MANAGER_LOOKBACK_MS;
+  // Дальше явного включения не смотрим. Иначе получалось так: менеджер
+  // написал, бот встал на паузу, человек нажал в панели «вернуть бота» — и на
+  // следующем же сообщении покупателя окно в полчаса находило ту же реплику
+  // менеджера и ставило паузу заново. Кнопка выглядела сломанной, а покупатель
+  // молча оставался без ответа. Нажатие — это решение человека: всё, что было
+  // до него, уже учтено. Менеджер, написавший ПОСЛЕ включения, паузу вернёт.
+  const resumedAt = Date.parse(state.resumed_at ?? "");
+  const since = Number.isFinite(resumedAt) ? Math.max(base, resumedAt) : base;
   const ourLast = foldReply(state.last_bot_reply ?? "");
   const ourVoice = new Set(ourReplies.map(foldReply).filter(Boolean));
   const tail = messages.slice(-TAIL);
