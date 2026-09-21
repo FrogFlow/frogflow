@@ -713,44 +713,51 @@ export async function decideConsultantReply(
         : null
       : await getFreshVtbRate();
   let storyTag: any = null;
-  let storyProduct: ConsultantProduct | null = null;
+  // К истории может быть привязано несколько товаров: в одной сторис лежат и
+  // простыня, и пододеяльник, и наволочки. Первый нужен отдельно — вокруг него
+  // строится ответ, если товар в истории один.
+  let storyProducts: ConsultantProduct[] = [];
   if (ctx.storyId || ctx.storyMediaUrl) {
     try {
       const { findStoryTag } = await import("./story-tags.functions");
+      const { storyProductsOf } = await import("./story-products");
       storyTag = await findStoryTag(ctx.storyId, ctx.storyMediaUrl);
-      if (storyTag) {
-        if (storyTag.product_id) {
-          storyProduct = await getProduct(storyTag.product_id, catalog);
+      for (const tagged of storyProductsOf(storyTag)) {
+        let resolved: ConsultantProduct | null = null;
+        if (tagged.id) {
+          resolved = await getProduct(tagged.id, catalog);
         }
-        if (!storyProduct && storyTag.product_name) {
-          const matched = matchProductsInText(storyTag.product_name, catalog);
+        if (!resolved) {
+          const matched = matchProductsInText(tagged.name, catalog);
           if (matched[0]) {
-            storyProduct = {
+            resolved = {
               ...matched[0],
-              name: storyTag.product_name,
-              price_kzt: storyTag.product_price_kzt || matched[0].price_kzt,
+              name: tagged.name,
+              price_kzt: tagged.price_kzt || matched[0].price_kzt,
             };
           }
         }
-        if (!storyProduct) {
-          storyProduct = {
-            id: storyTag.product_id || `story_${storyTag.story_id}`,
-            name: storyTag.product_name,
+        if (!resolved) {
+          resolved = {
+            id: tagged.id || `story_${storyTag?.story_id}_${storyProducts.length}`,
+            name: tagged.name,
             category: "текстиль",
             size: "",
             colors: [],
-            price_kzt: storyTag.product_price_kzt || 0,
+            price_kzt: tagged.price_kzt || 0,
             stock: true,
           };
         }
+        storyProducts.push(resolved);
       }
     } catch (err) {
       console.warn("[consultant] findStoryTag error:", err);
     }
   }
+  const storyProduct: ConsultantProduct | null = storyProducts[0] ?? null;
 
-  const effectiveCatalog = storyProduct && !catalog.some((p) => p.id === storyProduct!.id)
-    ? [...catalog, storyProduct]
+  const effectiveCatalog = storyProducts.length
+    ? [...catalog, ...storyProducts.filter((sp) => !catalog.some((p) => p.id === sp.id))]
     : catalog;
 
   if (effectiveCatalog.length === 0) {
@@ -761,25 +768,30 @@ export async function decideConsultantReply(
   if (canClaude) {
     try {
       let claudeText = text;
-      if (storyProduct) {
-        const kztPrice = storyProduct.price_kzt;
-        const rubPrice = rateRow?.rate ? priceRub(kztPrice, rateRow.rate) : null;
-        const priceNotice =
-          country === "RU"
-            ? `${rubPrice ? `${rubPrice} ₽` : "уточняется"}`
-            : `${kztPrice.toLocaleString("ru-RU")} ₸`;
-
+      if (storyProducts.length > 0) {
+        const priceOf = (p: ConsultantProduct) => {
+          const rub = rateRow?.rate ? priceRub(p.price_kzt, rateRow.rate) : null;
+          return country === "RU"
+            ? `${rub ? `${rub} ₽` : "уточняется"}`
+            : `${p.price_kzt.toLocaleString("ru-RU")} ₸`;
+        };
         const userPrompt = text.trim() || "Здравствуйте! Подскажите подробнее про этот товар";
+        const many = storyProducts.length > 1;
+        const list = storyProducts
+          .map((p) => `• «${p.name}» (категория: ${p.category}, цена: ${priceOf(p)}, в наличии)`)
+          .join("\n");
+        const names = storyProducts.map((p) => `«${p.name}»`).join(", ");
 
         claudeText = `[КОНТЕКСТ INSTAGRAM: Клиент ответил на Story или Reel (ID: ${storyTag?.story_id || ctx.storyId}).
-В этой публикации представлен товар нашего бренда BOVI: «${storyProduct.name}» (категория: ${storyProduct.category}, цена: ${priceNotice}, в наличии).
+В этой публикации представлен${many ? "ы товары" : " товар"} нашего бренда BOVI:
+${list}
 Запрос клиента: "${userPrompt}".
 ИНСТРУКЦИИ ДЛЯ ОТВЕТА:
-1. Подтвердите клиенту, что в публикации представлен товар «${storyProduct.name}».
-2. Обязательно назовите актуальную цену (${priceNotice}) и подтвердите наличие.
+1. Подтвердите, что в публикации ${many ? `представлены ${storyProducts.length} позиции: ${names}` : `представлен товар ${names}`}.
+2. Назовите актуальную цену ${many ? "по каждой позиции" : "товара"} и подтвердите наличие.
 3. Опишите качество и характеристики (натуральные премиальные материалы, фирменный стандарт BOVI).
-4. Задайте вопрос по размеру или расцветке, либо предложите оформить заказ.
-Категорически запрещено писать "я не понимаю, на что вы ссылаетесь" или спрашивать о каком товаре речь — вы точно знаете, что это «${storyProduct.name}».]`;
+4. ${many ? "Спросите, какая из позиций интересует, либо предложите комплект целиком." : "Задайте вопрос по размеру или расцветке, либо предложите оформить заказ."}
+Категорически запрещено писать "я не понимаю, на что вы ссылаетесь" или спрашивать о каком товаре речь — вы точно знаете, что это ${names}.]`;
       } else if (ctx.storyId || ctx.storyMediaUrl) {
         console.log("[consultant] story context detected without pre-fetched tag:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
         const userPrompt = text.trim() || "Здравствуйте! Подскажите цену и наличие этого товара";

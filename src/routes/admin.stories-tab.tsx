@@ -55,12 +55,14 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
       storyId: string;
       storyUrl: string;
       thumbnailUrl: string;
-      productName: string;
-      productPriceKzt: number;
-      productId?: string;
+      products: { id?: string; name: string; priceKzt: number }[];
     }) => upsertStoryTagFn({ data }),
-    onSuccess: () => {
-      toast.success("Товар привязан к Reels / Сторис");
+    onSuccess: (res: any) => {
+      toast.success(
+        res?.saved > 1
+          ? `Привязано товаров: ${res.saved}`
+          : "Товар привязан к Reels / Сторис",
+      );
       qc.invalidateQueries({ queryKey: ["ig_story_tags"] });
     },
     onError: (e: any) => {
@@ -88,9 +90,7 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
         storyId: raw,
         storyUrl: raw.startsWith("http") ? raw : "",
         thumbnailUrl: "",
-        productId: parsed.id || undefined,
-        productName: parsed.name,
-        productPriceKzt: parsed.price || 0,
+        products: [{ id: parsed.id || undefined, name: parsed.name, priceKzt: parsed.price || 0 }],
       });
       setManualId("");
       setManualSelected("");
@@ -266,15 +266,8 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
                     thumbnailUrl={thumbnailUrl}
                     existingTag={existingTag}
                     catalog={catalog}
-                    onSave={(productId: string | undefined, productName: string, price: number) =>
-                      upsertMutation.mutate({
-                        storyId,
-                        storyUrl,
-                        thumbnailUrl,
-                        productId,
-                        productName,
-                        productPriceKzt: price,
-                      })
+                    onSave={(products: { id?: string; name: string; priceKzt: number }[]) =>
+                      upsertMutation.mutate({ storyId, storyUrl, thumbnailUrl, products })
                     }
                     isSaving={upsertMutation.isPending}
                     onDelete={() => existingTag?.id && deleteMutation.mutate(existingTag.id)}
@@ -301,22 +294,44 @@ function StoryCard({
   onDelete,
   isDeleting,
 }: any) {
-  const [selectedProduct, setSelectedProduct] = useState(() => {
-    return existingTag
-      ? JSON.stringify({
-          id: existingTag.product_id,
-          name: existingTag.product_name,
-          price: existingTag.product_price_kzt,
-        })
-      : "";
+  // Товаров в одной сторис бывает несколько: простыня, пододеяльник, наволочки.
+  // Старые привязки хранят один товар в product_*, новые — список в products.
+  const [chosen, setChosen] = useState<{ id?: string; name: string; priceKzt: number }[]>(() => {
+    const saved = existingTag?.products;
+    const list = Array.isArray(saved) ? saved : null;
+    if (list?.length) {
+      return list.map((p: any) => ({
+        id: p.id || undefined,
+        name: String(p.name ?? ""),
+        priceKzt: Number(p.price_kzt) || 0,
+      }));
+    }
+    return existingTag?.product_name
+      ? [
+          {
+            id: existingTag.product_id || undefined,
+            name: existingTag.product_name,
+            priceKzt: Number(existingTag.product_price_kzt) || 0,
+          },
+        ]
+      : [];
   });
 
-  const handleSave = () => {
-    if (!selectedProduct) return;
+  const addProduct = (value: string) => {
+    if (!value) return;
     try {
-      const parsed = JSON.parse(selectedProduct);
-      onSave(parsed.id || undefined, parsed.name, parsed.price);
+      const p = JSON.parse(value);
+      setChosen((prev) =>
+        prev.some((c) => (c.id || c.name) === (p.id || p.name))
+          ? prev
+          : [...prev, { id: p.id || undefined, name: p.name, priceKzt: Number(p.price) || 0 }],
+      );
     } catch {}
+  };
+
+  const handleSave = () => {
+    if (chosen.length === 0) return;
+    onSave(chosen);
   };
 
   return (
@@ -333,16 +348,40 @@ function StoryCard({
           <div className="text-xs text-muted-foreground truncate">ID: {storyId}</div>
           {existingTag && (
             <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400 truncate">
-              ✓ Привязан: {existingTag.product_name} ({existingTag.product_price_kzt?.toLocaleString("ru-RU")} ₸)
+              ✓ Привязано товаров: {chosen.length || 1}
             </div>
           )}
         </div>
         <div className="space-y-2">
+          {chosen.length > 0 && (
+            <ul className="space-y-1">
+              {chosen.map((c, i) => (
+                <li
+                  key={`${c.id ?? c.name}-${i}`}
+                  className="flex items-center gap-2 rounded border bg-muted/40 px-2 py-1 text-xs"
+                >
+                  <span className="flex-1 truncate">
+                    {c.name} ({c.priceKzt.toLocaleString("ru-RU")} ₸)
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Убрать ${c.name}`}
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => setChosen((prev) => prev.filter((_, idx) => idx !== i))}
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div>
-            <Label className="text-xs mb-1 block">Выберите товар</Label>
+            <Label className="text-xs mb-1 block">
+              {chosen.length > 0 ? "Добавить ещё товар" : "Выберите товар"}
+            </Label>
             <select
-              value={selectedProduct}
-              onChange={(e) => setSelectedProduct(e.target.value)}
+              value=""
+              onChange={(e) => addProduct(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <option value="">-- Не выбрано --</option>
@@ -360,7 +399,7 @@ function StoryCard({
             <Button
               size="sm"
               className="flex-1"
-              disabled={!selectedProduct || isSaving}
+              disabled={chosen.length === 0 || isSaving}
               onClick={handleSave}
             >
               {existingTag ? "Обновить" : "Сохранить"}

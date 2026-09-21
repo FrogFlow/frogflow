@@ -27,7 +27,17 @@ export const upsertStoryTagFn = createServerFn({ method: "POST" })
       storyId: z.string().min(1),
       storyUrl: z.string().nullable().optional(),
       thumbnailUrl: z.string().nullable().optional(),
-      productName: z.string().min(1),
+      /** Список товаров истории. Одиночные поля ниже — старый вызов. */
+      products: z
+        .array(
+          z.object({
+            id: z.string().nullable().optional(),
+            name: z.string().min(1),
+            priceKzt: z.number().nullable().optional(),
+          }),
+        )
+        .optional(),
+      productName: z.string().optional(),
       productPriceKzt: z.number().nullable().optional(),
       productId: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
@@ -39,25 +49,49 @@ export const upsertStoryTagFn = createServerFn({ method: "POST" })
     const effectiveStoryId = info.shortcode || input.storyId.trim();
     const effectiveStoryUrl = input.storyUrl?.trim() || info.cleanUrl || null;
 
-    const { error } = await s.from("story_product_tags").upsert(
-      {
-        bot_id: process.env.BOT_ID || null,
-        story_id: effectiveStoryId,
-        story_url: effectiveStoryUrl,
-        thumbnail_url: input.thumbnailUrl ?? null,
-        product_name: input.productName,
-        product_price_kzt: input.productPriceKzt ?? null,
-        product_id: input.productId ?? null,
-        notes: input.notes ?? null,
-        expires_at: null, // Reels and permanent story tags do not expire
-      },
-      { onConflict: "story_id" },
+    const { dedupe, legacyColumnsOf } = await import("./story-products");
+    const products = dedupe(
+      (input.products?.length
+        ? input.products.map((p) => ({ id: p.id ?? null, name: p.name, price_kzt: p.priceKzt ?? null }))
+        : input.productName
+          ? [{ id: input.productId ?? null, name: input.productName, price_kzt: input.productPriceKzt ?? null }]
+          : []
+      ).filter((p) => p.name.trim()),
     );
+    const legacy = legacyColumnsOf(products);
+    if (!legacy) throw new Error("Выберите хотя бы один товар");
+
+    const base = {
+      bot_id: process.env.BOT_ID || null,
+      story_id: effectiveStoryId,
+      story_url: effectiveStoryUrl,
+      thumbnail_url: input.thumbnailUrl ?? null,
+      // Первый товар дублируется в старые колонки: на них смотрит уже
+      // выложенный код, и product_name объявлен NOT NULL.
+      ...legacy,
+      notes: input.notes ?? null,
+      expires_at: null, // Reels and permanent story tags do not expire
+    };
+
+    let { error } = await s
+      .from("story_product_tags")
+      .upsert({ ...base, products } as never, { onConflict: "story_id" });
+
+    // Колонки products может ещё не быть: MIGRATION-71 применяется руками, а
+    // выкладка кода от неё не зависит. Тогда сохраняем первый товар по-старому
+    // и говорим об этом в логах, а не роняем сохранение целиком.
+    if (error && /products/.test(error.message) && /column|schema cache/i.test(error.message)) {
+      console.warn(
+        "[upsertStoryTag] колонки products нет — применили MIGRATION-71? " +
+          "Сохраняю только первый товар.",
+      );
+      ({ error } = await s.from("story_product_tags").upsert(base, { onConflict: "story_id" }));
+    }
     if (error) {
       console.error("[upsertStoryTag] error:", error);
       throw new Error(error.message);
     }
-    return { ok: true, storyId: effectiveStoryId };
+    return { ok: true, storyId: effectiveStoryId, saved: products.length };
   });
 
 /** Delete a story product tag by id. */
