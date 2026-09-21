@@ -84,3 +84,45 @@ export async function clearConsultantTasks(onlyDone = false): Promise<void> {
   });
 }
 
+
+/**
+ * Вопрос, на который бот не смог ответить: в список задач панели И менеджеру
+ * в Telegram.
+ *
+ * Одной записи в панель мало. Продавец спросил прямо: «он отправит сообщение
+ * в таком случае? Или как?» — и до сих пор ответ был «или как»: вопрос тихо
+ * ложился в список, который надо открыть и увидеть. Бот при этом пообещал
+ * покупателю вернуться с ответом, и обещание держалось только на том, заглянет
+ * ли кто-нибудь в панель.
+ *
+ * Уведомление не отменяет запись: список в панели остаётся историей и местом,
+ * где вопрос помечают сделанным. Сбой отправки не должен терять вопрос,
+ * поэтому сначала пишем, потом отправляем.
+ */
+export async function fileConsultantQuestion(input: {
+  userKey: string;
+  question: string;
+  /** Что бот ответил покупателю — менеджеру видно, что именно тот обещал. */
+  promise?: string;
+}): Promise<{ task: ConsultantTask; notified: boolean }> {
+  const task = await addConsultantTask({
+    userKey: input.userKey,
+    reason: "question",
+    text: input.question,
+  });
+  let notified = false;
+  try {
+    const { notifyConsultantHandoff } = await import("./notify");
+    const res = await notifyConsultantHandoff({
+      userKey: input.userKey,
+      reason: "question",
+      text: input.promise
+        ? `${input.question}\n\nБот ответил: ${input.promise}`
+        : input.question,
+    });
+    notified = Boolean(res?.ok);
+  } catch (err) {
+    console.warn("[consultant] вопрос записан, но уведомление не ушло", err);
+  }
+  return { task, notified };
+}

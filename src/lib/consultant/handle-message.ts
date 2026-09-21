@@ -79,11 +79,13 @@ import {
   managerPauseExpired,
   managerSpokeInConversation,
 } from "./manager-guard";
+import { fileConsultantQuestion } from "./tasks";
 import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
   cleanDemoMentions,
   cleanDiscontinuedMattressOffers,
+  promisesManagerFollowUp,
   cleanForbiddenPhrases,
   cleanScriptHallucinations,
   DISCONTINUED_MEDIUM_MATTRESS_REPLY,
@@ -110,6 +112,8 @@ export type ConsultantReply = {
     | "clarify"
     | "error"
     | "injection";
+  /** Что модель вызвала за ход — нужно страховке «обещал и не сделал». */
+  toolsUsed?: string[];
 };
 
 const activeUserLocks = new Map<string, Promise<unknown>>();
@@ -371,6 +375,28 @@ async function handleConsultantZernioEventInternal(params: {
   // отвечаем честно про среднюю жёсткость.
   if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
     reply.text = DISCONTINUED_MEDIUM_MATTRESS_REPLY;
+  }
+
+  // Бот пообещал уточнить у менеджера, но инструмент не вызвал. На живом
+  // диалоге про плотность полотенец так и вышло: пообещал дважды, в списке
+  // задач не появилось ничего, покупатель остался ждать. Фиксируем по тексту
+  // обещания, а не по доброй воле модели.
+  if (
+    promisesManagerFollowUp(reply.text) &&
+    !(reply.toolsUsed ?? []).includes("ask_manager")
+  ) {
+    void fileConsultantQuestion({
+      userKey: params.userKey,
+      // Менеджеру нужен вопрос покупателя, а не пересказ бота.
+      question: text.trim() || reply.text,
+      promise: reply.text,
+    }).catch((err: unknown) => {
+      console.warn("[consultant] не удалось зафиксировать обещанный вопрос", err);
+    });
+    logConsultantEvent(requestId, "question_filed", {
+      userKey: params.userKey,
+      question: (text.trim() || reply.text).slice(0, 160),
+    });
   }
 
   const { consultant: latest } = await loadConsultantState(params.userKey);
@@ -834,6 +860,7 @@ export async function decideConsultantReply(
               conversation_state: "consulting",
             },
             kind: (mentionedProducts.length || storyProduct) ? "product" : "clarify",
+            toolsUsed: ai.toolsUsed,
           };
         }
         if (inStock.length > 0) {

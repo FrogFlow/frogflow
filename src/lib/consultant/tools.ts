@@ -389,11 +389,10 @@ export async function executeConsultantTool(
   if (name === "ask_manager") {
     const question = typeof input.question === "string" ? input.question.trim() : "";
     if (question) {
-      const { addConsultantTask } = await import("./tasks");
-      await addConsultantTask({
+      const { fileConsultantQuestion } = await import("./tasks");
+      await fileConsultantQuestion({
         userKey: ctx.userKey || "unknown",
-        reason: "question",
-        text: question,
+        question,
       }).catch((err: unknown) => {
         // Вопрос не записался — это повод показать ошибку в логах, но не
         // повод замолчать в диалоге: клиенту всё равно отвечаем честно.

@@ -261,6 +261,8 @@ export type ClaudeTurnResult = {
     delivery_city?: string;
     order_summary?: string;
   };
+  /** Инструменты, которые модель вызвала за ход, по порядку вызова. */
+  toolsUsed?: string[];
   usage: SmartSearchTokenUsage | null;
   error?: string;
 };
@@ -316,6 +318,7 @@ export async function runConsultantClaude(params: {
       products: [],
       extraNumbers: [],
       handoff: false,
+      toolsUsed: [],
       usage: null,
       error: "no_api_key",
     };
@@ -373,6 +376,9 @@ export async function runConsultantClaude(params: {
     if (rate) extraNumbers.push(priceRub(p.price_kzt, rate));
   }
   let handoff = false;
+  // Какие инструменты модель вызвала за все раунды. Нужно, чтобы поймать
+  // обещание «уточню у менеджера», сделанное без вызова ask_manager.
+  const toolsUsed: string[] = [];
   let handoffData: ClaudeTurnResult["handoffData"] = undefined;
   let usage: SmartSearchTokenUsage | null = null;
   let lastText = "";
@@ -429,6 +435,7 @@ export async function runConsultantClaude(params: {
         products,
         extraNumbers,
         handoff: false,
+        toolsUsed,
         usage,
         error: `network_error:${msg.slice(0, 120)}`,
       };
@@ -442,6 +449,7 @@ export async function runConsultantClaude(params: {
         products,
         extraNumbers,
         handoff: false,
+        toolsUsed,
         usage,
         error: `anthropic_${res.status}:${body.slice(0, 180)}`,
       };
@@ -484,9 +492,10 @@ export async function runConsultantClaude(params: {
         rounds: round + 1,
         handoff,
       });
-      return { text: stripMarkdownFormatting(lastText), products, extraNumbers, handoff, handoffData, usage };
+      return { text: stripMarkdownFormatting(lastText), products, extraNumbers, handoff, handoffData, toolsUsed, usage };
     }
 
+    toolsUsed.push(...toolUses.map((call) => call.name));
     const executedAll = await Promise.all(
       toolUses.map((call) =>
         executeConsultantTool(call.name, call.input ?? {}, {
@@ -542,9 +551,9 @@ export async function runConsultantClaude(params: {
     }
     messages.push({ role: "user", content: toolResults });
     if (handoff && (lastText.trim().length > 0 || round === CONSULTANT_MAX_TOOL_ROUNDS - 1)) {
-      return { text: stripMarkdownFormatting(lastText), products, extraNumbers, handoff, handoffData, usage };
+      return { text: stripMarkdownFormatting(lastText), products, extraNumbers, handoff, handoffData, toolsUsed, usage };
     }
   }
 
-  return { text: stripMarkdownFormatting(lastText), products, extraNumbers, handoff, handoffData, usage, error: "max_rounds" };
+  return { text: stripMarkdownFormatting(lastText), products, extraNumbers, handoff, handoffData, toolsUsed, usage, error: "max_rounds" };
 }
