@@ -141,3 +141,46 @@ describe("ручное включение переживает окно обна
     expect(findManagerMessage(managerTail(min(5)), state, now)?.text).toBe("Добрый день!");
   });
 })
+
+/**
+ * Живой случай 21.09, 18:07. Менеджер свайп-ответом передал покупателю «300г»,
+ * текст ушёл через наш же аккаунт Zernio — и следующая проверка увидела в
+ * переписке исходящее, которого бот не писал, приняла его за живого человека
+ * и поставила паузу. Покупатель тут же спросил «А есть подушки?» и остался
+ * без ответа, хотя менеджер в чат не заходил и передал ровно один факт.
+ */
+describe("переданный ответ менеджера — свой голос, а не чужой", () => {
+  const now = Date.parse("2026-09-21T12:08:00.000Z");
+  const min = (m: number) => new Date(now - m * 60_000).toISOString();
+  const tail = (text: string, at: string) => [
+    { message: text, direction: "outgoing" as const, createdAt: at },
+  ];
+
+  it("свой переданный текст паузу не ставит", () => {
+    const state = {
+      last_bot_reply_at: min(3),
+      last_bot_reply: "Уточню этот момент у менеджера и вернусь с ответом.",
+      relayed: ["300г"],
+    } as never;
+    expect(findManagerMessage(tail("300г", min(1)), state, now, [])).toBeNull();
+  });
+
+  it("настоящая реплика менеджера паузу ставит по-прежнему", () => {
+    const state = {
+      last_bot_reply_at: min(3),
+      last_bot_reply: "Уточню этот момент у менеджера и вернусь с ответом.",
+      relayed: ["300г"],
+    } as never;
+    const found = findManagerMessage(tail("Здравствуйте, я менеджер, помогу", min(1)), state, now, []);
+    expect(found?.text).toBe("Здравствуйте, я менеджер, помогу");
+  });
+
+  it("помним несколько переданных ответов, а не только последний", () => {
+    const state = {
+      last_bot_reply_at: min(9),
+      last_bot_reply: "Уточню у менеджера.",
+      relayed: ["300г", "Есть в бежевом и сером", "Доставка два дня"],
+    } as never;
+    expect(findManagerMessage(tail("Есть в бежевом и сером", min(2)), state, now, [])).toBeNull();
+  });
+})

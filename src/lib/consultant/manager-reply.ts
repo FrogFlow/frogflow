@@ -133,6 +133,20 @@ export async function deliverManagerReply(
 ): Promise<{ ok: boolean; error?: string }> {
   const sent = await sendManagerReplyToCustomer(target.userKey, text);
   if (!sent.ok) return sent;
+  // Запоминаем свой же голос. Без этого проверка «в чате менеджер» увидит в
+  // переписке исходящее, которого бот не писал, и поставит паузу — хотя
+  // менеджер в чат не заходил, а лишь передал один факт через нас. На живом
+  // диалоге так и вышло: бот замолчал сразу после «300г», и следующий вопрос
+  // покупателя — «А есть подушки?» — остался без ответа.
+  try {
+    const { loadConsultantState, patchConsultantState, appendRelayed } = await import("./state");
+    const { consultant } = await loadConsultantState(target.userKey);
+    await patchConsultantState(target.userKey, {
+      relayed: appendRelayed(consultant, text),
+    });
+  } catch (err) {
+    console.warn("[consultant] ответ отправлен, но не запомнен как свой", err);
+  }
   if (target.taskId) {
     try {
       const { setConsultantTaskDone } = await import("./tasks");

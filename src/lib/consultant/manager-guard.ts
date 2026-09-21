@@ -140,7 +140,13 @@ export function findManagerMessage(
   const resumedAt = Date.parse(state.resumed_at ?? "");
   const since = Number.isFinite(resumedAt) ? Math.max(base, resumedAt) : base;
   const ourLast = foldReply(state.last_bot_reply ?? "");
-  const ourVoice = new Set(ourReplies.map(foldReply).filter(Boolean));
+  // Свой голос — и ответы бота, и ответы менеджера, переданные покупателю
+  // через нас: они ушли с нашего аккаунта и в переписке от бота неотличимы,
+  // но живым человеком в чате не являются. Читаем их из состояния прямо
+  // здесь, чтобы ни один вызов не забыл их подмешать.
+  const ourVoice = new Set(
+    [...ourReplies, ...(state.relayed ?? [])].map(foldReply).filter(Boolean),
+  );
   const tail = messages.slice(-TAIL);
   for (let i = tail.length - 1; i >= 0; i--) {
     const m = tail[i];

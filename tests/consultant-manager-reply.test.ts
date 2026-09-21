@@ -74,3 +74,20 @@ describe("список адресов не растёт бесконечно", (
     expect(pruneReplyTargets([target({ at: "не дата" })], now)).toEqual([]);
   });
 });
+
+describe("список переданных ответов", () => {
+  it("копит по порядку и не растёт без предела", async () => {
+    const { appendRelayed, RELAYED_LIMIT } = await import("../src/lib/consultant/state");
+    let state = { relayed: [] as string[] };
+    for (let i = 0; i < RELAYED_LIMIT + 5; i++) {
+      state = { relayed: appendRelayed(state, `ответ ${i}`) };
+    }
+    expect(state.relayed).toHaveLength(RELAYED_LIMIT);
+    expect(state.relayed[state.relayed.length - 1]).toBe(`ответ ${RELAYED_LIMIT + 4}`);
+  });
+
+  it("пустой текст не запоминает", async () => {
+    const { appendRelayed } = await import("../src/lib/consultant/state");
+    expect(appendRelayed({ relayed: ["300г"] }, "   ")).toEqual(["300г"]);
+  });
+});

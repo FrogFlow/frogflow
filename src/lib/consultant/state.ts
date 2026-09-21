@@ -30,7 +30,24 @@ export type ConsultantState = {
   pending_product_query?: string;
   pending_story_id?: string;
   pending_story_url?: string;
+  /**
+   * Ответы менеджера, отправленные покупателю через бота (свайп-ответ на
+   * уведомление в Telegram). Уходят они с нашего же аккаунта Zernio, поэтому
+   * в переписке выглядят как исходящие, которых бот «не писал» — и проверка
+   * «в чате менеджер» принимала их за живого человека и ставила паузу.
+   * Помним последние, чтобы узнавать свой же голос.
+   */
+  relayed?: string[];
 };
+
+/** Сколько переданных ответов менеджера помним для опознания своего голоса. */
+export const RELAYED_LIMIT = 10;
+
+export function appendRelayed(state: ConsultantState, text: string): string[] {
+  const body = text.trim();
+  if (!body) return state.relayed ?? [];
+  return [...(state.relayed ?? []), body].slice(-RELAYED_LIMIT);
+}
 
 const RECENT_LIMIT = 24;
 
