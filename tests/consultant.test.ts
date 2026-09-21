@@ -398,19 +398,35 @@ describe("consultant — decideConsultantReply без магазинного ч�
     expect(res?.patch.pause_reason).toBe("purchase");
   });
 
-  /**
-   * Продавец: на «сколько стоит» бот отвечал «из какой вы страны?», и диалог
-   * затухал. Теперь страну не спрашиваем — прайс в тенге, а рубли называем
-   * тем, кто попросит.
-   */
-  it("без страны — ищем товар, а не спрашиваем страну", async () => {
+  it("без страны — сначала KZ/RU, не поиск товара", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
-    const res = await decideConsultantReply("есть белое полотенце?", {}, { catalog: [towel] });
-    expect(res?.text).not.toBe(consultantCopy.askCountry);
-    expect(res?.kind).not.toBe("country");
-    expect(res?.patch.country).toBe("KZ");
-    // Цена в тенге сразу, без промежуточной анкеты.
-    expect(res?.text).toContain("Полотенце банное");
+    const res = await decideConsultantReply("есть белое полотенце?", {});
+    expect(res?.text).toBe(consultantCopy.askCountry);
+    expect(res?.patch.conversation_state).toBe("awaiting_country");
+  });
+
+  /**
+   * Продавец: «когда пишут через рилс или историю и спрашивают цену,
+   * консультант должен давать цену, а не спрашивать страну». Человек ответил
+   * на конкретную вещь, которую только что увидел, — анкета вместо цены гасит
+   * разговор. В обычной переписке выбор страны остаётся первым шагом.
+   */
+  it("из сторис и рилса страну не спрашиваем", async () => {
+    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
+    for (const ctx of [{ storyId: "ABC123" }, { storyMediaUrl: "https://instagram.com/reel/XYZ/" }]) {
+      const res = await decideConsultantReply("сколько стоит?", {}, { catalog: [towel], ...ctx });
+      expect(res?.kind, JSON.stringify(ctx)).not.toBe("country");
+      expect(res?.text, JSON.stringify(ctx)).not.toBe(TZ_COPY.askCountry);
+      // Прайс в тенге — по умолчанию считаем в них, рубли назовём по просьбе.
+      expect(res?.patch.country, JSON.stringify(ctx)).toBe("KZ");
+    }
+  });
+
+  it("тот же вопрос в обычной переписке страну спрашивает как раньше", async () => {
+    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
+    const res = await decideConsultantReply("сколько стоит?", {}, { catalog: [towel] });
+    expect(res?.text).toBe(TZ_COPY.askCountry);
+    expect(res?.kind).toBe("country");
   });
 
   it("после страны — запрос товара по ТЗ (Какой товар вас интересует?)", async () => {
@@ -438,23 +454,13 @@ describe("consultant — decideConsultantReply без магазинного ч�
     expect(res?.text).toBe(TZ_COPY.otherCategories);
   });
 
-  it("повторное «здравствуйте» спрашивает про товар", async () => {
+  it("повторное «здравствуйте» снова спрашивает страну", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
     const res = await decideConsultantReply("Здравствуйте", {
       conversation_state: "awaiting_country",
     });
-    expect(res?.text).toBe(TZ_COPY.askProduct);
-    expect(res?.kind).toBe("clarify");
-  });
-
-  it("рубли остаются доступны тому, кто о них попросит", async () => {
-    // Умолчание в тенге не должно отрезать российских покупателей: слово
-    // «Россия» переключает страну в любой момент разговора.
-    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
-    const ru = await decideConsultantReply("я из России", {});
-    expect(ru?.patch.country).toBe("RU");
-    const city = await decideConsultantReply("В городе Хасавюрт", { country: "KZ" });
-    expect(city?.patch.country).toBe("RU");
+    expect(res?.text).toBe(TZ_COPY.askCountry);
+    expect(res?.kind).toBe("country");
   });
 
   it("полный каталог — абзац сайта", async () => {

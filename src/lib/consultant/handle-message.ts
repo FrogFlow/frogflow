@@ -31,6 +31,7 @@ import {
   looksLikeConsultantBotReply,
   stripMarkdownFormatting,
   type ConsultantCopyPack,
+  COUNTRY_BUTTONS,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import {
@@ -47,7 +48,7 @@ import {
   matchBasketIntent,
   matchCatalogIntent,
   matchCountry,
-  DEFAULT_CONSULTANT_COUNTRY,
+  STORY_REPLY_COUNTRY,
   matchCountryPostback,
   matchDeliveryIntent,
   matchMoreVariantsIntent,
@@ -218,13 +219,14 @@ async function handleConsultantZernioEventInternal(params: {
     await resetConsultantState(params.userKey);
     const bucket = consultant.ab_bucket ?? "a";
     const pack = copyForBucket(bucket);
-    const welcomeText = stripMarkdownFormatting(pack.askProduct);
+    const welcomeText = stripMarkdownFormatting(pack.askCountry);
 
     await sendDirectReply({
       conversationId: params.conversationId,
       accountId: params.accountId,
       userKey: params.userKey,
       text: welcomeText,
+      buttons: COUNTRY_BUTTONS,
       platform: params.platform,
       force: true,
     });
@@ -233,10 +235,10 @@ async function handleConsultantZernioEventInternal(params: {
       last_bot_reply: welcomeText,
       last_bot_reply_at: new Date().toISOString(),
       last_customer_text: rawIncoming,
-      country: DEFAULT_CONSULTANT_COUNTRY,
-      conversation_state: "awaiting_product",
+      conversation_state: "awaiting_country",
       automation_paused: false,
       pause_reason: undefined,
+      country: undefined,
       customer_contact: undefined,
       last_product_ids: [],
       recent: [],
@@ -529,16 +531,17 @@ export async function decideConsultantReply(
       recent: [],
       ab_bucket: bucket,
       automation_paused: false,
-      country: DEFAULT_CONSULTANT_COUNTRY,
-      conversation_state: "awaiting_product",
+      country: undefined,
+      conversation_state: "awaiting_country",
       pending_product_query: undefined,
       pending_story_id: undefined,
       pending_story_url: undefined,
     };
     return {
-      text: stripMarkdownFormatting(pack.askProduct),
+      text: stripMarkdownFormatting(pack.askCountry),
       patch: cleanPatch,
-      kind: "clarify",
+      buttons: COUNTRY_BUTTONS,
+      kind: "country",
     };
   }
 
@@ -572,16 +575,16 @@ export async function decideConsultantReply(
         automation_paused: false,
       };
       return {
-        text: stripMarkdownFormatting(pack.askProduct),
+        text: stripMarkdownFormatting(pack.askCountry),
         patch: {
           ...cleanPatch,
-          country: DEFAULT_CONSULTANT_COUNTRY,
-          conversation_state: "awaiting_product",
+          conversation_state: "awaiting_country",
           pending_product_query: undefined,
           pending_story_id: undefined,
           pending_story_url: undefined,
         },
-        kind: "clarify",
+        buttons: COUNTRY_BUTTONS,
+        kind: "country",
       };
     }
     // If the customer already selected a country and is in an ongoing consultation, let Claude respond naturally without wiping memory!
@@ -603,14 +606,36 @@ export async function decideConsultantReply(
     }
   }
 
-  // Страну больше не спрашиваем заранее. Человек написал «сколько стоит» —
-  // ему называют цену, а не анкету: на вопрос-шлагбаум разговор затухал, не
-  // начавшись. Прайс в тенге, поэтому умолчание KZ; «Россия» или просьба
-  // назвать в рублях переключат страну в любой момент разговора.
-  const effectiveCountry = country ?? DEFAULT_CONSULTANT_COUNTRY;
+  const hasStoryContext = Boolean(ctx.storyId || ctx.storyMediaUrl);
+
+  // Из сторис и рилса страну не спрашиваем. Человек ответил на конкретную
+  // вещь, которую только что увидел, и спрашивает цену — анкета вместо цены
+  // разговор гасит. Считаем тенге (прайс в них), рубли назовём тому, кто
+  // попросит. В обычной переписке выбор страны остаётся первым шагом.
+  if (!country && !hasStoryContext) {
+    const isProduct =
+      (looksLikeProductQuery(text) ||
+        matchPurchaseIntent(text) ||
+        matchCatalogIntent(text) ||
+        matchAdviceIntent(text) ||
+        text.trim().length >= 2) &&
+      !isConsultantGreeting(text);
+    return {
+      text: stripMarkdownFormatting(pack.askCountry),
+      patch: {
+        conversation_state: "awaiting_country",
+        ab_bucket: bucket,
+        pending_product_query: isProduct ? text || undefined : undefined,
+        pending_story_id: ctx.storyId || undefined,
+        pending_story_url: ctx.storyMediaUrl || undefined,
+      },
+      buttons: COUNTRY_BUTTONS,
+      kind: "country",
+    };
+  }
 
   const countryPatch: Partial<ConsultantState> = {
-    country: effectiveCountry,
+    country: country ?? STORY_REPLY_COUNTRY,
     ab_bucket: bucket,
     conversation_state: "consulting",
     pending_product_query: undefined,
@@ -940,7 +965,19 @@ ${list}
 
   // ================= FALLBACK DETERMINISTIC LOGIC (when Claude is unavailable or fails) =================
   if (storyProduct || ctx.storyId || ctx.storyMediaUrl) {
-    const tag = storyTag ?? ((ctx.storyId || ctx.storyMediaUrl) ? await (await import("./story-tags.functions")).findStoryTag(ctx.storyId, ctx.storyMediaUrl) : null);
+    // Чтение привязки не должно ронять ответ целиком: выше, в основной
+    // ветке, оно обёрнуто, а здесь — нет, и сбой базы превращал ответ на
+    // сторис в исключение вместо честного «уточните, какой товар».
+    const tag =
+      storyTag ??
+      ((ctx.storyId || ctx.storyMediaUrl)
+        ? await (await import("./story-tags.functions"))
+            .findStoryTag(ctx.storyId, ctx.storyMediaUrl)
+            .catch((err: unknown) => {
+              console.warn("[consultant] findStoryTag (fallback) error:", err);
+              return null;
+            })
+        : null);
     const targetProduct = storyProduct ?? (tag ? (tag.product_id ? await getProduct(tag.product_id, catalog) : null) ?? {
       id: tag.product_id || `story_${tag.story_id}`,
       name: tag.product_name,
