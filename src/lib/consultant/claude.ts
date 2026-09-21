@@ -102,6 +102,7 @@ export function buildConsultantSystemPrompt(
   shopUrl = "https://bovi.kz",
   storeInfo?: { address: string; phone: string; hours: string },
   knowledgeSection?: string,
+  brandsSection?: string,
 ): string {
   const catalogSection = formatCatalogForPrompt(catalog, rate);
   const storeAddress = storeInfo?.address || "г. Алматы, ул. Сатпаева, 3 (бутик-молл COLIBRI, 1-й этаж)";
@@ -223,8 +224,8 @@ export function buildConsultantSystemPrompt(
    • Для махры рекомендуется сушка в расправленном виде или в сушильной машине на низких оборотах для вспушивания петель.
 ${knowledgeBlock}
 
-СТРАНА ПРОИЗВОДСТВА
-Страну бренда называйте ТОЛЬКО если она прямо написана в базе знаний или в списке слов магазина. Ни по названию марки, ни по звучанию, ни по памяти страну не определяйте: на вопрос про итальянские и голландские товары уже были названы марки, к этим странам отношения не имеющие. Не знаете страну — так и скажите и вызовите ask_manager.
+${brandsSection ? `${brandsSection}\n\n` : ""}СТРАНА ПРОИЗВОДСТВА
+Страну бренда называйте ТОЛЬКО если она прямо написана в базе знаний или в списке марок выше. Ни по названию марки, ни по звучанию, ни по памяти страну не определяйте: на вопрос про итальянские и голландские товары уже были названы марки, к этим странам отношения не имеющие. Не знаете страну — так и скажите и вызовите ask_manager.
 
 ЕСЛИ ОТВЕТА НЕТ — СПРОСИТЕ МЕНЕДЖЕРА, А НЕ МОЛЧИТЕ
 Когда вопрос клиента не закрывается ни каталогом, ни базой знаний (сравнение двух моделей между собой, состав и технология, которых нет в карточке, сроки и гарантии):
@@ -350,12 +351,25 @@ export async function runConsultantClaude(params: {
     ? formatKnowledgeForPrompt(knowledgeArticles)
     : formatKnowledgeIndexForPrompt(knowledgeArticles);
 
+  // Список марок продавца едет в промпт целиком: он короткий, лежит в
+  // кешируемой части и без него модель называет страну по памяти.
+  const brandsSection = await (async () => {
+    try {
+      const { loadConsultantSynonyms } = await import("./catalog");
+      const { parseSynonymGroups, formatSynonymsForPrompt } = await import("./synonyms");
+      return formatSynonymsForPrompt(parseSynonymGroups(await loadConsultantSynonyms()));
+    } catch {
+      return "";
+    }
+  })();
+
   const fullSystemPrompt = buildConsultantSystemPrompt(
     catalog,
     rate,
     params.shopUrl,
     storeInfo,
     knowledgeSection,
+    brandsSection,
   );
 
   const country: ConsultantCountry | undefined = params.state.country;

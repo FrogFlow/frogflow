@@ -97,3 +97,48 @@ describe("страна бренда из списка продавца", () => {
     expect(names("японские")).toEqual([]);
   });
 });
+
+/**
+ * Живой ответ 19:47 на «У вас есть португальские бренды?»: бот назвал
+ * португальским Castelbel, которого в списке продавца нет, и не назвал Bovi
+ * с Graccioza, которые там как раз есть. Синонимы помогают подбору по
+ * каталогу, но на прямой вопрос модель отвечает из памяти — значит список
+ * должен быть у неё перед глазами.
+ */
+describe("список марок в промпте", () => {
+  it("перечисляет марки и слова, которыми про них спрашивают", async () => {
+    const { formatSynonymsForPrompt, parseSynonymGroups } = await import(
+      "../src/lib/consultant/synonyms"
+    );
+    const section = formatSynonymsForPrompt(parseSynonymGroups(SELLER_LIST));
+    expect(section).toContain("bovi — португальские, португалия");
+    expect(section).toContain("graccioza — португальские, португалия");
+    expect(section).toContain("weseta — швейцарские, швейцария");
+    // Прямой запрет выдумывать страну — рядом со списком, а не абзацем ниже.
+    expect(section).toMatch(/страну НЕ приписывайте/i);
+  });
+
+  it("пустой список не превращается в пустой заголовок в промпте", async () => {
+    const { formatSynonymsForPrompt } = await import("../src/lib/consultant/synonyms");
+    expect(formatSynonymsForPrompt([])).toBe("");
+    expect(formatSynonymsForPrompt([["bovi"]])).toBe("");
+  });
+
+  it("попадает в системный промпт целиком", async () => {
+    const { buildConsultantSystemPrompt } = await import("../src/lib/consultant/claude");
+    const { formatSynonymsForPrompt, parseSynonymGroups } = await import(
+      "../src/lib/consultant/synonyms"
+    );
+    const section = formatSynonymsForPrompt(parseSynonymGroups(SELLER_LIST));
+    const prompt = buildConsultantSystemPrompt(CATALOG, null, "https://bovi.kz", undefined, "", section);
+    expect(prompt).toContain("graccioza — португальские");
+    expect(prompt).toContain("СТРАНА ПРОИЗВОДСТВА");
+  });
+
+  it("без списка промпт собирается без пустой дыры", async () => {
+    const { buildConsultantSystemPrompt } = await import("../src/lib/consultant/claude");
+    const prompt = buildConsultantSystemPrompt(CATALOG, null, "https://bovi.kz", undefined, "", "");
+    expect(prompt).not.toContain("МАРКИ И КАК ИХ НАЗЫВАЮТ");
+    expect(prompt).toContain("СТРАНА ПРОИЗВОДСТВА");
+  });
+});
