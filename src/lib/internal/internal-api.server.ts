@@ -89,7 +89,13 @@ export async function authenticateInternalRequest(request: Request): Promise<Int
   return { ok: true };
 }
 
-export type NotifyDelivery = { chatId: string; ok: boolean; error?: string };
+export type NotifyDelivery = {
+  chatId: string;
+  ok: boolean;
+  error?: string;
+  /** Номер доставленного сообщения — по нему узнаётся свайп-ответ менеджера. */
+  messageId?: number;
+};
 
 export type NotifyOwnerResult =
   | { ok: true; deliveries?: NotifyDelivery[] }
@@ -156,8 +162,13 @@ export async function notifyOwner(
         text,
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       });
+      // Номер доставленного сообщения нужен, чтобы понять, на что именно
+      // отвечает менеджер свайп-ответом.
+      const messageId = (res.result as { message_id?: number } | undefined)?.message_id;
       deliveries.push(
-        res.ok ? { chatId, ok: true } : { chatId, ok: false, error: describeTelegramError(res.description) },
+        res.ok
+          ? { chatId, ok: true, ...(messageId ? { messageId } : {}) }
+          : { chatId, ok: false, error: describeTelegramError(res.description) },
       );
     } catch (e: unknown) {
       // Сюда попадает только незаданный TELEGRAM_BOT_TOKEN.

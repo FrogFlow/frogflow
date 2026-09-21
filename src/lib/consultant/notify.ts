@@ -11,6 +11,8 @@ export async function notifyConsultantHandoff(params: {
   customerUsername?: string;
   customerContact?: string;
   lastProducts?: string[];
+  /** Задано — ответ менеджера на это уведомление уйдёт покупателю. */
+  replyTo?: { userKey: string; taskId?: string };
 }): Promise<import("@/lib/internal/internal-api.server").NotifyOwnerResult> {
   try {
     const { notifyOwner } = await import("@/lib/internal/internal-api.server");
@@ -108,6 +110,11 @@ export async function notifyConsultantHandoff(params: {
       }
     }
 
+    if (params.replyTo) {
+      lines.push("");
+      lines.push("↩️ Ответьте на это сообщение — отправлю ваш текст покупателю.");
+    }
+
     const message = lines.join("\n");
 
     const replyMarkup = {
@@ -122,6 +129,21 @@ export async function notifyConsultantHandoff(params: {
 
     const res = await notifyOwner(message, replyMarkup);
     console.log("[notifyConsultantHandoff] response:", res);
+    if (params.replyTo) {
+      const { rememberReplyTargets } = await import("./manager-reply");
+      const at = new Date().toISOString();
+      await rememberReplyTargets(
+        (res.deliveries ?? [])
+          .filter((d) => d.ok && d.messageId)
+          .map((d) => ({
+            chatId: d.chatId,
+            messageId: d.messageId as number,
+            userKey: params.replyTo!.userKey,
+            taskId: params.replyTo!.taskId,
+            at,
+          })),
+      );
+    }
     return res;
   } catch (e) {
     console.error("[notifyConsultantHandoff] error:", e);

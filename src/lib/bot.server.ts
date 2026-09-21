@@ -52,6 +52,10 @@ export type TelegramUser = {
 export type TelegramMessage = {
   chat: { id: number; type?: string };
   from?: TelegramUser;
+  /** Номер самого сообщения — чтобы ответить именно на него. */
+  message_id?: number;
+  /** Свайп-ответ: на какое сообщение отвечает менеджер. */
+  reply_to_message?: { message_id?: number };
   text?: string;
   /** Подпись к фото/документу — Telegram кладёт её сюда, а не в `text`. */
   caption?: string;
@@ -5402,6 +5406,27 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
   }
 
   if (!ownerPendingInvoiceId && (await replyIfPaused(chat_id))) return;
+
+  // Свайп-ответ менеджера на уведомление «бот обещал вернуться» или «просят
+  // фото» — это ответ ПОКУПАТЕЛЮ, а не реплика консультанту. Без этой ветки
+  // текст уходил в консультанта, и менеджер в ответ на «У них плотность 300г»
+  // получал приветствие с выбором страны, а покупатель — ничего.
+  if (msg.text && msg.reply_to_message?.message_id) {
+    const { lookupReplyTarget, deliverManagerReply } = await import("./consultant/manager-reply");
+    const target = await lookupReplyTarget(chat_id, msg.reply_to_message.message_id);
+    if (target) {
+      const sent = await deliverManagerReply(target, msg.text);
+      await tg("sendMessage", {
+        chat_id,
+        text: sent.ok
+          ? "Отправлено покупателю."
+          : `Не отправилось: ${sent.error}. Ответьте через кнопку «Открыть диалог в Instagram».`,
+        reply_to_message_id: msg.message_id,
+      });
+      return;
+    }
+  }
+
   const user = await upsertUser(from);
   if (!user) return;
   {

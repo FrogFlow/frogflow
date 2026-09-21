@@ -122,6 +122,9 @@ export async function fileConsultantQuestion(input: {
       text: input.promise
         ? `${input.question}\n\nБот ответил: ${input.promise}`
         : input.question,
+      // Ответ менеджера на это сообщение уйдёт покупателю: запоминаем, какое
+      // уведомление в каком чате к какому диалогу относится.
+      replyTo: { userKey: input.userKey, taskId: task.id },
     });
     notified = Boolean(res?.ok);
   } catch (err) {
