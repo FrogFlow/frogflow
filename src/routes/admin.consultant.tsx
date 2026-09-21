@@ -333,6 +333,7 @@ function ConsultantPage() {
   const [storePhone, setStorePhone] = useState<string | null>(null);
   const [storeHours, setStoreHours] = useState<string | null>(null);
   const [pauseHours, setPauseHours] = useState<string | null>(null);
+  const [synonyms, setSynonyms] = useState<string | null>(null);
 
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const [knowledgeTagFilter, setKnowledgeTagFilter] = useState("all");
@@ -354,6 +355,7 @@ function ConsultantPage() {
   const currentHours = storeHours !== null ? storeHours : (d?.storeInfo?.hours ?? "");
   const currentPauseHours =
     pauseHours !== null ? pauseHours : String(d?.managerPauseHours ?? 6);
+  const currentSynonyms = synonyms !== null ? synonyms : (d?.synonyms ?? "");
 
   const knowledgeArticles: ConsultantKnowledgeArticle[] = d?.knowledge ?? [];
   const allKnowledgeTags = Array.from(
@@ -569,6 +571,7 @@ function ConsultantPage() {
           phone: currentPhone,
           hours: currentHours,
           managerPauseHours: currentPauseHours,
+          synonyms: currentSynonyms,
         },
       }),
     onSuccess: () => {
@@ -1158,6 +1161,23 @@ function ConsultantPage() {
                   сообщения. Ответил ещё раз — отсчёт начинается заново. От 1 до 24.
                 </p>
               </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Как ещё называют товары</Label>
+              <Textarea
+                value={currentSynonyms}
+                onChange={(e) => setSynonyms(e.target.value)}
+                placeholder={"pip, голландские, голландия\ndorelan, итальянские, италия\ntraumina, немецкие, германия\nuchino, японские, япония"}
+                rows={5}
+                className="text-xs font-mono"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Строка — одна группа. Первое слово то, что реально есть в названиях
+                товаров, дальше через запятую — как может спросить покупатель. Страна
+                происхождения в прайсе не хранится, поэтому «голландские полотенца» бот
+                не найдёт, пока здесь не написано, что это PIP Studio.
+              </p>
             </div>
 
             <div className="flex justify-end">

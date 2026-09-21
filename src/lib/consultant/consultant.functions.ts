@@ -92,10 +92,12 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
     const { getConsultantStoreInfo } = await import("./store-info");
     const { loadConsultantKnowledge } = await import("./knowledge");
     const { loadManagerPauseHours } = await import("./manager-guard");
-    const [storeInfo, knowledge, managerPauseHours] = await Promise.all([
+    const { loadConsultantSynonyms } = await import("./catalog");
+    const [storeInfo, knowledge, managerPauseHours, synonyms] = await Promise.all([
       getConsultantStoreInfo(),
       loadConsultantKnowledge(),
       loadManagerPauseHours(),
+      loadConsultantSynonyms(),
     ]);
 
     return {
@@ -129,6 +131,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
       checklist,
       storeInfo,
       managerPauseHours,
+      synonyms,
       knowledge,
       paymentNote: "Оплата в боте не делается — только handoff менеджеру (ТЗ).",
       oneCNote: "1С API недоступно по ТЗ. Источник — Excel/CSV/Sheets/Drive.",
@@ -322,6 +325,7 @@ export const saveConsultantStoreInfoFn = createServerFn({ method: "POST" })
         phone: z.string().optional(),
         hours: z.string().optional(),
         managerPauseHours: z.union([z.number(), z.string()]).optional(),
+        synonyms: z.string().optional(),
       })
       .parse(d),
   )
@@ -332,6 +336,17 @@ export const saveConsultantStoreInfoFn = createServerFn({ method: "POST" })
     if (data.managerPauseHours !== undefined) {
       const { saveManagerPauseHours } = await import("./manager-guard");
       await saveManagerPauseHours(data.managerPauseHours);
+    }
+    if (data.synonyms !== undefined) {
+      const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+      const { SYNONYMS_KEY, invalidateConsultantSynonymsCache } = await import("./catalog");
+      const { error } = await supabaseAdmin
+        .from("app_settings")
+        .upsert({ key: SYNONYMS_KEY, value: data.synonyms, updated_at: new Date().toISOString() });
+      if (error) throw new Error(`Не удалось сохранить синонимы: ${error.message}`);
+      // Иначе правка подхватится только через 45 секунд, и продавец решит,
+      // что она не сохранилась.
+      invalidateConsultantSynonymsCache();
     }
     return { ok: true as const };
   });

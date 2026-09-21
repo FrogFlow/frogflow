@@ -446,7 +446,43 @@ export async function loadConsultantCatalogSnapshot(): Promise<{
   return { products: snap.products, hidden: snap.hidden };
 }
 
+/**
+ * Синонимы продавца. Читаются рядом с каталогом и с тем же сроком жизни: до
+ * поиска они обязаны быть установлены, иначе «голландские полотенца» снова
+ * ничего не найдут.
+ */
+export const SYNONYMS_KEY = "consultant_synonyms";
+let synonymsCache: { at: number; text: string } | null = null;
+
+export async function loadConsultantSynonyms(): Promise<string> {
+  if (synonymsCache && Date.now() - synonymsCache.at < CATALOG_CACHE_MS) {
+    return synonymsCache.text;
+  }
+  try {
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("app_settings")
+      .select("value")
+      .eq("key", SYNONYMS_KEY)
+      .maybeSingle();
+    const text = data?.value ?? "";
+    synonymsCache = { at: Date.now(), text };
+    const { setDynamicSynonyms, parseSynonymGroups } = await import("./synonyms");
+    setDynamicSynonyms(parseSynonymGroups(text));
+    return text;
+  } catch {
+    return synonymsCache?.text ?? "";
+  }
+}
+
+export function invalidateConsultantSynonymsCache(): void {
+  synonymsCache = null;
+}
+
 async function loadCatalogSnapshot(): Promise<CatalogSnapshot> {
+  // Ставим синонимы до любого поиска, в том числе когда каталог взят из кеша:
+  // иначе первый запрос после перезапуска ищет по зашитому словарю.
+  await loadConsultantSynonyms();
   if (catalogCache && Date.now() - catalogCache.at < CATALOG_CACHE_MS) {
     return catalogCache;
   }

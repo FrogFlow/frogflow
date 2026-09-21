@@ -18,7 +18,10 @@ export function foldText(value: string): string {
  * обрабатываются автоматически стеммером stemWord, их сюда вносить не нужно.
  */
 const SYNONYM_GROUPS: string[][] = [
-  ["полотенце", "towel"],
+  // «полотенец» — родительный падеж множественного числа с беглой гласной:
+  // стеммер окончаний его не берёт, а спрашивают им постоянно («стоимость
+  // полотенец»). Поэтому вписано отдельным словом.
+  ["полотенце", "полотенец", "towel"],
   ["банное", "bath"],
   ["махровое", "махра", "terry"],
   ["постельное", "bedding", "кпб"],
@@ -61,25 +64,65 @@ export function stemWord(word: string): string {
   return w;
 }
 
-const LOOKUP = new Map<string, string>();
-for (const group of SYNONYM_GROUPS) {
-  const canon = foldText(group[0]);
-  for (const w of group) {
-    const folded = foldText(w);
-    LOOKUP.set(folded, canon);
-    const stemmed = stemWord(folded);
-    if (!LOOKUP.has(stemmed)) {
-      LOOKUP.set(stemmed, canon);
+function buildLookup(groups: string[][]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const group of groups) {
+    if (!group[0]) continue;
+    const canon = foldText(group[0]);
+    if (!canon) continue;
+    for (const w of group) {
+      const folded = foldText(w);
+      if (!folded) continue;
+      map.set(folded, canon);
+      const stemmed = stemWord(folded);
+      if (!map.has(stemmed)) map.set(stemmed, canon);
     }
   }
+  return map;
+}
+
+const LOOKUP = buildLookup(SYNONYM_GROUPS);
+
+/**
+ * Синонимы продавца поверх зашитых.
+ *
+ * Покупатель спросил «голландские полотенца» — бот ответил, что таких нет, а
+ * это PIP Studio. Страна происхождения в прайсе не хранится вовсе, и знать её
+ * коду неоткуда: «голландские — это PIP Studio», «итальянские — Dorelan» —
+ * это сведения магазина, а не языка. Поэтому список ведёт продавец, а не мы
+ * правкой кода на каждое новое слово.
+ */
+let DYNAMIC: Map<string, string> = new Map();
+
+export function setDynamicSynonyms(groups: string[][]): void {
+  DYNAMIC = buildLookup(groups);
+}
+
+/**
+ * Разбор списка из панели. Строка — одна группа: первое слово то, что реально
+ * встречается в названиях товаров, остальные — как покупатель может спросить.
+ *
+ *   pip, голландские, голландия
+ *   dorelan, итальянские, италия
+ */
+export function parseSynonymGroups(text: string): string[][] {
+  return (text ?? "")
+    .split("\n")
+    .map((line) => line.split(/[,;]/).map((w) => w.trim()).filter(Boolean))
+    .filter((group) => group.length >= 2);
+}
+
+export function formatSynonymGroups(groups: string[][]): string {
+  return groups.map((g) => g.join(", ")).join("\n");
 }
 
 export function expandToken(token: string): string {
   const folded = foldText(token);
-  const direct = LOOKUP.get(folded);
+  // Список продавца важнее зашитого: им же он и правит наши умолчания.
+  const direct = DYNAMIC.get(folded) ?? LOOKUP.get(folded);
   if (direct) return direct;
   const stemmed = stemWord(folded);
-  const fromStem = LOOKUP.get(stemmed);
+  const fromStem = DYNAMIC.get(stemmed) ?? LOOKUP.get(stemmed);
   if (fromStem) return fromStem;
   return stemmed;
 }
