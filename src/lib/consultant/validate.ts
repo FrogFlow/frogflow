@@ -245,6 +245,15 @@ const PHOTO_WORD_RE = /фото|фотк|фотограф|картинк|изо�
 const PHOTO_REQUEST_RE =
   /отправ|пришл|присыл|скин|сброс|покаж|скинь|можете|можно|есть\s+ли|дайте|поделит/i;
 
+/**
+ * Наша же строка-заглушка вместо голосового: Zernio присылает вложение без
+ * текста, и мы подставляем описание для модели. Узнаём её, чтобы передать
+ * диалог менеджеру, а не просить написать текстом.
+ */
+export function isVoiceMessagePlaceholder(text: string): boolean {
+  return /^\[Клиент отправил голосовое/i.test((text ?? "").trim());
+}
+
 export function asksForProductPhoto(text: string): boolean {
   const t = (text ?? "").trim();
   if (!t || t.startsWith("[")) return false;

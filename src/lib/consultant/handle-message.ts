@@ -86,6 +86,7 @@ import {
   cleanCatalogExcuses,
   cleanDemoMentions,
   asksForProductPhoto,
+  isVoiceMessagePlaceholder,
   cleanDiscontinuedMattressOffers,
   promisesManagerFollowUp,
   cleanForbiddenPhrases,
@@ -379,24 +380,6 @@ async function handleConsultantZernioEventInternal(params: {
     reply.text = DISCONTINUED_MEDIUM_MATTRESS_REPLY;
   }
 
-  // Просьба о фото. Фотографий у консультанта нет вовсе, поэтому ответить на
-  // такую просьбу может только человек. Ловим по сообщению покупателя, а не по
-  // ответу бота: отказ он может сформулировать как угодно, а просьба — вот она.
-  if (asksForProductPhoto(text) && reply.kind !== "purchase" && reply.kind !== "handoff") {
-    void fileConsultantQuestion({
-      userKey: params.userKey,
-      question: text.trim(),
-      promise: reply.text,
-      reason: "photo",
-    }).catch((err: unknown) => {
-      console.warn("[consultant] не удалось передать просьбу о фото", err);
-    });
-    logConsultantEvent(requestId, "photo_requested", {
-      userKey: params.userKey,
-      question: text.trim().slice(0, 160),
-    });
-  }
-
   // Бот пообещал уточнить у менеджера, но инструмент не вызвал. На живом
   // диалоге про плотность полотенец так и вышло: пообещал дважды, в списке
   // задач не появилось ничего, покупатель остался ждать. Фиксируем по тексту
@@ -518,6 +501,43 @@ export async function decideConsultantReply(
     }
   }
   const pack = copyForBucket(bucket);
+
+  /**
+   * Фото, картинки и голосовые — сразу менеджеру.
+   *
+   * Продавец: «если хотят фото, картинок, пишут сообщение голосом — сразу на
+   * менеджера переключать и сообщать об этом». Раньше бот на просьбу о фото
+   * передавал вопрос и продолжал разговор, а на голосовое просил написать
+   * текстом. И то и другое человек сделает быстрее и лучше: фотографий у
+   * консультанта нет вовсе, голосовые он не слышит.
+   *
+   * Передача ставит диалог на паузу, заводит задачу и уведомляет менеджера —
+   * всё это делает handoffReply, поэтому отдельной ветки не нужно.
+   */
+  if (isVoiceMessagePlaceholder(text)) {
+    void track(ctx.userKey, "handoff", text, bucket);
+    return handoffReply(
+      pack,
+      state,
+      bucket,
+      "voice",
+      text,
+      ctx.userKey,
+      "Голосовые сообщения я не распознаю. Передаю диалог менеджеру — он ответит здесь же.",
+    );
+  }
+  if (asksForProductPhoto(text)) {
+    void track(ctx.userKey, "handoff", text, bucket);
+    return handoffReply(
+      pack,
+      state,
+      bucket,
+      "photo",
+      text,
+      ctx.userKey,
+      "Фото отправит менеджер — передаю ему ваш вопрос, он ответит здесь же.",
+    );
+  }
 
   if (looksLikePromptInjection(text)) {
     void track(ctx.userKey, "injection", text, bucket);
@@ -1439,14 +1459,15 @@ async function handoffReply(
   pack: ConsultantCopyPack,
   state: ConsultantState,
   bucket: "a" | "b",
-  reason: "purchase" | "error" | "other" | "injection",
+  reason: "purchase" | "error" | "other" | "injection" | "photo" | "voice",
   text: string,
   userKey?: string,
   message?: string,
   customerContact?: string,
   catalog?: import("./catalog").ConsultantProduct[],
 ): Promise<ConsultantReply> {
-  const pauseReason = reason === "injection" ? "other" : reason === "other" ? "other" : reason;
+  const pauseReason =
+    reason === "purchase" ? "purchase" : reason === "error" ? "error" : "other";
   const contact = customerContact || state.customer_contact;
   const inCurrentText = catalog ? matchProductsInText(text, catalog) : [];
   const resolvedProducts =
@@ -1479,8 +1500,7 @@ async function handoffReply(
       ...state,
       ab_bucket: bucket,
       automation_paused: true,
-      pause_reason:
-        pauseReason === "purchase" ? "purchase" : pauseReason === "error" ? "error" : "other",
+      pause_reason: pauseReason,
       conversation_state: "handed_off",
       customer_contact: contact,
       last_product_ids: resolvedProducts,
