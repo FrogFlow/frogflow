@@ -87,6 +87,7 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components-ui/tabs";
 import { StoriesTab } from "./admin.stories-tab";
+import { CommentRepliesTab } from "./admin.comment-replies-tab";
 import {
   Card,
   CardContent,
@@ -2918,6 +2919,10 @@ function AdminInstagramPage() {
 
         {/* AUTOMATIONS TAB */}
         <TabsContent value="automations" className="space-y-6">
+          {/* Урезанный режим: ответ под постом без сообщения в Direct. Стоит
+              выше Comment-to-DM, потому что клиенту нужен именно он. */}
+          <CommentRepliesTab />
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Editor Side */}
             <div className="lg:col-span-5 space-y-6">

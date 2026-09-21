@@ -206,6 +206,35 @@ export const Route = createFileRoute("/api/public/zernio/webhook")({
                 await handleZernioCommentTwoStep(
                   payload as Parameters<typeof handleZernioCommentTwoStep>[0],
                 );
+                // Правила «ответить публично, в Direct не писать» — наши, а не
+                // Zernio: там автоматизация обязана слать сообщение в личку.
+                // Срабатывают на событие, а не по опросу: комментарий, на
+                // который ответили через пятнадцать минут, отвечать уже поздно.
+                const { replyToCommentByRules } = await import("@/lib/comment-reply-rules.server");
+                const c = payload as {
+                  account?: { accountId?: string; id?: string; username?: string };
+                  post?: { platformPostId?: string; id?: string };
+                  comment?: {
+                    id?: string;
+                    text?: string;
+                    postId?: string;
+                    platformPostId?: string;
+                    author?: { username?: string };
+                  };
+                };
+                await replyToCommentByRules({
+                  accountId: c.account?.accountId || c.account?.id,
+                  commentId: c.comment?.id,
+                  commentText: c.comment?.text,
+                  platformPostId: c.comment?.platformPostId || c.post?.platformPostId,
+                  postId: c.comment?.postId || c.post?.id,
+                  authorUsername: c.comment?.author?.username,
+                  accountUsername: c.account?.username,
+                }).catch((err: unknown) => {
+                  // Ответ на комментарий не должен ронять обработку события:
+                  // рядом идёт двухшаговый DM, и он важнее.
+                  console.error("[comment-reply] правило не отработало", err);
+                });
               } else if (eventType === "account.disconnected") {
                 await handleZernioAccountDisconnected(
                   payload as Parameters<typeof handleZernioAccountDisconnected>[0],
