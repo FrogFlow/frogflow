@@ -332,6 +332,7 @@ function ConsultantPage() {
   const [storeAddress, setStoreAddress] = useState<string | null>(null);
   const [storePhone, setStorePhone] = useState<string | null>(null);
   const [storeHours, setStoreHours] = useState<string | null>(null);
+  const [pauseHours, setPauseHours] = useState<string | null>(null);
 
   const [knowledgeSearch, setKnowledgeSearch] = useState("");
   const [knowledgeTagFilter, setKnowledgeTagFilter] = useState("all");
@@ -351,6 +352,8 @@ function ConsultantPage() {
   const currentAddress = storeAddress !== null ? storeAddress : (d?.storeInfo?.address ?? "");
   const currentPhone = storePhone !== null ? storePhone : (d?.storeInfo?.phone ?? "");
   const currentHours = storeHours !== null ? storeHours : (d?.storeInfo?.hours ?? "");
+  const currentPauseHours =
+    pauseHours !== null ? pauseHours : String(d?.managerPauseHours ?? 6);
 
   const knowledgeArticles: ConsultantKnowledgeArticle[] = d?.knowledge ?? [];
   const allKnowledgeTags = Array.from(
@@ -565,10 +568,11 @@ function ConsultantPage() {
           address: currentAddress,
           phone: currentPhone,
           hours: currentHours,
+          managerPauseHours: currentPauseHours,
         },
       }),
     onSuccess: () => {
-      toast.success("Адрес и контакты магазина сохранены");
+      toast.success("Настройки магазина сохранены");
       qc.invalidateQueries({ queryKey: ["consultant-admin"] });
     },
     onError: (e: unknown) => toast.error(errorMessage(e)),
@@ -1137,6 +1141,25 @@ function ConsultantPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Молчать после менеджера, часов</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={24}
+                  value={currentPauseHours}
+                  onChange={(e) => setPauseHours(e.target.value)}
+                  placeholder="6"
+                  className="h-9 text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Менеджер ответил в чате — бот молчит столько часов от его последнего
+                  сообщения. Ответил ещё раз — отсчёт начинается заново. От 1 до 24.
+                </p>
+              </div>
+            </div>
+
             <div className="flex justify-end">
               <Button
                 type="button"
@@ -1144,7 +1167,7 @@ function ConsultantPage() {
                 onClick={() => saveStoreInfo.mutate()}
                 disabled={saveStoreInfo.isPending}
               >
-                {saveStoreInfo.isPending ? "Сохранение..." : "Сохранить адрес и контакты"}
+                {saveStoreInfo.isPending ? "Сохранение..." : "Сохранить настройки магазина"}
               </Button>
             </div>
           </section>

@@ -91,9 +91,11 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
   const lastDirect = lastHooks?.[0] ?? null;
     const { getConsultantStoreInfo } = await import("./store-info");
     const { loadConsultantKnowledge } = await import("./knowledge");
-    const [storeInfo, knowledge] = await Promise.all([
+    const { loadManagerPauseHours } = await import("./manager-guard");
+    const [storeInfo, knowledge, managerPauseHours] = await Promise.all([
       getConsultantStoreInfo(),
       loadConsultantKnowledge(),
+      loadManagerPauseHours(),
     ]);
 
     return {
@@ -126,6 +128,7 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
       ab: ab ?? "split",
       checklist,
       storeInfo,
+      managerPauseHours,
       knowledge,
       paymentNote: "Оплата в боте не делается — только handoff менеджеру (ТЗ).",
       oneCNote: "1С API недоступно по ТЗ. Источник — Excel/CSV/Sheets/Drive.",
@@ -318,6 +321,7 @@ export const saveConsultantStoreInfoFn = createServerFn({ method: "POST" })
         address: z.string().optional(),
         phone: z.string().optional(),
         hours: z.string().optional(),
+        managerPauseHours: z.union([z.number(), z.string()]).optional(),
       })
       .parse(d),
   )
@@ -325,6 +329,10 @@ export const saveConsultantStoreInfoFn = createServerFn({ method: "POST" })
     await requireAdmin();
     const { saveConsultantStoreInfo } = await import("./store-info");
     await saveConsultantStoreInfo(data);
+    if (data.managerPauseHours !== undefined) {
+      const { saveManagerPauseHours } = await import("./manager-guard");
+      await saveManagerPauseHours(data.managerPauseHours);
+    }
     return { ok: true as const };
   });
 

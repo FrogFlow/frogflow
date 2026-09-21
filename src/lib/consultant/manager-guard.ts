@@ -45,6 +45,82 @@ export type ManagerMessage = { text: string; at: number };
  */
 export const ACTIVE_MANAGER_WINDOW_MS = 30 * 60 * 1000;
 
+/**
+ * Через сколько бот снова заговорит после того, как в чат влез менеджер.
+ *
+ * Отсчёт идёт не от паузы, а от последнего исходящего сообщения: менеджер
+ * ответил ещё раз — окно началось заново. Пока оно не вышло, бот молчит, даже
+ * если покупатель пишет.
+ *
+ * Цифра — это компромисс продавца, а не техники, поэтому она в настройках.
+ * Короткое окно рискует тем, что бот вклинится в разговор, который менеджер
+ * ещё ведёт; длинное — тем, что вернувшийся вечером покупатель не получит
+ * ответа, когда менеджер уже ушёл. Было зашито 12 часов: менеджер, ответивший
+ * в одиннадцать утра, держал бота молчащим до одиннадцати вечера, то есть весь
+ * рабочий день бутика.
+ */
+export const MANAGER_PAUSE_HOURS_KEY = "consultant_manager_pause_hours";
+export const DEFAULT_MANAGER_PAUSE_HOURS = 6;
+export const MIN_MANAGER_PAUSE_HOURS = 1;
+export const MAX_MANAGER_PAUSE_HOURS = 24;
+
+/** Приводит значение из настроек к допустимым границам. */
+export function normalizeManagerPauseHours(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number(String(raw ?? "").trim().replace(",", "."));
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_MANAGER_PAUSE_HOURS;
+  return Math.min(MAX_MANAGER_PAUSE_HOURS, Math.max(MIN_MANAGER_PAUSE_HOURS, n));
+}
+
+export function managerPauseMs(hours: number): number {
+  return normalizeManagerPauseHours(hours) * 60 * 60 * 1000;
+}
+
+/** Окно из настроек магазина, в часах; при любой ошибке — значение по умолчанию. */
+export async function loadManagerPauseHours(): Promise<number> {
+  try {
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("app_settings")
+      .select("value")
+      .eq("key", MANAGER_PAUSE_HOURS_KEY)
+      .maybeSingle();
+    return normalizeManagerPauseHours(data?.value);
+  } catch {
+    return DEFAULT_MANAGER_PAUSE_HOURS;
+  }
+}
+
+export async function loadManagerPauseMs(): Promise<number> {
+  return managerPauseMs(await loadManagerPauseHours());
+}
+
+export async function saveManagerPauseHours(hours: unknown): Promise<number> {
+  const value = normalizeManagerPauseHours(hours);
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  // Тот же случай, что в store-info.ts: ON CONFLICT (key) не совпадает с
+  // первичным ключом (bot_id, key), и ошибку нельзя глотать — иначе окно
+  // молча останется прежним, а продавец будет думать, что поменял.
+  const { error } = await supabaseAdmin
+    .from("app_settings")
+    .upsert({ key: MANAGER_PAUSE_HOURS_KEY, value: String(value) });
+  if (error) throw new Error(`Не удалось сохранить окно паузы: ${error.message}`);
+  return value;
+}
+
+/**
+ * Пора ли снимать паузу менеджера: с его последнего сообщения прошло больше
+ * окна. Без времени последнего исходящего судить не о чем — молчим дальше.
+ */
+export function managerPauseExpired(
+  lastOutgoingAt: string | number | undefined | null,
+  windowMs: number,
+  now: number = Date.now(),
+): boolean {
+  const at = typeof lastOutgoingAt === "number" ? lastOutgoingAt : Date.parse(lastOutgoingAt ?? "");
+  if (!Number.isFinite(at) || at <= 0) return false;
+  return now - at > windowMs;
+}
+
 export function findManagerMessage(
   messages: ZernioInboxMessage[],
   state: ConsultantState,

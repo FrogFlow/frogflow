@@ -74,7 +74,11 @@ import {
   type ConsultantState,
 } from "./state";
 import { consultantModel } from "./config";
-import { managerSpokeInConversation } from "./manager-guard";
+import {
+  loadManagerPauseMs,
+  managerPauseExpired,
+  managerSpokeInConversation,
+} from "./manager-guard";
 import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
@@ -240,22 +244,33 @@ async function handleConsultantZernioEventInternal(params: {
 
   if (isAutomationPaused(consultant)) {
     let lastOutgoing = "";
+    let lastOutgoingAt = "";
     try {
       const { listZernioConversationMessages } = await import("@/lib/zernio.server");
       const messages = await listZernioConversationMessages(
         params.accountId,
         params.conversationId,
       );
-      lastOutgoing =
-        [...messages].reverse().find((m) => m.direction === "outgoing" && m.message?.trim())
-          ?.message ?? "";
+      const last = [...messages]
+        .reverse()
+        .find((m) => m.direction === "outgoing" && m.message?.trim());
+      lastOutgoing = last?.message ?? "";
+      lastOutgoingAt = last?.createdAt ?? "";
     } catch {
       lastOutgoing = "";
+      lastOutgoingAt = "";
     }
     const rawIncoming = params.text.trim() || params.postback?.trim() || "";
     const canGreetingResume =
       consultant.pause_reason !== "manager_intervention" && isConsultantGreeting(rawIncoming);
-    if (isFalseManagerPause(consultant, lastOutgoing) || canGreetingResume) {
+    // Окно паузы менеджера истекло. Раньше это правило жило только в опросе
+    // инбокса, и покупатель, вернувшийся на следующий день, ждал ответа до
+    // минуты — пока не отработает минутный крон. Проверка здесь отвечает ему
+    // сразу; опрос остаётся второй линией для диалогов без вебхука.
+    const pauseExpired =
+      consultant.pause_reason === "manager_intervention" &&
+      managerPauseExpired(lastOutgoingAt, await loadManagerPauseMs());
+    if (isFalseManagerPause(consultant, lastOutgoing) || canGreetingResume || pauseExpired) {
       await resumeConsultant(params.userKey);
     } else {
       logConsultantEvent(requestId, "skipped_paused", {

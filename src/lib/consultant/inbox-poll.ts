@@ -1,6 +1,7 @@
 import { USER_KEY_PREFIX } from "@/lib/zernio-platform";
 import { extractInstagramMediaInfo } from "@/lib/instagram-media";
 import { looksLikeConsultantBotReply } from "./copy";
+import { managerPauseExpired } from "./manager-guard";
 import { handleConsultantZernioEvent } from "./handle-message";
 import {
   alreadyAnsweredIncoming,
@@ -146,8 +147,10 @@ export async function pollIncomingConsultantMessages(): Promise<{
         skipped += 1;
         continue;
       }
-      const outgoingTs = lastOutgoing?.createdAt ? Date.parse(lastOutgoing.createdAt) : 0;
-      if (consultant.automation_paused && outgoingTs > 0 && Date.now() - outgoingTs > 12 * 60 * 60 * 1000) {
+      if (
+        consultant.automation_paused &&
+        managerPauseExpired(lastOutgoing?.createdAt, await managerPauseWindow())
+      ) {
         consultant = await resumeConsultant(userKey);
         skipped += 1;
         continue;
@@ -289,6 +292,23 @@ function sleep(ms: number): Promise<void> {
  * Vercel cron не чаще раза в минуту. Если webhook молчит, без этого
  * «здравствуйте» ждёт весь тик. Крутим Inbox до конца слота функции.
  */
+/**
+ * Окно паузы на один проход опроса. Читать настройку на каждый диалог — лишний
+ * запрос к базе на каждой итерации цикла, а за минуту она не меняется.
+ */
+let pauseWindowCache: { at: number; ms: number } | null = null;
+const PAUSE_WINDOW_TTL_MS = 60_000;
+
+async function managerPauseWindow(): Promise<number> {
+  if (pauseWindowCache && Date.now() - pauseWindowCache.at < PAUSE_WINDOW_TTL_MS) {
+    return pauseWindowCache.ms;
+  }
+  const { loadManagerPauseMs } = await import("./manager-guard");
+  const ms = await loadManagerPauseMs();
+  pauseWindowCache = { at: Date.now(), ms };
+  return ms;
+}
+
 export async function pollIncomingConsultantBurst(maxMs = BURST_MS): Promise<{
   rounds: number;
   checked: number;
