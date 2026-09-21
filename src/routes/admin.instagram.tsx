@@ -2752,6 +2752,13 @@ function AdminInstagramPage() {
               <span className="hidden sm:inline">Сторис</span>
             </TabsTrigger>
           )}
+          {/* Ответы на комментарии без Direct — отдельной вкладкой, а не
+              внутри «Автоматизаций»: у ниши консультанта та скрыта целиком,
+              и блок там был бы недостижим. */}
+          <TabsTrigger value="comment-replies" className="gap-2">
+            <MessageSquare className="w-4 h-4" />{" "}
+            <span className="hidden sm:inline">Комментарии</span>
+          </TabsTrigger>
           {!isConsultant && (
             <>
               <TabsTrigger value="direct-bot" className="gap-2">
@@ -2794,6 +2801,9 @@ function AdminInstagramPage() {
             <StoriesTab accountId={acc?._id} />
           </TabsContent>
         )}
+        <TabsContent value="comment-replies" className="space-y-6">
+          <CommentRepliesTab />
+        </TabsContent>
         {!isConsultant && (
           <>
             <TabsContent value="direct-bot" className="space-y-6">
@@ -2919,10 +2929,6 @@ function AdminInstagramPage() {
 
         {/* AUTOMATIONS TAB */}
         <TabsContent value="automations" className="space-y-6">
-          {/* Урезанный режим: ответ под постом без сообщения в Direct. Стоит
-              выше Comment-to-DM, потому что клиенту нужен именно он. */}
-          <CommentRepliesTab />
-
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* Editor Side */}
             <div className="lg:col-span-5 space-y-6">
