@@ -6,6 +6,13 @@ import { Input } from "@/components-ui/input";
 import { Textarea } from "@/components-ui/textarea";
 import { Button } from "@/components-ui/button";
 import { Switch } from "@/components-ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components-ui/select";
 import { toast } from "sonner";
 import {
   deleteCommentReplyRuleFn,
@@ -13,8 +20,10 @@ import {
   saveCommentReplyRuleFn,
 } from "@/lib/comment-reply-rules.functions";
 import type { CommentReplyRule } from "@/lib/comment-reply-rules";
+import { getZernioPostsFn } from "@/lib/instagram.functions";
+import { describePostMediaKind } from "@/lib/zernio-post-ids";
 import { errorMessage } from "@/lib/error-message";
-import { Trash2 } from "lucide-react";
+import { Image as ImageIcon, RefreshCcw, Trash2 } from "lucide-react";
 
 const EMPTY = {
   name: "",
@@ -32,7 +41,16 @@ const EMPTY = {
  * добавка к обязательному сообщению в личку. Здесь наоборот: отвечаем под
  * постом и в Direct не пишем вовсе.
  */
-export function CommentRepliesTab() {
+/** Дата публикации человеческим видом; у части постов её нет вовсе. */
+function postDate(value: unknown): string {
+  if (typeof value !== "number" && typeof value !== "string") return "Без даты";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? "Без даты" : d.toLocaleDateString("ru-RU");
+}
+
+const ALL_POSTS = "__all__";
+
+export function CommentRepliesTab({ accountId }: { accountId?: string }) {
   const qc = useQueryClient();
   const [form, setForm] = useState(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
@@ -41,6 +59,22 @@ export function CommentRepliesTab() {
     queryKey: ["comment_reply_rules"],
     queryFn: () => listCommentReplyRulesFn(),
   });
+
+  // Тот же список публикаций, что и у обычных автоматизаций: вводить id
+  // поста руками неудобно и легко ошибиться.
+  const posts = useQuery({
+    queryKey: ["ig_posts", accountId],
+    queryFn: () => getZernioPostsFn({ data: { accountId: accountId as string } }),
+    enabled: Boolean(accountId),
+  });
+  const postList: Record<string, unknown>[] = (posts.data?.posts ?? []) as Record<
+    string,
+    unknown
+  >[];
+  const postIdOf = (p: Record<string, unknown>) =>
+    String(p.platformPostId || p._id || p.id || "");
+  /** Показать в списке правил подпись публикации, а не голый идентификатор. */
+  const postById = (id: string) => postList.find((p) => postIdOf(p) === id);
 
   const save = useMutation({
     mutationFn: () =>
@@ -145,13 +179,64 @@ export function CommentRepliesTab() {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">ID поста (необязательно)</Label>
-              <Input
-                value={form.platformPostId}
-                onChange={(e) => setForm({ ...form, platformPostId: e.target.value })}
-                placeholder="пусто — на все посты"
-                className="h-9 text-sm"
-              />
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Публикация</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[11px]"
+                  disabled={!accountId || posts.isFetching}
+                  onClick={() => qc.invalidateQueries({ queryKey: ["ig_posts", accountId] })}
+                >
+                  <RefreshCcw className="w-3 h-3 mr-1" />
+                  {posts.isFetching ? "Загрузка…" : "Обновить"}
+                </Button>
+              </div>
+              <Select
+                value={form.platformPostId || ALL_POSTS}
+                onValueChange={(v: string) =>
+                  setForm({ ...form, platformPostId: v === ALL_POSTS ? "" : v })
+                }
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="На все посты" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_POSTS}>На все посты и рилсы</SelectItem>
+                  {postList.map((p) => (
+                    <SelectItem key={postIdOf(p)} value={postIdOf(p)}>
+                      <div className="flex items-center gap-2 py-1 max-w-[320px]">
+                        {p._thumbnail ? (
+                          <img
+                            src={String(p._thumbnail)}
+                            className="w-8 h-8 object-cover rounded shrink-0 bg-muted"
+                            alt=""
+                          />
+                        ) : (
+                          <div className="w-8 h-8 bg-muted rounded flex items-center justify-center shrink-0">
+                            <ImageIcon className="w-4 h-4 opacity-40" />
+                          </div>
+                        )}
+                        <div className="flex flex-col min-w-0 text-left">
+                          <span className="text-[9px] text-muted-foreground font-bold uppercase">
+                            {postDate(p._date)}
+                            {describePostMediaKind(p) ? ` · ${describePostMediaKind(p)}` : ""}
+                          </span>
+                          <span className="text-xs truncate font-medium">
+                            {String(p.caption || p.content || "Без подписи").slice(0, 60)}
+                          </span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!accountId && (
+                <p className="text-[11px] text-muted-foreground">
+                  Аккаунт Instagram не подключён — список публикаций пуст.
+                </p>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -245,7 +330,15 @@ export function CommentRepliesTab() {
                   {rule.keywords.length > 0
                     ? `Слова: ${rule.keywords.join(", ")} (${rule.matchMode === "exact" ? "точно" : "вхождение"})`
                     : "На любой комментарий"}
-                  {rule.platformPostId ? ` · пост ${rule.platformPostId}` : " · все посты"}
+                  {rule.platformPostId
+                    ? ` · ${describePostMediaKind(postById(rule.platformPostId) ?? {}) || "публикация"}: ${
+                        String(
+                          postById(rule.platformPostId)?.caption ||
+                            postById(rule.platformPostId)?.content ||
+                            rule.platformPostId,
+                        ).slice(0, 40)
+                      }`
+                    : " · все посты"}
                 </p>
                 <ul className="text-xs space-y-0.5">
                   {rule.replies.map((text, i) => (

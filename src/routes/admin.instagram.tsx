@@ -2802,7 +2802,7 @@ function AdminInstagramPage() {
           </TabsContent>
         )}
         <TabsContent value="comment-replies" className="space-y-6">
-          <CommentRepliesTab />
+          <CommentRepliesTab accountId={acc?._id} />
         </TabsContent>
         {!isConsultant && (
           <>
