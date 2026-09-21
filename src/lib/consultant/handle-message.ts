@@ -78,6 +78,7 @@ import { managerSpokeInConversation } from "./manager-guard";
 import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
+  cleanDemoMentions,
   cleanDiscontinuedMattressOffers,
   cleanForbiddenPhrases,
   cleanScriptHallucinations,
@@ -349,7 +350,7 @@ async function handleConsultantZernioEventInternal(params: {
   // применяется здесь, а не в каждом месте, где собирается текст.
   const beforeDiscontinuedGuard = reply.text;
   reply.text = stripExclamationsAndEmoji(
-    stripMarkdownFormatting(cleanCatalogExcuses(cleanDiscontinuedMattressOffers(reply.text))),
+    stripMarkdownFormatting(cleanCatalogExcuses(cleanDemoMentions(cleanDiscontinuedMattressOffers(reply.text)))),
   );
   // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
   // отвечаем честно про среднюю жёсткость.

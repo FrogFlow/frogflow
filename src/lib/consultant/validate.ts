@@ -227,6 +227,30 @@ export function cleanDiscontinuedMattressOffers(text: string): string {
 }
 
 /**
+ * Упоминание демонстрационного образца.
+ *
+ * Пометку снимают с каталога на загрузке (catalog.ts), и модель её уже не
+ * видит. Это вторая линия: пометка может приехать из базы знаний, из прайса 1С
+ * или из пересказа прошлой реплики в той же переписке. Продавец попросил прямо:
+ * покупателю про демонстрационный образец не говорим.
+ *
+ * Вырезается предложение целиком, остальной ответ — название, цена, размер —
+ * остаётся: «У нас есть матрас EPIC R3 COMFORT 182x202 — 2 700 000 ₸. Это
+ * демонстрационная модель в нашем салоне.» теряет только второе предложение.
+ */
+const DEMO_MENTION_RE = /демонст[а-яё]*/i;
+
+export function mentionsDemoSample(sentence: string): boolean {
+  return DEMO_MENTION_RE.test(sentence);
+}
+
+export function cleanDemoMentions(text: string): string {
+  const cleaned = dropSentences(text, mentionsDemoSample);
+  // Если пометка была всем ответом, пустое сообщение хуже исходного.
+  return cleaned.trim() ? cleaned : text;
+}
+
+/**
  * Отговорка про каталог.
  *
  * Продавец о живом ответе: «спросил про это конкретное полотенце — про

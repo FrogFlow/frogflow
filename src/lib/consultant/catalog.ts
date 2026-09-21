@@ -112,13 +112,85 @@ export function isDiscontinuedProduct(product: ConsultantProduct): boolean {
 }
 
 /**
+ * «Не для продажи».
+ *
+ * Пометка из прайса на позициях, которые стоят в салоне, но не продаются:
+ * например, плед-образец на 70 000 ₸ с ценой и остатком, как у обычного
+ * товара. Отдельно от пометки «демонстрационный»: ту с покупателя снимают, а
+ * эту нельзя даже снимать — снятая, она превращает непродаваемую позицию в
+ * обычную и бот предложит её к покупке.
+ */
+const NOT_FOR_SALE_RE = /не\s+для\s+продажи|не\s+прода[её]тся|not\s+for\s+sale/i;
+
+export function isNotForSale(product: ConsultantProduct): boolean {
+  return NOT_FOR_SALE_RE.test(`${product.category} ${product.name}`);
+}
+
+/** Позиции, которых покупатель видеть не должен ни по какому пути. */
+export function isHiddenProduct(product: ConsultantProduct): boolean {
+  return isDiscontinuedProduct(product) || isNotForSale(product);
+}
+
+/**
+ * Пометка «демонстрационный».
+ *
+ * Продавец ведёт её в прайсе для себя: часть позиций стоит в салоне образцами.
+ * Покупателю это знать незачем, а бот честно пересказывал — «Это
+ * демонстрационная модель в нашем салоне» прямо в ответе о цене матраса.
+ *
+ * Правилом в промпте такое не лечится: пометка сидит в самом названии позиции
+ * и в её категории, модель читает её в каталоге и повторяет. Значит убирать
+ * надо там же, где убираются снятые с производства, — до того, как каталог
+ * попадёт модели на глаза.
+ *
+ * Корень взят коротким намеренно: в прайсе встречаются и «(демонстр.)», и
+ * «демонстраци подушк», и опечатка «(демонстарационный)». Осмысленных слов на
+ * «демонст» в домашнем текстиле нет, поэтому широкий корень здесь безопаснее
+ * точного перечисления написаний.
+ */
+const DEMO_MARKING_RE = /демонст[а-яё]*\.?/gi;
+const DEMO_MENTION_RE = /демонст[а-яё]*/i;
+
+export function isDemoMarked(product: ConsultantProduct): boolean {
+  return DEMO_MENTION_RE.test(`${product.category} ${product.name}`);
+}
+
+/** Убирает пометку из названия, вычищая за собой опустевшие скобки и пробелы. */
+export function stripDemoMarking(text: string): string {
+  return text
+    .replace(/\(\s*демонст[а-яё]*\.?\s*\)/gi, " ")
+    .replace(DEMO_MARKING_RE, " ")
+    .replace(/\(\s*\)/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim();
+}
+
+/**
+ * Позиция без пометки. Категорию «Демонстрационные позиции» обнуляем целиком:
+ * подбор и так смотрит в название, когда категории нет, а иначе пометка
+ * уезжает в промпт отдельным полем строки каталога.
+ */
+export function withoutDemoMarking(product: ConsultantProduct): ConsultantProduct {
+  if (!isDemoMarked(product)) return product;
+  const name = stripDemoMarking(product.name);
+  return {
+    ...product,
+    // Если после чистки от названия ничего не осталось, пометка была всем
+    // названием — исходное хуже не сделает, пустое сделает.
+    name: name || product.name,
+    category: DEMO_MENTION_RE.test(product.category) ? "" : product.category,
+  };
+}
+
+/**
  * Каталог без снятого с производства — ровно то, что консультанту видно.
  * Фильтр стоит в одном месте (loadConsultantCatalog), а не в поиске: в промпт
  * каталог уходит целиком, и отсечь позицию только в поиске значит оставить её
  * модели на глазах — она и назовёт её сама, без всякого поиска.
  */
 export function sellableProducts(rows: ConsultantProduct[]): ConsultantProduct[] {
-  return rows.filter((p) => !isDiscontinuedProduct(p));
+  return rows.filter((p) => !isHiddenProduct(p));
 }
 
 /**
@@ -342,12 +414,12 @@ let catalogCache: CatalogSnapshot | null = null;
 const CATALOG_CACHE_MS = 45_000;
 
 function snapshotOf(rows: ConsultantProduct[]): CatalogSnapshot {
-  const hidden = rows.filter(isDiscontinuedProduct);
-  return {
-    at: Date.now(),
-    products: hidden.length > 0 ? sellableProducts(rows) : rows,
-    hidden,
-  };
+  const hidden = rows.filter(isHiddenProduct);
+  const visible = hidden.length > 0 ? sellableProducts(rows) : rows;
+  // Пометка «демонстрационный» снимается только с того, что увидит покупатель.
+  // В hidden строки остаются как в прайсе: это список для продавца, и узнавать
+  // в нём свои позиции он должен по тому, что сам написал.
+  return { at: Date.now(), products: visible.map(withoutDemoMarking), hidden };
 }
 
 export function invalidateConsultantCatalogCache(): void {
