@@ -43,8 +43,10 @@ describe("широкий вопрос не разворачивается в п�
       products: unknown[];
       total_matches: number;
       sizes: string[];
+      sizes_total: number;
       colors: string[];
-      price_kzt: { from: number; to: number } | null;
+      colors_total: number;
+      price_from_kzt: number | null;
       in_stock?: boolean;
     };
     expect(payload.ask_size_and_color).toBe(true);
@@ -53,7 +55,37 @@ describe("широкий вопрос не разворачивается в п�
     expect(payload.total_matches).toBe(6);
     expect(payload.sizes).toEqual(["50x100", "75x150"]);
     expect(payload.colors).toContain("жёлтый");
-    expect(payload.price_kzt).toEqual({ from: 9_889, to: 21_976 });
+    /**
+     * Только нижняя граница. Продавец о живом ответе про коврики: «много
+     * лишнего написал, клиент сбежал» — там были одиннадцать расцветок и
+     * вилка от 20 000 до 420 000 ₸. Верхнюю границу модель больше не видит,
+     * поэтому и назвать её не может.
+     */
+    expect(payload.price_from_kzt).toBe(9_889);
+    expect(payload).not.toHaveProperty("price_kzt");
+  });
+
+  it("много расцветок — показываем шесть и говорим, сколько всего", async () => {
+    const many = Array.from({ length: 11 }, (_, i) => ({
+      id: `m${i}`,
+      name: `Коврик для ванной GRACCIOZA ${i}`,
+      category: "Коврики",
+      size: `${60 + i}x100`,
+      colors: [`цвет-${i}`],
+      price_kzt: 20_000 + i * 1000,
+      stock: true,
+    }));
+    const res = await executeConsultantTool("search_products", { query: "коврики" }, { catalog: many });
+    const payload = res.result as {
+      sizes: string[];
+      sizes_total: number;
+      colors: string[];
+      colors_total: number;
+    };
+    expect(payload.colors).toHaveLength(6);
+    expect(payload.colors_total).toBe(11);
+    expect(payload.sizes).toHaveLength(6);
+    expect(payload.sizes_total).toBe(11);
   });
 
   it("проверка ответа всё равно знает цены — вилку не посчитают выдумкой", async () => {

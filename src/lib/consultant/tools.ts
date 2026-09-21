@@ -142,6 +142,9 @@ export const CONSULTANT_TOOLS = [
  */
 const BROAD_SUMMARY_FROM = 3;
 
+/** Сколько размеров и расцветок показывать в сводке: выбор, а не перечень. */
+const SUMMARY_FACET_LIMIT = 6;
+
 /** Уникальные непустые значения, не больше двенадцати — это выбор, а не список. */
 function distinct(values: string[], limit = 12): string[] {
   const seen = new Set<string>();
@@ -247,7 +250,8 @@ export async function executeConsultantTool(
       const matched = all.filter((p) => !exclude.has(p.id));
       const prices = matched.map((p) => p.price_kzt).filter((n) => n > 0);
       const from = Math.min(...prices);
-      const to = Math.max(...prices);
+      const sizeValues = matched.map((p) => p.size);
+      const colorValues = matched.flatMap((p) => p.colors);
       return {
         result: {
           in_stock: true,
@@ -256,13 +260,27 @@ export async function executeConsultantTool(
           products: [],
           returned: 0,
           ask_size_and_color: true,
-          sizes: distinct(matched.map((p) => p.size)),
-          colors: distinct(matched.flatMap((p) => p.colors)),
-          price_kzt: prices.length ? { from, to } : null,
-          price_rub:
-            prices.length && ctx.country === "RU" && rate
-              ? { from: priceRub(from, rate), to: priceRub(to, rate) }
-              : null,
+          /**
+           * Показываем немного и считаем остальное.
+           *
+           * Запрет «не вываливайте списки» в промпте уже стоял — и модель всё
+           * равно перечислила одиннадцать расцветок и вилку от 20 000 до
+           * 420 000 ₸ на вопрос про коврики. Продавец: «много лишнего
+           * написал, клиент сбежал». Надёжнее не давать того, что нельзя
+           * говорить: шесть значений — это выбор, дюжина — уже список.
+           */
+          sizes: distinct(sizeValues, SUMMARY_FACET_LIMIT),
+          sizes_total: distinct(sizeValues, 999).length,
+          colors: distinct(colorValues, SUMMARY_FACET_LIMIT),
+          colors_total: distinct(colorValues, 999).length,
+          /**
+           * Только нижняя граница. Полная вилка на широком запросе врёт
+           * интонацией: «от 20 000 до 420 000» звучит как «у нас есть всё и
+           * ничего конкретного», и покупателю не за что зацепиться.
+           */
+          price_from_kzt: prices.length ? from : null,
+          price_from_rub:
+            prices.length && ctx.country === "RU" && rate ? priceRub(from, rate) : null,
         },
         // Карточки модель не видит, но знать о них должна проверка ответа:
         // иначе названная вилка цен читается как выдуманное число.
