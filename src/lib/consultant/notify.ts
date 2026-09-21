@@ -45,6 +45,7 @@ export async function notifyConsultantHandoff(params: {
       purchase: "🛒 Покупка",
       other: "❓ Вопрос вне каталога",
       question: "❓ Вопрос без ответа — бот обещал вернуться",
+      photo: "📸 Просят фото — бот отправить не может",
       error: "⚠️ Ошибка",
       injection: "🚫 Подозрительный запрос",
       handoff: "👋 Передача менеджеру",

@@ -84,6 +84,7 @@ import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
   cleanDemoMentions,
+  asksForProductPhoto,
   cleanDiscontinuedMattressOffers,
   promisesManagerFollowUp,
   cleanForbiddenPhrases,
@@ -375,6 +376,24 @@ async function handleConsultantZernioEventInternal(params: {
   // отвечаем честно про среднюю жёсткость.
   if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
     reply.text = DISCONTINUED_MEDIUM_MATTRESS_REPLY;
+  }
+
+  // Просьба о фото. Фотографий у консультанта нет вовсе, поэтому ответить на
+  // такую просьбу может только человек. Ловим по сообщению покупателя, а не по
+  // ответу бота: отказ он может сформулировать как угодно, а просьба — вот она.
+  if (asksForProductPhoto(text) && reply.kind !== "purchase" && reply.kind !== "handoff") {
+    void fileConsultantQuestion({
+      userKey: params.userKey,
+      question: text.trim(),
+      promise: reply.text,
+      reason: "photo",
+    }).catch((err: unknown) => {
+      console.warn("[consultant] не удалось передать просьбу о фото", err);
+    });
+    logConsultantEvent(requestId, "photo_requested", {
+      userKey: params.userKey,
+      question: text.trim().slice(0, 160),
+    });
   }
 
   // Бот пообещал уточнить у менеджера, но инструмент не вызвал. На живом

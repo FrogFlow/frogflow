@@ -104,10 +104,13 @@ export async function fileConsultantQuestion(input: {
   question: string;
   /** Что бот ответил покупателю — менеджеру видно, что именно тот обещал. */
   promise?: string;
+  /** question — вопрос без ответа, photo — просьба о фото. */
+  reason?: "question" | "photo";
 }): Promise<{ task: ConsultantTask; notified: boolean }> {
+  const reason = input.reason ?? "question";
   const task = await addConsultantTask({
     userKey: input.userKey,
-    reason: "question",
+    reason,
     text: input.question,
   });
   let notified = false;
@@ -115,7 +118,7 @@ export async function fileConsultantQuestion(input: {
     const { notifyConsultantHandoff } = await import("./notify");
     const res = await notifyConsultantHandoff({
       userKey: input.userKey,
-      reason: "question",
+      reason,
       text: input.promise
         ? `${input.question}\n\nБот ответил: ${input.promise}`
         : input.question,
