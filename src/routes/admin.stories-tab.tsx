@@ -12,7 +12,7 @@ import {
   getStoriesFn,
   getConsultantCatalogFn,
 } from "@/lib/consultant/story-tags.functions";
-import { getInstagramAccountsFn } from "@/lib/instagram.functions";
+import { getInstagramAccountsFn, getZernioPostsFn } from "@/lib/instagram.functions";
 import { errorMessage } from "@/lib/error-message";
 import { Trash2, RefreshCw } from "lucide-react";
 
@@ -99,6 +99,19 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
     }
   };
 
+  /**
+   * Посты и рилсы. Список историй приходит из /instagram/stories и содержит
+   * только сторис — те, что живут сутки. Рилсы в нём не появляются вовсе, и
+   * привязать к ним товары можно было лишь вставив ссылку руками. А отвечают
+   * покупатели как раз на рилсы: они не исчезают через сутки.
+   */
+  const postsQuery = useQuery({
+    queryKey: ["ig_posts", effectiveAccountId],
+    queryFn: () => getZernioPostsFn({ data: { accountId: effectiveAccountId as string } }),
+    enabled: Boolean(effectiveAccountId),
+  });
+  const posts = ((postsQuery.data?.posts ?? []) as any[]).filter((p) => !p._isStory);
+
   const stories = storiesQuery.data || [];
   const tags = tagsQuery.data || [];
   const catalog = catalogQuery.data || [];
@@ -153,6 +166,80 @@ export function StoriesTab({ accountId: propAccountId }: { accountId?: string })
               </Button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Посты и рилсы: они не исчезают через сутки, и отвечают чаще всего на них */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Рилсы и посты ({posts.length})</CardTitle>
+              <CardDescription>
+                Не исчезают через сутки, поэтому вопросы приходят в основном по ним. Привяжите
+                товары — и консультант назовёт их с ценами, когда покупатель ответит на публикацию.
+              </CardDescription>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => postsQuery.refetch()}
+              disabled={postsQuery.isFetching}
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${postsQuery.isFetching ? "animate-spin" : ""}`} />
+              {postsQuery.isFetching ? "Обновление..." : "Обновить"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!effectiveAccountId ? (
+            <div className="text-sm text-muted-foreground">
+              Аккаунт Instagram не подключен.
+            </div>
+          ) : postsQuery.isLoading ? (
+            <div className="text-sm text-muted-foreground">Загрузка публикаций...</div>
+          ) : posts.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              Публикаций не нашлось. Если рилс только что вышел, используйте ручную привязку выше.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {posts.map((post: any) => {
+                const postId = String(post.platformPostId || post._zernioPostId || post._id || post.id || "");
+                if (!postId) return null;
+                const postUrl = String(post.platformPostUrl || post.permalink || post.url || "");
+                const thumbnailUrl = String(post._thumbnail || "");
+                const caption = String(post.caption || post.content || "")
+                  .replace(/\s+/g, " ")
+                  .trim();
+                // Привязка ищется и по id, и по ссылке: в ответе покупателя
+                // приходит шорткод из ссылки, а не числовой идентификатор.
+                const existingTag = tags.find(
+                  (t: any) =>
+                    t.story_id === postId ||
+                    (postUrl && t.story_url === postUrl) ||
+                    (postUrl && t.story_id && postUrl.includes(t.story_id)),
+                );
+                return (
+                  <StoryCard
+                    key={postId}
+                    storyId={postId}
+                    storyUrl={postUrl}
+                    thumbnailUrl={thumbnailUrl}
+                    caption={caption}
+                    existingTag={existingTag}
+                    catalog={catalog}
+                    onSave={(products: { id?: string; name: string; priceKzt: number }[]) =>
+                      upsertMutation.mutate({ storyId: postUrl || postId, storyUrl: postUrl, thumbnailUrl, products })
+                    }
+                    isSaving={upsertMutation.isPending}
+                    onDelete={() => existingTag?.id && deleteMutation.mutate(existingTag.id)}
+                    isDeleting={deleteMutation.isPending}
+                  />
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -287,6 +374,7 @@ function StoryCard({
   storyId,
   storyUrl,
   thumbnailUrl,
+  caption,
   existingTag,
   catalog,
   onSave,
@@ -345,6 +433,7 @@ function StoryCard({
       )}
       <div className="p-3 flex flex-col gap-3 flex-1 justify-between">
         <div className="space-y-1">
+          {caption ? <div className="text-xs line-clamp-2">{caption}</div> : null}
           <div className="text-xs text-muted-foreground truncate">ID: {storyId}</div>
           {existingTag && (
             <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400 truncate">
