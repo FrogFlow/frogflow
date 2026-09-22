@@ -30,6 +30,7 @@ import { validateConsultantReply, cleanScriptHallucinations, cleanForbiddenPhras
 import { buildAnthropicMessages } from "../src/lib/consultant/claude";
 import { looksLikePromptInjection } from "../src/lib/consultant/injection";
 import {
+  DELIVERY_SCOPE_REPLY,
   formatBasketReply,
   formatBudgetReply,
   formatProductReply,
@@ -398,11 +399,20 @@ describe("consultant — decideConsultantReply без магазинного ч�
     expect(res?.patch.pause_reason).toBe("purchase");
   });
 
-  it("без страны — сначала KZ/RU, не поиск товара", async () => {
+  /**
+   * Анкета «из какой вы страны» первым ходом стоила 14% диалогов: по выгрузке
+   * 19–22.09 шесть из сорока четырёх оборвались ровно на ней, и все шесть
+   * пришли покупать. Теперь отвечаем сразу, страна — KZ по умолчанию (магазин
+   * в Алматы, прайс в тенге) и помечена как предположенная.
+   */
+  it("без страны — сразу ответ по товару, а не анкета", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
-    const res = await decideConsultantReply("есть белое полотенце?", {});
-    expect(res?.text).toBe(consultantCopy.askCountry);
-    expect(res?.patch.conversation_state).toBe("awaiting_country");
+    const res = await decideConsultantReply("есть белое полотенце?", {}, { catalog: [towel] });
+    expect(res?.text).not.toBe(consultantCopy.askCountry);
+    expect(res?.kind).toBe("product");
+    expect(res?.patch.country).toBe("KZ");
+    expect(res?.patch.country_assumed).toBe(true);
+    expect(res?.patch.conversation_state).not.toBe("awaiting_country");
   });
 
   /**
@@ -422,11 +432,29 @@ describe("consultant — decideConsultantReply без магазинного ч�
     }
   });
 
-  it("тот же вопрос в обычной переписке страну спрашивает как раньше", async () => {
+  it("страна берётся из слов покупателя, а не из анкеты", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
-    const res = await decideConsultantReply("сколько стоит?", {}, { catalog: [towel] });
-    expect(res?.text).toBe(TZ_COPY.askCountry);
-    expect(res?.kind).toBe("country");
+    const ru = await decideConsultantReply("я из России, что есть?", {}, { catalog: [towel] });
+    expect(ru?.patch.country).toBe("RU");
+    expect(ru?.patch.country_assumed).toBe(false);
+
+    const kz = await decideConsultantReply("Казахстан", {}, { catalog: [towel] });
+    expect(kz?.patch.country).toBe("KZ");
+    expect(kz?.patch.country_assumed).toBe(false);
+  });
+
+  /**
+   * «Делаете доставку в Израиль?» — покупатель страну уже назвал. Спрашивать
+   * его о ней в ответ значит не услышать вопрос; живой диалог 22.09 так и
+   * прошёл: бот задал вопрос про страну дважды подряд.
+   */
+  it("доставка в третью страну — ответ, а не вопрос про страну", async () => {
+    const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
+    const res = await decideConsultantReply("Делаете доставку в Израиль? Спасибо", {}, {
+      catalog: [towel],
+    });
+    expect(res?.text).toBe(DELIVERY_SCOPE_REPLY);
+    expect(res?.kind).not.toBe("country");
   });
 
   it("после страны — запрос товара по ТЗ (Какой товар вас интересует?)", async () => {
@@ -454,13 +482,13 @@ describe("consultant — decideConsultantReply без магазинного ч�
     expect(res?.text).toBe(TZ_COPY.otherCategories);
   });
 
-  it("повторное «здравствуйте» снова спрашивает страну", async () => {
+  it("повторное «здравствуйте» не уводит в анкету", async () => {
     const { decideConsultantReply } = await import("../src/lib/consultant/handle-message");
     const res = await decideConsultantReply("Здравствуйте", {
       conversation_state: "awaiting_country",
     });
-    expect(res?.text).toBe(TZ_COPY.askCountry);
-    expect(res?.kind).toBe("country");
+    expect(res?.text).toBe(TZ_COPY.askProduct);
+    expect(res?.kind).not.toBe("country");
   });
 
   it("полный каталог — абзац сайта", async () => {

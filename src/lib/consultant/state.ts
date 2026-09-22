@@ -14,6 +14,12 @@ export type ConsultantTurn = { role: "customer" | "assistant"; text: string };
 
 export type ConsultantState = {
   country?: ConsultantCountry;
+  /**
+   * Страну не называли — мы подставили её по умолчанию (магазин в Алматы,
+   * прайс в тенге). Пока отметка стоит, бот предлагает пересчёт в рубли;
+   * как только страну назвали словом или кнопкой, отметка снимается.
+   */
+  country_assumed?: boolean;
   automation_paused?: boolean;
   pause_reason?: PauseReason;
   conversation_state?: ConsultantConversationState;

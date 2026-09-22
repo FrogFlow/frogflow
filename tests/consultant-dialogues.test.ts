@@ -65,15 +65,27 @@ function nextState(state: ConsultantState, reply: ConsultantReply, text: string)
 }
 
 describe("consultant — матрица живых диалогов", () => {
-  it("старт: приветствие и товар без страны → сначала KZ/RU", async () => {
+  /**
+   * Раньше первым ходом стояла анкета «из какой вы страны». Выгрузка
+   * 19–22.09 показала цену этого хода: шесть диалогов из сорока четырёх
+   * оборвались ровно на нём, и все шесть открывались просьбой назвать цену
+   * или сделать заказ. Теперь отвечаем сразу, в тенге, а страну берём из
+   * слов покупателя и города доставки.
+   */
+  it("старт: приветствие и товар без страны → сразу ответ, не анкета", async () => {
     for (const hello of ["Здравствуйте", "привет", "добрый день", "Hello"]) {
       const res = await say(hello, {});
-      expect(res.kind, hello).toBe("country");
-      expect(res.text).toContain("Казахстан");
+      expect(res.kind, hello).not.toBe("country");
+      expect(res.text, hello).toBe(TZ_COPY.askProduct);
+      expect(res.patch.country, hello).toBe("KZ");
+      expect(res.patch.country_assumed, hello).toBe(true);
     }
     const productFirst = await say("А подушки у вас есть?", {});
-    expect(productFirst.kind).toBe("country");
-    expect(productFirst.text).not.toMatch(/есть в наличии/);
+    expect(productFirst.kind).toBe("product");
+    expect(productFirst.text).toMatch(/Подушка/);
+    expect(productFirst.text).toContain((12900).toLocaleString("ru-RU"));
+    // Страна подставлена, а не выбрана: отметка снимется, как только её назовут.
+    expect(productFirst.patch.country_assumed).toBe(true);
   });
 
   it("страна кнопкой, словом и вместе с товаром", async () => {
@@ -474,13 +486,15 @@ describe("consultant — таблица намерений, чтобы не ло
 });
 
 describe("consultant — сценарии из живого Direct клиента", () => {
-  it("Сafi: «как заказать» → страна; Дагестан / Хасавюрт = РФ", async () => {
+  it("Сafi: «как заказать» → по делу, Дагестан / Хасавюрт = РФ", async () => {
     const how = await say("Здравствуйте, как заказать?", {});
-    expect(how.kind).toBe("country");
+    expect(how.kind).not.toBe("country");
+    expect(how.text).toBe(TZ_COPY.askProduct);
     expect(matchPurchaseIntent("Здравствуйте, как заказать?")).toBe(false);
 
     const dag = await say("В Дагестане", {});
     expect(dag.patch.country).toBe("RU");
+    expect(dag.patch.country_assumed).toBe(false);
     expect(dag.kind).toBe("clarify");
 
     const city = await say("В городе Хасавюрт", {});

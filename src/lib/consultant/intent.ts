@@ -22,7 +22,7 @@ const PURCHASE_RE =
 const KZ_RE =
   /казахстан|қазақстан|(^|[^a-zа-яё])kz([^a-zа-яё]|$)|🇰🇿|алматы|астана|шымкент|караганда|актобе|павлодар|атау|уральск|костанай/i;
 const RU_RE =
-  /росси[яиию]|рф|russia|(^|[^a-zа-яё])ru([^a-zа-яё]|$)|🇷🇺|москва|питер|спб|дагестан|хасавюрт|махачкала|казань|екатеринбург|новосибирск|краснодар|сочи|ростов|самара|уфа|пермь|воронеж|челябинск|омск|татарстан|башкортостан/i;
+  /росси[яиию]|рубл|рублях|рублей|рубля|рф|russia|(^|[^a-zа-яё])ru([^a-zа-яё]|$)|🇷🇺|москва|питер|спб|дагестан|хасавюрт|махачкала|казань|екатеринбург|новосибирск|краснодар|сочи|ростов|самара|уфа|пермь|воронеж|челябинск|омск|татарстан|башкортостан/i;
 
 export function matchPurchaseIntent(text: string): boolean {
   const t = text.trim();
@@ -59,6 +59,22 @@ export function matchUnsupportedCountry(text: string): boolean {
   if (!t) return false;
   const words = t.split(/\s+/).filter(Boolean);
   if (words.length > 3) return false;
+  if (KZ_RE.test(t) || RU_RE.test(t)) return false;
+  return OTHER_COUNTRY_RE.test(t);
+}
+
+/**
+ * Вопрос о доставке в страну, куда мы не возим.
+ *
+ * Отдельно от matchUnsupportedCountry: там короткий ответ на наш вопрос, тут
+ * целая фраза покупателя («Делаете доставку в Израиль? Спасибо»). Такому
+ * человеку страну назвать уже нечего — он её назвал.
+ */
+const DELIVERY_RE = /достав|отправля|отправите|привез|привоз|высыла|шл[её]те|пересыл/i;
+
+export function asksDeliveryToUnsupportedCountry(text: string): boolean {
+  const t = (text ?? "").trim();
+  if (!t || !DELIVERY_RE.test(t)) return false;
   if (KZ_RE.test(t) || RU_RE.test(t)) return false;
   return OTHER_COUNTRY_RE.test(t);
 }

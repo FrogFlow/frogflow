@@ -34,7 +34,6 @@ import {
   looksLikeConsultantBotReply,
   stripMarkdownFormatting,
   type ConsultantCopyPack,
-  COUNTRY_BUTTONS,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
 import { stripRepeatGreeting } from "./style";
@@ -60,6 +59,7 @@ import {
   matchPriceOnlyIntent,
   matchPurchaseIntent,
   matchUnsupportedCountry,
+  asksDeliveryToUnsupportedCountry,
 } from "./intent";
 import { consultantApiKey } from "./config";
 import { consultantRequestId, logConsultantEvent } from "./log";
@@ -239,14 +239,16 @@ async function handleConsultantZernioEventInternal(params: {
     await resetConsultantState(params.userKey);
     const bucket = consultant.ab_bucket ?? "a";
     const pack = copyForBucket(bucket);
-    const welcomeText = stripMarkdownFormatting(pack.askCountry);
+    // На «старт» отвечаем тем же, чем на «здравствуйте»: вопросом по делу.
+    // Анкета про страну убрана и отсюда — иначе порог, который стоил 14%
+    // диалогов, возвращался бы через команду перезапуска.
+    const welcomeText = stripMarkdownFormatting(pack.askProduct);
 
     await sendDirectReply({
       conversationId: params.conversationId,
       accountId: params.accountId,
       userKey: params.userKey,
       text: welcomeText,
-      buttons: COUNTRY_BUTTONS,
       platform: params.platform,
       force: true,
     });
@@ -682,16 +684,16 @@ export async function decideConsultantReply(
       ab_bucket: bucket,
       automation_paused: false,
       country: undefined,
-      conversation_state: "awaiting_country",
+      country_assumed: undefined,
+      conversation_state: "awaiting_product",
       pending_product_query: undefined,
       pending_story_id: undefined,
       pending_story_url: undefined,
     };
     return {
-      text: stripMarkdownFormatting(pack.askCountry),
+      text: stripMarkdownFormatting(pack.askProduct),
       patch: cleanPatch,
-      buttons: COUNTRY_BUTTONS,
-      kind: "country",
+      kind: "clarify",
     };
   }
 
@@ -712,31 +714,16 @@ export async function decideConsultantReply(
     };
   }
 
-  const country =
-    matchCountryPostback(ctx.postback) ?? matchCountry(text) ?? state.country ?? undefined;
+  const namedNow = matchCountryPostback(ctx.postback) ?? matchCountry(text);
+  const country = namedNow ?? state.country ?? undefined;
+  /**
+   * Страну назвали словом или кнопкой — отметка снимается навсегда. Молчание
+   * её не снимает: иначе она гасла уже на втором сообщении, потому что
+   * country подтягивался из состояния и выглядел как названный.
+   */
+  const countryAssumed = namedNow ? false : state.country ? (state.country_assumed ?? false) : true;
 
   if (isConsultantGreeting(text)) {
-    if (!country) {
-      const cleanPatch: Partial<ConsultantState> = {
-        customer_contact: undefined,
-        last_product_ids: [],
-        recent: [],
-        ab_bucket: bucket,
-        automation_paused: false,
-      };
-      return {
-        text: stripMarkdownFormatting(pack.askCountry),
-        patch: {
-          ...cleanPatch,
-          conversation_state: "awaiting_country",
-          pending_product_query: undefined,
-          pending_story_id: undefined,
-          pending_story_url: undefined,
-        },
-        buttons: COUNTRY_BUTTONS,
-        kind: "country",
-      };
-    }
     // If the customer already selected a country and is in an ongoing consultation, let Claude respond naturally without wiping memory!
     if (canClaude && state.conversation_state === "consulting" && (state.recent?.length ?? 0) > 0) {
       /* proceed to Claude with existing history intact */
@@ -750,7 +737,12 @@ export async function decideConsultantReply(
       };
       return {
         text: stripMarkdownFormatting(pack.askProduct),
-        patch: { ...cleanPatch, country, conversation_state: "awaiting_product" },
+        patch: {
+          ...cleanPatch,
+          country: country ?? STORY_REPLY_COUNTRY,
+          country_assumed: countryAssumed,
+          conversation_state: "awaiting_product",
+        },
         kind: "clarify",
       };
     }
@@ -758,44 +750,37 @@ export async function decideConsultantReply(
 
   const hasStoryContext = Boolean(ctx.storyId || ctx.storyMediaUrl);
 
-  // Из сторис и рилса страну не спрашиваем. Человек ответил на конкретную
-  // вещь, которую только что увидел, и спрашивает цену — анкета вместо цены
-  // разговор гасит. Считаем тенге (прайс в них), рубли назовём тому, кто
-  // попросит. В обычной переписке выбор страны остаётся первым шагом.
+  /**
+   * Страну спрашиваем не первым ходом, а когда она понадобится.
+   *
+   * Выгрузка 19–22.09: шесть диалогов из сорока четырёх оборвались ровно на
+   * вопросе «из какой вы страны», и все шесть открывались просьбой назвать
+   * цену или сделать заказ — «можно узнать стоимость», «у вас опт есть?»,
+   * «можно парочку ковриков для ног в ванную заказать». Каждому вместо
+   * ответа показали анкету, и каждый ушёл. Это 14% всех диалогов, и это
+   * покупатели, а не любопытные.
+   *
+   * Выбор страны никуда не делся, он переехал туда, где от него есть толк:
+   * строкой про пересчёт в рубли под первым ответом, словами «Россия», «в
+   * рублях» и российскими городами в любой момент разговора (matchCountry
+   * смотрит текущее сообщение раньше сохранённого), и городом доставки при
+   * оформлении. До тех пор считаем тенге — магазин в Алматы и прайс в них.
+   */
   if (!country && !hasStoryContext) {
-    // Страну уже спрашивали, и в ответ назвали не Казахстан и не Россию.
-    // Повторять тот же вопрос нельзя — покупатель на него уже ответил.
-    if (state.conversation_state === "awaiting_country" && matchUnsupportedCountry(text)) {
+    // «Делаете доставку в Израиль?» — человек уже назвал страну. Спрашивать
+    // его о ней в ответ значит не услышать вопрос.
+    if (asksDeliveryToUnsupportedCountry(text) || matchUnsupportedCountry(text)) {
       return {
         text: DELIVERY_SCOPE_REPLY,
-        patch: { ab_bucket: bucket, conversation_state: "awaiting_country" },
-        buttons: COUNTRY_BUTTONS,
-        kind: "country",
+        patch: { ab_bucket: bucket, conversation_state: "consulting" },
+        kind: "clarify",
       };
     }
-    const isProduct =
-      (looksLikeProductQuery(text) ||
-        matchPurchaseIntent(text) ||
-        matchCatalogIntent(text) ||
-        matchAdviceIntent(text) ||
-        text.trim().length >= 2) &&
-      !isConsultantGreeting(text);
-    return {
-      text: stripMarkdownFormatting(pack.askCountry),
-      patch: {
-        conversation_state: "awaiting_country",
-        ab_bucket: bucket,
-        pending_product_query: isProduct ? text || undefined : undefined,
-        pending_story_id: ctx.storyId || undefined,
-        pending_story_url: ctx.storyMediaUrl || undefined,
-      },
-      buttons: COUNTRY_BUTTONS,
-      kind: "country",
-    };
   }
 
   const countryPatch: Partial<ConsultantState> = {
     country: country ?? STORY_REPLY_COUNTRY,
+    country_assumed: countryAssumed,
     ab_bucket: bucket,
     conversation_state: "consulting",
     pending_product_query: undefined,
@@ -969,6 +954,21 @@ ${list}
         console.log("[consultant] story context detected without pre-fetched tag:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
         const userPrompt = text.trim() || "Здравствуйте! Подскажите цену и наличие этого товара";
         claudeText = `[Customer replied to an Instagram story or reel with ID "${ctx.storyId || ""}". Call get_story_product with story_id="${ctx.storyId || ""}" or attachment_url="${ctx.storyMediaUrl || ""}" to see what product is shown. If the customer asks about price or availability, answer with the tagged product's price and details. If no product is found, politely ask which home textile item from the story they liked]\n\n${userPrompt}`;
+      }
+
+      /**
+       * Страну не спрашивали — значит покупатель и не знает, что цену можно
+       * получить в рублях. Предлагаем это сами, один раз, под первым
+       * ответом. Только при живом курсе: обещать пересчёт и отказать через
+       * сообщение хуже, чем не обещать вовсе.
+       */
+      if (
+        !hasStoryContext &&
+        countryPatch.country_assumed &&
+        rateRow?.rate &&
+        (state.recent?.length ?? 0) === 0
+      ) {
+        claudeText = `${claudeText}\n\n[Страну НЕ спрашивайте. Цены называйте в тенге. Если в этом ответе есть цены — последней строкой добавьте ровно так: «Если вам удобнее, мы можем сразу рассчитать стоимость в рублях.» Если цен в ответе нет, эту строку не добавляйте.]`;
       }
 
       const ai = await runConsultantClaude({
