@@ -110,15 +110,38 @@ export async function getFreshVtbRate(): Promise<StoredVtbRate | null> {
   return isRateFresh(stored) ? stored : null;
 }
 
-/** Последний успешно сохранённый курс. Cron / ручное обновление пишут сюда. */
+/**
+ * Последний успешно сохранённый курс. Cron / ручное обновление пишут сюда.
+ *
+ * Про «сбой чтения — не то же самое, что курса нет».
+ *
+ * 22.09 бот трижды сказал покупателю «курс недоступен» при совершенно живом
+ * курсе: крон отработал, в базе лежало 4.45 от finkaz, лог попыток ok. А в
+ * 03:02 того же дня он спокойно называл рублёвые цены. Отказ был разовый.
+ *
+ * Объяснение — вот эта выборка. Ошибку она проглатывала: деструктурировали
+ * только data, и любой сбой запроса выглядел ровно как «строки нет». Дальше
+ * отказ клался в кеш на минуту, и целую минуту все покупатели слышали, что
+ * цены в рублях мы посчитать не можем. В логах при этом не появлялось
+ * ничего: отличить одно от другого было невозможно ни нам, ни панели.
+ *
+ * Теперь ошибка видна в логах и не кешируется, а вместо неё отдаётся
+ * последнее успешно прочитанное значение. Протухшее по сроку всё равно
+ * отсечёт getFreshVtbRate — эта развилка отвечает только за «читали или не
+ * смогли».
+ */
 export async function getStoredVtbRate(): Promise<StoredVtbRate | null> {
   if (rateCache && Date.now() - rateCache.at < RATE_CACHE_MS) return rateCache.value;
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("app_settings")
     .select("value")
     .eq("key", "consultant_vtb_buy_rate")
     .maybeSingle();
+  if (error) {
+    console.warn("[rate] не удалось прочитать курс из базы:", error.message);
+    return rateCache?.value ?? null;
+  }
   if (!data?.value?.trim()) {
     rememberStoredVtbRate(null);
     return null;
@@ -139,7 +162,10 @@ export async function getStoredVtbRate(): Promise<StoredVtbRate | null> {
     };
     rememberStoredVtbRate(value);
     return value;
-  } catch {
-    return null;
+  } catch (err) {
+    // Значение в базе испорчено — это тоже не «курса нет», и кешировать
+    // отказ нельзя: следующая запись крона всё починит.
+    console.warn("[rate] курс в базе не разобрался:", err);
+    return rateCache?.value ?? null;
   }
 }
