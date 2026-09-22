@@ -89,6 +89,7 @@ import {
   asksForProductPhoto,
   isVoiceMessagePlaceholder,
   cleanDiscontinuedMattressOffers,
+  cleanUpsellPressure,
   promisesManagerFollowUp,
   cleanForbiddenPhrases,
   cleanScriptHallucinations,
@@ -373,7 +374,9 @@ async function handleConsultantZernioEventInternal(params: {
   // применяется здесь, а не в каждом месте, где собирается текст.
   const beforeDiscontinuedGuard = reply.text;
   reply.text = stripExclamationsAndEmoji(
-    stripMarkdownFormatting(cleanCatalogExcuses(cleanDemoMentions(cleanDiscontinuedMattressOffers(reply.text)))),
+    stripMarkdownFormatting(
+      cleanUpsellPressure(cleanCatalogExcuses(cleanDemoMentions(cleanDiscontinuedMattressOffers(reply.text)))),
+    ),
   );
   // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
   // отвечаем честно про среднюю жёсткость.
