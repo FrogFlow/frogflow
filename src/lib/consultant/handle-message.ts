@@ -28,6 +28,7 @@ import {
   formatStoreLocationReply,
   formatThanksReply,
   HANDOFF_TO_MANAGER_REPLY,
+  PHOTO_FROM_MANAGER_NOTE,
   formatVariantsReply,
   looksLikeConsultantBotReply,
   stripMarkdownFormatting,
@@ -86,6 +87,7 @@ import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
   cleanDemoMentions,
+  asksForPhotoOnly,
   asksForProductPhoto,
   isVoiceMessagePlaceholder,
   cleanDiscontinuedMattressOffers,
@@ -406,6 +408,35 @@ async function handleConsultantZernioEventInternal(params: {
     });
   }
 
+  /**
+   * В вопросе была и просьба о фото. Ответ по существу уже собран — добавляем
+   * строку про менеджера и передаём диалог ему: изображение пришлёт человек.
+   * Продавец: «можно написать ответ по размерам и цене и сказать, что фото
+   * пришлёт менеджер».
+   */
+  if (
+    asksForProductPhoto(text) &&
+    reply.kind !== "purchase" &&
+    reply.kind !== "handoff" &&
+    reply.text.trim() &&
+    !reply.text.includes(PHOTO_FROM_MANAGER_NOTE)
+  ) {
+    reply.text = `${reply.text.trim()}\n\n${PHOTO_FROM_MANAGER_NOTE}`;
+    reply.patch = { ...reply.patch, automation_paused: true, pause_reason: "other" };
+    void fileConsultantQuestion({
+      userKey: params.userKey,
+      question: text.trim(),
+      promise: reply.text,
+      reason: "photo",
+    }).catch((err: unknown) => {
+      console.warn("[consultant] не удалось передать просьбу о фото", err);
+    });
+    logConsultantEvent(requestId, "photo_requested", {
+      userKey: params.userKey,
+      question: text.trim().slice(0, 160),
+    });
+  }
+
   const { consultant: latest } = await loadConsultantState(params.userKey);
   const lastReplyAt = Date.parse(latest.last_bot_reply_at ?? "");
   const repliedRecently = Number.isFinite(lastReplyAt) && Date.now() - lastReplyAt < 45_000;
@@ -530,7 +561,10 @@ export async function decideConsultantReply(
       HANDOFF_TO_MANAGER_REPLY,
     );
   }
-  if (asksForProductPhoto(text)) {
+  // Молча передаём человеку только чистую просьбу о фото. Если в том же
+  // сообщении есть вопрос, на который боту есть чем ответить, — отвечаем, а
+  // про фото добавляем строкой ниже, уже после сборки ответа.
+  if (asksForPhotoOnly(text)) {
     void track(ctx.userKey, "handoff", text, bucket);
     return handoffReply(
       pack,
