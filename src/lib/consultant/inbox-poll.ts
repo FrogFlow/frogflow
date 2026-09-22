@@ -204,6 +204,22 @@ export async function pollIncomingConsultantMessages(): Promise<{
       ]);
       for (const m of recentIncoming) {
         const rawM = m as any;
+        /**
+         * Настоящая форма Zernio — metadata.storyReply, и опрос её не читал.
+         * Из-за этого ответ на сторис, пришедший опросом, а не вебхуком,
+         * считался обычным сообщением: живой случай 21.09 в 23:22, покупатель
+         * ответил на сторис «Можно узнать стоимость» и получил вопрос про
+         * страну. В вебхуке эта форма разбирается давно, в опросе — нет.
+         */
+        const storyReply = rawM.metadata?.storyReply ?? rawM.metadata?.story_reply;
+        if (storyReply) {
+          if (!storyId && (storyReply.storyId || storyReply.story_id)) {
+            storyId = String(storyReply.storyId ?? storyReply.story_id);
+          }
+          if (!storyMediaUrl && (storyReply.storyUrl || storyReply.story_url)) {
+            storyMediaUrl = String(storyReply.storyUrl ?? storyReply.story_url);
+          }
+        }
         if (!storyId) {
           const directId =
             rawM.story?.id ||
@@ -239,6 +255,9 @@ export async function pollIncomingConsultantMessages(): Promise<{
             p.story?.id ||
             p.reel?.id ||
             p.share?.id ||
+            // Форма рилса из живого события: payload.reel_video_id.
+            p.reel_video_id ||
+            p.reelVideoId ||
             p.reel_id ||
             p.story_id ||
             p.id ||

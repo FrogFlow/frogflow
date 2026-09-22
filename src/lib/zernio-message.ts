@@ -192,6 +192,32 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
     storyMediaUrl = String(candidateMetaUrl);
   }
 
+  /**
+   * Ответ на рилс приходит не метаданными, а вложением.
+   *
+   * Живое событие 22.09: message.attachments[0] = { type: "video", url:
+   * "https://www.instagram.com/reel/Dcaih_PMAZ2/", payload: { reel_video_id:
+   * "18113576638999210", … } }. Ни одного из полей выше в нём нет, поэтому
+   * ответ на рилс до сих пор считался обычным сообщением из Direct — и
+   * покупателю приходил вопрос про страну вместо цены.
+   */
+  if (!storyId || !storyMediaUrl) {
+    for (const att of (rawMsg.attachments ?? []) as Array<Record<string, any>>) {
+      const attPayload = (att?.payload ?? {}) as Record<string, any>;
+      const reelId =
+        attPayload.reel_video_id ||
+        attPayload.reelVideoId ||
+        attPayload.story_id ||
+        attPayload.media_id;
+      const url = att?.url || attPayload.url;
+      if (!storyId && reelId) storyId = String(reelId);
+      if (!storyMediaUrl && typeof url === "string" && /instagram\.com\/(?:reel|p|stories)\//i.test(url)) {
+        storyMediaUrl = url;
+      }
+      if (storyId && storyMediaUrl) break;
+    }
+  }
+
   if (!storyId && rawMsg?.referral) {
     const ref =
       rawMsg.referral.reel_id ||
