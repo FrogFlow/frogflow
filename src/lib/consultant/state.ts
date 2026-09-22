@@ -30,6 +30,10 @@ export type ConsultantState = {
   pending_product_query?: string;
   pending_story_id?: string;
   pending_story_url?: string;
+  /** Когда запомнили публикацию: она живёт минуты, а не вечно. */
+  pending_story_at?: string;
+  /** Публикация, к которой относился прошлый вопрос — для защиты от дублей. */
+  last_story_id?: string;
   /**
    * Ответы менеджера, отправленные покупателю через бота (свайп-ответ на
    * уведомление в Telegram). Уходят они с нашего же аккаунта Zernio, поэтому
@@ -345,9 +349,24 @@ export function alreadyAnsweredIncoming(
   text: string,
   now = Date.now(),
   source: IncomingSource = "poll",
+  /** Публикация, к которой относится это сообщение, если она есть. */
+  storyId?: string | null,
 ): boolean {
   const incoming = text.trim();
   if (!incoming || incoming !== (state.last_customer_text ?? "").trim()) return false;
+  /**
+   * Тот же текст, но про другую публикацию — это другой вопрос, а не повтор
+   * доставки.
+   *
+   * Живой случай 22.09: покупатель переслал рилс и спросил «Сколько стоит?»,
+   * через восемнадцать секунд ответил на сторис теми же словами. Второе
+   * сообщение проглотила защита от дублей — у неё правило «тот же текст
+   * меньше чем через двадцать секунд = ретрай вебхука», — и вопрос про
+   * сторис остался без ответа, хотя к ней привязаны товары.
+   */
+  const story = (storyId ?? "").trim();
+  const lastStory = (state.last_story_id ?? "").trim();
+  if (story !== lastStory) return false;
   const claimed = Date.parse(state.last_claim_at ?? "");
   const replied = Date.parse(state.last_bot_reply_at ?? "");
   const inFlight =

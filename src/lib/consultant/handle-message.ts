@@ -151,6 +151,13 @@ async function withUserLock<T>(userKey: string, fn: () => Promise<T>): Promise<T
   }
 }
 
+/**
+ * Сколько живёт запомненная публикация. Покупатель пересылает рилс и тут же
+ * спрашивает цену — секунды. Несколько минут с запасом, но не час: иначе
+ * вопрос про другой товар получил бы карточку из старого рилса.
+ */
+const PENDING_STORY_MS = 3 * 60_000;
+
 export async function handleConsultantZernioEvent(params: {
   payload: ZernioWebhookMessagePayload;
   conversationId: string;
@@ -293,7 +300,42 @@ async function handleConsultantZernioEventInternal(params: {
     }
   }
 
+  /**
+   * Публикация и вопрос о ней приходят двумя сообщениями.
+   *
+   * Живой случай 22.09: рилс прилетел отдельным сообщением с пустым текстом и
+   * вложением, а «Сколько стоит?» — следующим, уже безо всякого контекста. Бот
+   * честно переспросил, какой товар интересует, хотя покупатель только что
+   * показал какой.
+   *
+   * Поэтому публикацию запоминаем на несколько минут и подставляем в
+   * следующий вопрос, если своей у него нет.
+   */
+  let storyId = params.storyId;
+  let storyMediaUrl = params.storyMediaUrl;
+  const pendingAt = Date.parse(consultant.pending_story_at ?? "");
+  const pendingFresh = Number.isFinite(pendingAt) && Date.now() - pendingAt < PENDING_STORY_MS;
+  if (!storyId && !storyMediaUrl && pendingFresh) {
+    storyId = consultant.pending_story_id;
+    storyMediaUrl = consultant.pending_story_url;
+  }
+
   let text = params.text.trim() || params.postback?.trim() || "";
+
+  // Пришла только публикация, без слов — отвечать нечего, но запомнить нужно.
+  if (!text && (params.storyId || params.storyMediaUrl)) {
+    await patchConsultantState(params.userKey, {
+      pending_story_id: params.storyId || undefined,
+      pending_story_url: params.storyMediaUrl || undefined,
+      pending_story_at: new Date().toISOString(),
+    }).catch(() => {});
+    logConsultantEvent(requestId, "story_remembered", {
+      userKey: params.userKey,
+      storyId: params.storyId ?? undefined,
+    });
+    return;
+  }
+
   if (!text && !params.postback && !params.storyId && !params.storyMediaUrl) {
     const attachments = params.payload.message?.attachments;
     if (attachments && attachments.length > 0) {
@@ -312,7 +354,7 @@ async function handleConsultantZernioEventInternal(params: {
   }
 
   const source = params.source ?? "webhook";
-  if (alreadyAnsweredIncoming(consultant, text, Date.now(), source)) {
+  if (alreadyAnsweredIncoming(consultant, text, Date.now(), source, storyId)) {
     logConsultantEvent(requestId, "skipped_duplicate", { userKey: params.userKey });
     return;
   }
@@ -364,8 +406,8 @@ async function handleConsultantZernioEventInternal(params: {
     userKey: params.userKey,
     postback: params.postback,
     requestId,
-    storyId: params.storyId,
-    storyMediaUrl: params.storyMediaUrl,
+    storyId,
+    storyMediaUrl,
     onUsage: (usage, model) => {
       runUsage = usage;
       runModel = model;
@@ -463,6 +505,9 @@ async function handleConsultantZernioEventInternal(params: {
   registerBotOutgoingText(reply.text);
   await patchConsultantState(params.userKey, {
     last_customer_text: text,
+    // Публикация этого вопроса: по ней защита от дублей отличит тот же текст
+    // про другую публикацию от повтора доставки.
+    last_story_id: storyId || undefined,
     last_bot_reply: reply.text,
     last_bot_reply_at: replyTime,
   });
@@ -490,6 +535,12 @@ async function handleConsultantZernioEventInternal(params: {
   await patchConsultantState(params.userKey, {
     ...reply.patch,
     last_customer_text: text,
+    last_story_id: storyId || undefined,
+    // Запомненная публикация отработала — гасим, иначе следующий вопрос про
+    // другой товар получит карточку из неё.
+    pending_story_id: undefined,
+    pending_story_url: undefined,
+    pending_story_at: undefined,
     last_bot_reply: reply.text,
     last_bot_reply_at: replyTime,
     recent: appendRecent(consultant, text, reply.text),
