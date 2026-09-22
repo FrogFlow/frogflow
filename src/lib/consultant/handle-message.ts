@@ -27,6 +27,7 @@ import {
   formatSizeOptionsReply,
   formatStoreLocationReply,
   formatThanksReply,
+  DELIVERY_SCOPE_REPLY,
   HANDOFF_TO_MANAGER_REPLY,
   PHOTO_FROM_MANAGER_NOTE,
   formatVariantsReply,
@@ -58,6 +59,7 @@ import {
   matchOtherCategoriesIntent,
   matchPriceOnlyIntent,
   matchPurchaseIntent,
+  matchUnsupportedCountry,
 } from "./intent";
 import { consultantApiKey } from "./config";
 import { consultantRequestId, logConsultantEvent } from "./log";
@@ -87,6 +89,7 @@ import { fileConsultantQuestion } from "./tasks";
 import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
+  cleanEmptyPraise,
   cleanRateExcuses,
   cleanNotUnderstoodApology,
   collapseManagerPromises,
@@ -438,6 +441,7 @@ async function handleConsultantZernioEventInternal(params: {
   cleaned = cleanDemoMentions(cleaned);
   cleaned = cleanCatalogExcuses(cleaned);
   cleaned = cleanNotUnderstoodApology(cleaned);
+  cleaned = cleanEmptyPraise(cleaned);
   cleaned = cleanUpsellPressure(cleaned);
   reply.text = stripExclamationsAndEmoji(stripMarkdownFormatting(cleaned));
   // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
@@ -745,6 +749,16 @@ export async function decideConsultantReply(
   // разговор гасит. Считаем тенге (прайс в них), рубли назовём тому, кто
   // попросит. В обычной переписке выбор страны остаётся первым шагом.
   if (!country && !hasStoryContext) {
+    // Страну уже спрашивали, и в ответ назвали не Казахстан и не Россию.
+    // Повторять тот же вопрос нельзя — покупатель на него уже ответил.
+    if (state.conversation_state === "awaiting_country" && matchUnsupportedCountry(text)) {
+      return {
+        text: DELIVERY_SCOPE_REPLY,
+        patch: { ab_bucket: bucket, conversation_state: "awaiting_country" },
+        buttons: COUNTRY_BUTTONS,
+        kind: "country",
+      };
+    }
     const isProduct =
       (looksLikeProductQuery(text) ||
         matchPurchaseIntent(text) ||
