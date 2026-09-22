@@ -409,6 +409,7 @@ async function handleConsultantZernioEventInternal(params: {
 
   let runUsage: import("@/lib/smart-search-cost").SmartSearchTokenUsage | null = null;
   let runModel: string | null = null;
+  let runRate: { value?: number | null; updatedAt?: string | null; source?: string | null } | undefined;
   const reply = await decideConsultantReply(text, consultant, {
     userKey: params.userKey,
     postback: params.postback,
@@ -418,6 +419,13 @@ async function handleConsultantZernioEventInternal(params: {
     onUsage: (usage, model) => {
       runUsage = usage;
       runModel = model;
+    },
+    onRate: (rate) => {
+      runRate = {
+        value: rate?.rate ?? null,
+        updatedAt: rate?.updatedAt ?? null,
+        source: rate?.source ?? null,
+      };
     },
   });
   if (!reply) return;
@@ -466,7 +474,7 @@ async function handleConsultantZernioEventInternal(params: {
     void fileConsultantQuestion({
       userKey: params.userKey,
       // Менеджеру нужен вопрос покупателя, а не пересказ бота.
-      question: text.trim() || reply.text,
+      question: questionForManager(consultant, text, reply.text),
       promise: reply.text,
     }).catch((err: unknown) => {
       console.warn("[consultant] не удалось зафиксировать обещанный вопрос", err);
@@ -584,6 +592,10 @@ async function handleConsultantZernioEventInternal(params: {
     replyText: reply.text,
     replyKind: reply.kind,
     model: runModel,
+    // Был ли курс в момент ответа. Колонка заведена миграцией 69 под этот
+    // вопрос и ни разу не заполнялась: разбор диалогов видел null у всех
+    // строк и не мог отличить «курса не было» от «мы не записали».
+    rate: runRate,
     usage: runUsage,
     managerCheck,
   });
@@ -602,6 +614,8 @@ export async function decideConsultantReply(
     storyMediaUrl?: string | null;
     /** Сколько токенов стоил ответ модели — журналу сообщений и панели. */
     onUsage?: (usage: import("@/lib/smart-search-cost").SmartSearchTokenUsage, model: string) => void;
+    /** Курс, с которым собрался этот ответ, — тому же журналу. */
+    onRate?: (rate: import("./rate").StoredVtbRate | null) => void;
   } = {},
 ): Promise<ConsultantReply | null> {
   let bucket = state.ab_bucket ?? "a";
@@ -863,6 +877,7 @@ export async function decideConsultantReply(
         ? { rate: ctx.rate, updatedAt: "test", source: "test" }
         : null
       : await getFreshVtbRate();
+  ctx.onRate?.(rateRow ?? null);
   let storyTag: any = null;
   // К истории может быть привязано несколько товаров: в одной сторис лежат и
   // простыня, и пододеяльник, и наволочки. Первый нужен отдельно — вокруг него
@@ -1600,6 +1615,38 @@ export function resolveHandoffProductIds(
   }
 
   return [];
+}
+
+/**
+ * Текст задачи менеджеру.
+ *
+ * В списке задач 22.09 лежит строка «Верно» — это весь вопрос, который увидел
+ * менеджер. Последнее сообщение покупателя было подтверждением («Верно»,
+ * «Да», «Давайте»), а разговор шёл про предзаказ полотенец PIP с птичками, и
+ * ничего из этого в задачу не попало. Открывать диалог в Instagram, чтобы
+ * понять, о чём задача, — ровно та работа, которую бот должен был снять.
+ *
+ * Поэтому короткое подтверждение само по себе вопросом не считается: к нему
+ * подставляется предыдущий ход переписки.
+ */
+const CONFIRMATION_RE = /^(да|нет|верно|хорошо|ок|окей|давайте|давай|согласен|согласна|конечно|ага|угу)[\s.,!?…]*$/i;
+
+export function questionForManager(
+  state: Pick<ConsultantState, "recent">,
+  incoming: string,
+  fallback: string,
+): string {
+  const text = (incoming ?? "").trim();
+  if (!text) return fallback;
+  if (!CONFIRMATION_RE.test(text)) return text;
+  const turns = [...(state.recent ?? [])].reverse();
+  const asked = turns.find((t) => t.role === "customer")?.text?.trim() ?? "";
+  const answered = turns.find((t) => t.role === "assistant")?.text?.trim() ?? "";
+  if (!asked && !answered) return text;
+  const lines = [`«${text}» — в ответ на:`];
+  if (asked) lines.push(`клиент: ${asked.slice(0, 300)}`);
+  if (answered) lines.push(`бот: ${answered.slice(0, 300)}`);
+  return lines.join("\n");
 }
 
 async function handoffReply(

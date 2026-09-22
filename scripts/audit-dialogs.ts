@@ -113,8 +113,12 @@ const CHECKS: {
   {
     id: "no_reply",
     title: "Покупатель написал — ответа не ушло",
-    hint: "status не replied: ошибка, пауза или обрыв. Самая дорогая находка: человек ждёт.",
-    test: (r) => r.status !== "replied" && (r.status || "—"),
+    hint: "Ошибка или обрыв. Человек ждёт и не дождётся.",
+    // paused_manager сюда не считаем: это правильное поведение — в чате
+    // работает человек, и бот обязан замолчать. Проверено на выгрузке 22.09:
+    // все тринадцать «молчаний» оказались именно им, и в каждом менеджер
+    // действительно писал покупателю.
+    test: (r) => r.status !== "replied" && r.reply_kind !== "paused_manager" && (r.status || "—"),
   },
   {
     id: "internal_leak",
@@ -160,10 +164,19 @@ const CHECKS: {
     },
   },
   {
-    id: "ruble_without_rate",
-    title: "Речь про рубли, а курса в этот момент не было",
-    hint: "Либо назвали сумму из воздуха, либо отправили к менеджеру за тем, что умеем сами.",
-    test: (r) => /₽|рубл/i.test(r.reply_text ?? "") && r.rate_value == null,
+    id: "ruble_asked_not_given",
+    title: "Просили цену в рублях — суммы в ответе нет",
+    hint:
+      "Курс у нас есть и считается формулой. Каждый такой ответ — продажа, " +
+      "отданная менеджеру за то, что бот умеет сам.",
+    // Не по колонке rate_value: её начали заполнять только 22.09, у всех
+    // строк до этого там null, и проверка по ней врала на каждой второй.
+    // Текст ответа врать не может.
+    test: (r) => {
+      const asked = /рубл|₽|в\s+руб/i.test(r.incoming_text ?? "");
+      if (!asked) return false;
+      return /\d[\d\s]*\s?₽|\d[\d\s]*\s?руб/i.test(r.reply_text ?? "") ? false : "суммы нет";
+    },
   },
   {
     id: "style",
@@ -275,6 +288,18 @@ async function main() {
   const handedOff = [...byDialogue.values()].filter((l) =>
     l.some((r) => ["handoff", "purchase"].includes(r.reply_kind ?? "")),
   ).length;
+  /**
+   * Воронка. Ради неё разбор и затевался: находки говорят, что бот сделал
+   * не так, а воронка — сколько это стоило. На выгрузке 22.09 шесть диалогов
+   * из сорока четырёх оборвались ровно на вопросе «из какой вы страны», и
+   * все шесть открывались просьбой назвать цену или сделать заказ.
+   */
+  const dialogues = [...byDialogue.values()];
+  const diedOnCountry = dialogues.filter(
+    (l) => l[l.length - 1].reply_kind === "country",
+  );
+  const reachedProduct = dialogues.filter((l) => l.some((r) => r.reply_kind === "product")).length;
+  const reachedPurchase = dialogues.filter((l) => l.some((r) => r.reply_kind === "purchase")).length;
   const { usd, cacheShare } = money(runs);
   const summary = {
     messages: runs.length,
@@ -283,6 +308,9 @@ async function main() {
     lastAt: runs[runs.length - 1].received_at,
     handedOff,
     handedOffShare: byDialogue.size ? handedOff / byDialogue.size : 0,
+    diedOnCountry: diedOnCountry.length,
+    reachedProduct,
+    reachedPurchase,
     usd: Number(usd.toFixed(4)),
     usdPerMessage: runs.length ? Number((usd / runs.length).toFixed(5)) : 0,
     cacheShare: Number(cacheShare.toFixed(3)),
@@ -324,6 +352,22 @@ async function main() {
       cacheShare * 100
     ).toFixed(0)}%`,
   );
+  console.log("");
+  console.log("ВОРОНКА");
+  console.log(
+    `  дошли до показа товара:  ${reachedProduct} из ${byDialogue.size} (${(
+      (reachedProduct / byDialogue.size) * 100
+    ).toFixed(0)}%)`,
+  );
+  console.log(`  дошли до оформления:     ${reachedPurchase}`);
+  console.log(
+    `  оборвались на вопросе про страну: ${diedOnCountry.length} (${(
+      (diedOnCountry.length / byDialogue.size) * 100
+    ).toFixed(0)}%)`,
+  );
+  for (const l of diedOnCountry.slice(0, exampleLimit)) {
+    console.log(`     «${(l[0].incoming_text ?? "").replace(/\s+/g, " ").slice(0, 70)}»`);
+  }
   console.log("");
 
   const ordered = [...byCheck.entries()].sort((a, b) => b[1].length - a[1].length);
