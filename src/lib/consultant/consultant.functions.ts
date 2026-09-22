@@ -15,7 +15,7 @@ import {
 } from "./catalog";
 import { parseCatalogCsv } from "./catalog-import";
 import { consultantApiKey, consultantModel } from "./config";
-import { getStoredVtbRate } from "./rate";
+import { getStoredVtbRate, isRateFresh, RATE_MAX_AGE_HOURS } from "./rate";
 import { listConsultantCustomers, listPausedConsultations, resumeConsultant } from "./state";
 import { loadVtbAttemptLog, refreshVtbRate, saveVtbRate } from "./vtb";
 import { loadConsultantEvents, summarizeConsultantEvents } from "./analytics";
@@ -109,6 +109,17 @@ export const getConsultantAdminFn = createServerFn({ method: "GET" }).handler(as
       rateStale: rateAgeHours != null && rateAgeHours > 2,
       rateMissing: !rate,
       rateAgeHours,
+      /**
+       * Годится ли этот курс боту.
+       *
+       * Панель до сих пор читала курс через getStoredVtbRate — он отдаёт что
+       * лежит, любой давности. Консультант читает через getFreshVtbRate, и
+       * тот старше RATE_MAX_AGE_HOURS отдаёт как null. Поэтому в панели курс
+       * выглядел живым, а покупателю в это же время уходило «курс
+       * недоступен». Теперь панель показывает ровно то, что видит бот.
+       */
+      rateUsableByBot: isRateFresh(rate),
+      rateMaxAgeHours: RATE_MAX_AGE_HOURS,
       // Последняя попытка обновления и её причина отказа: без этого «курс не
       // подтягивается» выглядит как загадка и разбирается перепиской.
       rateAttempt,

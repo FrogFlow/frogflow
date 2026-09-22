@@ -1656,6 +1656,18 @@ function ConsultantPage() {
                   }`
                 : c.rateEmpty}
             </p>
+            {d && d.rate && !d.rateUsableByBot ? (
+              <div className="text-xs border rounded-md p-2 border-amber-500/50 bg-amber-500/10 space-y-1">
+                <p className="font-medium text-foreground">
+                  Этот курс боту уже не годится: ему больше {d.rateMaxAgeHours} часов.
+                </p>
+                <p className="text-muted-foreground">
+                  Здесь он показан, потому что это последнее, что удалось сохранить. Покупателю
+                  консультант в это время отвечает, что сумму в рублях подтвердит менеджер, и
+                  передаёт диалог человеку. Обновите курс кнопкой ниже или введите вручную.
+                </p>
+              </div>
+            ) : null}
             {d?.rateAttempt && !d.rateAttempt.ok ? (
               <div className="text-xs text-muted-foreground border rounded-md p-2 space-y-1">
                 <p className="font-medium text-foreground">
