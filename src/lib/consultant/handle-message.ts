@@ -36,6 +36,7 @@ import {
   COUNTRY_BUTTONS,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
+import { stripRepeatGreeting } from "./style";
 import {
   extractBudgetKzt,
   isAffirmativeInterest,
@@ -374,6 +375,13 @@ async function handleConsultantZernioEventInternal(params: {
   // Единственная точка выхода наружу: через неё проходят и ответы модели, и
   // локальные шаблоны, поэтому запрет на восклицательные знаки и эмодзи
   // применяется здесь, а не в каждом месте, где собирается текст.
+  // Бот в этом диалоге уже говорил — значит уже поздоровался, и второе
+  // «Здравствуйте» лишнее. Приветствие живёт в вопросе про страну, а следующий
+  // ответ начинался с него же.
+  if (consultant.last_bot_reply?.trim()) {
+    reply.text = stripRepeatGreeting(reply.text);
+  }
+
   const beforeDiscontinuedGuard = reply.text;
   reply.text = stripExclamationsAndEmoji(
     stripMarkdownFormatting(

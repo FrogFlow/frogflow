@@ -154,3 +154,26 @@ export function stripExclamationsAndEmoji(text: string): string {
 export function polishConsultantReply(text: string, catalog: ConsultantProduct[]): string {
   return stripExclamationsAndEmoji(fixBrandSpelling(text, brandVocabulary(catalog)));
 }
+
+/**
+ * Второе «Здравствуйте» в одном диалоге.
+ *
+ * Продавец: «здесь бот здоровается два раза — если человек выбрал страну
+ * вначале, там же есть здравствуйте». Так и было: приветствие стоит в вопросе
+ * про страну, а следующий ответ начинался с него же.
+ *
+ * Срезаем только ведущее приветствие и только когда бот в этом диалоге уже
+ * говорил. Первое приветствие остаётся на месте: здороваться один раз нужно.
+ */
+const LEADING_GREETING_RE =
+  /^\s*(?:здравствуйте|доброе\s+утро|добрый\s+(?:день|вечер)|привет(?:ствую)?|салем|сәлем)\s*[,.!…—–-]*\s*/i;
+
+export function stripRepeatGreeting(text: string): string {
+  const rest = (text ?? "").replace(LEADING_GREETING_RE, "");
+  // Приветствие было всем сообщением — тогда лучше оставить как есть, чем
+  // отправить пустоту.
+  if (!rest.trim()) return text;
+  if (rest === text) return text;
+  // Первая буква остатка могла быть строчной: «Здравствуйте, коврики есть…».
+  return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
