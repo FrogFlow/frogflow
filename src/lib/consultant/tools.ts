@@ -107,7 +107,7 @@ export const CONSULTANT_TOOLS = [
   {
     name: "ask_manager",
     description:
-      "Use when the customer asks something neither the catalog nor the knowledge base answers: a comparison between models, a material detail that is not in the card, a promise about dates. It files the question for a human manager and does NOT pause the chat. After calling it, say you will check with the manager and come back with the answer, then ask whether there is anything else you can help with right now. Never invent an answer instead, and never go silent.",
+      "Use when the customer asks something neither the catalog nor the knowledge base answers: a comparison between models, a material detail that is not in the card, a promise about dates. It hands the conversation to a human manager and STOPS the bot: the seller asked for the dialogue to be picked up by a person, not continued by the bot. Say only that you are passing the question to the manager. Do NOT add anything after that — no summary, no offer to help with something else, no follow-up question. Never invent an answer instead, and never go silent.",
     input_schema: {
       type: "object",
       properties: {
@@ -417,7 +417,14 @@ export async function executeConsultantTool(
         console.warn("[consultant] ask_manager: не удалось записать вопрос", err);
       });
     }
-    return { result: { queued: Boolean(question) }, products: [], handoff: false };
+    // Диалог уходит человеку и бот замолкает. Раньше он продолжал разговор и
+    // спрашивал «чем ещё помочь» — продавец попросил так не делать: вопрос
+    // передан, дальше отвечает менеджер.
+    return {
+      result: { queued: Boolean(question), paused: true, reason: "question" },
+      products: [],
+      handoff: true,
+    };
   }
 
   if (name === "handoff_to_manager") {

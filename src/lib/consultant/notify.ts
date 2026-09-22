@@ -46,7 +46,7 @@ export async function notifyConsultantHandoff(params: {
     const reasonLabels: Record<string, string> = {
       purchase: "🛒 Покупка",
       other: "❓ Вопрос вне каталога",
-      question: "❓ Вопрос без ответа — бот обещал вернуться",
+      question: "❓ Вопрос без ответа — диалог передан вам",
       photo: "📸 Просят фото — диалог передан вам",
       voice: "🎤 Голосовое сообщение — бот его не слышит",
       error: "⚠️ Ошибка",

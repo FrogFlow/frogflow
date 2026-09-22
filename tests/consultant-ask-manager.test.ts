@@ -32,17 +32,22 @@ describe("вопрос, на который нет ответа", () => {
     expect(names).toContain("handoff_to_manager");
   });
 
-  it("записывает вопрос менеджеру и не ставит диалог на паузу", async () => {
+  it("записывает вопрос менеджеру и передаёт ему диалог", async () => {
     const res = await executeConsultantTool(
       "ask_manager",
       { question: "В чём отличие TRESOR R3 от LEVANT R4?" },
       { userKey: "ig:lyudmila" },
     );
 
-    // Пауза здесь была бы ошибкой: продавец просил, чтобы бот сказал, что
-    // уточнит у менеджера, и продолжил отвечать на остальные вопросы.
-    expect(res.handoff).toBe(false);
-    expect(res.result).toEqual({ queued: true });
+    /**
+     * Раньше бот продолжал разговор: «уточню и вернусь, чем ещё помочь?».
+     * Продавец после первой ночи работы: «бот должен просто сообщить, что
+     * передаст вопрос менеджеру. После этого не нужно продолжать диалог и
+     * задавать вопросы вроде „есть ли у вас ещё вопросы?“ — дальше диалог
+     * подхватит человек».
+     */
+    expect(res.handoff).toBe(true);
+    expect(res.result).toEqual({ queued: true, paused: true, reason: "question" });
 
     const tasks = queuedTasks();
     expect(tasks).toHaveLength(1);
@@ -55,7 +60,9 @@ describe("вопрос, на который нет ответа", () => {
 
   it("пустой вопрос не засоряет очередь менеджера", async () => {
     const res = await executeConsultantTool("ask_manager", { question: "   " }, { userKey: "ig:x" });
-    expect(res.result).toEqual({ queued: false });
+    expect(res.result).toEqual({ queued: false, paused: true, reason: "question" });
+    // Пустой вопрос в очередь не попадает, но диалог всё равно уходит
+    // человеку: модель уже решила, что сама не ответит.
     expect(queuedTasks()).toHaveLength(0);
   });
 

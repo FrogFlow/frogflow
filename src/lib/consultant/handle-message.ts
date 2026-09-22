@@ -27,6 +27,7 @@ import {
   formatSizeOptionsReply,
   formatStoreLocationReply,
   formatThanksReply,
+  HANDOFF_TO_MANAGER_REPLY,
   formatVariantsReply,
   looksLikeConsultantBotReply,
   stripMarkdownFormatting,
@@ -523,7 +524,7 @@ export async function decideConsultantReply(
       "voice",
       text,
       ctx.userKey,
-      "Голосовые сообщения я не распознаю. Передаю диалог менеджеру — он ответит здесь же.",
+      HANDOFF_TO_MANAGER_REPLY,
     );
   }
   if (asksForProductPhoto(text)) {
@@ -535,7 +536,7 @@ export async function decideConsultantReply(
       "photo",
       text,
       ctx.userKey,
-      "Фото отправит менеджер — передаю ему ваш вопрос, он ответит здесь же.",
+      HANDOFF_TO_MANAGER_REPLY,
     );
   }
 
@@ -816,6 +817,7 @@ ${list}
 2. Назовите актуальную цену ${many ? "по каждой позиции" : "товара"} и подтвердите наличие.
 3. Опишите качество и характеристики (натуральные премиальные материалы, фирменный стандарт BOVI).
 4. ${many ? "Спросите, какая из позиций интересует, либо предложите комплект целиком." : "Задайте вопрос по размеру или расцветке, либо предложите оформить заказ."}
+5. Страну НЕ спрашивайте: человек написал из публикации и ждёт цену, а не анкету. Цены дайте в тенге, а последней строкой добавьте ровно так: «Если вам удобнее, мы можем сразу рассчитать стоимость в рублях.»${country === "RU" ? " Клиент уже назвал Россию — тогда цены сразу в рублях, и эту строку не пишите." : ""}
 Категорически запрещено писать "я не понимаю, на что вы ссылаетесь" или спрашивать о каком товаре речь — вы точно знаете, что это ${names}.]`;
       } else if (ctx.storyId || ctx.storyMediaUrl) {
         console.log("[consultant] story context detected without pre-fetched tag:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
@@ -840,6 +842,20 @@ ${list}
       if (ai.error) {
         // Any AI error (API 500/529, timeout, network error, no key) -> fall through to local catalog without triggering handoff!
         console.warn("[consultant] Claude error, falling back to local catalog:", ai.error);
+      } else if (ai.handoff && ai.handoffData?.reason === "question") {
+        // Вопрос без ответа уходит человеку, и бот замолкает. Телефон тут не
+        // спрашиваем: это не оформление заказа, а переданный вопрос, и
+        // отвечать на него будут в том же чате.
+        void track(ctx.userKey, "handoff", text, bucket);
+        return handoffReply(
+          pack,
+          { ...state, ...countryPatch },
+          bucket,
+          "question",
+          text,
+          ctx.userKey,
+          HANDOFF_TO_MANAGER_REPLY,
+        );
       } else if (ai.handoff) {
         void track(ctx.userKey, "handoff", text, bucket);
         const contactFromTool = ai.handoffData?.customer_phone;
@@ -1459,7 +1475,7 @@ async function handoffReply(
   pack: ConsultantCopyPack,
   state: ConsultantState,
   bucket: "a" | "b",
-  reason: "purchase" | "error" | "other" | "injection" | "photo" | "voice",
+  reason: "purchase" | "error" | "other" | "injection" | "photo" | "voice" | "question",
   text: string,
   userKey?: string,
   message?: string,
