@@ -126,6 +126,8 @@ export function findManagerMessage(
   state: ConsultantState,
   now: number = Date.now(),
   ourReplies: string[] = [],
+  /** Насколько далеко назад реплика менеджера вообще что-то значит. */
+  windowMs: number = MANAGER_LOOKBACK_MS,
 ): ManagerMessage | null {
   const botAt = Date.parse(state.last_bot_reply_at ?? "");
   const base = Number.isFinite(botAt)
@@ -138,7 +140,23 @@ export function findManagerMessage(
   // молча оставался без ответа. Нажатие — это решение человека: всё, что было
   // до него, уже учтено. Менеджер, написавший ПОСЛЕ включения, паузу вернёт.
   const resumedAt = Date.parse(state.resumed_at ?? "");
-  const since = Number.isFinite(resumedAt) ? Math.max(base, resumedAt) : base;
+  /**
+   * Нижняя граница окна. Без неё Math.min выше раскрывал поиск назад до
+   * последнего ответа бота, каким бы старым он ни был: бот ответил вчера в
+   * 19:47, менеджер написал в 19:50 — и сегодня в 12:43 та же вчерашняя
+   * реплика находилась снова.
+   *
+   * Получался замкнутый круг: окно паузы (шесть часов) её снимало, а guard
+   * тут же ставил заново по той же старой реплике. Шесть диалогов молчали
+   * сутки. Реплика менеджера старше окна паузы больше не значит, что он в
+   * чате: окно на то и окно.
+   */
+  const floor = now - Math.max(0, windowMs);
+  const since = Math.max(
+    base,
+    floor,
+    Number.isFinite(resumedAt) ? resumedAt : Number.NEGATIVE_INFINITY,
+  );
   const ourLast = foldReply(state.last_bot_reply ?? "");
   // Свой голос — и ответы бота, и ответы менеджера, переданные покупателю
   // через нас: они ушли с нашего аккаунта и в переписке от бота неотличимы,
@@ -231,7 +249,10 @@ export async function managerSpokeInConversation(params: {
     if (messages.length === 0) return { status: "empty", checked: 0 };
     const { loadRecentBotReplies } = await import("./runs");
     const ourReplies = params.userKey ? await loadRecentBotReplies(params.userKey) : [];
-    const found = findManagerMessage(messages, params.state, Date.now(), ourReplies);
+    // Окно поиска совпадает с окном паузы: держать паузу дольше, чем она
+    // живёт, — значит не снимать её никогда.
+    const windowMs = await loadManagerPauseMs();
+    const found = findManagerMessage(messages, params.state, Date.now(), ourReplies, windowMs);
     const stats = describeMessages(messages, params.state, Date.now());
     return found
       ? { status: "found", checked: messages.length, message: found, stats }

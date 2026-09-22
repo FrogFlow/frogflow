@@ -184,3 +184,48 @@ describe("переданный ответ менеджера — свой гол
     expect(findManagerMessage(tail("Есть в бежевом и сером", min(2)), state, now, [])).toBeNull();
   });
 })
+
+/**
+ * Живой случай 22.09, 12:43. Бот молчал в диалоге сутки. По журналу: на каждое
+ * новое сообщение guard находил реплику менеджера, написанную накануне в
+ * 19:50, и ставил паузу заново.
+ *
+ * Причина — Math.min в расчёте окна: он раскрывал поиск назад до последнего
+ * ответа бота, а тот был вчера в 19:47. Шестичасовое окно паузу снимало, guard
+ * тут же возвращал. Шесть диалогов молчали сутки.
+ */
+describe("вчерашний менеджер паузу сегодня не ставит", () => {
+  const now = Date.parse("2026-09-22T07:43:00.000Z");
+  const hours = (h: number) => new Date(now - h * 3600_000).toISOString();
+  const SIX_HOURS = 6 * 3600_000;
+
+  const tail = (at: string) => [
+    { message: "Вас именно, что интересует от португального бренда?", direction: "outgoing" as const, createdAt: at },
+  ];
+  // Бот отвечал вчера вечером, больше в диалоге ничего не было.
+  const state = {
+    last_bot_reply_at: hours(17),
+    last_bot_reply: "Да, у нас есть португальский бренд.",
+  } as never;
+
+  it("реплика старше окна паузы паузу не ставит", () => {
+    expect(findManagerMessage(tail(hours(17)), state, now, [], SIX_HOURS)).toBeNull();
+  });
+
+  it("свежая реплика менеджера паузу ставит по-прежнему", () => {
+    const found = findManagerMessage(tail(hours(1)), state, now, [], SIX_HOURS);
+    expect(found?.text).toContain("португального бренда");
+  });
+
+  it("граница окна: на пять часов ставит, на семь — нет", () => {
+    expect(findManagerMessage(tail(hours(5)), state, now, [], SIX_HOURS)).not.toBeNull();
+    expect(findManagerMessage(tail(hours(7)), state, now, [], SIX_HOURS)).toBeNull();
+  });
+
+  it("короткое окно продавца сужает и поиск", () => {
+    // Поставили три часа — реплика четырёхчасовой давности уже не считается.
+    const threeHours = 3 * 3600_000;
+    expect(findManagerMessage(tail(hours(4)), state, now, [], threeHours)).toBeNull();
+    expect(findManagerMessage(tail(hours(2)), state, now, [], threeHours)).not.toBeNull();
+  });
+})
