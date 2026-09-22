@@ -79,6 +79,25 @@ export function asksDeliveryToUnsupportedCountry(text: string): boolean {
   return OTHER_COUNTRY_RE.test(t);
 }
 
+/**
+ * Оптовый запрос.
+ *
+ * Выгрузка 19–22.09, оба обращения про опт: «У вас можно оптом закуп сделать?»
+ * и «У вас опт есть?». Обоим бот показал анкету про страну, и оба ушли.
+ * Отвечать им по рознице тоже нечем: оптового прайса у консультанта нет, нет
+ * ни партий, ни отсрочки, ни условий — всё это знает только человек.
+ *
+ * Форма слова проверяется до конца: голое «опт» подстрокой сидит в
+ * «оптимально» и «оптика», и без хвоста сюда попадал бы каждый второй
+ * разговор про подбор.
+ */
+const WHOLESALE_RE =
+  /опт(?:ов[а-яё]+|ом|ах?|у|е)?(?![а-яё])|дилер|дистриб[а-яё]*|перепрода[а-яё]*|(^|[^a-zа-яё])b2b([^a-zа-яё]|$)|мелким\s+опт/i;
+
+export function matchWholesaleIntent(text: string): boolean {
+  return WHOLESALE_RE.test((text ?? "").trim());
+}
+
 export function matchCountry(text: string): ConsultantCountry | null {
   const t = text.trim();
   if (/^(?:1|1\.|1\)|1\s*[-—–]\s*к[а-я]*)$/i.test(t)) return "KZ";

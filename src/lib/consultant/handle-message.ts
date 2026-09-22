@@ -28,6 +28,7 @@ import {
   formatStoreLocationReply,
   formatThanksReply,
   DELIVERY_SCOPE_REPLY,
+  WHOLESALE_REPLY,
   HANDOFF_TO_MANAGER_REPLY,
   PHOTO_FROM_MANAGER_NOTE,
   formatVariantsReply,
@@ -59,6 +60,7 @@ import {
   matchPriceOnlyIntent,
   matchPurchaseIntent,
   matchUnsupportedCountry,
+  matchWholesaleIntent,
   asksDeliveryToUnsupportedCountry,
 } from "./intent";
 import { consultantApiKey } from "./config";
@@ -669,6 +671,16 @@ export async function decideConsultantReply(
       ctx.userKey,
       HANDOFF_TO_MANAGER_REPLY,
     );
+  }
+
+  /**
+   * Опт — сразу человеку. Оптового прайса у консультанта нет, и любой его
+   * ответ здесь будет выдумкой. Оба таких обращения за 19–22.09 умерли на
+   * анкете про страну, так и не дойдя до менеджера.
+   */
+  if (matchWholesaleIntent(text)) {
+    void track(ctx.userKey, "handoff", text, bucket);
+    return handoffReply(pack, state, bucket, "wholesale", text, ctx.userKey, WHOLESALE_REPLY);
   }
 
   if (looksLikePromptInjection(text)) {
@@ -1653,7 +1665,16 @@ async function handoffReply(
   pack: ConsultantCopyPack,
   state: ConsultantState,
   bucket: "a" | "b",
-  reason: "purchase" | "error" | "other" | "injection" | "photo" | "photo_sent" | "voice" | "question",
+  reason:
+    | "purchase"
+    | "error"
+    | "other"
+    | "injection"
+    | "photo"
+    | "photo_sent"
+    | "voice"
+    | "question"
+    | "wholesale",
   text: string,
   userKey?: string,
   message?: string,
