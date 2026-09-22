@@ -207,12 +207,18 @@ export const DISCONTINUED_MEDIUM_MATTRESS_REPLY =
   "Матрасов средней жёсткости сейчас нет — эту линейку сняли с производства. Есть комфортные (Soft) и упругие (Firm), показать варианты?";
 
 /** Убирает из текста предложения, на которые сработало условие. */
-function dropSentences(text: string, drop: (sentence: string) => boolean): string {
+/** Граница предложения. Без флагов — значит без общего состояния между вызовами. */
+const SENTENCE_SPLIT_RE = /(?<=[.!?\u2026])\s+/;
+
+function dropSentences(
+  text: string,
+  drop: (sentence: string, index: number, parts: string[]) => boolean,
+): string {
   if (!text) return "";
   const kept: string[] = [];
   for (const line of text.split("\n")) {
-    const parts = line.split(/(?<=[.!?…])\s+/);
-    const keptParts = parts.filter((part) => !drop(part));
+    const parts = line.split(SENTENCE_SPLIT_RE);
+    const keptParts = parts.filter((part, i) => !drop(part, i, parts));
     const joined = keptParts.join(" ").trim();
     // Строка ушла целиком — убираем её вместе с переводом строки, чтобы в
     // ответе не осталось дырки из пустых абзацев.
@@ -353,9 +359,15 @@ export function asksForPhotoOnly(text: string): boolean {
  *
  * Поэтому обещание ловится по тексту ответа: сказал — значит зафиксировали,
  * независимо от того, догадалась модель вызвать инструмент или нет.
+ *
+ * Отдельно ловим дежурную фразу передачи («передам ваш вопрос менеджеру») и
+ * обещание пересчёта («сумму подтвердит менеджер»): их модель пишет вместо
+ * вызова инструмента чаще всего. А вот «свяжется менеджер» здесь намеренно
+ * нет — этими словами закрывается оформление заказа (pack.purchase, oos,
+ * нерабочие часы), и задача по нему уже заведена.
  */
 const MANAGER_PROMISE_RE =
-  /уточн[а-яё]*\s+(?:[а-яё]+\s+){0,3}у\s+менеджера|узна[а-яё]*\s+(?:[а-яё]+\s+){0,3}у\s+менеджера|спрош[а-яё]*\s+(?:[а-яё]+\s+){0,3}у\s+менеджера|верн[уеё][а-яё]*\s+с\s+ответом|свяж[а-яё]+\s+с\s+вами\s+с\s+ответом|провер[юяить][а-яё]*\s+информацию/i;
+  /уточн[а-яё]*\s+(?:[а-яё]+\s+){0,3}у\s+менеджера|узна[а-яё]*\s+(?:[а-яё]+\s+){0,3}у\s+менеджера|спрош[а-яё]*\s+(?:[а-яё]+\s+){0,3}у\s+менеджера|верн[уеё][а-яё]*\s+с\s+ответом|свяж[а-яё]+\s+с\s+вами\s+с\s+ответом|провер[юяить][а-яё]*\s+информацию|переда[мдю][а-яё]*\s+(?:[а-яё]+\s+){0,3}менеджеру|(?:подтвердит|уточнит|назов[её]т|рассчитает|посчитает)\s+менеджер|менеджер[а-яё]*\s+(?:[а-яё]+\s+){0,2}(?:подтвердит|уточнит|назов[её]т|рассчитает|посчитает)/i;
 
 export function promisesManagerFollowUp(text: string): boolean {
   return MANAGER_PROMISE_RE.test(text);
@@ -406,6 +418,62 @@ export function cleanCatalogExcuses(text: string): string {
   const cleaned = dropSentences(text, isCatalogExcuse);
   // Если от ответа ничего не осталось, отговорка была всем ответом — тогда
   // лучше исходный текст, чем пустое сообщение.
+  return cleaned.trim() ? cleaned : text;
+}
+
+/**
+ * Отговорка про курс рубля.
+ *
+ * Курс тянется с finkaz.kz по крону раз в пятнадцать минут; когда источник
+ * молчит, цену в рублях называть нельзя — назовём позапрошлую. Но покупателю
+ * об этом знать неоткуда и незачем: «сейчас курс недоступен» он читает как
+ * «магазин не может посчитать», и это последнее, что он слышит перед уходом.
+ * Внутреннюю поломку вырезаем, обещание менеджера рядом остаётся — оно и есть
+ * ответ.
+ */
+const RATE_EXCUSE_RE =
+  /курс[а-яё]*\s+(?:[а-яё]+\s+){0,2}(?:недоступен|не\s+доступен|отсутствует|неизвестен|не\s+загру[жз])|нет\s+(?:[а-яё]+\s+){0,2}курса|не\s+мог[а-яё]*\s+(?:пересчитать|перевести|посчитать|рассчитать)[^.]{0,40}рубл/i;
+
+export function mentionsRateOutage(sentence: string): boolean {
+  return RATE_EXCUSE_RE.test(sentence);
+}
+
+export function cleanRateExcuses(text: string): string {
+  const cleaned = dropSentences(text, mentionsRateOutage);
+  return cleaned.trim() ? cleaned : text;
+}
+
+/** Дежурная фраза передачи — ровно та, которую продиктовал продавец. */
+const HANDOFF_SENTENCE_RE = /переда[мю]\s+ваш\s+вопрос\s+менеджеру/i;
+const MANAGER_MENTION_RE = /менеджер/i;
+const BARE_THANKS_RE = /^спасибо\s*[.!\u2026]*$/i;
+
+/**
+ * Две фразы про менеджера в одном ответе.
+ *
+ * В промпте это два разных правила: «скажите, что сумму подтвердит менеджер»
+ * для недоступного курса и «ответьте ровно одной фразой» для вопроса без
+ * ответа. Модель в живом диалоге выполнила оба сразу и написала подряд
+ * «Точную сумму в рублях подтвердит менеджер» и «Спасибо. Я передам ваш
+ * вопрос менеджеру». Покупатель читает это как сбой.
+ *
+ * Когда в ответе уже сказано, что именно сделает менеджер, дежурная фраза
+ * лишняя — она ничего не добавляет. Когда её нет, остаётся она одна.
+ */
+export function collapseManagerPromises(text: string): string {
+  if (!text || !HANDOFF_SENTENCE_RE.test(text)) return text;
+  const saysMore = text
+    .split("\n")
+    .flatMap((line) => line.split(SENTENCE_SPLIT_RE))
+    .some((part) => MANAGER_MENTION_RE.test(part) && !HANDOFF_SENTENCE_RE.test(part));
+  if (!saysMore) return text;
+  const cleaned = dropSentences(
+    text,
+    (part, i, parts) =>
+      HANDOFF_SENTENCE_RE.test(part) ||
+      // «Спасибо.» держалось только на этой фразе — уходит вместе с ней.
+      (BARE_THANKS_RE.test(part) && HANDOFF_SENTENCE_RE.test(parts[i + 1] ?? "")),
+  );
   return cleaned.trim() ? cleaned : text;
 }
 

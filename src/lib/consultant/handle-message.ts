@@ -87,6 +87,8 @@ import { fileConsultantQuestion } from "./tasks";
 import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
+  cleanRateExcuses,
+  collapseManagerPromises,
   cleanDemoMentions,
   asksForPhotoOnly,
   asksForProductPhoto,
@@ -424,12 +426,17 @@ async function handleConsultantZernioEventInternal(params: {
     reply.text = stripRepeatGreeting(reply.text);
   }
 
+  // Каждое правило промпта продублировано механической чисткой: модель о
+  // правиле забывает, регулярное выражение — нет. Порядок важен только для
+  // пары «курс» → «менеджер»: вторая решает по тому, что осталось от первой.
   const beforeDiscontinuedGuard = reply.text;
-  reply.text = stripExclamationsAndEmoji(
-    stripMarkdownFormatting(
-      cleanUpsellPressure(cleanCatalogExcuses(cleanDemoMentions(cleanDiscontinuedMattressOffers(reply.text)))),
-    ),
-  );
+  let cleaned = cleanDiscontinuedMattressOffers(reply.text);
+  cleaned = cleanRateExcuses(cleaned);
+  cleaned = collapseManagerPromises(cleaned);
+  cleaned = cleanDemoMentions(cleaned);
+  cleaned = cleanCatalogExcuses(cleaned);
+  cleaned = cleanUpsellPressure(cleaned);
+  reply.text = stripExclamationsAndEmoji(stripMarkdownFormatting(cleaned));
   // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
   // отвечаем честно про среднюю жёсткость.
   if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
@@ -440,8 +447,13 @@ async function handleConsultantZernioEventInternal(params: {
   // диалоге про плотность полотенец так и вышло: пообещал дважды, в списке
   // задач не появилось ничего, покупатель остался ждать. Фиксируем по тексту
   // обещания, а не по доброй воле модели.
+  // handoffReply по дороге уже завёл задачу и дёрнул менеджера — второй раз
+  // не заводим, иначе на один вопрос в панели появятся две строки.
+  const alreadyHandedOff =
+    reply.kind === "handoff" || reply.kind === "purchase" || reply.kind === "injection";
   if (
     promisesManagerFollowUp(reply.text) &&
+    !alreadyHandedOff &&
     !(reply.toolsUsed ?? []).includes("ask_manager")
   ) {
     void fileConsultantQuestion({
@@ -913,7 +925,13 @@ ${list}
 2. Назовите актуальную цену ${many ? "по каждой позиции" : "товара"} и подтвердите наличие.
 3. Опишите качество и характеристики (натуральные премиальные материалы, фирменный стандарт BOVI).
 4. ${many ? "Спросите, какая из позиций интересует, либо предложите комплект целиком." : "Задайте вопрос по размеру или расцветке, либо предложите оформить заказ."}
-5. Страну НЕ спрашивайте: человек написал из публикации и ждёт цену, а не анкету. Цены дайте в тенге, а последней строкой добавьте ровно так: «Если вам удобнее, мы можем сразу рассчитать стоимость в рублях.»${country === "RU" ? " Клиент уже назвал Россию — тогда цены сразу в рублях, и эту строку не пишите." : ""}
+5. Страну НЕ спрашивайте: человек написал из публикации и ждёт цену, а не анкету. Цены дайте в тенге.${
+          country === "RU"
+            ? " Клиент уже назвал Россию — тогда цены сразу в рублях."
+            : rateRow?.rate
+              ? " Последней строкой добавьте ровно так: «Если вам удобнее, мы можем сразу рассчитать стоимость в рублях.»"
+              : ""
+        }
 Категорически запрещено писать "я не понимаю, на что вы ссылаетесь" или спрашивать о каком товаре речь — вы точно знаете, что это ${names}.]`;
       } else if (ctx.storyId || ctx.storyMediaUrl) {
         console.log("[consultant] story context detected without pre-fetched tag:", { storyId: ctx.storyId, storyMediaUrl: ctx.storyMediaUrl?.slice(0, 80) });
