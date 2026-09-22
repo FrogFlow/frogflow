@@ -969,6 +969,24 @@ ${list}
       }
 
       /**
+       * Статью из базы знаний подкладываем сами, а не надеемся, что модель
+       * сходит за ней инструментом.
+       *
+       * База BOVI — 46 тысяч знаков при лимите 6 000, поэтому в системный
+       * промпт едет одно оглавление, а текст статьи модель должна забрать
+       * через search_knowledge. На выгрузке 19–22.09 она не сделала этого
+       * пять раз подряд: покупатели спрашивали плотность полотенец Uchino и
+       * RIVOLTA, в базе лежит «Справочник по плотности полотенец» ровно про
+       * это — а бот отвечал «в каталоге не указано» и обещал менеджера.
+       *
+       * Кладём в сообщение покупателя, а не в системный промпт: системный
+       * кешируется целиком, доля кеша сейчас 100%, и подстановка в него
+       * ломала бы кеш на каждом сообщении.
+       */
+      const known = await knowledgeForQuestion(text, effectiveCatalog);
+      if (known) claudeText = `${claudeText}\n\n${known}`;
+
+      /**
        * Страну не спрашивали — значит покупатель и не знает, что цену можно
        * получить в рублях. Предлагаем это сами, один раз, под первым
        * ответом. Только при живом курсе: обещать пересчёт и отказать через
@@ -1659,6 +1677,48 @@ export function questionForManager(
   if (asked) lines.push(`клиент: ${asked.slice(0, 300)}`);
   if (answered) lines.push(`бот: ${answered.slice(0, 300)}`);
   return lines.join("\n");
+}
+
+/**
+ * Порог подстановки: одно попадание в название или теги статьи — но словом,
+ * которого нет в каталоге.
+ *
+ * Слова каталога из счёта выброшены, и это здесь главное. «Есть полотенца?»
+ * и «какая плотность?» оба один раз попадают в название «Справочник по
+ * плотности полотенец», но первый вопрос про товар, а второй про свойство,
+ * которого в прайсе нет. Без этого отсева статья ехала бы в каждый разговор
+ * про полотенца — лишние две тысячи токенов мимо кеша на каждое сообщение.
+ */
+const KNOWLEDGE_ATTACH_MIN_SCORE = 3;
+
+/** Одна статья целиком: обрезать посередине опасно — режется как раз хвост с цифрами. */
+const KNOWLEDGE_ATTACH_MAX_CHARS = 8000;
+
+async function knowledgeForQuestion(
+  text: string,
+  catalog: import("./catalog").ConsultantProduct[],
+): Promise<string> {
+  const query = (text ?? "").trim();
+  if (!query) return "";
+  try {
+    const {
+      loadConsultantKnowledge,
+      knowledgeFitsInPrompt,
+      searchKnowledgeScored,
+      formatKnowledgeForPrompt,
+      catalogKeySet,
+    } = await import("./knowledge");
+    const articles = await loadConsultantKnowledge();
+    // Маленькая база и так едет в промпт целиком — дублировать незачем.
+    if (articles.length === 0 || knowledgeFitsInPrompt(articles)) return "";
+    const [best] = searchKnowledgeScored(query, articles, 1, catalogKeySet(catalog));
+    if (!best || best.score < KNOWLEDGE_ATTACH_MIN_SCORE) return "";
+    if (best.article.content.length > KNOWLEDGE_ATTACH_MAX_CHARS) return "";
+    return formatKnowledgeForPrompt([best.article]);
+  } catch (err) {
+    console.warn("[consultant] не удалось подложить статью базы знаний", err);
+    return "";
+  }
 }
 
 async function handoffReply(

@@ -248,6 +248,63 @@ export function searchKnowledge(
   return scored.slice(0, limit).map((x) => x.a);
 }
 
+/**
+ * То же, что searchKnowledge, но с оценкой совпадения.
+ *
+ * Нужна, чтобы отличить «вопрос ровно про эту статью» от «в статье случайно
+ * встретилось то же слово». Три очка даёт попадание в название или теги, одно
+ * — в текст. Запрос «какая плотность у полотенец Uchino» набирает по
+ * названию «Справочник по плотности полотенец» шесть и выше, а просто «есть
+ * полотенца?» — три: одного слова для подстановки статьи мало.
+ */
+export function searchKnowledgeScored(
+  query: string,
+  articles: ConsultantKnowledgeArticle[],
+  limit = 3,
+  /**
+   * Слова, которые в счёт не идут. Сюда передаётся словарь каталога: названия
+   * товаров и категорий. Без него «есть полотенца?» и «какая плотность?»
+   * набирают поровну — оба один раз попадают в название «Справочник по
+   * плотности полотенец», — а это принципиально разные вопросы. Слово из
+   * каталога описывает товар, слово не из каталога описывает свойство,
+   * которого в прайсе нет, и вот за ним и надо идти в базу знаний.
+   */
+  ignore?: ReadonlySet<string>,
+): { article: ConsultantKnowledgeArticle; score: number }[] {
+  const keys = searchTokens(query)
+    .filter((t) => t.length >= 4)
+    .map((t) => t.slice(0, 4))
+    .filter((k) => !ignore?.has(k));
+  if (keys.length === 0) return [];
+  return articles
+    .map((a) => {
+      const head = haystackOf([a.title, a.tags.join(" ")]);
+      const body = haystackOf([a.content]);
+      let score = 0;
+      for (const key of keys) {
+        if (head.includes(key)) score += 3;
+        else if (body.includes(key)) score += 1;
+      }
+      return { article: a, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((x, y) => y.score - x.score)
+    .slice(0, limit);
+}
+
+/** Словарь каталога: по четыре первых буквы слов из названий и категорий. */
+export function catalogKeySet(
+  catalog: { name: string; category: string }[],
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const p of catalog) {
+    for (const t of searchTokens(`${p.name} ${p.category}`)) {
+      if (t.length >= 4) out.add(t.slice(0, 4));
+    }
+  }
+  return out;
+}
+
 export function formatKnowledgeForPrompt(articles: ConsultantKnowledgeArticle[]): string {
   if (!articles || articles.length === 0) return "";
   const lines: string[] = ["БАЗА ЗНАНИЙ О ТОВАРАХ, ПРОИЗВОДИТЕЛЯХ И МАТЕРИАЛАХ BOVI:"];
