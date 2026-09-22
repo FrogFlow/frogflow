@@ -88,11 +88,13 @@ import { recordConsultantRun } from "./runs";
 import {
   cleanCatalogExcuses,
   cleanRateExcuses,
+  cleanNotUnderstoodApology,
   collapseManagerPromises,
   cleanDemoMentions,
   asksForPhotoOnly,
   asksForProductPhoto,
   isVoiceMessagePlaceholder,
+  isIncomingPhotoPlaceholder,
   cleanDiscontinuedMattressOffers,
   cleanUpsellPressure,
   promisesManagerFollowUp,
@@ -344,7 +346,7 @@ async function handleConsultantZernioEventInternal(params: {
       const isVoice = attachments.some((a) => a.type === "audio");
       text = isVoice
         ? "[Клиент отправил голосовое сообщение. Попросите написать текстом, так как бот принимает только текстовые сообщения]"
-        : "[Клиент прислал фото/картинку без текста. Поблагодарите за фото и уточните, какой именно товар, размер или цвет интересует]";
+        : "[Клиент прислал фото или картинку]";
     } else {
       return;
     }
@@ -435,6 +437,7 @@ async function handleConsultantZernioEventInternal(params: {
   cleaned = collapseManagerPromises(cleaned);
   cleaned = cleanDemoMentions(cleaned);
   cleaned = cleanCatalogExcuses(cleaned);
+  cleaned = cleanNotUnderstoodApology(cleaned);
   cleaned = cleanUpsellPressure(cleaned);
   reply.text = stripExclamationsAndEmoji(stripMarkdownFormatting(cleaned));
   // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
@@ -620,13 +623,13 @@ export async function decideConsultantReply(
    * Передача ставит диалог на паузу, заводит задачу и уведомляет менеджера —
    * всё это делает handoffReply, поэтому отдельной ветки не нужно.
    */
-  if (isVoiceMessagePlaceholder(text)) {
+  if (isVoiceMessagePlaceholder(text) || isIncomingPhotoPlaceholder(text)) {
     void track(ctx.userKey, "handoff", text, bucket);
     return handoffReply(
       pack,
       state,
       bucket,
-      "voice",
+      isIncomingPhotoPlaceholder(text) ? "photo_sent" : "voice",
       text,
       ctx.userKey,
       HANDOFF_TO_MANAGER_REPLY,
@@ -1589,7 +1592,7 @@ async function handoffReply(
   pack: ConsultantCopyPack,
   state: ConsultantState,
   bucket: "a" | "b",
-  reason: "purchase" | "error" | "other" | "injection" | "photo" | "voice" | "question",
+  reason: "purchase" | "error" | "other" | "injection" | "photo" | "photo_sent" | "voice" | "question",
   text: string,
   userKey?: string,
   message?: string,

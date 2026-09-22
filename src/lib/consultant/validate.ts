@@ -260,6 +260,25 @@ export function isVoiceMessagePlaceholder(text: string): boolean {
   return /^\[Клиент отправил голосовое/i.test((text ?? "").trim());
 }
 
+/**
+ * Такая же заглушка вместо присланной картинки.
+ *
+ * Раньше она несла для модели инструкцию «поблагодарите за фото и уточните,
+ * какой товар интересует», и в живом диалоге 22.09 получилось вот что:
+ * покупательница из Москвы прислала снимок полотенец с птичками, а в ответ —
+ * «Спасибо за фото. К сожалению, я не вижу изображение в чате. Напишите,
+ * пожалуйста, текстом…» и список из четырёх пунктов. Человек показал ровно
+ * то, что хотел, и получил анкету.
+ *
+ * Правило продавца тут прямое: «если хотят фото, картинок, пишут сообщение
+ * голосом — сразу на менеджера переключать и сообщать об этом». Присланное
+ * фото — тот же случай, что голосовое: консультант его не видит, а менеджер
+ * видит.
+ */
+export function isIncomingPhotoPlaceholder(text: string): boolean {
+  return /^\[Клиент прислал фото/i.test((text ?? "").trim());
+}
+
 export function asksForProductPhoto(text: string): boolean {
   const t = (text ?? "").trim();
   if (!t || t.startsWith("[")) return false;
@@ -474,6 +493,29 @@ export function collapseManagerPromises(text: string): string {
       // «Спасибо.» держалось только на этой фразе — уходит вместе с ней.
       (BARE_THANKS_RE.test(part) && HANDOFF_SENTENCE_RE.test(parts[i + 1] ?? "")),
   );
+  return cleaned.trim() ? cleaned : text;
+}
+
+/**
+ * «Извините, я не совсем понял».
+ *
+ * Живой диалог 22.09: на «Мне голландские с птичками понравились» бот начал с
+ * этой фразы — и тут же сам назвал и страну, и бренд: «В нашем каталоге есть
+ * голландский бренд PIP». То есть понял он прекрасно, а покупатель прочитал
+ * первым делом, что его не понимают. Извинение вырезаем, ответ по существу
+ * остаётся.
+ */
+const NOT_UNDERSTOOD_RE =
+  /(?:извините|простите)[^.!?]{0,20}(?:не\s+совсем\s+)?(?:понял|поняла|поняли)|я\s+не\s+совсем\s+пон[ял]|не\s+совсем\s+вас\s+пон/i;
+
+export function apologizesForNotUnderstanding(sentence: string): boolean {
+  return NOT_UNDERSTOOD_RE.test(sentence);
+}
+
+export function cleanNotUnderstoodApology(text: string): string {
+  const cleaned = dropSentences(text, apologizesForNotUnderstanding);
+  // Если больше в ответе ничего не было, бот правда не понял — тогда пусть
+  // фраза останется, молчание хуже.
   return cleaned.trim() ? cleaned : text;
 }
 
