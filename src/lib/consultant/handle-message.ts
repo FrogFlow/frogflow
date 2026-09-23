@@ -120,7 +120,7 @@ import { recordConsultantEvent } from "./analytics";
 import { addConsultantTask } from "./tasks";
 import { notifyConsultantHandoff } from "./notify";
 import { foldText, haystackOf } from "./synonyms";
-import { stripExclamationsAndEmoji } from "./style";
+import { stripExclamationsAndEmoji, humanizePunctuation } from "./style";
 
 export type ConsultantReply = {
   text: string;
@@ -511,7 +511,7 @@ async function handleConsultantZernioEventInternal(params: {
   cleaned = cleanNotUnderstoodApology(cleaned);
   cleaned = cleanEmptyPraise(cleaned);
   cleaned = cleanUpsellPressure(cleaned);
-  reply.text = stripExclamationsAndEmoji(stripMarkdownFormatting(cleaned));
+  reply.text = humanizePunctuation(stripExclamationsAndEmoji(stripMarkdownFormatting(cleaned)));
   // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
   // отвечаем честно про среднюю жёсткость.
   if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
