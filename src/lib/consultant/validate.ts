@@ -309,7 +309,7 @@ export function asksForProductPhoto(text: string): boolean {
  * «или возьмёте оба». Если же дожим составляет всё предложение целиком —
  * «Рекомендую взять оба размера» — оно убирается полностью.
  */
-const UPSELL_VERB = "(?:возьм[еёи]те|возьм[её]шь|берите|бер[её]те|брать|взять)";
+const UPSELL_VERB = "(?:возьм[еёи]те|возьм[её]шь|берите|бер[её]те|беру|бер[её]м|брать|взять)";
 const UPSELL_OBJECT = "(?:оба|обе|два|две|сразу|комплект(?:ом)?|все)";
 
 /** Навязчивый хвост, приклеенный к нормальному вопросу через запятую или тире. */
@@ -546,6 +546,51 @@ const EMPTY_PRAISE_RE =
 const EMPTY_HELP_OFFER_RE =
   /(?:с\s+удовольствием|буду\s+рад[а]?|рад[а]?\s+буду|всегда\s+готов[а]?|охотно)\s+(?:вам\s+)?(?:помо(?:гу|чь)|подскаж|отвеч|проконсультир)/i;
 
+/**
+ * Болтовня вокруг цены и разговор ни о чём.
+ *
+ * Продавец 23.09, прочитав живой диалог: «Давайте уберем возможность бота
+ * пространно обсуждать и вести праздные беседы с клиентом. Только по сути».
+ * В том диалоге бот утешал («я вас понимаю, совсем не обидно»), оправдывал
+ * цены («это действительно серьёзная сумма, и не каждому по карману»,
+ * «качество там мировое», «в тенге цены звучат внушительно, но это другой
+ * масштаб валюты»), рассказывал о себе («я работаю с ценами в рублях для
+ * России») и предлагал то, о чём не спрашивали. Ни одно из этих предложений
+ * не отвечает на вопрос, а каждое — повод сказать что-нибудь не то.
+ *
+ * Эти режутся целиком, даже если в них есть число: «55 тысяч рублей за
+ * коврик — это действительно серьёзная сумма» — ровно тот случай, где число
+ * к тому же было в неверной валюте.
+ */
+const CHATTER_RE = new RegExp(
+  [
+    "я\\s+вас\\s+понимаю",
+    "совсем\\s+не\\s+обидно",
+    "спасибо\\s+за\\s+понимание",
+    "^\\s*ха[,.!\\s]",
+    "серь[её]зн[а-яё]*\\s+сумм",
+    "не\\s+каждому\\s+по\\s+карману",
+    "стоят?\\s+действительно\\s+дорого",
+    "лучше\\s+не\\s+брать",
+    "жалеть\\s+о\\s+потраченн",
+    "качество\\s+там\\s+мировое",
+    "цены\\s+соответствующие",
+    "звучат\\s+внушительно",
+    "масштаб\\s+валют",
+    "разумн[а-яё]*\\s+(?:цен|диапазон)",
+    "я\\s+работаю\\s+с\\s+ценами",
+    "(?:может\\s+быть|возможно)[,\\s]+(?:вас\\s+)?интересует\\s+что-?\\s?то",
+    "могу\\s+помочь\\s+с\\s+чем-?\\s?то",
+    "интересуют\\s+ли\\s+вас\\s+эти",
+    "там\\s+цены\\s+(?:совсем\\s+другие|поменьше)",
+  ].join("|"),
+  "i",
+);
+
+export function isChatter(sentence: string): boolean {
+  return CHATTER_RE.test(sentence);
+}
+
 /** Есть ли в предложении хоть один факт: число или марка латиницей. */
 function carriesFact(sentence: string): boolean {
   return /\d/.test(sentence) || /[A-Za-z]{3,}/.test(sentence);
@@ -553,6 +598,7 @@ function carriesFact(sentence: string): boolean {
 
 export function isEmptyPraise(sentence: string): boolean {
   if (EMPTY_HELP_OFFER_RE.test(sentence)) return true;
+  if (CHATTER_RE.test(sentence)) return true;
   if (!EMPTY_PRAISE_RE.test(sentence)) return false;
   return !carriesFact(sentence);
 }
@@ -560,6 +606,55 @@ export function isEmptyPraise(sentence: string): boolean {
 export function cleanEmptyPraise(text: string): string {
   const cleaned = dropSentences(text, isEmptyPraise);
   return cleaned.trim() ? cleaned : text;
+}
+
+/**
+ * Цена в тенге, подписанная рублями.
+ *
+ * Живой диалог 22.09, покупательница из России спросила про пледы. Ответ:
+ * «цены от 140 000 до 320 000 ₽». Это точные цены пледов Eagle в прайсе —
+ * в тенге. В рублях это 33 116 и 75 695. Правило в промпте про это есть
+ * давно («никогда не подставляйте тенговое число с символом рубля»), и оно
+ * не сработало, а проверка цен в ответе только пишет предупреждение в лог.
+ *
+ * Здесь не угадываем, а сверяем: число со знаком рубля, которое точно
+ * совпадает с ценой в тенге из прайса и при этом не является ничьей ценой в
+ * рублях, — перепутанная валюта, и его можно пересчитать без догадок.
+ * Совпадение с рублёвой ценой любой позиции оставляет число как есть: такое
+ * «12 300 ₽» законно, даже если где-то в прайсе есть товар за 12 300 ₸.
+ */
+const MONEY_NUM = "(\\d{1,3}(?:[ \\u00a0\\u202f]\\d{3})+|\\d{4,})";
+const RUB_SIGN = "(?:₽|руб(?:\\.|лей|ля|ль)?)";
+const RUB_RANGE_RE = new RegExp(
+  `(от\\s+)?${MONEY_NUM}(\\s*(?:до|–|—|-)\\s*)${MONEY_NUM}(\\s*)${RUB_SIGN}`,
+  "gi",
+);
+const RUB_SINGLE_RE = new RegExp(`${MONEY_NUM}(\\s*)(${RUB_SIGN})`, "gi");
+
+const moneyValue = (raw: string): number => Number(raw.replace(/\D/g, ""));
+
+export function fixRubleMislabels(
+  text: string,
+  kztPrices: number[],
+  toRub: (kzt: number) => number,
+): string {
+  if (!text || kztPrices.length === 0) return text;
+  const kzt = new Set(kztPrices.filter((p) => p > 0));
+  const rub = new Set([...kzt].map(toRub).filter((p) => p > 0));
+  const convert = (raw: string): string => {
+    const n = moneyValue(raw);
+    if (!kzt.has(n) || rub.has(n)) return raw;
+    return toRub(n).toLocaleString("ru-RU");
+  };
+  return text
+    .replace(
+      RUB_RANGE_RE,
+      (_m, from: string | undefined, a: string, mid: string, b: string, gap: string) => {
+        const sign = _m.slice(_m.search(new RegExp(`${RUB_SIGN}$`, "i")));
+        return `${from ?? ""}${convert(a)}${mid}${convert(b)}${gap}${sign}`;
+      },
+    )
+    .replace(RUB_SINGLE_RE, (_m, n: string, gap: string, sign: string) => `${convert(n)}${gap}${sign}`);
 }
 
 export function replyUsesUnknownProductName(_text: string, _products: ConsultantProduct[]): boolean {

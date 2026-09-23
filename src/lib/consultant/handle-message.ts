@@ -29,6 +29,7 @@ import {
   formatThanksReply,
   DELIVERY_SCOPE_REPLY,
   WHOLESALE_REPLY,
+  LONG_DIALOGUE_REPLY,
   HANDOFF_TO_MANAGER_REPLY,
   PHOTO_FROM_MANAGER_NOTE,
   formatVariantsReply,
@@ -93,6 +94,7 @@ import {
   cleanCatalogExcuses,
   cleanEmptyPraise,
   cleanRateExcuses,
+  fixRubleMislabels,
   cleanNotUnderstoodApology,
   collapseManagerPromises,
   cleanDemoMentions,
@@ -134,6 +136,46 @@ export type ConsultantReply = {
 };
 
 const activeUserLocks = new Map<string, Promise<unknown>>();
+
+/** После скольких ответов бота разговор передаётся менеджеру. */
+export const LONG_DIALOGUE_TURNS = 8;
+
+/**
+ * Фоновые записи, которые обязаны долететь до конца запроса.
+ *
+ * Вебхук консультанта ждёт обработку и сразу отвечает Zernio «200». Журнал,
+ * задачи менеджеру и аналитика писались через `void` — без ожидания. На
+ * Vercel функция после ответа замораживается, и недописанная запись просто
+ * исчезает. Живой случай 22.09: бот ответил покупательнице «Нет, я ошибся…»,
+ * а строки в журнале нет. Через полторы минуты проверка «в чате менеджер»
+ * сверила историю с журналом, не нашла там этого текста — и приняла
+ * собственный ответ бота за менеджерский.
+ *
+ * Той же дорогой шли задачи менеджеру: обещание «передам ваш вопрос» могло
+ * остаться без задачи и без уведомления. Теперь такие записи собираются здесь
+ * и дожидаются в конце обработки — уже после отправки ответа, так что
+ * покупатель не ждёт ни миллисекунды лишнего.
+ */
+const pendingWrites = new Set<Promise<unknown>>();
+
+function keep<T>(p: Promise<T>): Promise<T> {
+  pendingWrites.add(p);
+  p.then(
+    () => pendingWrites.delete(p),
+    () => pendingWrites.delete(p),
+  );
+  return p;
+}
+
+export async function drainPendingWrites(): Promise<void> {
+  while (pendingWrites.size > 0) {
+    await Promise.allSettled([...pendingWrites]);
+  }
+}
+
+const recordRun = (run: Parameters<typeof recordConsultantRun>[0]) => keep(recordConsultantRun(run));
+const fileQuestion = (input: Parameters<typeof fileConsultantQuestion>[0]) =>
+  keep(fileConsultantQuestion(input));
 
 async function withUserLock<T>(userKey: string, fn: () => Promise<T>): Promise<T> {
   const prev = activeUserLocks.get(userKey) ?? Promise.resolve();
@@ -179,7 +221,11 @@ export async function handleConsultantZernioEvent(params: {
   storyId?: string | null;
   storyMediaUrl?: string | null;
 }): Promise<void> {
-  return withUserLock(params.userKey, () => handleConsultantZernioEventInternal(params));
+  try {
+    return await withUserLock(params.userKey, () => handleConsultantZernioEventInternal(params));
+  } finally {
+    await drainPendingWrites();
+  }
 }
 
 async function handleConsultantZernioEventInternal(params: {
@@ -397,7 +443,7 @@ async function handleConsultantZernioEventInternal(params: {
     });
     // Пауза тоже попадает в журнал: иначе «бот промолчал» неотличимо от
     // «бот не получил сообщение».
-    void recordConsultantRun({
+    void recordRun({
       messageId: params.payload.message?.id || params.payload.id || requestId,
       conversationId: params.conversationId,
       accountId: params.accountId,
@@ -475,7 +521,7 @@ async function handleConsultantZernioEventInternal(params: {
     !alreadyHandedOff &&
     !(reply.toolsUsed ?? []).includes("ask_manager")
   ) {
-    void fileConsultantQuestion({
+    void fileQuestion({
       userKey: params.userKey,
       // Менеджеру нужен вопрос покупателя, а не пересказ бота.
       question: questionForManager(consultant, text, reply.text),
@@ -504,7 +550,7 @@ async function handleConsultantZernioEventInternal(params: {
   ) {
     reply.text = `${reply.text.trim()}\n\n${PHOTO_FROM_MANAGER_NOTE}`;
     reply.patch = { ...reply.patch, automation_paused: true, pause_reason: "other" };
-    void fileConsultantQuestion({
+    void fileQuestion({
       userKey: params.userKey,
       question: text.trim(),
       promise: reply.text,
@@ -575,6 +621,12 @@ async function handleConsultantZernioEventInternal(params: {
     last_bot_reply: reply.text,
     last_bot_reply_at: replyTime,
     recent: appendRecent(consultant, text, reply.text),
+    bot_turns:
+      reply.kind === "handoff" ||
+      reply.kind === "purchase" ||
+      (Array.isArray(reply.patch.recent) && reply.patch.recent.length === 0)
+        ? 0
+        : (consultant.bot_turns ?? 0) + 1,
   });
 
   logConsultantEvent(requestId, "replied", {
@@ -586,7 +638,7 @@ async function handleConsultantZernioEventInternal(params: {
 
   // Строка журнала на сообщение: из неё считается цена одного ответа и доля
   // кеша. Ответ покупателю уже ушёл, поэтому ошибка записи ничего не ломает.
-  void recordConsultantRun({
+  void recordRun({
     messageId: params.payload.message?.id || params.payload.id || requestId,
     conversationId: params.conversationId,
     accountId: params.accountId,
@@ -707,6 +759,25 @@ export async function decideConsultantReply(
       patch: cleanPatch,
       kind: "clarify",
     };
+  }
+
+  /**
+   * Длинный разговор — дальше ведёт человек.
+   *
+   * Продавец 23.09: «в длинных разговорах всегда есть вероятность, что бот
+   * скажет что-то не то или даст нереально низкую или высокую цену». Так и
+   * было: к десятому сообщению бот перепутал тенге с рублями, посоветовал как
+   * «намного бюджетнее» коврики дороже исходного и назвал страну марки, которой
+   * в списке продавца нет.
+   *
+   * По журналу 19–22.09: 31 диалог из 44 укладывается в два ответа бота, 41 —
+   * в семь. Дальше идут единицы — либо покупатель, которому нужен человек,
+   * либо разговор ни о чём. Обоим лучше менеджер: первого он закроет, второй
+   * ему ничего не стоит проигнорировать.
+   */
+  if ((state.bot_turns ?? 0) >= LONG_DIALOGUE_TURNS) {
+    void track(ctx.userKey, "handoff", text, bucket);
+    return handoffReply(pack, state, bucket, "long_dialogue", text, ctx.userKey, LONG_DIALOGUE_REPLY);
   }
 
   const canClaude = Boolean(consultantApiKey());
@@ -946,14 +1017,14 @@ export async function decideConsultantReply(
         const names = storyProducts.map((p) => `«${p.name}»`).join(", ");
 
         claudeText = `[КОНТЕКСТ INSTAGRAM: Клиент ответил на Story или Reel (ID: ${storyTag?.story_id || ctx.storyId}).
-В этой публикации представлен${many ? "ы товары" : " товар"} нашего бренда BOVI:
+В этой публикации ${many ? "товары" : "товар"} из нашего магазина:
 ${list}
 Запрос клиента: "${userPrompt}".
 ИНСТРУКЦИИ ДЛЯ ОТВЕТА:
-1. Подтвердите, что в публикации ${many ? `представлены ${storyProducts.length} позиции: ${names}` : `представлен товар ${names}`}.
-2. Назовите актуальную цену ${many ? "по каждой позиции" : "товара"} и подтвердите наличие.
-3. Опишите качество и характеристики (натуральные премиальные материалы, фирменный стандарт BOVI).
-4. ${many ? "Спросите, какая из позиций интересует, либо предложите комплект целиком." : "Задайте вопрос по размеру или расцветке, либо предложите оформить заказ."}
+1. Сначала ответьте ровно на вопрос клиента. Спросил о размере, цвете или товаре, которого среди позиций нет, — так и скажите одной фразой.
+2. Назовите ${many ? "позиции" : "товар"} с ценой и наличием — списком, без описаний.
+3. Качество, материалы, бренд и стандарты НЕ описывайте, если о них не спросили. Общую сумму «если взять всё вместе» не считайте, если о наборе не спросили.
+4. Закончите одним коротким вопросом: ${many ? "какая позиция интересует" : "какой размер или цвет интересует"}.
 5. Страну НЕ спрашивайте: человек написал из публикации и ждёт цену, а не анкету. Цены дайте в тенге.${
           country === "RU"
             ? " Клиент уже назвал Россию — тогда цены сразу в рублях."
@@ -1012,7 +1083,7 @@ ${list}
         userKey: ctx.userKey,
       });
       if (ai.usage) {
-        void import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!));
+        void keep(import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!)));
         ctx.onUsage?.(ai.usage, consultantModel());
       }
       if (ai.error) {
@@ -1087,6 +1158,22 @@ ${list}
         const rublePrices = country === "RU" && rateRow?.rate
           ? allKnownProducts.map((p) => priceRub(p.price_kzt, rateRow.rate))
           : [];
+        // Тенговое число со знаком рубля: «пледы от 140 000 до 320 000 ₽» при
+        // точных ценах в прайсе 140 000 и 320 000 ₸. Пересчитываем по той же
+        // формуле, что и весь прайс, — без догадок, только точные совпадения.
+        if (rateRow?.rate) {
+          const fixed = fixRubleMislabels(
+            cleanAiText,
+            allKnownProducts.map((p) => p.price_kzt),
+            (kzt) => priceRub(kzt, rateRow.rate),
+          );
+          if (fixed !== cleanAiText) {
+            console.warn("[consultant] тенге со знаком рубля — пересчитано", {
+              before: cleanAiText.slice(0, 300),
+            });
+            cleanAiText = fixed;
+          }
+        }
         const check = validateConsultantReply(cleanAiText, allKnownProducts, [...ai.extraNumbers, ...rublePrices]);
         if (!check.ok) {
           console.warn("[consultant] Claude reply validator note:", check.reason, {
@@ -1734,7 +1821,8 @@ async function handoffReply(
     | "photo_sent"
     | "voice"
     | "question"
-    | "wholesale",
+    | "wholesale"
+    | "long_dialogue",
   text: string,
   userKey?: string,
   message?: string,
@@ -1799,5 +1887,5 @@ async function track(
   bucket: string,
 ) {
   if (!userKey) return;
-  await recordConsultantEvent({ userKey, kind, text, bucket }).catch(() => {});
+  await keep(recordConsultantEvent({ userKey, kind, text, bucket }).catch(() => {}));
 }

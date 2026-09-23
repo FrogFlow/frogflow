@@ -20,6 +20,11 @@ export type ConsultantState = {
    * как только страну назвали словом или кнопкой, отметка снимается.
    */
   country_assumed?: boolean;
+  /**
+   * Сколько раз бот ответил с последнего сброса или передачи менеджеру. По
+   * нему длинный разговор уходит человеку — см. LONG_DIALOGUE_TURNS.
+   */
+  bot_turns?: number;
   automation_paused?: boolean;
   pause_reason?: PauseReason;
   conversation_state?: ConsultantConversationState;
