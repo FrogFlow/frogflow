@@ -95,6 +95,7 @@ import {
   cleanEmptyPraise,
   cleanRateExcuses,
   fixRubleMislabels,
+  withManagerHandoff,
   cleanNotUnderstoodApology,
   collapseManagerPromises,
   cleanDemoMentions,
@@ -1086,7 +1087,11 @@ ${list}
         void keep(import("@/lib/ai-usage.server").then((m) => m.recordConsultantLifetime(ai.usage!)));
         ctx.onUsage?.(ai.usage, consultantModel());
       }
-      if (ai.error) {
+      // Модель попросила менеджера — просьбу выполняем, даже если следующий
+      // шаг модели сорвался: задачу раньше заводил сам инструмент, теперь её
+      // заводит только передача ниже, и терять её на ошибке нельзя.
+      const askedManager = ai.handoff && ai.handoffData?.reason === "question";
+      if (ai.error && !askedManager) {
         // Any AI error (API 500/529, timeout, network error, no key) -> fall through to local catalog without triggering handoff!
         console.warn("[consultant] Claude error, falling back to local catalog:", ai.error);
       } else if (ai.handoff && ai.handoffData?.reason === "question") {
@@ -1094,6 +1099,9 @@ ${list}
         // спрашиваем: это не оформление заказа, а переданный вопрос, и
         // отвечать на него будут в том же чате.
         void track(ctx.userKey, "handoff", text, bucket);
+        const own = ai.error
+          ? ""
+          : cleanScriptHallucinations(cleanForbiddenPhrases(stripMarkdownFormatting(ai.text)));
         return handoffReply(
           pack,
           { ...state, ...countryPatch },
@@ -1101,7 +1109,10 @@ ${list}
           "question",
           text,
           ctx.userKey,
-          HANDOFF_TO_MANAGER_REPLY,
+          withManagerHandoff(own, HANDOFF_TO_MANAGER_REPLY),
+          undefined,
+          effectiveCatalog,
+          ai.handoffData?.question,
         );
       } else if (ai.handoff) {
         void track(ctx.userKey, "handoff", text, bucket);
@@ -1788,20 +1799,14 @@ async function knowledgeForQuestion(
   const query = (text ?? "").trim();
   if (!query) return "";
   try {
-    const {
-      loadConsultantKnowledge,
-      knowledgeFitsInPrompt,
-      searchKnowledgeScored,
-      formatKnowledgeForPrompt,
-      catalogKeySet,
-    } = await import("./knowledge");
+    const { loadConsultantKnowledge, knowledgeFitsInPrompt, formatKnowledgeForPrompt, pickArticleForQuestion } =
+      await import("./knowledge");
     const articles = await loadConsultantKnowledge();
     // Маленькая база и так едет в промпт целиком — дублировать незачем.
     if (articles.length === 0 || knowledgeFitsInPrompt(articles)) return "";
-    const [best] = searchKnowledgeScored(query, articles, 1, catalogKeySet(catalog));
-    if (!best || best.score < KNOWLEDGE_ATTACH_MIN_SCORE) return "";
-    if (best.article.content.length > KNOWLEDGE_ATTACH_MAX_CHARS) return "";
-    return formatKnowledgeForPrompt([best.article]);
+    const article = pickArticleForQuestion(query, articles, catalog, KNOWLEDGE_ATTACH_MIN_SCORE);
+    if (!article || article.content.length > KNOWLEDGE_ATTACH_MAX_CHARS) return "";
+    return formatKnowledgeForPrompt([article]);
   } catch (err) {
     console.warn("[consultant] не удалось подложить статью базы знаний", err);
     return "";
@@ -1828,6 +1833,8 @@ async function handoffReply(
   message?: string,
   customerContact?: string,
   catalog?: import("./catalog").ConsultantProduct[],
+  /** Суть вопроса словами модели — строкой к словам покупателя. */
+  note?: string,
 ): Promise<ConsultantReply> {
   const pauseReason =
     reason === "purchase" ? "purchase" : reason === "error" ? "error" : "other";
@@ -1839,13 +1846,20 @@ async function handoffReply(
       : resolveHandoffProductIds(state, text, catalog);
   if (userKey) {
     await pauseConsultant(userKey, pauseReason === "purchase" ? "purchase" : pauseReason).catch(() => {});
-    await addConsultantTask({ userKey, reason, text, contact }).catch(() => {});
+    // Слова покупателя — первыми: по ним менеджер понимает, о чём речь. Суть,
+    // если её сформулировала модель, — строкой ниже.
+    const taskText = note && note.trim() && note.trim() !== text.trim() ? `${text}\n\nСуть: ${note.trim()}` : text;
+    const task = await addConsultantTask({ userKey, reason, text: taskText, contact }).catch(() => null);
     await notifyConsultantHandoff({
       userKey,
       reason,
-      text,
+      text: taskText,
       customerContact: contact,
       lastProducts: reason === "purchase" ? resolvedProducts.slice(0, 1) : resolvedProducts.slice(0, 3),
+      // Ответ менеджера на это уведомление уйдёт покупателю в тот же чат. Раньше
+      // так работали только вопросы, заведённые инструментом, — теперь любая
+      // передача, кроме подозрительных запросов.
+      ...(reason === "injection" ? {} : { replyTo: { userKey, taskId: task?.id } }),
     }).catch(() => {});
   }
   const isOffHours = isOffHoursInAlmaty();

@@ -290,6 +290,8 @@ export type ClaudeTurnResult = {
   handoff: boolean;
   handoffData?: {
     reason?: string;
+    /** Вопрос для менеджера так, как его сформулировала модель в ask_manager. */
+    question?: string;
     customer_phone?: string;
     delivery_city?: string;
     order_summary?: string;
@@ -561,6 +563,7 @@ export async function runConsultantClaude(params: {
         handoff = true;
         const resObj = executed.result as {
           reason?: string;
+          question?: string;
           customer_phone?: string;
           delivery_city?: string;
           order_summary?: string;
@@ -568,6 +571,7 @@ export async function runConsultantClaude(params: {
         if (resObj) {
           handoffData = {
             reason: resObj.reason,
+            question: resObj.question,
             customer_phone: resObj.customer_phone,
             delivery_city: resObj.delivery_city,
             order_summary: resObj.order_summary,

@@ -657,6 +657,27 @@ export function fixRubleMislabels(
     .replace(RUB_SINGLE_RE, (_m, n: string, gap: string, sign: string) => `${convert(n)}${gap}${sign}`);
 }
 
+/**
+ * Ответ модели плюс строка о передаче менеджеру.
+ *
+ * Живой тест 23.09: «Риволта это бренд какой страны? И расскажите о
+ * качестве». Страна есть в списке марок продавца (rivolta — италия), а про
+ * технологии производства модель решила спросить менеджера. Ветка передачи
+ * выбросила всё, что модель написала, и отправила одну дежурную фразу — на
+ * вопрос «какой страны» покупатель не получил ничего, хотя ответ был.
+ *
+ * Правило продавца для этого случая уже есть (правка №4): можно ответить на
+ * то, что известно, и сказать, что остальное пришлёт менеджер. Поэтому текст
+ * модели сохраняется, а дежурная фраза добавляется, только если модель сама
+ * не пообещала менеджера. Пустой ответ — одна дежурная фраза, как раньше.
+ */
+export function withManagerHandoff(own: string, handoffLine: string): string {
+  const text = (own ?? "").trim();
+  if (!text) return handoffLine;
+  if (HANDOFF_SENTENCE_RE.test(text) || promisesManagerFollowUp(text)) return text;
+  return `${text}\n\n${handoffLine}`;
+}
+
 export function replyUsesUnknownProductName(_text: string, _products: ConsultantProduct[]): boolean {
   return false;
 }

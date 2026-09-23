@@ -1,5 +1,6 @@
 import { haystackOf } from "./synonyms";
-import { searchTokens } from "./catalog";
+import { searchTokens, type ConsultantProduct } from "./catalog";
+import { brandVocabulary, fixBrandSpelling } from "./style";
 export const KNOWLEDGE_KEY = "consultant_knowledge_json";
 
 export type ConsultantKnowledgeArticle = {
@@ -290,6 +291,89 @@ export function searchKnowledgeScored(
     .filter((x) => x.score > 0)
     .sort((x, y) => y.score - x.score)
     .slice(0, limit);
+}
+
+/**
+ * Статья о марке, про которую спрашивают.
+ *
+ * Подстановка по словам намеренно не считает слова каталога, а название
+ * марки — слово каталога. Поэтому на «Риволта это бренд какой страны? И
+ * расскажите о качестве» (живой тест 23.09) статья не подкладывалась, хотя в
+ * справочнике прямо написано: «Rivolta Carmignani (Италия) — знаменитый
+ * итальянский производитель премиального текстиля, поставляющий продукцию в
+ * лучшие отели класса люкс». Модель в оглавление не полезла и позвала
+ * менеджера.
+ *
+ * Здесь свой отбор: вопрос о свойствах марки (качество, страна, материал,
+ * технология, уход) и сама марка в тексте — тогда берём статью, где эта
+ * марка встречается чаще всего; название статьи весит больше текста.
+ * Кириллическое написание марки («Риволта») к этому моменту уже приведено к
+ * фабричному — см. fixBrandSpelling.
+ */
+const BRAND_ATTRIBUTE_RE =
+  /качеств|стран|производ|произвед|материал|состав|технолог|плотност|уход|стирк|гарант|откуда|ч[её]й\b|чья|бренд|марк[аиуе]|фабрик/i;
+
+/** Марки из списка, названные в тексте (в нижнем регистре). */
+export function brandsInText(text: string, brands: string[]): string[] {
+  const q = (text ?? "").toLowerCase();
+  return brands
+    .map((b) => b.toLowerCase())
+    .filter((b) => b.length >= 4 && new RegExp(`(^|[^a-z])${b}([^a-z]|$)`).test(q));
+}
+
+/** Говорит ли статья хоть об одной из марок. */
+export function articleMentions(article: ConsultantKnowledgeArticle, brands: string[]): boolean {
+  const hay = `${article.title}\n${article.content}`.toLowerCase();
+  return brands.some((b) => hay.includes(b.toLowerCase()));
+}
+
+export function articleAboutBrand(
+  query: string,
+  articles: ConsultantKnowledgeArticle[],
+  brands: string[],
+): ConsultantKnowledgeArticle | null {
+  const q = (query ?? "").toLowerCase();
+  if (!q || !BRAND_ATTRIBUTE_RE.test(q)) return null;
+  const asked = brandsInText(q, brands);
+  if (asked.length === 0) return null;
+  let best: { article: ConsultantKnowledgeArticle; score: number } | null = null;
+  for (const a of articles) {
+    const title = a.title.toLowerCase();
+    const body = a.content.toLowerCase();
+    let score = 0;
+    for (const b of asked) {
+      if (title.includes(b)) score += 3;
+      score += body.split(b).length - 1;
+    }
+    if (score > 0 && (!best || score > best.score)) best = { article: a, score };
+  }
+  return best?.article ?? null;
+}
+
+/**
+ * Какую статью подложить к вопросу покупателя — или никакую.
+ *
+ * Два отбора. По словам: слово вопроса, которого нет в каталоге, попадает в
+ * название статьи (плотность, уход, стирка). По марке: вопрос о свойствах
+ * марки, названной в тексте, в том числе кириллицей. Статья, найденная по
+ * словам, побеждает только если говорит о названной марке — иначе на вопрос
+ * о Rivolta приезжала статья о бренде BOVI с Португалией и Турцией.
+ */
+export function pickArticleForQuestion(
+  query: string,
+  articles: ConsultantKnowledgeArticle[],
+  catalog: ConsultantProduct[],
+  minScore = 3,
+): ConsultantKnowledgeArticle | null {
+  const [best] = searchKnowledgeScored(query, articles, 1, catalogKeySet(catalog));
+  let article = best && best.score >= minScore ? best.article : null;
+  const brands = brandVocabulary(catalog);
+  const fixed = fixBrandSpelling(query, brands);
+  const asked = brandsInText(fixed, brands);
+  if (asked.length > 0 && (!article || !articleMentions(article, asked))) {
+    article = articleAboutBrand(fixed, articles, brands);
+  }
+  return article;
 }
 
 /** Словарь каталога: по четыре первых буквы слов из названий и категорий. */

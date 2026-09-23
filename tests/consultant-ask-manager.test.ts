@@ -32,7 +32,13 @@ describe("вопрос, на который нет ответа", () => {
     expect(names).toContain("handoff_to_manager");
   });
 
-  it("записывает вопрос менеджеру и передаёт ему диалог", async () => {
+  /**
+   * Задачу теперь заводит передача диалога (handoffReply), а не инструмент.
+   * Раньше заводили оба, и на один вопрос менеджер получал два уведомления:
+   * живой тест 23.09, «Риволта это бренд какой страны?». Инструмент только
+   * передаёт суть вопроса дальше — она ложится в ту же единственную задачу.
+   */
+  it("передаёт диалог менеджеру и суть вопроса — без второй задачи", async () => {
     const res = await executeConsultantTool(
       "ask_manager",
       { question: "В чём отличие TRESOR R3 от LEVANT R4?" },
@@ -47,20 +53,18 @@ describe("вопрос, на который нет ответа", () => {
      * подхватит человек».
      */
     expect(res.handoff).toBe(true);
-    expect(res.result).toEqual({ queued: true, paused: true, reason: "question" });
-
-    const tasks = queuedTasks();
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0]).toMatchObject({
+    expect(res.result).toEqual({
+      queued: true,
+      paused: true,
       reason: "question",
-      userKey: "ig:lyudmila",
-      text: "В чём отличие TRESOR R3 от LEVANT R4?",
+      question: "В чём отличие TRESOR R3 от LEVANT R4?",
     });
+    expect(queuedTasks()).toHaveLength(0);
   });
 
   it("пустой вопрос не засоряет очередь менеджера", async () => {
     const res = await executeConsultantTool("ask_manager", { question: "   " }, { userKey: "ig:x" });
-    expect(res.result).toEqual({ queued: false, paused: true, reason: "question" });
+    expect(res.result).toEqual({ queued: false, paused: true, reason: "question", question: "" });
     // Пустой вопрос в очередь не попадает, но диалог всё равно уходит
     // человеку: модель уже решила, что сама не ответит.
     expect(queuedTasks()).toHaveLength(0);

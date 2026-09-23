@@ -406,22 +406,21 @@ export async function executeConsultantTool(
 
   if (name === "ask_manager") {
     const question = typeof input.question === "string" ? input.question.trim() : "";
-    if (question) {
-      const { fileConsultantQuestion } = await import("./tasks");
-      await fileConsultantQuestion({
-        userKey: ctx.userKey || "unknown",
-        question,
-      }).catch((err: unknown) => {
-        // Вопрос не записался — это повод показать ошибку в логах, но не
-        // повод замолчать в диалоге: клиенту всё равно отвечаем честно.
-        console.warn("[consultant] ask_manager: не удалось записать вопрос", err);
-      });
-    }
+    /**
+     * Задачу здесь не заводим — её заводит передача диалога в handle-message.
+     *
+     * Раньше заводили оба места, и на один вопрос менеджер получал два
+     * уведомления подряд: 23.09 на «Риволта это бренд какой страны? И
+     * расскажите о качестве» пришли «Какое качество полотенец Rivolta
+     * IMPERIALE…» (пересказ модели) и следом сам вопрос покупателя. Пересказ
+     * модели не теряется: он едет дальше в поле question и попадает в ту же
+     * единственную задачу строкой «Суть».
+     */
     // Диалог уходит человеку и бот замолкает. Раньше он продолжал разговор и
     // спрашивал «чем ещё помочь» — продавец попросил так не делать: вопрос
     // передан, дальше отвечает менеджер.
     return {
-      result: { queued: Boolean(question), paused: true, reason: "question" },
+      result: { queued: Boolean(question), paused: true, reason: "question", question },
       products: [],
       handoff: true,
     };
