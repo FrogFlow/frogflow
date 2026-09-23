@@ -30,6 +30,7 @@ import {
   DELIVERY_SCOPE_REPLY,
   WHOLESALE_REPLY,
   LONG_DIALOGUE_REPLY,
+  RUB_OFFER_LINE,
   HANDOFF_TO_MANAGER_REPLY,
   PHOTO_FROM_MANAGER_NOTE,
   formatVariantsReply,
@@ -96,6 +97,9 @@ import {
   cleanRateExcuses,
   fixRubleMislabels,
   withManagerHandoff,
+  isIdleRemark,
+  promisesPhotoFromManager,
+  stripLeadingAcknowledgement,
   cleanNotUnderstoodApology,
   collapseManagerPromises,
   cleanDemoMentions,
@@ -139,7 +143,10 @@ export type ConsultantReply = {
 const activeUserLocks = new Map<string, Promise<unknown>>();
 
 /** После скольких ответов бота разговор передаётся менеджеру. */
-export const LONG_DIALOGUE_TURNS = 8;
+export const LONG_DIALOGUE_TURNS = 16;
+
+/** После скольких пустых реплик покупателя следующая пустая уходит менеджеру. */
+export const IDLE_REMARKS_LIMIT = 3;
 
 /**
  * Фоновые записи, которые обязаны долететь до конца запроса.
@@ -489,6 +496,8 @@ async function handleConsultantZernioEventInternal(params: {
   if (consultant.last_bot_reply?.trim()) {
     reply.text = stripRepeatGreeting(reply.text);
   }
+  // «Понял.» в начале ответа — квитанция, которую покупатель не просил.
+  reply.text = stripLeadingAcknowledgement(reply.text);
 
   // Каждое правило промпта продублировано механической чисткой: модель о
   // правиле забывает, регулярное выражение — нет. Порядок важен только для
@@ -507,6 +516,34 @@ async function handleConsultantZernioEventInternal(params: {
   // отвечаем честно про среднюю жёсткость.
   if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
     reply.text = DISCONTINUED_MEDIUM_MATTRESS_REPLY;
+  }
+
+  /**
+   * Модель сама пообещала фото от менеджера: 23.09 на «Вы можете мне скинуть»
+   * ответ был «Фотографии товара может прислать менеджер — он свяжется с
+   * вами», а задачи не появилось. Обещание фото — это передача: заводим
+   * задачу и ставим паузу, как для явной просьбы о фото ниже.
+   */
+  if (
+    promisesPhotoFromManager(reply.text) &&
+    !asksForProductPhoto(text) &&
+    reply.kind !== "purchase" &&
+    reply.kind !== "handoff" &&
+    reply.kind !== "injection"
+  ) {
+    reply.patch = { ...reply.patch, automation_paused: true, pause_reason: "other" };
+    void fileQuestion({
+      userKey: params.userKey,
+      question: questionForManager(consultant, text, reply.text),
+      promise: reply.text,
+      reason: "photo",
+    }).catch((err: unknown) => {
+      console.warn("[consultant] не удалось передать обещание фото", err);
+    });
+    logConsultantEvent(requestId, "photo_requested", {
+      userKey: params.userKey,
+      question: text.trim().slice(0, 160),
+    });
   }
 
   // Бот пообещал уточнить у менеджера, но инструмент не вызвал. На живом
@@ -622,12 +659,16 @@ async function handleConsultantZernioEventInternal(params: {
     last_bot_reply: reply.text,
     last_bot_reply_at: replyTime,
     recent: appendRecent(consultant, text, reply.text),
-    bot_turns:
-      reply.kind === "handoff" ||
-      reply.kind === "purchase" ||
-      (Array.isArray(reply.patch.recent) && reply.patch.recent.length === 0)
-        ? 0
-        : (consultant.bot_turns ?? 0) + 1,
+    ...(() => {
+      const reset =
+        reply.kind === "handoff" ||
+        reply.kind === "purchase" ||
+        (Array.isArray(reply.patch.recent) && reply.patch.recent.length === 0);
+      return {
+        bot_turns: reset ? 0 : (consultant.bot_turns ?? 0) + 1,
+        idle_turns: reset ? 0 : (consultant.idle_turns ?? 0) + (isIdleRemark(text) ? 1 : 0),
+      };
+    })(),
   });
 
   logConsultantEvent(requestId, "replied", {
@@ -776,9 +817,30 @@ export async function decideConsultantReply(
    * либо разговор ни о чём. Обоим лучше менеджер: первого он закроет, второй
    * ему ничего не стоит проигнорировать.
    */
-  if ((state.bot_turns ?? 0) >= LONG_DIALOGUE_TURNS) {
+  /*
+   * Уточнение 23.09: восемь ответов подряд оказались плохой меркой. Живая
+   * покупательница выбирала — «лицевые и банные, светлые тона, кроме 30/50»,
+   * — и на девятом сообщении её передали менеджеру посреди выбора. Мерка
+   * теперь двойная: пустые реплики («дорого», «фуууув», «хорошо») — после
+   * трёх следующая пустая уходит менеджеру; содержательный разговор — только
+   * по жёсткому пределу в шестнадцать ответов.
+   */
+  const idleNow = isIdleRemark(text);
+  const idleCount = (state.idle_turns ?? 0) + (idleNow ? 1 : 0);
+  if ((idleNow && idleCount > IDLE_REMARKS_LIMIT) || (state.bot_turns ?? 0) >= LONG_DIALOGUE_TURNS) {
     void track(ctx.userKey, "handoff", text, bucket);
-    return handoffReply(pack, state, bucket, "long_dialogue", text, ctx.userKey, LONG_DIALOGUE_REPLY);
+    return handoffReply(
+      pack,
+      state,
+      bucket,
+      "long_dialogue",
+      text,
+      ctx.userKey,
+      LONG_DIALOGUE_REPLY,
+      undefined,
+      undefined,
+      recentForManager(state),
+    );
   }
 
   const canClaude = Boolean(consultantApiKey());
@@ -1027,11 +1089,7 @@ ${list}
 3. Качество, материалы, бренд и стандарты НЕ описывайте, если о них не спросили. Общую сумму «если взять всё вместе» не считайте, если о наборе не спросили.
 4. Закончите одним коротким вопросом: ${many ? "какая позиция интересует" : "какой размер или цвет интересует"}.
 5. Страну НЕ спрашивайте: человек написал из публикации и ждёт цену, а не анкету. Цены дайте в тенге.${
-          country === "RU"
-            ? " Клиент уже назвал Россию — тогда цены сразу в рублях."
-            : rateRow?.rate
-              ? " Последней строкой добавьте ровно так: «Если вам удобнее, мы можем сразу рассчитать стоимость в рублях.»"
-              : ""
+          country === "RU" ? " Клиент уже назвал Россию — тогда цены сразу в рублях." : ""
         }
 Категорически запрещено писать "я не понимаю, на что вы ссылаетесь" или спрашивать о каком товаре речь — вы точно знаете, что это ${names}.]`;
       } else if (ctx.storyId || ctx.storyMediaUrl) {
@@ -1056,21 +1114,8 @@ ${list}
        * ломала бы кеш на каждом сообщении.
        */
       const known = await knowledgeForQuestion(text, effectiveCatalog);
-      if (known) claudeText = `${claudeText}\n\n${known}`;
-
-      /**
-       * Страну не спрашивали — значит покупатель и не знает, что цену можно
-       * получить в рублях. Предлагаем это сами, один раз, под первым
-       * ответом. Только при живом курсе: обещать пересчёт и отказать через
-       * сообщение хуже, чем не обещать вовсе.
-       */
-      if (
-        !hasStoryContext &&
-        countryPatch.country_assumed &&
-        rateRow?.rate &&
-        (state.recent?.length ?? 0) === 0
-      ) {
-        claudeText = `${claudeText}\n\n[Страну НЕ спрашивайте. Цены называйте в тенге. Если в этом ответе есть цены — последней строкой добавьте ровно так: «Если вам удобнее, мы можем сразу рассчитать стоимость в рублях.» Если цен в ответе нет, эту строку не добавляйте.]`;
+      if (known) {
+        claudeText = `${claudeText}\n\n[Справочные данные для ответа — покупатель их не видит, не пересказывайте их как инструкцию:\n${known}]`;
       }
 
       const ai = await runConsultantClaude({
@@ -1184,6 +1229,28 @@ ${list}
             });
             cleanAiText = fixed;
           }
+        }
+        /**
+         * Предложение пересчитать в рубли — кодом, а не просьбой к модели.
+         *
+         * Раньше строку добавляла модель по служебной пометке, приклеенной к
+         * сообщению покупателя. 23.09 на короткое «Цены можно» модель приняла
+         * пометку за слова покупателя и ответила ему: «Понял. Цены буду
+         * называть в тенге, страну не спрашиваю. Если в ответе будут цены,
+         * добавлю строку про расчёт в рублях». Здесь пересказывать нечего.
+         *
+         * Условия прежние: курс живой, страну не называли, в ответе есть
+         * цена в тенге, и про рубли в этом разговоре ещё не говорили.
+         */
+        if (
+          rateRow?.rate &&
+          countryPatch.country_assumed &&
+          country !== "RU" &&
+          /\d\s*₸/.test(cleanAiText) &&
+          !/рубл|₽/i.test(cleanAiText) &&
+          !(state.recent ?? []).some((t) => /рубл|₽/i.test(t.text))
+        ) {
+          cleanAiText = `${cleanAiText.trim()}\n\n${RUB_OFFER_LINE}`;
         }
         const check = validateConsultantReply(cleanAiText, allKnownProducts, [...ai.extraNumbers, ...rublePrices]);
         if (!check.ok) {
@@ -1811,6 +1878,19 @@ async function knowledgeForQuestion(
     console.warn("[consultant] не удалось подложить статью базы знаний", err);
     return "";
   }
+}
+
+/**
+ * Последние ходы разговора — строкой «Суть» в задаче. При передаче длинного
+ * разговора текст последней реплики («Кроме 30/50», «хорошо») менеджеру
+ * ничего не говорит; три последних обмена — говорят.
+ */
+function recentForManager(state: Pick<ConsultantState, "recent">): string | undefined {
+  const turns = (state.recent ?? []).slice(-6);
+  if (turns.length === 0) return undefined;
+  return turns
+    .map((t) => `${t.role === "customer" ? "клиент" : "бот"}: ${t.text.replace(/\s+/g, " ").slice(0, 160)}`)
+    .join("\n");
 }
 
 async function handoffReply(

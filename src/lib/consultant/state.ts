@@ -25,6 +25,8 @@ export type ConsultantState = {
    * нему длинный разговор уходит человеку — см. LONG_DIALOGUE_TURNS.
    */
   bot_turns?: number;
+  /** Сколько пустых реплик («дорого», «фуууув», «хорошо») было с того же момента. */
+  idle_turns?: number;
   automation_paused?: boolean;
   pause_reason?: PauseReason;
   conversation_state?: ConsultantConversationState;
