@@ -84,6 +84,36 @@ function interactiveMetadata(payload: ZernioWebhookMessagePayload) {
   return payload.metadata ?? payload.message?.metadata ?? {};
 }
 
+/**
+ * Вложение — публикация (рилс, пост, сторис), а не файл покупателя.
+ *
+ * Фото, видео и гифки покупатель присылает теми же типами image/video, что и
+ * часть публикаций. Раньше любой такой файл считался публикацией, поиск
+ * привязки по нему ничего не находил и подставлял последнюю отмеченную
+ * публикацию. Живой случай 24.09: двое прислали фото полотенец (Pip Studio,
+ * жаккард) и получили список ковриков Kleen-Tex, отмеченных утром. По логам
+ * BOVI за две недели публикация ни разу не пришла как image: рилсы идут
+ * video со ссылкой instagram.com/reel и reel_video_id, фото покупателей —
+ * image с lookaside.fbsbx.com.
+ */
+export function isPublicationAttachment(
+  type: string,
+  url: string | null | undefined,
+  payload: Record<string, any> = {},
+): boolean {
+  const t = type.toLowerCase();
+  if (t !== "image" && t !== "video") return true;
+  if (typeof url === "string" && /instagram\.com\/(?:reels?|p|stories)\//i.test(url)) return true;
+  return Boolean(
+    payload.reel_video_id ||
+      payload.reelVideoId ||
+      payload.reel_id ||
+      payload.story_id ||
+      payload.story?.id ||
+      payload.reel?.id,
+  );
+}
+
 export function parseZernioMessage(payload: ZernioWebhookMessagePayload): ParsedZernioMessage {
   const message = payload.message ?? {};
   const conversation = payload.conversation ?? {};
@@ -277,14 +307,17 @@ export function parseZernioMessage(payload: ZernioWebhookMessagePayload): Parsed
   if (message.attachments && Array.isArray(message.attachments)) {
     for (const att of message.attachments) {
       const attType = String(att.type || "").toLowerCase();
-      if (RELEVANT_ATTACHMENT_TYPES.has(attType)) {
-        const attPayload = ((att as any).payload ?? {}) as Record<string, any>;
-        const candidateUrl =
-          (typeof att.url === "string" && att.url ? att.url : null) ||
-          (typeof attPayload.url === "string" && attPayload.url ? attPayload.url : null) ||
-          (typeof attPayload.story?.url === "string" && attPayload.story.url ? attPayload.story.url : null) ||
-          (typeof attPayload.reel?.url === "string" && attPayload.reel.url ? attPayload.reel.url : null) ||
-          (typeof attPayload.share?.url === "string" && attPayload.share.url ? attPayload.share.url : null);
+      const attPayload = ((att as any).payload ?? {}) as Record<string, any>;
+      const candidateUrl =
+        (typeof att.url === "string" && att.url ? att.url : null) ||
+        (typeof attPayload.url === "string" && attPayload.url ? attPayload.url : null) ||
+        (typeof attPayload.story?.url === "string" && attPayload.story.url ? attPayload.story.url : null) ||
+        (typeof attPayload.reel?.url === "string" && attPayload.reel.url ? attPayload.reel.url : null) ||
+        (typeof attPayload.share?.url === "string" && attPayload.share.url ? attPayload.share.url : null);
+      if (
+        RELEVANT_ATTACHMENT_TYPES.has(attType) &&
+        isPublicationAttachment(attType, candidateUrl, attPayload)
+      ) {
         if (!storyMediaUrl && candidateUrl) {
           storyMediaUrl = candidateUrl;
         }

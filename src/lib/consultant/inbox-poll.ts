@@ -1,5 +1,6 @@
 import { USER_KEY_PREFIX } from "@/lib/zernio-platform";
 import { extractInstagramMediaInfo } from "@/lib/instagram-media";
+import { isPublicationAttachment } from "@/lib/zernio-message";
 import { looksLikeConsultantBotReply } from "./copy";
 import { managerPauseExpired } from "./manager-guard";
 import { handleConsultantZernioEvent } from "./handle-message";
@@ -251,7 +252,12 @@ export async function pollIncomingConsultantMessages(): Promise<{
           if (directUrl) storyMediaUrl = String(directUrl);
         }
 
-        const att = m.attachments?.find((a) => POLL_STORY_TYPES.has(String(a.type || "").toLowerCase()));
+        const att = m.attachments?.find((a) => {
+          const type = String(a.type || "").toLowerCase();
+          const p = ((a as any).payload ?? {}) as Record<string, any>;
+          // Фото покупателя — не публикация (см. isPublicationAttachment).
+          return POLL_STORY_TYPES.has(type) && isPublicationAttachment(type, a.url || p.url, p);
+        });
         if (att) {
           const p = ((att as any).payload ?? {}) as Record<string, any>;
           const candidateUrl =

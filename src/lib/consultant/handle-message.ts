@@ -404,6 +404,13 @@ async function handleConsultantZernioEventInternal(params: {
 
   if (!text && !params.postback && !params.storyId && !params.storyMediaUrl) {
     const attachments = params.payload.message?.attachments;
+    // Гифка из стикеров Instagram — реакция вроде смайлика, а не фото товара:
+    // звать на неё менеджера незачем.
+    const onlyStickers =
+      attachments &&
+      attachments.length > 0 &&
+      attachments.every((a) => /giphy\.com/i.test(String(a.url || (a.payload as { url?: string } | undefined)?.url || "")));
+    if (onlyStickers) return;
     if (attachments && attachments.length > 0) {
       const isVoice = attachments.some((a) => a.type === "audio");
       text = isVoice

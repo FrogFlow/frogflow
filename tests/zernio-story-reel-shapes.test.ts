@@ -84,11 +84,27 @@ describe("ответ на рилс", () => {
         attachments: [{ type: "image", url: "https://lookaside.fbsbx.com/some-photo.jpg", payload: {} }],
       },
     } as never);
-    // Привязку к товару по такому вложению не найти — идентификатора нет.
-    // Ссылка при этом в storyMediaUrl попадает: так было и раньше, и на
-    // поиск привязки это не влияет, findStoryTag по ней ничего не найдёт.
+    // Фото покупателя — не публикация. Раньше ссылка попадала в
+    // storyMediaUrl, поиск привязки ничего не находил и подставлял последнюю
+    // отмеченную публикацию (24.09: коврики Kleen-Tex на фото полотенец).
     expect(parsed.storyId).toBeNull();
-    expect(parsed.storyMediaUrl).not.toContain("instagram.com/reel");
+    expect(parsed.storyMediaUrl).toBeNull();
+  });
+
+  it("живое событие 24.09: фото из директа (lookaside, asset_id) — не публикация", () => {
+    const url =
+      "https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=919539860941147&signature=Ab1QUikU";
+    const parsed = parseZernioMessage({
+      ...base,
+      message: {
+        id: "m5",
+        text: null,
+        sender: { id: "u5" },
+        attachments: [{ type: "image", url, payload: { url } }],
+      },
+    } as never);
+    expect(parsed.storyId).toBeNull();
+    expect(parsed.storyMediaUrl).toBeNull();
   });
 });
 
