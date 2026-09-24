@@ -7,6 +7,13 @@ import {
   explainInstagramPrivateReplyError,
   stalePendingAction,
   fallbackRecordStatus,
+  logCoverage,
+  commentCoveredByLogs,
+  logsReachBack,
+  commentIdsHandledByZernio,
+  commenterIdsOf,
+  isPrivateReplyAlreadySent,
+  LOG_LAG_MS,
   FALLBACK_MIN_AGE_MS,
   FALLBACK_MAX_AGE_MS,
   STALE_PENDING_MS,
@@ -247,5 +254,71 @@ describe("fallbackRecordStatus", () => {
     expect(fallbackRecordStatus(true, "skipped")).toBe("sent");
     expect(fallbackRecordStatus(false, "failed")).toBe("failed");
     expect(fallbackRecordStatus(false, "skipped")).toBe("failed");
+  });
+});
+
+describe("logCoverage / commentCoveredByLogs", () => {
+  const hour = 60 * 60 * 1000;
+  const now = Date.parse("2026-09-24T12:00:00Z");
+  const at = (hoursAgo: number) => new Date(now - hoursAgo * hour).toISOString();
+
+  it("прочитаны все логи — отвечаем за любой комментарий", () => {
+    const coverage = logCoverage([{ createdAt: at(1) }], true);
+    expect(commentCoveredByLogs(at(150), coverage)).toBe(true);
+  });
+
+  it("живой случай: 200 логов за последние сутки — комментарий трёхдневной давности не наш", () => {
+    const logs = Array.from({ length: 200 }, (_, i) => ({ createdAt: at(i * 0.1) }));
+    const coverage = logCoverage(logs, false);
+    expect(commentCoveredByLogs(at(72), coverage)).toBe(false);
+    expect(commentCoveredByLogs(at(5), coverage)).toBe(true);
+    // Свежий комментарий, на который Zernio так и не ответил, — ради него крон и есть.
+    expect(commentCoveredByLogs(at(0.5), coverage)).toBe(true);
+  });
+
+  it("старые сверху: про всё новее последней прочитанной записи не знаем", () => {
+    const logs = [{ createdAt: at(100) }, { createdAt: at(90) }, { createdAt: at(80) }];
+    const coverage = logCoverage(logs, false);
+    expect(commentCoveredByLogs(at(95), coverage)).toBe(true);
+    expect(commentCoveredByLogs(at(10), coverage)).toBe(false);
+    expect(coverage?.to).toBe(Date.parse(at(80)) - LOG_LAG_MS);
+  });
+
+  it("без разбираемых дат не отвечаем ни за один комментарий", () => {
+    expect(logCoverage([{ createdAt: "вчера" }], false)).toBeNull();
+    expect(commentCoveredByLogs(at(1), null)).toBe(false);
+  });
+
+  it("logsReachBack — есть запись не новее границы", () => {
+    const logs = [{ createdAt: at(1) }, { createdAt: at(200) }];
+    expect(logsReachBack(logs, now - 156 * hour)).toBe(true);
+    expect(logsReachBack([{ createdAt: at(1) }], now - 156 * hour)).toBe(false);
+  });
+});
+
+describe("commentIdsHandledByZernio / commenterIdsOf", () => {
+  it("sent и skipped — обработано Zernio, failed — нет", () => {
+    const ids = commentIdsHandledByZernio([
+      { status: "sent", commentId: "a" },
+      { status: "skipped", commentId: "b" },
+      { status: "failed", commentId: "c" },
+    ]);
+    expect([...ids].sort()).toEqual(["a", "b"]);
+  });
+
+  it("авторы обработанных комментариев", () => {
+    const comments = [
+      { id: "a", from: { id: "u1" } },
+      { id: "b", from: { id: "u2" } },
+    ];
+    expect([...commenterIdsOf(comments, new Set(["a"]))]).toEqual(["u1"]);
+  });
+});
+
+describe("isPrivateReplyAlreadySent", () => {
+  it("отказ Meta «уже отвечали» узнаём по коду и по тексту", () => {
+    expect(isPrivateReplyAlreadySent("(#10) ... error_subcode 2534023")).toBe(true);
+    expect(isPrivateReplyAlreadySent("You have already sent a private reply")).toBe(true);
+    expect(isPrivateReplyAlreadySent("2534066 comment id is valid")).toBe(false);
   });
 });

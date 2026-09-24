@@ -87,6 +87,119 @@ export function fallbackRecordStatus(
 }
 
 /**
+ * Логи правила читаем страницами по 200, не больше пяти страниц за проход.
+ *
+ * Раньше крон брал одну страницу из 200 логов и сверял с ней ВСЕ комментарии
+ * поста за 6,5 дня. На ходовом рилсе 200 срабатываний набирается за сутки-двое:
+ * всё, что старше, выглядело «пропущенным». Private-reply на такой комментарий
+ * Meta отклоняет (Zernio уже ответил), и крон уходил в альт-канал — обычным
+ * сообщением в открытый диалог. Открытый диалог есть ровно у тех, кто уже
+ * получил материалы и оплатил, — им то же сообщение и приходило повторно
+ * (живой случай, сент. 2026: ~3 000 попыток за три недели на одном аккаунте,
+ * почти все — по одному рилсу).
+ */
+export const LOG_PAGE_SIZE = 200;
+export const LOG_MAX_PAGES = 5;
+
+/** Запас на задержку между комментарием и записью о нём в логах Zernio. */
+export const LOG_LAG_MS = 10 * 60 * 1000;
+
+export type LogCoverage = { from: number; to: number };
+
+/**
+ * За комментарии какого времени прочитанные логи отвечают: «Zernio его видел»
+ * или «не видел». complete — прочитаны все логи правила (последняя страница
+ * неполная), тогда за любой. Иначе окно ограничено прочитанным. Порядок выдачи
+ * у Zernio не документирован, поэтому определяем его по самим записям. Без
+ * разбираемых дат не отвечаем ни за один комментарий — null.
+ */
+export function logCoverage(
+  logs: ReadonlyArray<{ createdAt?: unknown }>,
+  complete: boolean,
+): LogCoverage | null {
+  if (complete) return { from: -Infinity, to: Infinity };
+  const times = logs.map((row) => Date.parse(String(row.createdAt ?? "")));
+  if (times.length === 0 || times.some((t) => Number.isNaN(t))) return null;
+  const first = times[0];
+  const last = times[times.length - 1];
+  // Новые сверху: прочитано всё от самой старой записи до сегодня.
+  if (first >= last) return { from: Math.min(...times), to: Infinity };
+  // Старые сверху: прочитано начало истории, про всё новее — ничего не известно.
+  return { from: first, to: last - LOG_LAG_MS };
+}
+
+export function commentCoveredByLogs(
+  createdTimeIso: string,
+  coverage: LogCoverage | null,
+): boolean {
+  if (!coverage) return false;
+  const created = Date.parse(createdTimeIso);
+  if (Number.isNaN(created)) return false;
+  return created >= coverage.from && created <= coverage.to;
+}
+
+/** Дошли ли логи до записи старше cutoff — дальше листать незачем. */
+export function logsReachBack(
+  logs: ReadonlyArray<{ createdAt?: unknown }>,
+  cutoffMs: number,
+): boolean {
+  return logs.some((row) => {
+    const t = Date.parse(String(row.createdAt ?? ""));
+    return !Number.isNaN(t) && t <= cutoffMs;
+  });
+}
+
+/**
+ * Комментарии, которые Zernio уже обработал. skipped — Zernio видел комментарий
+ * и сознательно не писал (например, этому человеку правило уже отвечало):
+ * слать за него — ровно тот повтор, от которого правило себя защищает.
+ * failed — пытался и не смог: это и есть работа резервного пути.
+ */
+export function commentIdsHandledByZernio(
+  logs: ReadonlyArray<{ status?: unknown; commentId?: unknown }>,
+): Set<string> {
+  return new Set(
+    logs
+      .filter((row) => {
+        const status = String(row.status ?? "");
+        return status === "sent" || status === "skipped";
+      })
+      .map((row) => String(row.commentId ?? ""))
+      .filter(Boolean),
+  );
+}
+
+/**
+ * Авторы, которым по этому посту уже писали. Человек, оставивший кодовое слово
+ * дважды, получает сообщение один раз: второй комментарий Zernio пропускает,
+ * и резервный путь не должен его «догонять».
+ */
+export function commenterIdsOf(
+  comments: ReadonlyArray<{ id?: string; from?: { id?: string } }>,
+  commentIds: ReadonlySet<string>,
+): Set<string> {
+  return new Set(
+    comments
+      .filter((c) => c.id && commentIds.has(c.id))
+      .map((c) => c.from?.id ?? "")
+      .filter(Boolean),
+  );
+}
+
+/**
+ * Meta отказала в private-reply, потому что на этот комментарий уже отвечали.
+ * Значит, человек своё сообщение получил — эскалировать в директ нельзя.
+ */
+export function isPrivateReplyAlreadySent(raw: string): boolean {
+  const text = raw.toLowerCase();
+  return (
+    text.includes("2534023") ||
+    text.includes("privatereplyconsumed") ||
+    text.includes("already sent a private reply")
+  );
+}
+
+/**
  * С запасом от документированного 7-дневного окна private-reply у Zernio —
  * дальше этого возраста попытка гарантированно вернёт PLATFORM_LIMITATION,
  * пробовать нет смысла.
@@ -196,11 +309,7 @@ export function explainInstagramPrivateReplyError(raw: string): string {
   if (text.includes("2534025") || text.includes("older than") || /\b7\s*day/.test(text)) {
     return "Instagram не принимает приватный ответ: комментарию больше 7 дней.";
   }
-  if (
-    text.includes("2534023") ||
-    text.includes("privatereplyconsumed") ||
-    text.includes("already sent a private reply")
-  ) {
+  if (isPrivateReplyAlreadySent(raw)) {
     return "На этот комментарий приватный ответ уже уходил — Instagram даёт только один.";
   }
   if (text.includes("1545133")) {

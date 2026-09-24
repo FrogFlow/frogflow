@@ -4,7 +4,16 @@ import {
   commentPrivateReplyBlockReason,
   stalePendingAction,
   fallbackRecordStatus,
+  logCoverage,
+  commentCoveredByLogs,
+  logsReachBack,
+  commentIdsHandledByZernio,
+  commenterIdsOf,
+  FALLBACK_MAX_AGE_MS,
+  LOG_MAX_PAGES,
+  LOG_PAGE_SIZE,
   STALE_PENDING_MS,
+  type LogCoverage,
 } from "./comment-dm-fallback";
 
 /** Потолок правил за один проход крона — по числу их обычно не больше ~20-30 на аккаунт. */
@@ -17,12 +26,35 @@ const MAX_AUTOMATIONS_PER_RUN = 20;
  */
 const MAX_SENDS_PER_RUN = 5;
 
-/** Сколько логов автоматизации проверять на "Zernio уже отправил" — с запасом на обычный объём срабатываний одного правила. */
-const LOG_CHECK_LIMIT = 200;
-
 async function db() {
   const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
   return supabaseAdmin;
+}
+
+/**
+ * Логи правила постранично, пока не дойдём до записей старше окна
+ * private-reply или до потолка страниц. Вместе с логами — за комментарии
+ * какого времени они отвечают (см. logCoverage): комментарий вне этого окна
+ * мы не можем назвать пропущенным и не трогаем.
+ */
+async function readAutomationLogs(
+  automationId: string,
+  now: Date,
+): Promise<{ logs: Record<string, unknown>[]; coverage: LogCoverage | null; error?: string }> {
+  const { getCommentAutomationLogs } = await import("./zernio.server");
+  const logs: Record<string, unknown>[] = [];
+  const cutoff = now.getTime() - FALLBACK_MAX_AGE_MS;
+  for (let page = 0; page < LOG_MAX_PAGES; page++) {
+    const res = await getCommentAutomationLogs(automationId, {
+      limit: LOG_PAGE_SIZE,
+      skip: page * LOG_PAGE_SIZE,
+    });
+    if (res.error) return { logs, coverage: null, error: res.error };
+    logs.push(...res.logs);
+    if (res.logs.length < LOG_PAGE_SIZE) return { logs, coverage: logCoverage(logs, true) };
+    if (logsReachBack(res.logs, cutoff)) break;
+  }
+  return { logs, coverage: logCoverage(logs, false) };
 }
 
 /**
@@ -79,7 +111,6 @@ export async function runCommentDmFallback(): Promise<{
   const {
     listCommentAutomations,
     listInstagramComments,
-    getCommentAutomationLogs,
     sendCommentPrivateReply,
     postCommentReply,
     sendZernioInboxMessage,
@@ -108,10 +139,20 @@ export async function runCommentDmFallback(): Promise<{
     if (!automationId || !postId) continue;
 
     try {
-      const [{ comments }, { logs }] = await Promise.all([
+      const [{ comments }, logRead] = await Promise.all([
         listInstagramComments(postId, automation.accountId),
-        getCommentAutomationLogs(automationId, { limit: LOG_CHECK_LIMIT }),
+        readAutomationLogs(automationId, now),
       ]);
+      if (logRead.error) {
+        // Без логов любой комментарий выглядит пропущенным — это повтор
+        // каждому, кто уже получил сообщение. Лучше пропустить проход.
+        console.warn(`[comment-dm-fallback] логи правила ${automationId} не прочитаны`, logRead.error);
+        continue;
+      }
+      const { logs, coverage } = logRead;
+      const handledByZernio = commentIdsHandledByZernio(logs);
+      // Кому по этому посту уже писали — Zernio или этот проход.
+      const writtenCommenters = commenterIdsOf(comments, handledByZernio);
 
       const sentByZernio = new Set(
         logs
@@ -209,6 +250,7 @@ export async function runCommentDmFallback(): Promise<{
           }
           continue;
         }
+        if (handledByZernio.has(commentId)) continue; // skipped: Zernio видел и сознательно не писал
         if (
           !commentMatchesAutomation(
             comment.message ?? "",
@@ -224,8 +266,30 @@ export async function runCommentDmFallback(): Promise<{
         // 2534066 на вложенных / canReply=false сжигал все 15 слотов прохода
         // на одном посте, и остальные правила в этом тике не проверялись.
         if (commentPrivateReplyBlockReason(comment, now)) continue;
+        // Комментарий старше прочитанных логов: был ли он обработан, не знаем.
+        if (!commentCoveredByLogs(comment.createdTime ?? "", coverage)) continue;
 
         if (sendsThisRun >= MAX_SENDS_PER_RUN) continue; // остальное — в следующий проход через 15 минут
+
+        const authorId = comment.from?.id;
+        if (authorId && writtenCommenters.has(authorId)) continue;
+        if (authorId) {
+          const siblingIds = comments
+            .filter((c) => c.id && c.id !== commentId && c.from?.id === authorId)
+            .map((c) => c.id as string);
+          if (siblingIds.length > 0) {
+            const { data: earlier } = await s
+              .from("comment_dm_fallback_sends")
+              .select("comment_id")
+              .eq("automation_id", automationId)
+              .in("comment_id", siblingIds)
+              .limit(1);
+            if (earlier?.length) {
+              writtenCommenters.add(authorId);
+              continue;
+            }
+          }
+        }
 
         // Резервируем строку ДО отправки: уникальный индекс (automation_id,
         // comment_id) — единственная защита от повторной отправки при гонке
@@ -279,6 +343,7 @@ export async function runCommentDmFallback(): Promise<{
         }
 
         sendsThisRun++;
+        if (authorId) writtenCommenters.add(authorId);
         const result = await sendCommentPrivateReply(
           postId,
           commentId,
@@ -344,9 +409,11 @@ export async function runCommentDmFallback(): Promise<{
               }
             }
           }
-        } else {
-          failed++;
         }
+        // Meta: на этот комментарий уже отвечали — человек своё сообщение
+        // получил. Альт-канал здесь прислал бы ему то же самое второй раз.
+        const alreadyReplied = !result.ok && result.alreadySent === true;
+        if (!result.ok && !alreadyReplied) failed++;
 
         // Эскалация — только если наш собственный private-reply тоже не
         // прошёл (второй провал: родная автоматизация Zernio + наш резерв).
@@ -366,7 +433,7 @@ export async function runCommentDmFallback(): Promise<{
         //    нечего, зовём продавца в Telegram.
         let altChannelStatus: "skipped" | "sent" | "failed" = "skipped";
         let altChannelError: string | null = null;
-        if (!result.ok && allowAltChannel) {
+        if (!result.ok && allowAltChannel && !alreadyReplied) {
           const commenterId = comment.from?.id;
           if (commenterId) {
             const { data: buyer } = await s
@@ -418,7 +485,7 @@ export async function runCommentDmFallback(): Promise<{
         let commentReplyStatus: "skipped" | "sent" | "failed" = "skipped";
         let commentReplyError: string | null = null;
         const commentReplyText = automation.commentReply?.trim();
-        const dmDeliveredSomehow = result.ok || altChannelStatus === "sent";
+        const dmDeliveredSomehow = result.ok || alreadyReplied || altChannelStatus === "sent";
         if (
           !result.ok &&
           altChannelStatus === "sent" &&
@@ -466,21 +533,40 @@ export async function runCommentDmFallback(): Promise<{
           }
         }
 
-        await s
+        // Итог пишем без колонок MIGRATION-66: на живой базе её нет, и
+        // UPDATE с ними падал целиком. Строка оставалась pending, через 10
+        // минут крон считал её брошенной и отправлял сообщение ещё раз, а
+        // причина отказа не сохранялась нигде.
+        const { error: recordError } = await s
           .from("comment_dm_fallback_sends")
           .update({
-            status: fallbackRecordStatus(result.ok, altChannelStatus),
+            status: fallbackRecordStatus(result.ok || alreadyReplied, altChannelStatus),
             error: result.error?.slice(0, 500) ?? null,
             alt_channel_status: altChannelStatus,
             alt_channel_error: altChannelError,
             comment_reply_status: commentReplyStatus,
             comment_reply_error: commentReplyError,
-            unresolved_prompt_status: unresolvedPromptStatus,
-            unresolved_prompt_error: unresolvedPromptError,
           })
           .eq("bot_id", botId)
           .eq("automation_id", automationId)
           .eq("comment_id", commentId);
+        if (recordError) {
+          console.error(`[comment-dm-fallback] итог по комментарию ${commentId} не записан`, recordError);
+        }
+        if (unresolvedPromptStatus !== "skipped") {
+          const { error: promptRecordError } = await s
+            .from("comment_dm_fallback_sends")
+            .update({
+              unresolved_prompt_status: unresolvedPromptStatus,
+              unresolved_prompt_error: unresolvedPromptError,
+            })
+            .eq("bot_id", botId)
+            .eq("automation_id", automationId)
+            .eq("comment_id", commentId);
+          if (promptRecordError) {
+            console.warn("[comment-dm-fallback] unresolved_prompt не записан (MIGRATION-66?)", promptRecordError);
+          }
+        }
       }
     } catch (e) {
       console.error(`[comment-dm-fallback] правило ${automationId} не проверено`, e);

@@ -1806,7 +1806,7 @@ export async function deleteCommentAutomation(automationId: string): Promise<{ o
 export async function getCommentAutomationLogs(
   automationId: string,
   options: { limit?: number; skip?: number; status?: "sent" | "failed" | "skipped" } = {},
-): Promise<{ logs: Record<string, Json>[] }> {
+): Promise<{ logs: Record<string, Json>[]; error?: string }> {
   try {
     // limit/status — параметры самого Zernio (его собственная база логов, не
     // проксирование в Meta), в отличие от limit у списка комментариев,
@@ -1825,7 +1825,9 @@ export async function getCommentAutomationLogs(
     return { logs: res.logs || [] };
   } catch (e) {
     console.error("[zernio] getCommentAutomationLogs error", e);
-    return { logs: [] };
+    // Пустой список без ошибки читался бы как «Zernio никому не писал» —
+    // резервный крон отправил бы повтор каждому комментатору поста.
+    return { logs: [], error: errorMessage(e) };
   }
 }
 
@@ -1956,7 +1958,7 @@ export async function sendCommentPrivateReply(
   accountId: string,
   message: string,
   buttons: ZernioDmButton[],
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; alreadySent?: boolean }> {
   try {
     // Zernio отклоняет buttons: [] как невалидное значение ("Too small:
     // expected array to have >=1 items") — поле нужно либо не передавать
@@ -1976,8 +1978,15 @@ export async function sendCommentPrivateReply(
     return { ok: true };
   } catch (e) {
     console.error(`[zernio] sendCommentPrivateReply failed for comment ${commentId}`, e);
-    const { explainInstagramPrivateReplyError } = await import("./comment-dm-fallback");
-    return { ok: false, error: explainInstagramPrivateReplyError(errorMessage(e)) };
+    const { explainInstagramPrivateReplyError, isPrivateReplyAlreadySent } = await import(
+      "./comment-dm-fallback"
+    );
+    const raw = errorMessage(e);
+    return {
+      ok: false,
+      error: explainInstagramPrivateReplyError(raw),
+      alreadySent: isPrivateReplyAlreadySent(raw),
+    };
   }
 }
 
