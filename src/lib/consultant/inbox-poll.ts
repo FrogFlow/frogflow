@@ -18,6 +18,15 @@ import { logConsultantEvent, consultantRequestId } from "./log";
 const MAX_AGE_MS = 15 * 60 * 1000;
 const MAX_CONVOS = 12;
 
+/**
+ * Опрос добирает то, что не донёс вебхук, и не должен с ним соревноваться.
+ * Живой случай 23.09: опрос забрал сообщение раньше вебхука, который пришёл
+ * через несколько секунд, и покупательница получила два разных ответа на
+ * один вопрос. Полторы минуты вебхуку хватает с запасом, а пропущенное
+ * опрос всё равно заберёт на следующем тике.
+ */
+export const WEBHOOK_GRACE_MS = 90 * 1000;
+
 export function shouldAnswerLastIncoming(params: {
   incomingAt?: string;
   outgoingAt?: string;
@@ -51,6 +60,7 @@ export function shouldAnswerLastIncoming(params: {
 
   const now = params.now ?? Date.now();
   if (Number.isFinite(incomingTs) && now - incomingTs > MAX_AGE_MS) return false;
+  if (Number.isFinite(incomingTs) && now - incomingTs < WEBHOOK_GRACE_MS) return false;
   if (params.resetAt && Number.isFinite(incomingTs) && incomingTs < params.resetAt) return false;
 
   // Если входящее сообщение пришло ДО того, как бота включили — не отвечаем

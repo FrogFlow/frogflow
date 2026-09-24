@@ -368,6 +368,22 @@ describe("consultant — poll не глушит новый вопрос и не 
     expect(alreadyAnsweredIncoming(state, "А одеяла?", now, "poll")).toBe(false);
   });
 
+  it("живой случай 23.09: опрос ответил со сторис, вебхук принёс тот же текст без неё — повтор", () => {
+    const text = "Подскажите пожалуйста, цену семейного комплекта?";
+    const state: ConsultantState = {
+      last_customer_text: text,
+      last_claim_at: new Date(now - 9_000).toISOString(),
+      last_claim_source: "poll",
+      last_bot_reply: "BOVI КПБ PECAN семейный есть в двух вариантах",
+      last_bot_reply_at: new Date(now - 4_000).toISOString(),
+      last_story_id: "pecan-story",
+    };
+    expect(alreadyAnsweredIncoming(state, text, now, "webhook")).toBe(true);
+    // Тот же путь и две разные известные публикации — два вопроса (случай 22.09).
+    const sameWebhook: ConsultantState = { ...state, last_claim_source: "webhook" };
+    expect(alreadyAnsweredIncoming(sameWebhook, text, now, "webhook", "reel-2")).toBe(false);
+  });
+
   it("заняли вопрос и не отправили — poll повторяет", () => {
     expect(
       alreadyAnsweredIncoming(

@@ -47,6 +47,8 @@ export type ConsultantState = {
   pending_story_at?: string;
   /** Публикация, к которой относился прошлый вопрос — для защиты от дублей. */
   last_story_id?: string;
+  /** Кто занял прошлое входящее — вебхук или опрос ящика. */
+  last_claim_source?: "webhook" | "poll";
   /**
    * Ответы менеджера, отправленные покупателю через бота (свайп-ответ на
    * уведомление в Telegram). Уходят они с нашего же аккаунта Zernio, поэтому
@@ -379,7 +381,18 @@ export function alreadyAnsweredIncoming(
    */
   const story = (storyId ?? "").trim();
   const lastStory = (state.last_story_id ?? "").trim();
-  if (story !== lastStory) return false;
+  /**
+   * Но опрос и вебхук видят одно и то же сообщение по-разному: опрос берёт
+   * публикацию из трёх последних входящих, вебхук — только из самого
+   * сообщения. Живой случай 23.09 в 16:08: опрос ответил про комплект со
+   * сторис, через четыре секунды вебхук принёс тот же текст без сторис,
+   * и покупательница получила второй, другой ответ. Когда одна сторона
+   * публикацию не знает, а сообщение пришло другим путём, это повтор
+   * доставки, а не новый вопрос.
+   */
+  const otherPath = Boolean(state.last_claim_source) && state.last_claim_source !== source;
+  const storyUnknownOnOneSide = !story || !lastStory;
+  if (story !== lastStory && !(otherPath && storyUnknownOnOneSide)) return false;
   const claimed = Date.parse(state.last_claim_at ?? "");
   const replied = Date.parse(state.last_bot_reply_at ?? "");
   const inFlight =
@@ -471,6 +484,7 @@ export async function claimIncomingMessage(
       ...consultant,
       last_customer_text: incoming,
       last_claim_at: claimAt,
+      last_claim_source: source,
     };
     let query = s
       .from("bot_users")

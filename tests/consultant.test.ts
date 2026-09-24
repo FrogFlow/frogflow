@@ -813,9 +813,33 @@ describe("consultant — добор входящих Direct", () => {
     const { shouldAnswerLastIncoming } = await import("../src/lib/consultant/inbox-poll");
     expect(
       shouldAnswerLastIncoming({
-        incomingAt: new Date().toISOString(),
+        incomingAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
         incomingText: "есть полотенце?",
         paused: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("не опережает вебхук: входящему меньше полутора минут — ждём", async () => {
+    const { shouldAnswerLastIncoming, WEBHOOK_GRACE_MS } = await import(
+      "../src/lib/consultant/inbox-poll"
+    );
+    const now = Date.now();
+    const text = "Подскажите пожалуйста, цену семейного комплекта?";
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: new Date(now - 10_000).toISOString(),
+        incomingText: text,
+        paused: false,
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAnswerLastIncoming({
+        incomingAt: new Date(now - WEBHOOK_GRACE_MS - 1000).toISOString(),
+        incomingText: text,
+        paused: false,
+        now,
       }),
     ).toBe(true);
   });
@@ -944,7 +968,7 @@ describe("consultant — добор входящих Direct", () => {
         incomingText: "Сколько стоит?",
         paused: false,
         botEnabledAt: t0 + 60000,
-        now: t0 + 80000,
+        now: t0 + 170000,
       }),
     ).toBe(true);
 
@@ -965,7 +989,7 @@ describe("consultant — добор входящих Direct", () => {
         incomingText: "Сколько стоит?",
         paused: false,
         resumedAt: new Date(t0 + 10000).toISOString(),
-        now: t0 + 25000,
+        now: t0 + 115000,
       }),
     ).toBe(true);
   });
