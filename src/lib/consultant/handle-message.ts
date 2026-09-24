@@ -95,6 +95,7 @@ import {
   cleanCatalogExcuses,
   cleanEmptyPraise,
   cleanRateExcuses,
+  cleanRubleHedge,
   fixRubleMislabels,
   withManagerHandoff,
   isIdleRemark,
@@ -505,6 +506,7 @@ async function handleConsultantZernioEventInternal(params: {
   const beforeDiscontinuedGuard = reply.text;
   let cleaned = cleanDiscontinuedMattressOffers(reply.text);
   cleaned = cleanRateExcuses(cleaned);
+  cleaned = cleanRubleHedge(cleaned);
   cleaned = collapseManagerPromises(cleaned);
   cleaned = cleanDemoMentions(cleaned);
   cleaned = cleanCatalogExcuses(cleaned);

@@ -494,6 +494,26 @@ export function cleanRateExcuses(text: string): string {
   return cleaned.trim() ? cleaned : text;
 }
 
+/**
+ * «Точную сумму в рублях подтвердит менеджер» рядом с уже названной ценой в
+ * рублях.
+ *
+ * Рубли считает формула по курсу, их знает сам бот. Оговорка ничего не
+ * добавляет, а по тексту обещания менеджеру заводится задача: живой случай
+ * 24.09, покупатель написал «В рублях», получил обе цены и эту строку, и в
+ * списке задач появилась пустая «В рублях». Режем только при названной
+ * сумме в рублях: без неё менеджер и правда единственный ответ.
+ */
+const RUBLE_AMOUNT_RE = /\d[\d\s]*\s?₽/;
+const RUBLE_HEDGE_RE =
+  /(?=.*менеджер)(?=.*(?:сумм|стоимост|цен|курс|рубл))(?=.*(?:подтверд|уточн|назов|рассчита|посчита|сверит))/i;
+
+export function cleanRubleHedge(text: string): string {
+  if (!RUBLE_AMOUNT_RE.test(text)) return text;
+  const cleaned = dropSentences(text, (sentence) => RUBLE_HEDGE_RE.test(sentence));
+  return cleaned.trim() ? cleaned : text;
+}
+
 /** Дежурная фраза передачи — ровно та, которую продиктовал продавец. */
 const HANDOFF_SENTENCE_RE = /переда[мю]\s+ваш\s+вопрос\s+менеджеру/i;
 const MANAGER_MENTION_RE = /менеджер/i;
