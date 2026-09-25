@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "knowledge": "node scripts/collect-knowledge.mjs",
-    "audit:dialogs": "tsx scripts/audit-dialogs.ts"
+    "audit:dialogs": "tsx scripts/audit-dialogs.ts",
+    "clone:consultant": "tsx scripts/clone-consultant-tenant.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

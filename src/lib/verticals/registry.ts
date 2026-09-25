@@ -57,6 +57,69 @@ export type VerticalDef = {
   locales: Record<Locale, VerticalLocaleCopy>;
 };
 
+/**
+ * Консультант BOVI. Вынесен в константу, чтобы вторая версия
+ * (consultant_bovi_v2) бралась с него целиком и отличалась только тем,
+ * что меняем осознанно.
+ */
+const BOVI_CONSULTANT = {
+  title: "Консультант (ун. BOVI)",
+  mode: "consultant",
+  // Товары физические (дом. текстиль и т.п.), но UI кондитерской не включаем —
+  // см. isPhysicalShopVertical: mode === "shop" && defaultFulfillment === "physical".
+  defaultFulfillment: "physical",
+  botDescriptionIntro:
+    `Каталог в Instagram Direct.\n` +
+    `→ Наличие и цена из прайса\n` +
+    `→ Казахстан и Россия\n` +
+    `→ Связь с менеджером`,
+  shortDescription:
+    "Консультант в Direct. Нажимая /start, вы принимаете оферту и политику конфиденциальности.",
+  suggestedModules: ["instagram", "manager_chat"],
+  locales: {
+    ru: {
+      welcomeGreeting: "Здравствуйте. Помогу подобрать товар из наличия.",
+      welcomeCatalog: "Каталог по прайсу: размер, цвет, наличие",
+      welcomePayment: "Оформление через менеджера",
+      contactBtn: "💬 Связаться с менеджером",
+      instructionComingSoon:
+        "📖 Инструкция скоро появится.\nПока: напишите, что ищете — бот ответит по прайсу. «Купить» или «менеджер» — подключится живой менеджер.",
+      instructionDefaultCaption:
+        "📖 Напишите запрос в Direct. Бот ответит по наличию и цене из прайса. Чтобы оформить заказ или поговорить с человеком — напишите «купить» или «менеджер».",
+    },
+    kk: {
+      welcomeGreeting: "Сәлеметсіз бе. Қолда бар тауарды таңдауға көмектесемін.",
+      welcomeCatalog: "Прайс бойынша каталог: өлшем, түс, қор",
+      welcomePayment: "Менеджер арқылы рәсімдеу",
+      contactBtn: "💬 Менеджермен байланысу",
+      instructionComingSoon:
+        "📖 Нұсқаулық жақында қосылады.\nӘзірге: не іздегеніңізді жазыңыз — бот прайс бойынша жауап береді. «Сатып алу» немесе «менеджер» — тірі менеджер қосылады.",
+      instructionDefaultCaption:
+        "📖 Direct-ке сұрау жазыңыз. Бот прайстағы қор мен баға бойынша жауап береді. Тапсырыс рәсімдеу немесе адаммен сөйлесу үшін «сатып алу» немесе «менеджер» деп жазыңыз.",
+    },
+    en: {
+      welcomeGreeting: "Hello. I can help you pick an item from stock.",
+      welcomeCatalog: "Catalog from the price list: size, color, stock",
+      welcomePayment: "Checkout with a manager",
+      contactBtn: "💬 Contact a manager",
+      instructionComingSoon:
+        "📖 The guide is coming soon.\nFor now: write what you need — the bot answers from the price list. “Buy” or “manager” connects a live manager.",
+      instructionDefaultCaption:
+        "📖 Send a query in Direct. The bot answers with stock and price from the list. To place an order or talk to a person, write “buy” or “manager”.",
+    },
+    uz: {
+      welcomeGreeting: "Salom. Mavjud tovardan tanlashga yordam beraman.",
+      welcomeCatalog: "Narxlar ro‘yxati: o‘lcham, rang, qoldiq",
+      welcomePayment: "Menejer orqali rasmiylashtirish",
+      contactBtn: "💬 Menejer bilan bog‘lanish",
+      instructionComingSoon:
+        "📖 Yo‘riqnoma tez orada qo‘shiladi.\nHozircha: nima izlayotganingizni yozing — bot narxlar ro‘yxati bo‘yicha javob beradi. «Sotib olish» yoki «menejer» — jonli menejer ulanadi.",
+      instructionDefaultCaption:
+        "📖 Direct’ga so‘rov yozing. Bot ro‘yxatdagi qoldiq va narx bo‘yicha javob beradi. Buyurtma yoki odam bilan gaplashish uchun «sotib olish» yoki «menejer» deb yozing.",
+    },
+  },
+} as const satisfies VerticalDef;
+
 export const VERTICALS = {
   digital: {
     title: "Цифровые материалы",
@@ -170,63 +233,14 @@ export const VERTICALS = {
       },
     },
   },
-  consultant: {
-    title: "Консультант (ун. BOVI)",
-    mode: "consultant",
-    // Товары физические (дом. текстиль и т.п.), но UI кондитерской не включаем —
-    // см. isPhysicalShopVertical: mode === "shop" && defaultFulfillment === "physical".
-    defaultFulfillment: "physical",
-    botDescriptionIntro:
-      `Каталог в Instagram Direct.\n` +
-      `→ Наличие и цена из прайса\n` +
-      `→ Казахстан и Россия\n` +
-      `→ Связь с менеджером`,
-    shortDescription:
-      "Консультант в Direct. Нажимая /start, вы принимаете оферту и политику конфиденциальности.",
-    suggestedModules: ["instagram", "manager_chat"],
-    locales: {
-      ru: {
-        welcomeGreeting: "Здравствуйте. Помогу подобрать товар из наличия.",
-        welcomeCatalog: "Каталог по прайсу: размер, цвет, наличие",
-        welcomePayment: "Оформление через менеджера",
-        contactBtn: "💬 Связаться с менеджером",
-        instructionComingSoon:
-          "📖 Инструкция скоро появится.\nПока: напишите, что ищете — бот ответит по прайсу. «Купить» или «менеджер» — подключится живой менеджер.",
-        instructionDefaultCaption:
-          "📖 Напишите запрос в Direct. Бот ответит по наличию и цене из прайса. Чтобы оформить заказ или поговорить с человеком — напишите «купить» или «менеджер».",
-      },
-      kk: {
-        welcomeGreeting: "Сәлеметсіз бе. Қолда бар тауарды таңдауға көмектесемін.",
-        welcomeCatalog: "Прайс бойынша каталог: өлшем, түс, қор",
-        welcomePayment: "Менеджер арқылы рәсімдеу",
-        contactBtn: "💬 Менеджермен байланысу",
-        instructionComingSoon:
-          "📖 Нұсқаулық жақында қосылады.\nӘзірге: не іздегеніңізді жазыңыз — бот прайс бойынша жауап береді. «Сатып алу» немесе «менеджер» — тірі менеджер қосылады.",
-        instructionDefaultCaption:
-          "📖 Direct-ке сұрау жазыңыз. Бот прайстағы қор мен баға бойынша жауап береді. Тапсырыс рәсімдеу немесе адаммен сөйлесу үшін «сатып алу» немесе «менеджер» деп жазыңыз.",
-      },
-      en: {
-        welcomeGreeting: "Hello. I can help you pick an item from stock.",
-        welcomeCatalog: "Catalog from the price list: size, color, stock",
-        welcomePayment: "Checkout with a manager",
-        contactBtn: "💬 Contact a manager",
-        instructionComingSoon:
-          "📖 The guide is coming soon.\nFor now: write what you need — the bot answers from the price list. “Buy” or “manager” connects a live manager.",
-        instructionDefaultCaption:
-          "📖 Send a query in Direct. The bot answers with stock and price from the list. To place an order or talk to a person, write “buy” or “manager”.",
-      },
-      uz: {
-        welcomeGreeting: "Salom. Mavjud tovardan tanlashga yordam beraman.",
-        welcomeCatalog: "Narxlar ro‘yxati: o‘lcham, rang, qoldiq",
-        welcomePayment: "Menejer orqali rasmiylashtirish",
-        contactBtn: "💬 Menejer bilan bog‘lanish",
-        instructionComingSoon:
-          "📖 Yo‘riqnoma tez orada qo‘shiladi.\nHozircha: nima izlayotganingizni yozing — bot narxlar ro‘yxati bo‘yicha javob beradi. «Sotib olish» yoki «menejer» — jonli menejer ulanadi.",
-        instructionDefaultCaption:
-          "📖 Direct’ga so‘rov yozing. Bot ro‘yxatdagi qoldiq va narx bo‘yicha javob beradi. Buyurtma yoki odam bilan gaplashish uchun «sotib olish» yoki «menejer» deb yozing.",
-      },
-    },
-  },
+  consultant: BOVI_CONSULTANT,
+  /**
+   * Вторая версия консультанта BOVI — ИИ-менеджер, который ведёт продажу сам.
+   * Живёт рядом с первой: тестовый деплой на нашем аккаунте берёт эту нишу,
+   * BOVI остаётся на consultant, пока не решит перейти. Переход — смена
+   * VERTICAL в проекте Vercel; данные у обеих версий одинаковые.
+   */
+  consultant_bovi_v2: { ...BOVI_CONSULTANT, title: "Консультант v2 (ун. BOVI)" },
   flowers: {
     title: "Цветы и букеты",
     mode: "shop",
@@ -357,8 +371,14 @@ export function isConsultantVertical(key: VerticalKey): boolean {
   return VERTICALS[key].mode === "consultant";
 }
 
-export function isBoviConsultantVertical(key: VerticalKey): boolean {
-  return key === "consultant";
+/** Консультант BOVI — обе версии: у них общие данные и общая админка. */
+export function isBoviConsultantVertical(key: VerticalKey | string | undefined): boolean {
+  return key === "consultant" || key === "consultant_bovi_v2";
+}
+
+/** Вторая версия консультанта BOVI (ИИ-менеджер). */
+export function isBoviConsultantV2Vertical(key: VerticalKey | string | undefined): boolean {
+  return key === "consultant_bovi_v2";
 }
 
 export function isUniversalConsultantVertical(key: VerticalKey): boolean {

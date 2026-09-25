@@ -7,6 +7,19 @@ async function db() {
   return supabaseService;
 }
 
+/**
+ * Только отметки этого деплоя (и старые, без bot_id).
+ *
+ * Таблица общая на всех клиентов, а клиент здесь — с полным доступом, мимо
+ * изоляции арендаторов. Пока отметки были только у BOVI, это не мешало. С
+ * появлением второй версии консультанта на том же прайсе поиск без фильтра
+ * находил бы чужие отметки, а сохранение по story_id перезаписывало бы их.
+ */
+function tenantScope(): string {
+  const botId = process.env.BOT_ID?.trim();
+  return botId ? `bot_id.eq.${botId},bot_id.is.null` : "bot_id.is.null";
+}
+
 /** List all story product tags (admin panel). */
 export const listStoryTagsFn = createServerFn({ method: "GET" }).handler(async () => {
   const s = await db();
@@ -73,6 +86,17 @@ export const upsertStoryTagFn = createServerFn({ method: "POST" })
       expires_at: null, // Reels and permanent story tags do not expire
     };
 
+    // story_id уникален на всю таблицу: upsert по нему молча переписал бы
+    // отметку другого клиента на этот деплой.
+    const { data: taken } = await s
+      .from("story_product_tags")
+      .select("bot_id")
+      .eq("story_id", effectiveStoryId)
+      .maybeSingle();
+    if (taken?.bot_id && taken.bot_id !== base.bot_id) {
+      throw new Error("Эта публикация уже отмечена у другого клиента платформы — здесь её отметить нельзя.");
+    }
+
     let { error } = await s
       .from("story_product_tags")
       .upsert({ ...base, products } as never, { onConflict: "story_id" });
@@ -99,7 +123,11 @@ export const deleteStoryTagFn = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.string().min(1) }))
   .handler(async ({ data: input }) => {
     const s = await db();
-    const { error } = await s.from("story_product_tags").delete().eq("id", input.id);
+    const { error } = await s
+      .from("story_product_tags")
+      .delete()
+      .eq("id", input.id)
+      .or(tenantScope());
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -113,7 +141,7 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
 
   // 1. Direct match on story_id
   if (idCandidate) {
-    const byId = await s.from("story_product_tags").select("*").eq("story_id", idCandidate).maybeSingle();
+    const byId = await s.from("story_product_tags").select("*").or(tenantScope()).eq("story_id", idCandidate).maybeSingle();
     if (byId.data) {
       console.log("[findStoryTag] matched by story_id:", idCandidate);
       return byId.data;
@@ -122,7 +150,7 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
 
   // 2. Direct match on story_url
   if (urlCandidate) {
-    const byUrl = await s.from("story_product_tags").select("*").eq("story_url", urlCandidate).maybeSingle();
+    const byUrl = await s.from("story_product_tags").select("*").or(tenantScope()).eq("story_url", urlCandidate).maybeSingle();
     if (byUrl.data) {
       console.log("[findStoryTag] matched by exact story_url:", urlCandidate.slice(0, 60));
       return byUrl.data;
@@ -133,7 +161,7 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
   const urlInfo = extractInstagramMediaInfo(urlCandidate || idCandidate);
   if (urlInfo.shortcode) {
     // Check if story_id equals shortcode
-    const byShortcode = await s.from("story_product_tags").select("*").eq("story_id", urlInfo.shortcode).maybeSingle();
+    const byShortcode = await s.from("story_product_tags").select("*").or(tenantScope()).eq("story_id", urlInfo.shortcode).maybeSingle();
     if (byShortcode.data) {
       console.log("[findStoryTag] matched by shortcode in story_id:", urlInfo.shortcode);
       return byShortcode.data;
@@ -141,7 +169,7 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
 
     // Check if cleanUrl matches story_url
     if (urlInfo.cleanUrl) {
-      const byCleanUrl = await s.from("story_product_tags").select("*").eq("story_url", urlInfo.cleanUrl).maybeSingle();
+      const byCleanUrl = await s.from("story_product_tags").select("*").or(tenantScope()).eq("story_url", urlInfo.cleanUrl).maybeSingle();
       if (byCleanUrl.data) {
         console.log("[findStoryTag] matched by cleanUrl:", urlInfo.cleanUrl);
         return byCleanUrl.data;
@@ -149,13 +177,13 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
     }
 
     // Check ilike on story_url or story_id
-    const byIlikeUrl = await s.from("story_product_tags").select("*").ilike("story_url", `%${urlInfo.shortcode}%`).maybeSingle();
+    const byIlikeUrl = await s.from("story_product_tags").select("*").or(tenantScope()).ilike("story_url", `%${urlInfo.shortcode}%`).maybeSingle();
     if (byIlikeUrl.data) {
       console.log("[findStoryTag] matched by ilike story_url:", urlInfo.shortcode);
       return byIlikeUrl.data;
     }
 
-    const byIlikeId = await s.from("story_product_tags").select("*").ilike("story_id", `%${urlInfo.shortcode}%`).maybeSingle();
+    const byIlikeId = await s.from("story_product_tags").select("*").or(tenantScope()).ilike("story_id", `%${urlInfo.shortcode}%`).maybeSingle();
     if (byIlikeId.data) {
       console.log("[findStoryTag] matched by ilike story_id:", urlInfo.shortcode);
       return byIlikeId.data;
@@ -165,7 +193,7 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
   // 4. Match URL without query string
   if (urlCandidate && urlCandidate.includes("?")) {
     const noQuery = urlCandidate.split("?")[0];
-    const byNoQuery = await s.from("story_product_tags").select("*").ilike("story_url", `%${noQuery}%`).maybeSingle();
+    const byNoQuery = await s.from("story_product_tags").select("*").or(tenantScope()).ilike("story_url", `%${noQuery}%`).maybeSingle();
     if (byNoQuery.data) {
       console.log("[findStoryTag] matched by url without query:", noQuery.slice(0, 60));
       return byNoQuery.data;
@@ -179,7 +207,7 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
       const parts = parsed.pathname.split("/").filter(Boolean);
       const filename = parts[parts.length - 1];
       if (filename && filename.length > 5) {
-        const byFilename = await s.from("story_product_tags").select("*").ilike("story_url", `%${filename}%`).maybeSingle();
+        const byFilename = await s.from("story_product_tags").select("*").or(tenantScope()).ilike("story_url", `%${filename}%`).maybeSingle();
         if (byFilename.data) {
           console.log("[findStoryTag] matched by filename:", filename);
           return byFilename.data;
@@ -194,12 +222,12 @@ export async function findStoryTag(storyId?: string | null, storyUrl?: string | 
   const digits = `${idCandidate} ${urlCandidate}`.match(/\d{10,25}/g);
   if (digits && digits.length > 0) {
     for (const d of digits) {
-      const byDigitId = await s.from("story_product_tags").select("*").eq("story_id", d).maybeSingle();
+      const byDigitId = await s.from("story_product_tags").select("*").or(tenantScope()).eq("story_id", d).maybeSingle();
       if (byDigitId.data) {
         console.log("[findStoryTag] matched by digit ID:", d);
         return byDigitId.data;
       }
-      const byDigitUrl = await s.from("story_product_tags").select("*").ilike("story_url", `%${d}%`).maybeSingle();
+      const byDigitUrl = await s.from("story_product_tags").select("*").or(tenantScope()).ilike("story_url", `%${d}%`).maybeSingle();
       if (byDigitUrl.data) {
         console.log("[findStoryTag] matched by digit in story_url:", d);
         return byDigitUrl.data;

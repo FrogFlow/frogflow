@@ -13,13 +13,19 @@ const kleenTex = {
   product_name: "Kleen-Tex коврик в прихожую 120x180, цветной",
 };
 
+process.env.BOT_ID = "22222222-2222-2222-2222-222222222222";
+const scopes: string[] = [];
+
 /** Любой запрос по условию ничего не находит; «последняя отметка» есть всегда. */
 function chain(): Record<string, unknown> {
   const c: Record<string, unknown> = {
     select: () => c,
     eq: () => c,
     ilike: () => c,
-    or: () => c,
+    or: (filter: string) => {
+      scopes.push(filter);
+      return c;
+    },
     order: () => ({ ...c, filtered: false }),
     limit: () => c,
     maybeSingle: async () => ({ data: null, error: null }),
@@ -49,6 +55,16 @@ describe("findStoryTag", () => {
     );
     expect(tag).toBeNull();
     expect(latestTagQueried).toBe(false);
+  });
+
+  it("ищет только в отметках своего деплоя: таблица общая с другими клиентами", async () => {
+    scopes.length = 0;
+    const { findStoryTag } = await import("../src/lib/consultant/story-tags.functions");
+    await findStoryTag("Dbu9QJzR487", "https://www.instagram.com/reel/Dbu9QJzR487/");
+    expect(scopes.length).toBeGreaterThan(0);
+    for (const scope of scopes) {
+      expect(scope).toBe("bot_id.eq.22222222-2222-2222-2222-222222222222,bot_id.is.null");
+    }
   });
 });
 

@@ -238,7 +238,7 @@ export async function smartSearchProductIds(
   const domain =
     vertical === "confectionery"
       ? "Покупатель ищет торт или десерт на заказ в кондитерской."
-      : vertical === "consultant"
+      : vertical === "consultant" || vertical === "consultant_bovi_v2"
         ? "Покупатель подбирает товар из прайса консультанта (дом. текстиль: размер, цвет, состав, наличие). Не выдумывай цены и остатки — только позиции из списка."
         : "Покупатель ищет учебный материал в каталоге материалов для учителей.";
   const prompt =
