@@ -230,6 +230,21 @@ describe("decideConsultantReplyV2", () => {
     expect(res?.toolsUsed).toContain("fix:draft:price+questions");
   });
 
+  it("обещал менеджера, но не позвал — модель переписывает и зовёт", async () => {
+    responses.push(
+      reply([{ type: "text", text: "Передаю менеджеру, она оформит заказ." }]),
+      reply([
+        { type: "text", text: "Передаю менеджеру, она оформит заказ." },
+        { type: "tool_use", id: "t1", name: "handoff_to_manager", input: { reason: "purchase", summary: "Uchino 50х100" } },
+      ]),
+    );
+    const res = await decideConsultantReplyV2("Беру", {}, ctx);
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("не вызвали handoff_to_manager");
+    expect(handoffCalls[0]?.[3]).toBe("purchase");
+    expect(res?.kind).toBe("purchase");
+  });
+
   it("чистый черновик уходит без переписывания", async () => {
     responses.push(reply([{ type: "text", text: "Uchino 50х100 — 9 000 ₸. Какой цвет?" }]));
     await decideConsultantReplyV2("Есть полотенца?", {}, ctx);

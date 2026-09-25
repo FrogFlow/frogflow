@@ -12,13 +12,17 @@
  * - пересказ служебного покупателю («система сама переведёт в рубли»);
  * - два вопроса в одном сообщении;
  * - «ты» и «привет» вместо «вы»;
- * - «Беру?» от лица бота.
+ * - «Беру?» от лица бота;
+ * - «Передаю менеджеру» без вызова передачи: покупателю обещан человек, а
+ *   задачи у менеджера нет (прогон v2.6, «Беру белое Zero Twist 70х140»).
+ *
+ * Черновик проверяется, только когда модель менеджера не звала.
  */
 import type { ConsultantProduct } from "@/lib/consultant/catalog";
 import { checkPrices, indexCatalog, type CatalogIndex } from "./price-check";
 
 export type DraftProblem = {
-  kind: "price" | "service" | "questions" | "address" | "persona";
+  kind: "price" | "service" | "questions" | "address" | "persona" | "promise";
   detail: string;
 };
 
@@ -37,6 +41,8 @@ const SERVICE_RE =
   /(?:^|[^а-яё])систем\S*|цены буду писать|в тенге считаем|пометк|инструкци|промпт/i;
 const INFORMAL_RE = /(?:^|[^а-яё])(?:ты|тебе|тебя|твой|твоя|твои|привет)(?:[^а-яё]|$)/i;
 const BERU_RE = /(?:^|[^а-яё])беру(?:[^а-яё]|$)/i;
+const PROMISE_RE =
+  /менеджер\S*[^.?]{0,40}(?:подключ|оформ|свяж|напиш|пришл|ответ|вед[её]т)|(?:переда[юм]|подключу|позову)\S*[^.?]{0,20}менеджер/i;
 
 export function draftProblems(text: string, catalog: ConsultantProduct[]): DraftProblem[] {
   const problems: DraftProblem[] = [];
@@ -48,6 +54,7 @@ export function draftProblems(text: string, catalog: ConsultantProduct[]): Draft
   if (questions > 1) problems.push({ kind: "questions", detail: String(questions) });
   if (INFORMAL_RE.test(text)) problems.push({ kind: "address", detail: "" });
   if (BERU_RE.test(text)) problems.push({ kind: "persona", detail: "" });
+  if (PROMISE_RE.test(text)) problems.push({ kind: "promise", detail: "" });
   return problems;
 }
 
@@ -65,6 +72,8 @@ export function draftFixNote(problems: DraftProblem[]): string {
         return "• К покупателю — на «вы», без «привет».";
       case "persona":
         return "• «Беру» — слово покупателя, от себя его не пишите.";
+      case "promise":
+        return "• Вы обещаете покупателю менеджера, но не вызвали handoff_to_manager. Нужен менеджер — вызовите его с причиной; не нужен — не обещайте.";
     }
   });
   return `[Черновик не отправлен:\n${lines.join("\n")}\nНапишите ответ целиком заново с этими исправлениями — покупатель увидит только новый вариант.]`;
