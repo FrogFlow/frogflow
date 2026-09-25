@@ -245,6 +245,12 @@ describe("decideConsultantReplyV2", () => {
     expect(res?.kind).toBe("purchase");
   });
 
+  it("вопрос о бюджете — переписать: магазин просил не спрашивать", async () => {
+    const { draftProblems } = await import("../src/lib/consultant-v2/draft-check");
+    expect(draftProblems("Есть халаты Uchino и BOVI. Какой размер и примерный бюджет?", catalog).map((p) => p.kind)).toContain("budget");
+    expect(draftProblems("Бюджетные есть от 9 000 ₸.", catalog).map((p) => p.kind)).not.toContain("budget");
+  });
+
   it("чистый черновик уходит без переписывания", async () => {
     responses.push(reply([{ type: "text", text: "Uchino 50х100 — 9 000 ₸. Какой цвет?" }]));
     await decideConsultantReplyV2("Есть полотенца?", {}, ctx);

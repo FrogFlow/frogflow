@@ -13,6 +13,8 @@
  * - два вопроса в одном сообщении;
  * - «ты» и «привет» вместо «вы»;
  * - «Беру?» от лица бота;
+ * - вопрос о бюджете: магазин просил не спрашивать, а Haiku спрашивает
+ *   («Какой размер и примерный бюджет?», прогон 25.09);
  * - «Передаю менеджеру» без вызова передачи: покупателю обещан человек, а
  *   задачи у менеджера нет (прогон v2.6, «Беру белое Zero Twist 70х140»).
  *
@@ -22,7 +24,7 @@ import type { ConsultantProduct } from "@/lib/consultant/catalog";
 import { checkPrices, indexCatalog, type CatalogIndex } from "./price-check";
 
 export type DraftProblem = {
-  kind: "price" | "service" | "questions" | "address" | "persona" | "promise";
+  kind: "price" | "service" | "questions" | "address" | "persona" | "promise" | "budget";
   detail: string;
 };
 
@@ -57,6 +59,7 @@ export function draftProblems(text: string, catalog: ConsultantProduct[]): Draft
   if (INFORMAL_RE.test(text)) problems.push({ kind: "address", detail: "" });
   if (BERU_RE.test(text)) problems.push({ kind: "persona", detail: "" });
   if (PROMISE_RE.test(text)) problems.push({ kind: "promise", detail: "" });
+  if (/бюджет[^.?]*\?/i.test(text)) problems.push({ kind: "budget", detail: "" });
   return problems;
 }
 
@@ -74,6 +77,8 @@ export function draftFixNote(problems: DraftProblem[]): string {
         return "• К покупателю — на «вы», без «привет».";
       case "persona":
         return "• «Беру» — слово покупателя, от себя его не пишите.";
+      case "budget":
+        return "• Бюджет не спрашивайте — спросите, что важно в товаре (размер, цвет, для чего).";
       case "promise":
         return "• Вы обещаете покупателю менеджера, но не вызвали handoff_to_manager. Нужен менеджер — вызовите его с причиной; не нужен — не обещайте.";
     }
