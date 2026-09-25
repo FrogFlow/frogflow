@@ -734,8 +734,9 @@ async function handleConsultantZernioEventInternal(params: {
 
   // Строка журнала на сообщение: из неё считается цена одного ответа и доля
   // кеша. Ответ покупателю уже ушёл, поэтому ошибка записи ничего не ломает.
-  void recordRun({
-    messageId: params.payload.message?.id || params.payload.id || requestId,
+  const runMessageId = params.payload.message?.id || params.payload.id || requestId;
+  const recorded = recordRun({
+    messageId: runMessageId,
     conversationId: params.conversationId,
     accountId: params.accountId,
     userKey: params.userKey,
@@ -752,6 +753,33 @@ async function handleConsultantZernioEventInternal(params: {
     tools: reply.toolsUsed,
     managerCheck,
   });
+
+  // Теневой режим (consultant-v2/shadow.ts): на v1 то же сообщение молча
+  // считает v2 — ответ только в журнал, рядом с ответом v1. Выключен, пока
+  // в настройках нет consultant_shadow_v2 = "on". Идёт после отправки, вне
+  // блокировки покупателя и не в pendingWrites: ни ответ Zernio на вебхук,
+  // ни опрос ящика тень не ждут. Погасит Vercel изолят раньше — пропадёт
+  // только строка тени.
+  if (!isV2 && text.trim() && !reply.resetHistory) {
+    const shadow = (async () => {
+      const shadowImages = (await import("@/lib/consultant-v2/images")).incomingImageUrls(
+        params.payload.message?.attachments,
+        (await import("@/lib/zernio-message")).isPublicationAttachment,
+      );
+      const { runShadowV2 } = await import("@/lib/consultant-v2/shadow");
+      await runShadowV2({
+        messageId: runMessageId,
+        userKey: params.userKey,
+        text,
+        state: consultant,
+        storyId,
+        storyMediaUrl,
+        imageUrls: shadowImages,
+        recorded,
+      });
+    })().catch((err: unknown) => console.warn("[consultant] тень v2 не запустилась", err));
+    void import("@vercel/functions").then(({ waitUntil }) => waitUntil(shadow)).catch(() => {});
+  }
 }
 
 export async function decideConsultantReply(
@@ -1194,6 +1222,12 @@ ${list}
       if (ai.error && !askedManager) {
         // Any AI error (API 500/529, timeout, network error, no key) -> fall through to local catalog without triggering handoff!
         console.warn("[consultant] Claude error, falling back to local catalog:", ai.error);
+        // Кончились деньги на счёте Anthropic или ключ не принят — владельцу
+        // в Telegram, не чаще раза в три часа. 25.09 об этом узнали по журналу
+        // через несколько часов, а бот всё это время отвечал по шаблонам.
+        await import("@/lib/consultant-v2/model-alert")
+          .then((m) => m.alertModelFailure(ai.error))
+          .catch(() => {});
       } else if (ai.handoff && ai.handoffData?.reason === "question") {
         // Вопрос без ответа уходит человеку, и бот замолкает. Телефон тут не
         // спрашиваем: это не оформление заказа, а переданный вопрос, и

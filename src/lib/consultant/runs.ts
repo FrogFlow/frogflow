@@ -119,6 +119,33 @@ export async function recordConsultantRun(run: ConsultantRunRecord): Promise<voi
 }
 
 /**
+ * Дописать запись в tool_trace уже лежащей строки журнала — например, ответ
+ * v2 в теневом режиме (consultant-v2/shadow.ts). Строку не создаёт.
+ */
+export async function appendRunTrace(messageId: string, entry: Record<string, unknown>): Promise<void> {
+  const botId = process.env.BOT_ID?.trim();
+  if (!botId || !messageId) return;
+  try {
+    const s = await db();
+    const { data } = await s
+      .from("consultant_message_runs")
+      .select("tool_trace")
+      .eq("bot_id", botId)
+      .eq("message_id", messageId)
+      .maybeSingle();
+    if (!data) return;
+    const trace = Array.isArray(data.tool_trace) ? data.tool_trace : [];
+    await s
+      .from("consultant_message_runs")
+      .update({ tool_trace: [...trace, entry] as never, updated_at: new Date().toISOString() })
+      .eq("bot_id", botId)
+      .eq("message_id", messageId);
+  } catch (e) {
+    console.error("[consultant] не удалось дописать строку журнала", e);
+  }
+}
+
+/**
  * Что бот говорил в этом диалоге — по журналу, а не по памяти процесса.
  *
  * Отличить своё сообщение от менеджерского по памяти нельзя: на serverless

@@ -75,24 +75,40 @@ export async function alertModelFailure(error: string | null | undefined): Promi
       updated_at: new Date().toISOString(),
     });
 
-    const botId = process.env.BOT_ID?.trim();
-    const { data: bot } = botId
-      ? await supabaseAdmin.from("bots").select("owner_telegram_id").eq("id", botId).maybeSingle()
-      : { data: null };
-    let recipients = bot?.owner_telegram_id ? [String(bot.owner_telegram_id)] : [];
-    if (recipients.length === 0) {
-      const { data: admins } = await supabaseAdmin
-        .from("app_settings")
-        .select("value")
-        .eq("key", "admin_chat_id")
-        .maybeSingle();
-      recipients = (admins?.value ?? "").split(/[,;\s]+/).filter(Boolean);
-    }
-    const { tg } = await import("@/lib/telegram.server");
-    for (const chatId of recipients) {
-      await tg("sendMessage", { chat_id: chatId, text: modelFailureText(kind) });
-    }
+    await sendToOwner(modelFailureText(kind));
   } catch (err) {
     console.error("[consultant-v2] не удалось сообщить о сбое модели", err);
   }
+}
+
+/**
+ * Владелец бота из карточки (bots.owner_telegram_id), а если его нет — все
+ * Telegram из настроек (admin_chat_id). Служебное — счёт Anthropic, сводка
+ * качества — забота владельца, а не продавцов.
+ */
+export async function ownerChatIds(): Promise<string[]> {
+  const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+  const botId = process.env.BOT_ID?.trim();
+  const { data: bot } = botId
+    ? await supabaseAdmin.from("bots").select("owner_telegram_id").eq("id", botId).maybeSingle()
+    : { data: null };
+  if (bot?.owner_telegram_id) return [String(bot.owner_telegram_id)];
+  const { data: admins } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", "admin_chat_id")
+    .maybeSingle();
+  return (admins?.value ?? "").split(/[,;\s]+/).filter(Boolean);
+}
+
+/** Текст владельцу бота от имени этого бота. Возвращает, скольким ушло. */
+export async function sendToOwner(text: string): Promise<number> {
+  const recipients = await ownerChatIds();
+  const { tg } = await import("@/lib/telegram.server");
+  let sent = 0;
+  for (const chatId of recipients) {
+    const res = await tg("sendMessage", { chat_id: chatId, text });
+    if (res?.ok) sent++;
+  }
+  return sent;
 }
