@@ -86,7 +86,10 @@ describe("decideConsultantReplyV2", () => {
     const sent = requests[0];
     expect(sent.model).toBe("claude-haiku-4-5-20251001");
     expect(sent.system[0].text).toContain("КТО ВЫ");
-    expect(sent.system[0].text).toContain("Uchino полотенце банное");
+    // Вместо прайса — карта ассортимента: раздел, марка, размеры, цена «от».
+    expect(sent.system[0].text).toContain("КАРТА АССОРТИМЕНТА");
+    expect(sent.system[0].text).toMatch(/Полотенца — полотенце \(Uchino\): 1 поз\.; размеры 50x100; от 9\s000 ₸/);
+    expect(sent.system[0].text).not.toContain("Uchino полотенце банное");
     const names = sent.tools.map((t) => t.name);
     expect(names).toContain("handoff_to_manager");
     expect(names).toContain("remember_customer");
@@ -150,8 +153,8 @@ describe("decideConsultantReplyV2", () => {
     const res = await decideConsultantReplyV2("Сколько в рублях?", {}, ctx);
     expect(res?.text).toBe(`Uchino 50х100 - ${priceRub(9000, 4.2).toLocaleString("ru-RU")} ₽.`);
     expect(res?.patch.v2_rub).toBe(true);
-    // В прайсе промпта рублей нет — путать нечего.
-    const line = requests[0].system[0].text.split("\n").find((l) => l.includes("Uchino полотенце банное"));
+    // В карте ассортимента рублей нет — путать нечего.
+    const line = requests[0].system[0].text.split("\n").find((l) => l.startsWith("• Полотенца"));
     expect(line).toMatch(/9\s000 ₸/);
     expect(line).not.toContain("₽");
   });
@@ -164,7 +167,7 @@ describe("decideConsultantReplyV2", () => {
     );
     const res = await decideConsultantReplyV2("Сколько в рублях?", {}, ctx);
     // Напоминание о рублях — в самом сообщении покупателя.
-    expect(JSON.stringify(requests[0].messages.at(-1))).toContain("Покупатель смотрит цены в рублях");
+    expect(JSON.stringify(requests[0].messages.at(-1))).toContain("Покупателю нужны рубли");
     expect(requests).toHaveLength(2);
     expect(JSON.stringify(requests[1].messages.at(-1))).toContain("цены — в тенге");
     expect(res?.text).toBe(`Uchino 50х100 - ${priceRub(9000, 4.2).toLocaleString("ru-RU")} ₽.`);
@@ -230,6 +233,23 @@ describe("decideConsultantReplyV2", () => {
     );
     const res = await decideConsultantReplyV2("Цена?", {}, ctx);
     expect(res?.text).toBe("Uchino 50х100 - 9 000 ₸");
+  });
+});
+
+describe("карта ассортимента вместо прайса", () => {
+  it("по строке на раздел: вид, марки, размеры без дублей х/x, цена от; без позиций и цен каждой", async () => {
+    const { formatAssortmentMapForV2 } = await import("../src/lib/consultant-v2/prompt");
+    const map = formatAssortmentMapForV2([
+      { id: "1", name: "Traumina подушка из функц. волокна Swing 50х70", category: "Гипоаллергенные", size: "50х70", colors: [], price_kzt: 60000, stock: true },
+      { id: "2", name: "Traumina подушка из функц. волокна Swing light 50x70", category: "Гипоаллергенные", size: "50x70", colors: [], price_kzt: 55000, stock: true },
+      { id: "3", name: "Traumina подушка Cube Junior 40х60", category: "Гипоаллергенные", size: "40х60", colors: [], price_kzt: 30000, stock: true },
+      { id: "4", name: "BOVI  КПБ Soho (1 подод 140x200)", category: "Постельное белье BOVI", size: "140x200", colors: [], price_kzt: 66000, stock: true },
+      { id: "5", name: "Нет в наличии", category: "Пропавшее", size: "", colors: [], price_kzt: 1, stock: false },
+    ]);
+    expect(map).toContain("• Гипоаллергенные — подушка (Traumina): 3 поз.; размеры 50x70, 40x60; от 30 000 ₸".replace(/ (?=\d{3} ₸)/, "\u00a0"));
+    expect(map).toContain("Постельное белье BOVI — комплект постельного белья (BOVI)");
+    expect(map).not.toContain("Swing");
+    expect(map).not.toContain("Пропавшее");
   });
 });
 

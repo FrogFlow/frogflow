@@ -14,27 +14,64 @@
 
 import type { ConsultantProduct } from "@/lib/consultant/catalog";
 
-export const V2_PROMPT_VERSION = "v2.2";
+export const V2_PROMPT_VERSION = "v2.3";
+
+/** Марка — латиница в начале названия: «Bedding House PIP», «Uchino», «Kleen-tex». */
+function brandOf(name: string): string {
+  const prefix = /^[^А-Яа-яЁё]*/.exec(name.trim())?.[0] ?? "";
+  return prefix.replace(/[^A-Za-z0-9&.' -]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 30);
+}
+
+/** Вид товара — первое русское слово названия: «полотенце», «подушка», «КПБ». */
+function kindOf(name: string): string {
+  const word = /[А-Яа-яЁё]{3,}/.exec(name)?.[0] ?? "";
+  if (word === "КПБ") return "комплект постельного белья";
+  return word.toLowerCase();
+}
+
+function topValues(values: string[], limit: number): string {
+  const count = new Map<string, number>();
+  for (const v of values) if (v.trim()) count.set(v.trim(), (count.get(v.trim()) ?? 0) + 1);
+  const sorted = [...count].sort((a, b) => b[1] - a[1]).map(([v]) => v);
+  return sorted.length > limit ? `${sorted.slice(0, limit).join(", ")} и др.` : sorted.join(", ");
+}
 
 /**
- * Прайс для промпта v2 — только в тенге. Рублёвой колонки нет: рубли
- * считает код (currency.ts), модель их в длинном прайсе путает.
+ * Карта ассортимента для промпта v2 — вместо полного прайса.
+ *
+ * 25.09, тест v2 на Haiku 4.5: с прайсом на 791 строку в промпте модель
+ * брала цену соседней строки (Swing Light за 50 000 — цена Swing Extra Light,
+ * пуховая Soft за 85 000 — цена Medium) и выкладывала списки на широкий
+ * вопрос. Здесь по строке на раздел: что за товары, чьи, каких размеров и от
+ * какой цены. Этого хватает, чтобы ответить «что есть»; позиции и цены
+ * модель берёт поиском — из короткой выдачи, где путать нечего.
  */
-export function formatCatalogForV2(catalog: ConsultantProduct[]): string {
+export function formatAssortmentMapForV2(catalog: ConsultantProduct[]): string {
   const inStock = catalog.filter((p) => p.stock);
-  if (inStock.length === 0) return "АКТУАЛЬНЫЙ АССОРТИМЕНТ: сейчас пусто.";
-  const lines = [
-    "АКТУАЛЬНЫЙ АССОРТИМЕНТ — всё в наличии. Формат строки:",
-    "• название | размер | категория | цена ₸ | цв: расцветки | сост: состав",
-  ];
+  if (inStock.length === 0) return "КАРТА АССОРТИМЕНТА: сейчас пусто.";
+  const groups = new Map<string, ConsultantProduct[]>();
   for (const p of inStock) {
-    const parts = [p.name];
-    if (p.size) parts.push(p.size);
-    if (p.category) parts.push(p.category);
-    parts.push(`${p.price_kzt.toLocaleString("ru-RU")} ₸`);
-    if (p.colors.length > 0) parts.push(`цв: ${p.colors.join(", ")}`);
-    if (p.material) parts.push(`сост: ${p.material}`);
-    lines.push(`• ${parts.join(" | ")}`);
+    const key = p.category?.trim() || "Без раздела";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(p);
+  }
+  const lines = [
+    "КАРТА АССОРТИМЕНТА — всё в наличии. Раздел — вид товара (марки): число позиций; размеры; цена от.",
+    "Конкретных позиций, цен и расцветок здесь нет: их даёт поиск search_products.",
+  ];
+  for (const [category, products] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
+    const kinds = topValues(products.map((p) => kindOf(p.name)), 3);
+    const brands = topValues(products.map((p) => brandOf(p.name)), 4);
+    // «240х220» и «240x220» — один размер: в прайсе пишут по-разному.
+    const sizes = topValues(
+      products.map((p) => p.size.replace(/(\d)\s*[xхХ×*]\s*(\d)/g, "$1x$2")),
+      6,
+    );
+    const from = Math.min(...products.map((p) => p.price_kzt).filter((n) => n > 0));
+    const parts = [`• ${category} — ${kinds || "товары"}${brands ? ` (${brands})` : ""}: ${products.length} поз.`];
+    if (sizes) parts.push(`размеры ${sizes}`);
+    if (Number.isFinite(from)) parts.push(`от ${from.toLocaleString("ru-RU")} ₸`);
+    lines.push(parts.join("; "));
   }
   return lines.join("\n");
 }
@@ -91,8 +128,9 @@ export function buildV2SystemPrompt(input: V2PromptInput): string {
 Во всех остальных случаях отвечаете сами. «Не знаю точно» по мелочи — не повод звать человека: скажите, что знаете.
 
 ПРОДУКТЫ И ЦЕНЫ
-• Весь ассортимент в наличии — в блоке «АКТУАЛЬНЫЙ АССОРТИМЕНТ» ниже. Называйте только позиции, цены и расцветки оттуда. Не выдумывайте состав, материал и страну: их берите из базы знаний (search_knowledge) или не называйте.
-• Цены пишите всегда в тенге, как в прайсе, — даже покупателю из России и на вопрос «сколько в рублях». Система сама переведёт каждую сумму в рубли по курсу магазина, точно. Сами в рубли не пересчитывайте, «₽» не пишите и к ценам не добавляйте «примерно» и «точную сумму уточнит менеджер».
+• Что есть в магазине — в «КАРТЕ АССОРТИМЕНТА» ниже: разделы, марки, размеры и цена «от». На широкий вопрос её хватает: что есть и от какой цены.
+• Конкретные позиции, цены и расцветки — только из поиска search_products. Прежде чем назвать позицию, цену или цвет, найдите их поиском; чего поиск не вернул, того не называйте. Не выдумывайте состав, материал и страну: их берите из базы знаний (search_knowledge) или не называйте.
+• Цены пишите всегда в тенге, как в выдаче поиска, — даже покупателю из России и на вопрос «сколько в рублях». Кому нужны рубли, тому суммы из вашего ответа заменяются на рубли автоматически, точно по курсу магазина. Покупателю об этой замене не пишите: вы просто называете цену. Сами не пересчитывайте, «₽» не пишите, «примерно» и «уточнит менеджер» к ценам не добавляйте.
 • Марки пишите латиницей, как в прайсе (Traumina, Dorelan, Uchino). Цвета — по-русски, фабричный код можно в скобках: «светло-бежевый (fog)».
 • Матрасы: средняя жёсткость (MEDIUM) снята с производства — не предлагайте её. Soft называйте «комфортный (Soft)», Firm — «упругий (Firm)». Размер 182х202 — это фабричный размер под 180х200: расхождение до 3 см считается тем же размером.
 • Подушки: если непонятно, для сна или декоративные, — уточните.

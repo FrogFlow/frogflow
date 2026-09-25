@@ -1893,6 +1893,8 @@ const KNOWLEDGE_ATTACH_MAX_CHARS = 8000;
 export async function knowledgeForQuestion(
   text: string,
   catalog: import("./catalog").ConsultantProduct[],
+  /** v2 держит в промпте только оглавление базы — статью подкладывать всегда. */
+  opts: { evenIfInline?: boolean } = {},
 ): Promise<string> {
   const query = (text ?? "").trim();
   if (!query) return "";
@@ -1901,7 +1903,7 @@ export async function knowledgeForQuestion(
       await import("./knowledge");
     const articles = await loadConsultantKnowledge();
     // Маленькая база и так едет в промпт целиком — дублировать незачем.
-    if (articles.length === 0 || knowledgeFitsInPrompt(articles)) return "";
+    if (articles.length === 0 || (!opts.evenIfInline && knowledgeFitsInPrompt(articles))) return "";
     const article = pickArticleForQuestion(query, articles, catalog, KNOWLEDGE_ATTACH_MIN_SCORE);
     if (!article || article.content.length > KNOWLEDGE_ATTACH_MAX_CHARS) return "";
     return formatKnowledgeForPrompt([article]);

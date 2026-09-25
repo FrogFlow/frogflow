@@ -30,7 +30,7 @@ import {
   type V2HandoffReason,
   type V2Profile,
 } from "./tools";
-import { buildV2SystemPrompt, formatCatalogForV2, V2_PROMPT_VERSION } from "./prompt";
+import { buildV2SystemPrompt, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
 import { tengeToRubles, wantsRubles } from "./currency";
 
 const V2_TIMEOUT_MS = 30_000;
@@ -76,10 +76,16 @@ export function writesRubles(text: string): boolean {
 }
 
 const RUBLES_RETRY_NOTE =
-  "[Система: в ответе суммы в рублях. Напишите тот же ответ, но цены — в тенге, как в прайсе. В рубли их переведёт система, точно по курсу магазина.]";
+  "[В ответе суммы в рублях. Напишите тот же ответ, но цены — в тенге, как в выдаче поиска. О замене на рубли покупателю не пишите.]";
 
+/**
+ * Напоминание о рублях — без слов, которые модель повторит покупателю. В
+ * первой редакции было «система переведёт каждую сумму в рубли», и 25.09
+ * прогон набора получил в семи ответах «Систему сама переведёт в рубли по
+ * курсу магазина» прямо покупателю.
+ */
 const RUBLES_NOTE =
-  "[Покупатель смотрит цены в рублях. Пишите цены в тенге, как в прайсе: система переведёт каждую сумму в рубли точно по курсу магазина. «Примерно» и «уточнит менеджер» к ценам не добавляйте.]";
+  "[Покупателю нужны рубли: тенге из вашего ответа заменятся на рубли автоматически. Пишите цены в тенге и не упоминайте ни замену, ни курс.]";
 
 type HandoffReasonV1 = Parameters<typeof import("@/lib/consultant/handle-message").handoffReply>[3];
 
@@ -258,12 +264,11 @@ export async function decideConsultantReplyV2(
     phone: "+7 (777) 333 08 08",
     hours: "ежедневно с 10:00 до 22:00",
   }));
-  const { loadConsultantKnowledge, formatKnowledgeForPrompt, formatKnowledgeIndexForPrompt, knowledgeFitsInPrompt } =
-    await import("@/lib/consultant/knowledge");
+  // База знаний — оглавлением: нужная статья подкладывается к вопросу сама
+  // (ниже) или берётся search_knowledge. Целиком она была третью промпта.
+  const { loadConsultantKnowledge, formatKnowledgeIndexForPrompt } = await import("@/lib/consultant/knowledge");
   const articles = await loadConsultantKnowledge().catch(() => []);
-  const knowledgeSection = knowledgeFitsInPrompt(articles)
-    ? formatKnowledgeForPrompt(articles)
-    : formatKnowledgeIndexForPrompt(articles);
+  const knowledgeSection = formatKnowledgeIndexForPrompt(articles);
   const brandsSection = await (async () => {
     try {
       const { loadConsultantSynonyms } = await import("@/lib/consultant/catalog");
@@ -274,7 +279,7 @@ export async function decideConsultantReplyV2(
     }
   })();
   const system = buildV2SystemPrompt({
-    catalogSection: formatCatalogForV2(catalog),
+    catalogSection: formatAssortmentMapForV2(catalog),
     knowledgeSection,
     brandsSection,
     shopUrl,
@@ -288,7 +293,7 @@ export async function decideConsultantReplyV2(
   if (profileNote) notes.push(profileNote);
   const story = await storyNote(ctx, catalog);
   if (story.note) notes.push(story.note);
-  const known = await knowledgeForQuestion(text, catalog);
+  const known = await knowledgeForQuestion(text, catalog, { evenIfInline: true });
   if (known) notes.push(`[Из базы знаний — покупатель этого не видит:\n${known}]`);
   // Покупатель смотрит в рублях — напоминание в самом сообщении: одной строки
   // в системном промпте Haiku не хватило, на «сколько в рублях?» она считала сама.
