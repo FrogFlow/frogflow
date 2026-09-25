@@ -201,6 +201,8 @@ export type V2Context = {
   /** Фото покупателя: ссылки из директа (скачиваются здесь) или уже скачанные (Telegram). */
   imageUrls?: string[];
   images?: import("./images").V2Image[];
+  /** Ошибка обращения к модели — для журнала и разбора прогона. */
+  onError?: (error: string) => void;
 };
 
 export async function decideConsultantReplyV2(
@@ -245,6 +247,7 @@ export async function decideConsultantReplyV2(
 
   const apiKey = consultantApiKey();
   if (!apiKey) {
+    ctx.onError?.("no_api_key");
     return handoffReply(pack, state, bucket, "error", text, handoffUserKey, HANDOFF_TO_MANAGER_REPLY);
   }
   const model = ctx.catalog != null ? (ctx.model ?? consultantModel()) : await v2Model();
@@ -490,6 +493,7 @@ export async function decideConsultantReplyV2(
   }
   const tengeText = await finalizeV2Text(lastText, catalog);
   const finalText = rub ? tengeToRubles(tengeText, rate) : tengeText;
+  if (error) ctx.onError?.(error);
   logConsultantEvent(requestId, "v2_reply", {
     userKey: ctx.userKey,
     promptVersion: V2_PROMPT_VERSION,

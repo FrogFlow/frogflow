@@ -39,6 +39,7 @@ export type V2EvalTurnResult =
       model: string | null;
       rate: number | null;
       ms: number;
+      error?: string;
     }
   | { ok: false; error: string };
 
@@ -71,6 +72,7 @@ export async function runV2EvalTurn(input: V2EvalTurnInput | undefined): Promise
   let usage: SmartSearchTokenUsage | null = null;
   let model: string | null = null;
   let rate: number | null = null;
+  let modelError: string | undefined;
   const started = Date.now();
   const reply = await decideConsultantReplyV2(text, state, {
     userKey: "eval",
@@ -85,6 +87,9 @@ export async function runV2EvalTurn(input: V2EvalTurnInput | undefined): Promise
     },
     onRate: (r) => {
       rate = r?.rate ?? null;
+    },
+    onError: (e) => {
+      modelError = e;
     },
   });
   if (!reply) return { ok: false, error: "no reply" };
@@ -115,6 +120,7 @@ export async function runV2EvalTurn(input: V2EvalTurnInput | undefined): Promise
     model,
     rate,
     ms: Date.now() - started,
+    ...(modelError ? { error: modelError } : {}),
   };
 }
 
