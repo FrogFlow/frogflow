@@ -33,6 +33,7 @@ import {
 import { buildV2SystemPrompt, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
 import { tengeToRubles, wantsRubles } from "./currency";
 import { draftFixNote, draftProblems } from "./draft-check";
+import { correctQuery } from "./typos";
 
 const V2_TIMEOUT_MS = 30_000;
 const V2_MAX_ROUNDS = 4;
@@ -407,15 +408,34 @@ export async function decideConsultantReplyV2(
       } else {
         try {
           // Карточки — в тенге: рубли переводит код после ответа.
-          const executed = await executeConsultantTool(call.name, input, {
-            country: "KZ",
+          const toolCtx = {
+            country: "KZ" as const,
             catalog,
             shopUrl,
             excludeIds: state.last_product_ids,
             userKey: ctx.userKey,
-          });
+          };
+          let executed = await executeConsultantTool(call.name, input, toolCtx);
+          // Пустой поиск по слову с опечаткой («палатенца») — повтор по слову
+          // из прайса; модель видит, что запрос поправлен.
+          let corrected: string | null = null;
+          if (call.name === "search_products" && executed.products.length === 0 && typeof input.query === "string") {
+            corrected = correctQuery(input.query, catalog);
+            if (corrected) {
+              const retry = await executeConsultantTool(call.name, { ...input, query: corrected }, toolCtx);
+              if (retry.products.length > 0) {
+                executed = retry;
+                toolsUsed.push("fix:typo");
+              } else {
+                corrected = null;
+              }
+            }
+          }
           products.push(...executed.products);
-          result = executed.result;
+          result =
+            corrected && executed.result && typeof executed.result === "object"
+              ? { ...(executed.result as Record<string, unknown>), query_corrected_to: corrected }
+              : executed.result;
         } catch (err) {
           result = { error: err instanceof Error ? err.message : String(err) };
         }
