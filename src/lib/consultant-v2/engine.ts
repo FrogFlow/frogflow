@@ -30,10 +30,12 @@ import {
   type V2HandoffReason,
   type V2Profile,
 } from "./tools";
-import { buildV2SystemPrompt, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
+import { buildV2SystemPrompt, categoryOf, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
 import { tengeToRubles, wantsRubles } from "./currency";
 import { draftFixNote, draftProblems } from "./draft-check";
 import { correctQuery, latinModelsIn, latinModelsNote } from "./typos";
+import { knowledgeAboutModels } from "./knowledge";
+import { alertModelFailure } from "./model-alert";
 
 const V2_TIMEOUT_MS = 30_000;
 const V2_MAX_ROUNDS = 4;
@@ -127,6 +129,23 @@ export async function finalizeV2Text(raw: string, catalog: ConsultantProduct[]):
   text = cleanInstructionEcho(text);
   text = fixBrandSpelling(text, brandVocabulary(catalog));
   return humanizePunctuation(stripExclamationsAndEmoji(stripMarkdownFormatting(text))).trim();
+}
+
+/**
+ * Карточки выдачи (search_products — списком, get_product — одна) с разделом
+ * без чужой серии: у коврика Maks не «Коврики LONDON», а «Коврики» (categoryOf).
+ */
+export function withModelCategories(result: unknown): unknown {
+  const isCard = (x: unknown): x is { name: string; category: string } =>
+    Boolean(x) && typeof x === "object" && typeof (x as { name?: unknown }).name === "string" &&
+    typeof (x as { category?: unknown }).category === "string";
+  const fix = (x: unknown) => (isCard(x) ? { ...x, category: categoryOf(x) } : x);
+  if (isCard(result)) return fix(result);
+  if (result && typeof result === "object" && Array.isArray((result as { products?: unknown }).products)) {
+    const r = result as { products: unknown[] };
+    return { ...r, products: r.products.map(fix) };
+  }
+  return result;
 }
 
 type AnthropicBlock =
@@ -259,6 +278,7 @@ export async function decideConsultantReplyV2(
   const apiKey = consultantApiKey();
   if (!apiKey) {
     ctx.onError?.("no_api_key");
+    if (!ctx.dryRun) await alertModelFailure("no_api_key");
     return handoffReply(pack, state, bucket, "error", text, handoffUserKey, HANDOFF_TO_MANAGER_REPLY);
   }
   const model = ctx.catalog != null ? (ctx.model ?? consultantModel()) : await v2Model();
@@ -314,6 +334,16 @@ export async function decideConsultantReplyV2(
   if (story.note) notes.push(story.note);
   const known = await knowledgeForQuestion(text, catalog, { evenIfInline: true });
   if (known) notes.push(`[Из базы знаний — покупатель этого не видит:\n${known}]`);
+  // «Чем отличаются Макс и Лондон?» — статья о названных моделях (или о
+  // моделях последней выдачи): общий подбор ищет только марки.
+  const aboutModels = knowledgeAboutModels(text, catalog, articles, {
+    recentProductNames: (state.last_product_ids ?? [])
+      .slice(0, 4)
+      .map((id) => catalog.find((p) => p.id === id)?.name)
+      .filter((name): name is string => Boolean(name)),
+    attached: known,
+  });
+  if (aboutModels) notes.push(aboutModels);
   // Покупатель смотрит в рублях — напоминание в самом сообщении: одной строки
   // в системном промпте Haiku не хватило, на «сколько в рублях?» она считала сама.
   if (wantsRubles(text, state, state.v2_profile)) notes.push(RUBLES_NOTE);
@@ -364,6 +394,7 @@ export async function decideConsultantReplyV2(
   const toolsUsed: string[] = [
     ...(sentPhoto ? [`photo:${customerPhotos}`] : []),
     ...(story.image ? ["story_image"] : []),
+    ...(aboutModels ? ["kb_models"] : []),
   ];
   let usage: SmartSearchTokenUsage | null = null;
   let lastText = "";
@@ -508,10 +539,11 @@ export async function decideConsultantReplyV2(
             }
           }
           products.push(...executed.products);
+          const cards = withModelCategories(executed.result);
           result =
-            corrected && executed.result && typeof executed.result === "object"
-              ? { ...(executed.result as Record<string, unknown>), query_corrected_to: corrected }
-              : executed.result;
+            corrected && cards && typeof cards === "object"
+              ? { ...(cards as Record<string, unknown>), query_corrected_to: corrected }
+              : cards;
         } catch (err) {
           result = { error: err instanceof Error ? err.message : String(err) };
         }
@@ -541,6 +573,9 @@ export async function decideConsultantReplyV2(
   const tengeText = await finalizeV2Text(lastText, catalog);
   const finalText = rub ? tengeToRubles(tengeText, rate) : tengeText;
   if (error) ctx.onError?.(error);
+  // Сбой не на минуту (кончились деньги, ключ не принят) — владельцу в
+  // Telegram, не чаще раза в три часа. Перегрузку и сеть не шлём.
+  if (error && !ctx.dryRun) await alertModelFailure(error);
   logConsultantEvent(requestId, "v2_reply", {
     userKey: ctx.userKey,
     promptVersion: V2_PROMPT_VERSION,

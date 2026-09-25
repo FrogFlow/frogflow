@@ -11,6 +11,7 @@
  */
 import { priceRub } from "@/lib/consultant/rate";
 import { findKztAmounts } from "../currency";
+import { AD_WORDS_RE } from "../draft-check";
 import { checkPrices, type CatalogIndex, type Flag } from "../price-check";
 
 export {
@@ -112,8 +113,6 @@ export function checkRubles(out: TurnOutcome, expect: TurnExpect): Flag[] {
   return flags;
 }
 
-const AD_WORDS_RE =
-  /красив|премиальн|элегантн|идеальн|отличн(?:ый|ая|ое|ые|ого)|прекрасн|роскошн|шикарн|великолепн|хороший выбор|рекоменду|качественн/gi;
 const OPENER_RE = /^(понял|поняла|отлично|прекрасно|замечательно|конечно|хороший вопрос)\b/i;
 
 /** Форма: длина, число вопросов и позиций, приветствие не к месту, рекламные слова. */

@@ -260,6 +260,21 @@ export function latinModelsIn(text: string, catalog: ConsultantProduct[]): strin
 }
 
 /**
+ * Марки и модели прайса в сообщении — как они записаны в прайсе, латиницей:
+ * и написанные кириллицей («акванова Лондон»), и латиницей в любом регистре
+ * («aquanova maks»).
+ */
+export function modelWordsIn(text: string, catalog: ConsultantProduct[]): string[] {
+  const latin = latinWordsOf(catalog);
+  const found = latinModelsIn(text, catalog);
+  for (const word of text.match(/[A-Za-z]{4,}/g) ?? []) {
+    const match = latin.folded.get(latinFold(word));
+    if (match && !found.includes(match)) found.push(match);
+  }
+  return found;
+}
+
+/**
  * Пометка модели: какие позиции прайса покупатель, похоже, имеет в виду.
  * Пусто — если в сообщении нет марок и моделей кириллицей.
  */

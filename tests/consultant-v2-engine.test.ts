@@ -28,8 +28,9 @@ vi.mock("../src/lib/consultant/config", () => ({
 vi.mock("../src/lib/consultant/store-info", () => ({
   getConsultantStoreInfo: async () => ({ address: "Сатпаева, 3", phone: "+7 777", hours: "10–22" }),
 }));
+const knowledgeArticles: { id: string; title: string; tags: string[]; content: string; updatedAt: string }[] = [];
 vi.mock("../src/lib/consultant/knowledge", () => ({
-  loadConsultantKnowledge: async () => [],
+  loadConsultantKnowledge: async () => knowledgeArticles,
   formatKnowledgeForPrompt: () => "",
   formatKnowledgeIndexForPrompt: () => "",
   knowledgeFitsInPrompt: () => true,
@@ -75,6 +76,7 @@ beforeEach(() => {
   requests = [];
   responses = [];
   handoffCalls.length = 0;
+  knowledgeArticles.length = 0;
   vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
     requests.push(JSON.parse(init.body));
     const next = responses.shift();
@@ -273,6 +275,21 @@ describe("decideConsultantReplyV2", () => {
     expect(draftProblems("Бюджетные есть от 9 000 ₸.", catalog).map((p) => p.kind)).not.toContain("budget");
   });
 
+  it("оценки из статьи и длинный пересказ — переписать (Rivolta, прогон 25.09)", async () => {
+    const { draftProblems, draftFixNote } = await import("../src/lib/consultant-v2/draft-check");
+    const rivolta =
+      "Rivolta - итальянский бренд, Rivolta Carmignani. Это премиальный производитель, поставляет продукцию в лучшие мировые отели класса люкс, включая Four Seasons. " +
+      "По качеству их полотенца имеют высокую плотность: серия Shangri-La - 570 г/м², серия Imperiale - 600 г/м². Это профессиональная отельная махра с высокой плотностью и износостойкостью, " +
+      "в Imperiale - люксовый густой 100% хлопок с элегантным блеском. Полотенца мягкие, хорошо впитывают влагу, быстро сохнут и долго служат даже после многих стирок. Какой размер вас интересует?";
+    const problems = draftProblems(rivolta, catalog);
+    expect(problems.map((p) => p.kind)).toEqual(expect.arrayContaining(["ads", "length"]));
+    expect(problems.find((p) => p.kind === "ads")?.detail).toBe("премиальн, элегантн");
+    expect(draftFixNote(problems)).toContain("одно-три предложения");
+    // Факт об уходе — не оценка.
+    expect(draftProblems("Рекомендуется стирать при 40°.", catalog)).toEqual([]);
+    expect(draftProblems("Rivolta - итальянская марка, махра 570 г/м². Какой размер нужен?", catalog)).toEqual([]);
+  });
+
   it("чистый черновик уходит без переписывания", async () => {
     responses.push(reply([{ type: "text", text: "Uchino 50х100 — 9 000 ₸. Какой цвет?" }]));
     await decideConsultantReplyV2("Есть полотенца?", {}, ctx);
@@ -367,6 +384,53 @@ describe("карта ассортимента вместо прайса", () => 
     expect(map).toContain("Постельное белье BOVI — комплект постельного белья (BOVI)");
     expect(map).not.toContain("Swing");
     expect(map).not.toContain("Пропавшее");
+  });
+
+  it("раздел 1С с чужой серией не приписывает позиции эту серию: Maks — не LONDON", async () => {
+    const { categoryOf, formatAssortmentMapForV2 } = await import("../src/lib/consultant-v2/prompt");
+    const london = { id: "l", name: "Aquanova Коврик в ванную LONDON 60x100, цвет 43 белый", category: "Коврики LONDON", size: "60x100", colors: [], price_kzt: 47000, stock: true };
+    const maks = { id: "m", name: "Aquanova Коврик в ванную Maks 60х60, цвет 10 слон.кость", category: "Коврики LONDON", size: "60х60", colors: [], price_kzt: 58000, stock: true };
+    expect(categoryOf(london)).toBe("Коврики LONDON");
+    expect(categoryOf(maks)).toBe("Коврики");
+    // Марка без русского слова вне скобок — раздел как есть.
+    expect(categoryOf({ name: "RCD Блюдце чайное Darley Abbey", category: "ROYAL CROWN DERBY (Англия)" })).toBe("ROYAL CROWN DERBY (Англия)");
+    expect(categoryOf({ name: "Castelbel мыло", category: "Castelbel" })).toBe("Castelbel");
+    const map = formatAssortmentMapForV2([london, maks]);
+    expect(map).toContain("• Коврики LONDON — коврик (Aquanova): 1 поз.");
+    expect(map).not.toMatch(/LONDON[^\n]*60x60/);
+
+    const { withModelCategories } = await import("../src/lib/consultant-v2/engine");
+    expect(withModelCategories({ products: [london, maks], returned: 2 })).toMatchObject({
+      products: [{ category: "Коврики LONDON" }, { category: "Коврики" }],
+      returned: 2,
+    });
+    expect(withModelCategories(maks)).toMatchObject({ category: "Коврики" });
+    expect(withModelCategories({ error: "not_found" })).toEqual({ error: "not_found" });
+  });
+});
+
+describe("статья базы знаний о моделях — к вопросу покупателя", () => {
+  it("«Акванова Макс и Лондон в чем разница?» — статья приходит пометкой, в журнале kb_models", async () => {
+    knowledgeArticles.push({
+      id: "aq",
+      title: "Aquanova Collection Overview",
+      tags: [],
+      content: "London: 100% египетский хлопок (1200 г/м²). Силиконовые точки против скольжения.",
+      updatedAt: "",
+    });
+    responses.push(reply([{ type: "text", text: "London — египетский хлопок, 1200 г/м². О Maks в базе данных нет." }]));
+    // Марки и модели — редкие слова прайса: в каталоге из трёх строк редких нет.
+    const filler = Array.from({ length: 8 }, (_, i) => ({ ...catalog[0], id: `f${i}`, name: `Простыня хлопковая ${i}` }));
+    const catalogWithMats = [
+      ...ctx.catalog,
+      ...filler,
+      { id: "l", name: "Aquanova Коврик в ванную LONDON 60x100, цвет 43 белый", category: "Коврики LONDON", size: "60x100", colors: [], price_kzt: 47000, stock: true },
+      { id: "m", name: "Aquanova Коврик в ванную Maks 60х60, цвет 10 слон.кость", category: "Коврики LONDON", size: "60х60", colors: [], price_kzt: 58000, stock: true },
+    ];
+    const res = await decideConsultantReplyV2("Акванова Макс и Лондон в чем разница?", {}, { ...ctx, catalog: catalogWithMats });
+    const userText = JSON.stringify(requests[0].messages.at(-1).content);
+    expect(userText).toContain("египетский хлопок");
+    expect(res?.toolsUsed).toContain("kb_models");
   });
 });
 
