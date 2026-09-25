@@ -91,6 +91,32 @@ const RUBLES_RETRY_NOTE =
 const RUBLES_NOTE =
   "[Покупателю нужны рубли: тенге из вашего ответа заменятся на рубли автоматически. Пишите цены в тенге и не упоминайте ни замену, ни курс.]";
 
+/** Телефон в тексте: «+7 700 253 88 88», «87002538888» — как у v1. */
+export function phoneIn(text: string): string | undefined {
+  const match = /\+?\d[\d\s\-()]{8,}\d/.exec(text ?? "");
+  return match && match[0].replace(/\D/g, "").length >= 10 ? match[0].trim() : undefined;
+}
+
+/**
+ * Заказ без телефона не уходит менеджеру с первого раза. v1 перед передачей
+ * спрашивал телефон и город доставки, и менеджер получал готовый заказ; v2
+ * передавал сразу, и менеджер начинал с «а куда доставить?». Модели
+ * велено спросить сама (пример в промпте), это — страховка кода.
+ */
+const ASK_CONTACT_RESULT = {
+  ok: false,
+  handed_off: false,
+  note: "Заказ ещё не передан. Спросите одним сообщением телефон и как забрать: город доставки или самовывоз из бутика. Ответит — запомните (remember_customer) и передайте. Менеджера в этом ответе не обещайте.",
+};
+
+/**
+ * Нерабочие часы магазина — те же, что у v1 (isOffHoursInAlmaty). Ночью v1
+ * говорил «менеджер свяжется утром», v2 — «передаю менеджеру», и покупатель
+ * ждал ответа сейчас.
+ */
+const OFF_HOURS_NOTE =
+  "[Сейчас нерабочее время магазина (с 21:00 до 10:00 по Алматы). Менеджер ответит утром: если передаёте ему диалог, так и скажите покупателю.]";
+
 type HandoffReasonV1 = Parameters<typeof import("@/lib/consultant/handle-message").handoffReply>[3];
 
 /** Причина v2 → причина в задачах и уведомлениях менеджеру (общих с v1). */
@@ -233,6 +259,8 @@ export type V2Context = {
   images?: import("./images").V2Image[];
   /** Ошибка обращения к модели — для журнала и разбора прогона. */
   onError?: (error: string) => void;
+  /** Текущее время — для тестов нерабочих часов. */
+  now?: Date;
 };
 
 export async function decideConsultantReplyV2(
@@ -263,6 +291,7 @@ export async function decideConsultantReplyV2(
         recent: [],
         v2_profile: undefined,
         v2_rub: undefined,
+        v2_contact_asked: undefined,
         last_product_ids: [],
         automation_paused: false,
         country: undefined,
@@ -347,6 +376,8 @@ export async function decideConsultantReplyV2(
   // Покупатель смотрит в рублях — напоминание в самом сообщении: одной строки
   // в системном промпте Haiku не хватило, на «сколько в рублях?» она считала сама.
   if (wantsRubles(text, state, state.v2_profile)) notes.push(RUBLES_NOTE);
+  const { isOffHoursInAlmaty } = await import("@/lib/consultant/rate");
+  if (isOffHoursInAlmaty(ctx.now ?? new Date())) notes.push(OFF_HOURS_NOTE);
   // Марка или модель русскими буквами («акванова Маск») — подсказка, что это
   // в прайсе латиницей: иначе поиск пуст, и модель говорит «таких нет».
   const latinNote = latinModelsNote(text, catalog);
@@ -406,6 +437,7 @@ export async function decideConsultantReplyV2(
   const attachments: { url: string; kind: "image" | "video" }[] = [];
   let mediaList: import("./media").ProductMedia[] | undefined;
   let draftChecked = false;
+  let contactAsked = false;
   for (let round = 0; round < maxRounds; round++) {
     let json: { content?: AnthropicBlock[]; usage?: unknown };
     try {
@@ -505,12 +537,21 @@ export async function decideConsultantReplyV2(
           }
         }
       } else if (call.name === "handoff_to_manager") {
-        handoff = {
-          reason: isHandoffReason(input.reason) ? input.reason : "human",
-          summary: typeof input.summary === "string" ? input.summary.trim() : "",
-          phone: typeof input.customer_phone === "string" ? input.customer_phone.trim() : undefined,
-        };
-        result = { ok: true, note: "Менеджер подключится. Напишите покупателю одну короткую фразу об этом." };
+        const reason = isHandoffReason(input.reason) ? input.reason : "human";
+        const phone =
+          (typeof input.customer_phone === "string" && input.customer_phone.trim()) || phoneIn(text) || undefined;
+        if (reason === "purchase" && !phone && !profile?.phone && !state.v2_contact_asked && !contactAsked) {
+          contactAsked = true;
+          toolsUsed.push("ask_contact");
+          result = ASK_CONTACT_RESULT;
+        } else {
+          handoff = {
+            reason,
+            summary: typeof input.summary === "string" ? input.summary.trim() : "",
+            phone,
+          };
+          result = { ok: true, note: "Менеджер подключится. Напишите покупателю одну короткую фразу об этом." };
+        }
       } else {
         try {
           // Карточки — в тенге: рубли переводит код после ответа.
@@ -625,7 +666,7 @@ export async function decideConsultantReplyV2(
     );
     return {
       ...reply,
-      patch: { ...reply.patch, v2_profile: profile, v2_rub: rub },
+      patch: { ...reply.patch, v2_profile: profile, v2_rub: rub, v2_contact_asked: undefined },
       toolsUsed,
       // Фраза при передаче — тоже в тенге в истории, если покупателю ушли рубли.
       ...(finalText && finalText !== tengeText && reply.text === finalText ? { historyText: tengeText } : {}),
@@ -650,6 +691,7 @@ export async function decideConsultantReplyV2(
       v2_profile: profile,
       v2_rub: rub,
       conversation_state: "consulting",
+      ...(contactAsked ? { v2_contact_asked: true } : {}),
       ...(ids.length ? { last_product_ids: ids.slice(0, 12) } : {}),
     },
     kind: products.length ? "product" : "clarify",

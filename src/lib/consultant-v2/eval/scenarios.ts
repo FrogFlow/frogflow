@@ -263,21 +263,24 @@ export const V2_EVAL_SCENARIOS: EvalScenario[] = [
   },
   {
     id: "purchase",
-    title: "«Беру белое 70х140» — оформление менеджеру",
+    title: "«Беру белое 70х140» — телефон и город, потом менеджеру",
     source: "тест v2 25.09",
     turns: [
       { text: "Какие есть полотенца Uchino 70х140?" },
-      { text: "Беру белое Zero Twist 70х140", expect: { handoff: "purchase" } },
+      // Как v1: перед передачей — телефон и как забрать, одним сообщением.
+      { text: "Беру белое Zero Twist 70х140", expect: { must: [/телефон|номер/i] } },
+      { text: "+7 700 111 22 33, Алматы, заберу сама", expect: { handoff: "purchase" } },
     ],
   },
   {
     id: "purchase-oformlyaem",
-    title: "«Оформляем» после выбора подушки",
+    title: "«Оформляем» после выбора подушки — телефон, потом менеджеру",
     source: "BOVI 21.09",
     turns: [
       { text: "подушка Traumina" },
       { text: "Swing 50х70" },
-      { text: "Оформляем", expect: { handoff: "purchase" } },
+      { text: "Оформляем", expect: { must: [/телефон|номер/i] } },
+      { text: "87002538888 Алмата", expect: { handoff: "purchase" } },
     ],
   },
   {

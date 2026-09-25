@@ -85,7 +85,8 @@ beforeEach(() => {
   });
 });
 
-const ctx = { userKey: "ig_1", catalog, rate: 4.2 };
+// Днём по Алматы (11:00): ночью к сообщению добавляется пометка о нерабочих часах.
+const ctx = { userKey: "ig_1", catalog, rate: 4.2, now: new Date("2026-09-25T06:00:00Z") };
 
 describe("decideConsultantReplyV2", () => {
   it("обычный ответ: короткий промпт, прайс в нём, свои инструменты вместо ask_manager", async () => {
@@ -145,7 +146,8 @@ describe("decideConsultantReplyV2", () => {
         },
       ]),
     );
-    const res = await decideConsultantReplyV2("Беру два белых", {}, ctx);
+    // Телефон и город уже спрашивали — передача сразу.
+    const res = await decideConsultantReplyV2("Беру два белых", { v2_contact_asked: true }, ctx);
     expect(requests).toHaveLength(1);
     expect(handoffCalls).toHaveLength(1);
     const [, , , reason, text, userKey, message, , , note] = handoffCalls[0];
@@ -164,11 +166,13 @@ describe("decideConsultantReplyV2", () => {
         { type: "tool_use", id: "t1", name: "handoff_to_manager", input: { reason: "purchase", summary: "Uchino 50х100 белый, 2 шт" } },
       ]),
     );
-    const profile = { looking_for: "полотенца", for_whom: "подарок маме", size: "50х100", country: "Россия", city: "Москва" };
+    const profile = { looking_for: "полотенца", for_whom: "подарок маме", size: "50х100", country: "Россия", city: "Москва", delivery: "СДЭК", phone: "+7 916 000 00 00" };
     await decideConsultantReplyV2("Беру два", { v2_profile: profile }, ctx);
     const note = handoffCalls[0][9] as string;
     expect(note).toContain("Uchino 50х100 белый, 2 шт");
-    expect(note).toContain("О покупателе: полотенца; подарок маме; размер 50х100; Москва, Россия");
+    expect(note).toContain("О покупателе: полотенца; подарок маме; размер 50х100; Москва, Россия; СДЭК");
+    // Телефон — в контакты задачи, не в строку «О покупателе».
+    expect(handoffCalls[0][7]).toBe("+7 916 000 00 00");
   });
 
   it("рубли считает код: модель пишет тенге, покупатель видит рубли по формуле", async () => {
@@ -262,11 +266,58 @@ describe("decideConsultantReplyV2", () => {
         { type: "tool_use", id: "t1", name: "handoff_to_manager", input: { reason: "purchase", summary: "Uchino 50х100" } },
       ]),
     );
-    const res = await decideConsultantReplyV2("Беру", {}, ctx);
+    const res = await decideConsultantReplyV2("Беру", { v2_contact_asked: true }, ctx);
     expect(requests).toHaveLength(2);
     expect(JSON.stringify(requests[1].messages.at(-1))).toContain("не вызвали handoff_to_manager");
     expect(handoffCalls[0]?.[3]).toBe("purchase");
     expect(res?.kind).toBe("purchase");
+  });
+
+  it("заказ без телефона: сначала телефон и как забрать — как у v1, менеджеру пока не передаём", async () => {
+    responses.push(
+      reply([
+        { type: "text", text: "Передаю менеджеру, она оформит заказ." },
+        { type: "tool_use", id: "t1", name: "handoff_to_manager", input: { reason: "purchase", summary: "Uchino 50х100 белый" } },
+      ]),
+      reply([{ type: "text", text: "Хорошо. Напишите, пожалуйста, телефон и город доставки — или заберёте в бутике?" }]),
+    );
+    const res = await decideConsultantReplyV2("Беру белое", {}, ctx);
+    expect(handoffCalls).toHaveLength(0);
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("Заказ ещё не передан");
+    expect(res?.text).toContain("телефон");
+    expect(res?.patch).toMatchObject({ v2_contact_asked: true });
+    expect(res?.toolsUsed).toContain("ask_contact");
+  });
+
+  it("телефон в сообщении — передача сразу, номер в контакты задачи", async () => {
+    responses.push(
+      reply([
+        { type: "text", text: "Спасибо, передаю менеджеру — она оформит заказ." },
+        { type: "tool_use", id: "t1", name: "handoff_to_manager", input: { reason: "purchase", summary: "Traumina Swing 50х70" } },
+      ]),
+    );
+    const res = await decideConsultantReplyV2("Оформляем. Мой номер +7 700 253 88 88, Алматы", {}, ctx);
+    expect(handoffCalls[0]?.[3]).toBe("purchase");
+    expect(handoffCalls[0]?.[7]).toBe("+7 700 253 88 88");
+    expect(res?.patch).toMatchObject({ v2_contact_asked: undefined });
+  });
+
+  it("ночью — пометка: менеджер ответит утром; днём её нет", async () => {
+    responses.push(reply([{ type: "text", text: "Здравствуйте. Что подсказать?" }]));
+    await decideConsultantReplyV2("Здравствуйте", {}, { ...ctx, now: new Date("2026-09-25T18:30:00Z") });
+    expect(JSON.stringify(requests[0].messages.at(-1))).toContain("Менеджер ответит утром");
+    responses.push(reply([{ type: "text", text: "Здравствуйте. Что подсказать?" }]));
+    await decideConsultantReplyV2("Здравствуйте", {}, ctx);
+    expect(JSON.stringify(requests[1].messages.at(-1))).not.toContain("Менеджер ответит утром");
+  });
+
+  it("телефон в тексте: номер, а не размер или цена", async () => {
+    const { phoneIn } = await import("../src/lib/consultant-v2/engine");
+    expect(phoneIn("Мой номер +7 700 253 88 88, Алматы")).toBe("+7 700 253 88 88");
+    expect(phoneIn("87002538888 Алмата")).toBe("87002538888");
+    expect(phoneIn("8 (916) 123-45-67")).toBe("8 (916) 123-45-67");
+    expect(phoneIn("Беру 70х140 за 55 000")).toBeUndefined();
+    expect(phoneIn("КПБ 200x220 и 240x220")).toBeUndefined();
   });
 
   it("вопрос о бюджете — переписать: магазин просил не спрашивать", async () => {
