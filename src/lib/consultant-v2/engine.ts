@@ -535,11 +535,19 @@ export async function decideConsultantReplyV2(
   }
 
   const stateWithProfile = { ...state, v2_profile: profile, v2_rub: rub };
+  // Товары этого хода — первыми: менеджер видит в карточке то, о чём говорили сейчас.
+  const turnIds = [...new Set(products.map((p) => p.id))];
 
   if (handoff) {
+    const { profileForManager } = await import("./tools");
+    // Карточка менеджеру: суть от модели и что известно о покупателе — чтобы
+    // не перечитывать переписку.
+    const note = [handoff.summary, profileForManager(profile)].filter(Boolean).join("\n");
     const reply = await handoffReply(
       pack,
-      stateWithProfile,
+      turnIds.length
+        ? { ...stateWithProfile, last_product_ids: [...turnIds, ...(state.last_product_ids ?? [])].slice(0, 12) }
+        : stateWithProfile,
       bucket,
       REASON_TO_TASK[handoff.reason],
       text,
@@ -547,7 +555,7 @@ export async function decideConsultantReplyV2(
       finalText || HANDOFF_TO_MANAGER_REPLY,
       handoff.phone || profile?.phone,
       catalog,
-      handoff.summary,
+      note,
     );
     return {
       ...reply,

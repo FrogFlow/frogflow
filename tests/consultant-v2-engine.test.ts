@@ -147,6 +147,20 @@ describe("decideConsultantReplyV2", () => {
     expect(res?.kind).toBe("purchase");
   });
 
+  it("карточка менеджеру: суть и что известно о покупателе", async () => {
+    responses.push(
+      reply([
+        { type: "text", text: "Передаю менеджеру, она оформит заказ." },
+        { type: "tool_use", id: "t1", name: "handoff_to_manager", input: { reason: "purchase", summary: "Uchino 50х100 белый, 2 шт" } },
+      ]),
+    );
+    const profile = { looking_for: "полотенца", for_whom: "подарок маме", size: "50х100", country: "Россия", city: "Москва" };
+    await decideConsultantReplyV2("Беру два", { v2_profile: profile }, ctx);
+    const note = handoffCalls[0][9] as string;
+    expect(note).toContain("Uchino 50х100 белый, 2 шт");
+    expect(note).toContain("О покупателе: полотенца; подарок маме; размер 50х100; Москва, Россия");
+  });
+
   it("рубли считает код: модель пишет тенге, покупатель видит рубли по формуле", async () => {
     const { priceRub } = await import("../src/lib/consultant/rate");
     responses.push(reply([{ type: "text", text: "Uchino 50х100 — 9 000 ₸." }]));

@@ -131,6 +131,25 @@ export function formatProfile(profile: V2Profile | undefined): string {
   return lines.length ? `[Что известно о покупателе — ${lines.join("; ")}]` : "";
 }
 
+/**
+ * Что известно о покупателе — строкой в карточке менеджеру: для кого, размер,
+ * цвет, откуда. Телефон идёт отдельно, в контакты.
+ */
+export function profileForManager(profile: V2Profile | undefined): string {
+  if (!profile) return "";
+  const parts = [
+    profile.looking_for,
+    profile.for_whom,
+    profile.size && `размер ${profile.size}`,
+    profile.color,
+    profile.budget && `бюджет ${profile.budget}`,
+    [profile.city, profile.country].filter(Boolean).join(", "),
+    profile.name && `зовут ${profile.name}`,
+    profile.notes,
+  ].filter((p): p is string => Boolean(p && p.trim()));
+  return parts.length ? `О покупателе: ${parts.join("; ")}`.slice(0, 200) : "";
+}
+
 export function isHandoffReason(value: unknown): value is V2HandoffReason {
   return typeof value === "string" && (HANDOFF_REASONS as readonly string[]).includes(value);
 }
