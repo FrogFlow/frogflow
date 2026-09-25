@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { ConsultantProduct } from "../src/lib/consultant/catalog";
-import { correctQuery, editDistance, soundStem } from "../src/lib/consultant-v2/typos";
+import {
+  correctQuery,
+  editDistance,
+  latinModelsIn,
+  latinModelsNote,
+  soundStem,
+} from "../src/lib/consultant-v2/typos";
 
 /**
  * Опечатки на слух: «Пальтеца» (живой диалог BOVI 24.09) поиск не находил,
@@ -45,5 +51,28 @@ describe("опечатки в запросе поиска", () => {
     expect(correctQuery("одеяла", catalog)).toBeNull();
     expect(correctQuery("скатерть", catalog)).toBeNull();
     expect(correctQuery("Uchino", catalog)).toBeNull();
+  });
+});
+
+describe("марки и модели русскими буквами", () => {
+  const rugs = [
+    p("Aquanova Коврик в ванную LONDON 60x100, цвет 43 белый", "Коврики"),
+    p("Aquanova Коврик в ванную Maks 60х60, цвет 10 слон.кость", "Коврики"),
+    p("Kleen-Tex коврик в прихожую Car Protector Set Premium 90х100", "Коврики"),
+    ...catalog,
+  ];
+
+  it("25.09: «акванова Маск» — это Aquanova Maks, и пометка называет позицию", () => {
+    expect(latinModelsIn("А акванова Маск?", rugs)).toEqual(["Aquanova", "Maks"]);
+    expect(latinModelsNote("А акванова Маск?", rugs)).toContain(
+      "Aquanova Коврик в ванную Maks 60х60",
+    );
+    expect(latinModelsIn("траумина", rugs)).toEqual(["Traumina"]);
+  });
+
+  it("обычные слова переписки — не модели («есть» не Set, «рублях» не Ruby)", () => {
+    expect(latinModelsIn("Есть коврики в ванную?", rugs)).toEqual([]);
+    expect(latinModelsIn("Можно в рублях? Спасибо большое", rugs)).toEqual([]);
+    expect(latinModelsNote("Хорошо, давайте его", rugs)).toBe("");
   });
 });

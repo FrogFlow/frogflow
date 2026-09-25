@@ -33,7 +33,7 @@ import {
 import { buildV2SystemPrompt, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
 import { tengeToRubles, wantsRubles } from "./currency";
 import { draftFixNote, draftProblems } from "./draft-check";
-import { correctQuery } from "./typos";
+import { correctQuery, latinModelsIn, latinModelsNote } from "./typos";
 
 const V2_TIMEOUT_MS = 30_000;
 const V2_MAX_ROUNDS = 4;
@@ -317,6 +317,10 @@ export async function decideConsultantReplyV2(
   // Покупатель смотрит в рублях — напоминание в самом сообщении: одной строки
   // в системном промпте Haiku не хватило, на «сколько в рублях?» она считала сама.
   if (wantsRubles(text, state, state.v2_profile)) notes.push(RUBLES_NOTE);
+  // Марка или модель русскими буквами («акванова Маск») — подсказка, что это
+  // в прайсе латиницей: иначе поиск пуст, и модель говорит «таких нет».
+  const latinNote = latinModelsNote(text, catalog);
+  if (latinNote) notes.push(latinNote);
   // Фото покупателя — модели картинкой рядом с текстом.
   const images = await (async () => {
     const { fetchImage, MAX_IMAGES_PER_TURN } = await import("./images");
@@ -439,8 +443,10 @@ export async function decideConsultantReplyV2(
 
     const results: unknown[] = [];
     for (const call of calls) {
-      toolsUsed.push(call.name);
       const input = call.input ?? {};
+      // В журнал — и что искали: иначе по журналу не понять, почему поиск был пуст.
+      const asked = typeof input.query === "string" ? input.query : typeof input.product_id === "string" ? input.product_id : "";
+      toolsUsed.push(asked ? `${call.name} «${asked.slice(0, 60)}»` : call.name);
       ctx.onToolCall?.(call.name, input);
       let result: unknown;
       if (call.name === "remember_customer") {
@@ -489,7 +495,8 @@ export async function decideConsultantReplyV2(
           // из прайса; модель видит, что запрос поправлен.
           let corrected: string | null = null;
           if (call.name === "search_products" && executed.products.length === 0 && typeof input.query === "string") {
-            corrected = correctQuery(input.query, catalog);
+            const latin = latinModelsIn(input.query, catalog);
+            corrected = correctQuery(input.query, catalog) ?? (latin.length ? latin.join(" ") : null);
             if (corrected) {
               const retry = await executeConsultantTool(call.name, { ...input, query: corrected }, toolCtx);
               if (retry.products.length > 0) {
