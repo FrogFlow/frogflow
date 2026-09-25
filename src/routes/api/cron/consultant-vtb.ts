@@ -7,6 +7,7 @@ import { refreshCatalogFromSavedSheet } from "@/lib/consultant/catalog";
 import { pollOutgoingManagerMessages } from "@/lib/consultant/outgoing-poll";
 import { refreshVtbRate } from "@/lib/consultant/vtb";
 import { sendDailyQualityDigest } from "@/lib/consultant-v2/quality-digest";
+import { sendFollowUps } from "@/lib/consultant-v2/follow-up";
 
 /**
  * Курс покупки VTB KZ и снимок Google Sheet — раз в 15 минут.
@@ -26,7 +27,7 @@ export const Route = createFileRoute("/api/cron/consultant-vtb")({
           return Response.json({ ok: true, skipped: "not_consultant" });
         }
         try {
-          const [rate, catalog, outgoing, digest] = await Promise.all([
+          const [rate, catalog, outgoing, digest, followUps] = await Promise.all([
             refreshVtbRate(),
             refreshCatalogFromSavedSheet(),
             pollOutgoingManagerMessages().catch(() => ({ checked: 0, paused: 0 })),
@@ -36,8 +37,15 @@ export const Route = createFileRoute("/api/cron/consultant-vtb")({
               sent: false,
               reason: errorMessage(e),
             })),
+            // Напоминание пропавшему покупателю — только v2 и только если
+            // включено (consultant-v2/follow-up.ts).
+            sendFollowUps().catch((e: unknown) => ({
+              checked: 0,
+              sent: 0,
+              skipped: errorMessage(e),
+            })),
           ]);
-          return Response.json({ rate, catalog, outgoing, digest });
+          return Response.json({ rate, catalog, outgoing, digest, followUps });
         } catch (e: unknown) {
           console.error("[cron/consultant-vtb]", e);
           return Response.json({ ok: false, error: errorMessage(e) }, { status: 500 });
