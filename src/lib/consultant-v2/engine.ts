@@ -32,6 +32,7 @@ import {
 } from "./tools";
 import { buildV2SystemPrompt, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
 import { tengeToRubles, wantsRubles } from "./currency";
+import { draftFixNote, draftProblems } from "./draft-check";
 
 const V2_TIMEOUT_MS = 30_000;
 const V2_MAX_ROUNDS = 4;
@@ -320,6 +321,7 @@ export async function decideConsultantReplyV2(
 
   let maxRounds = V2_MAX_ROUNDS;
   let rublesRetried = false;
+  let draftChecked = false;
   for (let round = 0; round < maxRounds; round++) {
     let json: { content?: AnthropicBlock[]; usage?: unknown };
     try {
@@ -370,6 +372,18 @@ export async function decideConsultantReplyV2(
         toolsUsed.push("fix:rubles_by_model");
         messages.push({ role: "user", content: RUBLES_RETRY_NOTE });
         continue;
+      }
+      // Черновик сверяется с данными один раз: при расхождении модель
+      // переписывает сама (может и поискать заново), покупатель видит новый.
+      if (!draftChecked && !handoff && lastText) {
+        draftChecked = true;
+        const problems = draftProblems(lastText, catalog);
+        if (problems.length) {
+          maxRounds += 2;
+          toolsUsed.push(`fix:draft:${[...new Set(problems.map((p) => p.kind))].join("+")}`);
+          messages.push({ role: "user", content: draftFixNote(problems) });
+          continue;
+        }
       }
       break;
     }
@@ -424,6 +438,10 @@ export async function decideConsultantReplyV2(
   const rub = wantsRubles(text, state, profile);
   // После повтора рубли всё ещё от модели — в журнал: такой ответ надо видеть.
   if (rublesRetried && writesRubles(lastText)) toolsUsed.push("fix:rubles_by_model_again");
+  if (toolsUsed.some((t) => t.startsWith("fix:draft:")) && !handoff) {
+    const left = draftProblems(lastText, catalog);
+    if (left.length) toolsUsed.push(`fix:draft_again:${[...new Set(left.map((p) => p.kind))].join("+")}`);
+  }
   const tengeText = await finalizeV2Text(lastText, catalog);
   const finalText = rub ? tengeToRubles(tengeText, rate) : tengeText;
   logConsultantEvent(requestId, "v2_reply", {

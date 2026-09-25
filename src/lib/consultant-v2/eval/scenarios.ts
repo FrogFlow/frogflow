@@ -26,7 +26,11 @@ export const V2_EVAL_SCENARIOS: EvalScenario[] = [
       { text: "а белые есть?" },
       { text: "70х140", expect: { must: [/40\s000|30\s000|55\s000|₸/] } },
       { text: "сколько в рублях?", expect: { rubles: true } },
-      { text: "а подушки для сна какие есть?", expect: { broad: true, rubles: true } },
+      // 25.09, прогон этапа 2: «Подушек для сна в наличии нет».
+      {
+        text: "а подушки для сна какие есть?",
+        expect: { broad: true, rubles: true, mustNot: [/в наличии нет|нет в наличии/i] },
+      },
       { text: "помягче", expect: { rubles: true } },
       { text: "в тенге покажите", expect: { rubles: false } },
       { text: "Дорого", expect: { maxChars: 250 } },
@@ -38,7 +42,11 @@ export const V2_EVAL_SCENARIOS: EvalScenario[] = [
     source: "BOVI 19.09",
     turns: [
       { text: "Что у вас есть?", expect: { broad: true } },
-      { text: "Какие есть полотенца?", expect: { broad: true } },
+      // 25.09, прогон этапа 2: «португальские Rivolta» — Rivolta итальянская.
+      {
+        text: "Какие есть полотенца?",
+        expect: { broad: true, mustNot: [/португальск\S*\s+Rivolta/i] },
+      },
     ],
   },
   {

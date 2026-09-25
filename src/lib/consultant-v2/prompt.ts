@@ -19,7 +19,11 @@ export const V2_PROMPT_VERSION = "v2.3";
 /** Марка — латиница в начале названия: «Bedding House PIP», «Uchino», «Kleen-tex». */
 function brandOf(name: string): string {
   const prefix = /^[^А-Яа-яЁё]*/.exec(name.trim())?.[0] ?? "";
-  return prefix.replace(/[^A-Za-z0-9&.' -]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 30);
+  return prefix
+    .replace(/[^A-Za-z0-9&.' -]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 30);
 }
 
 /** Вид товара — первое русское слово названия: «полотенце», «подушка», «КПБ». */
@@ -49,9 +53,12 @@ function topValues(values: string[], limit: number): string {
 export function formatAssortmentMapForV2(catalog: ConsultantProduct[]): string {
   const inStock = catalog.filter((p) => p.stock);
   if (inStock.length === 0) return "КАРТА АССОРТИМЕНТА: сейчас пусто.";
+  // Строка — раздел и вид товара: в разделе «Подушки Dorelan» есть и
+  // наволочка за 35 000, и «от 35 000» на весь раздел модель 25.09 назвала
+  // ценой подушки (они от 85 000).
   const groups = new Map<string, ConsultantProduct[]>();
   for (const p of inStock) {
-    const key = p.category?.trim() || "Без раздела";
+    const key = `${p.category?.trim() || "Без раздела"}\u0000${kindOf(p.name) || "товары"}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(p);
   }
@@ -59,18 +66,36 @@ export function formatAssortmentMapForV2(catalog: ConsultantProduct[]): string {
     "КАРТА АССОРТИМЕНТА — всё в наличии. Раздел — вид товара (марки): число позиций; размеры; цена от.",
     "Конкретных позиций, цен и расцветок здесь нет: их даёт поиск search_products.",
   ];
-  for (const [category, products] of [...groups].sort((a, b) => b[1].length - a[1].length)) {
-    const kinds = topValues(products.map((p) => kindOf(p.name)), 3);
-    const brands = topValues(products.map((p) => brandOf(p.name)), 4);
-    // «240х220» и «240x220» — один размер: в прайсе пишут по-разному.
-    const sizes = topValues(
-      products.map((p) => p.size.replace(/(\d)\s*[xхХ×*]\s*(\d)/g, "$1x$2")),
-      6,
+  for (const [key, products] of [...groups].sort((a, b) => a[0].localeCompare(b[0], "ru"))) {
+    const [category, kinds] = key.split("\u0000");
+    const brands = topValues(
+      products.map((p) => brandOf(p.name)),
+      4,
     );
+    // «240х220» и «240x220» — один размер: в прайсе пишут по-разному.
+    const sizeOf = (p: ConsultantProduct) =>
+      p.size.replace(/(\d)\s*[xхХ×*]\s*(\d)/g, "$1x$2").trim();
+    const bySize = new Map<string, number>();
+    for (const p of products) {
+      const size = sizeOf(p);
+      if (size && p.price_kzt > 0)
+        bySize.set(size, Math.min(bySize.get(size) ?? Infinity, p.price_kzt));
+    }
     const from = Math.min(...products.map((p) => p.price_kzt).filter((n) => n > 0));
-    const parts = [`• ${category} — ${kinds || "товары"}${brands ? ` (${brands})` : ""}: ${products.length} поз.`];
-    if (sizes) parts.push(`размеры ${sizes}`);
-    if (Number.isFinite(from)) parts.push(`от ${from.toLocaleString("ru-RU")} ₸`);
+    const parts = [
+      `• ${category} — ${kinds}${brands ? ` (${brands})` : ""}: ${products.length} поз.`,
+    ];
+    if (bySize.size > 1 && bySize.size <= 4 && products.every((p) => sizeOf(p))) {
+      // Несколько размеров — цена «от» у каждого: «от 30 000» на весь раздел
+      // модель приписывала размеру 50х70, а 30 000 стоит только 40х60.
+      parts.push(
+        [...bySize].map(([size, min]) => `${size} от ${min.toLocaleString("ru-RU")} ₸`).join(", "),
+      );
+    } else {
+      const sizes = topValues(products.map(sizeOf), 6);
+      if (sizes) parts.push(`размеры ${sizes}`);
+      if (Number.isFinite(from)) parts.push(`от ${from.toLocaleString("ru-RU")} ₸`);
+    }
     lines.push(parts.join("; "));
   }
   return lines.join("\n");

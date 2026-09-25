@@ -16,7 +16,7 @@ import type { ConsultantState } from "@/lib/consultant/state";
 import type { V2Profile } from "./tools";
 
 /** Сумма в тенге: «85 000 ₸», «85000₸», «85 000 тг», «85 000 тенге». */
-const KZT_AMOUNT_RE = /(\d{1,3}(?:[   ]\d{3})+|\d+)[   ]?(?:₸|тг\.?(?![а-яё])|тенге)/gi;
+const KZT_AMOUNT_RE = /(\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)[ \u00a0\u202f]?(?:₸|тг\.?(?![а-яё])|тенге)/gi;
 
 const ASKS_RUBLES_RE = /рубл|₽|(?:^|[^а-яё])руб(?:[^а-яё]|$)|росси|(?:^|[^а-яё])рф(?:[^а-яё]|$)/i;
 const ASKS_TENGE_RE = /тенге|₸|(?:^|[^а-яё])тг(?:[^а-яё]|$)|казахстан/i;
@@ -49,7 +49,7 @@ export function findKztAmounts(text: string): { kzt: number; start: number; end:
 export function tengeToRubles(text: string, rate: number | null): string {
   if (!rate || rate <= 0) return text;
   return text.replace(KZT_AMOUNT_RE, (_match, digits: string) => {
-    const kzt = Number(digits.replace(/[   ]/g, ""));
+    const kzt = Number(digits.replace(/[ \u00a0\u202f]/g, ""));
     if (!Number.isFinite(kzt) || kzt <= 0) return _match;
     return `${priceRub(kzt, rate).toLocaleString("ru-RU")} ₽`;
   });
