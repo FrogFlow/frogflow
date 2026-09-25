@@ -116,6 +116,15 @@ type TurnResponse =
 
 let seenModel: string | null = null;
 
+/**
+ * Предел расхода на прогон. 25.09 девять прогонов подряд (по 0,35–1,06 $
+ * каждый) съели весь баланс Anthropic, общий с живыми ботами. Прогон
+ * останавливается, как только потрачено больше предела; поднять — только
+ * явно, флагом --max-usd.
+ */
+const MAX_USD = Number(arg("max-usd") ?? 0.3);
+let spentUsd = 0;
+
 async function runScenario(
   bot: { url: string; secret: string },
   scenario: EvalScenario,
@@ -129,6 +138,25 @@ async function runScenario(
   let firstReply = true;
   const turns: TurnResult[] = [];
   for (const turn of scenario.turns) {
+    if (spentUsd >= MAX_USD) {
+      turns.push({
+        customer: turn.text,
+        reply: "",
+        kind: "skipped",
+        handoff: null,
+        tools: [],
+        flags: [
+          {
+            check: "бюджет",
+            detail: `прогон остановлен: потрачено $${spentUsd.toFixed(2)} из $${MAX_USD}`,
+          },
+        ],
+        usd: 0,
+        ms: 0,
+        skipped: "бюджет",
+      });
+      continue;
+    }
     const reset = isResetIntent(turn.text);
     if (state.automation_paused && !reset) {
       turns.push({
@@ -172,6 +200,7 @@ async function runScenario(
       break;
     }
     if (res.model) seenModel = res.model;
+    if (res.usage) spentUsd += estimateUsdFromTokens(res.usage, undefined, res.model);
     const flags = checkTurn(
       turn,
       {
@@ -373,6 +402,10 @@ async function main() {
   const concurrency = Number(arg("concurrency") ?? 4);
   const repeat = Math.max(1, Number(arg("repeat") ?? 1));
   const queue = scenarios.flatMap((s) => Array.from({ length: repeat }, () => s));
+  const plannedTurns = queue.reduce((n, s) => n + s.turns.length, 0);
+  console.log(
+    `Ходов: ${plannedTurns}, ожидаемо около $${(plannedTurns * 0.004).toFixed(2)}; предел $${MAX_USD} (--max-usd).`,
+  );
   const results = await pool(queue, concurrency, async (s) => {
     const r = await runScenario(bot, s, catalogRes.products!, index);
     console.log(
