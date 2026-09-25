@@ -44,8 +44,18 @@ export const V2_PROFILE_FIELDS = [
 ] as const;
 export type V2Profile = Partial<Record<(typeof V2_PROFILE_FIELDS)[number], string>>;
 
+/**
+ * Поиск v1 велел на широкий запрос «сказать, чем известна марка» — отсюда
+ * в прогонах v2 «PIP — голландская марка, известна качественным текстилем».
+ * У v2 стиль задан примерами менеджера, поэтому описание поиска без этого.
+ */
+const V2_SEARCH_DESCRIPTION =
+  "Search the live catalog by free text, category, size, firmness or color. Use before naming any item, price or color. Empty list means nothing matched — do not invent items and do not offer a different category instead. The result reports total_matches: when it is larger than the number of returned cards, say the total and offer to narrow the choice. A broad request (only a brand or a category, no size and no color) comes back as a summary with ask_size_and_color: then do NOT list items — say in one line what there is and from what price, and ask one question about size or color.";
+
 export const V2_TOOLS = [
-  ...CONSULTANT_TOOLS.filter((t) => DATA_TOOL_NAMES.has(t.name)),
+  ...CONSULTANT_TOOLS.filter((t) => DATA_TOOL_NAMES.has(t.name)).map((t) =>
+    t.name === "search_products" ? { ...t, description: V2_SEARCH_DESCRIPTION } : t,
+  ),
   {
     name: "handoff_to_manager",
     description:

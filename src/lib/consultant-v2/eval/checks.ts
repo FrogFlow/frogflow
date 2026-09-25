@@ -122,11 +122,13 @@ export function checkForm(out: TurnOutcome, expect: TurnExpect, isFirst: boolean
   if (questions > 1)
     flags.push({ check: "вопросы", detail: `${questions} вопроса в одном сообщении` });
   const listLines = text.split("\n").filter((l) => /^\s*(?:[•\-–—*]|\d+[.)])\s/.test(l)).length;
-  const positions = Math.max(
-    listLines,
-    findKztAmounts(out.historyText ?? text).length,
-    rubAmounts(text).length,
-  );
+  // «от 180 000» — цена раздела, а не позиция: «летние от 180 000, пуховые
+  // от 190 000» — это и есть ответ «что есть и от какой цены».
+  const priced = out.historyText ?? text;
+  const positionPrices = findKztAmounts(priced).filter(
+    (a) => !/(?:^|[\s(])от\s*$/i.test(priced.slice(Math.max(0, a.start - 6), a.start)),
+  ).length;
+  const positions = Math.max(listLines, positionPrices, rubAmounts(text).length);
   if (expect.broad && positions > 3) {
     flags.push({
       check: "широкий вопрос",
