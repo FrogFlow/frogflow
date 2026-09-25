@@ -167,6 +167,11 @@ describe("форма ответа", () => {
     expect(checks(list, false)).not.toContain("широкий вопрос");
   });
 
+  it("казахский ответ не читается как «ты»", () => {
+    const kz = "Сәлеметсіз бе. Иә, сүлгілер бар: түрлі түсін және өлшемін айтыңыз.";
+    expect(checkForm(out(kz), { kazakh: true }, true)).toEqual([]);
+  });
+
   it("как пишет менеджер BOVI — без замечаний", () => {
     expect(checkForm(out("50х100 и 70х140. Какой цвет?"), {}, false)).toEqual([]);
     expect(checkForm(out("Есть подешевле, показать?"), {}, false)).toEqual([]);

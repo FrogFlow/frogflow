@@ -483,7 +483,13 @@ export async function decideConsultantReplyV2(
       catalog,
       handoff.summary,
     );
-    return { ...reply, patch: { ...reply.patch, v2_profile: profile, v2_rub: rub }, toolsUsed };
+    return {
+      ...reply,
+      patch: { ...reply.patch, v2_profile: profile, v2_rub: rub },
+      toolsUsed,
+      // Фраза при передаче — тоже в тенге в истории, если покупателю ушли рубли.
+      ...(finalText && finalText !== tengeText && reply.text === finalText ? { historyText: tengeText } : {}),
+    };
   }
 
   if (!finalText) {
