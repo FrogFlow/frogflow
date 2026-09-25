@@ -131,18 +131,24 @@ async function storyNote(
   ctx: V2Context,
   catalog: ConsultantProduct[],
 ): Promise<{ note: string; products: ConsultantProduct[] }> {
-  if (!ctx.storyId && !ctx.storyMediaUrl) return { note: "", products: [] };
+  if (!ctx.storyId && !ctx.storyMediaUrl && !ctx.storyProductIds) return { note: "", products: [] };
   try {
-    const { findStoryTag } = await import("@/lib/consultant/story-tags.functions");
-    const { storyProductsOf } = await import("@/lib/consultant/story-products");
-    const { getProduct } = await import("@/lib/consultant/catalog");
-    const { matchProductsInText } = await import("@/lib/consultant/handle-message");
-    const tag = await findStoryTag(ctx.storyId, ctx.storyMediaUrl);
     const products: ConsultantProduct[] = [];
-    for (const tagged of storyProductsOf(tag)) {
-      const byId = tagged.id ? await getProduct(tagged.id, catalog) : null;
-      const found = byId ?? matchProductsInText(tagged.name, catalog)[0] ?? null;
-      if (found) products.push(found);
+    if (ctx.storyProductIds) {
+      // Эталонный набор: товары публикации заданы сценарием, а не отметкой в базе.
+      const ids = new Set(ctx.storyProductIds);
+      products.push(...catalog.filter((p) => ids.has(p.id)));
+    } else {
+      const { findStoryTag } = await import("@/lib/consultant/story-tags.functions");
+      const { storyProductsOf } = await import("@/lib/consultant/story-products");
+      const { getProduct } = await import("@/lib/consultant/catalog");
+      const { matchProductsInText } = await import("@/lib/consultant/handle-message");
+      const tag = await findStoryTag(ctx.storyId, ctx.storyMediaUrl);
+      for (const tagged of storyProductsOf(tag)) {
+        const byId = tagged.id ? await getProduct(tagged.id, catalog) : null;
+        const found = byId ?? matchProductsInText(tagged.name, catalog)[0] ?? null;
+        if (found) products.push(found);
+      }
     }
     if (products.length === 0) {
       return {
@@ -174,6 +180,16 @@ export type V2Context = {
   catalog?: ConsultantProduct[];
   rate?: number | null;
   model?: string;
+  /**
+   * Прогон эталонного набора: ответ считается как обычно, но без следов —
+   * передача менеджеру не ставит паузу, не заводит задачу и не шлёт
+   * уведомление, расход не ложится в счёт клиента.
+   */
+  dryRun?: boolean;
+  /** Товары публикации, заданные сценарием набора, — вместо отметки сторис в базе. */
+  storyProductIds?: string[];
+  /** Каждый вызов инструмента с входом — для разбора прогона. */
+  onToolCall?: (name: string, input: Record<string, unknown>) => void;
 };
 
 export async function decideConsultantReplyV2(
@@ -191,9 +207,11 @@ export async function decideConsultantReplyV2(
 
   const bucket = state.ab_bucket ?? "a";
   const pack = copyForBucket(bucket);
+  // Без ключа покупателя handoffReply ничего не пишет: ни паузы, ни задачи, ни уведомления.
+  const handoffUserKey = ctx.dryRun ? undefined : ctx.userKey;
 
   if (looksLikePromptInjection(text)) {
-    return handoffReply(pack, state, bucket, "injection", text, ctx.userKey);
+    return handoffReply(pack, state, bucket, "injection", text, handoffUserKey);
   }
   if (isResetIntent(text)) {
     return {
@@ -210,12 +228,13 @@ export async function decideConsultantReplyV2(
         pending_story_url: undefined,
       },
       kind: "clarify",
+      resetHistory: true,
     };
   }
 
   const apiKey = consultantApiKey();
   if (!apiKey) {
-    return handoffReply(pack, state, bucket, "error", text, ctx.userKey, HANDOFF_TO_MANAGER_REPLY);
+    return handoffReply(pack, state, bucket, "error", text, handoffUserKey, HANDOFF_TO_MANAGER_REPLY);
   }
   const model = ctx.catalog != null ? (ctx.model ?? consultantModel()) : await v2Model();
 
@@ -354,6 +373,7 @@ export async function decideConsultantReplyV2(
     for (const call of calls) {
       toolsUsed.push(call.name);
       const input = call.input ?? {};
+      ctx.onToolCall?.(call.name, input);
       let result: unknown;
       if (call.name === "remember_customer") {
         profile = mergeProfile(profile, input);
@@ -390,7 +410,8 @@ export async function decideConsultantReplyV2(
 
   if (usage) {
     ctx.onUsage?.(usage, model);
-    await import("@/lib/ai-usage.server")
+    if (!ctx.dryRun)
+      await import("@/lib/ai-usage.server")
       .then((m) => m.recordConsultantLifetime(usage!, model))
       .catch(() => {});
   }
@@ -433,7 +454,7 @@ export async function decideConsultantReplyV2(
       bucket,
       REASON_TO_TASK[handoff.reason],
       text,
-      ctx.userKey,
+      handoffUserKey,
       finalText || HANDOFF_TO_MANAGER_REPLY,
       handoff.phone || profile?.phone,
       catalog,
@@ -445,7 +466,7 @@ export async function decideConsultantReplyV2(
   if (!finalText) {
     // Модель не ответила (сбой сети, пустой ответ). Молчать нельзя — человек
     // ждёт; отдаём менеджеру с причиной «ошибка».
-    return handoffReply(pack, stateWithProfile, bucket, "error", text, ctx.userKey, HANDOFF_TO_MANAGER_REPLY);
+    return handoffReply(pack, stateWithProfile, bucket, "error", text, handoffUserKey, HANDOFF_TO_MANAGER_REPLY);
   }
 
   const ids = [...new Set(products.map((p) => p.id))];

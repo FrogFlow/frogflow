@@ -5461,7 +5461,9 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
             ...reply.patch,
             last_bot_reply: reply.text,
             last_bot_reply_at: new Date().toISOString(),
-            recent: appendRecent(consultant, msg.text, reply.historyText ?? reply.text),
+            recent: reply.resetHistory
+              ? []
+              : appendRecent(consultant, msg.text, reply.historyText ?? reply.text),
           });
           // В журнал, как и сообщения из директа: по нему разбираются тесты.
           const { recordConsultantRun } = await import("./consultant/runs");

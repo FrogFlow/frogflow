@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "knowledge": "node scripts/collect-knowledge.mjs",
     "audit:dialogs": "tsx scripts/audit-dialogs.ts",
-    "clone:consultant": "tsx scripts/clone-consultant-tenant.ts"
+    "clone:consultant": "tsx scripts/clone-consultant-tenant.ts",
+    "eval:v2": "tsx scripts/eval-consultant-v2.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

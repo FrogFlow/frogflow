@@ -147,6 +147,11 @@ export type ConsultantReply = {
    * идёт тенге — в той валюте, в которой модель думает.
    */
   historyText?: string;
+  /**
+   * Покупатель начал заново — история диалога очищается. Патча `recent: []`
+   * для этого мало: история дописывается после патча и перекрывает его.
+   */
+  resetHistory?: boolean;
 };
 
 const activeUserLocks = new Map<string, Promise<unknown>>();
@@ -683,7 +688,7 @@ async function handleConsultantZernioEventInternal(params: {
     pending_story_at: undefined,
     last_bot_reply: reply.text,
     last_bot_reply_at: replyTime,
-    recent: appendRecent(consultant, text, reply.historyText ?? reply.text),
+    recent: reply.resetHistory ? [] : appendRecent(consultant, text, reply.historyText ?? reply.text),
     ...(() => {
       const reset =
         reply.kind === "handoff" ||

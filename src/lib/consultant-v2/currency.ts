@@ -36,6 +36,15 @@ export function wantsRubles(
   return /росси|рф|russia/i.test(profile?.country ?? "");
 }
 
+/** Суммы в тенге с местом в тексте — для проверок эталонного набора. */
+export function findKztAmounts(text: string): { kzt: number; start: number; end: number }[] {
+  return [...text.matchAll(KZT_AMOUNT_RE)].map((m) => ({
+    kzt: Number(m[1].replace(/[   ]/g, "")),
+    start: m.index ?? 0,
+    end: (m.index ?? 0) + m[0].length,
+  }));
+}
+
 /** Все суммы в тенге → рубли по курсу магазина. Без курса текст не меняется. */
 export function tengeToRubles(text: string, rate: number | null): string {
   if (!rate || rate <= 0) return text;

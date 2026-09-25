@@ -63,6 +63,11 @@ export default defineConfig({
           "/api/cron/consultant-vtb": {
             maxDuration: 60,
           },
+          // Ход эталонного набора консультанта v2 — до пяти обращений к модели
+          // по 30 с каждое; на дефолтном таймауте ход с поиском обрывался бы.
+          "/api/internal/diagnostics": {
+            maxDuration: 120,
+          },
         },
       },
     }),
