@@ -63,6 +63,9 @@ describe("статья базы знаний к вопросу о моделях
     expect(note).toContain("Aquanova Collection Overview");
     expect(note).toContain("египетский хлопок");
     expect(note).toContain("свойств не придумывайте");
+    // О Maks в статье ни слова — это сказано прямо (прогон 25.09: выдала Mauro за Maks).
+    expect(note).toContain("О Maks в статье ничего нет");
+    expect(note).not.toContain("О Aquanova");
   });
 
   it("статья, где названо больше разных моделей, важнее частых упоминаний одной", () => {

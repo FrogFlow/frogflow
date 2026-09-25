@@ -98,5 +98,13 @@ export function knowledgeAboutModels(
   }
   if (!best || opts.attached?.includes(best.article.title)) return "";
   const body = excerpt(best.article.content, terms);
-  return `[Из базы знаний о ${terms.join(", ")} — покупатель этого не видит. Отвечайте фактами отсюда; о модели, которой здесь нет, свойств не придумывайте:\n• ${best.article.title}:\n${body}]`;
+  // О какой из названных моделей в статье нет ни слова. 25.09, прогон: о Maks
+  // в статье Aquanova ничего нет, и модель выдала за него описание Mauro —
+  // «микрополиэстер до 2600 г/м²». Общего «не придумывайте» не хватило.
+  const article = `${best.article.title}\n${best.article.content}`;
+  const missing = terms.filter((t) => mentions(article, t) === 0);
+  const missingNote = missing.length
+    ? ` О ${missing.join(", ")} в статье ничего нет: свойств не называйте, даже если в статье есть похожее название. Скажите честно, что описания этой модели у вас нет; покупателю без него не решить — позовите менеджера (no_answer).`
+    : "";
+  return `[Из базы знаний о ${terms.join(", ")} — покупатель этого не видит. Отвечайте фактами отсюда; о модели, которой здесь нет, свойств не придумывайте.${missingNote}\n• ${best.article.title}:\n${body}]`;
 }
