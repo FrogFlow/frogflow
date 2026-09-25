@@ -138,7 +138,7 @@ type AnthropicBlock =
 async function storyNote(
   ctx: V2Context,
   catalog: ConsultantProduct[],
-): Promise<{ note: string; products: ConsultantProduct[] }> {
+): Promise<{ note: string; products: ConsultantProduct[]; image?: import("./images").V2Image }> {
   if (!ctx.storyId && !ctx.storyMediaUrl && !ctx.storyProductIds) return { note: "", products: [] };
   try {
     const products: ConsultantProduct[] = [];
@@ -159,6 +159,17 @@ async function storyNote(
       }
     }
     if (products.length === 0) {
+      // Отметки нет — модель смотрит на саму публикацию: узнаёт товар и ищет
+      // похожее. Видео (рилс) и устаревшая ссылка не скачаются — тогда вопрос.
+      const { fetchImage } = await import("./images");
+      const image = ctx.storyMediaUrl ? await fetchImage(ctx.storyMediaUrl) : null;
+      if (image) {
+        return {
+          note: "[Покупатель пишет из публикации (сторис или рилс); товары к ней не привязаны. Картинка публикации — ниже: поймите, что на ней, и найдите похожее поиском. Не уверены — спросите, что понравилось.]",
+          products,
+          image,
+        };
+      }
       return {
         note: "[Покупатель пишет из публикации (сторис или рилс), но товары к ней не привязаны. Спросите, что из неё понравилось.]",
         products,
@@ -309,14 +320,16 @@ export async function decideConsultantReplyV2(
   // Фото покупателя — модели картинкой рядом с текстом.
   const images = await (async () => {
     const { fetchImage, MAX_IMAGES_PER_TURN } = await import("./images");
-    const ready = (ctx.images ?? []).slice(0, MAX_IMAGES_PER_TURN);
+    const ready = [...(story.image ? [story.image] : []), ...(ctx.images ?? [])].slice(0, MAX_IMAGES_PER_TURN);
     const fetched = await Promise.all(
       (ctx.imageUrls ?? []).slice(0, MAX_IMAGES_PER_TURN - ready.length).map(fetchImage),
     );
     return [...ready, ...fetched.filter((img): img is NonNullable<typeof img> => img !== null)];
   })();
   const sentPhoto = (ctx.imageUrls?.length ?? 0) + (ctx.images?.length ?? 0) > 0;
-  if (images.length > 0) {
+  // Картинка публикации идёт со своей пометкой (storyNote); здесь — о фото покупателя.
+  const customerPhotos = images.length - (story.image ? 1 : 0);
+  if (customerPhotos > 0) {
     notes.push("[Покупатель прислал фото — оно ниже. Поймите, что на нём, и найдите похожее поиском.]");
   } else if (sentPhoto) {
     notes.push("[Покупатель прислал фото, но оно не загрузилось. Попросите написать, что за товар интересует.]");
@@ -344,7 +357,10 @@ export async function decideConsultantReplyV2(
   let handoff: { reason: V2HandoffReason; summary: string; phone?: string } | null = null;
   const products: ConsultantProduct[] = [...story.products];
   // В журнал: сколько фото модель увидела («photo:0» — не скачалось).
-  const toolsUsed: string[] = sentPhoto ? [`photo:${images.length}`] : [];
+  const toolsUsed: string[] = [
+    ...(sentPhoto ? [`photo:${customerPhotos}`] : []),
+    ...(story.image ? ["story_image"] : []),
+  ];
   let usage: SmartSearchTokenUsage | null = null;
   let lastText = "";
   let error: string | null = null;
