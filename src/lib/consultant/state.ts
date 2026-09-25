@@ -59,6 +59,8 @@ export type ConsultantState = {
   relayed?: string[];
   /** Консультант v2: что покупатель сказал о своей задаче (remember_customer). */
   v2_profile?: import("@/lib/consultant-v2/tools").V2Profile;
+  /** Консультант v2: покупатель смотрит цены в рублях (переводит код). */
+  v2_rub?: boolean;
 };
 
 /** Сколько переданных ответов менеджера помним для опознания своего голоса. */

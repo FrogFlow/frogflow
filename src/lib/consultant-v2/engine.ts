@@ -20,7 +20,6 @@
 import type { ConsultantReply } from "@/lib/consultant/handle-message";
 import type { ConsultantState } from "@/lib/consultant/state";
 import type { ConsultantProduct } from "@/lib/consultant/catalog";
-import type { ConsultantCountry } from "@/lib/consultant/intent";
 import type { StoredVtbRate } from "@/lib/consultant/rate";
 import type { SmartSearchTokenUsage } from "@/lib/smart-search-cost";
 import {
@@ -31,7 +30,8 @@ import {
   type V2HandoffReason,
   type V2Profile,
 } from "./tools";
-import { buildV2SystemPrompt, V2_PROMPT_VERSION } from "./prompt";
+import { buildV2SystemPrompt, formatCatalogForV2, V2_PROMPT_VERSION } from "./prompt";
+import { tengeToRubles, wantsRubles } from "./currency";
 
 const V2_TIMEOUT_MS = 30_000;
 const V2_MAX_ROUNDS = 4;
@@ -60,14 +60,6 @@ export function modelParams(model: string): Record<string, unknown> {
   return {};
 }
 
-/** Страна для цен в инструментах: из того, что покупатель сказал, иначе из состояния. */
-export function countryFrom(profile: V2Profile | undefined, state: ConsultantState): ConsultantCountry | undefined {
-  const said = profile?.country ?? "";
-  if (/росси|рф|russia/i.test(said)) return "RU";
-  if (/казах|қазақ|рк|kazakh/i.test(said)) return "KZ";
-  return state.country;
-}
-
 /**
  * Ответ модели перед отправкой: только защита и просьбы магазина, без
  * переписывания смысла. Разметка и эмодзи — магазин просил без них;
@@ -90,11 +82,10 @@ type AnthropicBlock =
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: string; [key: string]: unknown };
 
-/** Товары публикации — пометкой для модели. Покупатель её не видит. */
+/** Товары публикации — пометкой для модели. Покупатель её не видит. Цены — в тенге. */
 async function storyNote(
   ctx: V2Context,
   catalog: ConsultantProduct[],
-  rate: number | null,
 ): Promise<{ note: string; products: ConsultantProduct[] }> {
   if (!ctx.storyId && !ctx.storyMediaUrl) return { note: "", products: [] };
   try {
@@ -102,7 +93,6 @@ async function storyNote(
     const { storyProductsOf } = await import("@/lib/consultant/story-products");
     const { getProduct } = await import("@/lib/consultant/catalog");
     const { matchProductsInText } = await import("@/lib/consultant/handle-message");
-    const { priceRub } = await import("@/lib/consultant/rate");
     const tag = await findStoryTag(ctx.storyId, ctx.storyMediaUrl);
     const products: ConsultantProduct[] = [];
     for (const tagged of storyProductsOf(tag)) {
@@ -116,10 +106,9 @@ async function storyNote(
         products,
       };
     }
-    const lines = products.map((p) => {
-      const rub = rate ? ` / ${priceRub(p.price_kzt, rate).toLocaleString("ru-RU")} ₽` : "";
-      return `• ${p.name}${p.size ? `, ${p.size}` : ""} — ${p.price_kzt.toLocaleString("ru-RU")} ₸${rub}`;
-    });
+    const lines = products.map(
+      (p) => `• ${p.name}${p.size ? `, ${p.size}` : ""} — ${p.price_kzt.toLocaleString("ru-RU")} ₸`,
+    );
     return {
       note: `[Покупатель пишет из публикации (сторис или рилс). Товары в ней:\n${lines.join("\n")}]`,
       products,
@@ -167,6 +156,7 @@ export async function decideConsultantReplyV2(
       patch: {
         recent: [],
         v2_profile: undefined,
+        v2_rub: undefined,
         last_product_ids: [],
         automation_paused: false,
         country: undefined,
@@ -185,9 +175,7 @@ export async function decideConsultantReplyV2(
   const model = consultantModel();
 
   // ── Данные ────────────────────────────────────────────────────────────
-  const { formatCatalogForPrompt, buildAnthropicMessages, withTailCacheBreakpoint } = await import(
-    "@/lib/consultant/claude"
-  );
+  const { buildAnthropicMessages, withTailCacheBreakpoint } = await import("@/lib/consultant/claude");
   const { loadConsultantCatalog, getConsultantShopUrl } = await import("@/lib/consultant/catalog");
   const { getFreshVtbRate } = await import("@/lib/consultant/rate");
   const catalog = ctx.catalog ?? (await loadConsultantCatalog());
@@ -222,7 +210,7 @@ export async function decideConsultantReplyV2(
     }
   })();
   const system = buildV2SystemPrompt({
-    catalogSection: formatCatalogForPrompt(catalog, rate),
+    catalogSection: formatCatalogForV2(catalog),
     knowledgeSection,
     brandsSection,
     shopUrl,
@@ -234,7 +222,7 @@ export async function decideConsultantReplyV2(
   const notes: string[] = [];
   const profileNote = formatProfile(state.v2_profile);
   if (profileNote) notes.push(profileNote);
-  const story = await storyNote(ctx, catalog, rate);
+  const story = await storyNote(ctx, catalog);
   if (story.note) notes.push(story.note);
   const known = await knowledgeForQuestion(text, catalog);
   if (known) notes.push(`[Из базы знаний — покупатель этого не видит:\n${known}]`);
@@ -320,8 +308,9 @@ export async function decideConsultantReplyV2(
         result = { ok: true, note: "Менеджер подключится. Напишите покупателю одну короткую фразу об этом." };
       } else {
         try {
+          // Карточки — в тенге: рубли переводит код после ответа.
           const executed = await executeConsultantTool(call.name, input, {
-            country: countryFrom(profile, state),
+            country: "KZ",
             catalog,
             shopUrl,
             excludeIds: state.last_product_ids,
@@ -347,7 +336,9 @@ export async function decideConsultantReplyV2(
       .catch(() => {});
   }
 
-  const finalText = await finalizeV2Text(lastText, catalog);
+  const rub = wantsRubles(text, state, profile);
+  let finalText = await finalizeV2Text(lastText, catalog);
+  if (rub) finalText = tengeToRubles(finalText, rate);
   logConsultantEvent(requestId, "v2_reply", {
     userKey: ctx.userKey,
     promptVersion: V2_PROMPT_VERSION,
@@ -372,7 +363,7 @@ export async function decideConsultantReplyV2(
     }
   }
 
-  const stateWithProfile = { ...state, v2_profile: profile };
+  const stateWithProfile = { ...state, v2_profile: profile, v2_rub: rub };
 
   if (handoff) {
     const reply = await handoffReply(
@@ -387,7 +378,7 @@ export async function decideConsultantReplyV2(
       catalog,
       handoff.summary,
     );
-    return { ...reply, patch: { ...reply.patch, v2_profile: profile }, toolsUsed };
+    return { ...reply, patch: { ...reply.patch, v2_profile: profile, v2_rub: rub }, toolsUsed };
   }
 
   if (!finalText) {
@@ -401,6 +392,7 @@ export async function decideConsultantReplyV2(
     text: finalText,
     patch: {
       v2_profile: profile,
+      v2_rub: rub,
       conversation_state: "consulting",
       ...(ids.length ? { last_product_ids: ids.slice(0, 12) } : {}),
     },

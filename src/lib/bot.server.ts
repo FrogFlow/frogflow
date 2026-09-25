@@ -5433,14 +5433,27 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
     const { isConsultantVertical } = await import("./verticals/registry");
     const { currentVertical } = await import("./verticals/vertical.server");
     if (isConsultantVertical(currentVertical()) && msg.text && !msg.text.startsWith("/id")) {
-      const { decideConsultantReply } = await import("./consultant/handle-message");
+      // Консультант v2 отвечает и здесь: по Telegram его и тестируют.
+      const { isBoviConsultantV2Vertical } = await import("./verticals/registry");
+      const decideConsultantReply = isBoviConsultantV2Vertical(currentVertical())
+        ? (await import("./consultant-v2/engine")).decideConsultantReplyV2
+        : (await import("./consultant/handle-message")).decideConsultantReply;
       const { loadConsultantState, patchConsultantState, appendRecent } =
         await import("./consultant/state");
       const userKey = `tg_${from.id}`;
       const { consultant } = await loadConsultantState(userKey);
-      if (!consultant.automation_paused) {
+      const { isResetIntent } = await import("./consultant/intent");
+      // После передачи менеджеру диалог на паузе; сброс проходит и сквозь неё,
+      // иначе при тесте из Telegram начать заново было нечем.
+      if (!consultant.automation_paused || isResetIntent(msg.text)) {
+        let usage: import("./smart-search-cost").SmartSearchTokenUsage | null = null;
+        let model: string | null = null;
         const reply = await decideConsultantReply(msg.text, consultant, {
           userKey,
+          onUsage: (u, m) => {
+            usage = u;
+            model = m;
+          },
         });
         if (reply) {
           await tg("sendMessage", { chat_id, text: reply.text });
@@ -5449,6 +5462,20 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
             last_bot_reply: reply.text,
             last_bot_reply_at: new Date().toISOString(),
             recent: appendRecent(consultant, msg.text, reply.text),
+          });
+          // В журнал, как и сообщения из директа: по нему разбираются тесты.
+          const { recordConsultantRun } = await import("./consultant/runs");
+          await recordConsultantRun({
+            messageId: `tg_${chat_id}_${msg.message_id}`,
+            conversationId: `tg_${chat_id}`,
+            accountId: "telegram",
+            userKey,
+            source: "admin_test",
+            incomingText: msg.text,
+            replyText: reply.text,
+            replyKind: reply.kind,
+            model,
+            usage,
           });
         }
       }

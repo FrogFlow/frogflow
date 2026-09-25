@@ -1,7 +1,9 @@
 import { CONSULTANT_TOOLS } from "@/lib/consultant/tools";
 
 /**
- * Инструменты консультанта v2.
+ * Инструменты консультанта v2. Курса среди них нет: рубли считает код
+ * (currency.ts), модель пишет только тенге.
+ *
  *
  * Данные — те же, что у v1: поиск по прайсу, карточка, база знаний, курс,
  * товары публикации. Передача менеджеру — одним инструментом с причиной:
@@ -14,7 +16,6 @@ const DATA_TOOL_NAMES = new Set([
   "search_products",
   "search_knowledge",
   "get_product",
-  "get_current_rate",
   "get_catalog_link",
   "get_story_product",
 ]);
