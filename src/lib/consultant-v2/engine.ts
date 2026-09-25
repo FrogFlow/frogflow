@@ -367,6 +367,9 @@ export async function decideConsultantReplyV2(
 
   let maxRounds = V2_MAX_ROUNDS;
   let rublesRetried = false;
+  // Фото и видео товара для покупателя (send_product_photo) и фотобаза за ход.
+  const attachments: { url: string; kind: "image" | "video" }[] = [];
+  let mediaList: import("./media").ProductMedia[] | undefined;
   let draftChecked = false;
   for (let round = 0; round < maxRounds; round++) {
     let json: { content?: AnthropicBlock[]; usage?: unknown };
@@ -443,6 +446,27 @@ export async function decideConsultantReplyV2(
       if (call.name === "remember_customer") {
         profile = mergeProfile(profile, input);
         result = { ok: true };
+      } else if (call.name === "send_product_photo") {
+        // Фото товара из фотобазы магазина (панель → «Фото товаров»).
+        const id = typeof input.product_id === "string" ? input.product_id : "";
+        const product = catalog.find((p) => p.id === id) ?? products.find((p) => p.id === id);
+        if (!product) {
+          result = { found: false, error: "нет позиции с таким product_id — сначала найдите её поиском" };
+        } else {
+          const { loadProductMedia, mediaForProduct, mediaUrl } = await import("./media");
+          const { appOrigin } = await import("@/lib/app-origin.server");
+          mediaList ??= await loadProductMedia().catch(() => []);
+          const found = mediaForProduct(mediaList, product);
+          const origin = appOrigin();
+          const fresh = found.filter((m) => !attachments.some((a) => a.url === mediaUrl(origin, m.path)));
+          if (origin && fresh.length) {
+            attachments.push(...fresh.map((m) => ({ url: mediaUrl(origin, m.path), kind: m.kind })));
+            products.push(product);
+            result = { found: true, sent: fresh.length, kinds: fresh.map((m) => m.kind) };
+          } else {
+            result = { found: false, product: product.name };
+          }
+        }
       } else if (call.name === "handoff_to_manager") {
         handoff = {
           reason: isHandoffReason(input.reason) ? input.reason : "human",
@@ -588,5 +612,6 @@ export async function decideConsultantReplyV2(
     },
     kind: products.length ? "product" : "clarify",
     toolsUsed,
+    ...(attachments.length ? { attachments } : {}),
   };
 }

@@ -41,6 +41,14 @@ vi.mock("../src/lib/consultant/catalog", async (orig) => ({
   loadConsultantSynonyms: async () => "",
 }));
 
+vi.mock("../src/lib/app-origin.server", () => ({ appOrigin: () => "https://test.app" }));
+vi.mock("../src/lib/consultant-v2/media", async (orig) => ({
+  ...(await orig<typeof import("../src/lib/consultant-v2/media")>()),
+  loadProductMedia: async () => [
+    { id: "m1", match: "Uchino полотенце", path: "bot/t1.jpg", kind: "image", createdAt: "" },
+  ],
+}));
+
 const { decideConsultantReplyV2 } = await import("../src/lib/consultant-v2/engine");
 
 const catalog: ConsultantProduct[] = [
@@ -295,6 +303,27 @@ describe("decideConsultantReplyV2", () => {
     expect(last.content.at(-1)?.text).toContain("Картинка публикации — ниже");
     expect(last.content.at(-1)?.text).not.toContain("Покупатель прислал фото");
     expect(res?.toolsUsed).toContain("story_image");
+  });
+
+  it("фото товара из фотобазы — уходит покупателю вместе с ответом", async () => {
+    responses.push(
+      reply([{ type: "tool_use", id: "t1", name: "send_product_photo", input: { product_id: "T1" } }]),
+      reply([{ type: "text", text: "Вот фото." }]),
+    );
+    const res = await decideConsultantReplyV2("Можно фото?", {}, ctx);
+    expect(res?.attachments).toEqual([{ url: "https://test.app/api/public/img/bot/t1.jpg", kind: "image" }]);
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain('\\"found\\":true');
+    expect(res?.text).toBe("Вот фото.");
+  });
+
+  it("фото нет — модель узнаёт found: false и может позвать менеджера", async () => {
+    responses.push(
+      reply([{ type: "tool_use", id: "t1", name: "send_product_photo", input: { product_id: "нет-такой" } }]),
+      reply([{ type: "text", text: "Сейчас подключится менеджер." }]),
+    );
+    const res = await decideConsultantReplyV2("Можно фото?", {}, ctx);
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain('\\"found\\":false');
+    expect(res?.attachments).toBeUndefined();
   });
 
   it("взлом промпта — до модели", async () => {

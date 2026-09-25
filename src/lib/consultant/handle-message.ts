@@ -147,6 +147,8 @@ export type ConsultantReply = {
    * идёт тенге — в той валюте, в которой модель думает.
    */
   historyText?: string;
+  /** Фото и видео товара — уходят покупателю перед текстом (v2, send_product_photo). */
+  attachments?: { url: string; kind: "image" | "video" }[];
   /**
    * Покупатель начал заново — история диалога очищается. Патча `recent: []`
    * для этого мало: история дописывается после патча и перекрывает его.
@@ -675,6 +677,20 @@ async function handleConsultantZernioEventInternal(params: {
       platform: params.platform,
       force: true,
     });
+  // Фото и видео товара (v2) — отдельными сообщениями перед текстом.
+  if (reply.attachments?.length) {
+    const { sendZernioInboxMessage } = await import("@/lib/zernio.server");
+    for (const a of reply.attachments) {
+      const res = await sendZernioInboxMessage(params.conversationId, params.accountId, "", {
+        attachmentUrl: a.url,
+        attachmentType: a.kind,
+        platform: params.platform,
+      }).catch((err: unknown) => ({ ok: false, error: String(err) }));
+      if (!res.ok) {
+        logConsultantEvent(requestId, "media_send_failed", { userKey: params.userKey, error: res.error });
+      }
+    }
+  }
   let sent = await send(reply.buttons);
   if (!sent && reply.buttons?.length) sent = await send(undefined);
   if (!sent) {

@@ -78,6 +78,18 @@ export const V2_TOOLS = [
     },
   },
   {
+    name: "send_product_photo",
+    description:
+      "Отправить покупателю фото или видео товара из фотобазы магазина. Передайте product_id позиции из выдачи поиска. Ответ found: true — файлы уйдут покупателю вместе с вашим ответом, напишите коротко («Вот фото.»). found: false — фото нет: вызовите handoff_to_manager с причиной photo.",
+    input_schema: {
+      type: "object",
+      properties: {
+        product_id: { type: "string", description: "id позиции из выдачи search_products." },
+      },
+      required: ["product_id"],
+    },
+  },
+  {
     name: "remember_customer",
     description:
       "Запомнить, что покупатель сказал о своей задаче: что ищет, для кого, размер, цвет, бюджет, страна, город, имя, телефон. Вызывайте, когда узнали новое. В следующих сообщениях это придёт вам в пометке «Что известно о покупателе».",

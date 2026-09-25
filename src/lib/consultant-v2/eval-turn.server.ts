@@ -30,6 +30,7 @@ export type V2EvalTurnResult =
       ok: true;
       text: string;
       historyText?: string;
+      attachments?: { url: string; kind: "image" | "video" }[];
       kind: string;
       toolsUsed: string[];
       toolCalls: V2EvalToolCall[];
@@ -106,6 +107,7 @@ export async function runV2EvalTurn(input: V2EvalTurnInput | undefined): Promise
     ok: true,
     text: reply.text,
     ...(reply.historyText ? { historyText: reply.historyText } : {}),
+    ...(reply.attachments?.length ? { attachments: reply.attachments } : {}),
     kind: reply.kind,
     toolsUsed: reply.toolsUsed ?? [],
     toolCalls,

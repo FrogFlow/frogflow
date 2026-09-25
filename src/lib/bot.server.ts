@@ -5477,6 +5477,13 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
           },
         });
         if (reply) {
+          // Фото и видео товара (v2) — перед текстом ответа.
+          for (const a of reply.attachments ?? []) {
+            await tg(a.kind === "video" ? "sendVideo" : "sendPhoto", {
+              chat_id,
+              [a.kind === "video" ? "video" : "photo"]: a.url,
+            });
+          }
           await tg("sendMessage", { chat_id, text: reply.text });
           await patchConsultantState(userKey, {
             ...reply.patch,

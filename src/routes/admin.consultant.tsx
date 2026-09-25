@@ -33,6 +33,8 @@ import {
 import type { ConsultantKnowledgeArticle } from "@/lib/consultant/knowledge";
 import { confirmToast } from "@/lib/confirm-toast";
 import { StoriesTab } from "./admin.stories-tab";
+import { PRODUCT_MEDIA_QUERY_KEY, ProductMediaTab } from "./admin.product-media-tab";
+import { listProductMediaFn } from "@/lib/consultant-v2/media.functions";
 import { Badge } from "@/components-ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components-ui/table";
 import {
@@ -319,6 +321,8 @@ function ConsultantPage() {
   const c = copy[locale];
   const qc = useQueryClient();
   const data = useQuery({ queryKey: ["consultant-admin"], queryFn: () => getConsultantAdminFn() });
+  // Фото товаров — только у консультанта v2: сервер отвечает enabled: false для первой версии.
+  const productMedia = useQuery({ queryKey: PRODUCT_MEDIA_QUERY_KEY, queryFn: () => listProductMediaFn() });
   const [sheetsUrl, setSheetsUrl] = useState("");
   const [driveUrl, setDriveUrl] = useState("");
   const [shopUrl, setShopUrl] = useState("");
@@ -744,6 +748,7 @@ function ConsultantPage() {
           </TabsTrigger>
           <TabsTrigger value="dialogs">Диалоги</TabsTrigger>
           <TabsTrigger value="stories">Сторис</TabsTrigger>
+          {productMedia.data?.enabled && <TabsTrigger value="media">Фото товаров</TabsTrigger>}
           <TabsTrigger value="knowledge">База знаний</TabsTrigger>
           <TabsTrigger value="ai_setup">Настройка ИИ</TabsTrigger>
           <TabsTrigger value="diagnostics">Диагностика</TabsTrigger>
@@ -1100,6 +1105,12 @@ function ConsultantPage() {
         <TabsContent value="stories" className="space-y-6 mt-4">
           <StoriesTab />
         </TabsContent>
+
+        {productMedia.data?.enabled && (
+          <TabsContent value="media" className="space-y-6 mt-4">
+            <ProductMediaTab />
+          </TabsContent>
+        )}
 
         <TabsContent value="knowledge" className="space-y-6 mt-4">
           {/* Store Info & Pickup */}
