@@ -68,9 +68,13 @@ export function indexCatalog(products: ConsultantProduct[]): CatalogIndex {
   return { products, tokens: sets, idf, prices: new Set(products.map((p) => p.price_kzt)), colors };
 }
 
-/** Редкое слово прайса — марка, модель, размер, а не «полотенце» и «махровое». */
-function distinctive(index: CatalogIndex, t: string): boolean {
-  return (index.idf.get(t) ?? 0) >= Math.log(10);
+/**
+ * Слово, по которому опознаётся позиция: латиница (марка, модель) или размер,
+ * реже чем у каждой четвёртой позиции. Uchino — почти сотня позиций из 790, и
+ * всё равно называет марку; «полотенце» или «система» — не называют ничего.
+ */
+function identifies(index: CatalogIndex, t: string): boolean {
+  return /[a-z0-9]/.test(t) && (index.idf.get(t) ?? 0) >= Math.log(4);
 }
 
 /**
@@ -104,7 +108,7 @@ export function productsForSnippet(index: CatalogIndex, snippet: string): Consul
       // Позицию опознаёт марка, модель или размер. Одно русское слово
       // («система», «функциональное») — нет: 25.09 «система переведёт»
       // приводило к кровати Frankenstolz «с системой хранения».
-      if (distinctive(index, t) && /[a-z0-9]/.test(t)) rare = true;
+      if (identifies(index, t)) rare = true;
     }
     return rare ? sum : 0;
   });
@@ -135,7 +139,14 @@ export function productsForSnippet(index: CatalogIndex, snippet: string): Consul
       (sum, t) => sum + (differing.has(t) && !words.has(t) && namesModel(index, t) ? idf(t) : 0),
       0,
     );
-  if (pool.some((i) => extra(i) === 0)) pool = pool.filter((i) => extra(i) === 0);
+  // Только если названа модель, а не одна марка: «Decoflux» или «Uchino»
+  // без модели — любая их позиция, и выбирать «самую короткую» нельзя.
+  const latinNamed = [...words].filter(
+    (t) => /[a-z]/.test(t) && pool.some((i) => index.tokens[i].has(t)),
+  );
+  if (latinNamed.length >= 2 && pool.some((i) => extra(i) === 0)) {
+    pool = pool.filter((i) => extra(i) === 0);
+  }
   return pool.map((i) => index.products[i]);
 }
 
@@ -162,7 +173,7 @@ export function checkPrices(text: string, index: CatalogIndex): Flag[] {
       // (ремень для пледа за 4 000 у пледов «от 140 000»).
       if (
         /(?:^|[^\dxх×*])(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d{4,})\s*[–—-]\s*$/.test(before) ||
-        /(?:^|\s)(?:до|от)\s*$/i.test(before.slice(-6))
+        /(?:^|[\s(])(?:до|от)\s*$/i.test(before.slice(-6))
       )
         return;
       const piece = pieceFor(line, amounts, i);
