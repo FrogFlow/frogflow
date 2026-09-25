@@ -5432,10 +5432,22 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
   {
     const { isConsultantVertical } = await import("./verticals/registry");
     const { currentVertical } = await import("./verticals/vertical.server");
-    if (isConsultantVertical(currentVertical()) && msg.text && !msg.text.startsWith("/id")) {
+    const { isBoviConsultantV2Vertical } = await import("./verticals/registry");
+    const consultantV2 = isBoviConsultantV2Vertical(currentVertical());
+    // v2 видит фото: снимок покупателя (самый крупный из размеров) — модели,
+    // подпись — текстом. v1 на фото в Telegram по-прежнему не отвечает.
+    const consultantPhoto =
+      consultantV2 && msg.photo?.length ? msg.photo[msg.photo.length - 1] : null;
+    const consultantText =
+      msg.text ??
+      (consultantPhoto ? msg.caption?.trim() || "[Клиент прислал фото или картинку]" : undefined);
+    if (
+      isConsultantVertical(currentVertical()) &&
+      consultantText &&
+      !consultantText.startsWith("/id")
+    ) {
       // Консультант v2 отвечает и здесь: по Telegram его и тестируют.
-      const { isBoviConsultantV2Vertical } = await import("./verticals/registry");
-      const decideConsultantReply = isBoviConsultantV2Vertical(currentVertical())
+      const decideConsultantReply = consultantV2
         ? (await import("./consultant-v2/engine")).decideConsultantReplyV2
         : (await import("./consultant/handle-message")).decideConsultantReply;
       const { loadConsultantState, patchConsultantState, appendRecent } =
@@ -5445,11 +5457,20 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
       const { isResetIntent } = await import("./consultant/intent");
       // После передачи менеджеру диалог на паузе; сброс проходит и сквозь неё,
       // иначе при тесте из Telegram начать заново было нечем.
-      if (!consultant.automation_paused || isResetIntent(msg.text)) {
+      if (!consultant.automation_paused || isResetIntent(consultantText)) {
         let usage: import("./smart-search-cost").SmartSearchTokenUsage | null = null;
         let model: string | null = null;
-        const reply = await decideConsultantReply(msg.text, consultant, {
+        const images = consultantPhoto
+          ? await (async () => {
+              const file = await downloadTelegramFile(consultantPhoto.file_id).catch(() => null);
+              const { imageFromBytes } = await import("./consultant-v2/images");
+              const image = file ? imageFromBytes(file.bytes) : null;
+              return image ? [image] : [];
+            })()
+          : [];
+        const reply = await decideConsultantReply(consultantText, consultant, {
           userKey,
+          ...(images.length ? { images } : {}),
           onUsage: (u, m) => {
             usage = u;
             model = m;
@@ -5463,7 +5484,7 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
             last_bot_reply_at: new Date().toISOString(),
             recent: reply.resetHistory
               ? []
-              : appendRecent(consultant, msg.text, reply.historyText ?? reply.text),
+              : appendRecent(consultant, consultantText, reply.historyText ?? reply.text),
           });
           // В журнал, как и сообщения из директа: по нему разбираются тесты.
           const { recordConsultantRun } = await import("./consultant/runs");
@@ -5473,7 +5494,7 @@ async function handleIncomingMessage(msg: TelegramMessage): Promise<void> {
             accountId: "telegram",
             userKey,
             source: "admin_test",
-            incomingText: msg.text,
+            incomingText: consultantText,
             replyText: reply.text,
             replyKind: reply.kind,
             model,

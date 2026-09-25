@@ -19,6 +19,8 @@ export type V2EvalTurnInput = {
   text?: unknown;
   state?: unknown;
   storyProductIds?: unknown;
+  /** Фото покупателя — ссылки https, до трёх. */
+  imageUrls?: unknown;
 };
 
 export type V2EvalToolCall = { name: string; input: Record<string, unknown> };
@@ -57,6 +59,12 @@ export async function runV2EvalTurn(input: V2EvalTurnInput | undefined): Promise
     ? input.storyProductIds.filter((id): id is string => typeof id === "string").slice(0, 20)
     : undefined;
 
+  const imageUrls = Array.isArray(input?.imageUrls)
+    ? input.imageUrls
+        .filter((u): u is string => typeof u === "string" && /^https:\/\//.test(u))
+        .slice(0, 3)
+    : [];
+
   const { decideConsultantReplyV2 } = await import("./engine");
   const { appendRecent } = await import("@/lib/consultant/state");
   const toolCalls: V2EvalToolCall[] = [];
@@ -69,6 +77,7 @@ export async function runV2EvalTurn(input: V2EvalTurnInput | undefined): Promise
     requestId: "eval",
     dryRun: true,
     ...(storyProductIds?.length ? { storyProductIds } : {}),
+    ...(imageUrls.length ? { imageUrls } : {}),
     onToolCall: (name, callInput) => toolCalls.push({ name, input: callInput }),
     onUsage: (u, m) => {
       usage = u;

@@ -40,7 +40,12 @@ export type TurnExpect = {
   maxChars?: number;
 };
 
-export type EvalTurn = { text: string; expect?: TurnExpect };
+export type EvalTurn = {
+  text: string;
+  /** Фото покупателя: ссылка https, которую деплой скачает сам. */
+  imageUrl?: string;
+  expect?: TurnExpect;
+};
 
 export type EvalScenario = {
   id: string;

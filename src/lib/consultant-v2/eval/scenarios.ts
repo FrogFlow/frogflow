@@ -366,6 +366,33 @@ export const V2_EVAL_SCENARIOS: EvalScenario[] = [
     turns: [{ text: "Они есть в наличии?" }],
   },
 
+  // ── Фото от покупателя ────────────────────────────────────────────────────
+  {
+    id: "photo-towel",
+    title: "Фото белого полотенца — бот видит и предлагает похожее",
+    source: "сборный: фото с bovi.kz (Weseta Douceur, белое)",
+    turns: [
+      {
+        text: "[Клиент прислал фото или картинку]",
+        imageUrl:
+          "https://bovi.kz/wp-content/uploads/2021/06/weseta-douceur-handtuch-weiss-450x450.jpg",
+        expect: { must: [/полотен/i] },
+      },
+    ],
+  },
+  {
+    id: "photo-blanket-question",
+    title: "Фото одеяла с вопросом «такое есть?»",
+    source: "сборный: фото с bovi.kz (Traumina Breeze Daune)",
+    turns: [
+      {
+        text: "Такое есть?",
+        imageUrl: "https://bovi.kz/wp-content/uploads/2020/11/breezedaunewk2-450x450.jpg",
+        expect: { must: [/одеял/i] },
+      },
+    ],
+  },
+
   // ── Безопасность ──────────────────────────────────────────────────────────
   {
     id: "injection",

@@ -198,6 +198,9 @@ export type V2Context = {
   storyProductIds?: string[];
   /** Каждый вызов инструмента с входом — для разбора прогона. */
   onToolCall?: (name: string, input: Record<string, unknown>) => void;
+  /** Фото покупателя: ссылки из директа (скачиваются здесь) или уже скачанные (Telegram). */
+  imageUrls?: string[];
+  images?: import("./images").V2Image[];
 };
 
 export async function decideConsultantReplyV2(
@@ -300,8 +303,30 @@ export async function decideConsultantReplyV2(
   // Покупатель смотрит в рублях — напоминание в самом сообщении: одной строки
   // в системном промпте Haiku не хватило, на «сколько в рублях?» она считала сама.
   if (wantsRubles(text, state, state.v2_profile)) notes.push(RUBLES_NOTE);
+  // Фото покупателя — модели картинкой рядом с текстом.
+  const images = await (async () => {
+    const { fetchImage, MAX_IMAGES_PER_TURN } = await import("./images");
+    const ready = (ctx.images ?? []).slice(0, MAX_IMAGES_PER_TURN);
+    const fetched = await Promise.all(
+      (ctx.imageUrls ?? []).slice(0, MAX_IMAGES_PER_TURN - ready.length).map(fetchImage),
+    );
+    return [...ready, ...fetched.filter((img): img is NonNullable<typeof img> => img !== null)];
+  })();
+  const sentPhoto = (ctx.imageUrls?.length ?? 0) + (ctx.images?.length ?? 0) > 0;
+  if (images.length > 0) {
+    notes.push("[Покупатель прислал фото — оно ниже. Поймите, что на нём, и найдите похожее поиском.]");
+  } else if (sentPhoto) {
+    notes.push("[Покупатель прислал фото, но оно не загрузилось. Попросите написать, что за товар интересует.]");
+  }
   const userTurn = [...notes, text.trim() || "Здравствуйте"].join("\n\n");
   const messages = buildAnthropicMessages(state.recent, userTurn);
+  if (images.length > 0) {
+    const last = messages[messages.length - 1];
+    last.content = [
+      ...images.map((img) => ({ type: "image", source: { type: "base64", media_type: img.mediaType, data: img.data } })),
+      { type: "text", text: typeof last.content === "string" ? last.content : userTurn },
+    ];
+  }
 
   // ── Модель ────────────────────────────────────────────────────────────
   const { executeConsultantTool } = await import("@/lib/consultant/tools");
@@ -315,7 +340,8 @@ export async function decideConsultantReplyV2(
   let profile: V2Profile | undefined = state.v2_profile;
   let handoff: { reason: V2HandoffReason; summary: string; phone?: string } | null = null;
   const products: ConsultantProduct[] = [...story.products];
-  const toolsUsed: string[] = [];
+  // В журнал: сколько фото модель увидела («photo:0» — не скачалось).
+  const toolsUsed: string[] = sentPhoto ? [`photo:${images.length}`] : [];
   let usage: SmartSearchTokenUsage | null = null;
   let lastText = "";
   let error: string | null = null;

@@ -148,7 +148,12 @@ async function runScenario(
     try {
       res = await probe<TurnResponse>(bot, {
         probe: "consultant-v2-turn",
-        turn: { text: turn.text, state, ...(storyProductIds?.length ? { storyProductIds } : {}) },
+        turn: {
+          text: turn.text,
+          state,
+          ...(storyProductIds?.length ? { storyProductIds } : {}),
+          ...(turn.imageUrl ? { imageUrls: [turn.imageUrl] } : {}),
+        },
       });
     } catch (err) {
       res = { ok: false, error: err instanceof Error ? err.message : String(err) };

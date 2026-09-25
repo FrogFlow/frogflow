@@ -493,12 +493,20 @@ async function handleConsultantZernioEventInternal(params: {
   const decide = isV2
     ? (await import("@/lib/consultant-v2/engine")).decideConsultantReplyV2
     : decideConsultantReply;
+  // v2 видит фото покупателя: ссылки на снимки (не публикации) — модели.
+  const imageUrls = isV2
+    ? (await import("@/lib/consultant-v2/images")).incomingImageUrls(
+        params.payload.message?.attachments,
+        (await import("@/lib/zernio-message")).isPublicationAttachment,
+      )
+    : undefined;
   const reply = await decide(text, consultant, {
     userKey: params.userKey,
     postback: params.postback,
     requestId,
     storyId,
     storyMediaUrl,
+    ...(imageUrls?.length ? { imageUrls } : {}),
     onUsage: (usage, model) => {
       runUsage = usage;
       runModel = model;
