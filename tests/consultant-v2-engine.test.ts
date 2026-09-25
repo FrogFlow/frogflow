@@ -320,6 +320,33 @@ describe("decideConsultantReplyV2", () => {
     expect(phoneIn("КПБ 200x220 и 240x220")).toBeUndefined();
   });
 
+  it("ходы кончились на поиске — ещё запрос без инструментов, покупателю не уходит «Поищу иначе:»", async () => {
+    const search = (id: string) =>
+      reply([
+        { type: "text", text: "Поищу иначе:" },
+        { type: "tool_use", id, name: "search_products", input: { query: "семейный" } },
+      ]);
+    responses.push(search("s1"), search("s2"), search("s3"), search("s4"));
+    responses.push(reply([{ type: "text", text: "Семейных комплектов сейчас нет. Показать полотенца Uchino?" }]));
+    const res = await decideConsultantReplyV2("Цену семейного комплекта?", {}, ctx);
+    expect(requests).toHaveLength(5);
+    expect((requests[4] as unknown as { tool_choice: unknown }).tool_choice).toEqual({ type: "none" });
+    expect(res?.text).toBe("Семейных комплектов сейчас нет. Показать полотенца Uchino?");
+    expect(res?.toolsUsed).toContain("fix:final_without_tools");
+  });
+
+  it("семейный комплект — поиск отдаёт комплекты с двумя пододеяльниками", async () => {
+    const family = { id: "F1", name: "BOVI КПБ BRISE (2 подод 155x200, 2 наволочки 50x75), цвет зеленый", category: "Постельное белье BOVI", size: "155x200", colors: ["зеленый"], price_kzt: 220000, stock: true };
+    responses.push(
+      reply([{ type: "tool_use", id: "s1", name: "search_products", input: { query: "семейный комплект" } }]),
+      reply([{ type: "text", text: "Семейный BRISE с двумя пододеяльниками 155х200 — 220 000 ₸." }]),
+    );
+    const res = await decideConsultantReplyV2("Цену семейного комплекта?", {}, { ...ctx, catalog: [...catalog, family] });
+    const toolResult = JSON.stringify(requests[1].messages.at(-1));
+    expect(toolResult).toContain("BRISE");
+    expect(res?.toolsUsed).toContain("fix:family_sets");
+  });
+
   it("вопрос о бюджете — переписать: магазин просил не спрашивать", async () => {
     const { draftProblems } = await import("../src/lib/consultant-v2/draft-check");
     expect(draftProblems("Есть халаты Uchino и BOVI. Какой размер и примерный бюджет?", catalog).map((p) => p.kind)).toContain("budget");

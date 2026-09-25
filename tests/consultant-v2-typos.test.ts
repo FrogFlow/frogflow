@@ -6,6 +6,9 @@ import {
   latinModelsIn,
   latinModelsNote,
   soundStem,
+  normalizeCatalogQuery,
+  FAMILY_SET_RE,
+  familySets,
 } from "../src/lib/consultant-v2/typos";
 
 /**
@@ -74,5 +77,34 @@ describe("марки и модели русскими буквами", () => {
     expect(latinModelsIn("Есть коврики в ванную?", rugs)).toEqual([]);
     expect(latinModelsIn("Можно в рублях? Спасибо большое", rugs)).toEqual([]);
     expect(latinModelsNote("Хорошо, давайте его", rugs)).toBe("");
+  });
+});
+
+describe("постельное бельё: «подод» в прайсе и семейные комплекты", () => {
+  const bedding = [
+    p("BOVI КПБ ALLEGRA (1 подод 155x200, 1 наволочка 50x75), цвет белый", "Постельное белье BOVI"),
+    p(
+      "BOVI КПБ BRISE (2 подод 155x200, 2 наволочки 50x75, простынь 280х290), цвет зеленый",
+      "Постельное белье BOVI",
+    ),
+    p("Traumina одеяло шерстяное Cube Camel 155х200", "Одеяла"),
+  ];
+
+  it("пододеяльник как ни напиши — «подод»; одеяло, подушка, подарок — как есть", () => {
+    expect(normalizeCatalogQuery("2 пододеяльника 155x200", bedding)).toBe("2 подод 155x200");
+    expect(normalizeCatalogQuery("пародеяльника", bedding)).toBe("подод");
+    expect(normalizeCatalogQuery("пударьник", bedding)).toBe("подод");
+    expect(normalizeCatalogQuery("одеяло 155х200", bedding)).toBe("одеяло 155х200");
+    expect(normalizeCatalogQuery("подушка и подарок", bedding)).toBe("подушка и подарок");
+    // В прайсе без «подод» — запрос не трогаем.
+    expect(normalizeCatalogQuery("пододеяльник", catalog)).toBe("пододеяльник");
+  });
+
+  it("семейный комплект — «семейный», «где 2 одеяла», «два пододеяльника»", () => {
+    expect(FAMILY_SET_RE.test("семейный комплект")).toBe(true);
+    expect(FAMILY_SET_RE.test("Размер где 2 одеяла")).toBe(true);
+    expect(FAMILY_SET_RE.test("комплект с двумя пододеяльниками")).toBe(true);
+    expect(FAMILY_SET_RE.test("одеяло 155х200")).toBe(false);
+    expect(familySets(bedding).map((x) => x.name)).toEqual([bedding[1].name]);
   });
 });

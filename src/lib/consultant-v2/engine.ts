@@ -33,7 +33,14 @@ import {
 import { buildV2SystemPrompt, categoryOf, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
 import { tengeToRubles, wantsRubles } from "./currency";
 import { draftFixNote, draftProblems } from "./draft-check";
-import { correctQuery, latinModelsIn, latinModelsNote } from "./typos";
+import {
+  correctQuery,
+  FAMILY_SET_RE,
+  familySets,
+  latinModelsIn,
+  latinModelsNote,
+  normalizeCatalogQuery,
+} from "./typos";
 import { knowledgeAboutModels } from "./knowledge";
 import { alertModelFailure } from "./model-alert";
 
@@ -438,8 +445,10 @@ export async function decideConsultantReplyV2(
   let mediaList: import("./media").ProductMedia[] | undefined;
   let draftChecked = false;
   let contactAsked = false;
-  for (let round = 0; round < maxRounds; round++) {
-    let json: { content?: AnthropicBlock[]; usage?: unknown };
+  // Один запрос к модели; сбой — в error и null.
+  const callModel = async (
+    extra: Record<string, unknown> = {},
+  ): Promise<{ content?: AnthropicBlock[]; usage?: unknown } | null> => {
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -457,18 +466,26 @@ export async function decideConsultantReplyV2(
           tools,
           messages: withTailCacheBreakpoint(messages),
           ...modelParams(model),
+          ...extra,
         }),
         signal: AbortSignal.timeout(V2_TIMEOUT_MS),
       });
       if (!res.ok) {
         error = `anthropic_${res.status}:${(await res.text().catch(() => "")).slice(0, 180)}`;
-        break;
+        return null;
       }
-      json = (await res.json()) as typeof json;
+      return (await res.json()) as { content?: AnthropicBlock[]; usage?: unknown };
     } catch (err) {
       error = `network:${err instanceof Error ? err.message : String(err)}`.slice(0, 200);
-      break;
+      return null;
     }
+  };
+
+  // Последним в истории — результаты инструментов, а ответа на них ещё нет.
+  let toolsPending = false;
+  for (let round = 0; round < maxRounds; round++) {
+    const json = await callModel();
+    if (!json) break;
 
     const roundUsage = extractAnthropicUsage(json as never);
     if (roundUsage) usage = addTokenUsage(usage, roundUsage);
@@ -481,6 +498,7 @@ export async function decideConsultantReplyV2(
       (b): b is { type: "tool_use"; id: string; name: string; input: Record<string, unknown> } =>
         b.type === "tool_use",
     );
+    toolsPending = false;
     if (calls.length === 0) {
       if (!rublesRetried && writesRubles(lastText)) {
         rublesRetried = true;
@@ -562,15 +580,35 @@ export async function decideConsultantReplyV2(
             excludeIds: state.last_product_ids,
             userKey: ctx.userKey,
           };
-          let executed = await executeConsultantTool(call.name, input, toolCtx);
+          // «Пододеяльник» в запросе — «подод», как в прайсе.
+          const query = typeof input.query === "string" ? input.query : null;
+          const callInput =
+            call.name === "search_products" && query ? { ...input, query: normalizeCatalogQuery(query, catalog) } : input;
+          // Семейный комплект — по названию в прайсе («2 подод»): по словам
+          // «семейный», «где два одеяла» поиск его не находит.
+          const family =
+            call.name === "search_products" && query && FAMILY_SET_RE.test(query) ? familySets(catalog) : [];
+          let executed = family.length
+            ? {
+                result: {
+                  products: family.slice(0, 12).map((p) => ({ ...p, price_rub: null })),
+                  returned: Math.min(family.length, 12),
+                  total_matches: family.length,
+                  note: "Семейные комплекты: в каждом два пододеяльника («2 подод» — пишите «пододеяльника» полностью).",
+                },
+                products: family,
+                handoff: false,
+              }
+            : await executeConsultantTool(call.name, callInput, toolCtx);
+          if (family.length) toolsUsed.push("fix:family_sets");
           // Пустой поиск по слову с опечаткой («палатенца») — повтор по слову
           // из прайса; модель видит, что запрос поправлен.
           let corrected: string | null = null;
-          if (call.name === "search_products" && executed.products.length === 0 && typeof input.query === "string") {
-            const latin = latinModelsIn(input.query, catalog);
-            corrected = correctQuery(input.query, catalog) ?? (latin.length ? latin.join(" ") : null);
+          if (call.name === "search_products" && executed.products.length === 0 && typeof callInput.query === "string") {
+            const latin = latinModelsIn(callInput.query, catalog);
+            corrected = correctQuery(callInput.query, catalog) ?? (latin.length ? latin.join(" ") : null);
             if (corrected) {
-              const retry = await executeConsultantTool(call.name, { ...input, query: corrected }, toolCtx);
+              const retry = await executeConsultantTool(call.name, { ...callInput, query: corrected }, toolCtx);
               if (retry.products.length > 0) {
                 executed = retry;
                 toolsUsed.push("fix:typo");
@@ -592,8 +630,23 @@ export async function decideConsultantReplyV2(
       results.push({ type: "tool_result", tool_use_id: call.id, content: JSON.stringify(result) });
     }
     messages.push({ role: "user", content: results });
+    toolsPending = true;
     // Модель уже написала фразу покупателю вместе с передачей — дальше ходить незачем.
     if (handoff && lastText) break;
+  }
+
+  // Ходы кончились, а модель всё ещё ищет: последним был вызов инструмента,
+  // и lastText — промежуточная фраза. 25.09, прогон: на «цену семейного
+  // комплекта» четыре поиска подряд, и покупателю ушло «Поищу иначе:». Ещё
+  // один запрос — без инструментов (tool_choice none): ответ по тому, что
+  // уже найдено.
+  if (toolsPending && !error && !(handoff && lastText)) {
+    toolsUsed.push("fix:final_without_tools");
+    const json = await callModel({ tool_choice: { type: "none" } });
+    const roundUsage = json ? extractAnthropicUsage(json as never) : null;
+    if (roundUsage) usage = addTokenUsage(usage, roundUsage);
+    const texts = (json?.content ?? []).filter((b): b is { type: "text"; text: string } => b.type === "text");
+    lastText = texts.map((b) => b.text).join("\n").trim();
   }
 
   if (usage) {

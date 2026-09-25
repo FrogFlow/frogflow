@@ -289,3 +289,25 @@ export function latinModelsNote(text: string, catalog: ConsultantProduct[]): str
     ? `[Похоже, покупатель пишет по-русски о ${models.join(" ")}: в прайсе есть ${sample.join("; ")}. Ищите латиницей.]`
     : `[Похоже, покупатель пишет по-русски о ${models.join(" ")} — ищите латиницей.]`;
 }
+
+/**
+ * «Пододеяльник» в запросе — «подод», как в прайсе BOVI («КПБ … (2 подод
+ * 155x200, …)»). 25.09, прогон: «2 пододеяльника», «пародеяльника» и
+ * «семейный комплект» поиск не находил — модель потратила на них все ходы и
+ * отправила покупателю «Поищу иначе:».
+ */
+/** «пододеяльник», «пародеяльника», «паддеяльник», «пударьник» — на слух одно. */
+const DUVET_COVER_WORD_RE = /^(?:п[оау][дтр]{1,2}[оа]?д?[еи]я?л|пудар)/i;
+
+export function normalizeCatalogQuery(query: string, catalog: ConsultantProduct[]): string {
+  if (!catalog.some((p) => /подод/i.test(p.name))) return query;
+  return query.replace(/[А-Яа-яЁё]+/g, (word) => (DUVET_COVER_WORD_RE.test(word) ? "подод" : word));
+}
+
+/** Семейный комплект: «семейный», «2 пододеяльника», «где два одеяла». */
+export const FAMILY_SET_RE = /семейн|(?:\b2|дв[аеу]\S*)\s*(?:подод|под[оа]деял|пододеял|одеял)/i;
+
+/** Комплекты с двумя пододеяльниками в наличии — по названию из прайса. */
+export function familySets(catalog: ConsultantProduct[]): ConsultantProduct[] {
+  return catalog.filter((p) => p.stock && /(?:^|[^\d])2\s*подод/i.test(p.name));
+}
