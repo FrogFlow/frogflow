@@ -52,4 +52,10 @@ describe("сводка расхода консультанта", () => {
     });
     expect(usd).toBeCloseTo((90_000 * 0.1 + 3_000) / 1e6 + (130 * 5) / 1e6, 8);
   });
+
+  it("ответ Sonnet 5 считается по его ставкам — вдвое дороже Haiku, кеш с теми же множителями", () => {
+    const usage = { inputTokens: 3_000, outputTokens: 130, cacheCreationTokens: 0, cacheReadTokens: 90_000 };
+    expect(runUsd(usage, "claude-sonnet-5")).toBeCloseTo(2 * runUsd(usage), 10);
+    expect(runUsd(usage, "claude-haiku-4-5-20251001")).toBe(runUsd(usage));
+  });
 });

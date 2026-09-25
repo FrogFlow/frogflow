@@ -1,7 +1,22 @@
 /** Official Claude Haiku 4.5 list price (standard Messages API, not batch). */
 export const HAIKU_INPUT_USD_PER_MTOK = 1;
 export const HAIKU_OUTPUT_USD_PER_MTOK = 5;
+/**
+ * Claude Sonnet 5 — вдвое дороже Haiku 4.5 и по вводу, и по выводу; множители
+ * кеша те же. Консультант v2 сравнивают на обеих моделях, и счёт в журнале по
+ * ставке Haiku занизил бы цену ответа Sonnet вдвое.
+ */
+export const SONNET_5_INPUT_USD_PER_MTOK = 2;
+export const SONNET_5_OUTPUT_USD_PER_MTOK = 10;
 export const DEFAULT_USD_PER_REQUEST = 0.1;
+
+/** Ставки модели за миллион токенов. Неизвестная модель считается по Haiku, как было до таблицы. */
+export function modelUsdPerMTok(model?: string | null): { input: number; output: number } {
+  if (model && /^claude-sonnet-5/.test(model)) {
+    return { input: SONNET_5_INPUT_USD_PER_MTOK, output: SONNET_5_OUTPUT_USD_PER_MTOK };
+  }
+  return { input: HAIKU_INPUT_USD_PER_MTOK, output: HAIKU_OUTPUT_USD_PER_MTOK };
+}
 export const SMART_SEARCH_DAILY_LIMIT = 200;
 
 /**
@@ -59,6 +74,7 @@ export function todayUtcDate(): string {
 export function estimateUsdFromTokens(
   usage: SmartSearchTokenUsage,
   ttl: keyof typeof CACHE_WRITE_MULTIPLIER = CONSULTANT_CACHE_TTL,
+  model?: string | null,
 ): number {
   const input = Math.max(0, usage.inputTokens);
   const output = Math.max(0, usage.outputTokens);
@@ -73,8 +89,9 @@ export function estimateUsdFromTokens(
     written5m * CACHE_WRITE_MULTIPLIER["5m"] +
     written1h * CACHE_WRITE_MULTIPLIER["1h"] +
     writtenRest * CACHE_WRITE_MULTIPLIER[ttl];
-  const inputUsd = (input + writtenUsd + read * CACHE_READ_MULTIPLIER) * HAIKU_INPUT_USD_PER_MTOK;
-  return (inputUsd + output * HAIKU_OUTPUT_USD_PER_MTOK) / 1_000_000;
+  const price = modelUsdPerMTok(model);
+  const inputUsd = (input + writtenUsd + read * CACHE_READ_MULTIPLIER) * price.input;
+  return (inputUsd + output * price.output) / 1_000_000;
 }
 
 /**

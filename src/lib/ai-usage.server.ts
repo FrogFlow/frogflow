@@ -50,7 +50,10 @@ export async function recordSmartSearchLifetime(usage: SmartSearchTokenUsage): P
   }
 }
 
-export async function recordConsultantLifetime(usage: SmartSearchTokenUsage): Promise<void> {
+export async function recordConsultantLifetime(
+  usage: SmartSearchTokenUsage,
+  model?: string | null,
+): Promise<void> {
   // При работающем кеше почти весь ввод приходит в полях кеша, а input_tokens
   // может быть крошечным — вызов всё равно стоит денег и должен учитываться.
   const total =
@@ -66,7 +69,7 @@ export async function recordConsultantLifetime(usage: SmartSearchTokenUsage): Pr
       .select("value")
       .eq("key", CONSULTANT_LIFETIME_KEY)
       .maybeSingle();
-    const next = addSmartSearchLifetime(parseSmartSearchLifetime(data?.value), usage);
+    const next = addSmartSearchLifetime(parseSmartSearchLifetime(data?.value), usage, model);
     await s.from("app_settings").upsert({
       key: CONSULTANT_LIFETIME_KEY,
       value: JSON.stringify(next),

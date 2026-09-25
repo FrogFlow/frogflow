@@ -57,6 +57,7 @@ export function parseSmartSearchLifetime(raw: string | null | undefined): SmartS
 export function addSmartSearchLifetime(
   current: SmartSearchLifetimeSpend,
   usage: SmartSearchTokenUsage,
+  model?: string | null,
 ): SmartSearchLifetimeSpend {
   return {
     count: current.count + 1,
@@ -64,7 +65,7 @@ export function addSmartSearchLifetime(
     outputTokens: current.outputTokens + Math.max(0, usage.outputTokens),
     cacheCreationTokens: current.cacheCreationTokens + Math.max(0, usage.cacheCreationTokens ?? 0),
     cacheReadTokens: current.cacheReadTokens + Math.max(0, usage.cacheReadTokens ?? 0),
-    usd: current.usd + estimateUsdFromTokens(usage),
+    usd: current.usd + estimateUsdFromTokens(usage, undefined, model),
   };
 }
 

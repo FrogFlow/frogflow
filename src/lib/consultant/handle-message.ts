@@ -141,6 +141,12 @@ export type ConsultantReply = {
     | "injection";
   /** Что модель вызвала за ход — нужно страховке «обещал и не сделал». */
   toolsUsed?: string[];
+  /**
+   * Текст для истории диалога, если он не тот, что ушёл покупателю. v2 пишет
+   * цены в тенге, а покупателю из России код переводит их в рубли; в историю
+   * идёт тенге — в той валюте, в которой модель думает.
+   */
+  historyText?: string;
 };
 
 const activeUserLocks = new Map<string, Promise<unknown>>();
@@ -677,7 +683,7 @@ async function handleConsultantZernioEventInternal(params: {
     pending_story_at: undefined,
     last_bot_reply: reply.text,
     last_bot_reply_at: replyTime,
-    recent: appendRecent(consultant, text, reply.text),
+    recent: appendRecent(consultant, text, reply.historyText ?? reply.text),
     ...(() => {
       const reset =
         reply.kind === "handoff" ||
@@ -714,6 +720,7 @@ async function handleConsultantZernioEventInternal(params: {
     // строк и не мог отличить «курса не было» от «мы не записали».
     rate: runRate,
     usage: runUsage,
+    tools: reply.toolsUsed,
     managerCheck,
   });
 }

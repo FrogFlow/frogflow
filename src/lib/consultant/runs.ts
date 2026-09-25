@@ -29,6 +29,12 @@ export type ConsultantRunRecord = {
   usage?: SmartSearchTokenUsage | null;
   rate?: { value?: number | null; updatedAt?: string | null; source?: string | null };
   errorCode?: string | null;
+  /**
+   * Что вызвала модель за ход: инструменты и поправки кода (например, повтор
+   * ответа, когда модель сама написала рубли). Без этого разбор теста видел
+   * только текст и не мог сказать, искала ли модель в прайсе или вспоминала.
+   */
+  tools?: string[];
   /** Что увидела проверка «в чате уже отвечает менеджер». */
   managerCheck?: import("./manager-guard").ManagerCheck;
   /** По умолчанию replied; пауза из-за менеджера пишется как cancelled. */
@@ -41,8 +47,8 @@ async function db() {
 }
 
 /** Стоимость одного сообщения по тем же ставкам, что и накопительный счёт. */
-export function runUsd(usage: SmartSearchTokenUsage | null | undefined): number {
-  return usage ? estimateUsdFromTokens(usage) : 0;
+export function runUsd(usage: SmartSearchTokenUsage | null | undefined, model?: string | null): number {
+  return usage ? estimateUsdFromTokens(usage, undefined, model) : 0;
 }
 
 export async function recordConsultantRun(run: ConsultantRunRecord): Promise<void> {
@@ -82,21 +88,24 @@ export async function recordConsultantRun(run: ConsultantRunRecord): Promise<voi
                 ? { cache_write_1h: usage.cacheCreation1hTokens }
                 : {}),
               cache_read: usage.cacheReadTokens ?? 0,
-              usd: runUsd(usage),
+              usd: runUsd(usage, run.model),
             }
           : {},
-        tool_trace: run.managerCheck
-          ? [
-              {
-                check: "manager_in_chat",
-                status: run.managerCheck.status,
-                messages_seen: run.managerCheck.checked,
-                ...(run.managerCheck.message ? { text: run.managerCheck.message.text.slice(0, 200) } : {}),
-                ...(run.managerCheck.error ? { error: run.managerCheck.error.slice(0, 200) } : {}),
-                ...(run.managerCheck.stats ? { seen: run.managerCheck.stats } : {}),
-              },
-            ]
-          : [],
+        tool_trace: [
+          ...(run.managerCheck
+            ? [
+                {
+                  check: "manager_in_chat",
+                  status: run.managerCheck.status,
+                  messages_seen: run.managerCheck.checked,
+                  ...(run.managerCheck.message ? { text: run.managerCheck.message.text.slice(0, 200) } : {}),
+                  ...(run.managerCheck.error ? { error: run.managerCheck.error.slice(0, 200) } : {}),
+                  ...(run.managerCheck.stats ? { seen: run.managerCheck.stats } : {}),
+                },
+              ]
+            : []),
+          ...(run.tools?.length ? [{ tools: run.tools.slice(0, 20) }] : []),
+        ],
         error_code: run.errorCode ?? null,
         sent_at: run.errorCode || run.status === "cancelled" ? null : new Date().toISOString(),
         completed_at: new Date().toISOString(),

@@ -37,6 +37,50 @@ const V2_TIMEOUT_MS = 30_000;
 const V2_MAX_ROUNDS = 4;
 const V2_MAX_TOKENS = 800;
 
+/**
+ * Модели, на которых v2 проверяют. Настройка бота consultant_model выбирает
+ * из них без передеплоя: так один и тот же сценарий прогоняют на разных
+ * моделях. Чего нет в списке — берётся модель из ENV деплоя.
+ */
+export const V2_MODELS = ["claude-haiku-4-5-20251001", "claude-sonnet-5"] as const;
+
+async function v2Model(): Promise<string> {
+  const { consultantModel } = await import("@/lib/consultant/config");
+  try {
+    const { supabaseAdmin } = await import("@/integrations-supabase/client.server");
+    const { data } = await supabaseAdmin
+      .from("app_settings")
+      .select("value")
+      .eq("key", "consultant_model")
+      .maybeSingle();
+    const chosen = typeof data?.value === "string" ? data.value.trim() : "";
+    if ((V2_MODELS as readonly string[]).includes(chosen)) return chosen;
+  } catch (err) {
+    console.warn("[consultant-v2] настройка модели не прочиталась", err);
+  }
+  return consultantModel();
+}
+
+/** Сумма в рублях в тексте модели: «8 960 ₽», «8960 руб.», «9 000 рублей»; не «2 рубашки». */
+const RUBLE_AMOUNT_RE = /\d(?:[\d \u00a0\u202f.,]*\d)?[ \u00a0\u202f]?(?:₽|руб(?![а-км-яё]))/i;
+
+/**
+ * Модель сама посчитала рубли. 25.09, тест v2: на «сколько в рублях?» Haiku
+ * вместо тенге написала рубли по своему курсу — все четыре суммы на 5 % ниже
+ * магазинных, с «примерно» и «точный расчёт уточнит менеджер». Рублям модели
+ * верить нельзя; ответ переспрашивается один раз с ценами в тенге, а в рубли
+ * их переводит код.
+ */
+export function writesRubles(text: string): boolean {
+  return RUBLE_AMOUNT_RE.test(text);
+}
+
+const RUBLES_RETRY_NOTE =
+  "[Система: в ответе суммы в рублях. Напишите тот же ответ, но цены — в тенге, как в прайсе. В рубли их переведёт система, точно по курсу магазина.]";
+
+const RUBLES_NOTE =
+  "[Покупатель смотрит цены в рублях. Пишите цены в тенге, как в прайсе: система переведёт каждую сумму в рубли точно по курсу магазина. «Примерно» и «уточнит менеджер» к ценам не добавляйте.]";
+
 type HandoffReasonV1 = Parameters<typeof import("@/lib/consultant/handle-message").handoffReply>[3];
 
 /** Причина v2 → причина в задачах и уведомлениях менеджеру (общих с v1). */
@@ -126,9 +170,10 @@ export type V2Context = {
   storyMediaUrl?: string | null;
   onUsage?: (usage: SmartSearchTokenUsage, model: string) => void;
   onRate?: (rate: StoredVtbRate | null) => void;
-  /** Для тестов и эталонного набора: прайс и курс без базы. */
+  /** Для тестов и эталонного набора: прайс, курс и модель без базы. */
   catalog?: ConsultantProduct[];
   rate?: number | null;
+  model?: string;
 };
 
 export async function decideConsultantReplyV2(
@@ -172,7 +217,7 @@ export async function decideConsultantReplyV2(
   if (!apiKey) {
     return handoffReply(pack, state, bucket, "error", text, ctx.userKey, HANDOFF_TO_MANAGER_REPLY);
   }
-  const model = consultantModel();
+  const model = ctx.catalog != null ? (ctx.model ?? consultantModel()) : await v2Model();
 
   // ── Данные ────────────────────────────────────────────────────────────
   const { buildAnthropicMessages, withTailCacheBreakpoint } = await import("@/lib/consultant/claude");
@@ -226,6 +271,9 @@ export async function decideConsultantReplyV2(
   if (story.note) notes.push(story.note);
   const known = await knowledgeForQuestion(text, catalog);
   if (known) notes.push(`[Из базы знаний — покупатель этого не видит:\n${known}]`);
+  // Покупатель смотрит в рублях — напоминание в самом сообщении: одной строки
+  // в системном промпте Haiku не хватило, на «сколько в рублях?» она считала сама.
+  if (wantsRubles(text, state, state.v2_profile)) notes.push(RUBLES_NOTE);
   const userTurn = [...notes, text.trim() || "Здравствуйте"].join("\n\n");
   const messages = buildAnthropicMessages(state.recent, userTurn);
 
@@ -246,7 +294,9 @@ export async function decideConsultantReplyV2(
   let lastText = "";
   let error: string | null = null;
 
-  for (let round = 0; round < V2_MAX_ROUNDS; round++) {
+  let maxRounds = V2_MAX_ROUNDS;
+  let rublesRetried = false;
+  for (let round = 0; round < maxRounds; round++) {
     let json: { content?: AnthropicBlock[]; usage?: unknown };
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -289,7 +339,16 @@ export async function decideConsultantReplyV2(
       (b): b is { type: "tool_use"; id: string; name: string; input: Record<string, unknown> } =>
         b.type === "tool_use",
     );
-    if (calls.length === 0) break;
+    if (calls.length === 0) {
+      if (!rublesRetried && writesRubles(lastText)) {
+        rublesRetried = true;
+        maxRounds++;
+        toolsUsed.push("fix:rubles_by_model");
+        messages.push({ role: "user", content: RUBLES_RETRY_NOTE });
+        continue;
+      }
+      break;
+    }
 
     const results: unknown[] = [];
     for (const call of calls) {
@@ -332,13 +391,15 @@ export async function decideConsultantReplyV2(
   if (usage) {
     ctx.onUsage?.(usage, model);
     await import("@/lib/ai-usage.server")
-      .then((m) => m.recordConsultantLifetime(usage!))
+      .then((m) => m.recordConsultantLifetime(usage!, model))
       .catch(() => {});
   }
 
   const rub = wantsRubles(text, state, profile);
-  let finalText = await finalizeV2Text(lastText, catalog);
-  if (rub) finalText = tengeToRubles(finalText, rate);
+  // После повтора рубли всё ещё от модели — в журнал: такой ответ надо видеть.
+  if (rublesRetried && writesRubles(lastText)) toolsUsed.push("fix:rubles_by_model_again");
+  const tengeText = await finalizeV2Text(lastText, catalog);
+  const finalText = rub ? tengeToRubles(tengeText, rate) : tengeText;
   logConsultantEvent(requestId, "v2_reply", {
     userKey: ctx.userKey,
     promptVersion: V2_PROMPT_VERSION,
@@ -390,6 +451,11 @@ export async function decideConsultantReplyV2(
   const ids = [...new Set(products.map((p) => p.id))];
   return {
     text: finalText,
+    // В историю — ответ модели в тенге. Иначе на «в тенге покажите» она
+    // видела у себя только рубли и восстанавливала тенге по прайсу — и брала
+    // соседнюю строку: Swing Light за 50 000 вместо 55 000, пуховую Soft за
+    // 85 000 (цена Medium) вместо 120 000.
+    ...(finalText !== tengeText ? { historyText: tengeText } : {}),
     patch: {
       v2_profile: profile,
       v2_rub: rub,
