@@ -113,7 +113,9 @@ export function checkRubles(out: TurnOutcome, expect: TurnExpect): Flag[] {
   return flags;
 }
 
-const OPENER_RE = /^(понял|поняла|отлично|прекрасно|замечательно|конечно|хороший вопрос)\b/i;
+// Граница — не \b: в JS она латинская, и «Понял,» не ловилось (прогон 25.09, 13:20).
+const OPENER_RE =
+  /^(понял|поняла|отлично|прекрасно|замечательно|конечно|хороший вопрос)(?![а-яё])/i;
 
 /** Форма: длина, число вопросов и позиций, приветствие не к месту, рекламные слова. */
 export function checkForm(out: TurnOutcome, expect: TurnExpect, isFirst: boolean): Flag[] {

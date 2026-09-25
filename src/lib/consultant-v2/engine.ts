@@ -32,7 +32,7 @@ import {
 } from "./tools";
 import { buildV2SystemPrompt, categoryOf, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
 import { tengeToRubles, wantsRubles } from "./currency";
-import { draftFixNote, draftProblems } from "./draft-check";
+import { brandCountries, catalogBrands, draftFixNote, draftProblems } from "./draft-check";
 import {
   correctQuery,
   FAMILY_SET_RE,
@@ -154,13 +154,17 @@ export function modelParams(model: string): Record<string, unknown> {
  */
 export async function finalizeV2Text(raw: string, catalog: ConsultantProduct[]): Promise<string> {
   const { stripMarkdownFormatting } = await import("@/lib/consultant/copy");
-  const { cleanInstructionEcho, cleanScriptHallucinations } = await import("@/lib/consultant/validate");
+  const { cleanInstructionEcho, cleanScriptHallucinations, stripLeadingAcknowledgement } = await import(
+    "@/lib/consultant/validate"
+  );
   const { brandVocabulary, fixBrandSpelling, humanizePunctuation, stripExclamationsAndEmoji } = await import(
     "@/lib/consultant/style"
   );
   let text = cleanScriptHallucinations(raw ?? "");
   text = cleanInstructionEcho(text);
   text = fixBrandSpelling(text, brandVocabulary(catalog));
+  // «Понял, подушка для сна.» — квитанция, которую покупатель не просил (как в v1).
+  text = stripLeadingAcknowledgement(text);
   return humanizePunctuation(stripExclamationsAndEmoji(stripMarkdownFormatting(text))).trim();
 }
 
@@ -344,15 +348,19 @@ export async function decideConsultantReplyV2(
   const { loadConsultantKnowledge, formatKnowledgeIndexForPrompt } = await import("@/lib/consultant/knowledge");
   const articles = await loadConsultantKnowledge().catch(() => []);
   const knowledgeSection = formatKnowledgeIndexForPrompt(articles);
+  let synonymGroups: string[][] = [];
   const brandsSection = await (async () => {
     try {
       const { loadConsultantSynonyms } = await import("@/lib/consultant/catalog");
       const { parseSynonymGroups, formatSynonymsForPrompt } = await import("@/lib/consultant/synonyms");
-      return formatSynonymsForPrompt(parseSynonymGroups(await loadConsultantSynonyms()));
+      synonymGroups = parseSynonymGroups(await loadConsultantSynonyms());
+      return formatSynonymsForPrompt(synonymGroups);
     } catch {
       return "";
     }
   })();
+  // Для проверки черновика: страны марок из списка марок и сами марки прайса.
+  const draftCtx = { brandCountries: brandCountries(synonymGroups), brands: catalogBrands(catalog) };
   const system = buildV2SystemPrompt({
     catalogSection: formatAssortmentMapForV2(catalog),
     knowledgeSection,
@@ -511,7 +519,7 @@ export async function decideConsultantReplyV2(
       // переписывает сама (может и поискать заново), покупатель видит новый.
       if (!draftChecked && !handoff && lastText) {
         draftChecked = true;
-        const problems = draftProblems(lastText, catalog);
+        const problems = draftProblems(lastText, catalog, draftCtx);
         if (problems.length) {
           maxRounds += 2;
           toolsUsed.push(`fix:draft:${[...new Set(problems.map((p) => p.kind))].join("+")}`);
@@ -661,7 +669,7 @@ export async function decideConsultantReplyV2(
   // После повтора рубли всё ещё от модели — в журнал: такой ответ надо видеть.
   if (rublesRetried && writesRubles(lastText)) toolsUsed.push("fix:rubles_by_model_again");
   if (toolsUsed.some((t) => t.startsWith("fix:draft:")) && !handoff) {
-    const left = draftProblems(lastText, catalog);
+    const left = draftProblems(lastText, catalog, draftCtx);
     if (left.length) toolsUsed.push(`fix:draft_again:${[...new Set(left.map((p) => p.kind))].join("+")}`);
   }
   const tengeText = await finalizeV2Text(lastText, catalog);

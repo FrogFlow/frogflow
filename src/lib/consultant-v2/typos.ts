@@ -158,7 +158,7 @@ const TRANSLIT: Record<string, string> = {
 };
 
 /** Латиница, выровненная на слух: «qu» и «кв», «c» и «к», «y» и «и» — одно. */
-function latinFold(latin: string): string {
+export function latinFold(latin: string): string {
   return latin
     .toLowerCase()
     .replace(/qu/g, "kv")
@@ -172,7 +172,7 @@ function latinFold(latin: string): string {
     .replace(/(.)\1+/g, "$1");
 }
 
-function translitFold(cyrillic: string): string {
+export function translitFold(cyrillic: string): string {
   return latinFold([...cyrillic.toLowerCase()].map((ch) => TRANSLIT[ch] ?? ch).join(""));
 }
 

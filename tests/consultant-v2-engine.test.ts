@@ -347,6 +347,38 @@ describe("decideConsultantReplyV2", () => {
     expect(res?.toolsUsed).toContain("fix:family_sets");
   });
 
+  it("страна марки не та, что в списке марок, и марка кириллицей — переписать (прогон 25.09, 13:20)", async () => {
+    const { brandCountries, countryMistakes, cyrillicBrands, draftProblems } = await import("../src/lib/consultant-v2/draft-check");
+    const countries = brandCountries([
+      ["traumina", "немецкие", "германия"],
+      ["dorelan", "итальянские", "италия"],
+      ["weseta", "швейцарские", "швейцария"],
+      ["pip", "голландские", "голландия", "нидерланды"],
+      ["uchino", "японские", "япония"],
+    ]);
+    expect(countries.get("traumina")).toBe("Германия");
+    expect(countryMistakes("Есть товары этих стран: Dorelan и Traumina (Италия), PIP (Голландия), Uchino (Япония).", countries)).toEqual([
+      "traumina — Германия, не Италия",
+    ]);
+    expect(countryMistakes("50х100: Uchino (Япония) от 21 000 ₸, Weseta (Голландия) от 27 000 ₸", countries)).toEqual([
+      "weseta — Швейцария, не Нидерланды",
+    ]);
+    expect(countryMistakes("Есть итальянские Dorelan и немецкие Traumina.", countries)).toEqual([]);
+    expect(countryMistakes("португальские Rivolta", countries)).toEqual([]); // Rivolta нет в списке — не судим
+    expect(countryMistakes("японские Traumina", countries)).toEqual(["traumina — Германия, не Япония"]);
+    expect(cyrillicBrands("Травматина мягкая (Soft) есть 40x60", ["Traumina", "Dorelan"])).toEqual(["Травматина → Traumina"]);
+    expect(cyrillicBrands("Учино и Дорелан", ["Uchino", "Dorelan"])).toEqual(["Учино → Uchino", "Дорелан → Dorelan"]);
+    expect(cyrillicBrands("Подушки для сна, мягкие травмы нет", ["Traumina", "Dorelan"])).toEqual([]);
+    const kinds = draftProblems("Dorelan и Traumina (Италия). Травматина мягкая.", catalog, { brandCountries: countries, brands: ["Traumina"] }).map((p) => p.kind);
+    expect(kinds).toEqual(expect.arrayContaining(["country", "latin"]));
+  });
+
+  it("«Понял,» в начале ответа снимается", async () => {
+    responses.push(reply([{ type: "text", text: "Понял, подушка для сна. Какой размер: 40х60 или 50х70?" }]));
+    const res = await decideConsultantReplyV2("Для снв", {}, ctx);
+    expect(res?.text).toBe("Подушка для сна. Какой размер: 40х60 или 50х70?");
+  });
+
   it("вопрос о бюджете — переписать: магазин просил не спрашивать", async () => {
     const { draftProblems } = await import("../src/lib/consultant-v2/draft-check");
     expect(draftProblems("Есть халаты Uchino и BOVI. Какой размер и примерный бюджет?", catalog).map((p) => p.kind)).toContain("budget");
