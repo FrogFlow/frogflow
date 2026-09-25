@@ -39,6 +39,8 @@ import {
   type ConsultantCopyPack,
 } from "./copy";
 import { looksLikePromptInjection } from "./injection";
+import { isBoviConsultantV2Vertical } from "@/lib/verticals/registry";
+import { currentVertical } from "@/lib/verticals/vertical.server";
 import { stripRepeatGreeting } from "./style";
 import {
   extractBudgetKzt,
@@ -476,7 +478,11 @@ async function handleConsultantZernioEventInternal(params: {
   let runUsage: import("@/lib/smart-search-cost").SmartSearchTokenUsage | null = null;
   let runModel: string | null = null;
   let runRate: { value?: number | null; updatedAt?: string | null; source?: string | null } | undefined;
-  const reply = await decideConsultantReply(text, consultant, {
+  const isV2 = isBoviConsultantV2Vertical(currentVertical());
+  const decide = isV2
+    ? (await import("@/lib/consultant-v2/engine")).decideConsultantReplyV2
+    : decideConsultantReply;
+  const reply = await decide(text, consultant, {
     userKey: params.userKey,
     postback: params.postback,
     requestId,
@@ -495,120 +501,124 @@ async function handleConsultantZernioEventInternal(params: {
     },
   });
   if (!reply) return;
-  // Единственная точка выхода наружу: через неё проходят и ответы модели, и
-  // локальные шаблоны, поэтому запрет на восклицательные знаки и эмодзи
-  // применяется здесь, а не в каждом месте, где собирается текст.
-  // Бот в этом диалоге уже говорил — значит уже поздоровался, и второе
-  // «Здравствуйте» лишнее. Приветствие живёт в вопросе про страну, а следующий
-  // ответ начинался с него же.
-  if (consultant.last_bot_reply?.trim()) {
-    reply.text = stripRepeatGreeting(reply.text);
-  }
-  // «Понял.» в начале ответа — квитанция, которую покупатель не просил.
-  reply.text = stripLeadingAcknowledgement(reply.text);
+  // Консультант v2 решает сам и чистит ответ только защитными проверками
+  // (consultant-v2/engine.ts). Заплатки v1 ниже — только для первой версии.
+  if (!isV2) {
+    // Единственная точка выхода наружу: через неё проходят и ответы модели, и
+    // локальные шаблоны, поэтому запрет на восклицательные знаки и эмодзи
+    // применяется здесь, а не в каждом месте, где собирается текст.
+    // Бот в этом диалоге уже говорил — значит уже поздоровался, и второе
+    // «Здравствуйте» лишнее. Приветствие живёт в вопросе про страну, а следующий
+    // ответ начинался с него же.
+    if (consultant.last_bot_reply?.trim()) {
+      reply.text = stripRepeatGreeting(reply.text);
+    }
+    // «Понял.» в начале ответа — квитанция, которую покупатель не просил.
+    reply.text = stripLeadingAcknowledgement(reply.text);
 
-  // Каждое правило промпта продублировано механической чисткой: модель о
-  // правиле забывает, регулярное выражение — нет. Порядок важен только для
-  // пары «курс» → «менеджер»: вторая решает по тому, что осталось от первой.
-  const beforeDiscontinuedGuard = reply.text;
-  let cleaned = cleanDiscontinuedMattressOffers(reply.text);
-  cleaned = cleanRateExcuses(cleaned);
-  cleaned = cleanRubleHedge(cleaned);
-  cleaned = collapseManagerPromises(cleaned);
-  cleaned = cleanDemoMentions(cleaned);
-  cleaned = cleanCatalogExcuses(cleaned);
-  cleaned = cleanNotUnderstoodApology(cleaned);
-  cleaned = cleanEmptyPraise(cleaned);
-  cleaned = cleanUpsellPressure(cleaned);
-  reply.text = humanizePunctuation(stripExclamationsAndEmoji(stripMarkdownFormatting(cleaned)));
-  // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
-  // отвечаем честно про среднюю жёсткость.
-  if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
-    reply.text = DISCONTINUED_MEDIUM_MATTRESS_REPLY;
-  }
+    // Каждое правило промпта продублировано механической чисткой: модель о
+    // правиле забывает, регулярное выражение — нет. Порядок важен только для
+    // пары «курс» → «менеджер»: вторая решает по тому, что осталось от первой.
+    const beforeDiscontinuedGuard = reply.text;
+    let cleaned = cleanDiscontinuedMattressOffers(reply.text);
+    cleaned = cleanRateExcuses(cleaned);
+    cleaned = cleanRubleHedge(cleaned);
+    cleaned = collapseManagerPromises(cleaned);
+    cleaned = cleanDemoMentions(cleaned);
+    cleaned = cleanCatalogExcuses(cleaned);
+    cleaned = cleanNotUnderstoodApology(cleaned);
+    cleaned = cleanEmptyPraise(cleaned);
+    cleaned = cleanUpsellPressure(cleaned);
+    reply.text = humanizePunctuation(stripExclamationsAndEmoji(stripMarkdownFormatting(cleaned)));
+    // Ответ состоял только из предложения снятых матрасов — молчать нельзя,
+    // отвечаем честно про среднюю жёсткость.
+    if (!reply.text.trim() && beforeDiscontinuedGuard.trim()) {
+      reply.text = DISCONTINUED_MEDIUM_MATTRESS_REPLY;
+    }
 
-  /**
-   * Модель сама пообещала фото от менеджера: 23.09 на «Вы можете мне скинуть»
-   * ответ был «Фотографии товара может прислать менеджер — он свяжется с
-   * вами», а задачи не появилось. Обещание фото — это передача: заводим
-   * задачу и ставим паузу, как для явной просьбы о фото ниже.
-   */
-  if (
-    promisesPhotoFromManager(reply.text) &&
-    !asksForProductPhoto(text) &&
-    reply.kind !== "purchase" &&
-    reply.kind !== "handoff" &&
-    reply.kind !== "injection"
-  ) {
-    reply.patch = { ...reply.patch, automation_paused: true, pause_reason: "other" };
-    void fileQuestion({
-      userKey: params.userKey,
-      question: questionForManager(consultant, text, reply.text),
-      promise: reply.text,
-      reason: "photo",
-    }).catch((err: unknown) => {
-      console.warn("[consultant] не удалось передать обещание фото", err);
-    });
-    logConsultantEvent(requestId, "photo_requested", {
-      userKey: params.userKey,
-      question: text.trim().slice(0, 160),
-    });
-  }
+    /**
+     * Модель сама пообещала фото от менеджера: 23.09 на «Вы можете мне скинуть»
+     * ответ был «Фотографии товара может прислать менеджер — он свяжется с
+     * вами», а задачи не появилось. Обещание фото — это передача: заводим
+     * задачу и ставим паузу, как для явной просьбы о фото ниже.
+     */
+    if (
+      promisesPhotoFromManager(reply.text) &&
+      !asksForProductPhoto(text) &&
+      reply.kind !== "purchase" &&
+      reply.kind !== "handoff" &&
+      reply.kind !== "injection"
+    ) {
+      reply.patch = { ...reply.patch, automation_paused: true, pause_reason: "other" };
+      void fileQuestion({
+        userKey: params.userKey,
+        question: questionForManager(consultant, text, reply.text),
+        promise: reply.text,
+        reason: "photo",
+      }).catch((err: unknown) => {
+        console.warn("[consultant] не удалось передать обещание фото", err);
+      });
+      logConsultantEvent(requestId, "photo_requested", {
+        userKey: params.userKey,
+        question: text.trim().slice(0, 160),
+      });
+    }
 
-  // Бот пообещал уточнить у менеджера, но инструмент не вызвал. На живом
-  // диалоге про плотность полотенец так и вышло: пообещал дважды, в списке
-  // задач не появилось ничего, покупатель остался ждать. Фиксируем по тексту
-  // обещания, а не по доброй воле модели.
-  // handoffReply по дороге уже завёл задачу и дёрнул менеджера — второй раз
-  // не заводим, иначе на один вопрос в панели появятся две строки.
-  const alreadyHandedOff =
-    reply.kind === "handoff" || reply.kind === "purchase" || reply.kind === "injection";
-  if (
-    promisesManagerFollowUp(reply.text) &&
-    !alreadyHandedOff &&
-    !(reply.toolsUsed ?? []).includes("ask_manager")
-  ) {
-    void fileQuestion({
-      userKey: params.userKey,
-      // Менеджеру нужен вопрос покупателя, а не пересказ бота.
-      question: questionForManager(consultant, text, reply.text),
-      promise: reply.text,
-    }).catch((err: unknown) => {
-      console.warn("[consultant] не удалось зафиксировать обещанный вопрос", err);
-    });
-    logConsultantEvent(requestId, "question_filed", {
-      userKey: params.userKey,
-      question: (text.trim() || reply.text).slice(0, 160),
-    });
-  }
+    // Бот пообещал уточнить у менеджера, но инструмент не вызвал. На живом
+    // диалоге про плотность полотенец так и вышло: пообещал дважды, в списке
+    // задач не появилось ничего, покупатель остался ждать. Фиксируем по тексту
+    // обещания, а не по доброй воле модели.
+    // handoffReply по дороге уже завёл задачу и дёрнул менеджера — второй раз
+    // не заводим, иначе на один вопрос в панели появятся две строки.
+    const alreadyHandedOff =
+      reply.kind === "handoff" || reply.kind === "purchase" || reply.kind === "injection";
+    if (
+      promisesManagerFollowUp(reply.text) &&
+      !alreadyHandedOff &&
+      !(reply.toolsUsed ?? []).includes("ask_manager")
+    ) {
+      void fileQuestion({
+        userKey: params.userKey,
+        // Менеджеру нужен вопрос покупателя, а не пересказ бота.
+        question: questionForManager(consultant, text, reply.text),
+        promise: reply.text,
+      }).catch((err: unknown) => {
+        console.warn("[consultant] не удалось зафиксировать обещанный вопрос", err);
+      });
+      logConsultantEvent(requestId, "question_filed", {
+        userKey: params.userKey,
+        question: (text.trim() || reply.text).slice(0, 160),
+      });
+    }
 
-  /**
-   * В вопросе была и просьба о фото. Ответ по существу уже собран — добавляем
-   * строку про менеджера и передаём диалог ему: изображение пришлёт человек.
-   * Продавец: «можно написать ответ по размерам и цене и сказать, что фото
-   * пришлёт менеджер».
-   */
-  if (
-    asksForProductPhoto(text) &&
-    reply.kind !== "purchase" &&
-    reply.kind !== "handoff" &&
-    reply.text.trim() &&
-    !reply.text.includes(PHOTO_FROM_MANAGER_NOTE)
-  ) {
-    reply.text = `${reply.text.trim()}\n\n${PHOTO_FROM_MANAGER_NOTE}`;
-    reply.patch = { ...reply.patch, automation_paused: true, pause_reason: "other" };
-    void fileQuestion({
-      userKey: params.userKey,
-      question: text.trim(),
-      promise: reply.text,
-      reason: "photo",
-    }).catch((err: unknown) => {
-      console.warn("[consultant] не удалось передать просьбу о фото", err);
-    });
-    logConsultantEvent(requestId, "photo_requested", {
-      userKey: params.userKey,
-      question: text.trim().slice(0, 160),
-    });
+    /**
+     * В вопросе была и просьба о фото. Ответ по существу уже собран — добавляем
+     * строку про менеджера и передаём диалог ему: изображение пришлёт человек.
+     * Продавец: «можно написать ответ по размерам и цене и сказать, что фото
+     * пришлёт менеджер».
+     */
+    if (
+      asksForProductPhoto(text) &&
+      reply.kind !== "purchase" &&
+      reply.kind !== "handoff" &&
+      reply.text.trim() &&
+      !reply.text.includes(PHOTO_FROM_MANAGER_NOTE)
+    ) {
+      reply.text = `${reply.text.trim()}\n\n${PHOTO_FROM_MANAGER_NOTE}`;
+      reply.patch = { ...reply.patch, automation_paused: true, pause_reason: "other" };
+      void fileQuestion({
+        userKey: params.userKey,
+        question: text.trim(),
+        promise: reply.text,
+        reason: "photo",
+      }).catch((err: unknown) => {
+        console.warn("[consultant] не удалось передать просьбу о фото", err);
+      });
+      logConsultantEvent(requestId, "photo_requested", {
+        userKey: params.userKey,
+        question: text.trim().slice(0, 160),
+      });
+    }
   }
 
   const { consultant: latest } = await loadConsultantState(params.userKey);
@@ -1753,7 +1763,7 @@ export async function replyFromLocalCatalog(
   return null;
 }
 
-function matchProductsInText(
+export function matchProductsInText(
   targetText: string,
   catalog: import("./catalog").ConsultantProduct[],
 ): import("./catalog").ConsultantProduct[] {
@@ -1868,7 +1878,7 @@ const KNOWLEDGE_ATTACH_MIN_SCORE = 3;
 /** Одна статья целиком: обрезать посередине опасно — режется как раз хвост с цифрами. */
 const KNOWLEDGE_ATTACH_MAX_CHARS = 8000;
 
-async function knowledgeForQuestion(
+export async function knowledgeForQuestion(
   text: string,
   catalog: import("./catalog").ConsultantProduct[],
 ): Promise<string> {
@@ -1902,7 +1912,7 @@ function recentForManager(state: Pick<ConsultantState, "recent">): string | unde
     .join("\n");
 }
 
-async function handoffReply(
+export async function handoffReply(
   pack: ConsultantCopyPack,
   state: ConsultantState,
   bucket: "a" | "b",

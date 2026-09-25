@@ -70,7 +70,7 @@ export function formatCatalogForPrompt(catalog: ConsultantProduct[], rate: numbe
  * минутами: пятиминутный кеш до них доживает, а его запись стоит 1,25 против
  * 2 у часового.
  */
-function withTailCacheBreakpoint(
+export function withTailCacheBreakpoint(
   messages: Array<{ role: "user" | "assistant"; content: unknown }>,
 ): Array<{ role: "user" | "assistant"; content: unknown }> {
   if (messages.length === 0) return messages;

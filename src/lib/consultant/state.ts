@@ -57,6 +57,8 @@ export type ConsultantState = {
    * Помним последние, чтобы узнавать свой же голос.
    */
   relayed?: string[];
+  /** Консультант v2: что покупатель сказал о своей задаче (remember_customer). */
+  v2_profile?: import("@/lib/consultant-v2/tools").V2Profile;
 };
 
 /** Сколько переданных ответов менеджера помним для опознания своего голоса. */

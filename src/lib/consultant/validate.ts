@@ -668,6 +668,12 @@ const INSTRUCTION_ECHO_RE = new RegExp(
   "i",
 );
 
+/** Только пересказ служебных пометок — без чистки «болтовни» (для консультанта v2). */
+export function cleanInstructionEcho(text: string): string {
+  const cleaned = dropSentences(text, (sentence) => INSTRUCTION_ECHO_RE.test(sentence));
+  return cleaned.trim() ? cleaned : text;
+}
+
 /**
  * Реплика без вопроса и без запроса: оценка, эмоция, согласие.
  *
