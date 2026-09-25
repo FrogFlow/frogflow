@@ -81,11 +81,16 @@ export const V2_TOOLS = [
   {
     name: "send_product_photo",
     description:
-      "Отправить покупателю фото или видео товара из фотобазы магазина. Передайте product_id позиции из выдачи поиска. Ответ found: true — файлы уйдут покупателю вместе с вашим ответом, напишите коротко («Вот фото.»). found: false — фото нет: вызовите handoff_to_manager с причиной photo.",
+      "Отправить покупателю фото или видео товара из фотобазы магазина. Передайте product_id позиции из выдачи поиска и kind: video, если просят именно видео. Ответ found: true — файлы уйдут покупателю вместе с вашим ответом, напишите коротко («Вот фото.»). already_sent: true — этот файл покупатель уже получил (одно фото — на всю модель, все размеры): скажите, что фото выше, менеджера из-за этого не зовите. found: false — фото (или видео) нет: вызовите handoff_to_manager с причиной photo.",
     input_schema: {
       type: "object",
       properties: {
         product_id: { type: "string", description: "id позиции из выдачи search_products." },
+        kind: {
+          type: "string",
+          enum: ["photo", "video"],
+          description: "video — если просят видео; photo — если фото. Не указано — что есть.",
+        },
       },
       required: ["product_id"],
     },

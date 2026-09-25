@@ -450,6 +450,8 @@ export async function decideConsultantReplyV2(
   let rublesRetried = false;
   // Фото и видео товара для покупателя (send_product_photo) и фотобаза за ход.
   const attachments: { url: string; kind: "image" | "video" }[] = [];
+  // Пути отправленных за этот ход файлов — в состояние: второй раз не шлём.
+  const mediaSent: string[] = [];
   let mediaList: import("./media").ProductMedia[] | undefined;
   let draftChecked = false;
   let contactAsked = false;
@@ -551,15 +553,28 @@ export async function decideConsultantReplyV2(
           const { loadProductMedia, mediaForProduct, mediaUrl } = await import("./media");
           const { appOrigin } = await import("@/lib/app-origin.server");
           mediaList ??= await loadProductMedia().catch(() => []);
-          const found = mediaForProduct(mediaList, product);
+          // Просят видео — только видео: 25.09 на «Видео нет?» бот повторно
+          // отправил то же фото и позвал менеджера.
+          const wanted = input.kind === "video" ? "video" : input.kind === "photo" ? "image" : null;
+          const found = mediaForProduct(mediaList, product).filter((m) => !wanted || m.kind === wanted);
           const origin = appOrigin();
-          const fresh = found.filter((m) => !attachments.some((a) => a.url === mediaUrl(origin, m.path)));
+          // Одно фото — на всю модель. 25.09 на «фото линейки London» бот отправил
+          // его к 60х100, а к 70х120 то же фото считал «нет фото» и звал менеджера.
+          const alreadySent = new Set([...(state.v2_media_sent ?? []), ...mediaSent]);
+          const fresh = found.filter((m) => !alreadySent.has(m.path));
           if (origin && fresh.length) {
             attachments.push(...fresh.map((m) => ({ url: mediaUrl(origin, m.path), kind: m.kind })));
+            mediaSent.push(...fresh.map((m) => m.path));
             products.push(product);
             result = { found: true, sent: fresh.length, kinds: fresh.map((m) => m.kind) };
+          } else if (found.length) {
+            result = {
+              found: true,
+              already_sent: true,
+              note: "Этот файл покупатель уже получил — он для всей модели, других нет. Скажите, что фото выше; менеджера из-за этого не зовите.",
+            };
           } else {
-            result = { found: false, product: product.name };
+            result = { found: false, product: product.name, ...(wanted === "video" ? { kind: "video" } : {}) };
           }
         }
       } else if (call.name === "handoff_to_manager") {
@@ -727,8 +742,17 @@ export async function decideConsultantReplyV2(
     );
     return {
       ...reply,
-      patch: { ...reply.patch, v2_profile: profile, v2_rub: rub, v2_contact_asked: undefined },
+      patch: {
+        ...reply.patch,
+        v2_profile: profile,
+        v2_rub: rub,
+        v2_contact_asked: undefined,
+        ...(mediaSent.length ? { v2_media_sent: [...(state.v2_media_sent ?? []), ...mediaSent].slice(-30) } : {}),
+      },
       toolsUsed,
+      // Фото, найденные в этом же ходе, уходят и при передаче: 25.09 бот
+      // написал «Вот фото 60х100» и позвал менеджера, а фото не отправил.
+      ...(attachments.length ? { attachments } : {}),
       // Фраза при передаче — тоже в тенге в истории, если покупателю ушли рубли.
       ...(finalText && finalText !== tengeText && reply.text === finalText ? { historyText: tengeText } : {}),
     };
@@ -753,6 +777,7 @@ export async function decideConsultantReplyV2(
       v2_rub: rub,
       conversation_state: "consulting",
       ...(contactAsked ? { v2_contact_asked: true } : {}),
+      ...(mediaSent.length ? { v2_media_sent: [...(state.v2_media_sent ?? []), ...mediaSent].slice(-30) } : {}),
       ...(ids.length ? { last_product_ids: ids.slice(0, 12) } : {}),
     },
     kind: products.length ? "product" : "clarify",

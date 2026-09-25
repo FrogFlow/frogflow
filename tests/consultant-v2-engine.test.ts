@@ -379,6 +379,54 @@ describe("decideConsultantReplyV2", () => {
     expect(res?.text).toBe("Подушка для сна. Какой размер: 40х60 или 50х70?");
   });
 
+  it("одно фото на всю модель: второй размер — already_sent, а не «нет фото» и менеджер (BOVI 25.09)", async () => {
+    const t2 = { ...catalog[0], id: "T2", size: "70x140" };
+    responses.push(
+      reply([
+        { type: "tool_use", id: "p1", name: "send_product_photo", input: { product_id: "T1" } },
+        { type: "tool_use", id: "p2", name: "send_product_photo", input: { product_id: "T2" } },
+      ]),
+      reply([{ type: "text", text: "Вот фото — оно для обоих размеров." }]),
+    );
+    const res = await decideConsultantReplyV2("Фото есть?", {}, { ...ctx, catalog: [...catalog, t2] });
+    expect(res?.attachments).toHaveLength(1);
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("already_sent");
+    expect(handoffCalls).toHaveLength(0);
+    expect(res?.patch).toMatchObject({ v2_media_sent: ["bot/t1.jpg"] });
+  });
+
+  it("фото уже было в диалоге — второй раз не шлём; просят видео — фото не подсовываем", async () => {
+    responses.push(
+      reply([{ type: "tool_use", id: "p1", name: "send_product_photo", input: { product_id: "T1" } }]),
+      reply([{ type: "text", text: "Фото выше в переписке." }]),
+    );
+    const again = await decideConsultantReplyV2("Фото есть?", { v2_media_sent: ["bot/t1.jpg"] }, ctx);
+    expect(again?.attachments).toBeUndefined();
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("already_sent");
+
+    requests = [];
+    responses.push(
+      reply([{ type: "tool_use", id: "v1", name: "send_product_photo", input: { product_id: "T1", kind: "video" } }]),
+      reply([{ type: "text", text: "Видео пришлёт менеджер." }]),
+    );
+    const video = await decideConsultantReplyV2("Видео нет?", {}, ctx);
+    expect(video?.attachments).toBeUndefined();
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain('\\"found\\":false');
+  });
+
+  it("фото и передача в одном ходе — фото всё равно уходит покупателю", async () => {
+    responses.push(
+      reply([
+        { type: "text", text: "Вот фото. Остальное пришлёт менеджер." },
+        { type: "tool_use", id: "p1", name: "send_product_photo", input: { product_id: "T1" } },
+        { type: "tool_use", id: "h1", name: "handoff_to_manager", input: { reason: "photo", summary: "Нужно видео" } },
+      ]),
+    );
+    const res = await decideConsultantReplyV2("Фото и видео пришлите", {}, ctx);
+    expect(handoffCalls[0]?.[3]).toBe("photo");
+    expect(res?.attachments).toHaveLength(1);
+  });
+
   it("вопрос о бюджете — переписать: магазин просил не спрашивать", async () => {
     const { draftProblems } = await import("../src/lib/consultant-v2/draft-check");
     expect(draftProblems("Есть халаты Uchino и BOVI. Какой размер и примерный бюджет?", catalog).map((p) => p.kind)).toContain("budget");

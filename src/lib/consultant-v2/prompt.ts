@@ -14,7 +14,7 @@
 
 import type { ConsultantProduct } from "@/lib/consultant/catalog";
 
-export const V2_PROMPT_VERSION = "v2.15";
+export const V2_PROMPT_VERSION = "v2.16";
 
 /** Марка — латиница в начале названия: «Bedding House PIP», «Uchino», «Kleen-tex». */
 function brandOf(name: string): string {
@@ -171,7 +171,7 @@ export function buildV2SystemPrompt(input: V2PromptInput): string {
 Покупатель: «Можно фото?»
 Менеджер (вызвал send_product_photo, фото нашлось): «Вот фото.»
 Покупатель: «А видео есть?»
-Менеджер (вызвал send_product_photo, found: false, затем handoff_to_manager, photo): «Видео пришлёт менеджер, она сейчас подключится.»
+Менеджер (вызвал send_product_photo с kind: video — видео нет, found: false; затем handoff_to_manager, photo): «Видео пришлёт менеджер, она сейчас подключится.»
 Покупатель: «Мне пришло полотенце с затяжкой, хочу вернуть»
 Менеджер (вызвал handoff_to_manager, complaint): «Сожалеем, что так вышло. Передаю менеджеру — она разберётся с возвратом.»
 Покупатель: «Можно поговорить с человеком?»
