@@ -3,6 +3,8 @@
  *
  *   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… npm run eval:v2 -- \
  *     [--bot <bot_id>] [--only id1,id2] [--concurrency 4] [--out <папка>] [--compare <прошлый.json>]
+ *     [--repeat 2] — каждый сценарий несколько раз: ответы модели от раза к разу разные
+ *     [--rescore <прогон.json> [--rate 4.45]] — перепроверить старый прогон новыми проверками
  *
  * Ход считает тестовый деплой (у него ключ модели) через внутренний API —
  * адрес и секрет берутся из bots. Состояние диалога держит скрипт, поэтому на
@@ -39,6 +41,7 @@ type TurnResult = {
   flags: Flag[];
   usd: number;
   ms: number;
+  rate?: number | null;
   skipped?: string;
 };
 type ScenarioResult = { id: string; title: string; pass: boolean; turns: TurnResult[] };
@@ -187,6 +190,7 @@ async function runScenario(
       flags,
       usd: res.usage ? estimateUsdFromTokens(res.usage, undefined, res.model) : 0,
       ms: res.ms,
+      rate: res.rate,
     });
     state = res.nextState;
     firstReply = reset;
@@ -218,8 +222,24 @@ function oneLine(text: string, max = 400): string {
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
+/** Прогоны сценария (при --repeat их несколько): сколько прошло из скольких. */
+function passRate(
+  results: ScenarioResult[],
+): Map<string, { title: string; pass: number; runs: number }> {
+  const out = new Map<string, { title: string; pass: number; runs: number }>();
+  for (const r of results) {
+    const cur = out.get(r.id) ?? { title: r.title, pass: 0, runs: 0 };
+    cur.runs++;
+    if (r.pass) cur.pass++;
+    out.set(r.id, cur);
+  }
+  return out;
+}
+
 function report(run: RunFile, previous?: RunFile): string {
   const { results } = run;
+  const rates = passRate(results);
+  const stable = [...rates.values()].filter((r) => r.pass === r.runs).length;
   const passed = results.filter((r) => r.pass).length;
   const turns = results.flatMap((r) => r.turns);
   const cleanTurns = turns.filter((t) => t.flags.length === 0).length;
@@ -229,19 +249,22 @@ function report(run: RunFile, previous?: RunFile): string {
   const usd = turns.reduce((s, t) => s + t.usd, 0);
   const timed = turns.filter((t) => t.ms > 0);
   const avgMs = timed.length ? timed.reduce((s, t) => s + t.ms, 0) / timed.length : 0;
-  const prevPass = new Map(previous?.results.map((r) => [r.id, r.pass]) ?? []);
+  const prevRates = previous
+    ? passRate(previous.results)
+    : new Map<string, { pass: number; runs: number }>();
 
   const lines: string[] = [];
   lines.push(`# Эталонный набор v2 — ${run.at.slice(0, 16).replace("T", " ")} UTC`);
   lines.push("");
   lines.push(
-    `Модель: ${run.model ?? "—"}. Сценарии: ${passed} из ${results.length}. Ходы без замечаний: ${cleanTurns} из ${turns.length}.`,
+    `Модель: ${run.model ?? "—"}. Прогоны без замечаний: ${passed} из ${results.length}; сценарии, прошедшие каждый раз: ${stable} из ${rates.size}. Ходы без замечаний: ${cleanTurns} из ${turns.length}.`,
   );
   lines.push(`Стоимость прогона: $${usd.toFixed(3)}, средний ход ${(avgMs / 1000).toFixed(1)} с.`);
   if (previous) {
     const was = previous.results.filter((r) => r.pass).length;
+    const wasStable = [...prevRates.values()].filter((r) => r.pass === r.runs).length;
     lines.push(
-      `Прошлый прогон (${previous.at.slice(0, 16).replace("T", " ")}): ${was} из ${previous.results.length}.`,
+      `Прошлый прогон (${previous.at.slice(0, 16).replace("T", " ")}): ${was} из ${previous.results.length}; каждый раз — ${wasStable} из ${prevRates.size}.`,
     );
   }
   lines.push("");
@@ -252,9 +275,11 @@ function report(run: RunFile, previous?: RunFile): string {
   lines.push("");
   lines.push("| Сценарий | Итог | Было |");
   lines.push("|---|---|---|");
-  for (const r of results) {
-    const was = prevPass.has(r.id) ? (prevPass.get(r.id) ? "да" : "нет") : "—";
-    lines.push(`| ${r.title} | ${r.pass ? "да" : "нет"} | ${was} |`);
+  for (const [id, r] of rates) {
+    const prev = prevRates.get(id);
+    lines.push(
+      `| ${r.title} | ${r.pass} из ${r.runs} | ${prev ? `${prev.pass} из ${prev.runs}` : "—"} |`,
+    );
   }
   for (const r of results) {
     lines.push("");
@@ -269,6 +294,43 @@ function report(run: RunFile, previous?: RunFile): string {
     }
   }
   return lines.join("\n");
+}
+
+/**
+ * Перепроверка сохранённого прогона новыми проверками — без обращений к
+ * модели: ответы те же, меняются только правила оценки.
+ */
+function rescore(
+  run: RunFile,
+  index: ReturnType<typeof indexCatalog>,
+  fallbackRate: number | null,
+): RunFile {
+  const byId = new Map(V2_EVAL_SCENARIOS.map((s) => [s.id, s]));
+  const results = run.results.map((r) => {
+    const scenario = byId.get(r.id);
+    if (!scenario) return r;
+    let first = true;
+    const turns = r.turns.map((t, i) => {
+      if (t.skipped || t.kind === "error") return t;
+      const flags = checkTurn(
+        scenario.turns[i] ?? { text: t.customer },
+        {
+          text: t.reply,
+          historyText: t.historyText,
+          kind: t.kind,
+          handoff: t.handoff,
+          toolsUsed: t.tools,
+          rate: t.rate ?? fallbackRate,
+        },
+        index,
+        first,
+      );
+      first = isResetIntent(t.customer);
+      return { ...t, flags };
+    });
+    return { ...r, turns, pass: turns.every((t) => t.flags.length === 0) };
+  });
+  return { ...run, results };
 }
 
 async function main() {
@@ -291,8 +353,22 @@ async function main() {
   const index = indexCatalog(catalogRes.products);
   console.log(`Прайс: ${catalogRes.products.length} позиций. Сценариев: ${scenarios.length}.`);
 
+  const rescorePath = arg("rescore");
+  if (rescorePath) {
+    const old = JSON.parse(readFileSync(rescorePath, "utf8")) as RunFile;
+    const fresh = rescore(old, index, Number(arg("rate") ?? "") || null);
+    const out = rescorePath.replace(/\.json$/, "-rescored");
+    writeFileSync(`${out}.json`, JSON.stringify(fresh, null, 2));
+    writeFileSync(`${out}.md`, report(fresh));
+    console.log(report(fresh).split("\n## ")[0]);
+    console.log(`\nОтчёт: ${out}.md`);
+    return;
+  }
+
   const concurrency = Number(arg("concurrency") ?? 4);
-  const results = await pool(scenarios, concurrency, async (s) => {
+  const repeat = Math.max(1, Number(arg("repeat") ?? 1));
+  const queue = scenarios.flatMap((s) => Array.from({ length: repeat }, () => s));
+  const results = await pool(queue, concurrency, async (s) => {
     const r = await runScenario(bot, s, catalogRes.products!, index);
     console.log(
       `${r.pass ? "✓" : "✗"} ${s.id}${r.pass ? "" : `: ${r.turns.flatMap((t) => t.flags.map((f) => f.check)).join(", ")}`}`,
