@@ -616,3 +616,60 @@ describe("выбор версии по нише деплоя", () => {
     expect(isConsultantVertical("consultant_bovi_v2")).toBe(true);
   });
 });
+
+describe("живой диалог BOVI 27.09: клиентка из Москвы, наматрасник", () => {
+  it("«доставка в Москву» — страна и город в профиль, цены дальше в рублях", async () => {
+    const { priceRub } = await import("../src/lib/consultant/rate");
+    responses.push(reply([{ type: "text", text: "Доставка в Россию - через СДЭК, по тарифам СДЭК." }]));
+    const first = await decideConsultantReplyV2("Подскажите стоимость доставки в Москву? И сроки.", {}, ctx);
+    expect(first?.patch.v2_profile).toMatchObject({ country: "Россия", city: "Москва" });
+    expect(first?.patch.v2_rub).toBe(true);
+    responses.push(reply([{ type: "text", text: "Uchino 50х100 — 9 000 ₸." }]));
+    const second = await decideConsultantReplyV2("Полотенца сколько стоят?", { v2_profile: first?.patch.v2_profile, v2_rub: first?.patch.v2_rub }, ctx);
+    expect(second?.text).toBe(`Uchino 50х100 - ${priceRub(9000, 4.2).toLocaleString("ru-RU")} ₽.`);
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("город: Москва");
+  });
+
+  it("тенге «по умолчанию» не запоминается: страна, названная позже, включает рубли", async () => {
+    responses.push(reply([{ type: "text", text: "Есть Uchino 50х100. Какой цвет?" }]));
+    const first = await decideConsultantReplyV2("Полотенца есть?", {}, ctx);
+    expect(first?.patch.v2_rub).toBeUndefined();
+    responses.push(reply([{ type: "text", text: "Uchino 50х100 — 9 000 ₸." }]));
+    const second = await decideConsultantReplyV2("Белое сколько?", { v2_profile: { country: "Россия" } }, ctx);
+    expect(second?.text).toContain("₽");
+  });
+
+  it("свойство без опоры в прайсе и базе знаний — переписать", async () => {
+    const { draftProblems, unsupportedProperties } = await import("../src/lib/consultant-v2/draft-check");
+    const evidence = "Dorelan наматрасник защитный C.M.FIBERSAN 160х200 (высота 32-37 см)\nTraumina — гипоаллергенные одеяла";
+    const live = "Наматрасник под высокий матрас есть: Dorelan C.M.FIBERSAN 160х200, высота 32-37 см, непромокаемый, 100 000 ₸.";
+    expect(unsupportedProperties(live, evidence)).toEqual(["непромокаемый"]);
+    expect(draftProblems(live, catalog, { evidence }).map((p) => p.kind)).toContain("property");
+    // Есть в данных — можно; оговорка — не утверждение.
+    expect(unsupportedProperties("Одеяла Traumina гипоаллергенные.", evidence)).toEqual([]);
+    expect(unsupportedProperties("Непромокаемый ли он, в описании не указано.", evidence)).toEqual([]);
+    expect(unsupportedProperties("Непромокаемых наматрасников нет.", evidence)).toEqual([]);
+  });
+
+  it("наматрасник не по высоте матраса — переписать", async () => {
+    const { heightMismatches, mattressHeightIn } = await import("../src/lib/consultant-v2/draft-check");
+    expect(mattressHeightIn("для высокого матраса 160*200*25 есть вариант?")).toBe(25);
+    expect(mattressHeightIn("матрас 160х200, высота 30 см")).toBe(30);
+    expect(mattressHeightIn("Коврик 35*50")).toBeNull();
+    const live = "Наматрасник под высокий матрас есть: Dorelan C.M.FIBERSAN 160х200, высота 32-37 см, 100 000 ₸.";
+    expect(heightMismatches(live, "Коврик 35*50\nнаматрасник для матраса 160*200*25")).toEqual(["матрас 25 см, в ответе высота 32–37 см"]);
+    expect(heightMismatches(live, "160*200*35")).toEqual([]);
+    expect(heightMismatches("FIBERSAN рассчитан на высоту 32-37 см, на 25 см будет свободен.", "160*200*25")).toEqual([]);
+  });
+
+  it("черновик с выдуманным свойством: модель переписывает, покупатель видит новый", async () => {
+    responses.push(
+      reply([{ type: "text", text: "Uchino 50х100 быстро сохнет, непромокаемое, 9 000 ₸." }]),
+      reply([{ type: "text", text: "Uchino 50х100 - 9 000 ₸. Про непромокаемость в описании не указано." }]),
+    );
+    const res = await decideConsultantReplyV2("Полотенце непромокаемое есть?", {}, ctx);
+    expect(res?.toolsUsed).toContain("fix:draft:property");
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("непромокаемое");
+    expect(res?.text).toContain("в описании не указано");
+  });
+});

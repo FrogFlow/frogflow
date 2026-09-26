@@ -14,12 +14,27 @@
 import { priceRub } from "@/lib/consultant/rate";
 import type { ConsultantState } from "@/lib/consultant/state";
 import type { V2Profile } from "./tools";
+import { russianPlaceIn } from "./geo";
 
 /** Сумма в тенге: «85 000 ₸», «85000₸», «85 000 тг», «85 000 тенге». */
 const KZT_AMOUNT_RE = /(\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)[ \u00a0\u202f]?(?:₸|тг\.?(?![а-яё])|тенге)/gi;
 
 const ASKS_RUBLES_RE = /рубл|₽|(?:^|[^а-яё])руб(?:[^а-яё]|$)|росси|(?:^|[^а-яё])рф(?:[^а-яё]|$)/i;
 const ASKS_TENGE_RE = /тенге|₸|(?:^|[^а-яё])тг(?:[^а-яё]|$)|казахстан/i;
+
+/**
+ * Валюта, которую покупатель выбрал в этом сообщении: рубли (попросил, назвал
+ * Россию или российский город — «доставка в Москву»), тенге — или ничего.
+ * В состояние сохраняется только такой выбор, не вывод из профиля: иначе
+ * «тенге по умолчанию» с первого сообщения перекрывало страну, которую
+ * покупатель назвал позже.
+ */
+export function currencyAsked(text: string): boolean | undefined {
+  if (ASKS_RUBLES_RE.test(text)) return true;
+  if (ASKS_TENGE_RE.test(text)) return false;
+  if (russianPlaceIn(text)) return true;
+  return undefined;
+}
 
 /**
  * Нужны ли покупателю рубли: попросил в этом сообщении, раньше в этом диалоге
@@ -30,8 +45,8 @@ export function wantsRubles(
   state: Pick<ConsultantState, "v2_rub">,
   profile: V2Profile | undefined,
 ): boolean {
-  if (ASKS_RUBLES_RE.test(text)) return true;
-  if (ASKS_TENGE_RE.test(text)) return false;
+  const asked = currencyAsked(text);
+  if (asked !== undefined) return asked;
   if (state.v2_rub !== undefined) return state.v2_rub;
   return /росси|рф|russia/i.test(profile?.country ?? "");
 }

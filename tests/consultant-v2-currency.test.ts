@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { tengeToRubles, wantsRubles } from "../src/lib/consultant-v2/currency";
+import { currencyAsked, tengeToRubles, wantsRubles } from "../src/lib/consultant-v2/currency";
+import { russianPlaceIn } from "../src/lib/consultant-v2/geo";
 import { priceRub } from "../src/lib/consultant/rate";
 
 /**
@@ -40,5 +41,35 @@ describe("wantsRubles", () => {
     expect(wantsRubles("белые есть?", {}, { country: "Россия" })).toBe(true);
     expect(wantsRubles("белые есть?", {}, { country: "Казахстан" })).toBe(false);
     expect(wantsRubles("белые есть?", {}, undefined)).toBe(false);
+  });
+});
+
+/**
+ * 27.09, живой диалог BOVI: «стоимость доставки в Москву?» — страну модель не
+ * запомнила, и цены клиентке из Москвы ушли в тенге.
+ */
+describe("russianPlaceIn", () => {
+  it("город России в любом падеже — Россия и город", () => {
+    expect(russianPlaceIn("Доброго дня. Подскажите стоимость доставки в Москву? И сроки.")).toEqual({ country: "Россия", city: "Москва" });
+    expect(russianPlaceIn("В Московскую обл.отправляете?")).toEqual({ country: "Россия", city: "Москва" });
+    expect(russianPlaceIn("я из Питера")).toEqual({ country: "Россия", city: "Санкт-Петербург" });
+    expect(russianPlaceIn("отправите в Екатеринбург?")?.city).toBe("Екатеринбург");
+    expect(russianPlaceIn("Доставка по России есть?")).toEqual({ country: "Россия" });
+  });
+
+  it("не Россия: Казахстан рядом или похожие слова", () => {
+    expect(russianPlaceIn("Я в Алматы, можно отправить подарок в Москву?")).toBeNull();
+    expect(russianPlaceIn("Семейный комплект есть?")).toBeNull();
+    expect(russianPlaceIn("Уфф, дорого")).toBeNull();
+    expect(russianPlaceIn("Здравствуйте, цену коврика для ванной")).toBeNull();
+  });
+});
+
+describe("currencyAsked", () => {
+  it("российский город — рубли; тенге в том же сообщении важнее", () => {
+    expect(currencyAsked("Доставка в Москву есть?")).toBe(true);
+    expect(currencyAsked("Я в Москве, но цены в тенге")).toBe(false);
+    expect(currencyAsked("а белые есть?")).toBeUndefined();
+    expect(wantsRubles("Доставка в Москву есть?", {}, undefined)).toBe(true);
   });
 });

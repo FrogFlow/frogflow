@@ -25,7 +25,9 @@
  * - страна марки не та, что в списке марок магазина: «Dorelan и Traumina
  *   (Италия)», «Weseta (Голландия)» (прогон 25.09, 13:20) — Traumina немецкая,
  *   Weseta швейцарская;
- * - марка кириллицей: «Травматина мягкая» вместо Traumina.
+ * - марка кириллицей: «Травматина мягкая» вместо Traumina;
+ * - свойство, которого нет в данных магазина, и наматрасник не по высоте
+ *   матраса (живой диалог BOVI 27.09, ниже).
  *
  * Черновик проверяется, только когда модель менеджера не звала.
  */
@@ -45,7 +47,9 @@ export type DraftProblem = {
     | "ads"
     | "length"
     | "country"
-    | "latin";
+    | "latin"
+    | "property"
+    | "height";
   detail: string;
 };
 
@@ -183,7 +187,99 @@ export function cyrillicBrands(text: string, brands: string[]): string[] {
   return [...out];
 }
 
-export type DraftContext = { brandCountries?: Map<string, string>; brands?: string[] };
+/**
+ * Свойства, о которых покупатель спрашивает «да или нет». 27.09, живой диалог
+ * BOVI: на «нешуршащий непромокаемый наматрасник» модель назвала Dorelan
+ * FIBERSAN «непромокаемым» — ни в прайсе, ни в базе знаний этого слова нет.
+ * Свойство в ответе без опоры в данных — черновик переписывается.
+ */
+const PROPERTY_STEMS = [
+  "непромокаем",
+  "водонепроницаем",
+  "водоотталкива",
+  "мембран",
+  "нешуршащ",
+  "бесшумн",
+  "гипоаллерген",
+  "антиаллерген",
+  "антибактериальн",
+  "антиклещ",
+  "антистатич",
+  "терморегул",
+  "охлаждающ",
+  "несминаем",
+  "немнущ",
+];
+/** Свойство не утверждают, а оговаривают: «в описании этого нет», «уточню». */
+const HEDGE_RE =
+  /(?:^|[^а-яё])нет(?:[^а-яё]|$)|не указ|не знаю|неизвестн|уточн|не могу (?:сказать|подтвердить)|не подтвержд/i;
+
+/** Свойства из ответа, которых нет ни в прайсе, ни в базе знаний (evidence). */
+export function unsupportedProperties(text: string, evidence: string): string[] {
+  const data = evidence.toLowerCase();
+  const out = new Set<string>();
+  for (const sentence of text.toLowerCase().split(/(?<=[.!?\n])/)) {
+    if (HEDGE_RE.test(sentence)) continue;
+    for (const stem of PROPERTY_STEMS) {
+      const at = sentence.indexOf(stem);
+      if (at < 0 || data.includes(stem)) continue;
+      out.add(/^[а-яё-]+/.exec(sentence.slice(at))?.[0] ?? stem);
+    }
+  }
+  return [...out];
+}
+
+/** Высота матраса из слов покупателя: «160*200*25», «высота 25 см». */
+export function mattressHeightIn(text: string): number | null {
+  const said =
+    /\d{2,3}\s*[xх×*]\s*\d{2,3}\s*[xх×*]\s*(\d{1,2})(?!\d)/i.exec(text) ??
+    /высот\S*\s*(?:матрас\S*\s*)?[-—:]?\s*(\d{1,2})\s*см/i.exec(text) ??
+    /(\d{1,2})\s*см\s*(?:в\s*)?высот/i.exec(text);
+  const height = said ? Number(said[1]) : NaN;
+  return height >= 5 && height <= 50 ? height : null;
+}
+
+/** Ответ сам говорит, что по высоте не подойдёт. */
+const HEIGHT_WARNING_RE =
+  /не подойд|не подход|будет велик|великоват|маловат|свобод|не сядет|рассчитан на/i;
+
+/**
+ * Наматрасник не по высоте матраса. 27.09: матрас 160х200х25, а бот предложил
+ * FIBERSAN «высота 32-37 см» как подходящий.
+ */
+export function heightMismatches(text: string, customerText: string): string[] {
+  const height = mattressHeightIn(customerText);
+  if (height === null) return [];
+  const out: string[] = [];
+  for (const sentence of text.split(/(?<=[.!?\n])/)) {
+    if (HEIGHT_WARNING_RE.test(sentence)) continue;
+    const ranges = [
+      ...[
+        ...sentence.matchAll(
+          /высот\S*\s*(?:матрас\S*\s*)?(?:от\s*)?(\d{1,2})\s*(?:[-–—]|до)\s*(\d{1,2})\s*см/gi,
+        ),
+      ].map((m) => [Number(m[1]), Number(m[2])]),
+      ...[...sentence.matchAll(/высот\S*\s*(?:матрас\S*\s*)?до\s*(\d{1,2})\s*см/gi)].map((m) => [
+        0,
+        Number(m[1]),
+      ]),
+    ];
+    for (const [from, to] of ranges) {
+      if (height < from - 2 || height > to + 2)
+        out.push(`матрас ${height} см, в ответе высота ${from}–${to} см`);
+    }
+  }
+  return out;
+}
+
+export type DraftContext = {
+  brandCountries?: Map<string, string>;
+  brands?: string[];
+  /** Названия прайса и статьи базы знаний — чем подтверждается свойство товара. */
+  evidence?: string;
+  /** Что покупатель писал в этом диалоге — высота матраса для наматрасника. */
+  customerText?: string;
+};
 
 export function draftProblems(
   text: string,
@@ -209,6 +305,10 @@ export function draftProblems(
   if (wrongCountry.length) problems.push({ kind: "country", detail: wrongCountry.join("; ") });
   const cyrillic = cyrillicBrands(text, ctx.brands ?? []);
   if (cyrillic.length) problems.push({ kind: "latin", detail: cyrillic.join("; ") });
+  const properties = ctx.evidence ? unsupportedProperties(text, ctx.evidence) : [];
+  if (properties.length) problems.push({ kind: "property", detail: properties.join(", ") });
+  const heights = ctx.customerText ? heightMismatches(text, ctx.customerText) : [];
+  if (heights.length) problems.push({ kind: "height", detail: heights.join("; ") });
   return problems;
 }
 
@@ -236,6 +336,10 @@ export function draftFixNote(problems: DraftProblem[]): string {
         return `• Страна марки не та: ${p.detail}. Страну берите из списка марок в промпте; марки, которой там нет, страну не называйте.`;
       case "latin":
         return `• Марку пишите латиницей, как в прайсе: ${p.detail}.`;
+      case "property":
+        return `• «${p.detail}» — этого нет ни в прайсе, ни в базе знаний. Не утверждайте: скажите, что в описании позиции этого не указано.`;
+      case "height":
+        return `• Не та высота: ${p.detail}. Скажите, что эта позиция на другую высоту матраса, и как подходящую не предлагайте.`;
       case "promise":
         return "• Вы обещаете покупателю менеджера, но не вызвали handoff_to_manager. Нужен менеджер — вызовите его с причиной; не нужен — не обещайте.";
     }

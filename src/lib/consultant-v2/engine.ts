@@ -31,7 +31,8 @@ import {
   type V2Profile,
 } from "./tools";
 import { buildV2SystemPrompt, categoryOf, formatAssortmentMapForV2, V2_PROMPT_VERSION } from "./prompt";
-import { tengeToRubles, wantsRubles } from "./currency";
+import { currencyAsked, tengeToRubles, wantsRubles } from "./currency";
+import { russianPlaceIn } from "./geo";
 import { brandCountries, catalogBrands, draftFixNote, draftProblems } from "./draft-check";
 import {
   correctQuery,
@@ -359,8 +360,18 @@ export async function decideConsultantReplyV2(
       return "";
     }
   })();
-  // Для проверки черновика: страны марок из списка марок и сами марки прайса.
-  const draftCtx = { brandCountries: brandCountries(synonymGroups), brands: catalogBrands(catalog) };
+  // Для проверки черновика: страны марок из списка марок и сами марки прайса;
+  // прайс и база знаний — чем подтверждаются свойства товара; слова
+  // покупателя — высота его матраса.
+  const draftCtx = {
+    brandCountries: brandCountries(synonymGroups),
+    brands: catalogBrands(catalog),
+    evidence: [
+      ...catalog.map((p) => `${p.name} ${p.category ?? ""}`),
+      ...articles.map((a) => `${a.title} ${a.content}`),
+    ].join("\n"),
+    customerText: [...(state.recent ?? []).filter((t) => t.role === "customer").map((t) => t.text), text].join("\n"),
+  };
   const system = buildV2SystemPrompt({
     catalogSection: formatAssortmentMapForV2(catalog),
     knowledgeSection,
@@ -369,10 +380,16 @@ export async function decideConsultantReplyV2(
     store: { address: store.address, phone: store.phone, hours: store.hours },
   });
 
+  // Покупатель сам назвал Россию или российский город («доставка в Москву») —
+  // страна и город в профиль кодом. 27.09 модель их не запомнила: цены
+  // клиентке из Москвы ушли в тенге, в карточке менеджеру города не было.
+  const place = state.v2_profile?.country || state.v2_profile?.city ? null : russianPlaceIn(text);
+  const knownProfile = place ? mergeProfile(state.v2_profile, place) : state.v2_profile;
+
   // Всё, что известно к этому сообщению, — пометками перед словами покупателя.
   // Системный промпт общий и в кеше; сюда кладётся то, что меняется.
   const notes: string[] = [];
-  const profileNote = formatProfile(state.v2_profile);
+  const profileNote = formatProfile(knownProfile);
   if (profileNote) notes.push(profileNote);
   const story = await storyNote(ctx, catalog);
   if (story.note) notes.push(story.note);
@@ -390,7 +407,7 @@ export async function decideConsultantReplyV2(
   if (aboutModels) notes.push(aboutModels);
   // Покупатель смотрит в рублях — напоминание в самом сообщении: одной строки
   // в системном промпте Haiku не хватило, на «сколько в рублях?» она считала сама.
-  if (wantsRubles(text, state, state.v2_profile)) notes.push(RUBLES_NOTE);
+  if (wantsRubles(text, state, knownProfile)) notes.push(RUBLES_NOTE);
   const { isOffHoursInAlmaty } = await import("@/lib/consultant/rate");
   if (isOffHoursInAlmaty(ctx.now ?? new Date())) notes.push(OFF_HOURS_NOTE);
   // Марка или модель русскими буквами («акванова Маск») — подсказка, что это
@@ -433,7 +450,7 @@ export async function decideConsultantReplyV2(
     i === V2_TOOLS.length - 1 ? { ...tool, cache_control: { type: "ephemeral", ttl: CONSULTANT_CACHE_TTL } } : tool,
   );
 
-  let profile: V2Profile | undefined = state.v2_profile;
+  let profile: V2Profile | undefined = knownProfile;
   let handoff: { reason: V2HandoffReason; summary: string; phone?: string } | null = null;
   const products: ConsultantProduct[] = [...story.products];
   // В журнал: сколько фото модель увидела («photo:0» — не скачалось).
@@ -717,7 +734,9 @@ export async function decideConsultantReplyV2(
     }
   }
 
-  const stateWithProfile = { ...state, v2_profile: profile, v2_rub: rub };
+  // В состояние — только выбор покупателя (рубли, тенге), не вывод из профиля.
+  const rubChoice = currencyAsked(text) ?? state.v2_rub;
+  const stateWithProfile = { ...state, v2_profile: profile, v2_rub: rubChoice };
   // Товары этого хода — первыми: менеджер видит в карточке то, о чём говорили сейчас.
   const turnIds = [...new Set(products.map((p) => p.id))];
 
@@ -745,7 +764,7 @@ export async function decideConsultantReplyV2(
       patch: {
         ...reply.patch,
         v2_profile: profile,
-        v2_rub: rub,
+        v2_rub: rubChoice,
         v2_contact_asked: undefined,
         ...(mediaSent.length ? { v2_media_sent: [...(state.v2_media_sent ?? []), ...mediaSent].slice(-30) } : {}),
       },
@@ -774,7 +793,7 @@ export async function decideConsultantReplyV2(
     ...(finalText !== tengeText ? { historyText: tengeText } : {}),
     patch: {
       v2_profile: profile,
-      v2_rub: rub,
+      v2_rub: rubChoice,
       conversation_state: "consulting",
       ...(contactAsked ? { v2_contact_asked: true } : {}),
       ...(mediaSent.length ? { v2_media_sent: [...(state.v2_media_sent ?? []), ...mediaSent].slice(-30) } : {}),
